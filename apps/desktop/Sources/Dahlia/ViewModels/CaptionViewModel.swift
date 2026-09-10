@@ -3663,9 +3663,6 @@ final class CaptionViewModel: ObservableObject {
                 )
             )
             try await dbQueue.write { db in try processing.saveForRecordingStart(sessionID: recordingSessionId, in: db) }
-            if let meetingID = currentMeetingId {
-                await LiveTranscriptPublisher.shared.start(meetingID: meetingID, database: dbQueue)
-            }
             meetingScope = persistenceService?.isFirstRecordingSession == true ? .new : .continued
             try await prepareAndStartRecordingController(RecordingControllerStartRequest(
                 dbQueue: dbQueue,

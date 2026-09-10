@@ -586,10 +586,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read confirmed speech and replaceable previews */
+        /** Read synchronized confirmed speech */
         get: operations["getLiveTranscript"];
-        /** Publish latest owner-only previews; monotonic session sequence, expires after 45 seconds */
-        put: operations["putLiveTranscript"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -604,7 +603,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List recently published live sessions */
+        /** List latest synchronized recording sessions without an end event */
         get: operations["listLiveMeetings"];
         put?: never;
         post?: never;
@@ -2290,33 +2289,6 @@ export interface components {
             cursor?: string;
             limit?: number;
         };
-        LiveTranscriptUpdate: {
-            vaultId: string;
-            meetingId: string;
-            sessionId: string;
-            /** Format: date-time */
-            startedAt: string;
-            /** @enum {string} */
-            status: "recording" | "disabled" | "stopped" | "failed";
-            sequence: number;
-            /** Format: date-time */
-            updatedAt: string;
-            previews: (components["schemas"]["LiveSpeech"] & {
-                text?: string;
-                audioSource?: string | null;
-                speakerLabel?: string | null;
-            })[];
-        };
-        LiveSpeech: {
-            id: string;
-            /** Format: date-time */
-            startedAt: string;
-            /** Format: date-time */
-            endedAt?: string | null;
-            text: string;
-            audioSource?: string | null;
-            speakerLabel?: string | null;
-        };
         LiveTranscriptPage: {
             state: components["schemas"]["LiveTranscriptState"];
             /** @enum {string} */
@@ -2335,12 +2307,20 @@ export interface components {
             sessionId: string;
             /** Format: date-time */
             startedAt: string;
-            /** @enum {string} */
-            status: "recording" | "disabled" | "stopped" | "failed" | "disconnected";
-            sequence: number;
             /** Format: date-time */
-            updatedAt: string;
-            previews: components["schemas"]["LiveSpeech"][];
+            endedAt: string | null;
+            /** @enum {string} */
+            status: "recording" | "stopped";
+        };
+        LiveSpeech: {
+            id: string;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            endedAt?: string | null;
+            text: string;
+            audioSource?: string | null;
+            speakerLabel?: string | null;
         };
         MeetingFile: {
             id: string;
@@ -3546,31 +3526,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["LiveTranscriptPage"];
                 };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    putLiveTranscript: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                meetingId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LiveTranscriptUpdate"];
-            };
-        };
-        responses: {
-            /** @description Success; no response body. */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             default: components["responses"]["Problem"];
         };

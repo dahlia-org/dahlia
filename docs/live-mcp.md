@@ -31,16 +31,17 @@ Claude Code / Codex は原則2秒間隔で差分をポーリングする。発�
 
 ## Server MCP / HTTP / SSE
 
-Server MCP の同名 tool は既存の Vault 共有権限に従う。HTTP は通常の認証を使う。
+Server MCP の同名 tool は既存の Vault 共有権限に従い、通常の同期で届いた確定文だけを返す。途中結果は Local MCP のメモリ内だけに保持し、Server へ送信しない。専用テーブルや公開用の書き込み API はない。HTTP は通常の認証を使う。
 
-- `PUT /api/v1/meetings/{meetingId}/live-transcript`: 所有者のみ。Desktop が最新状態を毎秒最大1回送信し、15秒ごとに heartbeat を送る。45秒更新がなければ `disconnected`、未確定文は空になる。
-- `GET /api/v1/vaults/{vaultId}/live-meetings`: 更新が有効なセッション一覧。
+- `GET /api/v1/vaults/{vaultId}/live-meetings`: 各会議の最新セッションのうち、開始イベントが同期済みで終了イベントが未同期のものを返す。
 - `GET /api/v1/meetings/{meetingId}/live-transcript`: `cursor` と `limit`（1〜500、省略200）で確定文を差分取得。
 - `GET /api/v1/meetings/{meetingId}/live-transcript/events`: SSE。イベントは `transcript` / `reset` / `error`。`id` を `Last-Event-ID` に入れて再接続できる。5秒以上書き込みが進まない購読者は切断する。
 
-HTTP / Server MCP のプロパティ名は `hasMore` / `resetRequired` の camelCase。`confirmedState` が `not_synced` なら対象セッションの確定文はまだ同期されていない。`last_synced` の場合も最新の確認保証ではなく、`confirmedThrough` が Server に届いた発話の最新開始時刻を示す。未確定状態と確定文は独立して届くため、停止後にもポーリングして最終同期を取り込める。Server にまだライブ状態がないときは `live_meeting_not_found` を返す。
+HTTP / Server MCP のプロパティ名は `hasMore` / `resetRequired` の camelCase。`state` は既存の `recording_sessions` ビューから導出し、開始・終了時刻と `recording` / `stopped` を返す。`previews` は返さない。これは最後に同期された状態であり、端末の接続状態ではない。オフラインの録音は終了イベントが届くまで `recording` のままになる。
 
-Server は送信者の録音開始イベントと現在の所有権を検証し、連番が古い更新と終了した同一セッションの再開を無視する。新しい録音セッションで再開する。SSE は配信のたびに認証と Vault 閲覧権限を再確認する。配信やネットワーク失敗は録音・確定保存・停止完了を待たせない。
+`confirmedState` が `not_synced` なら対象セッションの確定文はまだ同期されていない。`last_synced` の場合も最新の確認保証ではなく、`confirmedThrough` が Server に届いた発話の最新開始時刻を示す。停止後にもポーリングして最終同期を取り込める。録音開始イベントが未同期なら `live_meeting_not_found` を返す。
+
+SSE は配信のたびに認証と Vault 閲覧権限を再確認する。配信やネットワーク失敗は録音・確定保存・停止完了を待たせない。
 
 ## English quick reference
 
@@ -48,4 +49,4 @@ Select **All added vaults** in MCP settings to register a read-only workspace, o
 
 Enable the existing live first-draft transcription setting before recording. Poll `list_live_meetings` and `get_live_transcript` every two seconds. Append confirmed speech by ID, replace the full preview array, and rebuild accumulated speech when `reset_required` (Server: `resetRequired`) is true. These tools never start recording or recognition. Local MCP covers recordings on this Mac, including Server accounts, and requires the app for live state.
 
-Server MCP and HTTP share Vault read permissions. Preview updates are coalesced to at most once a second with a 15-second heartbeat and 45-second expiry. SSE supports `Last-Event-ID`, reset events, and authorization checks during streaming. `confirmedState` and `confirmedThrough` describe the last synced confirmed data independently of live connection status. Recording and durable transcript writes do not wait for subscribers. Automatic live input in AI Chat has been removed; manual chat and historical conversations remain available.
+Server MCP and HTTP share Vault read permissions and return only normally synchronized confirmed speech. Unconfirmed previews remain in Local MCP memory; there is no preview upload API or dedicated table. Recording state is derived from synchronized start/end events, not a connection heartbeat. SSE supports `Last-Event-ID`, reset events, and authorization checks during streaming. `confirmedState` and `confirmedThrough` describe the last synced confirmed data independently of live connection status. Recording and durable transcript writes do not wait for subscribers. Automatic live input in AI Chat has been removed; manual chat and historical conversations remain available.

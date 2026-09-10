@@ -29,8 +29,8 @@ const postgresAuthPath = join(packageDirectory, "drizzle/postgres-auth");
 const postgresPath = join(packageDirectory, "drizzle/postgres");
 const sqlitePath = join(packageDirectory, "drizzle/sqlite");
 const postgresAuthBaseline = "20260903034253_melodic_scalphunter/migration.sql";
-const postgresFiles = ["20260909134056_initial/migration.sql", "20260909134100_runtime_support/migration.sql", "20260909154643_huge_the_order/migration.sql", "20260909154651_default_organization_initialization/migration.sql", "20260909185042_damp_miss_america/migration.sql", "20260910012026_outgoing_mad_thinker/migration.sql", "20260910044809_silent_slayback/migration.sql", "20260910044811_live_transcript_rls/migration.sql"];
-const sqliteFiles = ["20260909134058_initial/migration.sql", "20260909134100_runtime_support/migration.sql", "20260909154644_lame_lethal_legion/migration.sql", "20260909154652_default_organization_initialization/migration.sql", "20260909185043_chilly_warstar/migration.sql", "20260910012027_tense_franklin_storm/migration.sql", "20260910044810_lowly_tenebrous/migration.sql"];
+const postgresFiles = ["20260909134056_initial/migration.sql", "20260909134100_runtime_support/migration.sql", "20260909154643_huge_the_order/migration.sql", "20260909154651_default_organization_initialization/migration.sql", "20260909185042_damp_miss_america/migration.sql", "20260910012026_outgoing_mad_thinker/migration.sql"];
+const sqliteFiles = ["20260909134058_initial/migration.sql", "20260909134100_runtime_support/migration.sql", "20260909154644_lame_lethal_legion/migration.sql", "20260909154652_default_organization_initialization/migration.sql", "20260909185043_chilly_warstar/migration.sql", "20260910012027_tense_franklin_storm/migration.sql"];
 
 export const serverMigrationManifest: MigrationManifest = {
   postgres: {

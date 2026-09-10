@@ -850,25 +850,12 @@
       ]
     },
     {
-      "operationId": "putLiveTranscript",
-      "method": "PUT",
-      "path": "/api/v1/meetings/{meetingId}/live-transcript",
-      "classification": "modified",
-      "previous": "none",
-      "reason": "Add live transcript access and ephemeral preview publication.",
-      "consumers": [
-        "Desktop",
-        "MCP",
-        "SSE clients"
-      ]
-    },
-    {
       "operationId": "getLiveTranscript",
       "method": "GET",
       "path": "/api/v1/meetings/{meetingId}/live-transcript",
       "classification": "modified",
       "previous": "none",
-      "reason": "Add live transcript access and ephemeral preview publication.",
+      "reason": "Add read-only access to synchronized confirmed transcripts.",
       "consumers": [
         "Desktop",
         "MCP",
@@ -881,7 +868,7 @@
       "path": "/api/v1/meetings/{meetingId}/live-transcript/events",
       "classification": "modified",
       "previous": "none",
-      "reason": "Add live transcript access and ephemeral preview publication.",
+      "reason": "Add read-only access to synchronized confirmed transcripts.",
       "consumers": [
         "Desktop",
         "MCP",
@@ -894,7 +881,7 @@
       "path": "/api/v1/vaults/{vaultId}/live-meetings",
       "classification": "modified",
       "previous": "none",
-      "reason": "Add live transcript access and ephemeral preview publication.",
+      "reason": "Add read-only access to synchronized confirmed transcripts.",
       "consumers": [
         "Desktop",
         "MCP",

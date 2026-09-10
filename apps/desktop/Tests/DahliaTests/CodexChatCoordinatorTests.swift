@@ -204,7 +204,7 @@ import Foundation
             backgroundSession.sendDraft()
             await waitUntil {
                 await MainActor.run {
-                    backgroundSession.isGenerating && backgroundSession.backendThreadID == "thread-1"
+                    backgroundSession.isGenerating && backgroundSession.activeTurnID != nil
                 }
             }
 
@@ -213,6 +213,7 @@ import Foundation
             coordinator.activateVault(newVault.id)
 
             await waitUntil { await MainActor.run { !backgroundSession.isGenerating } }
+            await waitUntil { await service.interruptCount == 1 }
             #expect(coordinator.session(for: backgroundSession.id) == nil)
             #expect(await service.interruptCount == 1)
         }

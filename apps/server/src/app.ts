@@ -547,12 +547,6 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     return context.json(await sync.searchText(identity, sync.parseId(context.req.param("vaultId")!),
       body.query, body.kind, body.cursor, body.limit === undefined ? undefined : String(body.limit)));
   });
-  registerApi(app, "putLiveTranscript", bodyLimit({ maxSize: 1024 * 1024,
-    onError: (context) => context.json({ error: "live_state_too_large" }, 413) }), async (context) => {
-    const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
-    await sync.putLiveState(identity, sync.parseId(context.req.param("meetingId")!), await context.req.json());
-    return context.body(null, 204);
-  });
   registerApi(app, "listLiveMeetings", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     context.header("Cache-Control", "no-store");

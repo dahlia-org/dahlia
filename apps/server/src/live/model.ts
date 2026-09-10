@@ -2,33 +2,20 @@ import { z } from "zod";
 import { sha256 } from "../storage/sha256";
 import { RequestError } from "../storage/upload";
 
-const id = z.uuid().transform((value) => value.toLowerCase());
-export const liveSpeechSchema = z.object({
-  id, startedAt: z.iso.datetime({ offset: true }), endedAt: z.iso.datetime({ offset: true }).nullish(), text: z.string().max(16000),
-  audioSource: z.string().max(200).nullish(), speakerLabel: z.string().max(200).nullish(),
-}).strict();
-export const liveStateSchema = z.object({
-  vaultId: id, meetingId: id, sessionId: id, startedAt: z.iso.datetime({ offset: true }),
-  status: z.enum(["recording", "disabled", "stopped", "failed"]),
-  sequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  updatedAt: z.iso.datetime({ offset: true }), previews: z.array(liveSpeechSchema).max(8),
-}).strict().refine((state) => state.status === "recording" || state.previews.length === 0, "Inactive sessions cannot publish previews")
-  .refine((state) => new Set(state.previews.map((preview) => preview.audioSource ?? "")).size === state.previews.length, "One preview per source");
-export type LiveSpeech = z.infer<typeof liveSpeechSchema>;
-export type LiveState = z.infer<typeof liveStateSchema>;
-export interface StoredLiveState { vaultId: string; meetingId: string; sessionId: string; startedAt: Date; sequence: number; status: LiveState["status"]; updatedAt: Date; previews: LiveSpeech[] }
-export const LIVE_EXPIRY_MS = 45_000;
-export function visibleLiveState(row: StoredLiveState, now = new Date()) {
-  const expired = now.getTime() - row.updatedAt.getTime() > LIVE_EXPIRY_MS;
-  return { ...row, status: expired && ["recording", "disabled"].includes(row.status) ? "disconnected" as const : row.status,
-    previews: expired ? [] : row.previews };
+export interface LiveSpeech {
+  id: string; startedAt: string; endedAt?: string | null; text: string;
+  audioSource?: string | null; speakerLabel?: string | null;
+}
+export interface LiveState {
+  vaultId: string; meetingId: string; sessionId: string; startedAt: Date; endedAt: Date | null;
+  status: "recording" | "stopped";
 }
 const cursorSchema = z.object({ vaultId: z.uuid(), meetingId: z.uuid(), sessionId: z.uuid(), generation: z.string(),
   position: z.number().int().nonnegative(), digest: z.string() }).strict();
 export const liveQuery = z.object({ cursor: z.string().max(2048).optional(), limit: z.coerce.number().int().min(1).max(500).default(200) }).strict();
 
 // ponytail: O(n) prefix verification detects edits and late inserts without a second transcript journal; add a journal if long-meeting reads become costly.
-export async function livePage(state: ReturnType<typeof visibleLiveState>, generation: string, segments: LiveSpeech[], cursor: string | undefined, limit: number) {
+export async function livePage(state: LiveState, generation: string, segments: LiveSpeech[], cursor: string | undefined, limit: number) {
   let position = 0;
   let resetRequired = false;
   const digest = (end: number) => sha256(JSON.stringify(segments.slice(0, end)));

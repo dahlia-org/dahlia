@@ -738,8 +738,7 @@
     "liveState": {
       "vaultId": "id:vault",
       "meetingId": "id:meeting",
-      "sessionId": "id:recording",
-      "previews": "array:liveSpeech"
+      "sessionId": "id:recording"
     },
     "liveList": {
       "meetings": "array:liveState"
@@ -2077,14 +2076,6 @@
         "GET",
         "HEAD"
       ]
-    },
-    {
-      "path": "/api/v1/meetings/:meeting/live-transcript",
-      "methods": [
-        "PUT"
-      ],
-      "request": "liveState",
-      "limit": 1048576
     },
     {
       "path": "/api/v1/meetings/:meeting/live-transcript",

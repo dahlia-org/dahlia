@@ -39,6 +39,28 @@ import GRDB
         }
 
         @Test
+        func previewsRespectTheUTF16LimitWithoutSplittingCharacters() throws {
+            let database = try AppDatabaseManager(path: ":memory:").dbQueue
+            let store = LiveTranscriptStore()
+            let state = LiveTranscriptState(vaultId: .v7(), meetingId: .v7(), sessionId: .v7(), startedAt: .now, enabled: true)
+            store.begin(state, database: database)
+            let cases = [
+                (String(repeating: "a", count: 16001), String(repeating: "a", count: 16000)),
+                (String(repeating: "😀", count: 8001), String(repeating: "😀", count: 8000)),
+                ("a" + String(repeating: "😀", count: 8000), "a" + String(repeating: "😀", count: 7999)),
+                (String(repeating: "e\u{301}", count: 8001), String(repeating: "e\u{301}", count: 8000)),
+                (String(repeating: "👨‍👩‍👧‍👦", count: 1500), String(repeating: "👨‍👩‍👧‍👦", count: 1454)),
+            ]
+            for (input, expected) in cases {
+                let segment = TranscriptSegment(sessionId: state.sessionId, startTime: .now, text: input, audioSource: "mic")
+                store.observe(.preview(segment), meetingID: state.meetingId, database: database)
+                let text = try #require(store.snapshot(meetingID: state.meetingId, database: database)?.previews.first?.text)
+                #expect(text.utf16.count <= 16000)
+                #expect(text == expected)
+            }
+        }
+
+        @Test
         func previewsReplaceBySourceAndNeverFeedTheConfirmedStore() throws {
             let database = try AppDatabaseManager(path: ":memory:").dbQueue
             let store = LiveTranscriptStore()
@@ -136,104 +158,6 @@ import GRDB
             #expect(throws: (any Error).self) {
                 try scoped.executeTool(named: "get_live_transcript", arguments: ["meeting_id": fixture.firstMeetingID.uuidString, "limit": true])
             }
-        }
-
-        @Test(.timeLimit(.minutes(1)))
-        func publisherDoesNotCarryItsSequenceIntoAReplacementRecording() async throws {
-            let database = try AppDatabaseManager(path: ":memory:").dbQueue
-            let store = LiveTranscriptStore()
-            let first = LiveTranscriptState(vaultId: .v7(), meetingId: .v7(), sessionId: .v7(), startedAt: .now, enabled: true)
-            store.begin(first, database: database)
-            let (sent, sentContinuation) = AsyncStream.makeStream(of: LiveTranscriptState.self)
-            let (release, releaseContinuation) = AsyncStream.makeStream(of: Void.self)
-            defer {
-                sentContinuation.finish()
-                releaseContinuation.finish()
-            }
-            let publisher = LiveTranscriptPublisher(store: store) { state, _ in
-                sentContinuation.yield(state)
-                if state.sessionId == first.sessionId {
-                    var releaseIterator = release.makeAsyncIterator()
-                    _ = await releaseIterator.next()
-                }
-                return true
-            }
-            let oldWorker = await publisher.start(meetingID: first.meetingId, database: database)
-            var iterator = sent.makeAsyncIterator()
-            #expect(await iterator.next()?.sessionId == first.sessionId)
-            // begin precedes publisher.start during recording preparation; the old sender may still be in flight.
-            var replacement = LiveTranscriptState(
-                vaultId: first.vaultId, meetingId: first.meetingId, sessionId: .v7(), startedAt: .now, enabled: true
-            )
-            replacement.status = .stopped
-            store.begin(replacement, database: database)
-            releaseContinuation.yield(())
-            await oldWorker.value
-            let newWorker = await publisher.start(meetingID: replacement.meetingId, database: database)
-            await newWorker.value
-            sentContinuation.finish()
-            var remaining: [LiveTranscriptState] = []
-            while let state = await iterator.next() { remaining.append(state) }
-            #expect(remaining.map(\.sessionId) == [replacement.sessionId])
-            #expect(remaining.map(\.sequence) == [1])
-        }
-
-        @Test(.timeLimit(.minutes(1)))
-        func slowOfflinePublicationDoesNotGateConfirmedPersistenceOrStop() async throws {
-            let database = try AppDatabaseManager(path: ":memory:").dbQueue
-            let vault = VaultRecord(id: .v7(), path: nil, name: "Fixture", createdAt: .now, lastOpenedAt: .now)
-            try await database.write { try vault.insert($0) }
-            let transcriptStore = TranscriptStore()
-            let startedAt = Date.now
-            transcriptStore.recordingStartTime = startedAt
-            let service = try await MeetingPersistenceService.createNew(
-                store: transcriptStore,
-                dbQueue: database,
-                vaultId: vault.id,
-                projectId: nil,
-                initialName: "Fixture"
-            )
-            let store = LiveTranscriptStore()
-            let state = LiveTranscriptState(
-                vaultId: vault.id,
-                meetingId: service.meetingId,
-                sessionId: service.recordingSessionId,
-                startedAt: startedAt,
-                enabled: true
-            )
-            store.begin(state, database: database)
-            let (sent, sentContinuation) = AsyncStream.makeStream(of: LiveTranscriptState.self)
-            let (release, releaseContinuation) = AsyncStream.makeStream(of: Void.self)
-            defer { releaseContinuation.finish()
-                sentContinuation.finish()
-            }
-            let publisher = LiveTranscriptPublisher(store: store) { state, _ in
-                sentContinuation.yield(state)
-                if state.sequence == 1 {
-                    var iterator = release.makeAsyncIterator()
-                    _ = await iterator.next()
-                    throw URLError(.notConnectedToInternet)
-                }
-                return true
-            }
-            await publisher.start(meetingID: state.meetingId, database: database)
-            var iterator = sent.makeAsyncIterator()
-            #expect(await iterator.next()?.status == .recording)
-            let segment = TranscriptSegment(
-                sessionId: state.sessionId,
-                startTime: .now,
-                text: "durable while offline",
-                isConfirmed: true,
-                audioSource: "mic"
-            )
-            try await service.persist(.finalized(segment))
-            await service.stop()
-            store.finish(meetingID: state.meetingId, database: database)
-            let page = try await store.read(vaultID: vault.id, meetingID: state.meetingId, cursor: nil, limit: 200, database: database)
-            #expect(page.confirmed.map(\.text) == ["durable while offline"])
-            #expect(page.state.status == .stopped)
-            releaseContinuation.yield(())
-            #expect(await iterator.next()?.status == .stopped)
         }
 
         @Test

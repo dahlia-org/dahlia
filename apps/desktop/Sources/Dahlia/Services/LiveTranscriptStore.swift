@@ -29,12 +29,17 @@ final class LiveTranscriptStore: Sendable {
                 guard segment.sessionId == state.sessionId else { return }
                 state.previews.removeAll { $0.audioSource == segment.audioSource }
                 if !segment.isConfirmed, !segment.text.isEmpty {
-                    // Bound replaceable recognition output; never truncate durable confirmed text.
+                    // Bound local preview payloads in UTF-16 units while retaining whole characters; confirmed text is never truncated.
+                    var remainingUTF16 = 16000
+                    let preview = segment.text.prefix {
+                        remainingUTF16 -= String($0).utf16.count
+                        return remainingUTF16 >= 0
+                    }
                     state.previews.append(LiveSpeech(
                         id: segment.id,
                         startedAt: segment.startTime,
                         endedAt: segment.endTime,
-                        text: String(segment.text.prefix(16000)),
+                        text: String(preview),
                         audioSource: segment.audioSource,
                         speakerLabel: segment.speakerLabel
                     ))

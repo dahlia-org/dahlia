@@ -40,7 +40,6 @@ export const apiOperations = {
   getSnapshot: (init: FetchOptions<operations["getSnapshot"]>, notifyMutation = false) => unwrap(serverClient.GET("/api/v1/vaults/{vaultId}/snapshot", init), notifyMutation),
   search: (init: FetchOptions<operations["search"]>, notifyMutation = false) => unwrap(serverClient.POST("/api/v1/vaults/{vaultId}/search", init), notifyMutation),
   textSearch: (init: FetchOptions<operations["textSearch"]>, notifyMutation = false) => unwrap(serverClient.POST("/api/v1/vaults/{vaultId}/text-search", init), notifyMutation),
-  putLiveTranscript: (init: FetchOptions<operations["putLiveTranscript"]>, notifyMutation = true) => unwrap(serverClient.PUT("/api/v1/meetings/{meetingId}/live-transcript", init), notifyMutation),
   getLiveTranscript: (init: FetchOptions<operations["getLiveTranscript"]>, notifyMutation = false) => unwrap(serverClient.GET("/api/v1/meetings/{meetingId}/live-transcript", init), notifyMutation),
   listLiveMeetings: (init: FetchOptions<operations["listLiveMeetings"]>, notifyMutation = false) => unwrap(serverClient.GET("/api/v1/vaults/{vaultId}/live-meetings", init), notifyMutation),
   getLiveTranscriptEvents: (init: FetchOptions<operations["getLiveTranscriptEvents"]>, notifyMutation = false) => unwrap(serverClient.GET("/api/v1/meetings/{meetingId}/live-transcript/events", init), notifyMutation),

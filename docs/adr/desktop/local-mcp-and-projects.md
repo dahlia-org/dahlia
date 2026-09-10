@@ -45,6 +45,4 @@ helper は SQLite の完全性と保持 revision を検査し、不足する本�
 
 `list_live_meetings` / `get_live_transcript` はこの Mac の録音をアカウント種別に関係なく既存の署名済み helper broker から読む。ローカル HTTP listener、認証、本文 cache は追加しない。既存のライブ初版設定を使い、tool から録音・認識を開始しない。確定文は SQLite、未確定文は音源別の最新 projection とする。cursor の世代・prefix 検証で遅延挿入や訂正・削除を検出し、`reset_required` を返す。
 
-Server は所有者 API で最新状態だけを受け、確定文は既存同期を使う。毎秒最大1回、15秒 heartbeat、45秒失効とし、共有 Vault の閲覧権限で MCP/HTTP/SSE に配信する。SSE は各読取で再認可し、遅い購読者は切断して cursor から再開する。確定文・録音の永続化は配信完了を待たない。操作例と状態の意味は [ライブ MCP](../../live-mcp.md) を参照。
-
-AI Chat のライブ切替・自動投入・専用キューは廃止した。通常の手動チャットと既存履歴の読み取りは維持し、履歴中のライブ本文は引き続き未信頼データとして扱う。
+Server は通常の同期で届いた確定文だけを MCP/HTTP/SSE に配信する。録音状態は既存の recording_sessions ビューから読み、途中結果の送信・専用テーブルは持たない。Local MCP の途中結果はメモリに保持する。共有 Vault の閲覧権限を各読取で再確認し、遅い購読者は切断して cursor から再開する。確定文・録音の永続化は配信完了を待たない。操作例と状態の意味は [ライブ MCP](../../live-mcp.md) を参照。

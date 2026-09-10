@@ -1,4 +1,4 @@
-import { liveStateSchema, livePage, liveQuery, visibleLiveState } from "../live/model";
+import { livePage, liveQuery } from "../live/model";
 import { uuidSchema, transcriptChunkSchema, SCREENSHOT_DELETE_BATCH_SIZE, STORAGE_OPERATION_CONCURRENCY, QUERY_EMBEDDING_DEADLINE_MS, QUERY_EMBEDDING_CONCURRENCY, permissionPrincipalSchema, SYNC_READ_PAGE_SIZE, TRANSCRIPT_READ_PAGE_SIZE, meetingCursorSchema, screenshotCursorSchema, transcriptCursorSchema, uuidV7Schema, transactionSchema, transactionDataSchemas, SYNC_CHANGE_PAGE_SIZE } from "./schemas";
 import type { GeneratedTranscript } from "../summary/transcription";
 import { conditionalRead } from "../storage/http-read";
@@ -1076,19 +1076,10 @@ export class MeetingSyncService {
     return this.store.withIdentity(identity, (scoped) => scoped.getMeeting(vaultId, meetingId));
   }
 
-  async putLiveState(identity: Identity, meetingId: string, input: unknown) {
-    const parsed = liveStateSchema.safeParse(input);
-    if (!parsed.success || parsed.data.meetingId !== meetingId) throw new RequestError(400, "invalid_live_state");
-    const state = parsed.data;
-    const saved = await this.store.withIdentity(identity, (scoped) => scoped.putLiveState({ ...state,
-      startedAt: new Date(state.startedAt), updatedAt: new Date() }));
-    if (!saved) throw new RequestError(404, "meeting_not_found");
-  }
-
   async listLiveMeetings(identity: Identity, vaultId: string) {
     return this.store.withIdentity(identity, async (scoped) => {
       if (!await scoped.getVault(vaultId)) throw new RequestError(404, "vault_not_found");
-      return { meetings: (await scoped.listLiveStates(vaultId)).map((row) => visibleLiveState(row)) };
+      return { meetings: await scoped.listLiveStates(vaultId) };
     });
   }
 
@@ -1101,7 +1092,7 @@ export class MeetingSyncService {
       const row = await scoped.getLiveState(vaultId, meetingId);
       if (!row) throw new RequestError(404, "live_meeting_not_found");
       const { generation, segments } = await scoped.liveSegments(row);
-      return livePage(visibleLiveState(row), generation, segments, parsed.data.cursor, parsed.data.limit);
+      return livePage(row, generation, segments, parsed.data.cursor, parsed.data.limit);
     });
   }
 

@@ -1,3 +1,4 @@
+import type { LiveState } from "../live/model";
 import { EXTERNAL_ORGANIZATION_ID } from "../auth/ids";
 import { sha256 } from "../storage/sha256";
 import { storedTranscriptSettingsSchema } from "../summary/model";
@@ -322,7 +323,6 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "app.meetings",
       "app.meeting_events",
       "app.transcripts",
-      "app.live_transcripts",
       "app.transcript_segments",
       "app.transcript_patch_chunks",
       "app.files",
@@ -570,8 +570,6 @@ function createIdentityStore(
     } else {
       await db.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
     }
-    // Replaceable live state does not survive a Vault transfer.
-    await db.delete(schema.liveTranscript).where(eq(schema.liveTranscript.vaultId, sourceVaultId));
     for (const table of [schema.syncedProject, schema.syncedMeeting, schema.syncedFile,
       schema.meetingAttachment, schema.meetingEvent, schema.transcriptPatchChunk, schema.searchDocument,
       schema.searchEmbedding, schema.searchIndexJob, schema.imageAnalysisJob, schema.summaryJob]) {
@@ -2130,41 +2128,28 @@ function createIdentityStore(
     return { items: records, hasMore: false };
   }
 
+  async function liveStates(vaultId: string, meetingId?: string): Promise<LiveState[]> {
+    const sessions = schema.recordingSession;
+    const meetings = schema.syncedMeeting;
+    const query = db.select({ vaultId: sessions.vaultId, meetingId: sessions.meetingId, sessionId: sessions.sessionId,
+      startedAt: sessions.startedAt, endedAt: sessions.endedAt,
+    }).from(sessions).innerJoin(meetings, and(eq(meetings.meetingId, sessions.meetingId), eq(meetings.vaultId, sessions.vaultId)))
+      .where(and(eq(sessions.vaultId, vaultId), readable(sessions.vaultId), eq(meetings.active, true), isNull(meetings.deletingAt),
+        isNotNull(sessions.startedAt), meetingId ? eq(sessions.meetingId, meetingId) : and(isNull(sessions.endedAt), sql`NOT EXISTS (
+          SELECT 1 FROM ${sessions} newer WHERE newer.vault_id = ${sessions.vaultId} AND newer.meeting_id = ${sessions.meetingId}
+          AND (newer.started_at > ${sessions.startedAt} OR (newer.started_at = ${sessions.startedAt} AND newer.session_id > ${sessions.sessionId}))
+        )`)))
+      .orderBy(desc(sessions.startedAt), desc(sessions.sessionId));
+    const rows = await (meetingId ? query.limit(1) : query);
+    return rows.flatMap((row) => row.startedAt ? [{ ...row, startedAt: row.startedAt, status: row.endedAt ? "stopped" as const : "recording" as const }] : []);
+  }
+
   return {
-    async putLiveState(state) {
-      await lockVault(state.vaultId);
-      if (!await ensureUploadTarget(state.vaultId, state.meetingId)) return false;
-      const events = schema.meetingEvent;
-      const [session] = await db.select({ id: events.id, startedAt: events.occurredAt }).from(events).where(and(
-        eq(events.vaultId, state.vaultId), eq(events.meetingId, state.meetingId),
-        eq(events.sessionId, state.sessionId), eq(events.kind, "recording_started"),
-      )).limit(1);
-      if (!session) throw new SyncTransactionError(409, "live_session_not_synced");
-      state = { ...state, startedAt: session.startedAt };
-      const table = schema.liveTranscript;
-      const [previous] = await db.select().from(table).where(eq(table.meetingId, state.meetingId));
-      if (previous) {
-        if (previous.sessionId === state.sessionId) {
-          if (state.sequence <= previous.sequence || ["stopped", "failed"].includes(previous.status)) return true;
-        } else if (state.startedAt <= previous.startedAt) return true;
-      }
-      await db.insert(table).values(state).onConflictDoUpdate({ target: table.meetingId, set: state });
-      // Opportunistic cleanup is owner-scoped; expired projections are never returned by readers.
-      await db.update(table).set({ previews: [] }).where(and(ownerAccess(table.vaultId), lt(table.updatedAt, new Date(Date.now() - 45000))));
-      return true;
-    },
     async getLiveState(vaultId, meetingId) {
-      const table = schema.liveTranscript;
-      const [row] = await db.select().from(table).where(and(readable(table.vaultId), eq(table.vaultId, vaultId), eq(table.meetingId, meetingId)));
-      return row ?? null;
+      return (await liveStates(vaultId, meetingId))[0] ?? null;
     },
-    async listLiveStates(vaultId) {
-      const table = schema.liveTranscript;
-      return db.select().from(table).where(and(readable(table.vaultId), eq(table.vaultId, vaultId),
-        inArray(table.status, ["recording", "disabled", "failed"]), gt(table.updatedAt, new Date(Date.now() - 45000))))
-        .orderBy(asc(table.startedAt), asc(table.meetingId));
-    },
-    async liveSegments({ vaultId, meetingId, sessionId, startedAt }) {
+    listLiveStates: liveStates,
+    async liveSegments({ vaultId, meetingId, sessionId, startedAt, endedAt }) {
       const transcript = await getTranscript(vaultId, meetingId);
       if (!transcript) return { generation: "none", segments: [] };
       const runs = transcript.metadata?.runs ?? [];
@@ -2176,14 +2161,10 @@ function createIdentityStore(
           return { generation: "none", segments: [] };
         }
       }
-      // Generation timestamps describe processing, not the audio timeline. Use the synced recording boundary.
-      const events = schema.meetingEvent;
-      const [ended] = await db.select({ at: events.occurredAt }).from(events).where(and(
-        eq(events.vaultId, vaultId), eq(events.meetingId, meetingId), eq(events.sessionId, sessionId), eq(events.kind, "recording_ended"),
-      )).orderBy(desc(events.occurredAt)).limit(1);
+      // Generation timestamps describe processing; filter by the synced recording timeline.
       const table = schema.syncedTranscriptSegment;
       const rows = await db.select().from(table).where(and(eq(table.transcriptId, transcript.id),
-        gte(table.startedAt, startedAt), ended ? lte(table.startedAt, ended.at) : undefined))
+        gte(table.startedAt, startedAt), endedAt ? lte(table.startedAt, endedAt) : undefined))
         .orderBy(asc(table.createdAt), asc(table.segmentId));
       return { generation: transcript.id, segments: rows.map((row) => ({ id: row.segmentId, startedAt: row.startedAt.toISOString(),
         endedAt: row.endedAt?.toISOString() ?? null, text: row.text, audioSource: row.audioSource, speakerLabel: row.speakerLabel })) };

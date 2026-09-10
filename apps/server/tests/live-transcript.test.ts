@@ -11,11 +11,10 @@ import type { Identity } from "../src/auth/identity";
 import type { AppConfig } from "../src/config";
 import { uuidV7 } from "../src/id";
 import { MeetingSyncService } from "../src/sync/service";
-import { livePage, visibleLiveState, type LiveState } from "../src/live/model";
+import { livePage, type LiveState } from "../src/live/model";
 
 import { seedHeaderIdentity, testUserID } from "./public-test-client";
 import { encodeId } from "../src/typeid";
-import { wireValue } from "../src/public-wire";
 
 const directories: string[] = [];
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
@@ -40,8 +39,13 @@ async function fixture() {
   db.prepare("INSERT INTO meeting_events (id,vault_id,owner_user_id,meeting_id,kind,occurred_at,received_at,session_id) VALUES (?,?,?,?,?,?,?,?)")
     .run(uuidV7(), vaultId, owner.userId, meetingId, "recording_started", new Date(now).getTime(), Date.now(), sessionId);
   db.close();
-  const state: LiveState = { vaultId, meetingId, sessionId, startedAt: now, updatedAt: now, status: "recording", sequence: 1,
-    previews: [{ id: uuidV7(), startedAt: now, text: "partial", audioSource: "mic" }] };
+  const state: LiveState = { vaultId, meetingId, sessionId, startedAt: new Date(now), endedAt: null, status: "recording" };
+  const event = (kind: "recording_started" | "recording_ended", at: Date, id = sessionId) => {
+    const db = new DatabaseSync(databasePath);
+    db.prepare("INSERT INTO meeting_events (id,vault_id,owner_user_id,meeting_id,kind,occurred_at,received_at,session_id) VALUES (?,?,?,?,?,?,?,?)")
+      .run(uuidV7(), vaultId, owner.userId, meetingId, kind, at.getTime(), Date.now(), id);
+    db.close();
+  };
   const patchId = uuidV7();
   const segments = [{ segmentId: uuidV7(), startedAt: now, endedAt: null, text: "confirmed", createdAt: now, audioSource: "mic", speakerLabel: null }];
   const chunk = { segments, deletions: [] };
@@ -58,47 +62,42 @@ async function fixture() {
     else db.prepare("DELETE FROM vault_permissions WHERE vault_id = ? AND principal_id = ?").run(vaultId, reader.userId);
     db.close();
   };
-  return { store, sync, config, state, vaultId, meetingId, share, databasePath };
+  return { store, sync, config, state, vaultId, meetingId, share, databasePath, event };
 }
 
-it("rejects stale preview writes, scopes read access and expires previews", async () => {
-  const { store, sync, state, vaultId, meetingId, share } = await fixture();
+it("reads only confirmed speech from normal sync and scopes access to the Vault", async () => {
+  const { store, sync, state, vaultId, meetingId, share, event } = await fixture();
   try {
-    await sync.putLiveState(owner, meetingId, state);
-    await sync.putLiveState(owner, meetingId, { ...state, previews: [], sequence: 0 });
     const page = await sync.getLiveTranscript(owner, vaultId, meetingId, {});
-    expect(page.state.previews[0]?.text).toBe("partial");
+    expect(page.state).not.toHaveProperty("previews");
     expect(page.confirmed.map((speech) => speech.text)).toEqual(["confirmed"]);
     const next = await sync.getLiveTranscript(owner, vaultId, meetingId, { cursor: page.cursor });
     expect(next.confirmed).toEqual([]);
     await expect(sync.listLiveMeetings(reader, vaultId)).rejects.toMatchObject({ status: 404 });
     await expect(sync.getLiveTranscript(reader, vaultId, meetingId, {})).rejects.toMatchObject({ status: 404 });
-    await expect(sync.putLiveState(reader, meetingId, state)).rejects.toMatchObject({ status: 404 });
     share(true);
     expect((await sync.getLiveTranscript(reader, vaultId, meetingId, {})).state.sessionId).toBe(state.sessionId);
-    const expired = visibleLiveState({ ...state, startedAt: new Date(state.startedAt), updatedAt: new Date(0) });
-    expect(expired.status).toBe("disconnected"); expect(expired.previews).toEqual([]);
+    expect((await sync.listLiveMeetings(reader, vaultId)).meetings.map((row) => row.sessionId)).toEqual([state.sessionId]);
     const reset = await livePage(page.state, "replacement", [], page.cursor, 200);
     expect(reset.resetRequired).toBe(true);
     await expect(livePage({ ...page.state, vaultId: uuidV7() }, "replacement", [], page.cursor, 200)).rejects.toMatchObject({ status: 400 });
-    await sync.putLiveState(owner, meetingId, { ...state, status: "stopped", previews: [], sequence: 2 });
-    await sync.putLiveState(owner, meetingId, { ...state, sequence: 3 });
+    event("recording_ended", new Date());
     expect((await sync.getLiveTranscript(owner, vaultId, meetingId, {})).state.status).toBe("stopped");
+    expect((await sync.listLiveMeetings(reader, vaultId)).meetings).toEqual([]);
   } finally { await store.close?.(); }
 });
 
 describe.each(["node", "worker"])("live HTTP (%s)", (runtime) => {
   it("streams a page, resumes its cursor, and rejects access after revocation", async () => {
-    const { store, sync, config, state, meetingId, share } = await fixture();
+    const { store, config, state, meetingId, share } = await fixture();
     try {
-      await sync.putLiveState(owner, meetingId, state);
       share(true);
       const app = createApp({ config, authStore: store });
-      const published = await app.request(`/api/v1/meetings/${encodeId("meeting", meetingId)}/live-transcript`, {
+      const rejected = await app.request(`/api/v1/meetings/${encodeId("meeting", meetingId)}/live-transcript`, {
         method: "PUT", headers: { "content-type": "application/json", "x-forwarded-user": owner.userId, "x-forwarded-email": "owner@example.com" },
-        body: JSON.stringify(wireValue({ ...state, sequence: 2 }, "liveState", "encode")),
+        body: JSON.stringify({ previews: [{ text: "unconfirmed" }] }),
       });
-      expect(published.status).toBe(204);
+      expect(rejected.status).toBe(405);
       const listed = await app.request(`/api/v1/vaults/${encodeId("vault", state.vaultId)}/live-meetings`, {
         headers: { "x-forwarded-user": reader.userId, "x-forwarded-email": "reader@example.com" },
       });
@@ -118,6 +117,7 @@ describe.each(["node", "worker"])("live HTTP (%s)", (runtime) => {
       const first = new TextDecoder().decode((await stream.read()).value);
       expect(first).toContain("event: transcript"); expect(first).toContain("confirmed");
       const page = JSON.parse(first.match(/data: (.+)/)![1]!) as Awaited<ReturnType<typeof livePage>>;
+      expect(page.state).not.toHaveProperty("previews");
       expect(page.state.meetingId).toBe(encodeId("meeting", meetingId));
       expect(page.state.sessionId).toBe(encodeId("recording", state.sessionId));
       expect(page.confirmed[0]!.id).toMatch(/^seg_/);
@@ -135,33 +135,28 @@ describe.each(["node", "worker"])("live HTTP (%s)", (runtime) => {
   });
 });
 
-it("binds generations to synced sessions and ignores a delayed older session", async () => {
-  const { store, sync, state, vaultId, meetingId, databasePath } = await fixture();
+it("uses the latest synced recording without reviving an older unfinished session", async () => {
+  const { store, sync, state, vaultId, meetingId, event } = await fixture();
   try {
-    await sync.putLiveState(owner, meetingId, state);
     const first = await sync.getLiveTranscript(owner, vaultId, meetingId, {});
     const sessionId = uuidV7();
-    await expect(sync.putLiveState(owner, meetingId, { ...state, sessionId })).rejects.toMatchObject({ status: 409 });
     const startedAt = new Date(Date.now() + 1000);
-    const db = new DatabaseSync(databasePath);
-    db.prepare("INSERT INTO meeting_events (id,vault_id,owner_user_id,meeting_id,kind,occurred_at,received_at,session_id) VALUES (?,?,?,?,?,?,?,?)")
-      .run(uuidV7(), vaultId, owner.userId, meetingId, "recording_started", startedAt.getTime(), Date.now(), sessionId);
-    db.close();
-    await sync.putLiveState(owner, meetingId, { ...state, sessionId, startedAt: startedAt.toISOString(), previews: [] });
+    event("recording_started", startedAt, sessionId);
     const restarted = await sync.getLiveTranscript(owner, vaultId, meetingId, { cursor: first.cursor });
     expect(restarted.resetRequired).toBe(true);
     expect(restarted.confirmedState).toBe("not_synced");
-    await sync.putLiveState(owner, meetingId, { ...state, startedAt: "2100-01-01T00:00:00.000Z", sequence: 999 });
+    expect(restarted.confirmed).toEqual([]);
+    expect((await sync.listLiveMeetings(owner, vaultId)).meetings.map((row) => row.sessionId)).toEqual([sessionId]);
+    event("recording_started", new Date(state.startedAt.getTime() - 1000), uuidV7());
     expect((await sync.getLiveTranscript(owner, vaultId, meetingId, {})).state.sessionId).toBe(sessionId);
-    await expect(sync.putLiveState(owner, meetingId, { ...state, sessionId, previews: [...state.previews, ...state.previews] }))
-      .rejects.toMatchObject({ status: 400 });
+    event("recording_ended", new Date(startedAt.getTime() + 1000), sessionId);
+    expect((await sync.listLiveMeetings(owner, vaultId)).meetings).toEqual([]);
   } finally { await store.close?.(); }
 });
 
-it("disconnects a stalled SSE subscriber without blocking new state writes", async () => {
-  const { store, sync, config, state, vaultId, meetingId } = await fixture();
+it("disconnects a stalled SSE subscriber without blocking ordinary transcript reads", async () => {
+  const { store, sync, config, vaultId, meetingId, event } = await fixture();
   try {
-    await sync.putLiveState(owner, meetingId, state);
     const app = createApp({ config, authStore: store });
     const response = await app.request(`/api/v1/meetings/${encodeId("meeting", meetingId)}/live-transcript/events`, {
       headers: { "x-forwarded-user": owner.userId, "x-forwarded-email": "owner@example.com" },
@@ -169,8 +164,10 @@ it("disconnects a stalled SSE subscriber without blocking new state writes", asy
     expect(response.status).toBe(200);
     // Do not consume the stream: its bounded buffers fill and the write deadline aborts it.
     await new Promise((resolve) => setTimeout(resolve, 8000));
-    await sync.putLiveState(owner, meetingId, { ...state, sequence: 2, previews: [] });
-    expect((await sync.getLiveTranscript(owner, vaultId, meetingId, {})).state.sequence).toBe(2);
+    event("recording_ended", new Date());
+    const page = await sync.getLiveTranscript(owner, vaultId, meetingId, {});
+    expect(page.state.status).toBe("stopped");
+    expect(page.confirmed.map((speech) => speech.text)).toEqual(["confirmed"]);
     const reader = response.body!.getReader();
     let chunks = 0;
     while (!(await reader.read()).done) { expect(++chunks).toBeLessThanOrEqual(2); }
@@ -180,7 +177,6 @@ it("disconnects a stalled SSE subscriber without blocking new state writes", asy
 it("replaces live speech with cloud audio-input generations for the same recording", async () => {
   const { store, sync, state, vaultId, meetingId, databasePath } = await fixture();
   try {
-    await sync.putLiveState(owner, meetingId, state);
     const live = await sync.getLiveTranscript(owner, vaultId, meetingId, {});
     const startedAt = new Date(state.startedAt).getTime();
     const endedAt = new Date(startedAt + 10_000).toISOString();
@@ -189,7 +185,6 @@ it("replaces live speech with cloud audio-input generations for the same recordi
       .run(uuidV7(), vaultId, owner.userId, meetingId, "recording_ended", new Date(endedAt).getTime(), Date.now(), state.sessionId);
     db.close();
     const recording = await store.sync.withIdentity(owner, (scoped) => scoped.reserveRecording(vaultId, meetingId, state.sessionId, "mic"));
-    await sync.putLiveState(owner, meetingId, { ...state, status: "stopped", previews: [], sequence: 2 });
     const replace = async (recordingNumber: number) => {
       const previous = await store.sync.withIdentity(owner, (scoped) => scoped.getTranscript(vaultId, meetingId));
       const patchId = uuidV7();
@@ -201,7 +196,7 @@ it("replaces live speech with cloud audio-input generations for the same recordi
       await sync.putTranscriptChunk(owner, meetingId, patchId, 0, sha256, chunk);
       await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: endedAt,
         operations: [{ id: patchId, entity: "transcript", action: "patch", entityId: meetingId, baseRevision: previous!.syncRevision,
-          data: { patchId, mode: "replace", transcript: { id: uuidV7(), startedAt: state.startedAt, endedAt,
+          data: { patchId, mode: "replace", transcript: { id: uuidV7(), startedAt: state.startedAt.toISOString(), endedAt,
             metadata: { provider: "gemini", request: { model: "gemini" }, runs: [{ generatedBy: "server", inputTypes: ["audio"],
               audioInputs: [{ recordingNumber, source: "mic", checksum: `SHA-256:${"a".repeat(64)}` }], startedAt: endedAt, completedAt: endedAt }] } },
             segmentCount: segments.length, deletionCount: 0, chunks: [{ index: 0, sha256, segmentCount: segments.length, deletionCount: 0 }] } }] });

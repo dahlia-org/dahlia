@@ -1,4 +1,3 @@
-import type { LiveSpeech } from "../live/model";
 import type { TranscriptMetadata } from "../sync/transcript";
 import type { SummaryMetadata } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
@@ -652,18 +651,4 @@ export const vaultTransfer = appSchema.table("vault_transfers", {
     using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,
     withCheck: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,
   }),
-]).enableRLS();
-
-export const liveTranscript = appSchema.table("live_transcripts", {
-  meetingId: uuid("meeting_id").primaryKey(), vaultId: uuid("vault_id").notNull(), sessionId: uuid("session_id").notNull(),
-  startedAt: timestamp("started_at").notNull(), sequence: bigint("sequence", { mode: "number" }).notNull(),
-  status: text("status").$type<"recording" | "disabled" | "stopped" | "failed">().notNull(),
-  updatedAt: timestamp("updated_at").notNull(), previews: jsonb("previews").$type<LiveSpeech[]>().notNull(),
-}, (table) => [
-  foreignKey({ columns: [table.vaultId, table.meetingId], foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId] }).onDelete("cascade"),
-  index("live_transcripts_vault_idx").on(table.vaultId, table.updatedAt),
-  pgPolicy("live_transcripts_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})` }),
-  pgPolicy("live_transcripts_insert", { for: "insert", withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` }),
-  pgPolicy("live_transcripts_update", { for: "update", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` }),
-  pgPolicy("live_transcripts_delete", { for: "delete", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})` }),
 ]).enableRLS();

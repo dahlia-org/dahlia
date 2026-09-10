@@ -5959,130 +5959,6 @@
         ],
         "additionalProperties": false
       },
-      "LiveTranscriptUpdate": {
-        "type": "object",
-        "properties": {
-          "vaultId": {
-            "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-          },
-          "meetingId": {
-            "type": "string",
-            "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-          },
-          "sessionId": {
-            "type": "string",
-            "pattern": "^rec_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-          },
-          "startedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "recording",
-              "disabled",
-              "stopped",
-              "failed"
-            ]
-          },
-          "sequence": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "previews": {
-            "type": "array",
-            "items": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/LiveSpeech"
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "text": {
-                      "type": "string",
-                      "maxLength": 16000
-                    },
-                    "audioSource": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 200
-                    },
-                    "speakerLabel": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "maxLength": 200
-                    }
-                  }
-                }
-              ]
-            },
-            "maxItems": 8
-          }
-        },
-        "required": [
-          "vaultId",
-          "meetingId",
-          "sessionId",
-          "startedAt",
-          "status",
-          "sequence",
-          "updatedAt",
-          "previews"
-        ],
-        "additionalProperties": false
-      },
-      "LiveSpeech": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^seg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-          },
-          "startedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "endedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
-          },
-          "text": {
-            "type": "string"
-          },
-          "audioSource": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "speakerLabel": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "startedAt",
-          "text"
-        ]
-      },
       "LiveTranscriptPage": {
         "type": "object",
         "properties": {
@@ -6150,31 +6026,19 @@
             "type": "string",
             "format": "date-time"
           },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
           "status": {
             "type": "string",
             "enum": [
               "recording",
-              "disabled",
-              "stopped",
-              "failed",
-              "disconnected"
+              "stopped"
             ]
-          },
-          "sequence": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "previews": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/LiveSpeech"
-            },
-            "maxItems": 8
           }
         },
         "required": [
@@ -6182,10 +6046,48 @@
           "meetingId",
           "sessionId",
           "startedAt",
-          "status",
-          "sequence",
-          "updatedAt",
-          "previews"
+          "endedAt",
+          "status"
+        ]
+      },
+      "LiveSpeech": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^seg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "text": {
+            "type": "string"
+          },
+          "audioSource": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "speakerLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "startedAt",
+          "text"
         ]
       },
       "MeetingFile": {
@@ -9056,45 +8958,9 @@
       }
     },
     "/api/v1/meetings/{meetingId}/live-transcript": {
-      "put": {
-        "operationId": "putLiveTranscript",
-        "summary": "Publish latest owner-only previews; monotonic session sequence, expires after 45 seconds",
-        "tags": [
-          "meetings"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "meetingId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LiveTranscriptUpdate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "204": {
-            "description": "Success; no response body."
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      },
       "get": {
         "operationId": "getLiveTranscript",
-        "summary": "Read confirmed speech and replaceable previews",
+        "summary": "Read synchronized confirmed speech",
         "tags": [
           "meetings"
         ],
@@ -9147,7 +9013,7 @@
     "/api/v1/vaults/{vaultId}/live-meetings": {
       "get": {
         "operationId": "listLiveMeetings",
-        "summary": "List recently published live sessions",
+        "summary": "List latest synchronized recording sessions without an end event",
         "tags": [
           "vaults"
         ],
