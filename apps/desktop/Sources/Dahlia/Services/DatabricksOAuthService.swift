@@ -17,7 +17,7 @@ actor DatabricksOAuthService {
         let task: Task<String, Error>
         let loginOnly: Bool
         let generation: UUID
-        // nil closes registration before the last waiter cancels the task outside the lock.
+        /// nil closes registration before the last waiter cancels the task outside the lock.
         private let waiters: Mutex<Set<UUID>?>
 
         init(task: Task<String, Error>, loginOnly: Bool, generation: UUID, waiter: UUID) {
