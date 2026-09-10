@@ -30,7 +30,7 @@ it("disables Lakebase top-K scans before weighted ranking and reads settings onc
   expect(disableIndex).toBeGreaterThan(-1);
   expect(rankIndex).toBeGreaterThan(disableIndex);
   expect(queries[rankIndex]!.parameters).toContain(9);
-  for (const field of SEARCH_FIELDS) expect(queries[rankIndex]!.parameters).toContain(`app.search_documents_${field}_bm25`);
+  for (const field of SEARCH_FIELDS) expect(queries[rankIndex]!.parameters).toContain(`search.search_documents_${field}_bm25`);
   expect(queries[rankIndex]!.text).toContain(" @@ plainto_tsquery");
 });
 
@@ -53,4 +53,39 @@ it("decodes PostgreSQL project activity as UTC on a non-UTC host", async () => {
       (scoped) => scoped.searchProjectActivity("vault", {}));
     expect(result).toEqual([{ projectId: "project", updatedAt: "2026-09-03T00:00:00.000Z" }]);
   } finally { vi.unstubAllEnvs(); }
+});
+
+it.each(["postgres", "lakebase"] as const)("ranks integrated plaintext vectors in the %s database", async (backend) => {
+  const queries: Array<{ text: string; parameters: unknown[] }> = [];
+  const client = {
+    async connect() { return this; },
+    release() {},
+    async query(input: string | { text: string }, parameters: unknown[] = []) {
+      const text = typeof input === "string" ? input : input.text;
+      queries.push({ text, parameters });
+      if (text.includes("from pg_roles")) return { rows: [{ rolsuper: false, rolbypassrls: false }] };
+      if (text.includes("from pg_class")) return { rows: [{ count: (parameters[0] as string[]).length }] };
+      if (text.startsWith('select "meeting_id" from "app"."meetings"')) return { rows: [["meeting"]] };
+      return { rows: [] };
+    },
+  };
+  const store = createPostgresMeetingSyncStore(drizzle({ client: client as unknown as Pool }), backend);
+  await store.withIdentity({ userId: "owner", workspaceId: "personal:owner", source: "header" }, async (scoped) => {
+    const query = { text: "alpha", tokens: ["alpha"], embedding: { model: "current", dimensions: 32, vector: [1, ...new Array<number>(31).fill(0)] } };
+    await scoped.listMeetings("vault", query, 10);
+    await scoped.listScreenshots("vault", undefined, query, 10);
+  });
+  const vectors = queries.filter(({ text }) => text.includes("<=>"));
+  expect(vectors).toHaveLength(2);
+  for (const { text, parameters } of vectors) {
+    expect(text).toContain('from "search"."documents"');
+    expect(text).toContain('"embedding_model"');
+    expect(text).toContain('cardinality(');
+    expect(text).toContain('order by');
+    expect(text).toContain('limit');
+    expect(parameters).toContain("current");
+    expect(parameters).toContain(100);
+    expect(text).not.toContain('encrypted_payload');
+    expect(text).not.toContain('search_embeddings');
+  }
 });

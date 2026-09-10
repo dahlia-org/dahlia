@@ -352,7 +352,7 @@ integration("PostgreSQL application store", () => {
   it("has the search indexes configured by the CI embedding migration", async () => {
     const searchIndexes = await connection!.db.execute<{ indexname: string; indexdef: string }>(sql`
       select indexname, indexdef from pg_indexes
-      where schemaname = 'app'
+      where schemaname = 'search'
         and (indexname = 'search_documents_search_gin' or indexdef like '%USING hnsw%')
       order by indexname
     `);
@@ -393,12 +393,11 @@ integration("PostgreSQL application store", () => {
         ('app', 'files'),
         ('app', 'meeting_attachments'),
         ('app', 'meeting_events'),
-        ('app', 'search_documents'),
-        ('app', 'search_embeddings')
+        ('search', 'documents')
       )
       order by namespace.nspname, class.relname
     `);
-    expect(protectedTables.rows).toHaveLength(12);
+    expect(protectedTables.rows).toHaveLength(11);
     expect(protectedTables.rows.every(({ rls, force_rls }) => rls && force_rls)).toBe(true);
     const legacyOwnerColumns = await connection!.db.execute(sql`
       select 1 from information_schema.columns
@@ -417,7 +416,7 @@ integration("PostgreSQL application store", () => {
     expect(searchColumns.rows).toEqual([]);
     const projectionColumns = await connection!.db.execute<{ column_name: string }>(sql`
       select column_name from information_schema.columns
-      where table_schema = 'app' and table_name = 'search_documents'
+      where table_schema = 'search' and table_name = 'documents'
         and column_name in ('search_text', 'search_vector')
       order by column_name
     `);
@@ -457,7 +456,6 @@ integration("PostgreSQL application store", () => {
         createdAt: new Date(),
         updatedAt: new Date(),
         searchText: "postgresql search projection",
-        embeddingText: null,
         embeddingContentHash: null,
       },
     }]));
@@ -482,7 +480,7 @@ integration("PostgreSQL application store", () => {
     `);
     expect(withoutContext.rows[0]?.count).toBe("0");
     const searchWithoutContext = await connection!.db.execute<{ count: string }>(sql`
-      select count(*)::text as count from app.search_documents where vault_id = ${vaultId}
+      select count(*)::text as count from search.documents where vault_id = ${vaultId}
     `);
     expect(searchWithoutContext.rows[0]?.count).toBe("0");
     const receiptsWithoutContext = await connection!.db.execute<{ count: string }>(sql`
@@ -567,7 +565,7 @@ integration("PostgreSQL application store", () => {
           data: { checksum: `SHA-256:${screenshotHash}`, metadata: {} },
         }, { id: crypto.randomUUID(), entity: "meeting_attachment", action: "upsert", entityId: screenshotId, baseRevision: null,
           data: { meetingId, fileId: screenshotId, capturedAt: now, sessionId: null, createdAt: now,
-            searchText: "screen", embeddingText: "screen", embeddingContentHash: "screen-hash" },
+            searchText: "screen", embeddingContentHash: "screen-hash" },
         }, {
           id: patchId,
           entity: "transcript",
@@ -866,7 +864,6 @@ function meetingData(
     createdAt: now,
     updatedAt: now,
     searchText,
-    embeddingText: null,
     embeddingContentHash: null,
   };
 }

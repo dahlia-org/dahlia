@@ -131,14 +131,14 @@ export async function ensureSearchIndexes(pool: Pool, config: AppConfig): Promis
   if (config.databaseType === "lakebase") {
     await pool.query("CREATE EXTENSION IF NOT EXISTS lakebase_text");
     await pool.query(
-      "CREATE INDEX IF NOT EXISTS search_documents_search_bm25 ON app.search_documents USING lakebase_bm25 (search_vector)",
+      "CREATE INDEX IF NOT EXISTS search_documents_search_bm25 ON search.documents USING lakebase_bm25 (search_vector)",
     );
     for (const field of SEARCH_FIELDS) {
-      await pool.query(`CREATE INDEX IF NOT EXISTS search_documents_${field}_bm25 ON app.search_documents USING lakebase_bm25 (${field}_vector) WITH (k1 = 1.2, b = 0.75)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS search_documents_${field}_bm25 ON search.documents USING lakebase_bm25 (${field}_vector) WITH (k1 = 1.2, b = 0.75)`);
     }
   } else if (config.databaseType === "postgres") {
     await pool.query(
-      "CREATE INDEX IF NOT EXISTS search_documents_search_gin ON app.search_documents USING gin (search_vector)",
+      "CREATE INDEX IF NOT EXISTS search_documents_search_gin ON search.documents USING gin (search_vector)",
     );
   }
   const embedding = config.searchEmbedding;
@@ -150,12 +150,12 @@ export async function ensureSearchIndexes(pool: Pool, config: AppConfig): Promis
   const method = config.databaseType === "lakebase" ? "lakebase_ann" : "hnsw";
   const vectorType = config.databaseType === "lakebase" ? "vector" : "public.vector";
   const operatorClass = config.databaseType === "lakebase" ? "vector_cosine_ops" : "public.vector_cosine_ops";
-  const indexName = `search_embeddings_${method}_${embedding.dimensions}_${suffix}`;
+  const indexName = `search_documents_${method}_${embedding.dimensions}_${suffix}`;
   await pool.query(`
     CREATE INDEX IF NOT EXISTS ${indexName}
-    ON app.search_embeddings USING ${method}
+    ON search.documents USING ${method}
       ((embedding::${vectorType}(${embedding.dimensions})) ${operatorClass})
-    WHERE model = ${modelLiteral} AND dimensions = ${embedding.dimensions}
+    WHERE embedding_model = ${modelLiteral} AND cardinality(embedding) = ${embedding.dimensions}
   `);
 }
 

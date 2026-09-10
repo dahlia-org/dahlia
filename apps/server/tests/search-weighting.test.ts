@@ -63,7 +63,7 @@ describe.each(["sqlite", "postgres", "lakebase"] as const)("%s weighted search",
       return id;
     };
     const search = async (query: string) => {
-      if (lakebase) await lakebase.query("VACUUM ANALYZE app.search_documents");
+      if (lakebase) await lakebase.query("VACUUM ANALYZE search.documents");
       return (await service.listMeetings(owner, vaultId, query)).items.map((meeting) => meeting.meetingId);
     };
     return { store, service, owner, vaultId, path, config, commit, add, search, meetingData };
@@ -86,7 +86,7 @@ describe.each(["sqlite", "postgres", "lakebase"] as const)("%s weighted search",
     expect(await search("needle")).toEqual([description, title]);
   });
 
-  test("indexes summary tags, replaces removed tags, and preserves embedding input on tag-only edits", async () => {
+  test("indexes summary tags and updates search snippets on tag-only edits", async () => {
     const { store, service, owner, vaultId, add, search, commit } = await setup();
     const document = (tags: string[]) => JSON.stringify({ schemaVersion: 3, title: "Meeting", description: "", tags, actionItems: [],
       sections: [{ heading: "", blocks: [{ type: "paragraph", content: { text: "Stable summary" } }] }] });
@@ -101,7 +101,8 @@ describe.each(["sqlite", "postgres", "lakebase"] as const)("%s weighted search",
     expect(await search("budget")).toEqual([]);
     expect(await search("roadmap")).toEqual([id]);
     const after = await store.sync.withIdentity(owner, (scoped) => scoped.searchTextPage(vaultId, { text: "roadmap", tokens: ["roadmap"] }, "meeting", 0, 10));
-    expect(after[0]?.snippet).toBe(before[0]?.snippet);
+    expect(before[0]?.snippet).toContain("budget");
+    expect(after[0]?.snippet).toContain("roadmap");
     await commit([{ entity: "summary", action: "delete", entityId: id, baseRevision: 2, data: {} }]);
     expect(await search("roadmap")).toEqual([]);
     expect(await search("stable")).toEqual([]);

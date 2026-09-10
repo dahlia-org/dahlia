@@ -249,10 +249,10 @@ Web opens search from the sidebar or Cmd/Ctrl+K, shows six recent meetings initi
 
 Meeting and screenshot search is tokenized by the Server; it never reads Desktop's SQLite tokenizer or token data. Meeting search covers name, summary tags, description, and visible summary text. Screenshot search covers OCR and caption. Original transcripts remain synchronized but are not searchable. Queries are limited to 500 characters and 16 AND-combined tokens. Node uses the pinned Lindera IPADIC WASM package, while Cloudflare Workers use `Intl.Segmenter`; changing runtime for an existing database requires recreating it or fully resynchronizing every meeting.
 
-`app.search_documents` is the shared rebuildable projection for meetings and screenshots. PostgreSQL uses its generated `tsvector` with GIN, SQLite uses an external-content FTS5 table, and Lakebase uses `lakebase_text` with BM25. D1 sync is fail-closed until its multi-statement writes use D1's atomic `batch()` API. Lakebase Search must be enabled by an operator before deployment; startup stops when the required extension cannot be loaded. After the first full synchronization, update BM25 corpus statistics once with:
+`search.documents` (PostgreSQL/Lakebase) or `search_documents` (SQLite/D1) is the shared rebuildable projection for meetings and screenshots. PostgreSQL uses its generated `tsvector` with GIN, SQLite uses an external-content FTS5 table, and Lakebase uses `lakebase_text` with BM25. D1 sync is fail-closed until its multi-statement writes use D1's atomic `batch()` API. Lakebase Search must be enabled by an operator before deployment; startup stops when the required extension cannot be loaded. After the first full synchronization, update BM25 corpus statistics once with:
 
 ```sql
-VACUUM app.search_documents;
+VACUUM search.documents;
 ```
 
 Node also processes uploaded, canonically attached meeting images when `DAHLIA_CAPTIONING_MODEL` is set. The Databricks App service principal analyzes the existing bounded `thumb_1280` WebP variant; OCR stays in the original language (20,000 characters maximum), and captions use the owner's output language (500 characters maximum). Images and generated text are sent to the configured provider without logging request content. File-level durable jobs use five-minute leases and retry transient failures after restart. They preserve populated OCR/captions, accept empty OCR, and validate current ownership, checksum and revision before atomically committing canonical text, deltas, search projection and embedding jobs. Setting changes do not reanalyze completed images. Missing model configuration disables the corresponding worker; Workers do not run these Node jobs. The capabilities API advertises `imageAnalysis: { version: 1 }` only when Node has constructed the worker; Desktop retains device analysis when it is absent or its version is unsupported. Capability fetch failures retain the job for retry. Device fallback uses the Server account language settings when available, otherwise its existing device language settings. Files API storage currently requires Databricks Volumes.
@@ -684,3 +684,42 @@ The workerd check uses Wrangler's installed Miniflare and local R2/Images/Queue 
 The read-only MCP tool `get_meeting_transcript` returns confirmed speech for the whole meeting through ordinary transcript sync. Pass the returned `next_after` as `after` to retrieve additions; `wait: true` waits up to 25 seconds only when no speech is available. Empty results retain a checkpoint. Existing `cursor` pagination remains available, but cannot be combined with `after`. An edit, deletion, regeneration or late insertion into already-read speech returns `transcript_changed_refetch_without_after`: omit `after` and rebuild the transcript.
 
 Each wait iteration releases its transaction, revalidates authentication and Vault permissions, and stops on disconnection. `query_meetings` reports `isRecording` from synchronized start/end events; this does not prove live connectivity. No preview storage, live HTTP routes or separate SSE subscription is needed. See [MCP transcript access](../../docs/live-mcp.md) for Local MCP registration and the shared read contract.
+
+## Server Vault encryption
+
+New Vaults accept `encryption: "none" | "server"` in the create Transaction. Omission defaults to `none`; omission on update preserves the mode. Private Web offers the choice when the authenticated capabilities response advertises `vaultEncryption`. Existing Vault modes cannot change, and transfers involving an encrypted Vault return `409`. Desktop needs no key: authorized Server reads return the usual plaintext records.
+
+This protects canonical content from direct database reads, with an explicit exception: all search data (text, vectors and indexes) in `search.documents` / `search_documents` remains unencrypted and can expose searchable meeting text, summaries, OCR and captions. File bodies, recording objects, Desktop working copies, authentication data, IDs, relationships, dates, statuses and other operational fields are outside this protection. It is not end-to-end encryption; the Server holds the keys and decrypts for authorized clients and jobs. See the [design and protection boundary](../../docs/adr/server/vault-encryption.md).
+
+Configure individually named runtime secrets, each containing base64 of exactly 32 random bytes, and an explicit active ID:
+
+```dotenv
+DAHLIA_ENCRYPTION_MASTER_KEY_1=<base64-32-byte-secret>
+DAHLIA_ENCRYPTION_MASTER_KEY_3=<base64-32-byte-secret>
+DAHLIA_ENCRYPTION_ACTIVE_KEY_ID=3
+```
+
+IDs may have gaps. Never reuse an ID for different key bytes. Do not place keys in the application database, database backups, logs or source control. Node and Workers use the same names; inject Worker keys as secrets. Missing or invalid configured keys fail initialization; missing keys for an existing encrypted Vault or corrupt ciphertext fail reads with `vault_encryption_unavailable`, without plaintext fallback. D1 meeting sync remains disabled.
+
+The unreleased Server initial migrations include this schema. Apply them to a fresh database with `pnpm db:migrate` (packaged deployment: `pnpm db:migrate:prod`), configure secrets and restart before creating encrypted Vaults. Existing development databases need an explicit rebuild or migration before using this revised initial schema; startup does not rewrite them. Database backups are not modified.
+
+To rotate, add a fresh numbered key, retain old keys, set its active ID and restart all writers. From `apps/server`, validate the database's wrapped keys before applying:
+
+```bash
+pnpm db:rotate-encryption-keys
+pnpm db:rotate-encryption-keys --apply
+```
+
+The packaged command is `pnpm db:rotate-encryption-keys:prod` (append `--apply` to mutate). Dry-run is the default; output contains counts only. Rotation rewraps each Vault key, leaves content ciphertext unchanged, commits in batches and can resume after interruption. It includes retained keys for deleted Vault receipts. Keep old master keys as long as a retained backup requires them; a live rotation does not rewrite backups. Restore the database together with its matching master-key set and verify an encrypted read before switching traffic. Workers using PostgreSQL can rotate through this Node command against the same database with its normal scoped database credentials.
+
+Search text and vectors share one table: PostgreSQL/Lakebase `search.documents`, SQLite/D1 `search_documents`. `embedding` is NULL until generated; `embedding_model` identifies its model. Vector length is validated against configuration and no dimensions column is stored in the document. `app.jobs_search_index` remains a separate durable queue. Search performs no encryption or decryption; PostgreSQL/Lakebase use native DB ranking and SQLite retains exact cosine ranking.
+
+`embedding_text` is not stored. Jobs use the existing tokenized `search_text` projection, including meeting title, tags, description and summary or image OCR and caption. The existing `embedding_content_hash` is the hash of this exact input. A changed input clears the vector and its model atomically with the projection update. Saving requires the latest hash, the claimed job generation/model and current ownership to match; a deleted document cannot be recreated by a delayed result. Queries require the configured model and vector length, so model changes fall back to FTS until regeneration. No Meeting/image version or second vector hash is added.
+
+### Updating an existing development database
+
+The Server is unreleased; the initial Drizzle migrations were rewritten. An already-applied migration ledger will **not** apply this change on `pnpm db:migrate`. Do not clear the ledger or run the fresh baseline over populated tables. No existing database is deleted, reset or automatically converted by this change.
+
+Before running this code against an existing development DB, stop its writers/index workers and take a consistent backup (including encryption keys separately). On a restored copy, prepare an explicit schema/data upgrade for that DB's actual baseline: move PostgreSQL `app.search_documents` to `search.documents`; add nullable `embedding` and `embedding_model` (SQLite keeps its table name); retire the old `search_embeddings` table only after validating the replacement. Old vectors and hashes used different input or ciphertext and must be regenerated, not copied as valid results. Rebuild projections and their hashes from canonical content through the current sync service, clear obsolete search jobs, and regenerate vectors using the configured model. Preserve canonical records, keys, permissions and all unrelated data. Restore/verify the document foreign key, indexes, Vault RLS and FORCE RLS in the search schema, including any runtime-role schema grants. Test search, deletion and encrypted reads on the copy before applying an explicitly reviewed upgrade to the original. D1 sync remains disabled. This upgrade is separate from the rewritten fresh-install migration; production migration and deployment are outside this change.
+
+PostgreSQL encryption/RLS checks use `TEST_ENCRYPTION_DATABASE_URL` pointing to a dedicated disposable non-bypass-RLS database. These checks do not substitute for deployed Lakebase or Worker testing.

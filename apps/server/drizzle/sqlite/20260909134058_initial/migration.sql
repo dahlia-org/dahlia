@@ -322,25 +322,14 @@ CREATE TABLE `search_documents` (
 	`summary_text` text DEFAULT '' NOT NULL,
 	`ocr_text` text DEFAULT '' NOT NULL,
 	`caption_text` text DEFAULT '' NOT NULL,
-	`embedding_text` text,
 	`embedding_content_hash` text,
+	`embedding` blob,
+	`embedding_model` text,
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	CONSTRAINT `search_documents_pk` PRIMARY KEY(`vault_id`, `document_id`),
 	CONSTRAINT `fk_search_documents_vault_id_meeting_id_meetings_vault_id_meeting_id_fk` FOREIGN KEY (`vault_id`,`meeting_id`) REFERENCES `meetings`(`vault_id`,`meeting_id`) ON DELETE CASCADE,
+	CONSTRAINT "search_document_embedding_dimensions_check" CHECK("embedding" IS NULL OR (length("embedding") BETWEEN 128 AND 4096 AND length("embedding") % 4 = 0)),
 	CONSTRAINT "search_document_kind_check" CHECK("kind" IN ('meeting', 'screenshot'))
-);
---> statement-breakpoint
-CREATE TABLE `search_embeddings` (
-	`vault_id` text NOT NULL,
-	`document_id` text NOT NULL,
-	`model` text NOT NULL,
-	`dimensions` integer NOT NULL,
-	`content_hash` text NOT NULL,
-	`embedding` blob NOT NULL,
-	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	CONSTRAINT `search_embeddings_pk` PRIMARY KEY(`vault_id`, `document_id`),
-	CONSTRAINT `fk_search_embeddings_vault_id_document_id_search_documents_vault_id_document_id_fk` FOREIGN KEY (`vault_id`,`document_id`) REFERENCES `search_documents`(`vault_id`,`document_id`) ON DELETE CASCADE,
-	CONSTRAINT "search_embedding_dimensions_check" CHECK("dimensions" BETWEEN 32 AND 1024)
 );
 --> statement-breakpoint
 CREATE TABLE `jobs_search_index` (
@@ -388,6 +377,7 @@ CREATE TABLE `jobs_storage_delete` (
 );
 --> statement-breakpoint
 CREATE TABLE `summaries` (
+	`encrypted_payload` text,
 	`id` text PRIMARY KEY,
 	`meeting_id` text NOT NULL,
 	`version` integer NOT NULL,
@@ -401,6 +391,7 @@ CREATE TABLE `summaries` (
 );
 --> statement-breakpoint
 CREATE TABLE `jobs_summary` (
+	`encrypted_payload` text,
 	`id` text PRIMARY KEY,
 	`vault_id` text NOT NULL,
 	`meeting_id` text NOT NULL,
@@ -443,6 +434,7 @@ CREATE TABLE `sync_changes` (
 );
 --> statement-breakpoint
 CREATE TABLE `transaction_receipts` (
+	`encrypted_payload` text,
 	`transaction_id` text PRIMARY KEY,
 	`owner_user_id` text NOT NULL,
 	`vault_id` text NOT NULL,
@@ -465,6 +457,7 @@ CREATE TABLE `sync_vault_state` (
 );
 --> statement-breakpoint
 CREATE TABLE `files` (
+	`encrypted_payload` text,
 	`file_id` text PRIMARY KEY,
 	`vault_id` text NOT NULL,
 	`uri` text NOT NULL,
@@ -486,6 +479,7 @@ CREATE TABLE `files` (
 );
 --> statement-breakpoint
 CREATE TABLE `meetings` (
+	`encrypted_payload` text,
 	`meeting_id` text PRIMARY KEY,
 	`vault_id` text NOT NULL,
 	`project_id` text,
@@ -507,6 +501,7 @@ CREATE TABLE `meetings` (
 );
 --> statement-breakpoint
 CREATE TABLE `projects` (
+	`encrypted_payload` text,
 	`project_id` text PRIMARY KEY,
 	`vault_id` text NOT NULL,
 	`parent_project_id` text,
@@ -545,6 +540,7 @@ CREATE TABLE `recordings` (
 );
 --> statement-breakpoint
 CREATE TABLE `transcript_segments` (
+	`encrypted_payload` text,
 	`transcript_id` text NOT NULL,
 	`segment_id` text NOT NULL,
 	`started_at` integer NOT NULL,
@@ -558,6 +554,8 @@ CREATE TABLE `transcript_segments` (
 );
 --> statement-breakpoint
 CREATE TABLE `vaults` (
+	`encryption` text DEFAULT 'none' NOT NULL,
+	`encrypted_payload` text,
 	`vault_id` text PRIMARY KEY,
 	`name` text NOT NULL,
 	`icon` text,
@@ -584,6 +582,7 @@ CREATE TABLE `vault_permissions` (
 );
 --> statement-breakpoint
 CREATE TABLE `transcripts` (
+	`encrypted_payload` text,
 	`id` text PRIMARY KEY,
 	`meeting_id` text NOT NULL,
 	`version` integer NOT NULL,
@@ -598,6 +597,7 @@ CREATE TABLE `transcripts` (
 );
 --> statement-breakpoint
 CREATE TABLE `transcript_patch_chunks` (
+	`encrypted_payload` text,
 	`vault_id` text NOT NULL,
 	`meeting_id` text NOT NULL,
 	`patch_id` text NOT NULL,
@@ -607,6 +607,13 @@ CREATE TABLE `transcript_patch_chunks` (
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	CONSTRAINT `transcript_patch_chunks_pk` PRIMARY KEY(`vault_id`, `meeting_id`, `patch_id`, `chunk_index`),
 	CONSTRAINT `fk_transcript_patch_chunks_vault_id_meeting_id_meetings_vault_id_meeting_id_fk` FOREIGN KEY (`vault_id`,`meeting_id`) REFERENCES `meetings`(`vault_id`,`meeting_id`) ON DELETE CASCADE
+);
+--> statement-breakpoint
+CREATE TABLE `vault_keys` (
+	`vault_id` text PRIMARY KEY,
+	`owner_user_id` text NOT NULL,
+	`wrapped_key` text NOT NULL,
+	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `vault_transfers` (

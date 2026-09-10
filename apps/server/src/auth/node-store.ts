@@ -1,3 +1,4 @@
+import { rotateVaultKeys } from "../encryption/rotation";
 import { createSummaryJobStore, type SummaryJobStore } from "../summary/store";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
@@ -25,6 +26,7 @@ import { createImageAnalysisStore, type ImageAnalysisStore } from "../image-anal
 
 export interface NodeApplicationStore extends ApplicationStore {
   migrate(): Promise<void>;
+  rotateEncryptionKeys(apply: boolean): Promise<{ checked: number; pending: number; rotated: number }>;
   searchIndex?: SearchIndexStore;
   imageAnalysis?: ImageAnalysisStore;
   summaryJobs: SummaryJobStore;
@@ -41,14 +43,16 @@ export function createNodeApplicationStore(
         connection.db,
         config.databaseType,
         config.searchEmbedding,
+        config.encryption,
       ),
       migrate: () => migrateApplicationDatabase(
         config,
         postgresMigrations(migrations),
       ),
+      rotateEncryptionKeys: (apply) => rotateVaultKeys(connection.db, true, config.encryption, apply),
       searchIndex: config.searchEmbedding ? createPostgresSearchIndexStore(connection.db) : undefined,
-      summaryJobs: createSummaryJobStore(connection.db, true),
-      imageAnalysis: config.captioningModel ? createImageAnalysisStore(connection.db, true) : undefined,
+      summaryJobs: createSummaryJobStore(connection.db, true, config.encryption),
+      imageAnalysis: config.captioningModel ? createImageAnalysisStore(connection.db, true, config.encryption) : undefined,
       close: connection.close,
     };
   }
@@ -99,6 +103,7 @@ export function createNodeApplicationStore(
     transactionalSqlite,
     true,
     config.searchEmbedding,
+    config.encryption,
   );
   const applyMigrationQueries = (queries: string[]) => {
     for (const query of queries) database.exec(query);
@@ -170,9 +175,10 @@ export function createNodeApplicationStore(
         }
       },
     },
+    rotateEncryptionKeys: (apply) => rotateVaultKeys(transactionalSqlite, false, config.encryption, apply),
     searchIndex: config.searchEmbedding ? createSqliteSearchIndexStore(transactionalSqlite) : undefined,
-    summaryJobs: createSummaryJobStore(transactionalSqlite, false),
-    imageAnalysis: config.captioningModel ? createImageAnalysisStore(transactionalSqlite, false) : undefined,
+    summaryJobs: createSummaryJobStore(transactionalSqlite, false, config.encryption),
+    imageAnalysis: config.captioningModel ? createImageAnalysisStore(transactionalSqlite, false, config.encryption) : undefined,
     close: () => {
       database.close();
       return Promise.resolve();

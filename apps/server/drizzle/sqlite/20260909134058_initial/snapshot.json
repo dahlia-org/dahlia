@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "52352c72-2e2d-4339-8919-3c9d86309895",
+  "id": "60d8a8e6-6861-48d3-9659-91c8f2536ce8",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -95,10 +95,6 @@
       "entityType": "tables"
     },
     {
-      "name": "search_embeddings",
-      "entityType": "tables"
-    },
-    {
       "name": "jobs_search_index",
       "entityType": "tables"
     },
@@ -168,6 +164,10 @@
     },
     {
       "name": "transcript_patch_chunks",
+      "entityType": "tables"
+    },
+    {
+      "name": "vault_keys",
       "entityType": "tables"
     },
     {
@@ -2450,7 +2450,17 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "embedding_text",
+      "name": "embedding_content_hash",
+      "entityType": "columns",
+      "table": "search_documents"
+    },
+    {
+      "type": "blob",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "embedding",
       "entityType": "columns",
       "table": "search_documents"
     },
@@ -2460,7 +2470,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "embedding_content_hash",
+      "name": "embedding_model",
       "entityType": "columns",
       "table": "search_documents"
     },
@@ -2473,76 +2483,6 @@
       "name": "updated_at",
       "entityType": "columns",
       "table": "search_documents"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "vault_id",
-      "entityType": "columns",
-      "table": "search_embeddings"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "document_id",
-      "entityType": "columns",
-      "table": "search_embeddings"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "model",
-      "entityType": "columns",
-      "table": "search_embeddings"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "dimensions",
-      "entityType": "columns",
-      "table": "search_embeddings"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "content_hash",
-      "entityType": "columns",
-      "table": "search_embeddings"
-    },
-    {
-      "type": "blob",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "embedding",
-      "entityType": "columns",
-      "table": "search_embeddings"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
-      "generated": null,
-      "name": "updated_at",
-      "entityType": "columns",
-      "table": "search_embeddings"
     },
     {
       "type": "text",
@@ -2800,6 +2740,16 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "table": "summaries"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
       "name": "id",
       "entityType": "columns",
       "table": "summaries"
@@ -2873,6 +2823,16 @@
       "name": "metadata",
       "entityType": "columns",
       "table": "summaries"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "table": "jobs_summary"
     },
     {
       "type": "text",
@@ -3180,6 +3140,16 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "table": "transaction_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
       "name": "transaction_id",
       "entityType": "columns",
       "table": "transaction_receipts"
@@ -3293,6 +3263,16 @@
       "name": "pruned_through",
       "entityType": "columns",
       "table": "sync_vault_state"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "table": "files"
     },
     {
       "type": "text",
@@ -3433,6 +3413,16 @@
       "name": "updated_at",
       "entityType": "columns",
       "table": "files"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "table": "meetings"
     },
     {
       "type": "text",
@@ -3583,6 +3573,16 @@
       "name": "deleting_at",
       "entityType": "columns",
       "table": "meetings"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "table": "projects"
     },
     {
       "type": "text",
@@ -3786,6 +3786,16 @@
     },
     {
       "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "table": "transcript_segments"
+    },
+    {
+      "type": "text",
       "notNull": true,
       "autoincrement": false,
       "default": null,
@@ -3863,6 +3873,26 @@
       "name": "speaker_label",
       "entityType": "columns",
       "table": "transcript_segments"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'none'",
+      "generated": null,
+      "name": "encryption",
+      "entityType": "columns",
+      "table": "vaults"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "table": "vaults"
     },
     {
       "type": "text",
@@ -4010,6 +4040,16 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "table": "transcripts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
       "name": "id",
       "entityType": "columns",
       "table": "transcripts"
@@ -4086,6 +4126,16 @@
     },
     {
       "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "table": "transcript_patch_chunks"
+    },
+    {
+      "type": "text",
       "notNull": true,
       "autoincrement": false,
       "default": null,
@@ -4153,6 +4203,46 @@
       "name": "created_at",
       "entityType": "columns",
       "table": "transcript_patch_chunks"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "vault_id",
+      "entityType": "columns",
+      "table": "vault_keys"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "table": "vault_keys"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "wrapped_key",
+      "entityType": "columns",
+      "table": "vault_keys"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(unixepoch() * 1000)",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "vault_keys"
     },
     {
       "type": "integer",
@@ -4692,23 +4782,6 @@
     },
     {
       "columns": [
-        "vault_id",
-        "document_id"
-      ],
-      "tableTo": "search_documents",
-      "columnsTo": [
-        "vault_id",
-        "document_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_search_embeddings_vault_id_document_id_search_documents_vault_id_document_id_fk",
-      "entityType": "fks",
-      "table": "search_embeddings"
-    },
-    {
-      "columns": [
         "vault_id"
       ],
       "tableTo": "vaults",
@@ -5022,16 +5095,6 @@
       "name": "search_documents_pk",
       "entityType": "pks",
       "table": "search_documents"
-    },
-    {
-      "columns": [
-        "vault_id",
-        "document_id"
-      ],
-      "nameExplicit": false,
-      "name": "search_embeddings_pk",
-      "entityType": "pks",
-      "table": "search_embeddings"
     },
     {
       "columns": [
@@ -5390,6 +5453,15 @@
       "nameExplicit": false,
       "name": "transcripts_pk",
       "table": "transcripts",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "vault_id"
+      ],
+      "nameExplicit": false,
+      "name": "vault_keys_pk",
+      "table": "vault_keys",
       "entityType": "pks"
     },
     {
@@ -6384,16 +6456,16 @@
       "table": "meeting_events"
     },
     {
-      "value": "\"kind\" IN ('meeting', 'screenshot')",
-      "name": "search_document_kind_check",
+      "value": "\"embedding\" IS NULL OR (length(\"embedding\") BETWEEN 128 AND 4096 AND length(\"embedding\") % 4 = 0)",
+      "name": "search_document_embedding_dimensions_check",
       "entityType": "checks",
       "table": "search_documents"
     },
     {
-      "value": "\"dimensions\" BETWEEN 32 AND 1024",
-      "name": "search_embedding_dimensions_check",
+      "value": "\"kind\" IN ('meeting', 'screenshot')",
+      "name": "search_document_kind_check",
       "entityType": "checks",
-      "table": "search_embeddings"
+      "table": "search_documents"
     },
     {
       "value": "\"status\" IN ('pending', 'processing', 'failed')",

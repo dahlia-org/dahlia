@@ -6,7 +6,7 @@
 
 認証・管理・同期で DB を分けず、Drizzle の単一 application database に統一する。認証方式、DB、AI provider、storage の選択は独立させる。
 
-- PostgreSQL / Lakebase は `auth`（生成 Better Auth）、`app`（Vault / Project、permission、job、meeting、transcript、screenshot、検索 projection、同期履歴）。参照方向は `app → auth`。
+- PostgreSQL / Lakebase は `auth`（生成 Better Auth）、`app`（Vault / Project、permission、job、meeting、transcript、screenshot、同期履歴）、`search`（文書・テキスト・vector）、`crypto`（wrapped Vault key）。検索 projection は `search.documents` に置き、`search → app → auth` の参照を持つ。検索データ全体は暗号化対象外だが、Vault 単位の RLS / FORCE RLS を適用する。`jobs_search_index` は `app` に残す。
 - SQLite / D1 は Better Auth を top-level、Dahlia table は prefix なしにする。PostgreSQL の content ID は native UUID、非 UUID の user / workspace ID や hash は text。SQLite / D1 も境界で canonical UUID を検証する。
 - Better Auth schema は生成物として手編集しない。全認証方式で Auth → application の順に migration を適用する。PostgreSQL の ledger は `drizzle.__dahlia_auth_migrations` と `drizzle.__dahlia_server_migrations` に分離し、SQLite / D1 は単一 baseline を使う。
 - Node は SQLite / PostgreSQL / Lakebase、Workers は D1 / Hyperdrive / direct PostgreSQL を対象とする。DB 接続可能性と個別 capability の有効性は別であり、D1 sync の制限を解除したとは扱わない。

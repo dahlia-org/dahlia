@@ -95,6 +95,7 @@ try {
     const packagedMigrations = await readdir(new URL("./drizzle/", packageUrl), { recursive: true });
     if (packagedMigrations.some((file) => file.endsWith("snapshot.json"))) throw new Error("Development snapshots shipped in package");
     await readFile(new URL("./dist/server/db/prune-sync-history.js", packageUrl), "utf8");
+    await readFile(new URL("./dist/server/db/rotate-encryption-keys.js", packageUrl), "utf8");
     const codexLicense = await readFile(new URL("./Codex-LICENSE", packageUrl), "utf8");
     const codexNotice = await readFile(new URL("./Codex-NOTICE.txt", packageUrl), "utf8");
     const migration = await readFile(

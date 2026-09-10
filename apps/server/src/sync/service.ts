@@ -139,11 +139,10 @@ export class MeetingSyncService {
             baseRevision: job.summaryRevision, data: { title: document.title, document: summaryDocument, createdAt: job.createdAt.toISOString() } },
         ],
       });
-      const summaryText = summarySearchableText(summaryDocument);
-      const embeddingText = summaryText.trim() || null;
+      const projection = meetingSearchText(this.tokenizer, document.title, document.description, summaryDocument);
       for (const operation of transaction.operations.filter((operation) => operation.entity !== "transcript")) Object.assign(operation.data!, {
-        ...meetingSearchText(this.tokenizer, document.title, document.description, summaryDocument),
-        embeddingText, embeddingContentHash: await embeddingContentHash(embeddingText),
+        ...projection,
+        embeddingContentHash: await embeddingContentHash(projection.searchText),
       });
       return scoped.completeSummaryJob(job, transaction);
     });
@@ -206,13 +205,8 @@ export class MeetingSyncService {
   }
 
   private async fileSearchData(metadata: Partial<FileRecord["metadata"]>) {
-    const embeddingText = [metadata.ocr_text, metadata.caption]
-      .filter((value): value is string => typeof value === "string" && value.trim().length > 0).join("\n") || null;
-    return {
-      ...screenshotSearchText(this.tokenizer, metadata.ocr_text, metadata.caption),
-      embeddingText,
-      embeddingContentHash: await embeddingContentHash(embeddingText),
-    };
+    const projection = screenshotSearchText(this.tokenizer, metadata.ocr_text, metadata.caption);
+    return { ...projection, embeddingContentHash: await embeddingContentHash(projection.searchText) };
   }
 
   async commitTransaction(identity: Identity, body: unknown) {
@@ -244,12 +238,10 @@ export class MeetingSyncService {
             const summaryDocument = operation.entity === "summary"
               ? operation.action === "upsert" ? String(data.document) : null
               : meeting?.summaryDocument ?? null;
-            const summaryText = summarySearchableText(summaryDocument);
-            const embeddingText = summaryText.trim() || null;
+            const projection = meetingSearchText(this.tokenizer, name, description, summaryDocument);
             Object.assign(data, {
-              ...meetingSearchText(this.tokenizer, name, description, summaryDocument),
-              embeddingText,
-              embeddingContentHash: await embeddingContentHash(embeddingText),
+              ...projection,
+              embeddingContentHash: await embeddingContentHash(projection.searchText),
             });
             meetings.set(operation.entityId, {
               ...(meeting ?? {}),

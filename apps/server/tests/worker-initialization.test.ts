@@ -12,6 +12,7 @@ vi.mock("../src/auth/better-auth", async (importOriginal) => ({
   }),
 }));
 
+import { initializeDahliaAuth } from "../src/auth/better-auth";
 import { initializeWorkerApp } from "../src/worker";
 
 describe("Worker initialization", () => {
@@ -19,6 +20,8 @@ describe("Worker initialization", () => {
 
   it("closes PostgreSQL when authentication initialization fails", async () => {
     await expect(initializeWorkerApp({
+      DAHLIA_ENCRYPTION_MASTER_KEY_3: btoa(String.fromCharCode(...new Uint8Array(32).fill(3))),
+      DAHLIA_ENCRYPTION_ACTIVE_KEY_ID: "3",
       DAHLIA_AUTH_TYPE: "accounts",
       DAHLIA_DATABASE_TYPE: "postgres",
       DAHLIA_DATABASE_URL: "postgresql://dahlia.example/dahlia",
@@ -26,6 +29,7 @@ describe("Worker initialization", () => {
       GOOGLE_CLIENT_ID: "google-client",
       GOOGLE_CLIENT_SECRET: "google-secret",
     })).rejects.toThrow("seed failed");
+    expect(vi.mocked(initializeDahliaAuth).mock.calls.at(-1)?.[0].encryption?.activeKeyId).toBe("3");
     expect(close).toHaveBeenCalledOnce();
   });
 });

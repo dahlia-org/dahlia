@@ -1036,6 +1036,8 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         Vault: {
+            /** @enum {string} */
+            encryption?: "none" | "server";
             vaultId: string;
             name: string;
             icon?: string | null;
@@ -1347,6 +1349,8 @@ export interface components {
             record: components["schemas"]["NullableMeetingEventRecord"];
         };
         NullableVaultRecord: {
+            /** @enum {string} */
+            encryption?: "none" | "server";
             vaultId: string;
             name: string;
             icon?: string | null;
@@ -1559,6 +1563,9 @@ export interface components {
             } | null;
         };
         Capabilities: {
+            vaultEncryption?: {
+                version: number;
+            };
             sync?: {
                 version: number;
             };
@@ -1793,6 +1800,8 @@ export interface components {
                 entityId: string;
                 baseRevision: number | null;
                 data: {
+                    /** @enum {string} */
+                    encryption?: "none" | "server";
                     /** @enum {string|null} */
                     icon?: "vault" | "folder" | "dollarsign.circle" | "book.closed" | "graduationcap" | "pencil" | "tag" | "curlybraces" | "terminal" | "music.note" | "popcorn" | "paintbrush" | "paintpalette" | "stethoscope" | "asterisk" | "camera.macro" | "briefcase" | "chart.bar" | "medal" | "dumbbell" | "notebook" | "scales" | "globe.desk" | "airplane" | "globe" | "wrench" | "pawprint" | "flask" | "brain" | "heart" | "pottedplant" | "film" | "cross.case" | "puzzlepiece" | "leaf" | null;
                     /** @enum {string|null} */
@@ -1810,6 +1819,8 @@ export interface components {
                 entityId: string;
                 baseRevision: number | null;
                 data: {
+                    /** @enum {string} */
+                    encryption?: "none" | "server";
                     /** @enum {string|null} */
                     icon?: "vault" | "folder" | "dollarsign.circle" | "book.closed" | "graduationcap" | "pencil" | "tag" | "curlybraces" | "terminal" | "music.note" | "popcorn" | "paintbrush" | "paintpalette" | "stethoscope" | "asterisk" | "camera.macro" | "briefcase" | "chart.bar" | "medal" | "dumbbell" | "notebook" | "scales" | "globe.desk" | "airplane" | "globe" | "wrench" | "pawprint" | "flask" | "brain" | "heart" | "pottedplant" | "film" | "cross.case" | "puzzlepiece" | "leaf" | null;
                     /** @enum {string|null} */

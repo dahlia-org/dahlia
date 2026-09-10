@@ -45,6 +45,13 @@
       "Vault": {
         "type": "object",
         "properties": {
+          "encryption": {
+            "type": "string",
+            "enum": [
+              "none",
+              "server"
+            ]
+          },
           "vaultId": {
             "type": "string",
             "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
@@ -1510,6 +1517,13 @@
           "null"
         ],
         "properties": {
+          "encryption": {
+            "type": "string",
+            "enum": [
+              "none",
+              "server"
+            ]
+          },
           "vaultId": {
             "type": "string",
             "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
@@ -2443,6 +2457,19 @@
       "Capabilities": {
         "type": "object",
         "properties": {
+          "vaultEncryption": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "version"
+            ]
+          },
           "sync": {
             "type": "object",
             "properties": {
@@ -3538,6 +3565,13 @@
                     "data": {
                       "type": "object",
                       "properties": {
+                        "encryption": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "server"
+                          ]
+                        },
                         "icon": {
                           "type": [
                             "string",
@@ -3658,6 +3692,13 @@
                     "data": {
                       "type": "object",
                       "properties": {
+                        "encryption": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "server"
+                          ]
+                        },
                         "icon": {
                           "type": [
                             "string",

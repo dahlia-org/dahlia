@@ -157,6 +157,7 @@ export function createPostgresApplicationStore(
   db: PostgresDatabase,
   searchBackend: SyncSearchBackend = "postgres",
   searchEmbedding?: AppConfig["searchEmbedding"],
+  encryption?: AppConfig["encryption"],
 ): ApplicationStore {
   const externalMembership = async (userId: string) => {
     const [membership] = await db.select({ role: postgresAuthSchema.member.role })
@@ -170,7 +171,7 @@ export function createPostgresApplicationStore(
     database: drizzleAdapter(db, { provider: "pg", schema: postgresAuthSchema, schemaName: "auth" }),
     accountSettings: createAccountSettingsStore(db, true),
     searchSettings: createSearchSettingsStore(db, true),
-    sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding),
+    sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding, encryption),
     async resolveHeaderUser(identity) {
       const find = async () => {
         const [account] = await db.select({ userId: postgresAuthSchema.account.userId }).from(postgresAuthSchema.account)
@@ -643,6 +644,7 @@ export function createSqliteApplicationStore(
   db: SQLiteDatabase,
   transactions = false,
   searchEmbedding?: AppConfig["searchEmbedding"],
+  encryption?: AppConfig["encryption"],
 ): ApplicationStore {
   const externalMembership = async (userId: string) => {
     const [membership] = await db.select({ role: sqliteAuthSchema.member.role })
@@ -656,7 +658,7 @@ export function createSqliteApplicationStore(
     database: drizzleAdapter(db, { provider: "sqlite", schema: sqliteAuthSchema, transaction: transactions }),
     accountSettings: createAccountSettingsStore(db, false),
     searchSettings: createSearchSettingsStore(db, false),
-    sync: createSqliteMeetingSyncStore(db, searchEmbedding),
+    sync: createSqliteMeetingSyncStore(db, searchEmbedding, encryption),
     async resolveHeaderUser(identity) {
       const find = async () => {
         const [account] = await db.select({ userId: sqliteAuthSchema.account.userId }).from(sqliteAuthSchema.account)

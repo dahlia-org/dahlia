@@ -75,7 +75,7 @@ it("returns checkpoints for pagination, empty reads and later appends", async ()
     expect(next.next_after).toBe(first.next_after);
     const db = new DatabaseSync(databasePath);
     const original = db.prepare("SELECT * FROM transcript_segments LIMIT 1").get()!;
-    db.prepare("INSERT INTO transcript_segments SELECT transcript_id, ?, ?, NULL, 'added', ?, audio_source, speaker_label FROM transcript_segments LIMIT 1")
+    db.prepare("INSERT INTO transcript_segments (transcript_id, segment_id, started_at, ended_at, text, created_at, audio_source, speaker_label) SELECT transcript_id, ?, ?, NULL, 'added', ?, audio_source, speaker_label FROM transcript_segments LIMIT 1")
       .run(uuidV7(), Number(original.started_at) + 1000, Number(original.created_at) + 1000);
     db.close();
     const added = await sync.listTranscript(owner, vaultId, meetingId, undefined, { after: next.next_after });
@@ -124,7 +124,7 @@ it("rereads outside locks and returns new speech during a wait", async () => {
     const pending = sync.listTranscript(owner, vaultId, meetingId, undefined, { after: first.next_after, wait: true, authorize: () => {
       if (++checks !== 2) return;
       const db = new DatabaseSync(databasePath);
-      db.prepare("INSERT INTO transcript_segments SELECT transcript_id, ?, started_at + 1000, NULL, 'arrived', created_at + 1000, audio_source, speaker_label FROM transcript_segments LIMIT 1").run(uuidV7());
+      db.prepare("INSERT INTO transcript_segments (transcript_id, segment_id, started_at, ended_at, text, created_at, audio_source, speaker_label) SELECT transcript_id, ?, started_at + 1000, NULL, 'arrived', created_at + 1000, audio_source, speaker_label FROM transcript_segments LIMIT 1").run(uuidV7());
       db.close();
     } });
     expect((await pending).items.map((item) => item.text)).toEqual(["arrived"]);
