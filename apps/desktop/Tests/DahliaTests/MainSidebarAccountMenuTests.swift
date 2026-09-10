@@ -17,6 +17,68 @@
         }
 
         @Test
+        func syncProgressFitsTheMenuAndAppearsInTheFooter() throws {
+            let pending = VaultSyncProgress(
+                id: UUID(),
+                name: "Work Vault",
+                state: .pending,
+                phase: .attachments,
+                meetings: 0,
+                files: 2400,
+                attachments: 2400,
+                other: 0
+            )
+            let progress = AccountSyncProgress(vaults: [pending])
+            let footer = MainSidebarAccountMenuButton.footerTitle(accountName: "Account", vaultName: pending.name, syncSummary: progress.summary)
+            #expect(footer.string.contains(progress.summary))
+            #expect(footer.string.contains(pending.name))
+            let menu = NSHostingView(rootView: MainSidebarAccountMenuPanel(width: 320) {
+                SyncProgressView(connections: [])
+            }.fixedSize())
+            #expect(menu.fittingSize.width == 320)
+            #expect(menu.fittingSize.height > 40 && menu.fittingSize.height <= 432)
+
+            let rows = [
+                VaultSyncProgress(
+                    id: UUID(),
+                    name: "Preparing",
+                    state: .pending,
+                    phase: .preparing,
+                    meetings: 0,
+                    files: 0,
+                    attachments: 0,
+                    other: 0
+                ),
+                pending,
+                VaultSyncProgress(
+                    id: UUID(),
+                    name: "Needs attention",
+                    state: .blocked(.authorization),
+                    phase: .attention,
+                    meetings: 2,
+                    files: 8,
+                    attachments: 8,
+                    other: 0
+                ),
+            ]
+            let preview = MainSidebarAccountMenuPanel(width: 320) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(L10n.syncProgress).font(.headline)
+                    ForEach(rows) { VaultSyncProgressView(progress: $0) }
+                }.padding(12)
+            }
+            let host = NSHostingView(rootView: preview.fixedSize())
+            #expect(host.fittingSize.width == 320)
+            if let path = ProcessInfo.processInfo.environment["DAHLIA_SYNC_PROGRESS_SNAPSHOT"] {
+                let renderer = ImageRenderer(content: preview.fixedSize())
+                renderer.scale = 2
+                let data = try #require(renderer.nsImage?.tiffRepresentation)
+                let bitmap = try #require(NSBitmapImageRep(data: data))
+                try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: path))
+            }
+        }
+
+        @Test
         func footerTitleShowsAccountAndVaultOnSeparateLines() {
             let title = MainSidebarAccountMenuButton.footerTitle(
                 accountName: "Kazuki Matsuda",
@@ -200,6 +262,49 @@
             #expect(!MainSidebarAccountMenuCoordinator.shouldPassThroughKeyEvent(modifierFlags: [.option]))
             #expect(MainSidebarAccountMenuCoordinator.shouldPassThroughKeyEvent(modifierFlags: [.command, .option]))
             #expect(MainSidebarAccountMenuCoordinator.shouldPassThroughKeyEvent(modifierFlags: [.control]))
+        }
+
+        @Test(.timeLimit(.minutes(1)), arguments: [UInt16(125), 121, 49, 119])
+        func syncProgressConsumesKeysAndScrollsItsOwnPanel(keyCode: UInt16) async throws {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            let button = NSButton(frame: NSRect(x: 0, y: 0, width: 100, height: 30))
+            window.contentView?.addSubview(button)
+            let connections = (0 ..< 20).map { makeConnection(origin: "https://server-\($0).example.com", isCloud: false) }
+            let coordinator = MainSidebarAccountMenuCoordinator(
+                vaults: [], currentVault: nil, connections: connections,
+                accountSelection: .init(connectionID: nil, isLocal: true, isLocalAvailable: true),
+                onSelectVault: { _ in }, onOpenSettings: { _ in }, onSelectAccount: { _ in }, onAccountAction: {}
+            )
+            coordinator.button = button
+            defer { coordinator.dismissMenu()
+                window.close()
+            }
+            coordinator.toggleMenu()
+            for _ in 0 ... coordinator.syncProgressIndex {
+                coordinator.moveSelection(1)
+            }
+            coordinator.openSelectedSubmenu()
+            let panel = try #require(window.childWindows?.last)
+            let content = try #require(panel.contentView)
+            content.layoutSubtreeIfNeeded()
+            func findScrollView(_ view: NSView) -> NSScrollView? {
+                (view as? NSScrollView) ?? view.subviews.lazy.compactMap { findScrollView($0) }.first
+            }
+            let scroll = try #require(findScrollView(content))
+            #expect(!panel.canBecomeKey)
+            #expect(try #require(scroll.documentView).frame.height > scroll.contentView.bounds.height)
+            let initial = scroll.contentView.bounds.origin.y
+            let down = try #require(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                context: nil, characters: "\u{F701}", charactersIgnoringModifiers: "\u{F701}", isARepeat: false, keyCode: keyCode
+            ))
+            #expect(coordinator.handleKeyDown(down) == nil)
+            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+            while scroll.contentView.bounds.origin.y == initial, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            #expect(scroll.contentView.bounds.origin.y > initial)
         }
 
         @Test

@@ -7,6 +7,7 @@ final class MainSidebarAccountMenuNavigationState {
     enum ActiveMenu {
         case root
         case languages
+        case syncProgress
     }
 
     var activeMenu = ActiveMenu.root

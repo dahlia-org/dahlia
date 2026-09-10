@@ -1800,3 +1800,20 @@
 "Databricks sign-in returned an invalid response. Please sign in again." = "Databricks sign-in returned an invalid response. Please sign in again.";
 
 "Sign out before connecting to another Databricks workspace." = "Sign out before connecting to another Databricks workspace.";
+
+// Sync progress
+"sync.progress" = "Sync Progress";
+"sync.preparing" = "Preparing";
+"sync.text" = "Syncing meeting contents";
+"sync.transferringAttachments" = "Transferring attachments";
+"sync.fetching" = "Fetching changes";
+"sync.retrying" = "Waiting to retry";
+"sync.attention" = "Needs attention";
+"sync.meetingContents" = "Meeting contents remaining";
+"sync.files" = "Files remaining";
+"sync.attachments" = "Attachment links remaining";
+"sync.otherChanges" = "Other changes remaining";
+"sync.remainingFormat" = "%ld remaining";
+"sync.unavailable" = "Sync progress is unavailable";
+"sync.syncing" = "Syncing";
+"sync.synced" = "Synced";

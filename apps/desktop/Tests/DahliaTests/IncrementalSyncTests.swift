@@ -120,7 +120,7 @@
                 SyncTransactionQueue.transcriptPatch(operationId: operationId, dbQueue: fixture.queue)
             )
             let expectedManifest = try expected.map { chunk in
-                SHA256.hash(data: try PublicIDWire.data(chunk.data, shape: "chunk", direction: .encode)).map { String(format: "%02x", $0) }.joined()
+                try SHA256.hash(data: PublicIDWire.data(chunk.data, shape: "chunk", direction: .encode)).map { String(format: "%02x", $0) }.joined()
             }
             let manifests = Mutex<[Data]>([])
             let uploadedHashes = Mutex<[String]>([])
@@ -166,10 +166,9 @@
             #expect(try await fixture.queue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_transactions") } == 0)
             #expect(uploadedHashes.withLock { $0 } == expectedManifest)
             let bodies = manifests.withLock { $0 }
-            #expect(bodies.count == 2)
-            let resolved = try #require(bodies.first)
-            #expect(bodies.last == resolved)
-            let request = try #require(JSONSerialization.jsonObject(with: resolved) as? [String: Any])
+            #expect(bodies.count == 1)
+            let committed = try #require(bodies.first)
+            let request = try #require(JSONSerialization.jsonObject(with: committed) as? [String: Any])
             let operations = try #require(request["operations"] as? [[String: Any]])
             let data = try #require(operations.first?["data"] as? [String: Any])
             #expect(data["segmentCount"] as? Int == 50001)
@@ -183,6 +182,9 @@
                 try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'vault', ?, 1)", arguments: [fixture.vaultId, fixture.vaultId])
             }
             try await fixture.queueFile()
+            try await fixture.queue.write { db in
+                try db.execute(sql: "UPDATE sync_transactions SET attempts = 1")
+            }
             let transactionId = try await fixture.queue.read { try #require(try UUID.fetchOne($0, sql: "SELECT id FROM sync_transactions")) }
             let destination = UUID.v7()
             let relocation = try JSONSerialization.data(withJSONObject: [
@@ -279,7 +281,7 @@
                     return (200, [:], changes)
                 }
                 if path.hasSuffix("/relocations") { return (200, [:], Data("{\"vaults\":[],\"items\":[]}".utf8)) }
-                if path.hasSuffix("/resolve") { return (200, [:], receipt) }
+                if path == "/api/v1/transactions" { return (200, [:], receipt) }
                 return (503, [:], Data())
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }

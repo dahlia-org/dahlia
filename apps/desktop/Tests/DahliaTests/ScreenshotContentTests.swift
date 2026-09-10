@@ -181,7 +181,7 @@
                 let object = try JSONSerialization.jsonObject(with: body) as? [String: Any]
                 return (object?["id"] as? String).flatMap(UUID.init(uuidString:)) == transactionId
             }
-            #expect(resolves.count == 2)
+            #expect(resolves.count == 1)
             let resolvedBody = try #require(resolves.first?.httpBody)
             #expect(resolves.last?.httpBody == resolvedBody)
             let commits = all.filter { $0.url?.path == "/api/v1/transactions" }

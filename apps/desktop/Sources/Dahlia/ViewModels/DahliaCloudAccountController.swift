@@ -46,8 +46,10 @@ final class DahliaCloudAccountController {
 
     static let shared = DahliaCloudAccountController()
 
-    private(set) var syncStates: [UUID: MeetingSyncState] = [:]
-    @ObservationIgnored private var syncObservation: AnyDatabaseCancellable?
+    private(set) var syncProgress: [UUID: AccountSyncProgress] = [:]
+    private(set) var syncProgressUnavailable = false
+    var syncStates: [UUID: MeetingSyncState] { syncProgress.mapValues(\.state) }
+    @ObservationIgnored private var syncProgressTask: Task<Void, Never>?
 
     private(set) var connections: [DahliaAccountConnection] = []
     private(set) var errorMessage: String?
@@ -107,25 +109,47 @@ final class DahliaCloudAccountController {
 
     func configure(appDatabase: AppDatabaseManager?) async {
         guard self.appDatabase !== appDatabase else { return }
-        syncObservation?.cancel()
-        syncStates = [:]
+        syncProgressTask?.cancel()
+        syncProgress = [:]
+        syncProgressUnavailable = false
         self.appDatabase = appDatabase
         if let appDatabase {
-            syncObservation = ValueObservation.tracking { db in
-                try MeetingRepository.fetchAccountSyncStates(in: db)
-            }
-            .removeDuplicates()
-            .start(in: appDatabase.dbQueue, onError: { [weak self, weak appDatabase] _ in
-                guard let self, self.appDatabase === appDatabase else { return }
-                self.syncStates = [:]
-            }, onChange: { [weak self, weak appDatabase] states in
-                guard let self, self.appDatabase === appDatabase else { return }
-                self.syncStates = states
-            })
+            observeSyncProgress(appDatabase)
         }
         repository = appDatabase.map { MeetingRepository(dbQueue: $0.dbQueue) }
         services.removeAll()
         await reload()
+    }
+
+    private func observeSyncProgress(_ appDatabase: AppDatabaseManager) {
+        let queue = appDatabase.dbQueue
+        syncProgressTask = Task { [weak self, weak appDatabase] in
+            do {
+                let (changes, continuation) = AsyncThrowingStream<Void, Error>.makeStream(bufferingPolicy: .bufferingNewest(1))
+                // Registration and reads stay off MainActor; writes only yield a coalesced invalidation.
+                let observation = try await queue.write { _ in
+                    DatabaseRegionObservation(tracking: VaultRecord.all(), Table<Row>("sync_transactions"), Table<Row>("sync_operations"))
+                        .start(in: queue, onError: { continuation.finish(throwing: $0) }, onChange: { _ in continuation.yield(()) })
+                }
+                defer { observation.cancel()
+                    continuation.finish()
+                }
+                continuation.yield(())
+                for try await _ in changes {
+                    let progress = try await queue.read { try MeetingRepository.fetchSyncProgress(in: $0) }
+                    guard !Task.isCancelled, let self, let appDatabase, self.appDatabase === appDatabase else { return }
+                    if syncProgress != progress { syncProgress = progress }
+                    syncProgressUnavailable = false
+                    try await Task.sleep(for: .seconds(1))
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled, let self, let appDatabase, self.appDatabase === appDatabase else { return }
+                syncProgressUnavailable = true
+                syncProgress = [:]
+            }
+        }
     }
 
     func reload() async {

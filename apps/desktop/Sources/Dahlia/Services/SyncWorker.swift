@@ -42,13 +42,6 @@ struct SyncOperationBody: Encodable {
     }
 }
 
-private struct FileUploadResponse: Decodable {
-    let id: UUID
-    let vaultId: UUID
-    let size: Int
-    let checksum: String
-}
-
 private struct SyncTransactionResolution: Decodable {
     let id: UUID
     let status: String
@@ -214,12 +207,15 @@ actor SyncWorker {
     private static let transcriptPatchItemLimit = 50000
     private static let transcriptPatchMaximumChunks = 100
 
-    private let dbQueue: DatabaseQueue
+    let dbQueue: DatabaseQueue
     private let session: URLSession
     private let archiveService: RecordingArchiveService
-    private let apiClient: SyncAPIClient
+    let apiClient: SyncAPIClient
     private let vaultsDidChange: @MainActor @Sendable () async -> Void
     private var drainTask: Task<Void, Never>?
+    var fileUploads: [UUID: PendingFileUpload] = [:]
+    var fileUploadCandidates: [SyncFileUpload] = []
+    var fileUploadsStopped = false
     private var eventTasks: [UUID: Task<Void, Never>] = [:]
     private var isPulling = false
     private var discoveryTask: Task<Void, Error>?
@@ -247,6 +243,7 @@ actor SyncWorker {
 
     func start() async {
         guard drainTask == nil else { return }
+        fileUploadsStopped = false
         drainTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -274,7 +271,9 @@ actor SyncWorker {
     func stop() async {
         discoveryTask?.cancel()
         drainTask?.cancel()
+        cancelFileUploads()
         await drainTask?.value
+        await finishFileUploads()
         drainTask = nil
         for task in eventTasks.values {
             task.cancel()
@@ -287,13 +286,15 @@ actor SyncWorker {
 
     func drain() {
         guard drainTask == nil else { return }
+        fileUploadsStopped = false
         drainTask = Task { [weak self] in
             await self?.runDrain()
             await self?.clearDrainTask()
         }
     }
 
-    private func clearDrainTask() {
+    private func clearDrainTask() async {
+        await finishFileUploads()
         drainTask = nil
     }
 
@@ -333,7 +334,9 @@ actor SyncWorker {
                         try await SyncTransactionQueue.complete(transaction, response: response, dbQueue: dbQueue)
                     }
                 } catch is CancellationError {
-                    throw CancellationError()
+                    if Task.isCancelled { throw CancellationError() }
+                    // A discarded operation or changed connection invalidates only this attempt.
+                    continue
                 } catch let error as SyncHTTPError {
                     if error.status == 410, error.code == "meeting_event_parent_unavailable",
                        transaction.operations.allSatisfy({ $0.entity == .meetingEvent }) {
@@ -387,7 +390,8 @@ actor SyncWorker {
         }
     }
 
-    private func push(_ transaction: SyncQueuedTransaction) async throws -> SyncTransactionResponse? {
+    func push(_ transaction: SyncQueuedTransaction) async throws -> SyncTransactionResponse? {
+        defer { releaseFileUploads(transactionId: transaction.id) }
         guard let target = try await connection(id: transaction.connectionId) else {
             throw SyncHTTPError(status: 403, body: Data("{\"code\":\"connection_missing\"}".utf8))
         }
@@ -410,18 +414,33 @@ actor SyncWorker {
         }
         let body = try await transactionBody(transaction, origin: target, stageAttachments: false)
         let typedBody = try SyncJSON.decoder.decode(Components.Schemas.Transaction.self, from: body)
-        let resolved = try await sendData(origin: target, connectionId: transaction.connectionId, upgradeOnMissing: true, preservingJSONBody: body) {
-            try await $0.resolveTransaction(body: .json(typedBody)).ok.body.json
+        if transaction.attempts > 1 {
+            let resolved = try await sendData(
+                origin: target,
+                connectionId: transaction.connectionId,
+                upgradeOnMissing: true,
+                preservingJSONBody: body
+            ) {
+                try await $0.resolveTransaction(body: .json(typedBody)).ok.body.json
+            }
+            let resolution = try SyncJSON.decoder.decode(SyncTransactionResolution.self, from: resolved)
+            guard resolution.id == transaction.id else { throw SyncTransactionQueueError.invalidReceipt }
+            if resolution.status == "committed" {
+                return try SyncJSON.decoder.decode(SyncTransactionResponse.self, from: resolved)
+            }
+            guard resolution.status == "unknown" else { throw SyncTransactionQueueError.invalidReceipt }
         }
-        let resolution = try SyncJSON.decoder.decode(SyncTransactionResolution.self, from: resolved)
-        guard resolution.id == transaction.id else { throw SyncTransactionQueueError.invalidReceipt }
-        if resolution.status == "committed" {
-            return try SyncJSON.decoder.decode(SyncTransactionResponse.self, from: resolved)
-        }
-        guard resolution.status == "unknown" else { throw SyncTransactionQueueError.invalidReceipt }
         if try await reconcileRelocations(vaultId: transaction.vaultId, connectionId: transaction.connectionId, origin: target) { return nil }
+        if transaction.operations.contains(where: { $0.entity == .file && $0.action != .delete }) {
+            try await prepareFileUploads(for: transaction, origin: target)
+        }
         let stagedBody = try await transactionBody(transaction, origin: target, stageAttachments: true)
         guard stagedBody == body else { throw SyncTransactionQueueError.invalidReceipt }
+        try Task.checkCancellation()
+        guard try await dbQueue.read({ db in
+            try SyncTransactionQueue.matchesExpectedConnection(vaultId: transaction.vaultId, connectionId: transaction.connectionId, in: db)
+                && Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM sync_transactions WHERE id = ?)", arguments: [transaction.id]) == true
+        }) else { throw CancellationError() }
         let data = try await sendData(origin: target, connectionId: transaction.connectionId, preservingJSONBody: body) {
             try await $0.commitTransaction(body: .json(typedBody)).ok.body.json
         }
@@ -436,47 +455,11 @@ actor SyncWorker {
         var operations = transaction.operations
         for index in operations.indices {
             let operation = operations[index]
-            if stageAttachments, operation.entity == .file,
-               operation.action != .delete,
-               let attachment = try await SyncTransactionQueue.screenshotAttachment(
-                   operationId: operation.id,
-                   dbQueue: dbQueue
-               ) {
-                let payload = try decode(FileOperationPayload.self, from: operation.payloadJSON)
-                typealias Reservation = Operations.ReserveFileUpload.Input.Body.JsonPayload
-                guard let source = Reservation.MetadataPayload.SourcePayload(rawValue: payload.metadata.source.rawValue) else {
-                    throw SyncTransactionQueueError.invalidReceipt
-                }
-                let reservation = Reservation(
-                    id: operation.entityId.lowercase,
-                    vaultId: transaction.vaultId.lowercase,
-                    name: payload.name,
-                    contentType: attachment.mimeType,
-                    metadata: .init(
-                        source: source,
-                        width: payload.metadata.width,
-                        height: payload.metadata.height
-                    )
-                )
-                _ = try await sendData(origin: target, connectionId: transaction.connectionId) {
-                    let response = try await $0.reserveFileUpload(body: .json(reservation))
-                    if case let .created(value) = response { return try value.body.json }
-                    return try response.ok.body.json
-                }
-                let data = try await sendData(origin: target, connectionId: transaction.connectionId) {
-                    let response = try await $0.putFileContent(
-                        path: .init(fileId: operation.entityId.lowercase),
-                        headers: .init(contentLength: String(attachment.bytes.count)),
-                        body: .binary(HTTPBody(attachment.bytes))
-                    )
-                    if case let .created(value) = response { return try value.body.json }
-                    return try response.ok.body.json
-                }
-                let uploaded = try SyncJSON.decoder.decode(FileUploadResponse.self, from: data)
-                guard uploaded.id == operation.entityId, uploaded.vaultId == transaction.vaultId,
-                      uploaded.size == attachment.bytes.count,
-                      uploaded.checksum == "SHA-256:" + attachment.sha256,
-                      uploaded.checksum == payload.checksum else { throw SyncTransactionQueueError.invalidReceipt }
+            if stageAttachments, operation.entity == .file, operation.action != .delete {
+                try await stageFileUpload(.init(
+                    transactionId: transaction.id, vaultId: transaction.vaultId, connectionId: transaction.connectionId,
+                    origin: target, operation: operation
+                ))
             } else if stageAttachments, operation.entity == .recording, operation.action == .upsert, let payload = operation.payloadJSON {
                 try await archiveService.stage(
                     sessionId: operation.entityId,
