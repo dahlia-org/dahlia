@@ -1,11 +1,20 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { Pool, type PoolConfig } from "pg";
 
 export const POSTGRES_MIGRATION_SCHEMA = "drizzle";
 export const POSTGRES_SEARCH_PATH = "app,auth";
 
-export function createPostgresPool(connectionString: string, max: number): Pool {
-  return new Pool({ connectionString, max, options: `-c search_path=${POSTGRES_SEARCH_PATH}` });
+export function createPostgresPool(config: string | PoolConfig, max: number): Pool {
+  const pool = new Pool({
+    ...(typeof config === "string" ? { connectionString: config } : config),
+    max,
+    options: `-c search_path=${POSTGRES_SEARCH_PATH}`,
+  });
+  // pg removes failed idle clients; handle the event so a disconnect cannot terminate the server.
+  pool.on("error", () => {
+    console.error(JSON.stringify({ level: "error", event: "database_pool_idle_error" }));
+  });
+  return pool;
 }
 
 export function connectPostgresUrl(connectionString: string, max: number) {

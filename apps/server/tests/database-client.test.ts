@@ -1,14 +1,88 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { globSync, readFileSync } from "node:fs";
+import { EventEmitter } from "node:events";
+import { Pool } from "pg";
 
 import type { AppConfig } from "../src/config";
 import { createD1ApplicationStore } from "../src/auth/store";
-import { ensureSearchIndexes, postgresMigrationConfigs, readPostgresMigrations } from "../src/db/client";
+import { connectApplicationDatabase, ensureSearchIndexes, migrateApplicationDatabase, postgresMigrationConfigs, readPostgresMigrations } from "../src/db/client";
 import { createPostgresPool } from "../src/db/postgres";
 import { postgresMigrations, serverMigrationManifest } from "../src/migrations";
 
 describe("PostgreSQL migrations", () => {
+  it.each(["postgres", "lakebase"] as const)("handles %s idle disconnects without logging connection details", async (databaseType) => {
+    const connection = connectApplicationDatabase({
+      databaseType,
+      databaseUrl: "postgresql://dahlia@127.0.0.1:5432/dahlia",
+      lakebaseDatabase: {
+        database: "databricks_postgres", endpoint: "projects/test/branches/main/endpoints/app",
+        host: "localhost", port: 5432, sslMode: "require", username: "test",
+      },
+    } as AppConfig);
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const pool = connection.db.$client;
+      const error = Object.assign(new Error("terminating connection due to administrator command"), {
+        code: "57P01", client: { password: "must-not-log" },
+      });
+      expect(() => pool.emit("error", error, error.client)).not.toThrow();
+      expect(log.mock.calls).toEqual([[JSON.stringify({ level: "error", event: "database_pool_idle_error" })]]);
+      expect(pool.options.options).toBe("-c search_path=app,auth");
+      if (databaseType === "lakebase") {
+        expect(pool.options.password).toBeTypeOf("function");
+        expect(pool.options.ssl).toEqual({ rejectUnauthorized: true });
+      }
+    } finally {
+      log.mockRestore();
+      await connection.close();
+    }
+  });
+
+  it.each(["success", "disconnect", "unlock failure"] as const)("keeps the migration lock on one connection: %s", async (scenario) => {
+    const failure = new Error("connection lost");
+    let disconnected = false;
+    const client = Object.assign(new EventEmitter(), {
+      release: vi.fn(),
+      query: vi.fn(async (statement: string) => {
+        if (disconnected) throw failure;
+        if (statement.includes("pg_advisory_lock") && scenario === "disconnect") {
+          disconnected = true;
+          client.emit("error", failure);
+        }
+        if (statement.includes("pg_advisory_unlock") && scenario === "unlock failure") throw failure;
+        return { rows: [] };
+      }),
+    });
+    const connect = vi.spyOn(Pool.prototype, "connect").mockResolvedValue(client as never);
+    const query = vi.spyOn(Pool.prototype, "query").mockImplementation(() => {
+      throw new Error("Migration must not use a pool query that can reconnect");
+    });
+    const end = vi.spyOn(Pool.prototype, "end").mockResolvedValue(undefined);
+    try {
+      const migration = migrateApplicationDatabase({
+        databaseType: "postgres", databaseUrl: "postgresql://dahlia@localhost/dahlia",
+      } as AppConfig, []);
+      if (scenario === "success") await expect(migration).resolves.toBeUndefined();
+      else await expect(migration).rejects.toBe(failure);
+      expect(connect).toHaveBeenCalledTimes(1);
+      expect(query).not.toHaveBeenCalled();
+      expect(client.release).toHaveBeenCalledWith(true);
+      expect(end).toHaveBeenCalledTimes(1);
+      const statements = client.query.mock.calls.map(([statement]) => statement);
+      if (scenario === "disconnect") {
+        expect(statements.some((statement) => statement.includes("CREATE INDEX"))).toBe(false);
+        expect(statements.some((statement) => statement.includes("pg_advisory_unlock"))).toBe(false);
+      } else {
+        expect(statements.at(-1)).toContain("pg_advisory_unlock");
+      }
+    } finally {
+      connect.mockRestore();
+      query.mockRestore();
+      end.mockRestore();
+    }
+  });
+
   it("forces RLS on the new file tables before enabling canonical sync", () => {
     const sql = serverMigrationManifest.postgres.files
       .map((path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")).join("\n");

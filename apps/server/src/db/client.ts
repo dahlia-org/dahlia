@@ -8,12 +8,12 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/pg-core/async/session";
 import { readMigrationFiles, type MigrationConfig, type MigrationMeta } from "drizzle-orm/migrator";
 import type { SQLiteAsyncDatabase } from "drizzle-orm/sqlite-core/async";
-import pg, { type Pool } from "pg";
+import type { Pool } from "pg";
 
 import type { AppConfig } from "../config";
 import type { PostgresMigrationDirectory } from "../migrations";
 import { SEARCH_FIELDS } from "../search/settings-model";
-import { createPostgresPool, POSTGRES_MIGRATION_SCHEMA, POSTGRES_SEARCH_PATH } from "./postgres";
+import { createPostgresPool, POSTGRES_MIGRATION_SCHEMA } from "./postgres";
 
 export type PostgresDatabase = NodePgDatabase & { $client: Pool };
 export type SQLiteDatabase = SQLiteAsyncDatabase<"sync" | "async", unknown>;
@@ -37,18 +37,15 @@ function createDatabasePool(config: AppConfig, max: number): Pool {
   if (config.databaseType === "lakebase") {
     if (!config.lakebaseDatabase) throw new Error("Lakebase configuration is incomplete");
     const database = config.lakebaseDatabase;
-    return new pg.Pool({
-      ...getLakebasePgConfig({
-        database: database.database,
-        endpoint: database.endpoint,
-        host: database.host,
-        max,
-        port: database.port,
-        sslMode: database.sslMode,
-        user: database.username,
-      }, noOpLakebaseTelemetry),
-      options: `-c search_path=${POSTGRES_SEARCH_PATH}`,
-    });
+    return createPostgresPool(getLakebasePgConfig({
+      database: database.database,
+      endpoint: database.endpoint,
+      host: database.host,
+      max,
+      port: database.port,
+      sslMode: database.sslMode,
+      user: database.username,
+    }, noOpLakebaseTelemetry), max);
   }
   if (config.databaseType !== "postgres" || !config.databaseUrl) {
     throw new Error("Node storage supports DAHLIA_DATABASE_TYPE=sqlite, postgres, or lakebase");
@@ -105,29 +102,41 @@ export async function migrateApplicationDatabase(
   migrationDirectories: readonly PostgresMigrationDirectory[] = [{ id: "server", path: "./drizzle" }],
 ): Promise<void> {
   const pool = createDatabasePool(config, 1);
-  const database = drizzle({ client: pool });
-  const lockId = "75047176522049";
-  let locked = false;
   try {
-    await pool.query("SELECT pg_advisory_lock($1)", [lockId]);
-    locked = true;
-    await pool.query(`CREATE SCHEMA IF NOT EXISTS "${POSTGRES_MIGRATION_SCHEMA}"`);
-    const migrationConfigs = postgresMigrationConfigs(migrationDirectories);
-    for (const [index, migrationConfig] of migrationConfigs.entries()) {
-      const files = migrationDirectories[index]?.files;
-      const allowedNames = files && new Set(files.map((file) => file.split("/")[0]));
-      const migrations = readPostgresMigrations(migrationConfig)
-        .filter((migration) => !allowedNames || allowedNames.has(migration.name));
-      await migrate(migrations, database, migrationConfig);
+    const client = await pool.connect();
+    let connectionError: Error | undefined;
+    client.on("error", (error: Error) => { connectionError = error; });
+    const database = drizzle({ client });
+    const lockId = "75047176522049";
+    let locked = false;
+    try {
+      // Advisory locks belong to a session; never reconnect midway through migration.
+      await client.query("SELECT pg_advisory_lock($1)", [lockId]);
+      locked = true;
+      await client.query(`CREATE SCHEMA IF NOT EXISTS "${POSTGRES_MIGRATION_SCHEMA}"`);
+      const migrationConfigs = postgresMigrationConfigs(migrationDirectories);
+      for (const [index, migrationConfig] of migrationConfigs.entries()) {
+        const files = migrationDirectories[index]?.files;
+        const allowedNames = files && new Set(files.map((file) => file.split("/")[0]));
+        const migrations = readPostgresMigrations(migrationConfig)
+          .filter((migration) => !allowedNames || allowedNames.has(migration.name));
+        await migrate(migrations, database, migrationConfig);
+      }
+      await ensureSearchIndexes(client, config);
+      if (connectionError) throw connectionError;
+    } finally {
+      try {
+        if (locked && !connectionError) await client.query("SELECT pg_advisory_unlock($1)", [lockId]);
+      } finally {
+        client.release(true);
+      }
     }
-    await ensureSearchIndexes(pool, config);
   } finally {
-    if (locked) await pool.query("SELECT pg_advisory_unlock($1)", [lockId]);
     await pool.end();
   }
 }
 
-export async function ensureSearchIndexes(pool: Pool, config: AppConfig): Promise<void> {
+export async function ensureSearchIndexes(pool: Pick<Pool, "query">, config: AppConfig): Promise<void> {
   if (config.databaseType === "lakebase") {
     await pool.query("CREATE EXTENSION IF NOT EXISTS lakebase_text");
     await pool.query(

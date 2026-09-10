@@ -6,6 +6,8 @@ Better Auth, Gateway administration, and meeting sync share one Drizzle applicat
 
 ## Database and Gateway configuration
 
+PostgreSQL and Lakebase pools handle idle connection errors without terminating the server. The driver discards failed idle connections and reconnects on subsequent requests; active query errors still propagate to their callers. Diagnostics record only the `database_pool_idle_error` event, without connection or query details. Migrations retain a single connection for the entire advisory-lock lifetime and fail on disconnect rather than reconnecting without the lock.
+
 `DAHLIA_DATABASE_TYPE` selects storage independently from authentication and the AI Gateway:
 
 | Type | Runtime | Connection |
