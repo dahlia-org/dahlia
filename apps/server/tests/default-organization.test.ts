@@ -1,8 +1,6 @@
 import { EXTERNAL_ORGANIZATION_ID } from "../src/auth/ids";
 import { encodeId } from "../src/typeid";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
-import { serverMigrationManifest } from "../src/migrations";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeSignature } from "better-auth/crypto";
@@ -68,25 +66,3 @@ for (const databaseType of ["sqlite", "postgres"] as const) {
     },
   );
 }
-
-it("backfills existing SQLite default organizations without changing ownership", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dahlia-default-organization-upgrade-"));
-  const path = join(directory, "auth.sqlite");
-  const database = new DatabaseSync(path);
-  const files = serverMigrationManifest.sqlite.files;
-  const migrationIndex = files.findIndex((file) => file.includes("default_organization_initialization"));
-  try {
-    for (const file of files.slice(0, migrationIndex)) database.exec(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
-    database.exec("INSERT INTO organization(id, name, slug, created_at) VALUES ('01990ab0-0000-7000-8000-000000000001', 'Custom name', 'external', 1000)");
-    database.exec(readFileSync(new URL(`../${files[migrationIndex]!}`, import.meta.url), "utf8"));
-    expect(database.prepare("SELECT name, initialized_at FROM server_initializations").all())
-      .toEqual([{ name: "default_organization", initialized_at: 1000 }]);
-    expect(database.prepare("SELECT name FROM organization").all()).toEqual([{ name: "Custom name" }]);
-    expect(database.prepare("SELECT * FROM member").all()).toEqual([]);
-    database.exec("DELETE FROM organization");
-    expect(database.prepare("SELECT count(*) AS count FROM server_initializations").get()).toEqual({ count: 1 });
-  } finally {
-    database.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});

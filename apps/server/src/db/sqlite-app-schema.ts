@@ -7,10 +7,16 @@ import { blob, check, foreignKey, index, integer, primaryKey, real, sqliteTable,
 
 import type { FileMetadata } from "../files/model";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../account-settings-model";
+import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from "../search/settings-model";
 
 import { user as authUser } from "./generated/sqlite-auth-schema";
 
 const sqliteTimestamp = (name: string) => integer(name, { mode: "timestamp_ms" });
+
+export const serverSettings = sqliteTable("server_settings", {
+  id: integer("id").primaryKey(),
+  searchWeights: text("search_weights", { mode: "json" }).$type<SearchSettings>().default(DEFAULT_SEARCH_SETTINGS).notNull(),
+}, (table) => [check("server_settings_singleton", sql`${table.id} = 1`)]);
 
 export const serverInitializations = sqliteTable("server_initializations", {
   name: text("name").primaryKey(),
@@ -298,6 +304,12 @@ export const searchDocument = sqliteTable("search_documents", {
   meetingId: text("meeting_id").notNull(),
   kind: text("kind").notNull(),
   searchText: text("search_text").default("").notNull(),
+  titleText: text("title_text").default("").notNull(),
+  tagsText: text("tags_text").default("").notNull(),
+  descriptionText: text("description_text").default("").notNull(),
+  summaryText: text("summary_text").default("").notNull(),
+  ocrText: text("ocr_text").default("").notNull(),
+  captionText: text("caption_text").default("").notNull(),
   embeddingText: text("embedding_text"),
   embeddingContentHash: text("embedding_content_hash"),
   updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),

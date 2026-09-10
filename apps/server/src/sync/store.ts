@@ -2,6 +2,9 @@ import { EXTERNAL_ORGANIZATION_ID } from "../auth/ids";
 import { sha256 } from "../storage/sha256";
 import { storedTranscriptSettingsSchema } from "../summary/model";
 import { uuidV7 } from "../id";
+import type { SearchDocumentFields } from "../search/document";
+import { DEFAULT_SEARCH_SETTINGS, SEARCH_FIELDS, type SearchSettings } from "../search/settings-model";
+import { createSearchSettingsStore } from "../search/settings";
 import { transcriptStatus, sameTranscriptModel, type TranscriptVersion } from "./transcript";
 import { summaryMetadata, summaryMetadataSchema } from "../summary/metadata";
 import { fileResponse, fileStorageKey, imageContentTypes, type FileMetadata } from "../files/model";
@@ -388,6 +391,7 @@ function createIdentityStore(
   embeddingConfig?: AppConfig["searchEmbedding"],
 ): IdentitySyncStore {
   const userPrincipalId = identity.userId;
+  let searchSettings: Promise<SearchSettings> | undefined;
   const ownerAccess = (vault: AnyColumn, ownerId = userPrincipalId) => exists(
     db.select({ value: sql`1` }).from(schema.syncedVaultPermission).where(and(
       eq(schema.syncedVaultPermission.vaultId, vault),
@@ -686,6 +690,7 @@ function createIdentityStore(
     meetingId: string;
     kind: "meeting" | "screenshot";
     searchText: string;
+    searchFields: SearchDocumentFields;
     embeddingText: string | null;
     embeddingContentHash: string | null;
     currentEmbeddingContentHash: string | null;
@@ -702,6 +707,7 @@ function createIdentityStore(
         meetingId: input.meetingId,
         kind: input.kind,
         searchText: input.searchText,
+        ...input.searchFields,
         embeddingText: input.embeddingText,
         embeddingContentHash: input.embeddingContentHash,
         updatedAt: now,
@@ -711,6 +717,7 @@ function createIdentityStore(
           meetingId: sql`excluded.meeting_id`,
           kind: sql`excluded.kind`,
           searchText: sql`excluded.search_text`,
+          ...Object.fromEntries(SEARCH_FIELDS.map((field) => [`${field}Text`, sql`excluded.${sql.identifier(`${field}_text`)}`])),
           embeddingText: sql`excluded.embedding_text`,
           embeddingContentHash: sql`excluded.embedding_content_hash`,
           updatedAt: now,
@@ -766,27 +773,31 @@ function createIdentityStore(
     }
   }
 
-  function ftsExpressions(query: SyncSearchQuery) {
+  function ftsExpressions(query: SyncSearchQuery, weights: SearchSettings = DEFAULT_SEARCH_SETTINGS) {
     if (searchBackend === "sqlite") {
       const match = query.tokens.map((token) => `"${token.replaceAll('"', '""')}"`).join(" AND ");
       const table = sql.identifier("search_documents_fts");
       const sourceTable = sql.identifier("search_documents");
       return {
         filter: sql`exists (select 1 from ${table} where rowid = ${sourceTable}.rowid and ${table} match ${match})`,
-        rank: sql<number>`(select rank from ${table} where rowid = ${sourceTable}.rowid and ${table} match ${match})`,
+        rank: sql<number>`(select bm25(${table}, ${sql.join(SEARCH_FIELDS.map((field) => sql`${weights[field]}`), sql`, `)}) from ${table} where rowid = ${sourceTable}.rowid and ${table} match ${match})`,
       };
     }
     const vector = schema.searchDocument.searchVector;
     if (!vector) throw new Error("search_vector_not_configured");
     const tsquery = sql`plainto_tsquery('simple', ${query.text})`;
+    // Score each matching term even when the AND query spans different fields.
+    const rankQuery = sql.join(query.tokens.map((token) => sql`plainto_tsquery('simple', ${token})`), sql` || `);
     return {
       filter: sql`${vector} @@ ${tsquery}`,
-      rank: searchBackend === "lakebase"
-        ? sql<number>`${vector} <@> to_bm25query(
-            to_tsvector('simple', ${query.text}),
-            'app.search_documents_search_bm25'::regclass
-          )`
-        : sql<number>`-${sql`ts_rank_cd(${vector}, ${tsquery})`}`,
+      rank: sql<number>`(${sql.join(SEARCH_FIELDS.map((field) => {
+        const fieldVector = schema.searchDocument[`${field}Vector`];
+        if (!fieldVector) throw new Error("search_vector_not_configured");
+        const score = searchBackend === "lakebase"
+          ? sql`${fieldVector} <@> to_bm25query(to_tsvector('simple', ${query.text}), ${`app.search_documents_${field}_bm25`}::regclass)`
+          : sql`-ts_rank_cd(${fieldVector}, (${rankQuery}))`;
+        return sql`${weights[field]} * (${score})`;
+      }), sql` + `)})`,
     };
   }
 
@@ -811,7 +822,12 @@ function createIdentityStore(
     kind: "meeting" | "screenshot",
     query: SyncSearchQuery,
   ): Promise<string[]> {
-    const search = ftsExpressions(query);
+    const weights = await (searchSettings ??= createSearchSettingsStore(db, searchBackend !== "sqlite").get());
+    if (searchBackend === "lakebase") {
+      // ponytail: score all filtered matches; use a proven combined top-K plan if corpus size makes this too slow.
+      await db.execute(sql`select set_config('lakebase_bm25.enable_scan', 'false', true)`);
+    }
+    const search = ftsExpressions(query, weights);
     const common = and(
       readable(schema.searchDocument.vaultId),
       eq(schema.searchDocument.vaultId, vaultId),
@@ -1843,6 +1859,7 @@ function createIdentityStore(
           meetingId: operation.entityId,
           kind: "meeting",
           searchText: data.searchText,
+          searchFields: data.searchFields as SearchDocumentFields,
           embeddingText: data.embeddingText as string | null,
           embeddingContentHash: data.embeddingContentHash as string | null,
           currentEmbeddingContentHash: current?.hash ?? null,
@@ -1859,6 +1876,7 @@ function createIdentityStore(
           await updateSearchDocuments([{
             documentId: image.screenshotId, vaultId: transaction.vaultId, meetingId: image.meetingId, kind: "screenshot",
             searchText: typeof data.searchText === "string" ? data.searchText : "", embeddingText: data.embeddingText as string | null ?? null,
+            searchFields: data.searchFields as SearchDocumentFields,
             embeddingContentHash: data.embeddingContentHash as string | null ?? null, currentEmbeddingContentHash: current?.hash ?? null,
           }]);
         }
@@ -2748,9 +2766,10 @@ function meetingSelection(schema: SyncSchema) {
     )`.mapWith(Boolean),
     createdAt: schema.syncedMeeting.createdAt,
     updatedAt: schema.syncedMeeting.updatedAt,
-    summaryTitle: sql<string | null>`(select ${schema.summary.title} from ${schema.summary} where ${schema.summary.meetingId} = ${schema.syncedMeeting.meetingId} order by ${schema.summary.version} desc limit 1)`,
-    summaryDocument: sql<string | null>`(select ${schema.summary.document} from ${schema.summary} where ${schema.summary.meetingId} = ${schema.syncedMeeting.meetingId} order by ${schema.summary.version} desc limit 1)`,
-    summaryCreatedAt: sql<Date | null>`(select ${schema.summary.createdAt} from ${schema.summary} where ${schema.summary.meetingId} = ${schema.syncedMeeting.meetingId} order by ${schema.summary.version} desc limit 1)`.mapWith(schema.summary.createdAt),
+    // Keep the outer reference explicit: Drizzle unqualifies column objects in single-table selections.
+    summaryTitle: sql<string | null>`(select ${schema.summary.title} from ${schema.summary} where ${schema.summary.meetingId} = "meetings"."meeting_id" order by ${schema.summary.version} desc limit 1)`,
+    summaryDocument: sql<string | null>`(select ${schema.summary.document} from ${schema.summary} where ${schema.summary.meetingId} = "meetings"."meeting_id" order by ${schema.summary.version} desc limit 1)`,
+    summaryCreatedAt: sql<Date | null>`(select ${schema.summary.createdAt} from ${schema.summary} where ${schema.summary.meetingId} = "meetings"."meeting_id" order by ${schema.summary.version} desc limit 1)`.mapWith(schema.summary.createdAt),
     revision: schema.syncedMeeting.revision,
     summaryRevision: schema.syncedMeeting.summaryRevision,
     transcriptRevision: schema.syncedMeeting.transcriptRevision,

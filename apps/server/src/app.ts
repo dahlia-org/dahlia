@@ -20,6 +20,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { accountSettingsPatchSchema } from "./account-settings";
+import { searchSettingsSchema } from "./search/settings-model";
 
 import {
   AuthenticationError,
@@ -308,6 +309,12 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     }
     context.set("identity", identity);
     await next();
+  });
+  registerApi(app, "getSearchSettings", async (context) => context.json(await store.searchSettings.get()));
+  registerApi(app, "updateSearchSettings", async (context) => {
+    const parsed = searchSettingsSchema.safeParse(await context.req.json().catch(() => null));
+    if (!parsed.success) return context.json({ error: "invalid_search_settings" }, 400);
+    return context.json(await store.searchSettings.update(parsed.data));
   });
   for (const kind of ["users", "organizations"] as const) {
     registerApi(app, kind === "users" ? "listServerUsers" : "listServerOrganizations", async (context) => {

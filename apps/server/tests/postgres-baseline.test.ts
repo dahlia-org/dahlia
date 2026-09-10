@@ -22,51 +22,17 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
       .toEqual([{ rolsuper: false, rolbypassrls: false }]);
     await client.query("BEGIN");
     const files = serverMigrationManifest.postgres.files;
-    const organizationIndex = files.findIndex((file) => file.includes("default_organization_initialization"));
-    const summaryIndex = files.findIndex((file) => file.includes("damp_miss_america"));
-    for (const file of files.slice(0, organizationIndex)) {
+    for (const file of files) {
       await client.query(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
     }
-    await client.query("INSERT INTO auth.organization(id, name, slug, created_at) VALUES ('01990ab0-0000-7000-8000-000000000001', 'Custom name', 'external', to_timestamp(1))");
-    for (const file of files.slice(organizationIndex, summaryIndex)) {
-      await client.query(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
-    }
-    for (const method of ["transcript", "cloudTranscription", "audio"] as const) {
-      await client.query("INSERT INTO auth.\"user\"(id, name, email) VALUES ($1, $2, $3)", [testUserID(method), method, `${method}@example.com`]);
-      await client.query("SELECT set_config('app.user_id', $1, true)", [testUserID(method)]);
-      await client.query(`INSERT INTO app.account_settings(user_id, summary, output_language, analysis_languages)
-        VALUES ($1, $2::jsonb, 'ja', '{}'::jsonb)`, [testUserID(method), JSON.stringify({
-        method, detail: method === "audio" ? "standard" : "detailed", methodSettings: {
-          transcript: { model: "saved-summary", reasoningEffort: "high" },
-          audio: { model: "saved-audio", reasoningEffort: "low" },
-        },
-      })]);
-    }
-    for (const file of files.slice(summaryIndex)) {
-      await client.query(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
-    }
-    const expected = {
-      audio: { summary: { style: "standard" }, processing: { location: "remote", remote: {
-        workflow: "combined", summaryModel: "saved-audio", reasoningEffort: "low",
-      } } },
-      cloudTranscription: { summary: { style: "detailed" }, processing: { location: "remote", remote: {
-        workflow: "transcribeThenSummarize", summaryModel: "saved-summary", reasoningEffort: "high", transcriptionModel: "saved-audio",
-      } } },
-      transcript: { summary: { style: "detailed" }, processing: { location: "local", remote: {
-        workflow: "transcribeThenSummarize", summaryModel: "saved-summary", reasoningEffort: "high", transcriptionModel: "gemini-3-8-flash",
-      } } },
-    };
-    for (const method of Object.keys(expected) as (keyof typeof expected)[]) {
-      await client.query("SELECT set_config('app.user_id', $1, true)", [testUserID(method)]);
-      expect((await client.query("SELECT summary, processing FROM app.account_settings WHERE user_id = $1", [testUserID(method)])).rows)
-        .toEqual([expected[method]]);
-    }
-    expect((await client.query("SELECT name, initialized_at FROM app.server_initializations")).rows)
-      .toEqual([{ name: "default_organization", initialized_at: new Date(1000) }]);
-    expect((await client.query("SELECT name FROM auth.organization")).rows).toEqual([{ name: "Custom name" }]);
-    expect((await client.query("SELECT * FROM auth.member")).rows).toEqual([]);
-    await client.query("DELETE FROM auth.organization");
-    expect((await client.query("SELECT count(*)::int AS count FROM app.server_initializations")).rows).toEqual([{ count: 1 }]);
+    const owner = testUserID("owner");
+    await client.query('INSERT INTO auth."user"(id, name, email) VALUES ($1, $2, $3)', [owner, "Owner", "owner@example.com"]);
+    await client.query("SELECT set_config('app.user_id', $1, true)", [owner]);
+    await client.query("INSERT INTO app.account_settings(user_id, output_language, analysis_languages) VALUES ($1, 'ja', '{}')", [owner]);
+    expect((await client.query("SELECT summary, processing FROM app.account_settings")).rows).toEqual([{
+      summary: { style: "detailed" }, processing: { location: "local", remote: { workflow: "transcribeThenSummarize" } },
+    }]);
+    expect((await client.query("SELECT * FROM app.server_initializations")).rows).toEqual([]);
     const protectedTables = await client.query<{ relname: string; relforcerowsecurity: boolean }>(`SELECT relname, relforcerowsecurity FROM pg_class
       WHERE relnamespace = 'app'::regnamespace AND relrowsecurity ORDER BY relname`);
     expect(protectedTables.rows.map((row) => row.relname)).toEqual([

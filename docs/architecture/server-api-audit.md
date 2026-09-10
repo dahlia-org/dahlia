@@ -8,6 +8,8 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 
 | Operation | Classification | Method / path | Previous | Reason | Consumers |
 | --- | --- | --- | --- | --- | --- |
+| getSearchSettings | modified | GET `/api/v1/admin/search-settings` | `new public contract` | Read server-wide search weights; administrator only | apps/server/src/client/App.tsx |
+| updateSearchSettings | modified | PUT `/api/v1/admin/search-settings` | `new public contract` | Replace all six search weights with integers from 1 to 10 | apps/server/src/client/App.tsx |
 | getHealth | maintained | GET `/healthz` | `/healthz` | Process health | public API; no bundled caller |
 | getOpenAPI | modified | GET `/openapi.json` | `new public contract` | Public OpenAPI 3.1 contract | public API; no bundled caller |
 | getSession | modified | GET `/api/v1/session` | `/api/session` | Current browser identity | apps/server/src/client/App.tsx<br>apps/desktop/Sources/Dahlia/Services/DahliaCloudService.swift |

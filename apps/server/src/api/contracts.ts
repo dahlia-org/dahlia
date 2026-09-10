@@ -4,6 +4,7 @@ import { createRoute, OpenAPIHono, z, type RouteConfig } from "@hono/zod-openapi
 import type { Handler } from "hono";
 import type { AppVariables } from "../app";
 import { accountSettingsSchema, accountSettingsPatchSchema } from "../account-settings-model";
+import { searchSettingsSchema } from "../search/settings-model";
 import { fileUploadSchema, filePatchSchema } from "../files/model";
 import { summaryStartSchema } from "../summary/service";
 import { vaultSearchRequestSchema } from "../search/model";
@@ -76,6 +77,7 @@ const j = `${m}/summary-jobs`;
 export type OperationId =
   "getHealth" | "getOpenAPI" | "getSession" | "listSessions" | "revokeSession"
   | "listAdministrators" | "addAdministrator" | "removeAdministrator" | "listServerUsers" | "listServerOrganizations"
+  | "getSearchSettings" | "updateSearchSettings"
   | "getSettings" | "updateSettings" | "getCapabilities" | "listVaults" | "getVault"
   | "listProjects" | "getProject" | "listMeetings" | "getMeeting" | "listSummaries"
   | "getSummary" | "getLatestSummary" | "listTranscripts" | "getTranscript" | "getLatestTranscript"
@@ -98,6 +100,8 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   listSessions: route("get", "/api/v1/sessions", "listSessions", "OAuth sessions (accounts mode only)", { 200: json(S.page(session)) }, {}, browser),
   revokeSession: route("delete", "/api/v1/sessions/{id}", "revokeSession", "Revoke an OAuth session", { 204: empty }, { params: z.object({ id: S.principalId }) }, browser),
   listAdministrators: route("get", "/api/v1/admin/members", "listAdministrators", "List platform administrators; administrator only", { 200: json(S.page(admin)) }, {}, browser),
+  getSearchSettings: route("get", "/api/v1/admin/search-settings", "getSearchSettings", "Read server-wide full-text search weights; administrator only", { 200: json(searchSettingsSchema) }, {}, browser),
+  updateSearchSettings: route("put", "/api/v1/admin/search-settings", "updateSearchSettings", "Replace all six search weights (integers 1–10); applies to subsequent searches", { 200: json(searchSettingsSchema) }, body(searchSettingsSchema), browser),
   addAdministrator: route("post", "/api/v1/admin/members", "addAdministrator", "Grant administrator access to an existing user", { 201: created(admin) }, body(z.object({ email: z.string().trim().pipe(z.email()).openapi({ format: "email", example: "person@example.com" }) }).strict()), browser),
   removeAdministrator: route("delete", "/api/v1/admin/members/{userId}", "removeAdministrator", "Revoke administrator access; retain the last administrator", { 204: empty }, {}, browser),
   listServerUsers: route("get", "/api/v1/admin/users", "listServerUsers", "Administrator directory; ordered by name and ID", { 200: json(z.object({ items: z.array(S.person.extend({ createdAt: S.date, role: z.string().nullable() })), hasMore: z.boolean() })) }, { query: z.object({ offset: z.string().regex(/^\d+$/).optional().openapi({ description: "0–1000000. Fixed page size 100." }) }).strict() }, browser),

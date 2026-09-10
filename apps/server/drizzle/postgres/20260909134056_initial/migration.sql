@@ -2,7 +2,8 @@ CREATE SCHEMA "app";
 --> statement-breakpoint
 CREATE TABLE "app"."account_settings" (
 	"user_id" uuid PRIMARY KEY,
-	"summary" jsonb DEFAULT '{"method":"transcript","detail":"high","methodSettings":{"transcript":{"model":"gpt-5.4","reasoningEffort":"medium"},"audio":{"model":"gemini-3-8-flash","reasoningEffort":"medium"}}}' NOT NULL,
+	"summary" jsonb DEFAULT '{"style":"detailed"}' NOT NULL,
+	"processing" jsonb DEFAULT '{"location":"local","remote":{"workflow":"transcribeThenSummarize"}}' NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
 	"output_language" text NOT NULL,
 	"analysis_languages" jsonb NOT NULL
@@ -60,6 +61,18 @@ CREATE TABLE "app"."search_documents" (
 	"meeting_id" uuid NOT NULL,
 	"kind" text NOT NULL,
 	"search_text" text DEFAULT '' NOT NULL,
+	"title_text" text DEFAULT '' NOT NULL,
+	"tags_text" text DEFAULT '' NOT NULL,
+	"description_text" text DEFAULT '' NOT NULL,
+	"summary_text" text DEFAULT '' NOT NULL,
+	"ocr_text" text DEFAULT '' NOT NULL,
+	"caption_text" text DEFAULT '' NOT NULL,
+	"title_vector" tsvector GENERATED ALWAYS AS (to_tsvector('simple', title_text)) STORED,
+	"tags_vector" tsvector GENERATED ALWAYS AS (to_tsvector('simple', tags_text)) STORED,
+	"description_vector" tsvector GENERATED ALWAYS AS (to_tsvector('simple', description_text)) STORED,
+	"summary_vector" tsvector GENERATED ALWAYS AS (to_tsvector('simple', summary_text)) STORED,
+	"ocr_vector" tsvector GENERATED ALWAYS AS (to_tsvector('simple', ocr_text)) STORED,
+	"caption_vector" tsvector GENERATED ALWAYS AS (to_tsvector('simple', caption_text)) STORED,
 	"search_vector" tsvector GENERATED ALWAYS AS (to_tsvector('simple', search_text)) STORED,
 	"embedding_text" text,
 	"embedding_content_hash" text,
@@ -99,6 +112,17 @@ CREATE TABLE "app"."jobs_search_index" (
 	CONSTRAINT "search_index_job_pk" PRIMARY KEY("vault_id","document_id"),
 	CONSTRAINT "search_index_job_status_check" CHECK ("status" IN ('pending', 'processing', 'failed')),
 	CONSTRAINT "search_index_job_dimensions_check" CHECK ("dimensions" BETWEEN 32 AND 1024)
+);
+--> statement-breakpoint
+CREATE TABLE "app"."server_initializations" (
+	"name" text PRIMARY KEY,
+	"initialized_at" timestamp with time zone NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "app"."server_settings" (
+	"id" integer PRIMARY KEY,
+	"search_weights" jsonb DEFAULT '{"title":5,"tags":3,"description":2,"summary":1,"ocr":1,"caption":2}' NOT NULL,
+	CONSTRAINT "server_settings_singleton" CHECK ("id" = 1)
 );
 --> statement-breakpoint
 CREATE TABLE "app"."jobs_storage_delete" (

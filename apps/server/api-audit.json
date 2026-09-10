@@ -1,6 +1,24 @@
 {
   "owned": [
     {
+      "operationId": "getSearchSettings",
+      "method": "GET",
+      "path": "/api/v1/admin/search-settings",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Read server-wide search weights; administrator only",
+      "consumers": ["apps/server/src/client/App.tsx"]
+    },
+    {
+      "operationId": "updateSearchSettings",
+      "method": "PUT",
+      "path": "/api/v1/admin/search-settings",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Replace all six search weights with integers from 1 to 10",
+      "consumers": ["apps/server/src/client/App.tsx"]
+    },
+    {
       "operationId": "getHealth",
       "method": "GET",
       "path": "/healthz",

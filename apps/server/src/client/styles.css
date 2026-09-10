@@ -177,6 +177,7 @@ a { color: inherit; text-decoration: none; }
 .switch-field input:focus-visible + .switch-control { outline: 2px solid var(--plum); outline-offset: 2px; }
 .switch-field input:disabled + .switch-control { opacity: .5; }
 .admin-form { display: grid; grid-template-columns: .7fr 1fr 1fr auto; gap: 12px; align-items: end; }
+.search-settings-form { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 560px; }
 .member-form { grid-template-columns: 1fr auto; }
 .member-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .member-row > div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }

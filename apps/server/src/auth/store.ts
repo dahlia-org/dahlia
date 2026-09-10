@@ -1,5 +1,6 @@
 import { EXTERNAL_ORGANIZATION_ID, HEADER_IDENTITY_ISSUER } from "./ids";
 import { createAccountSettingsStore, type AccountSettingsStore } from "../account-settings";
+import { createSearchSettingsStore, type SearchSettingsStore } from "../search/settings";
 import type { DBAdapterInstance } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import { and, asc, desc, eq, gt, inArray, is, isNull, or, sql } from "drizzle-orm";
@@ -119,6 +120,7 @@ export interface D1DatabaseLike {
 export interface ApplicationStore {
   database: DBAdapterInstance;
   accountSettings: AccountSettingsStore;
+  searchSettings: SearchSettingsStore;
   sync: MeetingSyncStore;
   resolveHeaderUser(identity: Identity): Promise<string | null>;
   ensureIdentityUser(identity: Identity): Promise<boolean>;
@@ -167,6 +169,7 @@ export function createPostgresApplicationStore(
   return {
     database: drizzleAdapter(db, { provider: "pg", schema: postgresAuthSchema, schemaName: "auth" }),
     accountSettings: createAccountSettingsStore(db, true),
+    searchSettings: createSearchSettingsStore(db, true),
     sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding),
     async resolveHeaderUser(identity) {
       const find = async () => {
@@ -652,6 +655,7 @@ export function createSqliteApplicationStore(
   return {
     database: drizzleAdapter(db, { provider: "sqlite", schema: sqliteAuthSchema, transaction: transactions }),
     accountSettings: createAccountSettingsStore(db, false),
+    searchSettings: createSearchSettingsStore(db, false),
     sync: createSqliteMeetingSyncStore(db, searchEmbedding),
     async resolveHeaderUser(identity) {
       const find = async () => {

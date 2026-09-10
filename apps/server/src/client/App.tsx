@@ -1,4 +1,5 @@
 import { apiUrls } from "./generated-operations";
+import { DEFAULT_SEARCH_SETTINGS, SEARCH_FIELDS, searchSettingsSchema, type SearchSettings } from "../search/settings-model";
 import { encodeId } from "../typeid";
 import { apiOperations as api } from "./generated-operations";
 import type { components } from "./generated-api";
@@ -1525,6 +1526,46 @@ function AdminDirectory({ kind }: { kind: "users" | "organizations" }) {
   </>;
 }
 
+export function AdminSearchSettings() {
+  const [weights, setWeights] = useState<SearchSettings>();
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [pending, setPending] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void api.getSearchSettings({}).then((value) => { if (active) setWeights(value); })
+      .catch(() => { if (active) setError(uiText("Could not load search settings.", "検索設定を読み込めませんでした。")); });
+    return () => { active = false; };
+  }, []);
+  const labels = { title: uiText("Title", "タイトル"), tags: uiText("Tags", "タグ"), description: uiText("Description", "説明"),
+    summary: uiText("Summary", "要約"), ocr: "OCR", caption: uiText("Caption", "キャプション") };
+  async function save(event: React.SubmitEvent) {
+    event.preventDefault();
+    const parsed = searchSettingsSchema.safeParse(weights);
+    if (!parsed.success) { setError(uiText("Enter integers from 1 to 10.", "1〜10の整数を入力してください。")); return; }
+    setPending(true); setError(""); setSaved(false);
+    try { setWeights(await api.updateSearchSettings({ body: parsed.data })); setSaved(true); }
+    catch { setError(uiText("Could not save search settings.", "検索設定を保存できませんでした。")); }
+    finally { setPending(false); }
+  }
+  return <>
+    <PageHeader title={uiText("Server settings", "サーバー全体の設定")} />
+    <section className="settings-section">
+      <h2 className="section-label">{uiText("Search settings", "検索設定")}</h2>
+      <p className="muted">{uiText("Adjust each field's influence on search ranking from 1 to 10. Saved changes apply to subsequent searches across this server.", "各項目が検索順位に与える影響を1〜10で調整します。保存後の検索からサーバー全体に反映されます。")}</p>
+      {!weights && !error && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
+      {weights && <form className="panel admin-form search-settings-form" onSubmit={(event) => void save(event)}>
+        {SEARCH_FIELDS.map((field) => <label key={field}>{labels[field]}<input type="number" min={1} max={10} step={1} required disabled={pending}
+          value={Number.isNaN(weights[field]) ? "" : weights[field]} onChange={(event) => { setWeights({ ...weights, [field]: event.target.valueAsNumber }); setSaved(false); }} /></label>)}
+        <button className="primary" disabled={pending}>{pending ? uiText("Saving…", "保存中…") : uiText("Save", "保存")}</button>
+        <button type="button" className="secondary" disabled={pending} onClick={() => { setWeights({ ...DEFAULT_SEARCH_SETTINGS }); setSaved(false); setError(""); }}>{uiText("Reset to defaults", "初期値に戻す")}</button>
+      </form>}
+      {error && <p className="error" role="alert">{error}</p>}
+      {saved && <p role="status">{uiText("Search settings saved.", "検索設定を保存しました。")}</p>}
+    </section>
+  </>;
+}
+
 function AdminMembers() {
   const { dialog, openDialog } = useActionDialog();
   const [members, setMembers] = useState<AdminMember[]>();
@@ -1684,7 +1725,7 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   }
   else if (route.page === "admin-users") page = <><AdminDirectory kind="users" /><AdminMembers /></>;
   else if (route.page === "admin-organizations") page = <AdminDirectory kind="organizations" />;
-  else if (route.page === "admin-settings") page = <><PageHeader title={uiText("Server settings", "サーバー全体の設定")} /><p className="muted">{uiText("No settings are available yet.", "設定項目はまだありません。")}</p></>;
+  else if (route.page === "admin-settings") page = <AdminSearchSettings />;
   else if (route.page === "vaults") page = <Vaults />;
   else if (route.page === "vault") page = <VaultMeetings session={session} vaultId={route.vaultId!} />;
   else if (route.page === "meeting") page = detailVaultId ? <SyncedMeeting vaultId={detailVaultId} meetingId={route.meetingId!} /> : null;

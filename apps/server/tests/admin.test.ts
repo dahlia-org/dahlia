@@ -5,6 +5,8 @@ import type { Identity } from "../src/auth/identity";
 import type { AdminUserRecord } from "../src/auth/store";
 import type { AppConfig } from "../src/config";
 import { testStore } from "./test-store";
+import { DEFAULT_SEARCH_SETTINGS } from "../src/search/settings-model";
+import { createWorkerHandler } from "../src/worker";
 
 const config: AppConfig = {
   authProvider: "header",
@@ -55,6 +57,29 @@ function administrativeStore() {
 }
 
 describe("administration", () => {
+  it.each(["node", "worker"])("restricts and validates server search settings through %s", async (runtime) => {
+    const { store } = administrativeStore();
+    const app = createApp({ config, authStore: store });
+    const worker = createWorkerHandler(async () => app);
+    const fetchWorker = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+    const send = (method: string, body?: unknown, headers = ownerHeaders) => {
+      const request = new Request(`${config.baseUrl}/api/v1/admin/search-settings`, { method, headers,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      return runtime === "node" ? app.request(request) : fetchWorker(request, {} as Cloudflare.Env, {} as ExecutionContext);
+    };
+    expect(await (await send("GET")).json()).toEqual(DEFAULT_SEARCH_SETTINGS);
+    for (const body of [{ ...DEFAULT_SEARCH_SETTINGS, title: 0 }, { ...DEFAULT_SEARCH_SETTINGS, title: 11 },
+      { ...DEFAULT_SEARCH_SETTINGS, title: 1.5 }, { ...DEFAULT_SEARCH_SETTINGS, title: "5" }, { title: 5 },
+      { ...DEFAULT_SEARCH_SETTINGS, unknown: 1 }]) expect((await send("PUT", body)).status).toBe(400);
+    const updated = { ...DEFAULT_SEARCH_SETTINGS, title: 10 };
+    expect(await (await send("PUT", updated)).json()).toEqual(updated);
+    expect(await (await send("GET")).json()).toEqual(updated);
+    expect((await send("PUT", DEFAULT_SEARCH_SETTINGS, { ...ownerHeaders, origin: "https://other.example" })).status).toBe(403);
+    for (const method of ["GET", "PUT"]) {
+      expect((await send(method, method === "PUT" ? updated : undefined, { ...ownerHeaders, "X-Forwarded-Email": "member@example.com" })).status).toBe(403);
+    }
+  });
+
   it("promotes the first authenticated user to administrator", async () => {
     const { store } = administrativeStore();
     const app = createApp({ config, authStore: store });
