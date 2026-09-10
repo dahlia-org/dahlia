@@ -90,8 +90,8 @@ requires_openai_auth = false
 [model_providers.databricks.auth]
 command = {json.dumps(sys.executable)}
 args = {json.dumps(args)}
-timeout_ms = 370000
-refresh_interval_ms = 300000
+timeout_ms = 20000
+refresh_interval_ms = 1500000
 ''')
             environment = {key: value for key, value in os.environ.items()
                            if key in ("PATH", "TMPDIR", "LANG", "SYSTEMROOT")}

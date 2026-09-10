@@ -135,8 +135,8 @@ actor CodexConfigurationManager {
         [model_providers.databricks.auth]
         command = "\(tomlEscape(helperURL.path))"
         args = ["token", "--provider", "databricks", "--connection-id", "\(profile.id.uuidString)", "--profile", "\(runtimeProfile.rawValue)"]
-        timeout_ms = 370000
-        refresh_interval_ms = 300000
+        timeout_ms = 20000
+        refresh_interval_ms = 1500000
 
         [model_providers.databricks.http_headers]
         Databricks-Ai-Gateway-Request-Tags = "{\\\"source\\\": \\\"dahlia\\\"}"

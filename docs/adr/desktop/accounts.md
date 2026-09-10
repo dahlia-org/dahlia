@@ -32,7 +32,7 @@ Databricks / Dahlia Server の認証コマンドは共通の `auth-helper token 
 
 チャットとこの Mac の推論は独立した認可を broker に登録する。一方の再起動で他方の認可を消さず、接続の検証には要求元の親 PID に対応する認可だけを使う。broker は最大8接続を並行処理し、ブラウザ認証待ちで他の runtime を塞がない。認証保存直後に設定画面を閉じた場合も、再表示時に保存済み接続の UUID を設定へ復元する。
 
-Codex は Gateway に Bearer token を送る。401 による認証コマンド再実行では Databricks token を強制 refresh し、同一 HTTP request を1回だけ再試行する。固定版 Codex は stream retry ごとに認証回復を繰り返すため、直接 Databricks provider は `stream_max_retries = 0` とする。これによりストリーム切断時も自動再実行せずエラーを返す。refresh 失敗ではブラウザ認証へ進み、待受は300秒で終了する。ネットワーク時間を含め broker は360秒、helper クライアントは365秒、Codex auth command は370秒を上限にする。Databricks を対象に会話 turn 全体を再実行する回復経路は追加しない。
+Codex は Gateway に Bearer token を送る。401 による認証コマンド再実行では Databricks token を強制 refresh し、同一 HTTP request を1回だけ再試行する。固定版 Codex は stream retry ごとに認証回復を繰り返すため、直接 Databricks provider は `stream_max_retries = 0` とする。これによりストリーム切断時も自動再実行せずエラーを返す。refresh 失敗ではブラウザ認証へ進み、待受は300秒で終了する。ネットワーク時間を含め broker は360秒、helper クライアントは365秒、Codex auth command は20秒を上限にし、token の定期更新間隔は25分とする。ブラウザ認証が20秒以内に完了しなければ、その認証コマンドはタイムアウトする。Databricks を対象に会話 turn 全体を再実行する回復経路は追加しない。
 
 ChatGPT の `account/login/start` は `type: chatgpt` だけを指定し、hosted success page / appBrand を省略する。HTTPS auth URL を開き、login ID に対応する completed notification を待つ。固定 Codex 更新時は既定のローカル成功ページと request shape を認証回帰で確認する。
 
