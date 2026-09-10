@@ -7,21 +7,21 @@ import { DEFAULT_ACCOUNT_SETTINGS } from "../src/account-settings-model";
 import { modelList } from "../src/ai-gateway/models";
 import { isAudioSummaryModel, isStructuredSummaryModel, isSummaryModel } from "../src/summary/audio-model";
 
-it("preserves structured output support for available fallback models including the account default", () => {
-  const supported = ["gemini-3-8-flash", "gpt-5.4-mini", "gpt-5.2"];
-  const unsupported = ["gpt-5.4-pro", "gpt-unknown"];
+it("treats listed models as structured-output capable and rejects unregistered models", () => {
+  const supported = ["gemini-3-8-flash", "gpt-6-astra", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-5-6-luna", "gpt-5-5"];
+  const unsupported = ["gpt-5.4-mini", "gpt-5.2", "gpt-5.4-pro", "gpt-unknown"];
   const catalog = modelList([...supported, ...unsupported].map((id) => ({ id })));
   for (const id of supported) expect(isStructuredSummaryModel(id, catalog)).toBe(true);
   for (const id of unsupported) expect(isStructuredSummaryModel(id, catalog)).toBe(false);
   expect(isStructuredSummaryModel("gpt-5.4", modelList([]))).toBe(false);
 });
 
-it.each([false, undefined])("requires structured output from the transcription-only audio model (%s)", (support) => {
+it.each([false, undefined])("does not require the legacy schema flag for a listed audio model (%s)", (support) => {
   const catalog = modelList([{ id: "gemini-3-8-flash" }]);
   const model = catalog.models.find(({ slug }) => slug === "gemini-3-8-flash")!;
   model.supports_json_schema = support;
-  expect(isAudioSummaryModel(model.slug, catalog)).toBe(false);
-  expect(isSummaryModel(model.slug, catalog, "audio")).toBe(false);
+  expect(isAudioSummaryModel(model.slug, catalog)).toBe(true);
+  expect(isSummaryModel(model.slug, catalog, "audio")).toBe(true);
 });
 
 // These tests inspect available choices; real picker interactions run in tests/browser/select.html.
@@ -103,7 +103,7 @@ it("does not offer remote processing when the server only supports transcript in
 it.each([false, true])("hides the automatic review alias from summary model choices (alias only: %s)", (aliasOnly) => {
   const catalog = modelList([
     { id: "codex-auto-review" },
-    ...aliasOnly ? [] : [{ id: "gpt-5.6-terra" }],
+    ...aliasOnly ? [] : [{ id: "gemini-3-8-flash" }],
   ]);
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
     data: url === "/api/v1/models" ? catalog
@@ -115,11 +115,11 @@ it.each([false, true])("hides the automatic review alias from summary model choi
   expect(catalog.data.some(({ id }) => id === "codex-auto-review")).toBe(true);
   expect(html).not.toContain('value="codex-auto-review"');
   if (aliasOnly) expect(html).toContain("No models available");
-  else expect(html).toContain('value="gpt-5.6-terra"');
+  else expect(html).toContain('value="gemini-3-8-flash"');
 });
 
 it.each([true, false])("filters audio choices to available audio-capable Gemini (available: %s)", (available) => {
-  const catalog = modelList([{ id: "gpt-5.6-terra" }, { id: "gemini-unknown" }, { id: "codex-auto-review" },
+  const catalog = modelList([{ id: "gpt-5-6-terra" }, { id: "gemini-unknown" }, { id: "codex-auto-review" },
     ...(available ? [{ id: "gemini-3-8-flash" }, { id: "gemini-3-7-flash" }] : [])]);
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
     data: url === "/api/v1/models" ? catalog
@@ -131,7 +131,7 @@ it.each([true, false])("filters audio choices to available audio-capable Gemini 
   }));
   const html = renderToStaticMarkup(createElement(ServerSummarySettings));
   expect(html).toContain("Processing location");
-  expect(html).not.toContain('value="gpt-5.6-terra"'); expect(html).not.toContain('value="codex-auto-review"');
+  expect(html).not.toContain('value="gpt-5-6-terra"'); expect(html).not.toContain('value="codex-auto-review"');
   expect(html).not.toContain('value="gemini-unknown"');
   if (available) { expect(html).toContain('value="gemini-3-8-flash" selected'); expect(html).toContain('value="gemini-3-7-flash"'); }
   else {
