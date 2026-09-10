@@ -41,13 +41,14 @@ struct BundledCodexAppServerLauncher {
         let profile = DahliaApplicationSupport.profile()
         tokenBrokerAuthorization.clear(profile: profile)
         environment["PATH"] = CommandLineToolLocator.searchPath(environment: environment)
-        let onLaunch: (@Sendable (pid_t) -> Void)? = if let connectionID = runtimeProvider.accountConnectionID {
+        let onLaunch: (@Sendable (pid_t) -> Void)? = if let connection = runtimeProvider.authenticationConnection {
             { appServerPID in
                 tokenBrokerAuthorization.register(
                     profile: profile,
-                    connectionID: connectionID,
+                    connectionID: connection.id,
+                    provider: connection.provider,
                     appServerPID: appServerPID,
-                    helperURL: DahliaMCPBundle.expectedExecutableURL()
+                    helperURL: AuthHelperBundle.expectedExecutableURL()
                 )
             }
         } else {

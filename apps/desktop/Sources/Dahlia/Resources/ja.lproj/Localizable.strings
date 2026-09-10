@@ -1121,29 +1121,15 @@
 "Waiting for browser sign-in…" = "ブラウザでのサインインを待っています…";
 "Cancel Sign-In" = "サインインをキャンセル";
 "Sign Out" = "サインアウト";
-"Databricks CLI Profile" = "Databricks CLI プロファイル";
-"Databricks CLI Profile Name" = "Databricks CLI プロファイル名";
-"Enter the name used to save this sign-in in Databricks CLI." = "Databricks CLI に保存するサインイン名を入力します。";
-"A Databricks CLI profile named %@ already exists for another workspace or authentication method." = "「%@」という Databricks CLI プロファイルは、別のワークスペースまたは認証方式ですでに使われています。";
-"Codex obtains the workspace and credentials from this Databricks CLI profile." = "Codex は、この Databricks CLI プロファイルからワークスペースと認証情報を取得します。";
 "Refresh Profiles" = "プロファイルを再読み込み";
 "No Databricks workspaces are connected yet." = "接続済みの Databricks ワークスペースはまだありません。";
-"Databricks CLI was not found. Install it to connect a workspace." = "Databricks CLI が見つかりません。ワークスペースへ接続するためにインストールしてください。";
-"Install Databricks CLI" = "Databricks CLI をインストール";
-"Dahlia uses the official Databricks CLI for browser sign-in and token refresh. The CLI is installed separately and is subject to the Databricks License and Privacy Notice." = "Dahlia は、ブラウザでのサインインとトークン更新に公式 Databricks CLI を使用します。CLI は別途インストールされ、Databricks License と Privacy Notice が適用されます。";
 "Homebrew Command" = "Homebrew コマンド";
 "Terminal runs this visible command. Dahlia does not bundle or download the CLI." = "このコマンドはターミナル上で表示して実行されます。Dahlia は CLI を同梱またはダウンロードしません。";
 "Install in Terminal" = "ターミナルでインストール";
 "View Official Installation Guide" = "公式インストール手順を見る";
 "View Databricks License" = "Databricks License を見る";
 "View Databricks Privacy Notice" = "Databricks Privacy Notice を見る";
-"Databricks CLI Installation" = "Databricks CLI のインストール";
 "Dahlia could not control Terminal. The installation command was copied and Terminal was opened. Paste the command and press Return." = "Dahlia からターミナルを操作できませんでした。インストールコマンドをコピーしてターミナルを開きました。コマンドを貼り付け、Return キーを押してください。";
-"Dahlia could not open Terminal. Use the official installation guide to install Databricks CLI." = "ターミナルを開けませんでした。公式インストール手順から Databricks CLI をインストールしてください。";
-"Databricks CLI authentication failed: %@" = "Databricks CLI 認証に失敗しました: %@";
-"Databricks CLI authentication failed." = "Databricks CLI 認証に失敗しました。";
-"Databricks CLI returned an invalid profiles response." = "Databricks CLI から無効なプロファイルレスポンスが返されました。";
-"Select a Databricks CLI profile." = "Databricks CLI プロファイルを選択してください。";
 "Enter a valid HTTPS Databricks workspace root URL." = "有効な HTTPS の Databricks ワークスペースルート URL を入力してください。";
 "Databricks Workspace URL" = "Databricks ワークスペース URL";
 "Enter the HTTPS URL of the workspace used by Codex." = "Codex で使用するワークスペースの HTTPS URL を入力します。";
@@ -1157,7 +1143,6 @@
 "Codex is configured for Databricks" = "Codex を Databricks 用に設定しました";
 "The selected AI account is not ready. Open Accounts and Vaults in Settings and finish its configuration." = "選択した AI アカウントの準備が完了していません。設定の「アカウントと保管庫」を開き、設定を完了してください。";
 "This chat uses %@. Start a new chat to use the current account." = "このチャットは %@ を使用しています。現在のアカウントを使用するには新しいチャットを開始してください。";
-"Codex uses this Databricks CLI profile. Browser sign-in opens when authentication expires." = "Codex はこの Databricks CLI プロファイルを使用します。認証の有効期限が切れた場合は、ブラウザでのサインインを開きます。";
 "Codex returned no available models. Try again." = "Codex から利用可能なモデルが返されませんでした。再試行してください。";
 "Models are loaded from the bundled Codex app-server." = "モデルは同梱 Codex app-server から取得します。";
 "The saved model is used when available; otherwise Codex's default model is selected." = "保存済みモデルが利用可能なら使用し、それ以外は Codex のデフォルトモデルを選択します。";
@@ -1653,7 +1638,6 @@
 "Summaries and Image Captions" = "要約と画像説明";
 "Choose the model provider used for summaries and other AI features." = "要約などのAI機能で使うモデルプロバイダーを選びます。";
 "Use your ChatGPT account." = "ChatGPTアカウントを使用します。";
-"Use a Databricks CLI profile." = "Databricks CLI プロファイルを利用します。";
 "Allow access to the audio sources Dahlia records. You can continue and grant access later." = "Dahliaが録音するオーディオへのアクセスを許可します。後から許可することもできます。";
 "Calendar (Optional)" = "カレンダー（オプション）";
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "カレンダーを接続すると、Dahliaで今後のミーティングを確認できます。後から設定することもできます。";
@@ -1809,3 +1793,15 @@
 
 "Waiting for initial sync" = "初回同期を待っています";
 "Server meetings will appear after sync. An internet connection and sign-in are required." = "同期するとサーバーのミーティングが表示されます。インターネット接続とサインインが必要です。";
+
+"Connect a Databricks workspace." = "Databricks ワークスペースに接続します。";
+
+"Databricks Connection" = "Databricks 接続";
+
+"Connect and select a Databricks workspace." = "Databricks ワークスペースに接続して選択してください。";
+
+"Dahlia securely stores this workspace sign-in on this Mac." = "ワークスペースの認証情報をこの Mac に安全に保存します。";
+
+"Cannot listen on localhost:8020. Close the other sign-in and retry." = "localhost:8020 で待受できません。ほかのサインインを終了して再試行してください。";
+
+"Enter your workspace URL and sign in again to replace the old CLI connection." = "従来の CLI 接続を置き換えるため、ワークスペース URL を入力して再度サインインしてください。";

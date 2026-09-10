@@ -6,12 +6,8 @@ struct DatabricksAccountSettingsView<LeadingContent: View>: View {
     let title: String
     let footer: String?
     let leadingContent: LeadingContent
-    @State private var refreshTask: Task<Void, Never>?
-    @State private var isShowingInstallGuide = false
-    @State private var isShowingProfileCreation = false
-    @State private var isShowingInstallationAlert = false
-    @State private var installationAlertMessage = ""
-    @Environment(\.scenePhase) private var scenePhase
+    @State private var workspaceURL = ""
+    @State private var signInTask: Task<Void, Never>?
 
     init(
         controller: DatabricksAccountController,
@@ -28,164 +24,76 @@ struct DatabricksAccountSettingsView<LeadingContent: View>: View {
     var body: some View {
         Section {
             leadingContent
-            content
+            Picker(L10n.databricksProfile, selection: $vaultSettings.databricksProfile) {
+                Text(L10n.notSelected).tag("")
+                if !vaultSettings.databricksProfile.isEmpty,
+                   !controller.connections.contains(where: { $0.id.uuidString == vaultSettings.databricksProfile }) {
+                    Text(L10n.dahliaNotSignedIn).tag(vaultSettings.databricksProfile)
+                }
+                ForEach(controller.connections) { connection in
+                    Text(connection.name).tag(connection.id.uuidString)
+                }
+            }
+            .disabled(controller.isBusy)
+            if let selected = controller.connections.first(where: { $0.id.uuidString == vaultSettings.databricksProfile }) {
+                LabeledContent(L10n.databricksWorkspaceURL, value: selected.host)
+                Button(L10n.signOut) {
+                    signInTask = Task {
+                        if await controller.remove(selected.id), vaultSettings.databricksProfile == selected.id.uuidString {
+                            vaultSettings.databricksProfile = ""
+                        }
+                    }
+                }
+                .buttonStyle(.dahlia())
+                .disabled(controller.isBusy)
+            } else if !vaultSettings.databricksProfile.isEmpty {
+                Text(L10n.databricksReconnectRequired).foregroundStyle(.secondary)
+            }
+            TextField(
+                L10n.databricksWorkspaceURL,
+                text: $workspaceURL,
+                prompt: Text(L10n.databricksWorkspaceURLPlaceholder)
+            )
+            .textContentType(.URL)
+            .disabled(controller.isBusy)
+            .onSubmit(signIn)
+            if controller.isBusy {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text(L10n.codexWaitingForBrowserSignIn)
+                    Button(L10n.cancelSignIn) { signInTask?.cancel() }
+                        .buttonStyle(.dahlia())
+                }
+            } else {
+                Button(L10n.signInWithDatabricks, action: signIn)
+                    .buttonStyle(.dahlia(.primary))
+                    .disabled(workspaceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if let error = controller.errorMessage {
+                SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle.fill", tint: .red)
+            }
         } header: {
             Text(title)
         } footer: {
-            if let footer {
-                Text(footer)
-            }
+            if let footer { Text(footer) }
         }
-        .task(id: vaultSettings.databricksProfile) {
-            let requestedProfileName = vaultSettings.databricksProfile
-            if controller.configuredProfileName == requestedProfileName {
-                return
-            }
-            let resolvedProfile = await controller.prepare(profileName: requestedProfileName)
-            if let resolvedProfile,
-               resolvedProfile.isEmpty,
-               vaultSettings.databricksProfile == requestedProfileName {
-                vaultSettings.databricksProfile = resolvedProfile
-            }
-        }
-        .onChange(of: scenePhase) { _, newPhase in
-            guard newPhase == .active, controller.isCLIAvailable == false else { return }
-            refreshProfiles()
-        }
-        .sheet(isPresented: $isShowingInstallGuide) {
-            DatabricksCLIInstallGuideView(onInstall: installCLI)
-        }
-        .sheet(isPresented: $isShowingProfileCreation) {
-            DatabricksProfileCreationView(
-                controller: controller
-            ) { profileName in
-                vaultSettings.databricksProfile = profileName
-            }
-        }
-        .alert(L10n.databricksCLIInstallation, isPresented: $isShowingInstallationAlert) {} message: {
-            Text(installationAlertMessage)
-        }
-        .onDisappear {
-            refreshTask?.cancel()
-            refreshTask = nil
-        }
+        .task { await controller.load() }
+        .onDisappear { signInTask?.cancel() }
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if controller.isCLIAvailable == false {
-            SettingsStatusMessage(
-                text: L10n.databricksCLINotInstalled,
-                systemImage: "exclamationmark.triangle.fill",
-                tint: .orange
-            )
-
-            HStack {
-                Button(L10n.installDatabricksCLI, systemImage: "terminal") {
-                    isShowingInstallGuide = true
-                }
-                .buttonStyle(.dahlia(.primary))
-
-                Button(L10n.retry, systemImage: "arrow.clockwise", action: refreshProfiles)
-                    .buttonStyle(.dahlia())
-                    .disabled(controller.isBusy)
-            }
-        } else {
-            profilePickerRow
-
-            Button(L10n.createNewDatabricksProfile, systemImage: "plus") {
-                isShowingProfileCreation = true
-            }
-            .buttonStyle(.dahlia(.primary))
-            .disabled(controller.isBusy)
-
-            if let profile = controller.profile(named: vaultSettings.databricksProfile) {
-                LabeledContent(L10n.databricksWorkspaceID, value: profile.workspaceID ?? L10n.workspaceIDUnavailableFromProfile)
+    private func signIn() {
+        guard !controller.isBusy else { return }
+        signInTask = Task {
+            if let id = await controller.signIn(workspaceURL: workspaceURL), !Task.isCancelled {
+                vaultSettings.databricksProfile = id
+                workspaceURL = ""
             }
         }
-
-        if controller.isSigningIn {
-            LabeledContent(L10n.codexConfiguration) {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel(L10n.codexWaitingForBrowserSignIn)
-            }
-        } else if controller.isConfigured {
-            SettingsStatusMessage(
-                text: L10n.databricksConfigured,
-                systemImage: "checkmark.circle.fill",
-                tint: .green
-            )
-        }
-
-        if let errorMessage = controller.errorMessage {
-            SettingsStatusMessage(
-                text: errorMessage,
-                systemImage: "exclamationmark.triangle.fill",
-                tint: .red
-            )
-        }
-    }
-
-    private var profilePickerRow: some View {
-        LabeledContent {
-            HStack {
-                DatabricksProfilePicker(
-                    selection: $vaultSettings.databricksProfile,
-                    profiles: controller.profiles,
-                    isLoading: controller.isLoadingProfiles
-                )
-                .disabled(controller.isBusy)
-
-                Button(
-                    L10n.refreshDatabricksProfiles,
-                    systemImage: "arrow.clockwise",
-                    action: refreshProfiles
-                )
-                .labelStyle(.iconOnly)
-                .dahliaFixedSymbol()
-                .buttonStyle(.dahlia())
-                .disabled(controller.isBusy)
-            }
-        } label: {
-            Text(L10n.databricksProfile)
-            Text(L10n.databricksProfileDescription)
-        }
-    }
-
-    private func refreshProfiles() {
-        refreshTask?.cancel()
-        refreshTask = Task {
-            let requestedProfileName = vaultSettings.databricksProfile
-            let resolvedProfile = await controller.prepare(profileName: requestedProfileName)
-            if let resolvedProfile,
-               resolvedProfile.isEmpty,
-               vaultSettings.databricksProfile == requestedProfileName {
-                vaultSettings.databricksProfile = resolvedProfile
-            }
-        }
-    }
-
-    private func installCLI() {
-        switch controller.installCLIInTerminal() {
-        case .started:
-            return
-        case .commandCopied:
-            installationAlertMessage = L10n.databricksCLIInstallCommandCopied
-        case .failed:
-            installationAlertMessage = L10n.databricksCLIInstallFailed
-        }
-        isShowingInstallationAlert = true
     }
 }
 
 extension DatabricksAccountSettingsView where LeadingContent == EmptyView {
     init(controller: DatabricksAccountController = DatabricksAccountController()) {
-        self.init(
-            controller: controller,
-            title: L10n.databricks
-        ) {
-            EmptyView()
-        }
+        self.init(controller: controller, title: L10n.databricks) { EmptyView() }
     }
 }

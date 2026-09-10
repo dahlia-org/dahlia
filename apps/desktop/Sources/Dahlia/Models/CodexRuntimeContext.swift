@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 
 enum CodexRuntimeProvider: Codable, Hashable, Sendable {
@@ -24,6 +25,14 @@ enum CodexRuntimeProvider: Codable, Hashable, Sendable {
         return connectionID
     }
 
+    var authenticationConnection: (id: UUID, provider: DahliaTokenBrokerProtocol.Provider)? {
+        switch self {
+        case let .dahlia(id): (id, .dahlia)
+        case let .databricks(profile): UUID(uuidString: profile).map { ($0, .databricks) }
+        case .chatGPTSubscription: nil
+        }
+    }
+
     var localAccountProvider: AIAccountProvider? {
         switch self {
         case .chatGPTSubscription: .chatGPTSubscription
@@ -35,7 +44,7 @@ enum CodexRuntimeProvider: Codable, Hashable, Sendable {
     var displayName: String {
         switch self {
         case .chatGPTSubscription: L10n.chatGPTSubscription
-        case let .databricks(profile): "\(L10n.databricks) (\(profile))"
+        case .databricks: L10n.databricks
         case .dahlia: L10n.dahliaAccount
         }
     }

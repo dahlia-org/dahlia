@@ -120,29 +120,27 @@ actor CodexConfigurationManager {
     }
 
     @discardableResult
-    func configureDatabricks(profile: DatabricksCLIClient.Profile) throws -> Bool {
-        let (profileName, workspaceURL) = try validatedDatabricksValues(profile: profile)
-        let baseURL = workspaceURL.appending(path: "ai-gateway/codex/v1").absoluteString
-        let tokenCommand = "databricks auth token --profile \(shellQuote(profileName)) --output json "
-            + "| /usr/bin/plutil -extract access_token raw -o - -"
+    func configureDatabricks(profile: DatabricksConnection, helperURL: URL = AuthHelperBundle.expectedExecutableURL()) throws -> Bool {
+        let workspaceURL = try normalizedDatabricksWorkspaceURL(profile.host)
+        let runtimeProfile = DahliaApplicationSupport.profile()
         let configuration = """
         model_provider = "databricks"
 
         [model_providers.databricks]
         name = "Databricks AI Gateway"
-        base_url = "\(tomlEscape(baseURL))"
+        base_url = "\(tomlEscape(workspaceURL.appending(path: "ai-gateway/codex/v1").absoluteString))"
         wire_api = "responses"
+        stream_max_retries = 0
 
         [model_providers.databricks.auth]
-        command = "sh"
-        args = ["-c", "\(tomlEscape(tokenCommand))"]
-        timeout_ms = 5000
-        refresh_interval_ms = 1800000
+        command = "\(tomlEscape(helperURL.path))"
+        args = ["token", "--provider", "databricks", "--connection-id", "\(profile.id.uuidString)", "--profile", "\(runtimeProfile.rawValue)"]
+        timeout_ms = 370000
+        refresh_interval_ms = 300000
 
         [model_providers.databricks.http_headers]
         Databricks-Ai-Gateway-Request-Tags = "{\\\"source\\\": \\\"dahlia\\\"}"
         """ + "\n"
-
         return try writeIfChanged(Data(configuration.utf8), connectionID: nil)
     }
 
@@ -169,15 +167,11 @@ actor CodexConfigurationManager {
 
         [model_providers.dahlia.auth]
         command = "\(tomlEscape(helperURL.path))"
-        args = ["auth", "token", "--connection-id", "\(connectionID.uuidString)", "--profile", "\(runtimeProfile.rawValue)"]
+        args = ["token", "--provider", "dahlia", "--connection-id", "\(connectionID.uuidString)", "--profile", "\(runtimeProfile.rawValue)"]
         timeout_ms = 10000
         refresh_interval_ms = 300000
         """ + "\n"
         return try writeIfChanged(Data(configuration.utf8), connectionID: connectionID)
-    }
-
-    nonisolated func validateDatabricks(profile: DatabricksCLIClient.Profile) throws {
-        _ = try validatedDatabricksValues(profile: profile)
     }
 
     func configurationData(connectionID: UUID? = nil) throws -> Data? {
@@ -197,15 +191,6 @@ actor CodexConfigurationManager {
         } else if FileManager.default.fileExists(atPath: configURL.path) {
             try FileManager.default.removeItem(at: configURL)
         }
-    }
-
-    private nonisolated func validatedDatabricksValues(
-        profile: DatabricksCLIClient.Profile
-    ) throws -> (profileName: String, workspaceURL: URL) {
-        guard let profileName = profile.name.nilIfBlank else {
-            throw CodexConfigurationError.databricksProfileRequired
-        }
-        return try (profileName, normalizedDatabricksWorkspaceURL(profile.host))
     }
 
     nonisolated func normalizedDatabricksWorkspaceURL(_ value: String?) throws -> URL {
@@ -251,10 +236,6 @@ actor CodexConfigurationManager {
         } catch {
             throw CodexConfigurationError.updateFailed(error.localizedDescription)
         }
-    }
-
-    private nonisolated func shellQuote(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
     }
 
     private nonisolated func tomlEscape(_ value: String) -> String {

@@ -128,7 +128,25 @@
             await #expect(throws: (any Error).self) {
                 _ = try await OAuthLoopbackRedirectServer(port: port, callbackPath: "/")
             }
+            await #expect(throws: DatabricksOAuthError.callbackUnavailable) {
+                _ = try await DatabricksOAuthService.makeCallbackServer()
+            }
             _ = first
+        }
+
+        @Test
+        func loopbackTimeoutAndCancellationFinishTheirWaiters() async throws {
+            let expiring = try await OAuthLoopbackRedirectServer(callbackPath: "/", callbackTimeout: 0.01)
+            do {
+                _ = try await expiring.waitForCallback()
+                Issue.record("Expected the callback deadline")
+            } catch GoogleSignInError.authorizationTimedOut {
+                // Expected timer completion, not a test-side sleep.
+            }
+            let cancelled = try await OAuthLoopbackRedirectServer(callbackPath: "/")
+            let task = Task { try await cancelled.waitForCallback() }
+            task.cancel()
+            await #expect(throws: CancellationError.self) { try await task.value }
         }
 
         @Test

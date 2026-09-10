@@ -1121,29 +1121,15 @@
 "Waiting for browser sign-in…" = "Waiting for browser sign-in…";
 "Cancel Sign-In" = "Cancel Sign-In";
 "Sign Out" = "Sign Out";
-"Databricks CLI Profile" = "Databricks CLI Profile";
-"Databricks CLI Profile Name" = "Databricks CLI Profile Name";
-"Enter the name used to save this sign-in in Databricks CLI." = "Enter the name used to save this sign-in in Databricks CLI.";
-"A Databricks CLI profile named %@ already exists for another workspace or authentication method." = "A Databricks CLI profile named %@ already exists for another workspace or authentication method.";
-"Codex obtains the workspace and credentials from this Databricks CLI profile." = "Codex obtains the workspace and credentials from this Databricks CLI profile.";
 "Refresh Profiles" = "Refresh Profiles";
 "No Databricks workspaces are connected yet." = "No Databricks workspaces are connected yet.";
-"Databricks CLI was not found. Install it to connect a workspace." = "Databricks CLI was not found. Install it to connect a workspace.";
-"Install Databricks CLI" = "Install Databricks CLI";
-"Dahlia uses the official Databricks CLI for browser sign-in and token refresh. The CLI is installed separately and is subject to the Databricks License and Privacy Notice." = "Dahlia uses the official Databricks CLI for browser sign-in and token refresh. The CLI is installed separately and is subject to the Databricks License and Privacy Notice.";
 "Homebrew Command" = "Homebrew Command";
 "Terminal runs this visible command. Dahlia does not bundle or download the CLI." = "Terminal runs this visible command. Dahlia does not bundle or download the CLI.";
 "Install in Terminal" = "Install in Terminal";
 "View Official Installation Guide" = "View Official Installation Guide";
 "View Databricks License" = "View Databricks License";
 "View Databricks Privacy Notice" = "View Databricks Privacy Notice";
-"Databricks CLI Installation" = "Databricks CLI Installation";
 "Dahlia could not control Terminal. The installation command was copied and Terminal was opened. Paste the command and press Return." = "Dahlia could not control Terminal. The installation command was copied and Terminal was opened. Paste the command and press Return.";
-"Dahlia could not open Terminal. Use the official installation guide to install Databricks CLI." = "Dahlia could not open Terminal. Use the official installation guide to install Databricks CLI.";
-"Databricks CLI authentication failed: %@" = "Databricks CLI authentication failed: %@";
-"Databricks CLI authentication failed." = "Databricks CLI authentication failed.";
-"Databricks CLI returned an invalid profiles response." = "Databricks CLI returned an invalid profiles response.";
-"Select a Databricks CLI profile." = "Select a Databricks CLI profile.";
 "Enter a valid HTTPS Databricks workspace root URL." = "Enter a valid HTTPS Databricks workspace root URL.";
 "Databricks Workspace URL" = "Databricks Workspace URL";
 "Enter the HTTPS URL of the workspace used by Codex." = "Enter the HTTPS URL of the workspace used by Codex.";
@@ -1157,7 +1143,6 @@
 "Codex is configured for Databricks" = "Codex is configured for Databricks";
 "The selected AI account is not ready. Open Accounts and Vaults in Settings and finish its configuration." = "The selected AI account is not ready. Open Accounts and Vaults in Settings and finish its configuration.";
 "This chat uses %@. Start a new chat to use the current account." = "This chat uses %@. Start a new chat to use the current account.";
-"Codex uses this Databricks CLI profile. Browser sign-in opens when authentication expires." = "Codex uses this Databricks CLI profile. Browser sign-in opens when authentication expires.";
 "Codex returned no available models. Try again." = "Codex returned no available models. Try again.";
 "Models are loaded from the bundled Codex app-server." = "Models are loaded from the bundled Codex app-server.";
 "The saved model is used when available; otherwise Codex's default model is selected." = "The saved model is used when available; otherwise Codex's default model is selected.";
@@ -1653,7 +1638,6 @@
 "Summaries and Image Captions" = "Summaries and Image Captions";
 "Choose the model provider used for summaries and other AI features." = "Choose the model provider used for summaries and other AI features.";
 "Use your ChatGPT account." = "Use your ChatGPT account.";
-"Use a Databricks CLI profile." = "Use a Databricks CLI profile.";
 "Allow access to the audio sources Dahlia records. You can continue and grant access later." = "Allow access to the audio sources Dahlia records. You can continue and grant access later.";
 "Calendar (Optional)" = "Calendar (Optional)";
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later.";
@@ -1809,3 +1793,15 @@
 
 "Waiting for initial sync" = "Waiting for initial sync";
 "Server meetings will appear after sync. An internet connection and sign-in are required." = "Server meetings will appear after sync. An internet connection and sign-in are required.";
+
+"Connect a Databricks workspace." = "Connect a Databricks workspace.";
+
+"Databricks Connection" = "Databricks Connection";
+
+"Connect and select a Databricks workspace." = "Connect and select a Databricks workspace.";
+
+"Dahlia securely stores this workspace sign-in on this Mac." = "Dahlia securely stores this workspace sign-in on this Mac.";
+
+"Cannot listen on localhost:8020. Close the other sign-in and retry." = "Cannot listen on localhost:8020. Close the other sign-in and retry.";
+
+"Enter your workspace URL and sign in again to replace the old CLI connection." = "Enter your workspace URL and sign in again to replace the old CLI connection.";

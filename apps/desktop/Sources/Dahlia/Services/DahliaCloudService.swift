@@ -570,7 +570,7 @@ actor DahliaCloudService {
         url.path.isEmpty || url.path == "/"
     }
 
-    private static func formEncoded(_ parameters: [String: String]) -> String {
+    static func formEncoded(_ parameters: [String: String]) -> String {
         parameters.sorted { $0.key < $1.key }.map { key, value in
             "\(formEncode(key))=\(formEncode(value))"
         }.joined(separator: "&")

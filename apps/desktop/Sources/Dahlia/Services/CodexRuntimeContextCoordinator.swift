@@ -1,4 +1,5 @@
 import DahliaRuntimeSupport
+import Foundation
 import GRDB
 
 actor CodexRuntimeContextCoordinator {
@@ -7,14 +8,14 @@ actor CodexRuntimeContextCoordinator {
 
     private var repository: MeetingRepository?
     private let configurationManager: CodexConfigurationManager
-    private let databricksClient: DatabricksCLIClient
+    private let databricksClient: DatabricksOAuthService
     private let service: CodexAppServerService
     private let contextStore: CodexRuntimeContextStore
     private var configuredProvider: CodexRuntimeProvider?
 
     init(
         configurationManager: CodexConfigurationManager = CodexConfigurationManager(),
-        databricksClient: DatabricksCLIClient = DatabricksCLIClient(),
+        databricksClient: DatabricksOAuthService = .shared,
         service: CodexAppServerService = .shared,
         contextStore: CodexRuntimeContextStore = .shared
     ) {
@@ -48,7 +49,7 @@ actor CodexRuntimeContextCoordinator {
             guard let record = try await repository?.fetchDahliaAccountConnection(id: connectionID) else {
                 throw CodexConfigurationError.accountNotReady
             }
-            let helperURL = try DahliaMCPBundle.executableURL()
+            let helperURL = try AuthHelperBundle.executableURL()
             _ = try await configurationManager.configureDahlia(
                 connectionID: connectionID,
                 origin: record.origin,
@@ -58,8 +59,8 @@ actor CodexRuntimeContextCoordinator {
         case .chatGPTSubscription:
             _ = try await configurationManager.configureChatGPTSubscription()
         case let .databricks(profileName):
-            guard let profileName = profileName.nilIfBlank,
-                  let profile = try await databricksClient.profiles().first(where: { $0.name == profileName })
+            guard let id = UUID(uuidString: profileName),
+                  let profile = try await databricksClient.connections().first(where: { $0.id == id })
             else { throw CodexConfigurationError.databricksProfileRequired }
             _ = try await configurationManager.configureDatabricks(profile: profile)
         }

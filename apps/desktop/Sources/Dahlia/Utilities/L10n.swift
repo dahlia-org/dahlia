@@ -1865,7 +1865,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var chatGPTProviderDescription: String { String(localized: "Use your ChatGPT account.", bundle: bundle) }
-    static var databricksProviderDescription: String { String(localized: "Use a Databricks CLI profile.", bundle: bundle) }
+    static var databricksProviderDescription: String { String(localized: "Connect a Databricks workspace.", bundle: bundle) }
     static var audioPermissionSetupDescription: String { String(
         localized: "Allow access to the audio sources Dahlia records. You can continue and grant access later.",
         bundle: bundle
@@ -2694,65 +2694,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var codexWaitingForBrowserSignIn: String { String(localized: "Waiting for browser sign-in…", bundle: bundle) }
     static var cancelSignIn: String { String(localized: "Cancel Sign-In", bundle: bundle) }
     static var signOut: String { String(localized: "Sign Out", bundle: bundle) }
-    static var databricksProfile: String { String(localized: "Databricks CLI Profile", bundle: bundle) }
-    static var databricksProfileName: String { String(localized: "Databricks CLI Profile Name", bundle: bundle) }
-    static var databricksProfileNameDescription: String { String(
-        localized: "Enter the name used to save this sign-in in Databricks CLI.",
-        bundle: bundle
-    ) }
-    static func databricksProfileAlreadyExists(_ name: String) -> String { String(
-        localized: "A Databricks CLI profile named \(name) already exists for another workspace or authentication method.",
-        bundle: bundle
-    ) }
-    static var databricksProfileDescription: String { String(
-        localized: "Codex obtains the workspace and credentials from this Databricks CLI profile.",
-        bundle: bundle
-    ) }
-    static var refreshDatabricksProfiles: String { String(localized: "Refresh Profiles", bundle: bundle) }
-    static var noDatabricksProfiles: String { String(
-        localized: "No Databricks workspaces are connected yet.",
-        bundle: bundle
-    ) }
-    static var databricksCLINotInstalled: String { String(
-        localized: "Databricks CLI was not found. Install it to connect a workspace.",
-        bundle: bundle
-    ) }
-    static var installDatabricksCLI: String { String(localized: "Install Databricks CLI", bundle: bundle) }
-    static var databricksCLIInstallOverview: String { String(
-        localized: "Dahlia uses the official Databricks CLI for browser sign-in and token refresh. The CLI is installed separately and is subject to the Databricks License and Privacy Notice.",
-        bundle: bundle
-    ) }
-    static var databricksCLIInstallCommand: String { String(localized: "Homebrew Command", bundle: bundle) }
-    static var databricksCLIInstallCommandDescription: String { String(
-        localized: "Terminal runs this visible command. Dahlia does not bundle or download the CLI.",
-        bundle: bundle
-    ) }
-    static var installInTerminal: String { String(localized: "Install in Terminal", bundle: bundle) }
-    static var viewOfficialInstallGuide: String { String(localized: "View Official Installation Guide", bundle: bundle) }
-    static var viewDatabricksLicense: String { String(localized: "View Databricks License", bundle: bundle) }
-    static var viewDatabricksPrivacyNotice: String { String(localized: "View Databricks Privacy Notice", bundle: bundle) }
-    static var databricksCLIInstallation: String { String(localized: "Databricks CLI Installation", bundle: bundle) }
-    static var databricksCLIInstallCommandCopied: String { String(
-        localized: "Dahlia could not control Terminal. The installation command was copied and Terminal was opened. Paste the command and press Return.",
-        bundle: bundle
-    ) }
-    static var databricksCLIInstallFailed: String { String(
-        localized: "Dahlia could not open Terminal. Use the official installation guide to install Databricks CLI.",
-        bundle: bundle
-    ) }
-    static func databricksCLICommandFailed(_ detail: String) -> String { String(
-        localized: "Databricks CLI authentication failed: \(detail)",
-        bundle: bundle
-    ) }
-    static var databricksCLICommandFailedWithoutDetail: String { String(
-        localized: "Databricks CLI authentication failed.",
-        bundle: bundle
-    ) }
-    static var databricksCLIInvalidProfilesResponse: String { String(
-        localized: "Databricks CLI returned an invalid profiles response.",
-        bundle: bundle
-    ) }
-    static var databricksProfileRequired: String { String(localized: "Select a Databricks CLI profile.", bundle: bundle) }
+    static var databricksProfile: String { String(localized: "Databricks Connection", bundle: bundle) }
+    static var databricksProfileRequired: String { String(localized: "Connect and select a Databricks workspace.", bundle: bundle) }
     static var databricksWorkspaceURLInvalid: String { String(
         localized: "Enter a valid HTTPS Databricks workspace root URL.",
         bundle: bundle
@@ -2788,7 +2731,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var databricksCodexDescription: String { String(
-        localized: "Codex uses this Databricks CLI profile. Browser sign-in opens when authentication expires.",
+        localized: "Dahlia securely stores this workspace sign-in on this Mac.",
         bundle: bundle
     ) }
     static var codexNoModels: String { String(localized: "Codex returned no available models. Try again.", bundle: bundle) }
@@ -3613,4 +3556,15 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var processingSaving: String { String(localized: "processingSaving", bundle: bundle) }
     static var processingCancelled: String { String(localized: "processingCancelled", bundle: bundle) }
     static var transcriptionModel: String { String(localized: "transcriptionModel", bundle: bundle) }
+}
+
+extension L10n {
+    static var databricksCallbackUnavailable: String { String(
+        localized: "Cannot listen on localhost:8020. Close the other sign-in and retry.",
+        bundle: bundle
+    ) }
+    static var databricksReconnectRequired: String { String(
+        localized: "Enter your workspace URL and sign in again to replace the old CLI connection.",
+        bundle: bundle
+    ) }
 }

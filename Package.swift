@@ -10,6 +10,7 @@ let package = Package(
     products: [
         .executable(name: "Dahlia", targets: ["Dahlia"]),
         .executable(name: "dahlia-mcp", targets: ["DahliaMCP"]),
+        .executable(name: "auth-helper", targets: ["AuthHelper"]),
         .executable(name: "dahlia-search-ranking-benchmark", targets: ["DahliaSearchRankingBenchmark"]),
     ],
     dependencies: [
@@ -24,6 +25,7 @@ let package = Package(
         .package(url: "https://github.com/SDWebImage/libwebp-Xcode.git", exact: "1.6.0"),
     ],
     targets: [
+        .executableTarget(name: "AuthHelper", dependencies: ["DahliaRuntimeSupport"], path: "apps/desktop/Sources/AuthHelper"),
         .target(
             name: "DahliaServerAPI",
             dependencies: [
