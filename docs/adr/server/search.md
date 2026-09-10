@@ -16,7 +16,7 @@ PostgreSQL は generated tsvector / GIN、Lakebase は `lakebase_text` / BM25、
 
 ## Hybrid 検索
 
-検索文書テーブルに nullable な `embedding` と `embedding_model` を統合する。独立した `search_embeddings` と `embedding_text` 列、文書の dimensions 列は持たない。既存の `search_text` を入力とし、その hash は既存の `embedding_content_hash` にのみ保存する。会議名・summary・OCR・caption を含む入力が変わると、同じ transaction で vector と model を NULL にする。`app.jobs_search_index` は raw text を持たない lease 付き durable queue。Node worker が owner identity で文書を読み、App service principal により最大16文書ずつ非同期推論する。保存の UPDATE 条件で最新 hash、claim の generation / model / dimensions、owner permission、文書と親の存在を確認する。Meeting / 画像の version は追加しない。モデルとベクトル長が設定に一致する結果だけ検索に使用する。
+検索文書テーブルに nullable な `embedding` と `embedding_model` を統合する。独立した `search_embeddings` と `embedding_text` 列、文書の dimensions 列は持たない。既存の `search_text` を入力とし、その hash は既存の `embedding_content_hash` にのみ保存する。会議名・summary・OCR・caption を含む入力が変わると、同じ transaction で vector と model を NULL にする。`jobs.search_index` は raw text を持たない lease 付き durable queue。Node worker が owner identity で文書を読み、App service principal により最大16文書ずつ非同期推論する。保存の UPDATE 条件で最新 hash、claim の generation / model / dimensions、owner permission、文書と親の存在を確認する。Meeting / 画像の version は追加しない。モデルとベクトル長が設定に一致する結果だけ検索に使用する。
 
 - `DAHLIA_EMBEDDING_MODEL` が空なら無効。dimensions は32〜1024の2の冪、既定1024。DAB は `${var.catalog}.${var.ai_schema}.embedding` を使い、未登録時に `qwen3-embedding-0-6b` を登録する。
 - Lakebase は `lakebase_vector` / ANN、他 PostgreSQL は pgvector / HNSW、SQLite Node は Float32 BLOB の exact cosine。model / dimensions を index と query の条件に含める。

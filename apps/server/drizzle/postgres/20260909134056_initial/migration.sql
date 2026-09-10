@@ -2,6 +2,8 @@ CREATE SCHEMA "app";
 --> statement-breakpoint
 CREATE SCHEMA "crypto";
 --> statement-breakpoint
+CREATE SCHEMA "jobs";
+--> statement-breakpoint
 CREATE SCHEMA "search";
 --> statement-breakpoint
 CREATE TABLE "app"."account_settings" (
@@ -14,7 +16,7 @@ CREATE TABLE "app"."account_settings" (
 );
 --> statement-breakpoint
 ALTER TABLE "app"."account_settings" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
-CREATE TABLE "app"."jobs_image_analysis" (
+CREATE TABLE "jobs"."image_analysis" (
 	"file_id" uuid PRIMARY KEY,
 	"vault_id" uuid NOT NULL,
 	"owner_user_id" uuid NOT NULL,
@@ -88,7 +90,7 @@ CREATE TABLE "search"."documents" (
 );
 --> statement-breakpoint
 ALTER TABLE "search"."documents" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
-CREATE TABLE "app"."jobs_search_index" (
+CREATE TABLE "jobs"."search_index" (
 	"vault_id" uuid,
 	"document_id" uuid,
 	"owner_user_id" uuid NOT NULL,
@@ -118,7 +120,7 @@ CREATE TABLE "app"."server_settings" (
 	CONSTRAINT "server_settings_singleton" CHECK ("id" = 1)
 );
 --> statement-breakpoint
-CREATE TABLE "app"."jobs_storage_delete" (
+CREATE TABLE "jobs"."storage_delete" (
 	"storage_key" text PRIMARY KEY,
 	"attempts" integer DEFAULT 0 NOT NULL,
 	"status" text DEFAULT 'pending' NOT NULL,
@@ -144,7 +146,7 @@ CREATE TABLE "app"."summaries" (
 );
 --> statement-breakpoint
 ALTER TABLE "app"."summaries" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
-CREATE TABLE "app"."jobs_summary" (
+CREATE TABLE "jobs"."summary" (
 	"encrypted_payload" text,
 	"id" uuid PRIMARY KEY,
 	"vault_id" uuid NOT NULL,
@@ -170,7 +172,7 @@ CREATE TABLE "app"."jobs_summary" (
 	CONSTRAINT "summary_job_status_check" CHECK ("status" IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled'))
 );
 --> statement-breakpoint
-ALTER TABLE "app"."jobs_summary" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "jobs"."summary" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."sync_changes" (
 	"sequence" bigserial PRIMARY KEY,
 	"owner_user_id" uuid NOT NULL,
@@ -379,15 +381,15 @@ CREATE TABLE "app"."vault_transfers" (
 );
 --> statement-breakpoint
 ALTER TABLE "app"."vault_transfers" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
-CREATE INDEX "image_analysis_job_claim_idx" ON "app"."jobs_image_analysis" ("status","available_at","lease_expires_at");--> statement-breakpoint
+CREATE INDEX "image_analysis_job_claim_idx" ON "jobs"."image_analysis" ("status","available_at","lease_expires_at");--> statement-breakpoint
 CREATE INDEX "meeting_attachments_vault_meeting_id_idx" ON "app"."meeting_attachments" ("vault_id","meeting_id","id");--> statement-breakpoint
 CREATE INDEX "meeting_events_meeting_time_idx" ON "app"."meeting_events" ("vault_id","meeting_id","occurred_at","id");--> statement-breakpoint
 CREATE INDEX "meeting_events_session_idx" ON "app"."meeting_events" ("vault_id","session_id");--> statement-breakpoint
 CREATE INDEX "search_document_vault_kind_meeting_document_idx" ON "search"."documents" ("vault_id","kind","meeting_id","document_id");--> statement-breakpoint
-CREATE INDEX "search_index_job_claim_idx" ON "app"."jobs_search_index" ("status","available_at","lease_expires_at");--> statement-breakpoint
-CREATE INDEX "storage_delete_job_claim_idx" ON "app"."jobs_storage_delete" ("status","available_at","lease_expires_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "summary_job_active_meeting_idx" ON "app"."jobs_summary" ("meeting_id") WHERE "status" IN ('pending', 'processing');--> statement-breakpoint
-CREATE INDEX "summary_job_owner_created_idx" ON "app"."jobs_summary" ("owner_user_id","created_at");--> statement-breakpoint
+CREATE INDEX "search_index_job_claim_idx" ON "jobs"."search_index" ("status","available_at","lease_expires_at");--> statement-breakpoint
+CREATE INDEX "storage_delete_job_claim_idx" ON "jobs"."storage_delete" ("status","available_at","lease_expires_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "summary_job_active_meeting_idx" ON "jobs"."summary" ("meeting_id") WHERE "status" IN ('pending', 'processing');--> statement-breakpoint
+CREATE INDEX "summary_job_owner_created_idx" ON "jobs"."summary" ("owner_user_id","created_at");--> statement-breakpoint
 CREATE INDEX "sync_change_owner_vault_sequence_idx" ON "app"."sync_changes" ("owner_user_id","vault_id","sequence");--> statement-breakpoint
 CREATE INDEX "sync_change_owner_sequence_idx" ON "app"."sync_changes" ("owner_user_id","sequence");--> statement-breakpoint
 CREATE INDEX "transaction_receipt_owner_created_idx" ON "app"."transaction_receipts" ("owner_user_id","created_at");--> statement-breakpoint
@@ -401,20 +403,20 @@ CREATE UNIQUE INDEX "vault_permission_single_owner_idx" ON "app"."vault_permissi
 CREATE INDEX "vault_permission_principal_vault_idx" ON "app"."vault_permissions" ("principal_type","principal_id","role","vault_id");--> statement-breakpoint
 CREATE INDEX "vault_transfer_owner_sequence_idx" ON "app"."vault_transfers" ("owner_user_id","sequence");--> statement-breakpoint
 ALTER TABLE "app"."account_settings" ADD CONSTRAINT "account_settings_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "app"."jobs_image_analysis" ADD CONSTRAINT "jobs_image_analysis_file_id_files_file_id_fkey" FOREIGN KEY ("file_id") REFERENCES "app"."files"("file_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "app"."jobs_image_analysis" ADD CONSTRAINT "jobs_image_analysis_vault_id_vaults_vault_id_fkey" FOREIGN KEY ("vault_id") REFERENCES "app"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "app"."jobs_image_analysis" ADD CONSTRAINT "jobs_image_analysis_owner_user_id_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "jobs"."image_analysis" ADD CONSTRAINT "jobs_image_analysis_file_id_files_file_id_fkey" FOREIGN KEY ("file_id") REFERENCES "app"."files"("file_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "jobs"."image_analysis" ADD CONSTRAINT "jobs_image_analysis_vault_id_vaults_vault_id_fkey" FOREIGN KEY ("vault_id") REFERENCES "app"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "jobs"."image_analysis" ADD CONSTRAINT "jobs_image_analysis_owner_user_id_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."meeting_attachments" ADD CONSTRAINT "meeting_attachments_fnlH8jMHLYfd_fkey" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "app"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."meeting_attachments" ADD CONSTRAINT "meeting_attachments_sV1ehoid9FNK_fkey" FOREIGN KEY ("vault_id","file_id") REFERENCES "app"."files"("vault_id","file_id");--> statement-breakpoint
 ALTER TABLE "app"."meeting_events" ADD CONSTRAINT "meeting_events_vault_id_vaults_vault_id_fkey" FOREIGN KEY ("vault_id") REFERENCES "app"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."meeting_events" ADD CONSTRAINT "meeting_events_owner_user_id_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "search"."documents" ADD CONSTRAINT "search_document_meeting_fk" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "app"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "app"."jobs_search_index" ADD CONSTRAINT "search_index_job_vault_fk" FOREIGN KEY ("vault_id") REFERENCES "app"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "app"."jobs_search_index" ADD CONSTRAINT "search_index_job_owner_user_fk" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "jobs"."search_index" ADD CONSTRAINT "search_index_job_vault_fk" FOREIGN KEY ("vault_id") REFERENCES "app"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "jobs"."search_index" ADD CONSTRAINT "search_index_job_owner_user_fk" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."summaries" ADD CONSTRAINT "summaries_meeting_id_meetings_meeting_id_fkey" FOREIGN KEY ("meeting_id") REFERENCES "app"."meetings"("meeting_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "app"."jobs_summary" ADD CONSTRAINT "jobs_summary_vault_id_vaults_vault_id_fkey" FOREIGN KEY ("vault_id") REFERENCES "app"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "app"."jobs_summary" ADD CONSTRAINT "jobs_summary_meeting_id_meetings_meeting_id_fkey" FOREIGN KEY ("meeting_id") REFERENCES "app"."meetings"("meeting_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "app"."jobs_summary" ADD CONSTRAINT "jobs_summary_owner_user_id_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "jobs"."summary" ADD CONSTRAINT "jobs_summary_vault_id_vaults_vault_id_fkey" FOREIGN KEY ("vault_id") REFERENCES "app"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "jobs"."summary" ADD CONSTRAINT "jobs_summary_meeting_id_meetings_meeting_id_fkey" FOREIGN KEY ("meeting_id") REFERENCES "app"."meetings"("meeting_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "jobs"."summary" ADD CONSTRAINT "jobs_summary_owner_user_id_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."transaction_receipts" ADD CONSTRAINT "transaction_receipt_owner_user_fk" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."sync_vault_state" ADD CONSTRAINT "sync_vault_state_owner_user_id_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."files" ADD CONSTRAINT "files_vault_id_vaults_vault_id_fkey" FOREIGN KEY ("vault_id") REFERENCES "app"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint

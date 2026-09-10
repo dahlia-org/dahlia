@@ -393,11 +393,12 @@ integration("PostgreSQL application store", () => {
         ('app', 'files'),
         ('app', 'meeting_attachments'),
         ('app', 'meeting_events'),
-        ('search', 'documents')
+        ('search', 'documents'),
+        ('jobs', 'summary')
       )
       order by namespace.nspname, class.relname
     `);
-    expect(protectedTables.rows).toHaveLength(11);
+    expect(protectedTables.rows).toHaveLength(12);
     expect(protectedTables.rows.every(({ rls, force_rls }) => rls && force_rls)).toBe(true);
     const legacyOwnerColumns = await connection!.db.execute(sql`
       select 1 from information_schema.columns

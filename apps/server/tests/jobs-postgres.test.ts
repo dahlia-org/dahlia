@@ -11,7 +11,7 @@ import { MeetingSyncService } from "../src/sync/service";
 import { uuidV7 } from "../src/id";
 const databaseUrl = process.env.TEST_DATABASE_URL;
 describe.runIf(databaseUrl)("PostgreSQL targeted summary delivery", () => {
-  it.each(["duplicate", "lease", "cancel", "permission", "conflict"])("protects durable results across %s delivery", async (scenario) => {
+  it.each(["duplicate", "retry", "lease", "cancel", "permission", "conflict"])("protects durable results across %s delivery", async (scenario) => {
     const connection = connectPostgresUrl(databaseUrl!, 5);
     const store = createPostgresApplicationStore(connection.db, "postgres");
     const jobs = createSummaryJobStore(connection.db, true);
@@ -50,12 +50,21 @@ describe.runIf(databaseUrl)("PostgreSQL targeted summary delivery", () => {
         expect(await processSummaryJob(jobs, [method], sync, new AbortController().signal, reference)).toBe(false);
         expect(generations).toBe(0); return;
       }
+      if (scenario === "retry") {
+        const claimed = (await jobs.claim(reference))!;
+        await jobs.fail(claimed, "temporary", true);
+        expect(await jobs.claim(reference)).toBeNull();
+        await connection.db.transaction(async (tx) => {
+          await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
+          await tx.execute(sql`update jobs.summary set available_at = timestamp '1970-01-01' where id = ${accepted.id}`);
+        });
+      }
       if (scenario === "lease") {
         const claims = await Promise.all([jobs.claim(reference), jobs.claim(reference)]);
         expect(claims.filter(Boolean)).toHaveLength(1);
         await connection.db.transaction(async (tx) => {
           await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
-          await tx.execute(sql`update app.jobs_summary set lease_expires_at = timestamp '1970-01-01' where id = ${accepted.id}`);
+          await tx.execute(sql`update jobs.summary set lease_expires_at = timestamp '1970-01-01' where id = ${accepted.id}`);
         });
         expect(await jobs.due(userId)).toContainEqual(reference);
       }
@@ -66,7 +75,7 @@ describe.runIf(databaseUrl)("PostgreSQL targeted summary delivery", () => {
       if (scenario !== "permission") {
         const status = await service.status(identity, vaultId, meetingId);
         expect(status?.status).toBe(scenario === "conflict" ? "failed" : "succeeded");
-        expect(status?.attempts).toBe(scenario === "lease" ? 2 : 1);
+        expect(status?.attempts).toBe(["lease", "retry"].includes(scenario) ? 2 : 1);
         const versions = await store.sync.withIdentity(identity, (scoped) => scoped.listSummaryVersions(vaultId, meetingId, 100));
         expect(versions).toHaveLength(scenario === "conflict" ? 0 : 1);
       }

@@ -34,10 +34,10 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     }]);
     expect((await client.query("SELECT * FROM app.server_initializations")).rows).toEqual([]);
     const protectedTables = await client.query<{ relname: string; relforcerowsecurity: boolean }>(`SELECT relname, relforcerowsecurity FROM pg_class
-      WHERE relnamespace = 'app'::regnamespace AND relrowsecurity ORDER BY relname`);
+      WHERE relnamespace IN ('app'::regnamespace, 'jobs'::regnamespace) AND relrowsecurity ORDER BY relname`);
     expect(protectedTables.rows.map((row) => row.relname)).toEqual([
-      "account_settings", "files", "jobs_summary", "meeting_attachments", "meeting_events", "meetings", "projects",
-      "recordings", "summaries", "transaction_receipts",
+      "account_settings", "files", "meeting_attachments", "meeting_events", "meetings", "projects",
+      "recordings", "summaries", "summary", "transaction_receipts",
       "transcript_patch_chunks", "transcript_segments", "transcripts", "vault_transfers", "vaults",
     ]);
     expect(protectedTables.rows.every((row) => row.relforcerowsecurity === true)).toBe(true);
@@ -52,6 +52,53 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     expect((await client.query("SELECT id FROM auth.oauth_client_assertion")).rows).toEqual([{ id: digest }]);
     await expect(client.query("INSERT INTO auth.oauth_client_assertion(id, expires_at) VALUES ($1, now())", [digest]))
       .rejects.toMatchObject({ code: "23505" });
+  } finally {
+    await client.query("ROLLBACK");
+    await client.end();
+  }
+});
+
+it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("moves existing job rows and security metadata using the documented development procedure", async () => {
+  const client = new Client({ connectionString: process.env.TEST_MIGRATION_DATABASE_URL });
+  await client.connect();
+  const names = ["summary", "image_analysis", "search_index", "storage_delete"];
+  try {
+    await client.query("BEGIN");
+    // Reconstruct the previous physical layout from the same unchanged column contracts.
+    for (const file of serverMigrationManifest.postgres.files) {
+      let sql = readFileSync(new URL(`../${file}`, import.meta.url), "utf8")
+        .replace('CREATE SCHEMA "jobs";', "");
+      for (const name of names) sql = sql.replaceAll(`"jobs"."${name}"`, `"app"."jobs_${name}"`);
+      await client.query(sql);
+    }
+    const owner = testUserID("move-owner"), vault = testUserID("move-vault"), meeting = testUserID("move-meeting");
+    await client.query('INSERT INTO auth."user"(id, name, email) VALUES ($1, \'Owner\', \'move@example.com\')', [owner]);
+    await client.query("SELECT set_config('app.user_id', $1, true)", [owner]);
+    await client.query("INSERT INTO app.vaults(vault_id, name) VALUES ($1, 'Vault')", [vault]);
+    await client.query("INSERT INTO app.vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id) VALUES ($1, 'user', $2, 'owner', $2)", [vault, owner]);
+    await client.query("INSERT INTO app.meetings(meeting_id, vault_id, name, status, created_at, updated_at) VALUES ($1, $2, 'Meeting', 'READY', now(), now())", [meeting, vault]);
+    await client.query(`INSERT INTO app.jobs_summary(id, vault_id, meeting_id, owner_user_id, method, settings, output_language,
+      created_at, available_at, summary_revision, input_version, request_hash, encrypted_payload, status, attempts, claimed_at, lease_expires_at)
+      VALUES ($1, $2, $3, $4, 'transcript', '{}', 'ja', now(), now(), 0, 'existing-hash', 'existing-request', 'opaque-ciphertext', 'processing', 2, now(), now())`, [testUserID("move-summary"), vault, meeting, owner]);
+    await client.query("INSERT INTO app.files(file_id, vault_id, uri, size, content_type, checksum, name, metadata) VALUES ($1, $2, 'file', 0, 'image/png', '', 'image', '{}')", [testUserID("move-file"), vault]);
+    await client.query("INSERT INTO app.jobs_image_analysis(file_id, vault_id, owner_user_id, model, status, attempts) VALUES ($1, $2, $3, 'model', 'failed', 3)", [testUserID("move-file"), vault, owner]);
+    await client.query("INSERT INTO app.jobs_search_index(vault_id, document_id, owner_user_id, model, dimensions, attempts) VALUES ($1, $2, $3, 'model', 32, 1)", [vault, meeting, owner]);
+    await client.query("INSERT INTO app.jobs_storage_delete(storage_key, attempts) VALUES ('existing-key', 2)");
+    const rows = await Promise.all(names.map((name) => client.query(`SELECT * FROM app.jobs_${name}`)));
+    const relations = (await client.query<{ oid: number }>("SELECT oid FROM pg_class WHERE relnamespace = 'app'::regnamespace AND relname = ANY($1)", [names.map((name) => `jobs_${name}`)])).rows.map(({ oid }) => oid);
+    const metadata = () => client.query(`SELECT c.oid, c.relowner, c.relacl, c.relrowsecurity, c.relforcerowsecurity,
+      (SELECT array_agg(oid ORDER BY oid) FROM pg_constraint WHERE conrelid = c.oid) AS constraints,
+      (SELECT array_agg(indexrelid ORDER BY indexrelid) FROM pg_index WHERE indrelid = c.oid) AS indexes,
+      (SELECT array_agg(oid ORDER BY oid) FROM pg_policy WHERE polrelid = c.oid) AS policies
+      FROM pg_class c WHERE c.oid = ANY($1::oid[]) ORDER BY c.oid`, [relations]);
+    const before = await metadata();
+    const procedure = readFileSync(new URL("../docs/jobs-schema-move.md", import.meta.url), "utf8").split("```sql\n")[1]!.split("```")[0]!;
+    await client.query(procedure.replace("BEGIN;", "").replace("COMMIT;", ""));
+    expect((await metadata()).rows).toEqual(before.rows);
+    for (const [index, name] of names.entries()) {
+      expect((await client.query(`SELECT * FROM jobs.${name}`)).rows).toEqual(rows[index]!.rows);
+      expect((await client.query("SELECT to_regclass($1) AS old", [`app.jobs_${name}`])).rows).toEqual([{ old: null }]);
+    }
   } finally {
     await client.query("ROLLBACK");
     await client.end();

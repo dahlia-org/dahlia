@@ -1,3 +1,7 @@
+import { getTableConfig } from "drizzle-orm/pg-core";
+import { getTableName } from "drizzle-orm";
+import * as postgres from "../src/db/postgres-app-schema";
+import * as sqlite from "../src/db/sqlite-app-schema";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { expect, it } from "vitest";
@@ -57,4 +61,12 @@ it.each(["sqlite", "d1"])("creates canonical tables, defaults, and cascading rel
     db.exec("DELETE FROM vaults WHERE vault_id = 'vault'");
     expect(db.prepare("SELECT * FROM meeting_events").all()).toEqual([]);
   } finally { db.close(); }
+});
+
+it.each([
+  ["summaryJob", "summary"], ["imageAnalysisJob", "image_analysis"],
+  ["searchIndexJob", "search_index"], ["storageDeleteJob", "storage_delete"],
+] as const)("keeps %s physical names dialect-specific", (key, name) => {
+  expect(getTableConfig(postgres[key])).toMatchObject({ schema: "jobs", name });
+  expect(getTableName(sqlite[key])).toBe(`jobs_${name}`);
 });

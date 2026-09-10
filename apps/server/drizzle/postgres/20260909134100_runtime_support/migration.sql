@@ -37,7 +37,7 @@ ALTER TABLE "app"."meeting_events" FORCE ROW LEVEL SECURITY;--> statement-breakp
 ALTER TABLE "app"."meeting_attachments" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "search"."documents" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."summaries" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
-ALTER TABLE "app"."jobs_summary" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "jobs"."summary" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."transaction_receipts" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."files" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."meetings" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
@@ -75,7 +75,7 @@ CREATE POLICY "search_document_select" ON "search"."documents" AS PERMISSIVE FOR
 CREATE POLICY "search_document_write" ON "search"."documents" AS PERMISSIVE FOR ALL TO public USING ("app"."current_identity_owns_vault"("search"."documents"."vault_id")) WITH CHECK ("app"."current_identity_owns_vault"("search"."documents"."vault_id"));--> statement-breakpoint
 CREATE POLICY "summary_select" ON "app"."summaries" AS PERMISSIVE FOR SELECT TO public USING (EXISTS (SELECT 1 FROM "app"."meetings" m WHERE m.meeting_id = "app"."summaries"."meeting_id" AND "app"."current_identity_can_read_vault"(m.vault_id)));--> statement-breakpoint
 CREATE POLICY "summary_write" ON "app"."summaries" AS PERMISSIVE FOR ALL TO public USING (EXISTS (SELECT 1 FROM "app"."meetings" m WHERE m.meeting_id = "app"."summaries"."meeting_id" AND "app"."current_identity_owns_vault"(m.vault_id))) WITH CHECK (EXISTS (SELECT 1 FROM "app"."meetings" m WHERE m.meeting_id = "app"."summaries"."meeting_id" AND "app"."current_identity_owns_vault"(m.vault_id)));--> statement-breakpoint
-CREATE POLICY "summary_job_owner" ON "app"."jobs_summary" AS PERMISSIVE FOR ALL TO public USING ("app"."jobs_summary"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid) WITH CHECK ("app"."jobs_summary"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid);--> statement-breakpoint
+CREATE POLICY "summary_job_owner" ON "jobs"."summary" AS PERMISSIVE FOR ALL TO public USING ("jobs"."summary"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid) WITH CHECK ("jobs"."summary"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid);--> statement-breakpoint
 CREATE POLICY "transaction_receipt_owner" ON "app"."transaction_receipts" AS PERMISSIVE FOR ALL TO public USING ("app"."transaction_receipts"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid) WITH CHECK ("app"."transaction_receipts"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid);--> statement-breakpoint
 CREATE POLICY "file_select" ON "app"."files" AS PERMISSIVE FOR SELECT TO public USING ("app"."current_identity_can_read_vault"("app"."files"."vault_id"));--> statement-breakpoint
 CREATE POLICY "file_write" ON "app"."files" AS PERMISSIVE FOR ALL TO public USING ("app"."current_identity_owns_vault"("app"."files"."vault_id")) WITH CHECK ("app"."current_identity_owns_vault"("app"."files"."vault_id"));--> statement-breakpoint

@@ -124,7 +124,7 @@ describe("PostgreSQL migrations", () => {
 
     expect(sql).toContain('CREATE TABLE "search"."documents"');
     expect(sql).not.toContain('CREATE TABLE "app"."search_embeddings"');
-    expect(sql).toContain('CREATE TABLE "app"."jobs_search_index"');
+    expect(sql).toContain('CREATE TABLE "jobs"."search_index"');
     expect(sql).toContain('"search_text" text DEFAULT \'\' NOT NULL');
     expect(sql).toContain("tsvector GENERATED ALWAYS AS (to_tsvector('simple', search_text)) STORED");
     expect(sql).toContain('"embedding" real[]');

@@ -15,6 +15,10 @@
       "entityType": "schemas"
     },
     {
+      "name": "jobs",
+      "entityType": "schemas"
+    },
+    {
       "name": "search",
       "entityType": "schemas"
     },
@@ -26,9 +30,9 @@
     },
     {
       "isRlsEnabled": false,
-      "name": "jobs_image_analysis",
+      "name": "image_analysis",
       "entityType": "tables",
-      "schema": "app"
+      "schema": "jobs"
     },
     {
       "isRlsEnabled": true,
@@ -50,9 +54,9 @@
     },
     {
       "isRlsEnabled": false,
-      "name": "jobs_search_index",
+      "name": "search_index",
       "entityType": "tables",
-      "schema": "app"
+      "schema": "jobs"
     },
     {
       "isRlsEnabled": false,
@@ -68,9 +72,9 @@
     },
     {
       "isRlsEnabled": false,
-      "name": "jobs_storage_delete",
+      "name": "storage_delete",
       "entityType": "tables",
-      "schema": "app"
+      "schema": "jobs"
     },
     {
       "isRlsEnabled": true,
@@ -80,9 +84,9 @@
     },
     {
       "isRlsEnabled": true,
-      "name": "jobs_summary",
+      "name": "summary",
       "entityType": "tables",
-      "schema": "app"
+      "schema": "jobs"
     },
     {
       "isRlsEnabled": false,
@@ -256,8 +260,8 @@
       "identity": null,
       "name": "file_id",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_image_analysis"
+      "schema": "jobs",
+      "table": "image_analysis"
     },
     {
       "type": "uuid",
@@ -269,8 +273,8 @@
       "identity": null,
       "name": "vault_id",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_image_analysis"
+      "schema": "jobs",
+      "table": "image_analysis"
     },
     {
       "type": "uuid",
@@ -282,8 +286,8 @@
       "identity": null,
       "name": "owner_user_id",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_image_analysis"
+      "schema": "jobs",
+      "table": "image_analysis"
     },
     {
       "type": "text",
@@ -295,8 +299,8 @@
       "identity": null,
       "name": "model",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_image_analysis"
+      "schema": "jobs",
+      "table": "image_analysis"
     },
     {
       "type": "text",
@@ -308,8 +312,8 @@
       "identity": null,
       "name": "status",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_image_analysis"
+      "schema": "jobs",
+      "table": "image_analysis"
     },
     {
       "type": "integer",
@@ -321,8 +325,8 @@
       "identity": null,
       "name": "attempts",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_image_analysis"
+      "schema": "jobs",
+      "table": "image_analysis"
     },
     {
       "type": "timestamp",
@@ -334,8 +338,8 @@
       "identity": null,
       "name": "available_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_image_analysis"
+      "schema": "jobs",
+      "table": "image_analysis"
     },
     {
       "type": "timestamp",
@@ -347,8 +351,8 @@
       "identity": null,
       "name": "claimed_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_image_analysis"
+      "schema": "jobs",
+      "table": "image_analysis"
     },
     {
       "type": "timestamp",
@@ -360,8 +364,8 @@
       "identity": null,
       "name": "lease_expires_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_image_analysis"
+      "schema": "jobs",
+      "table": "image_analysis"
     },
     {
       "type": "text",
@@ -373,8 +377,8 @@
       "identity": null,
       "name": "last_error_code",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_image_analysis"
+      "schema": "jobs",
+      "table": "image_analysis"
     },
     {
       "type": "uuid",
@@ -953,8 +957,8 @@
       "identity": null,
       "name": "vault_id",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "type": "uuid",
@@ -966,8 +970,8 @@
       "identity": null,
       "name": "document_id",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "type": "uuid",
@@ -979,8 +983,8 @@
       "identity": null,
       "name": "owner_user_id",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "type": "text",
@@ -992,8 +996,8 @@
       "identity": null,
       "name": "model",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "type": "integer",
@@ -1005,8 +1009,8 @@
       "identity": null,
       "name": "dimensions",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "type": "integer",
@@ -1018,8 +1022,8 @@
       "identity": null,
       "name": "generation",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "type": "text",
@@ -1031,8 +1035,8 @@
       "identity": null,
       "name": "status",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "type": "integer",
@@ -1044,8 +1048,8 @@
       "identity": null,
       "name": "attempts",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "type": "timestamp",
@@ -1057,8 +1061,8 @@
       "identity": null,
       "name": "available_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "type": "timestamp",
@@ -1070,8 +1074,8 @@
       "identity": null,
       "name": "claimed_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "type": "timestamp",
@@ -1083,8 +1087,8 @@
       "identity": null,
       "name": "lease_expires_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "type": "text",
@@ -1096,8 +1100,8 @@
       "identity": null,
       "name": "last_error_code",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "type": "timestamp",
@@ -1109,8 +1113,8 @@
       "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "type": "text",
@@ -1174,8 +1178,8 @@
       "identity": null,
       "name": "storage_key",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_storage_delete"
+      "schema": "jobs",
+      "table": "storage_delete"
     },
     {
       "type": "integer",
@@ -1187,8 +1191,8 @@
       "identity": null,
       "name": "attempts",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_storage_delete"
+      "schema": "jobs",
+      "table": "storage_delete"
     },
     {
       "type": "text",
@@ -1200,8 +1204,8 @@
       "identity": null,
       "name": "status",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_storage_delete"
+      "schema": "jobs",
+      "table": "storage_delete"
     },
     {
       "type": "timestamp",
@@ -1213,8 +1217,8 @@
       "identity": null,
       "name": "available_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_storage_delete"
+      "schema": "jobs",
+      "table": "storage_delete"
     },
     {
       "type": "timestamp",
@@ -1226,8 +1230,8 @@
       "identity": null,
       "name": "claimed_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_storage_delete"
+      "schema": "jobs",
+      "table": "storage_delete"
     },
     {
       "type": "timestamp",
@@ -1239,8 +1243,8 @@
       "identity": null,
       "name": "lease_expires_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_storage_delete"
+      "schema": "jobs",
+      "table": "storage_delete"
     },
     {
       "type": "text",
@@ -1252,8 +1256,8 @@
       "identity": null,
       "name": "last_error_code",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_storage_delete"
+      "schema": "jobs",
+      "table": "storage_delete"
     },
     {
       "type": "timestamp",
@@ -1265,8 +1269,8 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_storage_delete"
+      "schema": "jobs",
+      "table": "storage_delete"
     },
     {
       "type": "text",
@@ -1395,8 +1399,8 @@
       "identity": null,
       "name": "encrypted_payload",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "uuid",
@@ -1408,8 +1412,8 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "uuid",
@@ -1421,8 +1425,8 @@
       "identity": null,
       "name": "vault_id",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "uuid",
@@ -1434,8 +1438,8 @@
       "identity": null,
       "name": "meeting_id",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "uuid",
@@ -1447,8 +1451,8 @@
       "identity": null,
       "name": "owner_user_id",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "text",
@@ -1460,8 +1464,8 @@
       "identity": null,
       "name": "method",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "jsonb",
@@ -1473,8 +1477,8 @@
       "identity": null,
       "name": "settings",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "jsonb",
@@ -1486,8 +1490,8 @@
       "identity": null,
       "name": "input",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "text",
@@ -1499,8 +1503,8 @@
       "identity": null,
       "name": "stage",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "integer",
@@ -1512,8 +1516,8 @@
       "identity": null,
       "name": "transcript_revision",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "jsonb",
@@ -1525,8 +1529,8 @@
       "identity": null,
       "name": "transcript_result",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "text",
@@ -1538,8 +1542,8 @@
       "identity": null,
       "name": "output_language",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "text",
@@ -1551,8 +1555,8 @@
       "identity": null,
       "name": "status",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "integer",
@@ -1564,8 +1568,8 @@
       "identity": null,
       "name": "attempts",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "timestamp",
@@ -1577,8 +1581,8 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "timestamp",
@@ -1590,8 +1594,8 @@
       "identity": null,
       "name": "available_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "timestamp",
@@ -1603,8 +1607,8 @@
       "identity": null,
       "name": "claimed_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "timestamp",
@@ -1616,8 +1620,8 @@
       "identity": null,
       "name": "lease_expires_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "text",
@@ -1629,8 +1633,8 @@
       "identity": null,
       "name": "last_error_code",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "integer",
@@ -1642,8 +1646,8 @@
       "identity": null,
       "name": "summary_revision",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "text",
@@ -1655,8 +1659,8 @@
       "identity": null,
       "name": "input_version",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "text",
@@ -1668,8 +1672,8 @@
       "identity": null,
       "name": "request_hash",
       "entityType": "columns",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "type": "bigserial",
@@ -3367,8 +3371,8 @@
       "concurrently": false,
       "name": "image_analysis_job_claim_idx",
       "entityType": "indexes",
-      "schema": "app",
-      "table": "jobs_image_analysis"
+      "schema": "jobs",
+      "table": "image_analysis"
     },
     {
       "nameExplicit": true,
@@ -3549,8 +3553,8 @@
       "concurrently": false,
       "name": "search_index_job_claim_idx",
       "entityType": "indexes",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "nameExplicit": true,
@@ -3584,8 +3588,8 @@
       "concurrently": false,
       "name": "storage_delete_job_claim_idx",
       "entityType": "indexes",
-      "schema": "app",
-      "table": "jobs_storage_delete"
+      "schema": "jobs",
+      "table": "storage_delete"
     },
     {
       "nameExplicit": true,
@@ -3605,8 +3609,8 @@
       "concurrently": false,
       "name": "summary_job_active_meeting_idx",
       "entityType": "indexes",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "nameExplicit": true,
@@ -3633,8 +3637,8 @@
       "concurrently": false,
       "name": "summary_job_owner_created_idx",
       "entityType": "indexes",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "nameExplicit": true,
@@ -4025,7 +4029,7 @@
       "table": "account_settings"
     },
     {
-      "nameExplicit": false,
+      "nameExplicit": true,
       "columns": [
         "file_id"
       ],
@@ -4038,11 +4042,11 @@
       "onDelete": "CASCADE",
       "name": "jobs_image_analysis_file_id_files_file_id_fkey",
       "entityType": "fks",
-      "schema": "app",
-      "table": "jobs_image_analysis"
+      "schema": "jobs",
+      "table": "image_analysis"
     },
     {
-      "nameExplicit": false,
+      "nameExplicit": true,
       "columns": [
         "vault_id"
       ],
@@ -4055,11 +4059,11 @@
       "onDelete": "CASCADE",
       "name": "jobs_image_analysis_vault_id_vaults_vault_id_fkey",
       "entityType": "fks",
-      "schema": "app",
-      "table": "jobs_image_analysis"
+      "schema": "jobs",
+      "table": "image_analysis"
     },
     {
-      "nameExplicit": false,
+      "nameExplicit": true,
       "columns": [
         "owner_user_id"
       ],
@@ -4072,8 +4076,8 @@
       "onDelete": "CASCADE",
       "name": "jobs_image_analysis_owner_user_id_user_id_fkey",
       "entityType": "fks",
-      "schema": "app",
-      "table": "jobs_image_analysis"
+      "schema": "jobs",
+      "table": "image_analysis"
     },
     {
       "nameExplicit": false,
@@ -4180,8 +4184,8 @@
       "onDelete": "CASCADE",
       "name": "search_index_job_vault_fk",
       "entityType": "fks",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "nameExplicit": true,
@@ -4197,8 +4201,8 @@
       "onDelete": "CASCADE",
       "name": "search_index_job_owner_user_fk",
       "entityType": "fks",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "nameExplicit": false,
@@ -4218,7 +4222,7 @@
       "table": "summaries"
     },
     {
-      "nameExplicit": false,
+      "nameExplicit": true,
       "columns": [
         "vault_id"
       ],
@@ -4231,11 +4235,11 @@
       "onDelete": "CASCADE",
       "name": "jobs_summary_vault_id_vaults_vault_id_fkey",
       "entityType": "fks",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
-      "nameExplicit": false,
+      "nameExplicit": true,
       "columns": [
         "meeting_id"
       ],
@@ -4248,11 +4252,11 @@
       "onDelete": "CASCADE",
       "name": "jobs_summary_meeting_id_meetings_meeting_id_fkey",
       "entityType": "fks",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
-      "nameExplicit": false,
+      "nameExplicit": true,
       "columns": [
         "owner_user_id"
       ],
@@ -4265,8 +4269,8 @@
       "onDelete": "CASCADE",
       "name": "jobs_summary_owner_user_id_user_id_fkey",
       "entityType": "fks",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "nameExplicit": true,
@@ -4531,8 +4535,8 @@
       "nameExplicit": true,
       "name": "search_index_job_pk",
       "entityType": "pks",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "columns": [
@@ -4596,9 +4600,9 @@
         "file_id"
       ],
       "nameExplicit": false,
-      "name": "jobs_image_analysis_pkey",
-      "schema": "app",
-      "table": "jobs_image_analysis",
+      "name": "image_analysis_pkey",
+      "schema": "jobs",
+      "table": "image_analysis",
       "entityType": "pks"
     },
     {
@@ -4646,9 +4650,9 @@
         "storage_key"
       ],
       "nameExplicit": false,
-      "name": "jobs_storage_delete_pkey",
-      "schema": "app",
-      "table": "jobs_storage_delete",
+      "name": "storage_delete_pkey",
+      "schema": "jobs",
+      "table": "storage_delete",
       "entityType": "pks"
     },
     {
@@ -4666,9 +4670,9 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "jobs_summary_pkey",
-      "schema": "app",
-      "table": "jobs_summary",
+      "name": "summary_pkey",
+      "schema": "jobs",
+      "table": "summary",
       "entityType": "pks"
     },
     {
@@ -4882,8 +4886,8 @@
       "value": "\"status\" IN ('pending', 'processing', 'failed')",
       "name": "image_analysis_job_status_check",
       "entityType": "checks",
-      "schema": "app",
-      "table": "jobs_image_analysis"
+      "schema": "jobs",
+      "table": "image_analysis"
     },
     {
       "value": "\"kind\" IN ('meeting_created', 'meeting_updated', 'meeting_deleted', 'tag_added', 'tag_removed', 'recording_started', 'recording_ended', 'segment_rotated')",
@@ -4917,15 +4921,15 @@
       "value": "\"status\" IN ('pending', 'processing', 'failed')",
       "name": "search_index_job_status_check",
       "entityType": "checks",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "value": "\"dimensions\" BETWEEN 32 AND 1024",
       "name": "search_index_job_dimensions_check",
       "entityType": "checks",
-      "schema": "app",
-      "table": "jobs_search_index"
+      "schema": "jobs",
+      "table": "search_index"
     },
     {
       "value": "\"id\" = 1",
@@ -4938,15 +4942,15 @@
       "value": "\"status\" IN ('pending', 'processing', 'failed')",
       "name": "storage_delete_job_status_check",
       "entityType": "checks",
-      "schema": "app",
-      "table": "jobs_storage_delete"
+      "schema": "jobs",
+      "table": "storage_delete"
     },
     {
       "value": "\"status\" IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled')",
       "name": "summary_job_status_check",
       "entityType": "checks",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "value": "\"entity\" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')",
@@ -5169,12 +5173,12 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"jobs_summary\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
-      "withCheck": "\"app\".\"jobs_summary\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
+      "using": "\"jobs\".\"summary\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "\"jobs\".\"summary\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
       "name": "summary_job_owner",
       "entityType": "policies",
-      "schema": "app",
-      "table": "jobs_summary"
+      "schema": "jobs",
+      "table": "summary"
     },
     {
       "as": "PERMISSIVE",

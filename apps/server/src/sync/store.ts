@@ -345,7 +345,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "app.recordings",
       "search.documents",
       "app.account_settings",
-      "app.jobs_summary",
+      "jobs.summary",
       "app.summaries",
     ];
     const secured = (await client.query<{ count: number }>(`
