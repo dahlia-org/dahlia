@@ -116,7 +116,7 @@ struct SyncTranscriptPatchSnapshot: Sendable {
     let deletions: [UUID]
 }
 
-struct SyncQueuedOperation: Sendable {
+struct SyncQueuedOperation: Equatable, Sendable {
     let id: UUID
     let entity: SyncEntity
     let action: SyncAction

@@ -10,6 +10,7 @@ struct MainSidebarAccountRootMenuView: View {
     let vaults: [VaultRecord]
     let currentVault: VaultRecord?
     let onShowLanguages: (CGFloat?) -> Void
+    let onShowSyncProgress: (CGFloat?) -> Void
     let onDismissSubmenu: () -> Void
     let onShowAccountHelp: (String, CGRect) -> Void
     let onDismissAccountHelp: () -> Void
@@ -38,7 +39,8 @@ struct MainSidebarAccountRootMenuView: View {
             ForEach(connections.enumerated(), id: \.element.id) { index, connection in
                 MainSidebarAccountMenuRow(
                     title: connection.displayName,
-                    subtitle: connection.isCloud ? L10n.dahliaCloud : L10n.dahliaServer,
+                    subtitle: accountController.syncProgress[connection.id]?.summary
+                        ?? (connection.isCloud ? L10n.dahliaCloud : L10n.dahliaServer),
                     syncState: accountController.syncStates[connection.id] ?? .pending,
                     selectionState: connection.id == currentConnectionID,
                     isEnabled: connection.vaultCount > 0,
@@ -100,6 +102,20 @@ struct MainSidebarAccountRootMenuView: View {
                 action: { activate(index: manageVaultsIndex, action: onManageVaults) }
             )
 
+            if !connections.isEmpty {
+                MainSidebarAccountMenuRow(
+                    title: L10n.syncProgress,
+                    image: Image(systemName: "arrow.triangle.2.circlepath"),
+                    showsDisclosure: true,
+                    isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == syncProgressIndex,
+                    onHoverStartAtY: { minY in
+                        hover(index: syncProgressIndex, submenu: .syncProgress, action: { onShowSyncProgress(minY) })
+                    },
+                    onHoverEnd: cancelPendingHover,
+                    action: { activate(index: syncProgressIndex, action: { onShowSyncProgress(nil) }) }
+                )
+            }
+
             Divider()
                 .padding(.vertical, 4)
 
@@ -139,7 +155,8 @@ struct MainSidebarAccountRootMenuView: View {
 
     private var vaultOffset: Int { connections.count + 1 }
     private var manageVaultsIndex: Int { vaultOffset + vaults.count }
-    private var menuOffset: Int { manageVaultsIndex + 1 }
+    private var syncProgressIndex: Int { manageVaultsIndex + 1 }
+    private var menuOffset: Int { syncProgressIndex + (connections.isEmpty ? 0 : 1) }
     private var currentConnection: DahliaAccountConnection? {
         connections.first { $0.id == currentConnectionID }
     }

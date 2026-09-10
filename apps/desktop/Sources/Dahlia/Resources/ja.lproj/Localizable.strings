@@ -1800,3 +1800,20 @@
 "Databricks sign-in returned an invalid response. Please sign in again." = "Databricks のサインインで無効なレスポンスが返されました。再度サインインしてください。";
 
 "Sign out before connecting to another Databricks workspace." = "別の Databricks ワークスペースに接続する前にサインアウトしてください。";
+
+// Sync progress
+"sync.progress" = "同期の進捗";
+"sync.preparing" = "準備中";
+"sync.text" = "本文同期中";
+"sync.transferringAttachments" = "添付転送中";
+"sync.fetching" = "変更を取得中";
+"sync.retrying" = "再試行待ち";
+"sync.attention" = "要対応";
+"sync.meetingContents" = "会議本文の残り";
+"sync.files" = "ファイルの残り";
+"sync.attachments" = "添付関連付けの残り";
+"sync.otherChanges" = "その他の変更の残り";
+"sync.remainingFormat" = "残り %ld 件";
+"sync.unavailable" = "同期の進捗を取得できません";
+"sync.syncing" = "同期中";
+"sync.synced" = "同期済み";

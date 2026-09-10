@@ -155,6 +155,22 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var meetingSyncAuthorization: String { String(localized: "meetingSync.authorization", bundle: bundle) }
     static var meetingSyncValidation: String { String(localized: "meetingSync.validation", bundle: bundle) }
 
+    static var syncSyncing: String { String(localized: "sync.syncing", bundle: bundle) }
+    static var syncSynced: String { String(localized: "sync.synced", bundle: bundle) }
+    static var syncProgress: String { String(localized: "sync.progress", bundle: bundle) }
+    static var syncPreparing: String { String(localized: "sync.preparing", bundle: bundle) }
+    static var syncText: String { String(localized: "sync.text", bundle: bundle) }
+    static var syncTransferringAttachments: String { String(localized: "sync.transferringAttachments", bundle: bundle) }
+    static var syncFetching: String { String(localized: "sync.fetching", bundle: bundle) }
+    static var syncRetrying: String { String(localized: "sync.retrying", bundle: bundle) }
+    static var syncAttention: String { String(localized: "sync.attention", bundle: bundle) }
+    static var syncMeetingContents: String { String(localized: "sync.meetingContents", bundle: bundle) }
+    static var syncFiles: String { String(localized: "sync.files", bundle: bundle) }
+    static var syncAttachments: String { String(localized: "sync.attachments", bundle: bundle) }
+    static var syncOtherChanges: String { String(localized: "sync.otherChanges", bundle: bundle) }
+    static var syncRemainingFormat: String { String(localized: "sync.remainingFormat", bundle: bundle) }
+    static var syncProgressUnavailable: String { String(localized: "sync.unavailable", bundle: bundle) }
+
     // MARK: - Common
 
     static var delete: String { String(localized: "Delete", bundle: bundle) }

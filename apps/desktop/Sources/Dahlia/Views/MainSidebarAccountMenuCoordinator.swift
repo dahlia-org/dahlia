@@ -111,6 +111,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 vaults: vaults,
                 currentVault: currentVault,
                 onShowLanguages: { [weak self] in self?.presentLanguageMenu(anchorMinY: $0) },
+                onShowSyncProgress: { [weak self] in self?.presentSyncProgress(anchorMinY: $0) },
                 onDismissSubmenu: { [weak self] in self?.closeSubmenu() },
                 onShowAccountHelp: { [weak self] label, frame in self?.scheduleAccountHelp(label: label, rowFrame: frame) },
                 onDismissAccountHelp: { [weak self] in self?.dismissAccountHelp() },
@@ -126,6 +127,13 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         attach(panel, to: button.window)
         mainPanel = panel
         startMonitoring()
+    }
+
+    private func presentSyncProgress(anchorMinY: CGFloat? = nil) {
+        let content = MainSidebarAccountMenuPanel(width: 320) {
+            SyncProgressView(connections: connections)
+        }
+        presentSubmenu(content, menu: .syncProgress, anchorMinY: anchorMinY)
     }
 
     private func presentLanguageMenu(anchorMinY: CGFloat? = nil) {
@@ -153,7 +161,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         positionSubmenu(panel, relativeTo: mainPanel, anchorMinY: anchorMinY)
         attach(panel, to: button?.window)
         submenuPanel = panel
-        announce(L10n.language)
+        announce(menu == .syncProgress ? L10n.syncProgress : L10n.language)
     }
 
     private func makePanel(content: some View) -> NSPanel {
@@ -370,6 +378,10 @@ extension MainSidebarAccountMenuCoordinator {
             return event
         }
 
+        if navigation.activeMenu == .syncProgress, ![53, 123].contains(event.keyCode) {
+            scrollSyncProgress(event)
+            return nil
+        }
         switch event.keyCode {
         case 53:
             dismissMenu()
@@ -393,6 +405,31 @@ extension MainSidebarAccountMenuCoordinator {
         return nil
     }
 
+    /// These non-key panels must route scrolling explicitly instead of returning keys to the parent window.
+    private func scrollSyncProgress(_ event: NSEvent) {
+        func findScrollView(in view: NSView) -> NSScrollView? {
+            (view as? NSScrollView) ?? view.subviews.lazy.compactMap { findScrollView(in: $0) }.first
+        }
+        guard let content = submenuPanel?.contentView, let scroll = findScrollView(in: content) else { return }
+        let clip = scroll.contentView
+        var bounds = clip.bounds
+        let direction: CGFloat = clip.isFlipped ? 1 : -1
+        let page = max(scroll.verticalLineScroll, bounds.height - scroll.verticalPageScroll)
+        switch event.keyCode {
+        case 125: bounds.origin.y += direction * scroll.verticalLineScroll
+        case 126: bounds.origin.y -= direction * scroll.verticalLineScroll
+        case 121: bounds.origin.y += direction * page
+        case 116: bounds.origin.y -= direction * page
+        case 115: bounds.origin.y = clip.isFlipped ? clip.documentRect.minY : clip.documentRect.maxY
+        case 119: bounds.origin.y = clip.isFlipped ? clip.documentRect.maxY : clip.documentRect.minY
+        case 49:
+            bounds.origin.y += direction * page * (event.modifierFlags.contains(.shift) ? -1 : 1)
+        default: return
+        }
+        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+        scroll.reflectScrolledClipView(clip)
+    }
+
     func handleTypeAhead(_ event: NSEvent) {
         guard navigation.activeMenu != .root,
               let input = event.charactersIgnoringModifiers,
@@ -414,7 +451,7 @@ extension MainSidebarAccountMenuCoordinator {
         let titles: [String]
         let isEnabled: (Int) -> Bool
         switch navigation.activeMenu {
-        case .root:
+        case .root, .syncProgress:
             return false
         case .languages:
             let languages = AppLanguage.allCases
@@ -456,6 +493,8 @@ extension MainSidebarAccountMenuCoordinator {
                 count: menuOffset + 3,
                 isEnabled: isRootIndexEnabled
             )
+        case .syncProgress:
+            return
         case .languages:
             let languages = AppLanguage.allCases
             let currentLanguage = AppSettings.shared.appLanguage
@@ -471,14 +510,15 @@ extension MainSidebarAccountMenuCoordinator {
 
     func openSelectedSubmenu() {
         guard navigation.activeMenu == .root, let selection = navigation.rootSelection else { return }
-        guard selection == menuOffset else { return }
-        presentLanguageMenu()
+        if !connections.isEmpty, selection == syncProgressIndex { presentSyncProgress() }
+        if selection == menuOffset { presentLanguageMenu() }
     }
 
     func activateSelection() {
         switch navigation.activeMenu {
         case .root: activateRootSelection()
         case .languages: activateLanguageSelection()
+        case .syncProgress: break
         }
     }
 
@@ -501,6 +541,10 @@ extension MainSidebarAccountMenuCoordinator {
         }
         if selection == manageVaultsIndex {
             manageVaults()
+            return
+        }
+        if !connections.isEmpty, selection == syncProgressIndex {
+            presentSyncProgress()
             return
         }
         switch selection - menuOffset {
@@ -526,8 +570,11 @@ extension MainSidebarAccountMenuCoordinator {
         case .root:
             let titles = connections.map(\.displayName) + [L10n.localAccount]
                 + vaults.map(\.name)
-                + [L10n.manageVaults, L10n.language, L10n.settings, hasCurrentConnection ? L10n.signOut : L10n.dahliaSignIn]
+                + [L10n.manageVaults] + (connections.isEmpty ? [] : [L10n.syncProgress])
+                + [L10n.language, L10n.settings, hasCurrentConnection ? L10n.signOut : L10n.dahliaSignIn]
             title = navigation.rootSelection.flatMap { titles.indices.contains($0) ? titles[$0] : nil }
+        case .syncProgress:
+            title = L10n.syncProgress
         case .languages:
             title = navigation.submenuSelection.flatMap {
                 AppLanguage.allCases.indices.contains($0) ? AppLanguage.allCases[$0].displayName : nil
@@ -555,7 +602,8 @@ extension MainSidebarAccountMenuCoordinator {
 
     var vaultOffset: Int { connections.count + 1 }
     var manageVaultsIndex: Int { vaultOffset + vaults.count }
-    var menuOffset: Int { manageVaultsIndex + 1 }
+    var syncProgressIndex: Int { manageVaultsIndex + 1 }
+    var menuOffset: Int { syncProgressIndex + (connections.isEmpty ? 0 : 1) }
 
     private func isRootIndexEnabled(_ index: Int) -> Bool {
         if connections.indices.contains(index) { return connections[index].vaultCount > 0 }

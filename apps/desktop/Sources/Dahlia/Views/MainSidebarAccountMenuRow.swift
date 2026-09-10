@@ -36,14 +36,23 @@ struct MainSidebarAccountMenuRow: View {
                         .frame(width: 18)
                 }
 
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(title)
-                        .lineLimit(1)
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                if syncState != nil {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).lineLimit(1)
+                        if let subtitle {
+                            Text(subtitle).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(title)
                             .lineLimit(1)
+                        if let subtitle {
+                            Text(subtitle)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                 }
 
@@ -63,7 +72,7 @@ struct MainSidebarAccountMenuRow: View {
                 }
             }
             .padding(.horizontal, 8)
-            .frame(height: 30)
+            .frame(height: syncState != nil && subtitle != nil ? 44 : 30)
             .contentShape(.rect(corners: .concentric(
                 minimum: .fixed(DahliaDesign.Highlight.compactCornerRadius)
             )))

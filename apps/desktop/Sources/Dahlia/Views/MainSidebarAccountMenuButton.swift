@@ -68,9 +68,18 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
             ? L10n.localAccount
             : currentConnection?.displayName ?? L10n.dahliaNotSignedIn
         let vaultTitle = currentVault?.name ?? L10n.noVaultSelected
+        let progress = currentConnectionID.flatMap { accountController.syncProgress[$0] }
+        let syncTitle: String? = if isLocalAccount {
+            nil
+        } else if accountController.syncProgressUnavailable {
+            L10n.syncProgressUnavailable
+        } else {
+            progress?.summary
+        }
         button.attributedTitle = Self.footerTitle(
             accountName: accountTitle,
-            vaultName: vaultTitle
+            vaultName: vaultTitle,
+            syncSummary: progress?.state == .synced ? nil : syncTitle
         )
         let font = NSFont.preferredFont(forTextStyle: .body)
         if !isLocalAccount, let currentConnectionID {
@@ -82,7 +91,8 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
             button.image = NSImage(systemSymbolName: isLocalAccount ? "person.2" : "icloud.slash", accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular))
         }
-        button.setAccessibilityLabel("\(L10n.account), \(accountTitle); \(L10n.currentVault), \(vaultTitle)")
+        button.toolTip = syncTitle
+        button.setAccessibilityLabel("\(L10n.account), \(accountTitle); \(L10n.currentVault), \(vaultTitle); \(syncTitle ?? "")")
     }
 
     private var accountSelection: MainSidebarAccountSelection {
@@ -93,14 +103,14 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
         )
     }
 
-    static func footerTitle(accountName: String, vaultName: String) -> NSAttributedString {
+    static func footerTitle(accountName: String, vaultName: String, syncSummary: String? = nil) -> NSAttributedString {
         let result = NSMutableAttributedString()
         result.append(NSAttributedString(
             string: accountName,
             attributes: [.font: NSFont.preferredFont(forTextStyle: .body), .foregroundColor: NSColor.labelColor]
         ))
         result.append(NSAttributedString(string: "\n"))
-        result.append(vaultLine(title: vaultName))
+        result.append(vaultLine(title: syncSummary.map { "\($0) · \(vaultName)" } ?? vaultName))
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.firstLineHeadIndent = 6
         paragraphStyle.headIndent = 6

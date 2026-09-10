@@ -144,13 +144,16 @@ enum SyncInitialSnapshotBuilder {
             restoring: restoring,
             dbQueue: dbQueue
         )
-        try await enqueueFiles(vaultId: vaultId, connectionId: connectionId, markerId: markerId, restoring: restoring, dbQueue: dbQueue)
         try await enqueueMeetings(
             vaultId: vaultId,
             connectionId: connectionId,
             markerId: markerId,
             restoring: restoring,
             dbQueue: dbQueue
+        )
+        try await enqueueFiles(vaultId: vaultId, connectionId: connectionId, markerId: markerId, restoring: restoring, dbQueue: dbQueue)
+        try await enqueueScreenshots(
+            vaultId: vaultId, connectionId: connectionId, markerId: markerId, restoring: restoring, dbQueue: dbQueue
         )
 
         return try await dbQueue.write { db in
@@ -264,14 +267,6 @@ enum SyncInitialSnapshotBuilder {
                 restoring: restoring,
                 dbQueue: dbQueue
             )
-            try await enqueueScreenshots(
-                meetingId: meeting.id,
-                vaultId: vaultId,
-                connectionId: connectionId,
-                markerId: markerId,
-                restoring: restoring,
-                dbQueue: dbQueue
-            )
         }
     }
 
@@ -304,7 +299,6 @@ enum SyncInitialSnapshotBuilder {
     }
 
     private static func enqueueScreenshots(
-        meetingId: UUID,
         vaultId: UUID,
         connectionId: UUID,
         markerId: UUID,
@@ -313,20 +307,30 @@ enum SyncInitialSnapshotBuilder {
     ) async throws {
         var lastScreenshotId: UUID?
         while true {
+            try Task.checkCancellation()
             let cursor = lastScreenshotId
             let screenshot = try await dbQueue.write { db -> MeetingAttachmentRecord? in
                 guard try canContinue(markerId: markerId, vaultId: vaultId, in: db) else { return nil }
+                // Walk the attachment ID index instead of sorting every meeting's candidate for each row.
                 let screenshot = if let cursor {
                     try MeetingAttachmentRecord.fetchOne(
                         db,
-                        sql: "SELECT * FROM meeting_attachments WHERE meetingId = ? AND id > ? ORDER BY id LIMIT 1",
-                        arguments: [meetingId, cursor]
+                        sql: """
+                        SELECT a.* FROM meeting_attachments a
+                        WHERE EXISTS (SELECT 1 FROM meetings m WHERE m.id = a.meetingId AND m.vaultId = ?)
+                          AND a.id > ? ORDER BY a.id LIMIT 1
+                        """,
+                        arguments: [vaultId, cursor]
                     )
                 } else {
                     try MeetingAttachmentRecord.fetchOne(
                         db,
-                        sql: "SELECT * FROM meeting_attachments WHERE meetingId = ? ORDER BY id LIMIT 1",
-                        arguments: [meetingId]
+                        sql: """
+                        SELECT a.* FROM meeting_attachments a
+                        WHERE EXISTS (SELECT 1 FROM meetings m WHERE m.id = a.meetingId AND m.vaultId = ?)
+                        ORDER BY a.id LIMIT 1
+                        """,
+                        arguments: [vaultId]
                     )
                 }
                 guard let screenshot else { return nil }

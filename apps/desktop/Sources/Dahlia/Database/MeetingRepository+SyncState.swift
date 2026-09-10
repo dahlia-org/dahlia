@@ -120,7 +120,7 @@ extension MeetingRepository {
 
 }
 
-private extension MeetingSyncState {
+extension MeetingSyncState {
     var accountPriority: Int {
         switch self {
         case .local: 0

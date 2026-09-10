@@ -36,6 +36,14 @@ worker は録音中も push / pull できるが、transcript patch は確定済�
 録音による初期同期・復旧・本文置換の待機は対象 Vault 内だけで判定する。移動の反映では移動元と移動先を確認する。別の Local / Server Vault の録音には依存せず、録音待ちの Vault があっても他の Vault の初期 snapshot 構築を続ける。
 初期 snapshot の原本取得が失敗した場合はその Vault のローカルデータを保持して失敗を報告し、他の Vault の snapshot 構築・送信・受信は続ける。明示的な競合解決では呼び出し元へ取得失敗を返す。
 
+初期 snapshot の送信順序は Vault / Project、全会議の metadata / summary / transcript、file、添付関連付けの順とする。全画像のアップロードを待たずに会議本文を利用できる。構築済みのキューは並べ替えない。
+
+初回・継続同期の file staging は共通の SyncWorker が最大4件並行で処理する。先読みは同じ Vault の先頭8 transaction、最大8 file operation までとし、原本の読み込みも転送枠の取得後に行う。同じ file の後続操作、未確定の Vault 作成・reset・削除、再送確認待ち・blocked transaction を越えて staging しない。commit / receipt 適用は従来の Vault 内順序を維持する。先読みの失敗は対象 transaction の送信時に既存の retry / block 経路へ渡し、手前の commit は妨げない。
+
+snapshot 復旧の pending / recovering はローカル送信キューの確定を待つため、既存の file staging を止めない。移管保留・更新必須・権限喪失など、送信できない状態とは区別する。
+
+初回送信は事前の resolve を省き、Server の冪等な commit を使う。再送は元の transaction を resolve してから必要な staging を行う。staging 完了はメモリ内だけに保持し、5分を超えた結果は再アップロードする。再起動後は従来の resolve / staging で再開する。キュー破棄、接続・権限・移管状態の変更、worker 停止で未完了の先読みをキャンセルし、古い結果を commit しない。
+
 ## 会議イベントと録音セッションの表示
 
 2026-09-07: Server の調査用履歴は `meeting_events` に保持する。会議の作成・メタデータ変更・削除は Server の確定 transaction 内で記録し、変更した項目名だけを残す。Server Account の Desktop はタグ付与・解除、成功した録音開始、終了、音源ごとの物理セグメント切り替えを既存の永続 queue から送る。Local Account、タグ名、変更前後の本文、音声、ファイルパスは対象外。切り替えはファイル確定成功とは区別し、初回ファイル作成では発生させない。
@@ -68,6 +76,8 @@ Local / Server の両アカウントで UI の読み書きは既存 `MeetingRepo
 同期済み revision の観測で開いている会議の projection を更新する。文字起こしは閲覧中の bounded window を再読込し、
 過去を読んでいる位置を末尾へ飛ばさない。会議タイトル横のアイコンとホバーヘルプで端末への保存と Server 同期完了、保留・復旧・競合を区別する。
 アカウントメニューとフッターのアイコンは接続先に属する保管庫の同期状態を集約し、未完了・復旧・エラーがあれば同期済みより優先して表示する。右上のウィンドウヘッダーには同期状態を表示しない。
+
+アカウントメニューとフッターは同期中の残件数を併記し、「同期の進捗」から Vault 別の準備中・本文同期中・添付転送中・変更取得中・再試行待ち・要対応・同期済みを確認できる。残件は未確定の operation ID ではなく対象 entity ID を重複排除し、meeting / summary / transcript は一つの会議本文として数える。file と添付関連付け、その他の変更は別に集計する。アップロードだけでは減らず、receipt 適用後のキューから再計算するため、再起動後も復元できる。準備中は不定進捗とし、百分率・完了予測時刻は表示しない。DB の変更通知を集約し、本文・画像を読み込まず MainActor 外で最大毎秒1回集計する。
 
 画像一覧は metadata だけを保持する。`ScreenshotContentProvider` が 移行待ちの旧 BLOB、共通ファイル、認証済み Server read を解決する。
 delta / snapshot は画像ダウンロードを待たず metadata を適用する。Server Account の画像は未送信分と取得済み分を
