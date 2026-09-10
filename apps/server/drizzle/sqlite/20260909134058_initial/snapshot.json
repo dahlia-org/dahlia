@@ -87,7 +87,7 @@
       "entityType": "tables"
     },
     {
-      "name": "meeting_files",
+      "name": "meeting_attachments",
       "entityType": "tables"
     },
     {
@@ -2244,7 +2244,7 @@
       "generated": null,
       "name": "id",
       "entityType": "columns",
-      "table": "meeting_files"
+      "table": "meeting_attachments"
     },
     {
       "type": "text",
@@ -2254,7 +2254,7 @@
       "generated": null,
       "name": "vault_id",
       "entityType": "columns",
-      "table": "meeting_files"
+      "table": "meeting_attachments"
     },
     {
       "type": "text",
@@ -2264,7 +2264,7 @@
       "generated": null,
       "name": "meeting_id",
       "entityType": "columns",
-      "table": "meeting_files"
+      "table": "meeting_attachments"
     },
     {
       "type": "text",
@@ -2274,7 +2274,7 @@
       "generated": null,
       "name": "file_id",
       "entityType": "columns",
-      "table": "meeting_files"
+      "table": "meeting_attachments"
     },
     {
       "type": "integer",
@@ -2284,7 +2284,7 @@
       "generated": null,
       "name": "captured_at",
       "entityType": "columns",
-      "table": "meeting_files"
+      "table": "meeting_attachments"
     },
     {
       "type": "text",
@@ -2294,7 +2294,7 @@
       "generated": null,
       "name": "session_id",
       "entityType": "columns",
-      "table": "meeting_files"
+      "table": "meeting_attachments"
     },
     {
       "type": "integer",
@@ -2304,7 +2304,7 @@
       "generated": null,
       "name": "created_at",
       "entityType": "columns",
-      "table": "meeting_files"
+      "table": "meeting_attachments"
     },
     {
       "type": "integer",
@@ -2314,7 +2314,7 @@
       "generated": null,
       "name": "revision",
       "entityType": "columns",
-      "table": "meeting_files"
+      "table": "meeting_attachments"
     },
     {
       "type": "text",
@@ -4534,9 +4534,9 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_meeting_files_vault_id_meeting_id_meetings_vault_id_meeting_id_fk",
+      "name": "fk_meeting_attachments_vault_id_meeting_id_meetings_vault_id_meeting_id_fk",
       "entityType": "fks",
-      "table": "meeting_files"
+      "table": "meeting_attachments"
     },
     {
       "columns": [
@@ -4551,9 +4551,9 @@
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": false,
-      "name": "fk_meeting_files_vault_id_file_id_files_vault_id_file_id_fk",
+      "name": "fk_meeting_attachments_vault_id_file_id_files_vault_id_file_id_fk",
       "entityType": "fks",
-      "table": "meeting_files"
+      "table": "meeting_attachments"
     },
     {
       "columns": [
@@ -5153,8 +5153,8 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "meeting_files_pk",
-      "table": "meeting_files",
+      "name": "meeting_attachments_pk",
+      "table": "meeting_attachments",
       "entityType": "pks"
     },
     {
@@ -5735,9 +5735,9 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "meeting_files_vault_meeting_id_idx",
+      "name": "meeting_attachments_vault_meeting_id_idx",
       "entityType": "indexes",
-      "table": "meeting_files"
+      "table": "meeting_attachments"
     },
     {
       "columns": [
@@ -6083,9 +6083,9 @@
         "file_id"
       ],
       "nameExplicit": true,
-      "name": "meeting_files_meeting_file_unique",
+      "name": "meeting_attachments_meeting_attachment_unique",
       "entityType": "uniques",
-      "table": "meeting_files"
+      "table": "meeting_attachments"
     },
     {
       "columns": [
@@ -6284,7 +6284,7 @@
       "table": "jobs_summary"
     },
     {
-      "value": "\"entity\" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_file', 'recording')",
+      "value": "\"entity\" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')",
       "name": "sync_change_entity_check",
       "entityType": "checks",
       "table": "sync_changes"
@@ -6369,7 +6369,7 @@
       "entityType": "views"
     },
     {
-      "definition": "\n  SELECT m.id AS screenshot_id, f.file_id, m.vault_id, m.meeting_id,\n    coalesce(m.captured_at, m.created_at) AS captured_at, f.content_type,\n    'files/' || f.file_id || '/original' AS storage_key,\n    f.size AS content_length, substr(f.checksum, 9) AS content_hash, f.active,\n    json_extract(f.metadata, '$.ocr_text') AS ocr_text,\n    json_extract(f.metadata, '$.caption') AS caption,\n    m.revision\n  FROM meeting_files m JOIN files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id\n  WHERE json_extract(f.metadata, '$.source') = 'screenshot'\n",
+      "definition": "\n  SELECT m.id AS screenshot_id, f.file_id, m.vault_id, m.meeting_id,\n    coalesce(m.captured_at, m.created_at) AS captured_at, f.content_type,\n    'files/' || f.file_id || '/original' AS storage_key,\n    f.size AS content_length, substr(f.checksum, 9) AS content_hash, f.active,\n    json_extract(f.metadata, '$.ocr_text') AS ocr_text,\n    json_extract(f.metadata, '$.caption') AS caption,\n    m.revision\n  FROM meeting_attachments m JOIN files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id\n  WHERE json_extract(f.metadata, '$.source') = 'screenshot'\n",
       "isExisting": false,
       "error": null,
       "name": "meeting_images",

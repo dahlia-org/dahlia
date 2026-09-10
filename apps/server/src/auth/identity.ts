@@ -1,3 +1,4 @@
+import { originalPublicRequest } from "../public-http";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 
 import { gatewayResource, mcpResource, type AppConfig } from "../config";
@@ -27,7 +28,7 @@ export class IdentityProjectionError extends Error {
   }
 }
 
-export type IdentityUserProjector = (identity: Identity) => Promise<boolean>;
+export type IdentityUserProjector = (identity: Identity) => Promise<Identity | null>;
 
 export class IdentityService {
   private readonly verifyAccessToken?: ReturnType<typeof createAccessTokenVerifier>;
@@ -67,7 +68,7 @@ export class IdentityService {
     if (!this.verifyAccessToken) throw new AuthenticationError("Authentication is unavailable");
     let claims: Awaited<ReturnType<NonNullable<typeof this.verifyAccessToken>>>;
     try {
-      claims = await this.verifyAccessToken(request, {
+      claims = await this.verifyAccessToken(originalPublicRequest(request), {
         requiredScopes: [requiredScope],
         verifyOptions: {
           audience: gatewayResource(this.config),
@@ -107,7 +108,7 @@ export class IdentityService {
 
   async fromMcpResource(request: Request, requiredScope: ApiScope): Promise<Identity> {
     if (this.config.authProvider !== "accounts") return this.fromHeader(request);
-    const authInfo = await this.verifyMcpAccessToken(request, new URL(request.url).pathname);
+    const authInfo = await this.verifyMcpAccessToken(request, new URL(originalPublicRequest(request).url).pathname);
     if (!hasApiScope(authInfo.scopes, requiredScope)) {
       throw new AuthenticationError("Insufficient scope", true);
     }
@@ -185,8 +186,10 @@ export class IdentityService {
   }
 
   private async project(identity: Identity): Promise<Identity> {
-    if (this.projectUser && !await this.projectUser(identity)) throw new IdentityProjectionError();
-    return identity;
+    if (!this.projectUser) return identity;
+    const projected = await this.projectUser(identity);
+    if (!projected) throw new IdentityProjectionError();
+    return projected;
   }
 }
 

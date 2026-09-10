@@ -652,7 +652,7 @@ private extension SearchIndexer {
                     sql: """
                     INSERT INTO file_text_bodies(ocrText, caption, fileId)
                     VALUES (?, ?, (SELECT fileId
-                    FROM meeting_files
+                    FROM meeting_attachments
                     WHERE id = ?))
                     ON CONFLICT(fileId) DO UPDATE SET ocrText = excluded.ocrText, caption = excluded.caption
                     """,
@@ -803,7 +803,7 @@ private extension SearchIndexer {
             for job in jobs {
                 if let expectedConnectionId {
                     let connectionId = try UUID.fetchOne(db, sql: """
-                    SELECT v.accountConnectionId FROM meeting_files f
+                    SELECT v.accountConnectionId FROM meeting_attachments f
                     JOIN meetings m ON m.id = f.meetingId JOIN vaults v ON v.id = m.vaultId
                     WHERE f.id = ?
                     """, arguments: [job.targetID])

@@ -886,7 +886,7 @@ import os
                 try (
                     db.tableExists("recording_sessions"),
                     String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('transcript_segments')"),
-                    String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('meeting_files')")
+                    String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('meeting_attachments')")
                 )
             }
 

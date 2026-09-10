@@ -1,0 +1,2048 @@
+{
+  "shapes": {
+    "vault": {
+      "vaultId": "id:vault",
+      "meetingId": "id:meeting",
+      "projectId": "id:project",
+      "fileId": "id:file",
+      "screenshotId": "id:attachment",
+      "transcriptId": "id:transcript",
+      "transactionId": "id:transaction",
+      "operationId": "id:operation",
+      "ownerUserId": "id:user",
+      "createdByUserId": "id:user",
+      "grantedByUserId": "id:user",
+      "parentProjectId": "id:project",
+      "rootProjectId": "id:project",
+      "typeOwnerProjectId": "id:project",
+      "id": "id:vault"
+    },
+    "project": {
+      "vaultId": "id:vault",
+      "meetingId": "id:meeting",
+      "projectId": "id:project",
+      "fileId": "id:file",
+      "screenshotId": "id:attachment",
+      "transcriptId": "id:transcript",
+      "transactionId": "id:transaction",
+      "operationId": "id:operation",
+      "ownerUserId": "id:user",
+      "createdByUserId": "id:user",
+      "grantedByUserId": "id:user",
+      "parentProjectId": "id:project",
+      "rootProjectId": "id:project",
+      "typeOwnerProjectId": "id:project",
+      "id": "id:project"
+    },
+    "meeting": {
+      "vaultId": "id:vault",
+      "meetingId": "id:meeting",
+      "projectId": "id:project",
+      "fileId": "id:file",
+      "screenshotId": "id:attachment",
+      "transcriptId": "id:transcript",
+      "transactionId": "id:transaction",
+      "operationId": "id:operation",
+      "ownerUserId": "id:user",
+      "createdByUserId": "id:user",
+      "grantedByUserId": "id:user",
+      "parentProjectId": "id:project",
+      "rootProjectId": "id:project",
+      "typeOwnerProjectId": "id:project",
+      "id": "id:meeting",
+      "summaryDocument": "document",
+      "summary_document": "document"
+    },
+    "file": {
+      "vaultId": "id:vault",
+      "meetingId": "id:meeting",
+      "projectId": "id:project",
+      "fileId": "id:file",
+      "screenshotId": "id:attachment",
+      "transcriptId": "id:transcript",
+      "transactionId": "id:transaction",
+      "operationId": "id:operation",
+      "ownerUserId": "id:user",
+      "createdByUserId": "id:user",
+      "grantedByUserId": "id:user",
+      "parentProjectId": "id:project",
+      "rootProjectId": "id:project",
+      "typeOwnerProjectId": "id:project",
+      "id": "id:file",
+      "contentURL": "url",
+      "variants": "urls",
+      "contentUrl": "url"
+    },
+    "attachment": {
+      "vaultId": "id:vault",
+      "meetingId": "id:meeting",
+      "projectId": "id:project",
+      "fileId": "id:file",
+      "screenshotId": "id:attachment",
+      "transcriptId": "id:transcript",
+      "transactionId": "id:transaction",
+      "operationId": "id:operation",
+      "ownerUserId": "id:user",
+      "createdByUserId": "id:user",
+      "grantedByUserId": "id:user",
+      "parentProjectId": "id:project",
+      "rootProjectId": "id:project",
+      "typeOwnerProjectId": "id:project",
+      "id": "id:attachment",
+      "sessionId": "id:recording",
+      "file": "file"
+    },
+    "summary": {
+      "vaultId": "id:vault",
+      "meetingId": "id:meeting",
+      "projectId": "id:project",
+      "fileId": "id:file",
+      "screenshotId": "id:attachment",
+      "transcriptId": "id:transcript",
+      "transactionId": "id:transaction",
+      "operationId": "id:operation",
+      "ownerUserId": "id:user",
+      "createdByUserId": "id:user",
+      "grantedByUserId": "id:user",
+      "parentProjectId": "id:project",
+      "rootProjectId": "id:project",
+      "typeOwnerProjectId": "id:project",
+      "id": "id:summary",
+      "document": "document"
+    },
+    "transcript": {
+      "vaultId": "id:vault",
+      "meetingId": "id:meeting",
+      "projectId": "id:project",
+      "fileId": "id:file",
+      "screenshotId": "id:attachment",
+      "transcriptId": "id:transcript",
+      "transactionId": "id:transaction",
+      "operationId": "id:operation",
+      "ownerUserId": "id:user",
+      "createdByUserId": "id:user",
+      "grantedByUserId": "id:user",
+      "parentProjectId": "id:project",
+      "rootProjectId": "id:project",
+      "typeOwnerProjectId": "id:project",
+      "id": "id:transcript",
+      "metadata": "transcriptMetadata"
+    },
+    "transcriptMetadata": {
+      "runs": "array:transcriptRun"
+    },
+    "transcriptRun": {
+      "recordingSessionId": "id:recording"
+    },
+    "segment": {
+      "id": "id:segment",
+      "segmentId": "id:segment"
+    },
+    "recording": {
+      "vaultId": "id:vault",
+      "meetingId": "id:meeting",
+      "projectId": "id:project",
+      "fileId": "id:file",
+      "screenshotId": "id:attachment",
+      "transcriptId": "id:transcript",
+      "transactionId": "id:transaction",
+      "operationId": "id:operation",
+      "ownerUserId": "id:user",
+      "createdByUserId": "id:user",
+      "grantedByUserId": "id:user",
+      "parentProjectId": "id:project",
+      "rootProjectId": "id:project",
+      "typeOwnerProjectId": "id:project",
+      "sessionId": "id:recording",
+      "audio": "audio",
+      "contentURL": "url"
+    },
+    "audio": {
+      "mic": "audioFile",
+      "system": "audioFile"
+    },
+    "audioFile": {
+      "fileId": "id:file",
+      "contentURL": "url"
+    },
+    "event": {
+      "vaultId": "id:vault",
+      "meetingId": "id:meeting",
+      "projectId": "id:project",
+      "fileId": "id:file",
+      "screenshotId": "id:attachment",
+      "transcriptId": "id:transcript",
+      "transactionId": "id:transaction",
+      "operationId": "id:operation",
+      "ownerUserId": "id:user",
+      "createdByUserId": "id:user",
+      "grantedByUserId": "id:user",
+      "parentProjectId": "id:project",
+      "rootProjectId": "id:project",
+      "typeOwnerProjectId": "id:project",
+      "id": "id:event",
+      "sessionId": "id:recording"
+    },
+    "summaryJob": {
+      "vaultId": "id:vault",
+      "meetingId": "id:meeting",
+      "projectId": "id:project",
+      "fileId": "id:file",
+      "screenshotId": "id:attachment",
+      "transcriptId": "id:transcript",
+      "transactionId": "id:transaction",
+      "operationId": "id:operation",
+      "ownerUserId": "id:user",
+      "createdByUserId": "id:user",
+      "grantedByUserId": "id:user",
+      "parentProjectId": "id:project",
+      "rootProjectId": "id:project",
+      "typeOwnerProjectId": "id:project",
+      "id": "id:summaryJob",
+      "input": "summaryInput",
+      "transcriptResult": "transcriptResult"
+    },
+    "transcriptResult": {
+      "transcriptId": "id:transcript"
+    },
+    "summaryInput": {
+      "recordings": "array:recordingInput"
+    },
+    "recordingInput": {
+      "micFileId": "id:file",
+      "systemFileId": "id:file"
+    },
+    "summaryJobResponse": {
+      "job": "summaryJob"
+    },
+    "chunk": {
+      "segments": "array:segment",
+      "deletions": "array:id:segment"
+    },
+    "transcriptPatch": {
+      "patchId": "id:patch",
+      "transcript": "transcript",
+      "vaultId": "id:vault",
+      "meetingId": "id:meeting",
+      "projectId": "id:project",
+      "fileId": "id:file",
+      "screenshotId": "id:attachment",
+      "transcriptId": "id:transcript",
+      "transactionId": "id:transaction",
+      "operationId": "id:operation",
+      "ownerUserId": "id:user",
+      "createdByUserId": "id:user",
+      "grantedByUserId": "id:user",
+      "parentProjectId": "id:project",
+      "rootProjectId": "id:project",
+      "typeOwnerProjectId": "id:project"
+    },
+    "transaction": {
+      "id": "id:transaction",
+      "vaultId": "id:vault",
+      "operations": "array:operation",
+      "records": "array:canonical",
+      "conflicts": "array:canonical",
+      "operationId": "id:operation"
+    },
+    "resolve": {
+      "id": "id:transaction",
+      "vaultId": "id:vault"
+    },
+    "changes": {
+      "changes": "array:canonical",
+      "items": "array:canonical",
+      "records": "array:canonical"
+    },
+    "snapshot": {
+      "items": "array:canonical",
+      "records": "array:canonical",
+      "nextCursor": "cursor:snapshot"
+    },
+    "relocations": {
+      "vaults": "array:vault",
+      "items": "array:canonical"
+    },
+    "transfer": {
+      "id": "id:transaction",
+      "sourceVaultId": "id:vault",
+      "destinationVaultId": "id:vault"
+    },
+    "audience": {
+      "source": "audienceVault",
+      "destination": "audienceVault",
+      "sourceVaultId": "id:vault",
+      "destinationVaultId": "id:vault",
+      "added": "array:user",
+      "removed": "array:user"
+    },
+    "audienceVault": {
+      "vaultId": "id:vault",
+      "principals": "array:permission",
+      "permissions": "array:permission",
+      "users": "array:user"
+    },
+    "summaryContent": {
+      "entityId": "id:meeting",
+      "record": "summary"
+    },
+    "transcriptContent": {
+      "entityId": "id:meeting",
+      "transcript": "transcript",
+      "items": "array:segment",
+      "records": "array:segment",
+      "nextCursor": "cursor:segment"
+    },
+    "user": {
+      "id": "id:user",
+      "userId": "id:user"
+    },
+    "organization": {
+      "id": "id:organization",
+      "organizationId": "id:organization",
+      "members": "array:organizationMember",
+      "teams": "array:team",
+      "invitations": "array:invitation"
+    },
+    "team": {
+      "id": "id:team",
+      "organizationId": "id:organization"
+    },
+    "organizationMember": {
+      "id": "id:organizationMember",
+      "organizationId": "id:organization",
+      "userId": "id:user",
+      "user": "user"
+    },
+    "teamMember": {
+      "id": "id:teamMember",
+      "teamId": "id:team",
+      "userId": "id:user",
+      "user": "user"
+    },
+    "invitation": {
+      "id": "id:invitation",
+      "organizationId": "id:organization",
+      "inviterId": "id:user",
+      "teamId": "teamList"
+    },
+    "session": {
+      "id": "id:session",
+      "userId": "id:user",
+      "activeOrganizationId": "id:organization",
+      "activeTeamId": "id:team",
+      "impersonatedBy": "id:user"
+    },
+    "oauthSession": {
+      "sessionId": "id:session"
+    },
+    "sessionResponse": {
+      "user": "user",
+      "session": "session",
+      "workspace": "workspace"
+    },
+    "workspace": {
+      "id": "personalWorkspace"
+    },
+    "authRequest": {
+      "userId": "id:user",
+      "organizationId": "id:organization",
+      "teamId": "id:team",
+      "memberId": "id:organizationMember",
+      "memberIdOrEmail": "memberOrEmail",
+      "invitationId": "id:invitation",
+      "sessionId": "id:session",
+      "data": "authRequest"
+    },
+    "authMemberships": {
+      "member": "organizationMember",
+      "teams": "array:team"
+    },
+    "authMemberResponse": {
+      "member": "organizationMember",
+      "user": "user"
+    },
+    "authInviteResponse": {
+      "invitation": "invitation",
+      "member": "organizationMember"
+    },
+    "searchRequest": {
+      "vaultId": "id:vault",
+      "projectId": "id:project"
+    },
+    "search": {
+      "vaultId": "id:vault",
+      "meetings": "array:meeting",
+      "projects": "array:project",
+      "screenshots": "array:attachment"
+    },
+    "textSearch": {
+      "items": "array:textSearchHit",
+      "nextCursor": "cursor:textSearch"
+    },
+    "fileUpload": {
+      "file": "file"
+    },
+    "vaults": {
+      "items": "array:vault"
+    },
+    "projects": {
+      "items": "array:project"
+    },
+    "meetings": {
+      "items": "array:meeting",
+      "nextCursor": "cursor:meeting"
+    },
+    "files": {
+      "items": "array:file",
+      "nextCursor": "cursor:file"
+    },
+    "attachments": {
+      "items": "array:attachment",
+      "nextCursor": "cursor:attachment"
+    },
+    "summaries": {
+      "items": "array:summary"
+    },
+    "transcripts": {
+      "items": "array:transcript"
+    },
+    "recordings": {
+      "items": "array:recording"
+    },
+    "permissions": {
+      "items": "array:permission"
+    },
+    "organizations": {
+      "items": "array:organization"
+    },
+    "users": {
+      "items": "array:user"
+    },
+    "orgMembers": {
+      "items": "array:organizationMember"
+    },
+    "orgMemberPage": {
+      "members": "array:organizationMember"
+    },
+    "mcpMeeting": {
+      "vault_id": "id:vault",
+      "meeting_id": "id:meeting",
+      "project_id": "id:project",
+      "parent_project_id": "id:project",
+      "root_project_id": "id:project",
+      "type_owner_project_id": "id:project",
+      "contact_id": "id:contact",
+      "topic_id": "id:topic",
+      "insight_id": "id:insight",
+      "transcript_id": "id:transcript",
+      "screenshot_id": "id:attachment",
+      "file_id": "id:file",
+      "id": "id:meeting"
+    },
+    "mcpProject": {
+      "vault_id": "id:vault",
+      "meeting_id": "id:meeting",
+      "project_id": "id:project",
+      "parent_project_id": "id:project",
+      "root_project_id": "id:project",
+      "type_owner_project_id": "id:project",
+      "contact_id": "id:contact",
+      "topic_id": "id:topic",
+      "insight_id": "id:insight",
+      "transcript_id": "id:transcript",
+      "screenshot_id": "id:attachment",
+      "file_id": "id:file",
+      "id": "id:project"
+    },
+    "mcpContact": {
+      "vault_id": "id:vault",
+      "meeting_id": "id:meeting",
+      "project_id": "id:project",
+      "parent_project_id": "id:project",
+      "root_project_id": "id:project",
+      "type_owner_project_id": "id:project",
+      "contact_id": "id:contact",
+      "topic_id": "id:topic",
+      "insight_id": "id:insight",
+      "transcript_id": "id:transcript",
+      "screenshot_id": "id:attachment",
+      "file_id": "id:file",
+      "id": "id:contact"
+    },
+    "mcpTopic": {
+      "vault_id": "id:vault",
+      "meeting_id": "id:meeting",
+      "project_id": "id:project",
+      "parent_project_id": "id:project",
+      "root_project_id": "id:project",
+      "type_owner_project_id": "id:project",
+      "contact_id": "id:contact",
+      "topic_id": "id:topic",
+      "insight_id": "id:insight",
+      "transcript_id": "id:transcript",
+      "screenshot_id": "id:attachment",
+      "file_id": "id:file",
+      "id": "id:topic",
+      "references": "array:mcpReference"
+    },
+    "mcpInsight": {
+      "vault_id": "id:vault",
+      "meeting_id": "id:meeting",
+      "project_id": "id:project",
+      "parent_project_id": "id:project",
+      "root_project_id": "id:project",
+      "type_owner_project_id": "id:project",
+      "contact_id": "id:contact",
+      "topic_id": "id:topic",
+      "insight_id": "id:insight",
+      "transcript_id": "id:transcript",
+      "screenshot_id": "id:attachment",
+      "file_id": "id:file",
+      "id": "id:insight",
+      "references": "array:mcpReference"
+    },
+    "mcpProjectReference": {
+      "vault_id": "id:vault",
+      "meeting_id": "id:meeting",
+      "project_id": "id:project",
+      "parent_project_id": "id:project",
+      "root_project_id": "id:project",
+      "type_owner_project_id": "id:project",
+      "contact_id": "id:contact",
+      "topic_id": "id:topic",
+      "insight_id": "id:insight",
+      "transcript_id": "id:transcript",
+      "screenshot_id": "id:attachment",
+      "file_id": "id:file",
+      "id": "id:projectReference",
+      "resource_id": "resourceID"
+    },
+    "mcpScreenshot": {
+      "vault_id": "id:vault",
+      "meeting_id": "id:meeting",
+      "project_id": "id:project",
+      "parent_project_id": "id:project",
+      "root_project_id": "id:project",
+      "type_owner_project_id": "id:project",
+      "contact_id": "id:contact",
+      "topic_id": "id:topic",
+      "insight_id": "id:insight",
+      "transcript_id": "id:transcript",
+      "screenshot_id": "id:attachment",
+      "file_id": "id:file",
+      "id": "id:attachment"
+    },
+    "mcpSegment": {
+      "vault_id": "id:vault",
+      "meeting_id": "id:meeting",
+      "project_id": "id:project",
+      "parent_project_id": "id:project",
+      "root_project_id": "id:project",
+      "type_owner_project_id": "id:project",
+      "contact_id": "id:contact",
+      "topic_id": "id:topic",
+      "insight_id": "id:insight",
+      "transcript_id": "id:transcript",
+      "screenshot_id": "id:attachment",
+      "file_id": "id:file",
+      "id": "id:segment"
+    },
+    "mcpTranscript": {
+      "vault_id": "id:vault",
+      "meeting_id": "id:meeting",
+      "project_id": "id:project",
+      "parent_project_id": "id:project",
+      "root_project_id": "id:project",
+      "type_owner_project_id": "id:project",
+      "contact_id": "id:contact",
+      "topic_id": "id:topic",
+      "insight_id": "id:insight",
+      "transcript_id": "id:transcript",
+      "screenshot_id": "id:attachment",
+      "file_id": "id:file",
+      "id": "id:transcript",
+      "metadata": "mcpTranscriptMetadata"
+    },
+    "mcpReference": {
+      "resource_id": "resourceID",
+      "vault_id": "id:vault",
+      "meeting_id": "id:meeting",
+      "project_id": "id:project",
+      "parent_project_id": "id:project",
+      "root_project_id": "id:project",
+      "type_owner_project_id": "id:project",
+      "contact_id": "id:contact",
+      "topic_id": "id:topic",
+      "insight_id": "id:insight",
+      "transcript_id": "id:transcript",
+      "screenshot_id": "id:attachment",
+      "file_id": "id:file"
+    },
+    "mcpOrganization": {
+      "parent_organization_id": "id:organization",
+      "members": "array:mcpContact",
+      "children": "array:mcpOrganization",
+      "id": "id:organization"
+    },
+    "mcpManifest": {
+      "entity_id": "textEntityID"
+    },
+    "mcpTextContent": {
+      "summary": "mcpManifest",
+      "transcript": "mcpManifest",
+      "file": "mcpManifest"
+    },
+    "mcpResult": {
+      "vault_id": "id:vault",
+      "meeting_id": "id:meeting",
+      "project_id": "id:project",
+      "parent_project_id": "id:project",
+      "root_project_id": "id:project",
+      "type_owner_project_id": "id:project",
+      "contact_id": "id:contact",
+      "topic_id": "id:topic",
+      "insight_id": "id:insight",
+      "transcript_id": "id:transcript",
+      "screenshot_id": "id:attachment",
+      "file_id": "id:file",
+      "vault": "mcpVault",
+      "meeting": "mcpMeeting",
+      "project": "mcpProject",
+      "organization": "mcpOrganization",
+      "contact": "mcpContact",
+      "topic": "mcpTopic",
+      "insight": "mcpInsight",
+      "meetings": "array:mcpMeeting",
+      "projects": "array:mcpProject",
+      "organizations": "array:mcpOrganization",
+      "contacts": "array:mcpContact",
+      "topics": "array:mcpTopic",
+      "insights": "array:mcpInsight",
+      "screenshots": "array:mcpScreenshot",
+      "segments": "array:mcpSegment",
+      "resources": "array:mcpProjectReference",
+      "references": "array:mcpReference",
+      "transcript": "mcpTranscript",
+      "summary_document": "document",
+      "resource_id": "resourceID",
+      "source_id": "relationshipSource",
+      "target_id": "relationshipTarget",
+      "text_content": "mcpTextContent",
+      "server": "mcpServerSearch",
+      "members": "array:mcpContact",
+      "recent_meetings": "array:mcpMeeting",
+      "project_resources": "array:mcpProjectReference",
+      "affected_project_ids": "array:id:project",
+      "effective_type_changed_project_ids": "array:id:project",
+      "changed_meeting_ids": "array:id:meeting",
+      "provisional_contact_id": "id:contact",
+      "identified_contact_id": "id:contact",
+      "organization_id": "id:organization",
+      "parent_organization_id": "id:organization",
+      "root_organization_id": "id:organization",
+      "nodes": "array:mcpOrganization",
+      "memberships": "array:mcpOrganizationMembership"
+    },
+    "mcpVault": {
+      "id": "id:vault"
+    },
+    "mcpServerSearch": {
+      "items": "array:textSearchHit"
+    },
+    "mcpInput": {
+      "vault_id": "id:vault",
+      "meeting_id": "id:meeting",
+      "project_id": "id:project",
+      "parent_project_id": "id:project",
+      "root_project_id": "id:project",
+      "type_owner_project_id": "id:project",
+      "contact_id": "id:contact",
+      "topic_id": "id:topic",
+      "insight_id": "id:insight",
+      "transcript_id": "id:transcript",
+      "screenshot_id": "id:attachment",
+      "file_id": "id:file",
+      "references": "array:mcpReference",
+      "resource_id": "resourceID",
+      "document": "document",
+      "summary_document": "document",
+      "screenshot_ids": "array:id:attachment",
+      "expected_project_id": "id:project",
+      "provisional_contact_id": "id:contact",
+      "identified_contact_id": "id:contact",
+      "organization_id": "id:organization",
+      "parent_organization_id": "id:organization",
+      "root_organization_id": "id:organization"
+    },
+    "error": {
+      "conflicts": "array:canonical",
+      "operationId": "id:operation"
+    },
+    "textScreenshotSearch": {
+      "items": "array:attachment",
+      "nextCursor": "cursor:textSearch"
+    },
+    "authInviteRequest": {
+      "userId": "id:user",
+      "organizationId": "id:organization",
+      "teamId": "teamChoice",
+      "memberId": "id:organizationMember",
+      "memberIdOrEmail": "memberOrEmail",
+      "invitationId": "id:invitation",
+      "sessionId": "id:session",
+      "data": "authRequest"
+    },
+    "authUsers": {
+      "users": "array:user"
+    },
+    "authSessions": {
+      "sessions": "array:session"
+    },
+    "authAccount": {
+      "userId": "id:user"
+    },
+    "oauthSessions": {
+      "items": "array:oauthSession"
+    },
+    "organizationMembers": {
+      "items": "array:organizationMember"
+    },
+    "teamMembers": {
+      "items": "array:teamMember"
+    },
+    "organizationPage": {
+      "items": "array:organization"
+    },
+    "teamMemberPage": {
+      "items": "array:teamMember"
+    },
+    "teamPage": {
+      "items": "array:team"
+    },
+    "textSearchRequest": {
+      "cursor": "cursor:textSearch"
+    },
+    "mcpTranscriptMetadata": {
+      "runs": "array:mcpTranscriptRun"
+    },
+    "mcpTranscriptRun": {
+      "recording_session_id": "id:recording"
+    },
+    "mcpOrganizationMembership": {
+      "organization_id": "id:organization"
+    }
+  },
+  "routes": [
+    {
+      "path": "/api/v1/admin/members",
+      "methods": [
+        "POST"
+      ],
+      "response": "user"
+    },
+    {
+      "path": "/api/v1/session",
+      "response": "sessionResponse",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/sessions",
+      "response": "oauthSessions",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/admin/users",
+      "response": "users",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/admin/organizations",
+      "response": "organizations",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/admin/members",
+      "response": "users",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/meetings/:meeting/summary/job/:summaryJob/:action",
+      "response": "summaryJobResponse",
+      "request": "summaryJob",
+      "limit": 12582912,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/meetings/:meeting/summary/job",
+      "response": "summaryJobResponse",
+      "query": {
+        "id": "id:summaryJob"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/meetings/:meeting/summary/latest",
+      "response": "summaryContent",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/meetings/:meeting/summary/:version",
+      "response": "summary",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/meetings/:meeting/summary",
+      "response": "summaryJobResponse",
+      "request": "summaryJob",
+      "limit": 12582912,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/meetings/:meeting/summary",
+      "response": "summaries",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/meetings/:meeting/transcripts/:patch/chunks/:index",
+      "request": "chunk",
+      "limit": 12582912,
+      "methods": [
+        "PUT"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/meetings/:meeting/transcript/:version",
+      "response": "transcriptContent",
+      "query": {
+        "cursor": "cursor:segment"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/meetings/:meeting/transcript",
+      "response": "transcripts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/meetings/:meeting/files",
+      "response": "attachments",
+      "query": {
+        "cursor": "cursor:attachment"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/meetings/:meeting",
+      "response": "meeting",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/transfer-audience",
+      "response": "audience",
+      "query": {
+        "destinationVaultId": "id:vault"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/transfer",
+      "response": "transfer",
+      "request": "transfer",
+      "limit": 12582912,
+      "headers": {
+        "idempotency-key": "id:transaction"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/relocations",
+      "response": "relocations",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/transactions/resolve",
+      "response": "transaction",
+      "request": "transaction",
+      "limit": 12582912,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/transactions",
+      "response": "transaction",
+      "request": "transaction",
+      "limit": 12582912,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/changes",
+      "response": "changes",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/snapshot",
+      "response": "snapshot",
+      "query": {
+        "cursor": "cursor:snapshot"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/search",
+      "response": "search",
+      "request": "searchRequest",
+      "limit": 16384,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/search",
+      "response": "textSearch",
+      "query": {
+        "cursor": "cursor:textSearch"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/recordings/:number/audio/:source",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/recordings",
+      "response": "recording",
+      "query": {
+        "sessionId": "id:recording"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/recordings",
+      "response": "recordings",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/files",
+      "response": "file",
+      "query": {
+        "id": "id:file",
+        "vaultId": "id:vault"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/files/:file/metadata",
+      "response": "file",
+      "methods": [
+        "GET",
+        "HEAD",
+        "PATCH"
+      ]
+    },
+    {
+      "path": "/api/v1/files/:file/variants/:variant",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/files/:file",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "response": "file"
+    },
+    {
+      "path": "/api/v1/vaults/:vault/files",
+      "response": "files",
+      "query": {
+        "cursor": "cursor:file"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults",
+      "response": "vaults",
+      "query": {
+        "userId": "id:user",
+        "organizationId": "id:organization"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault",
+      "response": "vault",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/projects/:project",
+      "response": "project",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting",
+      "response": "meeting",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/projects",
+      "response": "projects",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/projects/:project",
+      "response": "project",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/meetings",
+      "response": "meetings",
+      "query": {
+        "projectId": "id:project",
+        "cursor": "cursor:meeting"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/permissions",
+      "response": "permissions",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/permissions/organizations/:organization",
+      "methods": [
+        "PUT",
+        "DELETE"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/permissions/teams/:team",
+      "methods": [
+        "PUT",
+        "DELETE"
+      ]
+    },
+    {
+      "path": "/api/v1/organizations",
+      "response": "organizationPage",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/organizations/:organization/teams/:team/members/:user",
+      "methods": [
+        "PUT",
+        "DELETE"
+      ]
+    },
+    {
+      "path": "/api/v1/organizations/:organization/teams/:team/members",
+      "response": "teamMemberPage",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/organizations/:organization/teams/:team",
+      "response": "team",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ]
+    },
+    {
+      "path": "/api/v1/organizations/:organization/teams",
+      "response": "team",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/organizations/:organization/teams",
+      "response": "teamPage",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/organizations/:organization/members",
+      "response": "orgMembers",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/organizations/:organization",
+      "response": "organization",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/mcp/resources/vaults/:vault/meetings/:meeting/screenshots/:attachment/content",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/list",
+      "response": "array:organization",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/get-full-organization",
+      "response": "organization",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/create",
+      "response": "organization",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/update",
+      "response": "organization",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/delete",
+      "response": "organization",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/set-active",
+      "response": "organization",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/list-teams",
+      "response": "array:team",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/create-team",
+      "response": "team",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/update-team",
+      "response": "team",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/remove-team",
+      "response": "team",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/add-team-member",
+      "response": "teamMember",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/remove-team-member",
+      "response": "teamMember",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/list-team-members",
+      "response": "array:teamMember",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/list-members",
+      "response": "orgMemberPage",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation",
+        "filterValue": "filter:organizationMember"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/get-active-member",
+      "response": "organizationMember",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/add-member",
+      "response": "organizationMember",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/update-member-role",
+      "response": "organizationMember",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/remove-member",
+      "response": "authMemberResponse",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/list-invitations",
+      "response": "array:invitation",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/get-invitation",
+      "response": "invitation",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation",
+        "id": "id:invitation"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/invite-member",
+      "response": "invitation",
+      "request": "authInviteRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/cancel-invitation",
+      "response": "invitation",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/accept-invitation",
+      "response": "authInviteResponse",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/reject-invitation",
+      "response": "authInviteResponse",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/list-user-teams",
+      "response": "array:team",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/list-user-invitations",
+      "response": "array:invitation",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/list-members-with-teams",
+      "response": "array:authMemberships",
+      "request": "authRequest",
+      "limit": 131072,
+      "query": {
+        "organizationId": "id:organization",
+        "teamId": "id:team",
+        "userId": "id:user",
+        "invitationId": "id:invitation"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/get-session",
+      "response": "sessionResponse",
+      "methods": [
+        "GET",
+        "HEAD",
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/list-sessions",
+      "response": "array:session",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/get-organization",
+      "response": "organization",
+      "query": {
+        "organizationId": "id:organization",
+        "userId": "id:user"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/leave",
+      "response": "organizationMember",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/get-active-member-role",
+      "response": "pass",
+      "query": {
+        "organizationId": "id:organization",
+        "userId": "id:user"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/set-active-team",
+      "response": "team",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/organization/has-permission",
+      "response": "pass",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/admin/set-role",
+      "response": "sessionResponse",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/admin/create-user",
+      "response": "sessionResponse",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/admin/update-user",
+      "response": "user",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/admin/list-user-sessions",
+      "response": "authSessions",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/admin/unban-user",
+      "response": "sessionResponse",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/admin/ban-user",
+      "response": "sessionResponse",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/admin/impersonate-user",
+      "response": "sessionResponse",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/admin/stop-impersonating",
+      "response": "sessionResponse",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/admin/revoke-user-sessions",
+      "response": "pass",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/admin/remove-user",
+      "response": "pass",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/admin/set-user-password",
+      "response": "pass",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/admin/has-permission",
+      "response": "pass",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/admin/get-user",
+      "response": "user",
+      "query": {
+        "id": "id:user"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/admin/list-users",
+      "response": "authUsers",
+      "query": {
+        "filterValue": "filter:user"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/sign-in/social",
+      "response": "sessionResponse",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/change-password",
+      "response": "sessionResponse",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/verify-email",
+      "response": "sessionResponse",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/update-session",
+      "response": "sessionResponse",
+      "request": "session",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/list-accounts",
+      "response": "array:authAccount",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/auth/get-access-token",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/refresh-token",
+      "request": "authRequest",
+      "limit": 131072,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/account-info",
+      "query": {
+        "userId": "id:user"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/admin/members/:user",
+      "methods": [
+        "DELETE"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/summaries/latest",
+      "response": "summaryContent",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/summaries",
+      "response": "summaries",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/summaries/:version",
+      "response": "summary",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/summary-jobs/latest",
+      "response": "summaryJobResponse",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/summary-jobs/:summaryJob/:action",
+      "response": "summaryJobResponse",
+      "request": "summaryJob",
+      "limit": 8192,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/summary-jobs",
+      "response": "summaryJobResponse",
+      "request": "summaryJob",
+      "limit": 8192,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/summary-jobs/:summaryJob",
+      "response": "summaryJobResponse",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/search",
+      "response": "search",
+      "request": "searchRequest",
+      "limit": 16384,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/text-search",
+      "response": "textSearch",
+      "request": "textSearchRequest",
+      "limit": 16384,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/transcript-uploads/:patch/chunks/:index",
+      "request": "chunk",
+      "limit": 12582912,
+      "methods": [
+        "PUT"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/recording-uploads/:recording/audio/:source",
+      "response": "recording",
+      "methods": [
+        "PUT"
+      ]
+    },
+    {
+      "path": "/api/v1/file-uploads",
+      "response": "file",
+      "request": "file",
+      "limit": 8192,
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/file-uploads/:file/content",
+      "response": "file",
+      "methods": [
+        "PUT"
+      ]
+    },
+    {
+      "path": "/api/v1/files/:file",
+      "response": "file",
+      "request": "file",
+      "limit": 131072,
+      "methods": [
+        "PATCH"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/transcripts",
+      "response": "transcripts",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/transcripts/latest",
+      "response": "transcriptContent",
+      "query": {
+        "cursor": "cursor:segment"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/transcripts/:version",
+      "response": "transcriptContent",
+      "query": {
+        "cursor": "cursor:segment"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/files",
+      "response": "attachments",
+      "query": {
+        "cursor": "cursor:attachment"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/files/:file/content",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    }
+  ]
+}

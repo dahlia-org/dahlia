@@ -248,7 +248,7 @@ export const syncedRecording = sqliteTable("recordings", {
 
 ]);
 
-export const meetingFile = sqliteTable("meeting_files", {
+export const meetingAttachment = sqliteTable("meeting_attachments", {
   id: text("id").primaryKey(),
   vaultId: text("vault_id").notNull(),
   meetingId: text("meeting_id").notNull(),
@@ -260,11 +260,11 @@ export const meetingFile = sqliteTable("meeting_files", {
 }, (table) => [
   foreignKey({ columns: [table.vaultId, table.meetingId], foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId] }).onDelete("cascade"),
   foreignKey({ columns: [table.vaultId, table.fileId], foreignColumns: [syncedFile.vaultId, syncedFile.fileId] }),
-  unique("meeting_files_meeting_file_unique").on(table.meetingId, table.fileId),
-  index("meeting_files_vault_meeting_id_idx").on(table.vaultId, table.meetingId, table.id)
+  unique("meeting_attachments_meeting_attachment_unique").on(table.meetingId, table.fileId),
+  index("meeting_attachments_vault_meeting_id_idx").on(table.vaultId, table.meetingId, table.id)
 ]);
 
-// Read-only image projection. All writes belong to files and meeting_files.
+// Read-only image projection. All writes belong to files and meeting_attachments.
 export const syncedScreenshot = sqliteView("meeting_images", {
   screenshotId: text("screenshot_id").notNull(),
   fileId: text("file_id").notNull(),
@@ -287,7 +287,7 @@ export const syncedScreenshot = sqliteView("meeting_images", {
     json_extract(f.metadata, '$.ocr_text') AS ocr_text,
     json_extract(f.metadata, '$.caption') AS caption,
     m.revision
-  FROM meeting_files m JOIN files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id
+  FROM meeting_attachments m JOIN files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id
   WHERE json_extract(f.metadata, '$.source') = 'screenshot'
 `);
 
@@ -382,7 +382,7 @@ export const syncChange = sqliteTable("sync_changes", {
   transactionId: text("transaction_id").notNull(),
   createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 }, (table) => [
-  check("sync_change_entity_check", sql`${table.entity} IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_file', 'recording')`),
+  check("sync_change_entity_check", sql`${table.entity} IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')`),
   check("sync_change_action_check", sql`${table.action} IN ('upsert', 'delete', 'reset')`),
   index("sync_change_owner_vault_sequence_idx").on(table.ownerUserId, table.vaultId, table.sequence),
   index("sync_change_owner_sequence_idx").on(table.ownerUserId, table.sequence),

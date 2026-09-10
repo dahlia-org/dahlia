@@ -1,8 +1,8 @@
 import Foundation
 import GRDB
 
-struct MeetingFileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
-    static let databaseTableName = "meeting_files"
+struct MeetingAttachmentRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
+    static let databaseTableName = "meeting_attachments"
 
     var id: UUID
     var meetingId: UUID

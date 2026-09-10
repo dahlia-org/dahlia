@@ -134,7 +134,7 @@
                     id: imageId, meetingId: fixture.meetingId, sessionId: nil, capturedAt: .now,
                     imageData: Data([1]), mimeType: "image/png", ocrText: "Changed"
                 ).insertLegacyForTesting(db)
-                for (entity, id) in [("meeting", fixture.meetingId), ("meeting_file", imageId)] {
+                for (entity, id) in [("meeting", fixture.meetingId), ("meeting_attachment", imageId)] {
                     try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, ?, ?, 1)", arguments: [fixture.vaultId, entity, id])
                 }
                 try db.execute(

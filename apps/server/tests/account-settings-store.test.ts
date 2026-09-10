@@ -16,7 +16,7 @@ it.runIf(url)("enforces PostgreSQL FORCE RLS and atomically merges concurrent le
   try {
     await client.query("BEGIN");
     for (const file of serverMigrationManifest.postgres.files) await client.query(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
-    await client.query(`INSERT INTO auth."user"(id, name, email, updated_at) VALUES ('audio', 'Audio', 'audio@example.com', now()), ('new', 'New', 'new@example.com', now())`);
+    await client.query(`INSERT INTO auth."user"(id, name, email, updated_at) VALUES ('01990ab0-0000-7000-8000-000000000101', 'Audio', 'audio@example.com', now()), ('01990ab0-0000-7000-8000-000000000102', 'New', 'new@example.com', now())`);
     await client.query("COMMIT");
   } catch (error) { await client.query("ROLLBACK"); throw error; }
   finally { client.release(); }
@@ -28,26 +28,26 @@ it.runIf(url)("enforces PostgreSQL FORCE RLS and atomically merges concurrent le
       audio: { model: "saved-audio", reasoningEffort: "medium" },
     },
   } as const;
-  await store.update("audio", { summary: expectedSummary });
+  await store.update("01990ab0-0000-7000-8000-000000000101", { summary: expectedSummary });
   expect((await pool!.query("SELECT * FROM app.account_settings")).rows).toEqual([]);
-  expect(await store.get("other")).toBeNull();
-  expect(await store.getRevision("audio")).toBe(1);
-  await store.update("audio", { summary: { detail: "medium" } });
-  expect(await store.getRevision("audio")).toBe(1);
+  expect(await store.get("01990ab0-0000-7000-8000-000000000103")).toBeNull();
+  expect(await store.getRevision("01990ab0-0000-7000-8000-000000000101")).toBe(1);
+  await store.update("01990ab0-0000-7000-8000-000000000101", { summary: { detail: "medium" } });
+  expect(await store.getRevision("01990ab0-0000-7000-8000-000000000101")).toBe(1);
   await Promise.all([
-    store.update("audio", { summary: { methodSettings: { audio: { model: "changed" } } } }),
-    store.update("audio", { summary: { methodSettings: { audio: { reasoningEffort: "high" } } } }),
-    store.update("audio", { summary: { detail: "high" } }),
+    store.update("01990ab0-0000-7000-8000-000000000101", { summary: { methodSettings: { audio: { model: "changed" } } } }),
+    store.update("01990ab0-0000-7000-8000-000000000101", { summary: { methodSettings: { audio: { reasoningEffort: "high" } } } }),
+    store.update("01990ab0-0000-7000-8000-000000000101", { summary: { detail: "high" } }),
   ]);
-  expect((await store.get("audio"))?.summary).toEqual({ ...expectedSummary, detail: "high", methodSettings: {
+  expect((await store.get("01990ab0-0000-7000-8000-000000000101"))?.summary).toEqual({ ...expectedSummary, detail: "high", methodSettings: {
     ...expectedSummary.methodSettings, audio: { model: "changed", reasoningEffort: "high" },
   } });
-  expect(await store.getRevision("audio")).toBe(4);
-  await store.update("audio", { summary: { detail: "low" } });
-  await store.update("audio", { summary: { detail: "medium" } });
-  expect((await store.get("audio"))?.summary.detail).toBe("medium");
-  await Promise.all([store.update("new", { outputLanguage: "en" }, true), store.update("new", { outputLanguage: "ja" }, true)]);
-  const initial = await store.get("new");
-  expect(await store.getRevision("new")).toBe(1);
-  expect(await store.update("new", { outputLanguage: "fr" }, true)).toEqual(initial);
+  expect(await store.getRevision("01990ab0-0000-7000-8000-000000000101")).toBe(4);
+  await store.update("01990ab0-0000-7000-8000-000000000101", { summary: { detail: "low" } });
+  await store.update("01990ab0-0000-7000-8000-000000000101", { summary: { detail: "medium" } });
+  expect((await store.get("01990ab0-0000-7000-8000-000000000101"))?.summary.detail).toBe("medium");
+  await Promise.all([store.update("01990ab0-0000-7000-8000-000000000102", { outputLanguage: "en" }, true), store.update("01990ab0-0000-7000-8000-000000000102", { outputLanguage: "ja" }, true)]);
+  const initial = await store.get("01990ab0-0000-7000-8000-000000000102");
+  expect(await store.getRevision("01990ab0-0000-7000-8000-000000000102")).toBe(1);
+  expect(await store.update("01990ab0-0000-7000-8000-000000000102", { outputLanguage: "fr" }, true)).toEqual(initial);
 });

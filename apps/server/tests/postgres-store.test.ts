@@ -1,3 +1,5 @@
+import { EXTERNAL_ORGANIZATION_ID } from "../src/auth/ids";
+import { testUserID } from "./public-test-client";
 import { readFileSync } from "node:fs";
 import { Client } from "pg";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -27,6 +29,19 @@ const connection = databaseUrl ? connectAuthDatabase(config) : undefined;
 afterAll(async () => connection?.close());
 
 integration("PostgreSQL application store", () => {
+  it("maps concurrent external subjects to one UUID user without email-only linking", async () => {
+    const store = createPostgresAuthStore(connection!.db, "postgres");
+    const subject = `external-${crypto.randomUUID()}`;
+    const identity: Identity = { userId: subject, email: `${subject}@example.com`, workspaceId: `personal:${subject}`, source: "header" };
+    const ids = await Promise.all(Array.from({ length: 12 }, () => store.resolveHeaderUser(identity)));
+    expect(ids[0]).toMatch(/^[0-9a-f-]{14}7[0-9a-f-]{21}$/);
+    expect(new Set(ids).size).toBe(1);
+    expect(await store.resolveHeaderUser({ ...identity, userId: `${subject}-other` })).toBeNull();
+    expect(await store.resolveHeaderUser(identity)).toBe(ids[0]);
+    const rows = await connection!.db.select().from(schema.user).where(eq(schema.user.email, identity.email!));
+    expect(rows).toHaveLength(1);
+  });
+
   it.each(["app.vault_permissions", "auth.member", "auth.team_member"])("holds %s membership writes until the transfer commits", async (table) => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const userId = crypto.randomUUID();
@@ -164,8 +179,8 @@ integration("PostgreSQL application store", () => {
   it("derives recording scope from its meeting under FORCE RLS", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
-    const owner: Identity = { userId: `recording-owner-${suffix}`, workspaceId: `personal:recording-owner-${suffix}`, source: "header" };
-    const member: Identity = { userId: `recording-member-${suffix}`, workspaceId: `personal:recording-member-${suffix}`, source: "header" };
+    const owner: Identity = { userId: testUserID(`recording-owner-${suffix}`), workspaceId: `personal:${testUserID(`recording-owner-${suffix}`)}`, source: "header" };
+    const member: Identity = { userId: testUserID(`recording-member-${suffix}`), workspaceId: `personal:${testUserID(`recording-member-${suffix}`)}`, source: "header" };
     const vaultId = crypto.randomUUID();
     const meetingId = crypto.randomUUID();
     const sessionId = crypto.randomUUID();
@@ -185,7 +200,7 @@ integration("PostgreSQL application store", () => {
       });
       expect(await connection!.db.select().from(schema.syncedRecording).where(eq(schema.syncedRecording.sessionId, sessionId))).toEqual([]);
       expect(await store.sync.withIdentity(member, (sync) => sync.getRecording(meetingId, 1))).toBeNull();
-      await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+      await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", EXTERNAL_ORGANIZATION_ID));
       expect(await store.sync.withIdentity(member, (sync) => sync.getRecording(meetingId, 1))).toMatchObject({ vaultId, meetingId });
       expect(await store.sync.withIdentity(member, (sync) => sync.getRecording(meetingId, 1, true))).toBeNull();
       await connection!.db.transaction(async (tx) => {
@@ -195,7 +210,7 @@ integration("PostgreSQL application store", () => {
         expect(await tx.update(schema.syncedRecording).set({ revision: 99 })
           .where(eq(schema.syncedRecording.sessionId, sessionId)).returning()).toEqual([]);
       });
-      await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", "external"));
+      await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", EXTERNAL_ORGANIZATION_ID));
       expect(await store.sync.withIdentity(member, (sync) => sync.getRecording(meetingId, 1))).toBeNull();
       const record = await store.sync.withIdentity(owner, (sync) => sync.getRecording(meetingId, 1));
       await store.sync.withIdentity(owner, (sync) => commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting", action: "delete",
@@ -222,8 +237,8 @@ integration("PostgreSQL application store", () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const userId = crypto.randomUUID();
     const owner: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
-    const reader: Identity = { userId: `reader-${userId}`, workspaceId: `personal:reader-${userId}`, source: "header" };
-    const outsider: Identity = { userId: `other-${userId}`, workspaceId: `personal:other-${userId}`, source: "header" };
+    const reader: Identity = { userId: testUserID(`reader-${userId}`), workspaceId: `personal:${testUserID(`reader-${userId}`)}`, source: "header" };
+    const outsider: Identity = { userId: testUserID(`other-${userId}`), workspaceId: `personal:${testUserID(`other-${userId}`)}`, source: "header" };
     for (const identity of [owner, reader, outsider]) await store.ensureIdentityUser(identity);
     const vaultId = crypto.randomUUID(); const meetingId = crypto.randomUUID(); const now = new Date();
     await store.sync.withIdentity(owner, (sync) => createVault(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting",
@@ -334,11 +349,22 @@ integration("PostgreSQL application store", () => {
     await store.sync.withIdentity(identity, (sync) => resetVault(sync, vaultId));
   });
 
+  it("has the search indexes configured by the CI embedding migration", async () => {
+    const searchIndexes = await connection!.db.execute<{ indexname: string; indexdef: string }>(sql`
+      select indexname, indexdef from pg_indexes
+      where schemaname = 'app'
+        and (indexname = 'search_documents_search_gin' or indexdef like '%USING hnsw%')
+      order by indexname
+    `);
+    expect(searchIndexes.rows.some(({ indexname }) => indexname === "search_documents_search_gin")).toBe(true);
+    expect(searchIndexes.rows.some(({ indexdef }) => indexdef.includes("USING hnsw"))).toBe(true);
+  });
+
   it("enforces FORCE RLS and does not leak transaction-local identity", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
     const owner: Identity = { userId: suffix, workspaceId: `personal:${suffix}`, source: "header" };
-    const other: Identity = { userId: `other-${suffix}`, workspaceId: `personal:other-${suffix}`, source: "header" };
+    const other: Identity = { userId: testUserID(`other-${suffix}`), workspaceId: `personal:${testUserID(`other-${suffix}`)}`, source: "header" };
     const vaultId = crypto.randomUUID();
     const projectId = crypto.randomUUID();
     const meetingId = crypto.randomUUID();
@@ -365,7 +391,7 @@ integration("PostgreSQL application store", () => {
         ('app', 'transcript_segments'),
         ('app', 'transcript_patch_chunks'),
         ('app', 'files'),
-        ('app', 'meeting_files'),
+        ('app', 'meeting_attachments'),
         ('app', 'meeting_events'),
         ('app', 'search_documents'),
         ('app', 'search_embeddings')
@@ -377,14 +403,14 @@ integration("PostgreSQL application store", () => {
     const legacyOwnerColumns = await connection!.db.execute(sql`
       select 1 from information_schema.columns
       where table_schema = 'app'
-        and table_name in ('vaults', 'meetings', 'transcript_segments', 'files', 'meeting_files')
+        and table_name in ('vaults', 'meetings', 'transcript_segments', 'files', 'meeting_attachments')
         and column_name = 'owner_workspace_id'
     `);
     expect(legacyOwnerColumns.rows).toEqual([]);
     const searchColumns = await connection!.db.execute<{ table_name: string; column_name: string }>(sql`
       select table_name, column_name from information_schema.columns
       where table_schema = 'app'
-        and table_name in ('meetings', 'files', 'meeting_files')
+        and table_name in ('meetings', 'files', 'meeting_attachments')
         and column_name in ('search_text', 'search_vector')
       order by table_name, column_name
     `);
@@ -396,14 +422,6 @@ integration("PostgreSQL application store", () => {
       order by column_name
     `);
     expect(projectionColumns.rows.map(({ column_name }) => column_name)).toEqual(["search_text", "search_vector"]);
-    const searchIndexes = await connection!.db.execute<{ indexname: string; indexdef: string }>(sql`
-      select indexname, indexdef from pg_indexes
-      where schemaname = 'app'
-        and (indexname = 'search_documents_search_gin' or indexdef like '%USING hnsw%')
-      order by indexname
-    `);
-    expect(searchIndexes.rows.some(({ indexname }) => indexname === "search_documents_search_gin")).toBe(true);
-    expect(searchIndexes.rows.some(({ indexdef }) => indexdef.includes("USING hnsw"))).toBe(true);
     expect(await store.sync.isAvailable()).toBe(true);
     expect(await store.ensureIdentityUser(owner)).toBe(true);
     expect(await store.ensureIdentityUser(other)).toBe(true);
@@ -494,10 +512,10 @@ integration("PostgreSQL application store", () => {
   it("grants read-only Vault access through an explicit organization share", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
-    const owner: Identity = { userId: `owner-${suffix}`, workspaceId: `personal:owner-${suffix}`, source: "accounts" };
-    const member: Identity = { userId: `member-${suffix}`, workspaceId: `personal:member-${suffix}`, source: "accounts" };
-    const outsider: Identity = { userId: `outsider-${suffix}`, workspaceId: `personal:outsider-${suffix}`, source: "accounts" };
-    const organizationId = `org-${suffix}`;
+    const owner: Identity = { userId: testUserID(`owner-${suffix}`), workspaceId: `personal:${testUserID(`owner-${suffix}`)}`, source: "accounts" };
+    const member: Identity = { userId: testUserID(`member-${suffix}`), workspaceId: `personal:${testUserID(`member-${suffix}`)}`, source: "accounts" };
+    const outsider: Identity = { userId: testUserID(`outsider-${suffix}`), workspaceId: `personal:${testUserID(`outsider-${suffix}`)}`, source: "accounts" };
+    const organizationId = testUserID(`org-${suffix}`);
     const vaultId = crypto.randomUUID();
     const meetingId = crypto.randomUUID();
     const segmentId = crypto.randomUUID();
@@ -518,8 +536,8 @@ integration("PostgreSQL application store", () => {
         createdAt: now,
       });
       await connection!.db.insert(schema.member).values([
-        { id: `owner-membership-${suffix}`, organizationId, userId: owner.userId, role: "owner", createdAt: now },
-        { id: `member-membership-${suffix}`, organizationId, userId: member.userId, role: "member", createdAt: now },
+        { id: testUserID(`owner-membership-${suffix}`), organizationId, userId: owner.userId, role: "owner", createdAt: now },
+        { id: testUserID(`member-membership-${suffix}`), organizationId, userId: member.userId, role: "member", createdAt: now },
       ]);
       await store.sync.withIdentity(owner, (sync) => createVault(sync, vaultId));
       expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(false);
@@ -547,7 +565,7 @@ integration("PostgreSQL application store", () => {
         })).not.toBeNull();
         await commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "file", action: "upsert", entityId: screenshotId, baseRevision: null,
           data: { checksum: `SHA-256:${screenshotHash}`, metadata: {} },
-        }, { id: crypto.randomUUID(), entity: "meeting_file", action: "upsert", entityId: screenshotId, baseRevision: null,
+        }, { id: crypto.randomUUID(), entity: "meeting_attachment", action: "upsert", entityId: screenshotId, baseRevision: null,
           data: { meetingId, fileId: screenshotId, capturedAt: now, sessionId: null, createdAt: now,
             searchText: "screen", embeddingText: "screen", embeddingContentHash: "screen-hash" },
         }, {
@@ -564,7 +582,7 @@ integration("PostgreSQL application store", () => {
           },
         }]);
       });
-      for (const table of ["meetings", "transcripts", "transcript_segments", "files", "meeting_files"] as const) {
+      for (const table of ["meetings", "transcripts", "transcript_segments", "files", "meeting_attachments"] as const) {
         const hidden = await connection!.db.execute<{ count: string }>(
           sql.raw(`select count(*)::text as count from app.${table}`),
         );
@@ -609,11 +627,11 @@ integration("PostgreSQL application store", () => {
   it("keeps header Vaults private until the owner shares with the external organization", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
-    const owner: Identity = { userId: `owner-${suffix}`, workspaceId: `personal:owner-${suffix}`, source: "header" };
-    const member: Identity = { userId: `member-${suffix}`, workspaceId: `personal:member-${suffix}`, source: "header" };
+    const owner: Identity = { userId: testUserID(`owner-${suffix}`), workspaceId: `personal:${testUserID(`owner-${suffix}`)}`, source: "header" };
+    const member: Identity = { userId: testUserID(`member-${suffix}`), workspaceId: `personal:${testUserID(`member-${suffix}`)}`, source: "header" };
     const vaultId = crypto.randomUUID();
     const meetingId = crypto.randomUUID();
-    const teamId = `team-${suffix}`;
+    const teamId = testUserID(`team-${suffix}`);
     try {
       expect(await store.ensureIdentityUser(owner)).toBe(true);
       expect(await store.ensureIdentityUser(member)).toBe(true);
@@ -623,22 +641,22 @@ integration("PostgreSQL application store", () => {
       expect(await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(
         vaultId,
         "organization",
-        "external",
+        EXTERNAL_ORGANIZATION_ID,
       ))).toBe(true);
       expect(await store.sync.withIdentity(member, (sync) => sync.getVault(vaultId)))
         .toMatchObject({ vaultId, role: "member" });
       expect(await store.sync.withIdentity(member, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(false);
-      await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", "external"));
+      await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", EXTERNAL_ORGANIZATION_ID));
       expect(await store.sync.withIdentity(member, (sync) => sync.getVault(vaultId))).toBeNull();
       await connection!.db.insert(schema.team).values({
         id: teamId,
         name: "Readers",
-        organizationId: "external",
+        organizationId: EXTERNAL_ORGANIZATION_ID,
         createdAt: new Date(),
         updatedAt: new Date(),
       });
       await connection!.db.insert(schema.teamMember).values({
-        id: `${teamId}:${member.userId}`,
+        id: crypto.randomUUID(),
         teamId,
         userId: member.userId,
         createdAt: new Date(),
@@ -651,7 +669,7 @@ integration("PostgreSQL application store", () => {
     } finally {
       await store.sync.withIdentity(owner, async (sync) => {
         await sync.deleteMemberPermission(vaultId, "team", teamId);
-        await sync.deleteMemberPermission(vaultId, "organization", "external");
+        await sync.deleteMemberPermission(vaultId, "organization", EXTERNAL_ORGANIZATION_ID);
         await resetVault(sync, vaultId);
       }).catch(() => undefined);
       await connection!.db.delete(schema.team).where(eq(schema.team.id, teamId));
@@ -661,8 +679,8 @@ integration("PostgreSQL application store", () => {
   it("rejects non-owner restoration of a revision-zero Vault without side effects", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
-    const owner: Identity = { userId: `restore-owner-${suffix}`, workspaceId: `personal:restore-owner-${suffix}`, source: "header" };
-    const member: Identity = { userId: `restore-member-${suffix}`, workspaceId: `personal:restore-member-${suffix}`, source: "header" };
+    const owner: Identity = { userId: testUserID(`restore-owner-${suffix}`), workspaceId: `personal:${testUserID(`restore-owner-${suffix}`)}`, source: "header" };
+    const member: Identity = { userId: testUserID(`restore-member-${suffix}`), workspaceId: `personal:${testUserID(`restore-member-${suffix}`)}`, source: "header" };
     const vaultId = crypto.randomUUID();
     const projectId = crypto.randomUUID();
     const meetingId = crypto.randomUUID();
@@ -690,7 +708,7 @@ integration("PostgreSQL application store", () => {
       // RLS-hidden Vaults must fail with a non-retryable authorization error, not a raw constraint error.
       await expect(store.sync.withIdentity(member, (sync) => sync.commitTransaction(restore)))
         .rejects.toMatchObject({ status: 404, code: "vault_not_found", conflicts: [], operationId: restore.operations[0]!.id });
-      await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+      await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", EXTERNAL_ORGANIZATION_ID));
       await expect(store.sync.withIdentity(member, (sync) => sync.commitTransaction(restore)))
         .rejects.toMatchObject({ status: 404, code: "vault_not_found", conflicts: [] });
       await store.sync.withIdentity(owner, async (sync) => {
@@ -703,7 +721,7 @@ integration("PostgreSQL application store", () => {
       const receipt = await store.sync.withIdentity(owner, (sync) => sync.commitTransaction(restore));
       expect(await store.sync.withIdentity(owner, (sync) => sync.commitTransaction(restore))).toEqual(JSON.parse(JSON.stringify(receipt)));
       expect(await store.sync.withIdentity(member, (sync) => sync.getMeeting(vaultId, meetingId))).toMatchObject({ name: "Meeting" });
-      await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", "external"));
+      await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", EXTERNAL_ORGANIZATION_ID));
       expect(await store.sync.withIdentity(member, (sync) => sync.getMeeting(vaultId, meetingId))).toBeNull();
     } finally {
       await store.sync.withIdentity(owner, (sync) => resetVault(sync, vaultId));
@@ -713,8 +731,8 @@ integration("PostgreSQL application store", () => {
   it("supports direct user members without granting writes or another owner", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
-    const owner: Identity = { userId: `owner-${suffix}`, workspaceId: `personal:owner-${suffix}`, source: "header" };
-    const member: Identity = { userId: `member-${suffix}`, workspaceId: `personal:member-${suffix}`, source: "header" };
+    const owner: Identity = { userId: testUserID(`owner-${suffix}`), workspaceId: `personal:${testUserID(`owner-${suffix}`)}`, source: "header" };
+    const member: Identity = { userId: testUserID(`member-${suffix}`), workspaceId: `personal:${testUserID(`member-${suffix}`)}`, source: "header" };
     const vaultId = crypto.randomUUID();
     const meetingId = crypto.randomUUID();
     try {
@@ -732,14 +750,14 @@ integration("PostgreSQL application store", () => {
       await expect(connection!.db.insert(schema.syncedVaultPermission).values({
         vaultId,
         principalType: "user",
-        principalId: `second-owner-${suffix}`,
+        principalId: testUserID(`second-owner-${suffix}`),
         role: "owner",
         grantedByUserId: owner.userId,
       })).rejects.toThrow();
       await expect(connection!.db.insert(schema.syncedVaultPermission).values({
         vaultId,
         principalType: "organization",
-        principalId: `org-owner-${suffix}`,
+        principalId: testUserID(`org-owner-${suffix}`),
         role: "owner",
         grantedByUserId: owner.userId,
       })).rejects.toThrow();
@@ -751,7 +769,7 @@ integration("PostgreSQL application store", () => {
         ]);
         expect(await sync.ensureUploadTarget(vaultId, meetingId)).toBe(false);
         await expect(resetVault(sync, vaultId)).rejects.toMatchObject({ status: 409, code: "revision_conflict" });
-        expect(await sync.putMemberPermission(vaultId, "organization", "external")).toBe(false);
+        expect(await sync.putMemberPermission(vaultId, "organization", EXTERNAL_ORGANIZATION_ID)).toBe(false);
       });
     } finally {
       await connection!.db.delete(schema.syncedVaultPermission).where(eq(
@@ -767,7 +785,7 @@ integration("PostgreSQL application store", () => {
   it("copies full transcript versions under parent RLS and seals them immutably", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
-    const owner: Identity = { userId: `transcript-${suffix}`, workspaceId: `personal:transcript-${suffix}`, source: "header" };
+    const owner: Identity = { userId: testUserID(`transcript-${suffix}`), workspaceId: `personal:${testUserID(`transcript-${suffix}`)}`, source: "header" };
     const vaultId = crypto.randomUUID(), meetingId = crypto.randomUUID(), firstId = crypto.randomUUID(), secondId = crypto.randomUUID();
     const now = new Date();
     await store.ensureIdentityUser(owner);

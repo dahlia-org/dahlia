@@ -17,22 +17,22 @@ BEGIN
 END $$;
 
 BEGIN;
-SELECT set_config('app.user_id', 'rls-probe-owner', true);
+SELECT set_config('app.user_id', '00000000-0000-7000-8000-000000005804', true);
 SELECT set_config('app.sharing_enabled', 'true', true);
 
 INSERT INTO auth.user (id, name, email, email_verified)
 VALUES
-  ('rls-probe-owner', 'RLS probe owner', 'rls-probe-owner@invalid.example', true),
-  ('rls-probe-direct-member', 'RLS probe member', 'rls-probe-direct-member@invalid.example', true);
+  ('00000000-0000-7000-8000-000000005804', 'RLS probe owner', 'rls-probe-owner@invalid.example', true),
+  ('00000000-0000-7000-8000-000000005800', 'RLS probe member', 'rls-probe-direct-member@invalid.example', true);
 INSERT INTO app.vaults (vault_id, name)
 VALUES ('00000000-0000-0000-0000-000000005900', 'RLS probe');
 INSERT INTO app.vault_permissions
   (vault_id, principal_type, principal_id, role, granted_by_user_id)
 VALUES
-  ('00000000-0000-0000-0000-000000005900', 'user', 'rls-probe-owner', 'owner', 'rls-probe-owner'),
-  ('00000000-0000-0000-0000-000000005900', 'user', 'rls-probe-direct-member', 'member', 'rls-probe-owner'),
-  ('00000000-0000-0000-0000-000000005900', 'organization', 'rls-probe-org', 'member', 'rls-probe-owner'),
-  ('00000000-0000-0000-0000-000000005900', 'team', 'rls-probe-team', 'member', 'rls-probe-owner');
+  ('00000000-0000-0000-0000-000000005900', 'user', '00000000-0000-7000-8000-000000005804', 'owner', '00000000-0000-7000-8000-000000005804'),
+  ('00000000-0000-0000-0000-000000005900', 'user', '00000000-0000-7000-8000-000000005800', 'member', '00000000-0000-7000-8000-000000005804'),
+  ('00000000-0000-0000-0000-000000005900', 'organization', '00000000-0000-7000-8000-000000005802', 'member', '00000000-0000-7000-8000-000000005804'),
+  ('00000000-0000-0000-0000-000000005900', 'team', '00000000-0000-7000-8000-000000005805', 'member', '00000000-0000-7000-8000-000000005804');
 INSERT INTO app.meetings
   (meeting_id, vault_id, name, status, created_at, updated_at)
 VALUES
@@ -45,7 +45,7 @@ BEGIN
   END IF;
 END $$;
 
-SELECT set_config('app.user_id', 'rls-probe-direct-member', true);
+SELECT set_config('app.user_id', '00000000-0000-7000-8000-000000005800', true);
 DO $$
 DECLARE affected integer;
 BEGIN
@@ -61,14 +61,14 @@ BEGIN
 END $$;
 
 INSERT INTO auth.user (id, name, email, email_verified)
-VALUES ('rls-probe-org-member', 'RLS probe', 'rls-probe-org-member@invalid.example', true);
+VALUES ('00000000-0000-7000-8000-000000005803', 'RLS probe', 'rls-probe-org-member@invalid.example', true);
 INSERT INTO auth.organization (id, name, slug, created_at)
-VALUES ('rls-probe-org', 'RLS probe', 'rls-probe-org', now());
+VALUES ('00000000-0000-7000-8000-000000005802', 'RLS probe', '00000000-0000-7000-8000-000000005802', now());
 INSERT INTO auth.member (id, organization_id, user_id, role, created_at)
-VALUES ('rls-probe-membership', 'rls-probe-org', 'rls-probe-org-member', 'member', now());
+VALUES ('00000000-0000-7000-8000-000000005801', '00000000-0000-7000-8000-000000005802', '00000000-0000-7000-8000-000000005803', 'member', now());
 INSERT INTO auth.team (id, name, organization_id, created_at)
-VALUES ('rls-probe-team', 'RLS probe team', 'rls-probe-org', now());
-SELECT set_config('app.user_id', 'rls-probe-org-member', true);
+VALUES ('00000000-0000-7000-8000-000000005805', 'RLS probe team', '00000000-0000-7000-8000-000000005802', now());
+SELECT set_config('app.user_id', '00000000-0000-7000-8000-000000005803', true);
 DO $$
 BEGIN
   IF (SELECT count(*) FROM app.meetings WHERE vault_id = '00000000-0000-0000-0000-000000005900') <> 1 THEN
@@ -77,12 +77,12 @@ BEGIN
 END $$;
 
 INSERT INTO auth.user (id, name, email, email_verified)
-VALUES ('rls-probe-team-member', 'RLS probe', 'rls-probe-team-member@invalid.example', true);
+VALUES ('00000000-0000-7000-8000-000000005806', 'RLS probe', 'rls-probe-team-member@invalid.example', true);
 INSERT INTO auth.member (id, organization_id, user_id, role, created_at)
-VALUES ('rls-probe-team-membership', 'rls-probe-org', 'rls-probe-team-member', 'member', now());
+VALUES ('00000000-0000-7000-8000-000000005808', '00000000-0000-7000-8000-000000005802', '00000000-0000-7000-8000-000000005806', 'member', now());
 INSERT INTO auth.team_member (id, team_id, user_id, created_at)
-VALUES ('rls-probe-team-member-row', 'rls-probe-team', 'rls-probe-team-member', now());
-SELECT set_config('app.user_id', 'rls-probe-team-member', true);
+VALUES ('00000000-0000-7000-8000-000000005807', '00000000-0000-7000-8000-000000005805', '00000000-0000-7000-8000-000000005806', now());
+SELECT set_config('app.user_id', '00000000-0000-7000-8000-000000005806', true);
 DO $$
 BEGIN
   IF (SELECT count(*) FROM app.meetings WHERE vault_id = '00000000-0000-0000-0000-000000005900') <> 1 THEN

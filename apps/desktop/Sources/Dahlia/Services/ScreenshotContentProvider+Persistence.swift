@@ -15,7 +15,7 @@ extension ScreenshotContentProvider {
             if target.connectionId != nil {
                 let attachment = try SyncScreenshotAttachmentReference(stored)
                 let file = try SyncInitialSnapshotBuilder.screenshotOperation(stored, action: .upsert)
-                let link = try SyncInitialSnapshotBuilder.meetingFileOperation(stored)
+                let link = try SyncInitialSnapshotBuilder.meetingAttachmentOperation(stored)
                 try SyncTransactionRecorder.record(
                     vaultId: target.vaultId,
                     operations: [file, link],

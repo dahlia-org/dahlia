@@ -117,7 +117,7 @@ struct VaultRelocation: Decodable, Sendable {
                 for state in ["sync_entity_state", "sync_content_state"] {
                     try db.execute(sql: """
                     UPDATE \(state) SET vaultId = ? WHERE vaultId = ? AND (
-                        entity = 'meeting_file' AND entityId IN (SELECT id FROM meeting_files WHERE meetingId = ?)
+                        entity = 'meeting_attachment' AND entityId IN (SELECT id FROM meeting_attachments WHERE meetingId = ?)
                         OR entity = 'recording' AND entityId IN (SELECT id FROM recording_sessions WHERE meetingId = ?))
                     """, arguments: [item.vaultId, source, item.id, item.id])
                 }

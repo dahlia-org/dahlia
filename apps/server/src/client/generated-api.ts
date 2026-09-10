@@ -40,10 +40,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Current browser identity
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Current browser identity */
         get: operations["getSession"];
         put?: never;
         post?: never;
@@ -60,10 +57,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * OAuth sessions (accounts mode only)
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** OAuth sessions (accounts mode only) */
         get: operations["listSessions"];
         put?: never;
         post?: never;
@@ -83,10 +77,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /**
-         * Revoke an OAuth session
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Revoke an OAuth session */
         delete: operations["revokeSession"];
         options?: never;
         head?: never;
@@ -100,16 +91,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * List platform administrators; administrator only
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** List platform administrators; administrator only */
         get: operations["listAdministrators"];
         put?: never;
-        /**
-         * Grant administrator access to an existing user
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Grant administrator access to an existing user */
         post: operations["addAdministrator"];
         delete?: never;
         options?: never;
@@ -127,10 +112,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /**
-         * Revoke administrator access; retain the last administrator
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Revoke administrator access; retain the last administrator */
         delete: operations["removeAdministrator"];
         options?: never;
         head?: never;
@@ -144,10 +126,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Administrator directory; ordered by name and ID
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Administrator directory; ordered by name and ID */
         get: operations["listServerUsers"];
         put?: never;
         post?: never;
@@ -164,10 +143,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Administrator organization directory
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Administrator organization directory */
         get: operations["listServerOrganizations"];
         put?: never;
         post?: never;
@@ -184,20 +160,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Read current account settings
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Read current account settings */
         get: operations["getSettings"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /**
-         * Merge supplied fields, including nested summary settings; maximum 8 KiB
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Merge supplied fields, including nested summary settings; maximum 8 KiB */
         patch: operations["updateSettings"];
         trace?: never;
     };
@@ -208,10 +178,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Discover feature versions; unsupported features are omitted
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Discover feature versions; unsupported features are omitted */
         get: operations["getCapabilities"];
         put?: never;
         post?: never;
@@ -228,10 +195,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Accessible Vaults
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Accessible Vaults */
         get: operations["listVaults"];
         put?: never;
         post?: never;
@@ -248,10 +212,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get Vault
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Get Vault */
         get: operations["getVault"];
         put?: never;
         post?: never;
@@ -268,10 +229,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Vault project tree
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Vault project tree */
         get: operations["listProjects"];
         put?: never;
         post?: never;
@@ -288,10 +246,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Resolve and get an accessible Project
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Resolve and get an accessible Project */
         get: operations["getProject"];
         put?: never;
         post?: never;
@@ -308,10 +263,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Meetings by creation time and ID; 200 per page
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Meetings by creation time and ID; 200 per page */
         get: operations["listMeetings"];
         put?: never;
         post?: never;
@@ -328,10 +280,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Resolve and get meeting metadata
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Resolve and get meeting metadata */
         get: operations["getMeeting"];
         put?: never;
         post?: never;
@@ -348,10 +297,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Summary versions, newest first; bodies omitted
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Summary versions, newest first; bodies omitted */
         get: operations["listSummaries"];
         put?: never;
         post?: never;
@@ -368,10 +314,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Read a saved summary version
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Read a saved summary version */
         get: operations["getSummary"];
         put?: never;
         post?: never;
@@ -388,10 +331,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Current summary; present=false when absent
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Current summary; present=false when absent */
         get: operations["getLatestSummary"];
         put?: never;
         post?: never;
@@ -408,10 +348,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Transcript versions, newest first
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Transcript versions, newest first */
         get: operations["listTranscripts"];
         put?: never;
         post?: never;
@@ -428,10 +365,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Read a transcript version in bounded pages
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Read a transcript version in bounded pages */
         get: operations["getTranscript"];
         put?: never;
         post?: never;
@@ -448,10 +382,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Read current transcript; match version and syncRevision across pages
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Read current transcript; match version and syncRevision across pages */
         get: operations["getLatestTranscript"];
         put?: never;
         post?: never;
@@ -470,10 +401,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Queue an owner-only summary job; ID is the replay key; maximum 8 KiB
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Queue an owner-only summary job; ID is the replay key; maximum 8 KiB */
         post: operations["startSummaryJob"];
         delete?: never;
         options?: never;
@@ -488,10 +416,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Most recent owner-visible job, or null
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Most recent owner-visible job, or null */
         get: operations["getLatestSummaryJob"];
         put?: never;
         post?: never;
@@ -508,10 +433,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get an individual owner-visible job
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Get an individual owner-visible job */
         get: operations["getSummaryJob"];
         put?: never;
         post?: never;
@@ -530,10 +452,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Cancel a job; repeated cancellation is safe
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Cancel a job; repeated cancellation is safe */
         post: operations["cancelSummaryJob"];
         delete?: never;
         options?: never;
@@ -550,10 +469,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Retry a failed or cancelled job using a new ID
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Retry a failed or cancelled job using a new ID */
         post: operations["retrySummaryJob"];
         delete?: never;
         options?: never;
@@ -570,10 +486,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Commit one atomic Vault transaction; maximum 8 MiB
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Commit one atomic Vault transaction; maximum 8 MiB */
         post: operations["commitTransaction"];
         delete?: never;
         options?: never;
@@ -590,10 +503,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Resolve the exact original request without mutating; never advance the pull cursor from receipts
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Resolve the exact original request without mutating; never advance the pull cursor from receipts */
         post: operations["resolveTransaction"];
         delete?: never;
         options?: never;
@@ -608,10 +518,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Durable delta feed; retain highWaterCursor across a catch-up
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Durable delta feed; retain highWaterCursor across a catch-up */
         get: operations["getChanges"];
         put?: never;
         post?: never;
@@ -628,10 +535,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Bounded snapshot; retain startCursor and catch up before reconciliation
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Bounded snapshot; retain startCursor and catch up before reconciliation */
         get: operations["getSnapshot"];
         put?: never;
         post?: never;
@@ -650,10 +554,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Ranked search with explicit truncation indicators; maximum 16 KiB
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Ranked search with explicit truncation indicators; maximum 16 KiB */
         post: operations["search"];
         delete?: never;
         options?: never;
@@ -670,10 +571,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Exhaustive full-text search pages; cursor invalidates when the ledger changes
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Exhaustive full-text search pages; cursor invalidates when the ledger changes */
         post: operations["textSearch"];
         delete?: never;
         options?: never;
@@ -688,10 +586,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * SSE invalidation and account_settings events; recover through canonical reads
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** SSE invalidation and account_settings events; recover through canonical reads */
         get: operations["getEvents"];
         put?: never;
         post?: never;
@@ -709,10 +604,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /**
-         * Stage an owner-only transcript patch chunk; SHA-256 of exact request bytes
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Stage an owner-only transcript patch chunk; SHA-256 of exact request bytes */
         put: operations["putTranscriptChunk"];
         post?: never;
         delete?: never;
@@ -730,10 +622,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Reserve private file staging with a client-generated UUIDv7; maximum 8 KiB
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Reserve private file staging with a client-generated UUIDv7; maximum 8 KiB */
         post: operations["reserveFileUpload"];
         delete?: never;
         options?: never;
@@ -749,10 +638,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /**
-         * Stream reserved file bytes; identical replay succeeds, different content conflicts
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Stream reserved file bytes; identical replay succeeds, different content conflicts */
         put: operations["putFileContent"];
         post?: never;
         delete?: never;
@@ -768,20 +654,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * File JSON metadata; staged files are owner-only
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** File JSON metadata; staged files are owner-only */
         get: operations["getFile"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /**
-         * Owner metadata patch with baseRevision; maximum 128 KiB
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Owner metadata patch with baseRevision; maximum 128 KiB */
         patch: operations["updateFile"];
         trace?: never;
     };
@@ -792,10 +672,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Committed files by ID; 200 per page
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Committed files by ID; 200 per page */
         get: operations["listFiles"];
         put?: never;
         post?: never;
@@ -812,10 +689,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Meeting file links by ID; 200 per page
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Meeting file links by ID; 200 per page */
         get: operations["listMeetingFiles"];
         put?: never;
         post?: never;
@@ -832,19 +706,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Stream original file
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Stream original file */
         get: operations["getFileContent"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
-        /**
-         * File headers; Range ignored; no body
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** File headers; Range ignored; no body */
         head: operations["headFileContent"];
         patch?: never;
         trace?: never;
@@ -856,19 +724,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Stream image variant
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Stream image variant */
         get: operations["getFileVariant"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
-        /**
-         * Variant headers; Range ignored; no body
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Variant headers; Range ignored; no body */
         head: operations["headFileVariant"];
         patch?: never;
         trace?: never;
@@ -881,10 +743,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /**
-         * Stage audio/mp4; maximum 1 GiB; Transaction activates the recording
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Stage audio/mp4; maximum 1 GiB; Transaction activates the recording */
         put: operations["putRecordingContent"];
         post?: never;
         delete?: never;
@@ -900,10 +759,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Committed recordings by meeting-local number; 200 per page
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Committed recordings by meeting-local number; 200 per page */
         get: operations["listRecordings"];
         put?: never;
         post?: never;
@@ -920,19 +776,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Stream recording audio
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Stream recording audio */
         get: operations["getRecordingContent"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
-        /**
-         * Recording headers; Range ignored; no body
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Recording headers; Range ignored; no body */
         head: operations["headRecordingContent"];
         patch?: never;
         trace?: never;
@@ -944,10 +794,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Preview readers gaining or losing access; owner only
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Preview readers gaining or losing access; owner only */
         get: operations["getTransferAudience"];
         put?: never;
         post?: never;
@@ -966,10 +813,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Move all content after revision and audience checks; owner only
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Move all content after revision and audience checks; owner only */
         post: operations["transferVault"];
         delete?: never;
         options?: never;
@@ -984,10 +828,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Resolve moved resources to currently accessible Vaults
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Resolve moved resources to currently accessible Vaults */
         get: operations["getRelocations"];
         put?: never;
         post?: never;
@@ -1004,10 +845,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Read Vault sharing permissions
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Read Vault sharing permissions */
         get: operations["listPermissions"];
         put?: never;
         post?: never;
@@ -1025,16 +863,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /**
-         * Grant read-only organization access; owner only
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Grant read-only organization access; owner only */
         put: operations["putOrganizationPermission"];
         post?: never;
-        /**
-         * Revoke organization access; owner only
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Revoke organization access; owner only */
         delete: operations["deleteOrganizationPermission"];
         options?: never;
         head?: never;
@@ -1049,16 +881,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /**
-         * Grant read-only team access; owner only
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Grant read-only team access; owner only */
         put: operations["putTeamPermission"];
         post?: never;
-        /**
-         * Revoke team access; owner only
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Revoke team access; owner only */
         delete: operations["deleteTeamPermission"];
         options?: never;
         head?: never;
@@ -1072,10 +898,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Current organization memberships
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Current organization memberships */
         get: operations["listOrganizations"];
         put?: never;
         post?: never;
@@ -1092,10 +915,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * External organization (header mode only)
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** External organization (header mode only) */
         get: operations["getOrganization"];
         put?: never;
         post?: never;
@@ -1112,10 +932,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * External organization members (header mode only)
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** External organization members (header mode only) */
         get: operations["listOrganizationMembers"];
         put?: never;
         post?: never;
@@ -1132,16 +949,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * External teams (header mode only)
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** External teams (header mode only) */
         get: operations["listTeams"];
         put?: never;
-        /**
-         * Create external team (header mode only)
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Create external team (header mode only) */
         post: operations["createTeam"];
         delete?: never;
         options?: never;
@@ -1159,17 +970,11 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /**
-         * Delete external team (header mode only)
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Delete external team (header mode only) */
         delete: operations["deleteTeam"];
         options?: never;
         head?: never;
-        /**
-         * Rename external team (header mode only)
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Rename external team (header mode only) */
         patch: operations["updateTeam"];
         trace?: never;
     };
@@ -1180,10 +985,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * External team members (header mode only)
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** External team members (header mode only) */
         get: operations["listTeamMembers"];
         put?: never;
         post?: never;
@@ -1201,16 +1003,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /**
-         * Add an organization member to an external team
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Add an organization member to an external team */
         put: operations["putTeamMember"];
         post?: never;
-        /**
-         * Remove an external team member
-         * @description Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.
-         */
+        /** Remove an external team member */
         delete: operations["deleteTeamMember"];
         options?: never;
         head?: never;
@@ -1222,10 +1018,6 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         Vault: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             vaultId: string;
             name: string;
             icon?: string | null;
@@ -1243,20 +1035,8 @@ export interface components {
             hasResources?: boolean;
         };
         Project: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             projectId: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             vaultId: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             parentProjectId: string | null;
             name: string;
             description: string;
@@ -1271,35 +1051,15 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             path?: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             rootProjectId?: string;
             effectiveType?: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             typeOwnerProjectId?: string;
             directMeetingCount?: number;
             subtreeMeetingCount?: number;
         };
         Meeting: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             meetingId: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             vaultId: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             projectId: string | null;
             name: string;
             description: string;
@@ -1324,15 +1084,7 @@ export interface components {
             transcriptRevision?: number;
         };
         File: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             vaultId: string;
             name: string;
             contentType: string;
@@ -1360,15 +1112,7 @@ export interface components {
             contentPresent?: boolean;
         };
         Transcript: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             meetingId: string;
             version: number;
             syncRevision: number;
@@ -1382,66 +1126,59 @@ export interface components {
             latestSegmentCreatedAt: string | null;
             /** Format: date-time */
             createdAt: string;
-            metadata: {
-                provider: string;
-                request: {
-                    model: string;
-                };
-                runs: {
+            metadata: components["schemas"]["NullableTranscriptMetadata"];
+        };
+        NullableTranscriptMetadata: {
+            provider: string;
+            request: {
+                model: string;
+            };
+            runs: {
+                /** @enum {string} */
+                generatedBy: "desktop" | "server";
+                inputTypes: "audio"[];
+                /** Format: date-time */
+                startedAt?: string | null;
+                /** Format: date-time */
+                completedAt?: string | null;
+                language?: {
                     /** @enum {string} */
-                    generatedBy: "desktop" | "server";
-                    inputTypes: "audio"[];
-                    /** Format: date-time */
-                    startedAt?: string | null;
-                    /** Format: date-time */
-                    completedAt?: string | null;
-                    language?: {
-                        /** @enum {string} */
-                        mode: "auto" | "fixed";
-                        locales: string[];
-                    };
-                    recognitionLocales?: string[];
-                    response?: {
-                        id?: string | null;
-                        model?: string | null;
-                        created_at?: number | null;
-                        reasoning?: {
-                            effort?: string | null;
-                            summary?: string | null;
-                        } | null;
-                        usage?: {
-                            input_tokens?: number | null;
-                            output_tokens?: number | null;
-                            total_tokens?: number | null;
-                            input_tokens_details?: {
-                                cached_tokens?: number | null;
-                            } | null;
-                            output_tokens_details?: {
-                                reasoning_tokens?: number | null;
-                            } | null;
-                        } | null;
-                    };
-                    /** Format: uuid */
-                    recordingSessionId?: string;
-                    audioInputs?: {
-                        recordingNumber: number;
-                        /** @enum {string} */
-                        source: "mic" | "system";
-                        checksum: string;
-                    }[];
+                    mode: "auto" | "fixed";
+                    locales: string[];
+                };
+                recognitionLocales?: string[];
+                response?: components["schemas"]["SummaryResponseMetadata"];
+                recordingSessionId?: string;
+                audioInputs?: {
+                    recordingNumber: number;
+                    /** @enum {string} */
+                    source: "mic" | "system";
+                    checksum: string;
                 }[];
+            }[];
+        } | null;
+        SummaryResponseMetadata: {
+            id?: string | null;
+            model?: string | null;
+            created_at?: number | null;
+            reasoning?: {
+                effort?: string | null;
+                summary?: string | null;
+            } | null;
+            usage?: {
+                input_tokens?: number | null;
+                output_tokens?: number | null;
+                total_tokens?: number | null;
+                input_tokens_details?: {
+                    cached_tokens?: number | null;
+                } | null;
+                output_tokens_details?: {
+                    reasoning_tokens?: number | null;
+                } | null;
             } | null;
         };
         Summary: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             meetingId: string;
             version: number;
             title: string;
@@ -1450,41 +1187,23 @@ export interface components {
             createdAt: string | null;
             /** Format: date-time */
             savedAt: string;
-            metadata: {
-                /** @enum {string} */
-                generatedBy: "server" | "local_codex";
-                inputTypes: ("transcript" | "image" | "audio" | "note" | "context")[];
-                detailLevel?: string | null;
-                outputLanguage?: string | null;
-                request: {
-                    model?: string | null;
-                    reasoning?: {
-                        effort?: string | null;
-                        summary?: string | null;
-                    };
-                };
-                response?: {
-                    id?: string | null;
-                    model?: string | null;
-                    created_at?: number | null;
-                    reasoning?: {
-                        effort?: string | null;
-                        summary?: string | null;
-                    } | null;
-                    usage?: {
-                        input_tokens?: number | null;
-                        output_tokens?: number | null;
-                        total_tokens?: number | null;
-                        input_tokens_details?: {
-                            cached_tokens?: number | null;
-                        } | null;
-                        output_tokens_details?: {
-                            reasoning_tokens?: number | null;
-                        } | null;
-                    } | null;
-                };
-            } | null;
+            metadata: components["schemas"]["NullableSummaryMetadata"];
         };
+        NullableSummaryMetadata: {
+            /** @enum {string} */
+            generatedBy: "server" | "local_codex";
+            inputTypes: ("transcript" | "image" | "audio" | "note" | "context")[];
+            detailLevel?: string | null;
+            outputLanguage?: string | null;
+            request: {
+                model?: string | null;
+                reasoning?: {
+                    effort?: string | null;
+                    summary?: string | null;
+                };
+            };
+            response?: components["schemas"]["SummaryResponseMetadata"];
+        } | null;
         Recording: {
             id: number;
             /** Format: date-time */
@@ -1497,10 +1216,6 @@ export interface components {
             };
         };
         RecordingAudio: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             fileId?: string;
             /** @enum {string} */
             contentType: "audio/mp4";
@@ -1547,19 +1262,11 @@ export interface components {
             code: string;
             detail?: string;
             conflicts?: components["schemas"]["RevisionConflict"][];
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             operationId?: string;
         };
         RevisionConflict: {
             /** @enum {string} */
             entity: "vault";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             clientBaseRevision: number | null;
             serverRevision: number | null;
@@ -1567,10 +1274,6 @@ export interface components {
         } | {
             /** @enum {string} */
             entity: "project";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             clientBaseRevision: number | null;
             serverRevision: number | null;
@@ -1578,10 +1281,6 @@ export interface components {
         } | {
             /** @enum {string} */
             entity: "meeting";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             clientBaseRevision: number | null;
             serverRevision: number | null;
@@ -1589,10 +1288,6 @@ export interface components {
         } | {
             /** @enum {string} */
             entity: "summary";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             clientBaseRevision: number | null;
             serverRevision: number | null;
@@ -1600,10 +1295,6 @@ export interface components {
         } | {
             /** @enum {string} */
             entity: "transcript";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             clientBaseRevision: number | null;
             serverRevision: number | null;
@@ -1611,32 +1302,20 @@ export interface components {
         } | {
             /** @enum {string} */
             entity: "file";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             clientBaseRevision: number | null;
             serverRevision: number | null;
             record: components["schemas"]["NullableFileRecord"];
         } | {
             /** @enum {string} */
-            entity: "meeting_file";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
+            entity: "meeting_attachment";
             id: string;
             clientBaseRevision: number | null;
             serverRevision: number | null;
-            record: components["schemas"]["NullableMeetingFileRecord"];
+            record: components["schemas"]["NullableMeetingAttachmentRecord"];
         } | {
             /** @enum {string} */
             entity: "recording";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             clientBaseRevision: number | null;
             serverRevision: number | null;
@@ -1644,20 +1323,12 @@ export interface components {
         } | {
             /** @enum {string} */
             entity: "meeting_event";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             clientBaseRevision: number | null;
             serverRevision: number | null;
             record: components["schemas"]["NullableMeetingEventRecord"];
         };
         NullableVaultRecord: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             vaultId: string;
             name: string;
             icon?: string | null;
@@ -1675,20 +1346,8 @@ export interface components {
             hasResources?: boolean;
         } | null;
         NullableProjectRecord: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             projectId: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             vaultId: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             parentProjectId: string | null;
             name: string;
             description: string;
@@ -1703,35 +1362,15 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             path?: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             rootProjectId?: string;
             effectiveType?: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             typeOwnerProjectId?: string;
             directMeetingCount?: number;
             subtreeMeetingCount?: number;
         } | null;
         NullableMeetingRecord: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             meetingId: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             vaultId: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             projectId: string | null;
             name: string;
             description: string;
@@ -1756,15 +1395,7 @@ export interface components {
             transcriptRevision?: number;
         } | null;
         NullableSummaryRecord: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string | null;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             meetingId: string;
             version: number | null;
             title: string | null;
@@ -1775,10 +1406,6 @@ export interface components {
             contentPresent?: boolean;
         } | null;
         NullableTranscriptRecord: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             meetingId: string;
             transcript: components["schemas"]["NullableTranscript"];
             contentCount?: number;
@@ -1786,15 +1413,7 @@ export interface components {
             contentPresent?: boolean;
         } | null;
         NullableTranscript: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             meetingId: string;
             version: number;
             syncRevision: number;
@@ -1808,66 +1427,10 @@ export interface components {
             latestSegmentCreatedAt: string | null;
             /** Format: date-time */
             createdAt: string;
-            metadata: {
-                provider: string;
-                request: {
-                    model: string;
-                };
-                runs: {
-                    /** @enum {string} */
-                    generatedBy: "desktop" | "server";
-                    inputTypes: "audio"[];
-                    /** Format: date-time */
-                    startedAt?: string | null;
-                    /** Format: date-time */
-                    completedAt?: string | null;
-                    language?: {
-                        /** @enum {string} */
-                        mode: "auto" | "fixed";
-                        locales: string[];
-                    };
-                    recognitionLocales?: string[];
-                    response?: {
-                        id?: string | null;
-                        model?: string | null;
-                        created_at?: number | null;
-                        reasoning?: {
-                            effort?: string | null;
-                            summary?: string | null;
-                        } | null;
-                        usage?: {
-                            input_tokens?: number | null;
-                            output_tokens?: number | null;
-                            total_tokens?: number | null;
-                            input_tokens_details?: {
-                                cached_tokens?: number | null;
-                            } | null;
-                            output_tokens_details?: {
-                                reasoning_tokens?: number | null;
-                            } | null;
-                        } | null;
-                    };
-                    /** Format: uuid */
-                    recordingSessionId?: string;
-                    audioInputs?: {
-                        recordingNumber: number;
-                        /** @enum {string} */
-                        source: "mic" | "system";
-                        checksum: string;
-                    }[];
-                }[];
-            } | null;
+            metadata: components["schemas"]["NullableTranscriptMetadata"];
         } | null;
         NullableFileRecord: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             vaultId: string;
             name: string;
             contentType: string;
@@ -1894,33 +1457,13 @@ export interface components {
             contentOmitted?: boolean;
             contentPresent?: boolean;
         } | null;
-        NullableMeetingFileRecord: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
+        NullableMeetingAttachmentRecord: {
             id: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             vaultId: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             meetingId: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             fileId: string;
             /** Format: date-time */
             capturedAt: string | null;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             sessionId: string | null;
             /** Format: date-time */
             createdAt: string;
@@ -1937,20 +1480,8 @@ export interface components {
                 system?: components["schemas"]["RecordingAudio"];
             };
             recordingNumber: number;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             sessionId: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             meetingId: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             vaultId: string;
             revision: number;
         } | null;
@@ -2039,10 +1570,6 @@ export interface components {
             /** @enum {number} */
             formatVersion: 1;
             version: number;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             entityId: string;
             present: boolean;
             count: number;
@@ -2054,15 +1581,7 @@ export interface components {
             entity: "summary";
             revision: number;
             record?: {
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 id?: string;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 meetingId?: string;
                 version?: number;
                 title: string | null;
@@ -2071,50 +1590,13 @@ export interface components {
                 createdAt: string | null;
                 /** Format: date-time */
                 savedAt?: string;
-                metadata?: {
-                    /** @enum {string} */
-                    generatedBy: "server" | "local_codex";
-                    inputTypes: ("transcript" | "image" | "audio" | "note" | "context")[];
-                    detailLevel?: string | null;
-                    outputLanguage?: string | null;
-                    request: {
-                        model?: string | null;
-                        reasoning?: {
-                            effort?: string | null;
-                            summary?: string | null;
-                        };
-                    };
-                    response?: {
-                        id?: string | null;
-                        model?: string | null;
-                        created_at?: number | null;
-                        reasoning?: {
-                            effort?: string | null;
-                            summary?: string | null;
-                        } | null;
-                        usage?: {
-                            input_tokens?: number | null;
-                            output_tokens?: number | null;
-                            total_tokens?: number | null;
-                            input_tokens_details?: {
-                                cached_tokens?: number | null;
-                            } | null;
-                            output_tokens_details?: {
-                                reasoning_tokens?: number | null;
-                            } | null;
-                        } | null;
-                    };
-                } | null;
+                metadata?: components["schemas"]["NullableSummaryMetadata"];
             };
         };
         TranscriptContent: {
             /** @enum {number} */
             formatVersion: 1;
             version: number;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             entityId: string;
             present: boolean;
             count: number;
@@ -2129,10 +1611,6 @@ export interface components {
             items?: components["schemas"]["TranscriptSegment"][];
         };
         TranscriptSegment: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             segmentId: string;
             /** Format: date-time */
             startedAt: string;
@@ -2145,10 +1623,6 @@ export interface components {
             speakerLabel: string | null;
         };
         SummaryJob: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             /** @enum {string} */
             method: "transcript" | "audio";
@@ -2160,9 +1634,7 @@ export interface components {
                 /** @enum {string} */
                 type: "recording";
                 recordings: {
-                    /** Format: uuid */
                     micFileId: string | null;
-                    /** Format: uuid */
                     systemFileId: string | null;
                 }[];
                 transcriptionModel?: string;
@@ -2170,10 +1642,6 @@ export interface components {
             /** @enum {string|null} */
             stage?: "transcribing" | "summarizing" | "generating" | "saving" | null;
             transcriptResult?: {
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 transcriptId: string;
                 version: string;
             } | null;
@@ -2195,10 +1663,6 @@ export interface components {
             error: string | null;
         };
         TransactionReceipt: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             /** @enum {string} */
             status: "committed";
@@ -2211,90 +1675,54 @@ export interface components {
         CanonicalRecord: {
             /** @enum {string} */
             entity: "vault";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             revision: number | null;
             record?: components["schemas"]["NullableVaultRecord"];
         } | {
             /** @enum {string} */
             entity: "project";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             revision: number | null;
             record?: components["schemas"]["NullableProjectRecord"];
         } | {
             /** @enum {string} */
             entity: "meeting";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             revision: number | null;
             record?: components["schemas"]["NullableMeetingRecord"];
         } | {
             /** @enum {string} */
             entity: "summary";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             revision: number | null;
             record?: components["schemas"]["NullableSummaryRecord"];
         } | {
             /** @enum {string} */
             entity: "transcript";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             revision: number | null;
             record?: components["schemas"]["NullableTranscriptRecord"];
         } | {
             /** @enum {string} */
             entity: "file";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             revision: number | null;
             record?: components["schemas"]["NullableFileRecord"];
         } | {
             /** @enum {string} */
-            entity: "meeting_file";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
+            entity: "meeting_attachment";
             id: string;
             revision: number | null;
-            record?: components["schemas"]["NullableMeetingFileRecord"];
+            record?: components["schemas"]["NullableMeetingAttachmentRecord"];
         } | {
             /** @enum {string} */
             entity: "recording";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             revision: number | null;
             record?: components["schemas"]["NullableRecordingRecord"];
         } | {
             /** @enum {string} */
             entity: "meeting_event";
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             revision: number | null;
             record?: components["schemas"]["NullableMeetingEventRecord"];
@@ -2303,7 +1731,6 @@ export interface components {
             /** @enum {number} */
             schemaVersion: 2;
             id: string;
-            /** Format: uuid */
             vaultId: string;
             /** Format: date-time */
             createdAt: string;
@@ -2313,11 +1740,9 @@ export interface components {
                 entity: "meeting_event";
                 /** @enum {string} */
                 action: "create";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: {
-                    /** Format: uuid */
                     meetingId: string;
                     /** @enum {string} */
                     kind: "tag_added" | "tag_removed";
@@ -2325,24 +1750,19 @@ export interface components {
                     occurredAt: string;
                     relatedId: string;
                 } | {
-                    /** Format: uuid */
                     meetingId: string;
                     /** @enum {string} */
                     kind: "recording_started" | "recording_ended";
                     /** Format: date-time */
                     occurredAt: string;
-                    /** Format: uuid */
                     sessionId: string;
                 } | {
-                    /** Format: uuid */
                     meetingId: string;
                     /** @enum {string} */
                     kind: "segment_rotated";
                     /** Format: date-time */
                     occurredAt: string;
-                    /** Format: uuid */
                     sessionId: string;
-                    /** Format: uuid */
                     relatedId: string;
                     /** @enum {string} */
                     audioSource: "mic" | "system";
@@ -2354,7 +1774,6 @@ export interface components {
                 entity: "vault";
                 /** @enum {string} */
                 action: "create";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: {
@@ -2372,7 +1791,6 @@ export interface components {
                 entity: "vault";
                 /** @enum {string} */
                 action: "update";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: {
@@ -2388,7 +1806,6 @@ export interface components {
                 entity: "vault";
                 /** @enum {string} */
                 action: "reset";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: {
@@ -2400,7 +1817,6 @@ export interface components {
                 entity: "project";
                 /** @enum {string} */
                 action: "create";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: {
@@ -2408,7 +1824,6 @@ export interface components {
                     icon?: "vault" | "folder" | "dollarsign.circle" | "book.closed" | "graduationcap" | "pencil" | "tag" | "curlybraces" | "terminal" | "music.note" | "popcorn" | "paintbrush" | "paintpalette" | "stethoscope" | "asterisk" | "camera.macro" | "briefcase" | "chart.bar" | "medal" | "dumbbell" | "notebook" | "scales" | "globe.desk" | "airplane" | "globe" | "wrench" | "pawprint" | "flask" | "brain" | "heart" | "pottedplant" | "film" | "cross.case" | "puzzlepiece" | "leaf" | null;
                     /** @enum {string|null} */
                     color?: "neutral" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink" | null;
-                    /** Format: uuid */
                     parentProjectId: string | null;
                     name: string;
                     /** @default  */
@@ -2424,7 +1839,6 @@ export interface components {
                 entity: "project";
                 /** @enum {string} */
                 action: "update";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: {
@@ -2432,7 +1846,6 @@ export interface components {
                     icon?: "vault" | "folder" | "dollarsign.circle" | "book.closed" | "graduationcap" | "pencil" | "tag" | "curlybraces" | "terminal" | "music.note" | "popcorn" | "paintbrush" | "paintpalette" | "stethoscope" | "asterisk" | "camera.macro" | "briefcase" | "chart.bar" | "medal" | "dumbbell" | "notebook" | "scales" | "globe.desk" | "airplane" | "globe" | "wrench" | "pawprint" | "flask" | "brain" | "heart" | "pottedplant" | "film" | "cross.case" | "puzzlepiece" | "leaf" | null;
                     /** @enum {string|null} */
                     color?: "neutral" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink" | null;
-                    /** Format: uuid */
                     parentProjectId: string | null;
                     name: string;
                     /** @default  */
@@ -2446,7 +1859,6 @@ export interface components {
                 entity: "project";
                 /** @enum {string} */
                 action: "delete";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: Record<string, never>;
@@ -2456,11 +1868,9 @@ export interface components {
                 entity: "meeting";
                 /** @enum {string} */
                 action: "create";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: {
-                    /** Format: uuid */
                     projectId: string | null;
                     name: string;
                     /** @default  */
@@ -2481,11 +1891,9 @@ export interface components {
                 entity: "meeting";
                 /** @enum {string} */
                 action: "update";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: {
-                    /** Format: uuid */
                     projectId: string | null;
                     name: string;
                     /** @default  */
@@ -2504,7 +1912,6 @@ export interface components {
                 entity: "meeting";
                 /** @enum {string} */
                 action: "delete";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: Record<string, never>;
@@ -2514,7 +1921,6 @@ export interface components {
                 entity: "summary";
                 /** @enum {string} */
                 action: "upsert";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: {
@@ -2529,7 +1935,6 @@ export interface components {
                 entity: "summary";
                 /** @enum {string} */
                 action: "delete";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: Record<string, never>;
@@ -2539,12 +1944,10 @@ export interface components {
                 entity: "transcript";
                 /** @enum {string} */
                 action: "patch";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: {
                     transcript: {
-                        /** Format: uuid */
                         id: string;
                         /** Format: date-time */
                         startedAt?: string | null;
@@ -2569,27 +1972,7 @@ export interface components {
                                     locales: string[];
                                 };
                                 recognitionLocales?: string[];
-                                response?: {
-                                    id?: string | null;
-                                    model?: string | null;
-                                    created_at?: number | null;
-                                    reasoning?: {
-                                        effort?: string | null;
-                                        summary?: string | null;
-                                    } | null;
-                                    usage?: {
-                                        input_tokens?: number | null;
-                                        output_tokens?: number | null;
-                                        total_tokens?: number | null;
-                                        input_tokens_details?: {
-                                            cached_tokens?: number | null;
-                                        } | null;
-                                        output_tokens_details?: {
-                                            reasoning_tokens?: number | null;
-                                        } | null;
-                                    } | null;
-                                };
-                                /** Format: uuid */
+                                response?: components["schemas"]["SummaryResponseMetadata"];
                                 recordingSessionId?: string;
                                 audioInputs?: {
                                     recordingNumber: number;
@@ -2618,7 +2001,6 @@ export interface components {
                 entity: "recording";
                 /** @enum {string} */
                 action: "upsert";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: {
@@ -2643,7 +2025,6 @@ export interface components {
                 entity: "file";
                 /** @enum {string} */
                 action: "upsert";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: {
@@ -2664,27 +2045,22 @@ export interface components {
                 entity: "file";
                 /** @enum {string} */
                 action: "delete";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: Record<string, never>;
             } | {
                 id: string;
                 /** @enum {string} */
-                entity: "meeting_file";
+                entity: "meeting_attachment";
                 /** @enum {string} */
                 action: "upsert";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: {
-                    /** Format: uuid */
                     meetingId: string;
-                    /** Format: uuid */
                     fileId: string;
                     /** Format: date-time */
                     capturedAt: string | null;
-                    /** Format: uuid */
                     sessionId: string | null;
                     /** Format: date-time */
                     createdAt: string;
@@ -2692,20 +2068,15 @@ export interface components {
             } | {
                 id: string;
                 /** @enum {string} */
-                entity: "meeting_file";
+                entity: "meeting_attachment";
                 /** @enum {string} */
                 action: "delete";
-                /** Format: uuid */
                 entityId: string;
                 baseRevision: number | null;
                 data: Record<string, never>;
             })[];
         };
         TransactionResolution: components["schemas"]["TransactionReceipt"] | {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             /** @enum {string} */
             status: "unknown";
@@ -2713,209 +2084,101 @@ export interface components {
         Changes: {
             items: ({
                 sequence: number;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 vaultId: string;
                 /** @enum {string} */
                 entity: "vault";
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 entityId: string;
                 /** @enum {string} */
                 action: "upsert" | "delete" | "reset";
                 revision: number | null;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 transactionId: string;
                 record: components["schemas"]["NullableVaultRecord"];
             } | {
                 sequence: number;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 vaultId: string;
                 /** @enum {string} */
                 entity: "project";
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 entityId: string;
                 /** @enum {string} */
                 action: "upsert" | "delete" | "reset";
                 revision: number | null;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 transactionId: string;
                 record: components["schemas"]["NullableProjectRecord"];
             } | {
                 sequence: number;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 vaultId: string;
                 /** @enum {string} */
                 entity: "meeting";
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 entityId: string;
                 /** @enum {string} */
                 action: "upsert" | "delete" | "reset";
                 revision: number | null;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 transactionId: string;
                 record: components["schemas"]["NullableMeetingRecord"];
             } | {
                 sequence: number;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 vaultId: string;
                 /** @enum {string} */
                 entity: "summary";
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 entityId: string;
                 /** @enum {string} */
                 action: "upsert" | "delete" | "reset";
                 revision: number | null;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 transactionId: string;
                 record: components["schemas"]["NullableSummaryRecord"];
             } | {
                 sequence: number;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 vaultId: string;
                 /** @enum {string} */
                 entity: "transcript";
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 entityId: string;
                 /** @enum {string} */
                 action: "upsert" | "delete" | "reset";
                 revision: number | null;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 transactionId: string;
                 record: components["schemas"]["NullableTranscriptRecord"];
             } | {
                 sequence: number;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 vaultId: string;
                 /** @enum {string} */
                 entity: "file";
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 entityId: string;
                 /** @enum {string} */
                 action: "upsert" | "delete" | "reset";
                 revision: number | null;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 transactionId: string;
                 record: components["schemas"]["NullableFileRecord"];
             } | {
                 sequence: number;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 vaultId: string;
                 /** @enum {string} */
-                entity: "meeting_file";
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
+                entity: "meeting_attachment";
                 entityId: string;
                 /** @enum {string} */
                 action: "upsert" | "delete" | "reset";
                 revision: number | null;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 transactionId: string;
-                record: components["schemas"]["NullableMeetingFileRecord"];
+                record: components["schemas"]["NullableMeetingAttachmentRecord"];
             } | {
                 sequence: number;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 vaultId: string;
                 /** @enum {string} */
                 entity: "recording";
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 entityId: string;
                 /** @enum {string} */
                 action: "upsert" | "delete" | "reset";
                 revision: number | null;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 transactionId: string;
                 record: components["schemas"]["NullableRecordingRecord"];
             } | {
                 sequence: number;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 vaultId: string;
                 /** @enum {string} */
                 entity: "meeting_event";
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 entityId: string;
                 /** @enum {string} */
                 action: "upsert" | "delete" | "reset";
                 revision: number | null;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 transactionId: string;
                 record: components["schemas"]["NullableMeetingEventRecord"];
             })[];
@@ -2933,10 +2196,6 @@ export interface components {
             startCursor: string;
         };
         SearchResults: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             vaultId: string;
             meetings: components["schemas"]["SearchHit"][];
             screenshots: components["schemas"]["SearchHit"][];
@@ -2948,45 +2207,21 @@ export interface components {
             };
         };
         SearchHit: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
             /** @enum {string} */
             kind: "meeting" | "screenshot" | "project";
             title: string;
             date: string;
             snippet: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             meetingId?: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             projectId?: string;
             projectPath?: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             fileId?: string;
             meetingCount?: number;
         };
         TextSearchResults: {
             items: {
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 id: string;
-                /**
-                 * Format: uuid
-                 * @example 019f0d36-0520-7000-8000-000000000001
-                 */
                 meetingId: string;
                 snippet: string;
             }[];
@@ -3006,32 +2241,12 @@ export interface components {
             limit?: number;
         };
         MeetingFile: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             id: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             vaultId: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             meetingId: string;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             fileId: string;
             /** Format: date-time */
             capturedAt: string | null;
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             sessionId: string | null;
             /** Format: date-time */
             createdAt: string;
@@ -3049,10 +2264,6 @@ export interface components {
             contentUrl: string;
         };
         VaultPermission: {
-            /**
-             * Format: uuid
-             * @example 019f0d36-0520-7000-8000-000000000001
-             */
             vaultId: string;
             /** @enum {string} */
             principalType: "user" | "organization" | "team";
@@ -3072,10 +2283,17 @@ export interface components {
             /** Format: date-time */
             updatedAt: string | null;
         };
+        TeamMember: {
+            name: string;
+            email: string;
+            id: string;
+            userId: string;
+            teamId: string;
+        };
     };
     responses: {
-        /** @description HTTP 400. See Problem.code. */
-        Problem400: {
+        /** @description Request failed. Use the HTTP status and Problem.code; 409 conflicts require reconciliation before retrying. */
+        Problem: {
             headers: {
                 "WWW-Authenticate"?: string;
                 Allow?: string;
@@ -3083,354 +2301,6 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 400,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 401. See Problem.code. */
-        Problem401: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 401,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 403. See Problem.code. */
-        Problem403: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 403,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 404. See Problem.code. */
-        Problem404: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 404,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 405. See Problem.code. */
-        Problem405: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 405,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description Revision, state, or idempotency conflict. Reconcile before retrying. */
-        Problem409: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 409,
-                 *       "code": "revision_conflict"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 410. See Problem.code. */
-        Problem410: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 410,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 411. See Problem.code. */
-        Problem411: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 411,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 412. See Problem.code. */
-        Problem412: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 412,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 413. See Problem.code. */
-        Problem413: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 413,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 415. See Problem.code. */
-        Problem415: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 415,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 416. See Problem.code. */
-        Problem416: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 416,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 422. See Problem.code. */
-        Problem422: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 422,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 426. See Problem.code. */
-        Problem426: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 426,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 429. See Problem.code. */
-        Problem429: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 429,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 500. See Problem.code. */
-        Problem500: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 500,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 502. See Problem.code. */
-        Problem502: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 502,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description HTTP 503. See Problem.code. */
-        Problem503: {
-            headers: {
-                "WWW-Authenticate"?: string;
-                Allow?: string;
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "type": "about:blank",
-                 *       "title": "Request failed",
-                 *       "status": 503,
-                 *       "code": "invalid_request"
-                 *     }
-                 */
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
@@ -3457,11 +2327,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "status": "ok"
-                     *     }
-                     */
                     "application/json": {
                         /** @enum {string} */
                         status: "ok";
@@ -3485,16 +2350,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "openapi": "3.1.0",
-                     *       "info": {
-                     *         "title": "example",
-                     *         "version": "example"
-                     *       },
-                     *       "paths": {}
-                     *     }
-                     */
                     "application/json": {
                         /** @enum {string} */
                         openapi: "3.1.0";
@@ -3529,44 +2384,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "capabilities": {
-                     *         "admin": false,
-                     *         "sessions": false,
-                     *         "sync": false,
-                     *         "sharing": false
-                     *       },
-                     *       "user": {
-                     *         "id": "example"
-                     *       },
-                     *       "workspace": {
-                     *         "id": "example",
-                     *         "type": "personal"
-                     *       }
-                     *     }
-                     */
                     "application/json": components["schemas"]["CurrentSession"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listSessions: {
@@ -3584,12 +2405,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example"
-                     *     }
-                     */
                     "application/json": {
                         items: components["schemas"]["Session"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
@@ -3597,24 +2412,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     revokeSession: {
@@ -3635,24 +2433,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listAdministrators: {
@@ -3670,12 +2451,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example"
-                     *     }
-                     */
                     "application/json": {
                         items: components["schemas"]["Administrator"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
@@ -3683,24 +2458,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     addAdministrator: {
@@ -3712,11 +2470,6 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "email": "person@example.com"
-                 *     }
-                 */
                 "application/json": {
                     /**
                      * Format: email
@@ -3735,37 +2488,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": "example",
-                     *       "name": "example",
-                     *       "email": "example",
-                     *       "createdAt": "2026-09-09T00:00:00.000Z",
-                     *       "role": "admin",
-                     *       "removable": false
-                     *     }
-                     */
                     "application/json": components["schemas"]["Administrator"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     removeAdministrator: {
@@ -3786,24 +2512,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listServerUsers: {
@@ -3824,12 +2533,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "hasMore": false
-                     *     }
-                     */
                     "application/json": {
                         items: (components["schemas"]["Person"] & {
                             /** Format: date-time */
@@ -3840,24 +2543,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listServerOrganizations: {
@@ -3877,12 +2563,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "hasMore": false
-                     *     }
-                     */
                     "application/json": {
                         items: (components["schemas"]["Organization"] & {
                             memberCount: number;
@@ -3892,24 +2572,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getSettings: {
@@ -3927,52 +2590,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "settings": {
-                     *         "outputLanguage": "ja",
-                     *         "analysisLanguages": {
-                     *           "scope": "all",
-                     *           "identifiers": []
-                     *         },
-                     *         "summary": {
-                     *           "method": "transcript",
-                     *           "detail": "low",
-                     *           "methodSettings": {
-                     *             "transcript": {
-                     *               "model": "example",
-                     *               "reasoningEffort": "none"
-                     *             },
-                     *             "audio": {
-                     *               "model": "example",
-                     *               "reasoningEffort": "none"
-                     *             }
-                     *           }
-                     *         }
-                     *       }
-                     *     }
-                     */
                     "application/json": components["schemas"]["AccountSettingsResponse"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     updateSettings: {
@@ -4026,52 +2647,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "settings": {
-                     *         "outputLanguage": "ja",
-                     *         "analysisLanguages": {
-                     *           "scope": "all",
-                     *           "identifiers": []
-                     *         },
-                     *         "summary": {
-                     *           "method": "transcript",
-                     *           "detail": "low",
-                     *           "methodSettings": {
-                     *             "transcript": {
-                     *               "model": "example",
-                     *               "reasoningEffort": "none"
-                     *             },
-                     *             "audio": {
-                     *               "model": "example",
-                     *               "reasoningEffort": "none"
-                     *             }
-                     *           }
-                     *         }
-                     *       }
-                     *     }
-                     */
                     "application/json": components["schemas"]["AccountSettingsResponse"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getCapabilities: {
@@ -4089,28 +2668,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /** @example {} */
                     "application/json": components["schemas"]["Capabilities"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listVaults: {
@@ -4131,12 +2692,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example"
-                     *     }
-                     */
                     "application/json": {
                         items: components["schemas"]["Vault"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
@@ -4144,24 +2699,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getVault: {
@@ -4181,36 +2719,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "vaultId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "name": "example",
-                     *       "revision": 0,
-                     *       "createdAt": "2026-09-09T00:00:00.000Z",
-                     *       "updatedAt": "2026-09-09T00:00:00.000Z"
-                     *     }
-                     */
                     "application/json": components["schemas"]["Vault"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listProjects: {
@@ -4230,12 +2742,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example"
-                     *     }
-                     */
                     "application/json": {
                         items: components["schemas"]["Project"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
@@ -4243,24 +2749,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getProject: {
@@ -4280,39 +2769,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "projectId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "vaultId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "parentProjectId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "name": "example",
-                     *       "description": "example",
-                     *       "projectType": "customer",
-                     *       "revision": 0,
-                     *       "createdAt": "2026-09-09T00:00:00.000Z"
-                     *     }
-                     */
                     "application/json": components["schemas"]["Project"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listMeetings: {
@@ -4338,12 +2798,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example"
-                     *     }
-                     */
                     "application/json": {
                         items: components["schemas"]["Meeting"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
@@ -4351,24 +2805,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getMeeting: {
@@ -4388,42 +2825,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "meetingId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "vaultId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "projectId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "name": "example",
-                     *       "description": "example",
-                     *       "status": "PROCESSING_TRANSCRIPT",
-                     *       "duration": 0,
-                     *       "recordingStartedAt": "2026-09-09T00:00:00.000Z",
-                     *       "createdAt": "2026-09-09T00:00:00.000Z",
-                     *       "updatedAt": "2026-09-09T00:00:00.000Z",
-                     *       "revision": 0
-                     *     }
-                     */
                     "application/json": components["schemas"]["Meeting"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listSummaries: {
@@ -4448,23 +2853,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example"
-                     *     }
-                     */
                     "application/json": {
                         items: {
-                            /**
-                             * Format: uuid
-                             * @example 019f0d36-0520-7000-8000-000000000001
-                             */
                             id: string;
-                            /**
-                             * Format: uuid
-                             * @example 019f0d36-0520-7000-8000-000000000001
-                             */
                             meetingId: string;
                             version: number;
                             title: string;
@@ -4472,64 +2863,14 @@ export interface operations {
                             createdAt: string | null;
                             /** Format: date-time */
                             savedAt: string;
-                            metadata: {
-                                /** @enum {string} */
-                                generatedBy: "server" | "local_codex";
-                                inputTypes: ("transcript" | "image" | "audio" | "note" | "context")[];
-                                detailLevel?: string | null;
-                                outputLanguage?: string | null;
-                                request: {
-                                    model?: string | null;
-                                    reasoning?: {
-                                        effort?: string | null;
-                                        summary?: string | null;
-                                    };
-                                };
-                                response?: {
-                                    id?: string | null;
-                                    model?: string | null;
-                                    created_at?: number | null;
-                                    reasoning?: {
-                                        effort?: string | null;
-                                        summary?: string | null;
-                                    } | null;
-                                    usage?: {
-                                        input_tokens?: number | null;
-                                        output_tokens?: number | null;
-                                        total_tokens?: number | null;
-                                        input_tokens_details?: {
-                                            cached_tokens?: number | null;
-                                        } | null;
-                                        output_tokens_details?: {
-                                            reasoning_tokens?: number | null;
-                                        } | null;
-                                    } | null;
-                                };
-                            } | null;
+                            metadata: components["schemas"]["NullableSummaryMetadata"];
                         }[];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
                         nextCursor: string | null;
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getSummary: {
@@ -4550,43 +2891,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": "019f0d36-0520-7000-8000-000000000001",
-                     *       "meetingId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "version": 0,
-                     *       "title": "example",
-                     *       "document": "example",
-                     *       "createdAt": "2026-09-09T00:00:00.000Z",
-                     *       "savedAt": "2026-09-09T00:00:00.000Z",
-                     *       "metadata": {
-                     *         "generatedBy": "server",
-                     *         "inputTypes": [],
-                     *         "request": {}
-                     *       }
-                     *     }
-                     */
                     "application/json": components["schemas"]["Summary"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getLatestSummary: {
@@ -4608,40 +2916,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "formatVersion": 1,
-                     *       "version": 0,
-                     *       "entityId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "present": false,
-                     *       "count": 0,
-                     *       "byteCount": 0,
-                     *       "sha256": "example",
-                     *       "entity": "summary",
-                     *       "revision": 0
-                     *     }
-                     */
                     "application/json": components["schemas"]["SummaryContent"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listTranscripts: {
@@ -4666,12 +2944,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example"
-                     *     }
-                     */
                     "application/json": {
                         items: components["schemas"]["Transcript"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
@@ -4679,24 +2951,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getTranscript: {
@@ -4721,65 +2976,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "formatVersion": 1,
-                     *       "version": 0,
-                     *       "entityId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "present": false,
-                     *       "count": 0,
-                     *       "byteCount": 0,
-                     *       "sha256": "example",
-                     *       "entity": "transcript",
-                     *       "syncRevision": 0,
-                     *       "transcript": {
-                     *         "id": "019f0d36-0520-7000-8000-000000000001",
-                     *         "meetingId": "019f0d36-0520-7000-8000-000000000001",
-                     *         "version": 0,
-                     *         "syncRevision": 0,
-                     *         "status": "active",
-                     *         "startedAt": "2026-09-09T00:00:00.000Z",
-                     *         "endedAt": "2026-09-09T00:00:00.000Z",
-                     *         "latestSegmentCreatedAt": "2026-09-09T00:00:00.000Z",
-                     *         "createdAt": "2026-09-09T00:00:00.000Z",
-                     *         "metadata": {
-                     *           "provider": "example",
-                     *           "request": {
-                     *             "model": "example"
-                     *           },
-                     *           "runs": [
-                     *             {
-                     *               "generatedBy": "desktop",
-                     *               "inputTypes": [
-                     *                 "audio"
-                     *               ]
-                     *             }
-                     *           ]
-                     *         }
-                     *       }
-                     *     }
-                     */
                     "application/json": components["schemas"]["TranscriptContent"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getLatestTranscript: {
@@ -4803,65 +3003,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "formatVersion": 1,
-                     *       "version": 0,
-                     *       "entityId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "present": false,
-                     *       "count": 0,
-                     *       "byteCount": 0,
-                     *       "sha256": "example",
-                     *       "entity": "transcript",
-                     *       "syncRevision": 0,
-                     *       "transcript": {
-                     *         "id": "019f0d36-0520-7000-8000-000000000001",
-                     *         "meetingId": "019f0d36-0520-7000-8000-000000000001",
-                     *         "version": 0,
-                     *         "syncRevision": 0,
-                     *         "status": "active",
-                     *         "startedAt": "2026-09-09T00:00:00.000Z",
-                     *         "endedAt": "2026-09-09T00:00:00.000Z",
-                     *         "latestSegmentCreatedAt": "2026-09-09T00:00:00.000Z",
-                     *         "createdAt": "2026-09-09T00:00:00.000Z",
-                     *         "metadata": {
-                     *           "provider": "example",
-                     *           "request": {
-                     *             "model": "example"
-                     *           },
-                     *           "runs": [
-                     *             {
-                     *               "generatedBy": "desktop",
-                     *               "inputTypes": [
-                     *                 "audio"
-                     *               ]
-                     *             }
-                     *           ]
-                     *         }
-                     *       }
-                     *     }
-                     */
                     "application/json": components["schemas"]["TranscriptContent"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     startSummaryJob: {
@@ -4875,20 +3020,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "id": "019f0d36-0520-7000-8000-000000000001",
-                 *       "input": {
-                 *         "type": "transcript",
-                 *         "version": "example"
-                 *       },
-                 *       "model": "example",
-                 *       "detail": "low",
-                 *       "outputLanguage": "ja"
-                 *     }
-                 */
                 "application/json": {
-                    /** Format: uuid */
                     id: string;
                     input: {
                         /** @enum {string} */
@@ -4898,9 +3030,7 @@ export interface operations {
                         /** @enum {string} */
                         type: "recording";
                         recordings: {
-                            /** Format: uuid */
                             micFileId: string | null;
-                            /** Format: uuid */
                             systemFileId: string | null;
                         }[];
                         transcriptionModel?: string;
@@ -4911,7 +3041,6 @@ export interface operations {
                     /** @enum {string} */
                     outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
                 } | {
-                    /** Format: uuid */
                     id: string;
                     /** @enum {string} */
                     detail?: "low" | "medium" | "high" | "xhigh" | "max";
@@ -4929,47 +3058,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "job": {
-                     *         "id": "019f0d36-0520-7000-8000-000000000001",
-                     *         "method": "transcript",
-                     *         "settings": {
-                     *           "model": "example",
-                     *           "reasoningEffort": "none",
-                     *           "detail": "low"
-                     *         },
-                     *         "outputLanguage": "example",
-                     *         "status": "pending",
-                     *         "attempts": 0,
-                     *         "createdAt": "2026-09-09T00:00:00.000Z",
-                     *         "error": "example"
-                     *       }
-                     *     }
-                     */
                     "application/json": {
                         job: components["schemas"]["SummaryJob"];
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getLatestSummaryJob: {
@@ -4989,30 +3083,8 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "job": {
-                     *         "id": "019f0d36-0520-7000-8000-000000000001",
-                     *         "method": "transcript",
-                     *         "settings": {
-                     *           "model": "example",
-                     *           "reasoningEffort": "none",
-                     *           "detail": "low"
-                     *         },
-                     *         "outputLanguage": "example",
-                     *         "status": "pending",
-                     *         "attempts": 0,
-                     *         "createdAt": "2026-09-09T00:00:00.000Z",
-                     *         "error": "example"
-                     *       }
-                     *     }
-                     */
                     "application/json": {
                         job: {
-                            /**
-                             * Format: uuid
-                             * @example 019f0d36-0520-7000-8000-000000000001
-                             */
                             id: string;
                             /** @enum {string} */
                             method: "transcript" | "audio";
@@ -5024,9 +3096,7 @@ export interface operations {
                                 /** @enum {string} */
                                 type: "recording";
                                 recordings: {
-                                    /** Format: uuid */
                                     micFileId: string | null;
-                                    /** Format: uuid */
                                     systemFileId: string | null;
                                 }[];
                                 transcriptionModel?: string;
@@ -5034,10 +3104,6 @@ export interface operations {
                             /** @enum {string|null} */
                             stage?: "transcribing" | "summarizing" | "generating" | "saving" | null;
                             transcriptResult?: {
-                                /**
-                                 * Format: uuid
-                                 * @example 019f0d36-0520-7000-8000-000000000001
-                                 */
                                 transcriptId: string;
                                 version: string;
                             } | null;
@@ -5061,24 +3127,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getSummaryJob: {
@@ -5099,47 +3148,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "job": {
-                     *         "id": "019f0d36-0520-7000-8000-000000000001",
-                     *         "method": "transcript",
-                     *         "settings": {
-                     *           "model": "example",
-                     *           "reasoningEffort": "none",
-                     *           "detail": "low"
-                     *         },
-                     *         "outputLanguage": "example",
-                     *         "status": "pending",
-                     *         "attempts": 0,
-                     *         "createdAt": "2026-09-09T00:00:00.000Z",
-                     *         "error": "example"
-                     *       }
-                     *     }
-                     */
                     "application/json": {
                         job: components["schemas"]["SummaryJob"];
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     cancelSummaryJob: {
@@ -5160,47 +3174,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "job": {
-                     *         "id": "019f0d36-0520-7000-8000-000000000001",
-                     *         "method": "transcript",
-                     *         "settings": {
-                     *           "model": "example",
-                     *           "reasoningEffort": "none",
-                     *           "detail": "low"
-                     *         },
-                     *         "outputLanguage": "example",
-                     *         "status": "pending",
-                     *         "attempts": 0,
-                     *         "createdAt": "2026-09-09T00:00:00.000Z",
-                     *         "error": "example"
-                     *       }
-                     *     }
-                     */
                     "application/json": {
                         job: components["schemas"]["SummaryJob"];
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     retrySummaryJob: {
@@ -5215,13 +3194,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "id": "019f0d36-0520-7000-8000-000000000001"
-                 *     }
-                 */
                 "application/json": {
-                    /** Format: uuid */
                     id: string;
                 };
             };
@@ -5235,47 +3208,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "job": {
-                     *         "id": "019f0d36-0520-7000-8000-000000000001",
-                     *         "method": "transcript",
-                     *         "settings": {
-                     *           "model": "example",
-                     *           "reasoningEffort": "none",
-                     *           "detail": "low"
-                     *         },
-                     *         "outputLanguage": "example",
-                     *         "status": "pending",
-                     *         "attempts": 0,
-                     *         "createdAt": "2026-09-09T00:00:00.000Z",
-                     *         "error": "example"
-                     *       }
-                     *     }
-                     */
                     "application/json": {
                         job: components["schemas"]["SummaryJob"];
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     commitTransaction: {
@@ -5287,29 +3225,6 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "schemaVersion": 2,
-                 *       "id": "019f0d36-0520-7000-8000-000000000001",
-                 *       "vaultId": "019f0d36-0520-7000-8000-000000000001",
-                 *       "createdAt": "2026-09-09T00:00:00.000Z",
-                 *       "operations": [
-                 *         {
-                 *           "id": "019f0d36-0520-7000-8000-000000000001",
-                 *           "entity": "meeting_event",
-                 *           "action": "create",
-                 *           "entityId": "019f0d36-0520-7000-8000-000000000001",
-                 *           "baseRevision": 0,
-                 *           "data": {
-                 *             "meetingId": "019f0d36-0520-7000-8000-000000000001",
-                 *             "kind": "tag_added",
-                 *             "occurredAt": "2026-09-09T00:00:00.000Z",
-                 *             "relatedId": "1"
-                 *           }
-                 *         }
-                 *       ]
-                 *     }
-                 */
                 "application/json": components["schemas"]["Transaction"];
             };
         };
@@ -5320,35 +3235,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": "019f0d36-0520-7000-8000-000000000001",
-                     *       "status": "committed",
-                     *       "cursor": "example",
-                     *       "records": []
-                     *     }
-                     */
                     "application/json": components["schemas"]["TransactionReceipt"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     resolveTransaction: {
@@ -5360,29 +3250,6 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "schemaVersion": 2,
-                 *       "id": "019f0d36-0520-7000-8000-000000000001",
-                 *       "vaultId": "019f0d36-0520-7000-8000-000000000001",
-                 *       "createdAt": "2026-09-09T00:00:00.000Z",
-                 *       "operations": [
-                 *         {
-                 *           "id": "019f0d36-0520-7000-8000-000000000001",
-                 *           "entity": "meeting_event",
-                 *           "action": "create",
-                 *           "entityId": "019f0d36-0520-7000-8000-000000000001",
-                 *           "baseRevision": 0,
-                 *           "data": {
-                 *             "meetingId": "019f0d36-0520-7000-8000-000000000001",
-                 *             "kind": "tag_added",
-                 *             "occurredAt": "2026-09-09T00:00:00.000Z",
-                 *             "relatedId": "1"
-                 *           }
-                 *         }
-                 *       ]
-                 *     }
-                 */
                 "application/json": components["schemas"]["Transaction"];
             };
         };
@@ -5393,35 +3260,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": "019f0d36-0520-7000-8000-000000000001",
-                     *       "status": "committed",
-                     *       "cursor": "example",
-                     *       "records": []
-                     *     }
-                     */
                     "application/json": components["schemas"]["TransactionResolution"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getChanges: {
@@ -5446,35 +3288,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "cursor": "example",
-                     *       "highWaterCursor": "example",
-                     *       "hasMore": false
-                     *     }
-                     */
                     "application/json": components["schemas"]["Changes"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getSnapshot: {
@@ -5499,34 +3316,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example",
-                     *       "startCursor": "example"
-                     *     }
-                     */
                     "application/json": components["schemas"]["Snapshot"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     search: {
@@ -5540,13 +3333,11 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {} */
                 "application/json": {
                     /** @default  */
                     query?: string;
                     /** @enum {string} */
                     kind?: "meeting" | "screenshot" | "project";
-                    /** Format: uuid */
                     projectId?: string;
                     /** Format: date-time */
                     from?: string;
@@ -5564,40 +3355,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "vaultId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "meetings": [],
-                     *       "screenshots": [],
-                     *       "projects": [],
-                     *       "limited": {
-                     *         "meeting": false,
-                     *         "screenshot": false,
-                     *         "project": false
-                     *       }
-                     *     }
-                     */
                     "application/json": components["schemas"]["SearchResults"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     textSearch: {
@@ -5611,12 +3372,6 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "query": "example",
-                 *       "kind": "meeting"
-                 *     }
-                 */
                 "application/json": components["schemas"]["TextSearchRequest"];
             };
         };
@@ -5627,35 +3382,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example",
-                     *       "version": 1,
-                     *       "scope": "server"
-                     *     }
-                     */
                     "application/json": components["schemas"]["TextSearchResults"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getEvents: {
@@ -5678,31 +3408,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example event: invalidation
-                     *     data: {"cursor":"opaque-cursor"}
-                     */
                     "text/event-stream": string;
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     putTranscriptChunk: {
@@ -5720,15 +3429,8 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "segments": [],
-                 *       "deletions": []
-                 *     }
-                 */
                 "application/json": {
                     segments: {
-                        /** Format: uuid */
                         segmentId: string;
                         /** Format: date-time */
                         startedAt: string;
@@ -5753,24 +3455,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     reserveFileUpload: {
@@ -5782,21 +3467,8 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "id": "019f0d36-0520-7000-8000-000000000001",
-                 *       "vaultId": "019f0d36-0520-7000-8000-000000000001",
-                 *       "name": "example",
-                 *       "contentType": "application/octet-stream",
-                 *       "metadata": {
-                 *         "source": "upload"
-                 *       }
-                 *     }
-                 */
                 "application/json": {
-                    /** Format: uuid */
                     id: string;
-                    /** Format: uuid */
                     vaultId: string;
                     name: string;
                     contentType: string;
@@ -5816,22 +3488,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": "019f0d36-0520-7000-8000-000000000001",
-                     *       "vaultId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "name": "example",
-                     *       "contentType": "example",
-                     *       "size": 0,
-                     *       "checksum": "example",
-                     *       "metadata": {
-                     *         "source": "upload"
-                     *       },
-                     *       "revision": 0,
-                     *       "createdAt": "2026-09-09T00:00:00.000Z",
-                     *       "updatedAt": "2026-09-09T00:00:00.000Z"
-                     *     }
-                     */
                     "application/json": components["schemas"]["File"];
                 };
             };
@@ -5843,43 +3499,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": "019f0d36-0520-7000-8000-000000000001",
-                     *       "vaultId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "name": "example",
-                     *       "contentType": "example",
-                     *       "size": 0,
-                     *       "checksum": "example",
-                     *       "metadata": {
-                     *         "source": "upload"
-                     *       },
-                     *       "revision": 0,
-                     *       "createdAt": "2026-09-09T00:00:00.000Z",
-                     *       "updatedAt": "2026-09-09T00:00:00.000Z"
-                     *     }
-                     */
                     "application/json": components["schemas"]["File"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     putFileContent: {
@@ -5907,22 +3530,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": "019f0d36-0520-7000-8000-000000000001",
-                     *       "vaultId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "name": "example",
-                     *       "contentType": "example",
-                     *       "size": 0,
-                     *       "checksum": "example",
-                     *       "metadata": {
-                     *         "source": "upload"
-                     *       },
-                     *       "revision": 0,
-                     *       "createdAt": "2026-09-09T00:00:00.000Z",
-                     *       "updatedAt": "2026-09-09T00:00:00.000Z"
-                     *     }
-                     */
                     "application/json": components["schemas"]["File"];
                 };
             };
@@ -5934,43 +3541,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": "019f0d36-0520-7000-8000-000000000001",
-                     *       "vaultId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "name": "example",
-                     *       "contentType": "example",
-                     *       "size": 0,
-                     *       "checksum": "example",
-                     *       "metadata": {
-                     *         "source": "upload"
-                     *       },
-                     *       "revision": 0,
-                     *       "createdAt": "2026-09-09T00:00:00.000Z",
-                     *       "updatedAt": "2026-09-09T00:00:00.000Z"
-                     *     }
-                     */
                     "application/json": components["schemas"]["File"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getFile: {
@@ -5990,43 +3564,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": "019f0d36-0520-7000-8000-000000000001",
-                     *       "vaultId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "name": "example",
-                     *       "contentType": "example",
-                     *       "size": 0,
-                     *       "checksum": "example",
-                     *       "metadata": {
-                     *         "source": "upload"
-                     *       },
-                     *       "revision": 0,
-                     *       "createdAt": "2026-09-09T00:00:00.000Z",
-                     *       "updatedAt": "2026-09-09T00:00:00.000Z"
-                     *     }
-                     */
                     "application/json": components["schemas"]["File"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     updateFile: {
@@ -6040,12 +3581,6 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "baseRevision": 1,
-                 *       "metadata": {}
-                 *     }
-                 */
                 "application/json": {
                     baseRevision: number;
                     metadata: {
@@ -6064,43 +3599,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": "019f0d36-0520-7000-8000-000000000001",
-                     *       "vaultId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "name": "example",
-                     *       "contentType": "example",
-                     *       "size": 0,
-                     *       "checksum": "example",
-                     *       "metadata": {
-                     *         "source": "upload"
-                     *       },
-                     *       "revision": 0,
-                     *       "createdAt": "2026-09-09T00:00:00.000Z",
-                     *       "updatedAt": "2026-09-09T00:00:00.000Z"
-                     *     }
-                     */
                     "application/json": components["schemas"]["File"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listFiles: {
@@ -6123,12 +3625,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example"
-                     *     }
-                     */
                     "application/json": {
                         items: components["schemas"]["File"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
@@ -6136,24 +3632,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listMeetingFiles: {
@@ -6176,12 +3655,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example"
-                     *     }
-                     */
                     "application/json": {
                         items: (components["schemas"]["MeetingFile"] & {
                             file: components["schemas"]["File"];
@@ -6191,24 +3664,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getFileContent: {
@@ -6278,24 +3734,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     headFileContent: {
@@ -6338,24 +3777,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getFileVariant: {
@@ -6426,24 +3848,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     headFileVariant: {
@@ -6487,24 +3892,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     putRecordingContent: {
@@ -6534,17 +3922,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": 0,
-                     *       "source": "mic",
-                     *       "contentType": "audio/mp4",
-                     *       "size": 0,
-                     *       "checksum": "example",
-                     *       "revision": 0,
-                     *       "contentUrl": "example"
-                     *     }
-                     */
                     "application/json": components["schemas"]["RecordingUpload"];
                 };
             };
@@ -6556,38 +3933,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": 0,
-                     *       "source": "mic",
-                     *       "contentType": "audio/mp4",
-                     *       "size": 0,
-                     *       "checksum": "example",
-                     *       "revision": 0,
-                     *       "contentUrl": "example"
-                     *     }
-                     */
                     "application/json": components["schemas"]["RecordingUpload"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listRecordings: {
@@ -6610,12 +3959,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example"
-                     *     }
-                     */
                     "application/json": {
                         items: components["schemas"]["Recording"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
@@ -6623,24 +3966,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getRecordingContent: {
@@ -6712,24 +4038,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     headRecordingContent: {
@@ -6774,24 +4083,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getTransferAudience: {
@@ -6813,13 +4105,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "audienceHash": "example",
-                     *       "removed": [],
-                     *       "added": []
-                     *     }
-                     */
                     "application/json": {
                         audienceHash: string;
                         removed: components["schemas"]["Person"][];
@@ -6827,24 +4112,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     transferVault: {
@@ -6860,19 +4128,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "destinationVaultId": "019f0d36-0520-7000-8000-000000000001",
-                 *       "sourceRevision": 0,
-                 *       "destinationRevision": 0,
-                 *       "audienceHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                 *     }
-                 */
                 "application/json": {
-                    /**
-                     * Format: uuid
-                     * @example 019f0d36-0520-7000-8000-000000000001
-                     */
                     destinationVaultId: string;
                     sourceRevision: number;
                     destinationRevision: number;
@@ -6887,53 +4143,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": "019f0d36-0520-7000-8000-000000000001",
-                     *       "status": "committed",
-                     *       "sourceVaultId": "019f0d36-0520-7000-8000-000000000001",
-                     *       "destinationVaultId": "019f0d36-0520-7000-8000-000000000001"
-                     *     }
-                     */
                     "application/json": {
-                        /**
-                         * Format: uuid
-                         * @example 019f0d36-0520-7000-8000-000000000001
-                         */
                         id: string;
                         /** @enum {string} */
                         status: "committed";
-                        /**
-                         * Format: uuid
-                         * @example 019f0d36-0520-7000-8000-000000000001
-                         */
                         sourceVaultId: string;
-                        /**
-                         * Format: uuid
-                         * @example 019f0d36-0520-7000-8000-000000000001
-                         */
                         destinationVaultId: string;
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getRelocations: {
@@ -6953,49 +4172,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "vaults": [],
-                     *       "items": []
-                     *     }
-                     */
                     "application/json": {
                         vaults: components["schemas"]["Vault"][];
                         items: {
                             /** @enum {string} */
                             entity: "project" | "meeting" | "file";
-                            /**
-                             * Format: uuid
-                             * @example 019f0d36-0520-7000-8000-000000000001
-                             */
                             id: string;
-                            /**
-                             * Format: uuid
-                             * @example 019f0d36-0520-7000-8000-000000000001
-                             */
                             vaultId: string;
                         }[];
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listPermissions: {
@@ -7015,12 +4203,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example"
-                     *     }
-                     */
                     "application/json": {
                         items: components["schemas"]["VaultPermission"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
@@ -7028,24 +4210,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     putOrganizationPermission: {
@@ -7067,24 +4232,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     deleteOrganizationPermission: {
@@ -7106,24 +4254,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     putTeamPermission: {
@@ -7145,24 +4276,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     deleteTeamPermission: {
@@ -7184,24 +4298,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listOrganizations: {
@@ -7219,12 +4316,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example"
-                     *     }
-                     */
                     "application/json": {
                         items: components["schemas"]["Organization"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
@@ -7232,24 +4323,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     getOrganization: {
@@ -7269,34 +4343,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": "example",
-                     *       "name": "example",
-                     *       "slug": "example"
-                     *     }
-                     */
                     "application/json": components["schemas"]["Organization"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listOrganizationMembers: {
@@ -7316,12 +4366,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example"
-                     *     }
-                     */
                     "application/json": {
                         items: {
                             id: string;
@@ -7337,24 +4381,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listTeams: {
@@ -7374,12 +4401,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example"
-                     *     }
-                     */
                     "application/json": {
                         items: components["schemas"]["Team"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
@@ -7387,24 +4408,7 @@ export interface operations {
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     createTeam: {
@@ -7418,11 +4422,6 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "name": "example"
-                 *     }
-                 */
                 "application/json": {
                     name: string;
                 };
@@ -7437,37 +4436,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": "example",
-                     *       "name": "example",
-                     *       "organizationId": "example",
-                     *       "memberCount": 0,
-                     *       "createdAt": "2026-09-09T00:00:00.000Z",
-                     *       "updatedAt": "2026-09-09T00:00:00.000Z"
-                     *     }
-                     */
                     "application/json": components["schemas"]["Team"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     deleteTeam: {
@@ -7489,24 +4461,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     updateTeam: {
@@ -7521,11 +4476,6 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "name": "example"
-                 *     }
-                 */
                 "application/json": {
                     name: string;
                 };
@@ -7538,37 +4488,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": "example",
-                     *       "name": "example",
-                     *       "organizationId": "example",
-                     *       "memberCount": 0,
-                     *       "createdAt": "2026-09-09T00:00:00.000Z",
-                     *       "updatedAt": "2026-09-09T00:00:00.000Z"
-                     *     }
-                     */
                     "application/json": components["schemas"]["Team"];
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     listTeamMembers: {
@@ -7589,40 +4512,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [],
-                     *       "nextCursor": "example"
-                     *     }
-                     */
                     "application/json": {
-                        items: (components["schemas"]["Person"] & {
-                            userId: string;
-                            teamId: string;
-                        })[];
+                        items: components["schemas"]["TeamMember"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
                         nextCursor: string | null;
                     };
                 };
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     putTeamMember: {
@@ -7645,24 +4542,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
     deleteTeamMember: {
@@ -7685,24 +4565,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["Problem400"];
-            401: components["responses"]["Problem401"];
-            403: components["responses"]["Problem403"];
-            404: components["responses"]["Problem404"];
-            405: components["responses"]["Problem405"];
-            409: components["responses"]["Problem409"];
-            410: components["responses"]["Problem410"];
-            411: components["responses"]["Problem411"];
-            412: components["responses"]["Problem412"];
-            413: components["responses"]["Problem413"];
-            415: components["responses"]["Problem415"];
-            416: components["responses"]["Problem416"];
-            422: components["responses"]["Problem422"];
-            426: components["responses"]["Problem426"];
-            429: components["responses"]["Problem429"];
-            500: components["responses"]["Problem500"];
-            502: components["responses"]["Problem502"];
-            503: components["responses"]["Problem503"];
+            default: components["responses"]["Problem"];
         };
     };
 }

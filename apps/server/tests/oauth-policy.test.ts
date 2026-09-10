@@ -1,3 +1,6 @@
+import { Hono } from "hono";
+import { installPublicIDs } from "../src/public-http";
+import { encodeId } from "../src/typeid";
 import { describe, expect, it, vi } from "vitest";
 
 import { denyOAuthManagement } from "../src/auth/better-auth";
@@ -84,6 +87,38 @@ describe("fixed OAuth client policy", () => {
       .toBe("https://new.dahlia.example/mcp/resources/vaults/vault/screenshots/image/content");
     await expect(identities.fromMcpResource(request, MCP_SCOPE))
       .rejects.toThrow("Insufficient scope");
+  });
+
+  it.each(["resource", "gateway"])("preserves the public URL through ID decoding for %s proofs", async (kind) => {
+    const uuid = "01990ab0-0000-7000-8000-000000000001";
+    const path = kind === "resource"
+      ? `/mcp/resources/vaults/${encodeId("vault", uuid)}/meetings/${encodeId("meeting", uuid)}/screenshots/${encodeId("attachment", uuid)}/content`
+      : `/api/v1/vaults/${encodeId("vault", uuid)}`;
+    const publicURL = `${config.baseUrl}${path}`;
+    const identities = new IdentityService(config);
+    const verifier = vi.fn(async (request: Request) => {
+      expect(request.url).toBe(publicURL);
+      expect(request.method).toBe("GET");
+      expect(request.headers.get("authorization")).toBe("DPoP access-token");
+      if (request.headers.get("dpop") !== "valid-proof") throw new Error("invalid proof");
+      return { sub: uuid, workspace_id: `personal:${uuid}`, client_id: "mcp-client",
+        exp: Math.floor(Date.now() / 1000) + 60, scope: kind === "resource" ? MCP_READ_SCOPE : ALL_APIS_SCOPE };
+    });
+    Object.assign(identities, { verifyAccessToken: verifier });
+    const app = new Hono();
+    app.get("*", async (context) => {
+      expect(context.req.path).toContain(uuid);
+      try {
+        if (kind === "resource") await identities.fromMcpResource(context.req.raw, MCP_READ_SCOPE);
+        else await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
+        return new Response(null, { status: 204 });
+      } catch { return new Response(null, { status: 401 }); }
+    });
+    installPublicIDs(app);
+    for (const [proof, status] of [["valid-proof", 204], ["invalid-proof", 401]] as const) {
+      expect((await app.request(publicURL, { headers: { authorization: "DPoP access-token", dpop: proof } })).status).toBe(status);
+    }
+    expect(verifier).toHaveBeenCalledTimes(2);
   });
 
   it("keeps impersonated OAuth tokens read-only", async () => {

@@ -1,7 +1,7 @@
 CREATE SCHEMA "app";
 --> statement-breakpoint
 CREATE TABLE "app"."account_settings" (
-	"user_id" text PRIMARY KEY,
+	"user_id" uuid PRIMARY KEY,
 	"summary" jsonb DEFAULT '{"method":"transcript","detail":"high","methodSettings":{"transcript":{"model":"gpt-5.4","reasoningEffort":"medium"},"audio":{"model":"gemini-3-8-flash","reasoningEffort":"medium"}}}' NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
 	"output_language" text NOT NULL,
@@ -12,7 +12,7 @@ ALTER TABLE "app"."account_settings" ENABLE ROW LEVEL SECURITY;--> statement-bre
 CREATE TABLE "app"."jobs_image_analysis" (
 	"file_id" uuid PRIMARY KEY,
 	"vault_id" uuid NOT NULL,
-	"owner_user_id" text NOT NULL,
+	"owner_user_id" uuid NOT NULL,
 	"model" text NOT NULL,
 	"status" text DEFAULT 'pending' NOT NULL,
 	"attempts" integer DEFAULT 0 NOT NULL,
@@ -23,10 +23,23 @@ CREATE TABLE "app"."jobs_image_analysis" (
 	CONSTRAINT "image_analysis_job_status_check" CHECK ("status" IN ('pending', 'processing', 'failed'))
 );
 --> statement-breakpoint
+CREATE TABLE "app"."meeting_attachments" (
+	"id" uuid PRIMARY KEY,
+	"vault_id" uuid NOT NULL,
+	"meeting_id" uuid NOT NULL,
+	"file_id" uuid NOT NULL,
+	"captured_at" timestamp,
+	"session_id" uuid,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"revision" integer DEFAULT 1 NOT NULL,
+	CONSTRAINT "meeting_attachments_meeting_attachment_unique" UNIQUE("meeting_id","file_id")
+);
+--> statement-breakpoint
+ALTER TABLE "app"."meeting_attachments" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."meeting_events" (
 	"id" uuid PRIMARY KEY,
 	"vault_id" uuid NOT NULL,
-	"owner_user_id" text NOT NULL,
+	"owner_user_id" uuid NOT NULL,
 	"meeting_id" uuid NOT NULL,
 	"kind" text NOT NULL,
 	"occurred_at" timestamp NOT NULL,
@@ -41,19 +54,6 @@ CREATE TABLE "app"."meeting_events" (
 );
 --> statement-breakpoint
 ALTER TABLE "app"."meeting_events" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
-CREATE TABLE "app"."meeting_files" (
-	"id" uuid PRIMARY KEY,
-	"vault_id" uuid NOT NULL,
-	"meeting_id" uuid NOT NULL,
-	"file_id" uuid NOT NULL,
-	"captured_at" timestamp,
-	"session_id" uuid,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"revision" integer DEFAULT 1 NOT NULL,
-	CONSTRAINT "meeting_files_meeting_file_unique" UNIQUE("meeting_id","file_id")
-);
---> statement-breakpoint
-ALTER TABLE "app"."meeting_files" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."search_documents" (
 	"document_id" uuid,
 	"vault_id" uuid,
@@ -85,7 +85,7 @@ ALTER TABLE "app"."search_embeddings" ENABLE ROW LEVEL SECURITY;--> statement-br
 CREATE TABLE "app"."jobs_search_index" (
 	"vault_id" uuid,
 	"document_id" uuid,
-	"owner_user_id" text NOT NULL,
+	"owner_user_id" uuid NOT NULL,
 	"model" text NOT NULL,
 	"dimensions" integer NOT NULL,
 	"generation" integer DEFAULT 1 NOT NULL,
@@ -130,7 +130,7 @@ CREATE TABLE "app"."jobs_summary" (
 	"id" uuid PRIMARY KEY,
 	"vault_id" uuid NOT NULL,
 	"meeting_id" uuid NOT NULL,
-	"owner_user_id" text NOT NULL,
+	"owner_user_id" uuid NOT NULL,
 	"method" text NOT NULL,
 	"settings" jsonb NOT NULL,
 	"input" jsonb,
@@ -154,7 +154,7 @@ CREATE TABLE "app"."jobs_summary" (
 ALTER TABLE "app"."jobs_summary" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."sync_changes" (
 	"sequence" bigserial PRIMARY KEY,
-	"owner_user_id" text NOT NULL,
+	"owner_user_id" uuid NOT NULL,
 	"vault_id" uuid NOT NULL,
 	"entity" text NOT NULL,
 	"entity_id" uuid NOT NULL,
@@ -162,13 +162,13 @@ CREATE TABLE "app"."sync_changes" (
 	"revision" integer,
 	"transaction_id" uuid NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "sync_change_entity_check" CHECK ("entity" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_file', 'recording')),
+	CONSTRAINT "sync_change_entity_check" CHECK ("entity" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')),
 	CONSTRAINT "sync_change_action_check" CHECK ("action" IN ('upsert', 'delete', 'reset'))
 );
 --> statement-breakpoint
 CREATE TABLE "app"."transaction_receipts" (
 	"transaction_id" uuid PRIMARY KEY,
-	"owner_user_id" text NOT NULL,
+	"owner_user_id" uuid NOT NULL,
 	"vault_id" uuid NOT NULL,
 	"request_hash" text NOT NULL,
 	"response_json" jsonb,
@@ -179,7 +179,7 @@ CREATE TABLE "app"."transaction_receipts" (
 --> statement-breakpoint
 ALTER TABLE "app"."transaction_receipts" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."sync_vault_state" (
-	"owner_user_id" text,
+	"owner_user_id" uuid,
 	"vault_id" uuid,
 	"latest_sequence" bigint DEFAULT 0 NOT NULL,
 	"pruned_through" bigint DEFAULT 0 NOT NULL,
@@ -293,9 +293,9 @@ ALTER TABLE "app"."vaults" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."vault_permissions" (
 	"vault_id" uuid,
 	"principal_type" text,
-	"principal_id" text,
+	"principal_id" uuid,
 	"role" text NOT NULL,
-	"granted_by_user_id" text NOT NULL,
+	"granted_by_user_id" uuid NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "vault_permission_pk" PRIMARY KEY("vault_id","principal_type","principal_id"),
 	CONSTRAINT "vault_permission_principal_type_check" CHECK ("principal_type" IN ('user', 'organization', 'team')),
@@ -332,7 +332,7 @@ ALTER TABLE "app"."transcript_patch_chunks" ENABLE ROW LEVEL SECURITY;--> statem
 CREATE TABLE "app"."vault_transfers" (
 	"sequence" bigserial PRIMARY KEY,
 	"id" uuid NOT NULL UNIQUE,
-	"owner_user_id" text NOT NULL,
+	"owner_user_id" uuid NOT NULL,
 	"idempotency_key" uuid NOT NULL,
 	"request_hash" text NOT NULL,
 	"source_vault_id" uuid NOT NULL,
@@ -343,9 +343,9 @@ CREATE TABLE "app"."vault_transfers" (
 --> statement-breakpoint
 ALTER TABLE "app"."vault_transfers" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE INDEX "image_analysis_job_claim_idx" ON "app"."jobs_image_analysis" ("status","available_at","lease_expires_at");--> statement-breakpoint
+CREATE INDEX "meeting_attachments_vault_meeting_id_idx" ON "app"."meeting_attachments" ("vault_id","meeting_id","id");--> statement-breakpoint
 CREATE INDEX "meeting_events_meeting_time_idx" ON "app"."meeting_events" ("vault_id","meeting_id","occurred_at","id");--> statement-breakpoint
 CREATE INDEX "meeting_events_session_idx" ON "app"."meeting_events" ("vault_id","session_id");--> statement-breakpoint
-CREATE INDEX "meeting_files_vault_meeting_id_idx" ON "app"."meeting_files" ("vault_id","meeting_id","id");--> statement-breakpoint
 CREATE INDEX "search_document_vault_kind_meeting_document_idx" ON "app"."search_documents" ("vault_id","kind","meeting_id","document_id");--> statement-breakpoint
 CREATE INDEX "search_index_job_claim_idx" ON "app"."jobs_search_index" ("status","available_at","lease_expires_at");--> statement-breakpoint
 CREATE INDEX "storage_delete_job_claim_idx" ON "app"."jobs_storage_delete" ("status","available_at","lease_expires_at");--> statement-breakpoint
@@ -367,10 +367,10 @@ ALTER TABLE "app"."account_settings" ADD CONSTRAINT "account_settings_user_id_us
 ALTER TABLE "app"."jobs_image_analysis" ADD CONSTRAINT "jobs_image_analysis_file_id_files_file_id_fkey" FOREIGN KEY ("file_id") REFERENCES "app"."files"("file_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."jobs_image_analysis" ADD CONSTRAINT "jobs_image_analysis_vault_id_vaults_vault_id_fkey" FOREIGN KEY ("vault_id") REFERENCES "app"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."jobs_image_analysis" ADD CONSTRAINT "jobs_image_analysis_owner_user_id_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."meeting_attachments" ADD CONSTRAINT "meeting_attachments_fnlH8jMHLYfd_fkey" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "app"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."meeting_attachments" ADD CONSTRAINT "meeting_attachments_sV1ehoid9FNK_fkey" FOREIGN KEY ("vault_id","file_id") REFERENCES "app"."files"("vault_id","file_id");--> statement-breakpoint
 ALTER TABLE "app"."meeting_events" ADD CONSTRAINT "meeting_events_vault_id_vaults_vault_id_fkey" FOREIGN KEY ("vault_id") REFERENCES "app"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."meeting_events" ADD CONSTRAINT "meeting_events_owner_user_id_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "app"."meeting_files" ADD CONSTRAINT "meeting_files_7HfrsfdhAdbg_fkey" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "app"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "app"."meeting_files" ADD CONSTRAINT "meeting_files_vault_id_file_id_files_vault_id_file_id_fkey" FOREIGN KEY ("vault_id","file_id") REFERENCES "app"."files"("vault_id","file_id");--> statement-breakpoint
 ALTER TABLE "app"."search_documents" ADD CONSTRAINT "search_document_meeting_fk" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "app"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."search_embeddings" ADD CONSTRAINT "search_embedding_document_fk" FOREIGN KEY ("vault_id","document_id") REFERENCES "app"."search_documents"("vault_id","document_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."jobs_search_index" ADD CONSTRAINT "search_index_job_vault_fk" FOREIGN KEY ("vault_id") REFERENCES "app"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
@@ -409,6 +409,6 @@ CREATE VIEW "app"."meeting_images" WITH (security_invoker = true) AS (
     f.metadata ->> 'ocr_text' AS ocr_text,
     f.metadata ->> 'caption' AS caption,
     m.revision
-  FROM app.meeting_files m JOIN app.files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id
+  FROM app.meeting_attachments m JOIN app.files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id
   WHERE f.metadata ->> 'source' = 'screenshot'
 );

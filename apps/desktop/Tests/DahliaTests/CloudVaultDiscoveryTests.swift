@@ -1,4 +1,5 @@
 #if canImport(Testing)
+    import DahliaRuntimeSupport
     import Foundation
     import HTTPTypes
     import OpenAPIRuntime
@@ -12,7 +13,10 @@
                 let url = try #require(request.url)
                 #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test")
                 if url.path == "/api/v1/organizations" {
-                    return response(url, body: #"{"items":[{"id":"a","name":"A","slug":"a"},{"id":"b","name":"B","slug":"b"}],"nextCursor":null}"#)
+                    return response(url, body: #"""
+                    {"items":[{"id":"org_01m0000000e008000000000001","name":"A","slug":"a"},
+                    {"id":"org_01m0000000e008000000000002","name":"B","slug":"b"}],"nextCursor":null}
+                    """#)
                 }
                 let organization = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                     .queryItems?.first?.value
@@ -27,7 +31,7 @@
             let result = try await CloudVaultDiscovery.fetch(connection: connection, token: "test", transport: DiscoveryTransport { request in
                 let url = try #require(request.url)
                 if url.path == "/api/v1/organizations" {
-                    return response(url, body: #"{"items":[{"id":"revoked","name":"R","slug":"r"}],"nextCursor":null}"#)
+                    return response(url, body: #"{"items":[{"id":"org_01m0000000e008000000000003","name":"R","slug":"r"}],"nextCursor":null}"#)
                 }
                 return url.query == nil ? response(url, body: vaultPage("1", role: "owner"))
                     : response(url, status: 403, body: "{}")
@@ -54,7 +58,7 @@
 
     private func vaultPage(_ suffix: String, role: String = "member") -> String {
         """
-        {"items":[{"vaultId":"019d3f46-7e0d-7d21-98d9-f1456c0bfb5\(suffix)","name":"Vault",
+        {"items":[{"vaultId":"\(TypeID.encode(UUID(uuidString: "019d3f46-7e0d-7d21-98d9-f1456c0bfb5" + suffix)!, as: .vault))","name":"Vault",
         "revision":1,"createdAt":"2026-09-03T00:00:00.000Z","updatedAt":"2026-09-03T00:00:00.000Z","role":"\(role)"}],"nextCursor":null}
         """
     }

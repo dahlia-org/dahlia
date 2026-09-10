@@ -511,7 +511,7 @@ import GRDB
             let original = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
 
             let readOnly = try Self.initializedServer(store: fixture.store(vaultID: fixture.primaryVaultID))
-            let denied = try Self.json(readOnly.handleLine(Self.updateRequest(id: 9, meetingID: fixture.firstMeetingID)))
+            let denied = try Self.json(readOnly.handleInternalTestLine(Self.updateRequest(id: 9, meetingID: fixture.firstMeetingID)))
             let deniedResult = try #require(denied["result"] as? [String: Any])
             #expect(deniedResult["isError"] as? Bool == true)
 
@@ -561,7 +561,7 @@ import GRDB
                     version: current.version,
                     document: document
                 )
-                let response = try Self.json(server.handleLine(line))
+                let response = try Self.json(server.handleInternalTestLine(line))
                 let error = try #require(response["error"] as? [String: Any])
                 #expect(error["code"] as? Int == -32602)
             }
@@ -598,7 +598,7 @@ import GRDB
             let stored = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
             #expect(try stored == (rich.databaseJSONString()))
             if withMetadata {
-                let tools = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#))
+                let tools = try Self.json(server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#))
                 let definitions = try #require((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]])
                 var current = try Self.summaryDocumentFromMeeting(server: server, meetingID: fixture.firstMeetingID)
                 let metadata = try #require(current.document["metadata"] as? [String: Any])
@@ -614,7 +614,7 @@ import GRDB
                 let edit = try Self.summaryUpdateRequest(
                     id: 4, meetingID: fixture.firstMeetingID, version: current.version, document: current.document
                 )
-                let response = try Self.json(server.handleLine(edit))
+                let response = try Self.json(server.handleInternalTestLine(edit))
                 #expect(response["error"] == nil)
                 let edited = try SummaryDocument.decode(databaseJSON: fixture.storedDocument(meetingID: fixture.firstMeetingID))
                 #expect(edited.title == "Edited")
@@ -764,7 +764,7 @@ import GRDB
 
         private static func toolNames(_ store: MeetingAccessStore) throws -> [String] {
             let server = try initializedServer(store: store)
-            let tools = try json(server.handleLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#))
+            let tools = try json(server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#))
             let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             return definitions.compactMap { $0["name"] as? String }
         }
@@ -780,7 +780,7 @@ import GRDB
                 version: current.version,
                 document: current.document
             )
-            let response = try json(server.handleLine(line))
+            let response = try json(server.handleInternalTestLine(line))
             return try #require((response["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
         }
 
@@ -788,7 +788,7 @@ import GRDB
             server: DahliaMCPServer,
             meetingID: UUID
         ) throws -> (document: [String: Any], version: String) {
-            let detail = try json(server.handleLine(#"""
+            let detail = try json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_meeting","arguments":{"meeting_id":"\#(meetingID
                 .uuidString)"}}}
             """#))
@@ -837,8 +837,8 @@ import GRDB
 
         private static func initializedServer(store: MeetingAccessStore) throws -> DahliaMCPServer {
             let server = DahliaMCPServer(store: store)
-            _ = try json(server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
-            #expect(server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#) == nil)
+            _ = try json(server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
+            #expect(server.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#) == nil)
             return server
         }
 

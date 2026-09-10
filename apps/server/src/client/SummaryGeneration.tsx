@@ -6,6 +6,7 @@ import { MenuIcon } from "./Sidebar";
 import { useEffect, useRef, useState } from "react";
 import { RequestError, uiText } from "./api";
 import { refreshData, useLiveJSON } from "./live-data";
+import { encodeId } from "../typeid";
 import { uuidV7 } from "../id";
 import type { GatewayModelList } from "../ai-gateway/backend";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings, type AccountSettingsPatch } from "../account-settings-model";
@@ -146,7 +147,7 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
   const active = job?.status === "pending" || job?.status === "processing";
   const start = async () => {
     setStarting(true); setError(undefined);
-    requestID.current ??= uuidV7();
+    requestID.current ??= encodeId("summaryJob", uuidV7());
     try {
       if (!requestBody.current) {
         const account = await api.getSettings({});
@@ -186,7 +187,7 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
   const action = async (action: "cancel" | "retry") => {
     if (!job) return;
     setStarting(true); setError(undefined);
-    requestID.current ??= uuidV7();
+    requestID.current ??= encodeId("summaryJob", uuidV7());
     try {
       const params = { path: { meetingId, jobId: job.id } };
       if (action === "retry") await api.retrySummaryJob({ params, body: { id: requestID.current } });

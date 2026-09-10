@@ -2,7 +2,7 @@ import type { TranscriptVersion } from "./transcript";
 import type { SummaryVersion } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
 import type { RecordingRecord, RecordingSource } from "../recordings/model";
-import type { FileRecord, MeetingFileRecord } from "../files/model";
+import type { FileRecord, MeetingAttachmentRecord } from "../files/model";
 import type { Identity } from "../auth/identity";
 import type { ImageAnalysisClaim, ImageAnalysisInput } from "../image-analysis/model";
 
@@ -57,7 +57,7 @@ export interface SyncProjectView extends SyncProjectRecord {
 
 export type VaultRole = "owner" | "member";
 export type VaultPrincipalType = "user" | "organization" | "team";
-export type SyncEntity = "vault" | "project" | "meeting" | "summary" | "transcript" | "file" | "meeting_file" | "meeting_event" | "recording";
+export type SyncEntity = "vault" | "project" | "meeting" | "summary" | "transcript" | "file" | "meeting_attachment" | "meeting_event" | "recording";
 export type SyncAction = "create" | "update" | "delete" | "upsert" | "patch" | "reset";
 
 export interface SyncTransactionOperation {
@@ -277,7 +277,7 @@ export interface IdentitySyncStore {
   markFileUploaded(file: FileRecord, size: number, checksum: string): Promise<FileRecord | null>;
   expireFileUploads(vaultId: string, before: Date): Promise<void>;
   listFiles(vaultId: string, after: string | undefined, limit: number): Promise<FileRecord[]>;
-  listMeetingFiles(vaultId: string, meetingId: string, after: string | undefined, limit: number): Promise<(MeetingFileRecord & { file: FileRecord })[]>;
+  listMeetingAttachments(vaultId: string, meetingId: string, after: string | undefined, limit: number): Promise<(MeetingAttachmentRecord & { file: FileRecord })[]>;
   listOrganizations(): Promise<{ id: string; name: string; slug: string }[]>;
   listVaults(organizationId?: string): Promise<SyncVaultRecord[]>;
   getVault(vaultId: string): Promise<SyncVaultRecord | null>;

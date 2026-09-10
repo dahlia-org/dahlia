@@ -332,7 +332,7 @@
                 return (404, [:], Data())
             }
             defer { ImageURLProtocol.remove(origin: fixture.source.origin) }
-            let entity: SyncEntity = deletesScreenshot ? .meetingFile : .meeting
+            let entity: SyncEntity = deletesScreenshot ? .meetingAttachment : .meeting
             let entityId = deletesScreenshot ? fixture.screenshotId : fixture.meetingId
             try await fixture.dbQueue.write { db in
                 try db.execute(
@@ -370,19 +370,19 @@
             try await fixture.dbQueue.write { db in
                 let image = try #require(try MeetingScreenshotRecord.fetchOne(db, key: fixture.screenshotId))
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'meeting_file', ?, 1)",
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'meeting_attachment', ?, 1)",
                     arguments: [fixture.vaultId, image.id]
                 )
                 try SyncTransactionRecorder.record(
                     vaultId: fixture.vaultId,
-                    operations: [SyncInitialSnapshotBuilder.meetingFileOperation(image)],
+                    operations: [SyncInitialSnapshotBuilder.meetingAttachmentOperation(image)],
                     in: db
                 )
             }
             let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.dbQueue))
             try await SyncTransactionQueue.block(transaction, reason: .conflict, response: Data("""
             {"conflicts":[
-              {"entity":"meeting_file","id":"\(fixture.screenshotId)","serverRevision":null},
+              {"entity":"meeting_attachment","id":"\(fixture.screenshotId)","serverRevision":null},
               {"entity":"meeting","id":"\(fixture.meetingId)","serverRevision":null}
             ]}
             """.utf8), dbQueue: fixture.dbQueue)
@@ -396,7 +396,7 @@
                 SELECT o.entity, o.action, o.baseRevision, o.payloadJSON FROM sync_operations o
                 JOIN sync_transactions t ON t.id = o.transactionId ORDER BY t.sequence, o.position
                 """)
-                #expect(operations.map { $0["entity"] as String } == ["meeting", "meeting_file"])
+                #expect(operations.map { $0["entity"] as String } == ["meeting", "meeting_attachment"])
                 #expect(operations.map { $0["action"] as String } == ["create", "upsert"])
                 #expect(operations.allSatisfy { ($0["baseRevision"] as Int?) == nil })
                 let link = try #require(operations.last)
@@ -1024,11 +1024,14 @@
                 client?.urlProtocol(self, didFailWithError: URLError(.cannotFindHost))
                 return
             }
-            let (status, headers, bytes) = handler(request)
-            let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: headers)!
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: bytes)
-            client?.urlProtocolDidFinishLoading(self)
+            do {
+                let (status, headers, bytes) = try handler(PublicIDTestClient.internalRequest(request))
+                let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: headers)!
+                let publicBytes = try PublicIDTestClient.publicResponse(bytes, request: request, status: status)
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: publicBytes)
+                client?.urlProtocolDidFinishLoading(self)
+            } catch { client?.urlProtocol(self, didFailWithError: error) }
         }
 
         override func stopLoading() {}

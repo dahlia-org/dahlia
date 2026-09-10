@@ -1,3 +1,6 @@
+import { encodeId } from "../src/typeid";
+import { wireValue } from "../src/public-wire";
+import { seedHeaderIdentity, testUserID } from "./public-test-client";
 import { z } from "zod";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -25,8 +28,8 @@ import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../src/account-s
 import { ImageAnalysisError } from "../src/image-analysis/model";
 
 const directories: string[] = [];
-const owner: Identity = { userId: "owner", workspaceId: "personal:owner", source: "header" };
-const other: Identity = { userId: "other", workspaceId: "personal:other", source: "header" };
+const owner: Identity = { userId: testUserID("owner"), workspaceId: `personal:${testUserID("owner")}`, source: "header" };
+const other: Identity = { userId: testUserID("other"), workspaceId: `personal:${testUserID("other")}`, source: "header" };
 const vaultId = "019d3f46-7e0d-7d21-98d9-f1456c0bfb58";
 const meetingId = "019d3f46-8b72-77f1-b232-93726eec3e9e";
 const projectId = "019d3f46-8c00-7000-8000-000000000001";
@@ -307,7 +310,7 @@ describe("SQLite canonical sync", () => {
       const snapshot = await service.listSnapshot(owner, vaultId);
       expect(snapshot.items.find((item) => item.entity === "vault")).toMatchObject({ record: { icon: "folder", color: "blue" } });
       expect(snapshot.items.find((item) => item.entity === "project")).toMatchObject({ revision: 3, record: { icon: null, color: "purple" } });
-      await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+      await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "01990ab0-0000-7000-8000-000000000001"));
       const shared = await service.listSnapshot(other, vaultId);
       expect(shared.items.find((item) => item.entity === "project")).toMatchObject({ record: { color: "purple" } });
       expect((await send(update(3, { color: "red" }), other.userId)).status).toBe(409);
@@ -347,13 +350,13 @@ describe("SQLite canonical sync", () => {
       .toMatchObject({ limited: { meeting: false, screenshot: false, project: false } });
     expect(await (await send({ vaultId, kind: "meeting", limit: 100 })).json())
       .toMatchObject({ limited: { meeting: true } });
-    const mcpParams = { name: "search", arguments: { vaultId, query: "契約更新", projectId, from: "2026-09-03T09:00:00+09:00", to: "2026-09-04T00:00:00Z" },
+    const mcpParams = { name: "search", arguments: { vaultId: encodeId("vault", vaultId), query: "契約更新", projectId: encodeId("project", projectId), from: "2026-09-03T09:00:00+09:00", to: "2026-09-04T00:00:00Z" },
       _meta: { "io.modelcontextprotocol/clientCapabilities": {}, "io.modelcontextprotocol/clientInfo": { name: "Search test", version: "1" }, "io.modelcontextprotocol/protocolVersion": "2026-07-28" } };
     const mcpBody = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: mcpParams });
     const mcp = await app.request("/mcp", { method: "POST", headers: { ...headers(), "content-length": String(new TextEncoder().encode(mcpBody).length),
       "mcp-method": "tools/call", "mcp-name": "search", "mcp-protocol-version": "2026-07-28" }, body: mcpBody });
     const mcpResult = z.object({ result: z.object({ content: z.array(z.object({ text: z.string() })) }) }).parse(await mcp.json());
-    expect(JSON.parse(mcpResult.result.content[0]!.text)).toEqual(await (await send(mcpParams.arguments)).json());
+    expect(wireValue(JSON.parse(mcpResult.result.content[0]!.text), "search", "decode")).toEqual(await (await send(mcpParams.arguments)).json());
     expect((await send({ vaultId, query: "契約更新" }, other.userId)).status).toBe(404);
     const recent = await (await send({ vaultId, query: "", limit: 6 })).json();
     expect(z.object({ meetings: z.array(z.unknown()) }).parse(recent).meetings).toHaveLength(6);
@@ -631,7 +634,7 @@ describe("SQLite canonical sync", () => {
     await send(operation);
     await expect(send({ ...operation, data: { ...operation.data, occurredAt: new Date(now.getTime() + 1) } })).rejects.toMatchObject({ code: "event_id_reused" });
     await expect(send({ ...operation, entityId: freshId(), data: { ...operation.data, meetingId: secondMeeting } })).rejects.toMatchObject({ code: "recording_session_meeting_mismatch" });
-    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "01990ab0-0000-7000-8000-000000000001"));
     expect(await store.sync.withIdentity(other, (sync) => sync.getMeeting(vaultId, meetingId))).toMatchObject({ isRecording: true });
     await expect(send({ ...operation, entityId: freshId() }, other)).rejects.toBeDefined();
     await expect(send({ ...operation, data: { ...operation.data, kind: "meeting_deleted" } })).rejects.toBeDefined();
@@ -659,9 +662,9 @@ describe("SQLite canonical sync", () => {
       expect(await (await get(path)).json()).toMatchObject({ vaultId });
       expect((await get(path, other)).status).toBe(404);
     }
-    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "01990ab0-0000-7000-8000-000000000001"));
     for (const path of paths) expect((await get(path, other)).status).toBe(200);
-    await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", "external"));
+    await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", "01990ab0-0000-7000-8000-000000000001"));
     for (const path of paths) expect((await get(path, other)).status).toBe(404);
     expect((await get(`/api/v1/projects/${freshId()}`)).status).toBe(404);
     expect((await get(`/api/v1/meetings/${freshId()}`)).status).toBe(404);
@@ -680,7 +683,7 @@ describe("SQLite canonical sync", () => {
     const app = createApp({ config: testConfig(databasePath), authStore: store });
     const abort = new AbortController();
     const response = await app.request("/api/v1/events", {
-      headers: { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner" }, signal: abort.signal,
+      headers: { "x-forwarded-email": "owner@example.com", "x-forwarded-user": owner.userId }, signal: abort.signal,
     });
     const reader = response.body!.getReader();
     const nextSettingsEvent = async () => {
@@ -694,7 +697,7 @@ describe("SQLite canonical sync", () => {
     };
     try {
       expect(await nextSettingsEvent()).toContain("data: {}");
-      await store.accountSettings.update("owner", { outputLanguage: "fr" });
+      await store.accountSettings.update(owner.userId, { outputLanguage: "fr" });
       const event = await nextSettingsEvent();
       expect(event).toContain("data: {}");
       expect(event).not.toContain("outputLanguage");
@@ -775,7 +778,7 @@ describe("SQLite canonical sync", () => {
     await service.commitTransaction(owner, wire([
       { entity: "meeting", action: "create", entityId: secondMeeting, baseRevision: null, data: { projectId: null, name: "Second", status: "READY", duration: null,
         recordingStartedAt: null, createdAt: now.toISOString(), updatedAt: now.toISOString() } },
-      { entity: "meeting_file", action: "upsert", entityId: freshId(), baseRevision: null,
+      { entity: "meeting_attachment", action: "upsert", entityId: freshId(), baseRevision: null,
         data: { fileId: file.id, meetingId: secondMeeting, capturedAt: now.toISOString(), sessionId: null, createdAt: now.toISOString() } },
     ]));
     const cursor = await service.latestCursor(owner);
@@ -832,7 +835,7 @@ describe("SQLite canonical sync", () => {
       const nextClaim = await store.imageAnalysis!.claim("model");
       expect(nextClaim).not.toBeNull();
     } else {
-      await service.commitTransaction(owner, wire([{ entity: "meeting_file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
+      await service.commitTransaction(owner, wire([{ entity: "meeting_attachment", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
       if (change === "delete") await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
     }
     expect(await service.completeImageAnalysis(owner, input, { ocr_text: "stale", caption: "stale" })).toBe(false);
@@ -908,7 +911,7 @@ describe("SQLite canonical sync", () => {
 
   it("keeps a deleted file deleted in the delta while its ID is reserved again", async () => {
     const { store, service, storage, file, bytes, publish } = await fileSetup();
-    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "01990ab0-0000-7000-8000-000000000001"));
     const published = await publish();
     await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
     await vi.waitFor(async () => {
@@ -931,7 +934,7 @@ describe("SQLite canonical sync", () => {
     await publish();
     if (existing) await attach();
     await service.commitTransaction(owner, wire([{ entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }]));
-    const link = { entity: "meeting_file" as const, action: "upsert" as const, entityId: file.id,
+    const link = { entity: "meeting_attachment" as const, action: "upsert" as const, entityId: file.id,
       baseRevision: existing ? 1 : null,
       data: { fileId: file.id, meetingId, capturedAt: now.toISOString(), sessionId: null, createdAt: now.toISOString() } };
     await expect(service.commitTransaction(owner, wire([link]))).rejects.toMatchObject({ status: 409, code: "revision_conflict",
@@ -1020,7 +1023,7 @@ describe("SQLite canonical sync", () => {
     }
     const portable = createApp({ config: testConfig(databasePath), authStore: store, objectStorage: storage });
     expect((await portable.request(variants.thumb_1280!, { headers: headers() })).status).toBe(404);
-    await service.commitTransaction(owner, wire([{ entity: "meeting_file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
+    await service.commitTransaction(owner, wire([{ entity: "meeting_attachment", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
     await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
     await vi.waitFor(async () => {
       for (const variant of Object.keys(SCREENSHOT_VARIANTS) as Array<keyof typeof SCREENSHOT_VARIANTS>) {
@@ -1243,9 +1246,9 @@ describe("SQLite canonical sync", () => {
     await service.commitTransaction(owner, wire([
       { entity: "meeting", action: "create", entityId: secondMeeting, baseRevision: null, data: { projectId: null, name: "Second", status: "READY", duration: null,
         recordingStartedAt: null, createdAt: now.toISOString(), updatedAt: now.toISOString() } },
-      { entity: "meeting_file", action: "upsert", entityId: linkId, baseRevision: null,
+      { entity: "meeting_attachment", action: "upsert", entityId: linkId, baseRevision: null,
         data: { fileId: file.id, meetingId: secondMeeting, capturedAt: null, sessionId: null, createdAt: now.toISOString() } },
-      { entity: "meeting_file", action: "delete", entityId: file.id, baseRevision: 1, data: {} },
+      { entity: "meeting_attachment", action: "delete", entityId: file.id, baseRevision: 1, data: {} },
     ]));
     expect(await service.listFiles(owner, vaultId, undefined, secondMeeting)).toMatchObject({ items: [{ id: linkId, file: { id: file.id } }] });
     expect(await service.listFiles(owner, vaultId, undefined, meetingId)).toMatchObject({ items: [] });
@@ -1451,7 +1454,7 @@ describe("SQLite canonical sync", () => {
     }
     expect((await patch({ metadata: { caption: "missing revision" } })).status).toBe(400);
     expect((await patch({ baseRevision: 3, size: 0, metadata: {} })).status).toBe(400);
-    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "01990ab0-0000-7000-8000-000000000001"));
     const memberPatch = new Request(`http://localhost:5173/api/v1/files/${file.id}`, { method,
       headers: { ...headers(), "x-forwarded-user": other.userId, "x-forwarded-email": "other@example.com" },
       body: JSON.stringify({ baseRevision: 3, metadata: { caption: "member" } }) });
@@ -1574,26 +1577,26 @@ describe("SQLite canonical sync", () => {
     const service = new MeetingSyncService(store.sync);
     expect(await service.listVaults(owner)).toHaveLength(1);
     expect(await service.listVaults(other)).toEqual([]);
-    expect(await service.listVaults(owner, undefined, "external")).toEqual([]);
+    expect(await service.listVaults(owner, undefined, "01990ab0-0000-7000-8000-000000000001")).toEqual([]);
     const team = (await store.createExternalTeam(owner.userId, "Private team"))!;
     await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "team", team.id));
-    expect(await service.listVaults(other, undefined, "external")).toEqual([]);
+    expect(await service.listVaults(other, undefined, "01990ab0-0000-7000-8000-000000000001")).toEqual([]);
     await store.addExternalTeamMember(owner.userId, team.id, other.userId);
-    expect(await service.listVaults(other, undefined, "external")).toMatchObject([{ vaultId, role: "member" }]);
+    expect(await service.listVaults(other, undefined, "01990ab0-0000-7000-8000-000000000001")).toMatchObject([{ vaultId, role: "member" }]);
     // Two access paths must still produce one Vault.
-    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
-    expect(await service.listVaults(other, undefined, "external")).toHaveLength(1);
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "01990ab0-0000-7000-8000-000000000001"));
+    expect(await service.listVaults(other, undefined, "01990ab0-0000-7000-8000-000000000001")).toHaveLength(1);
     expect(await service.listVaults(other)).toEqual([]);
     const database = new DatabaseSync(databasePath);
     database.exec(`
       INSERT INTO organization (id, name, slug, created_at) VALUES ('another', 'Another', 'another', 0);
       INSERT INTO member (id, organization_id, user_id, role, created_at)
-        VALUES ('another-member', 'another', 'other', 'member', 0);
+        VALUES ('another-member', 'another', '${other.userId}', 'member', 0);
     `);
     expect(await service.listVaults(other, undefined, "another")).toEqual([]);
     // A stale Team row cannot bypass loss of organization membership.
-    database.prepare("DELETE FROM member WHERE user_id = ? AND organization_id = ?").run(other.userId, "external");
-    await expect(service.listVaults(other, undefined, "external")).rejects.toMatchObject({ status: 403 });
+    database.prepare("DELETE FROM member WHERE user_id = ? AND organization_id = ?").run(other.userId, "01990ab0-0000-7000-8000-000000000001");
+    await expect(service.listVaults(other, undefined, "01990ab0-0000-7000-8000-000000000001")).rejects.toMatchObject({ status: 403 });
     expect(await service.listOrganizations(other)).toMatchObject([{ id: "another" }]);
     database.close();
     await store.close?.();
@@ -1603,7 +1606,7 @@ describe("SQLite canonical sync", () => {
     const { store, databasePath } = await setup();
     await createVault(store);
     const app = createApp({ config: testConfig(databasePath), authStore: store });
-    for (const query of ["", "?userId=owner"]) {
+    for (const query of ["", `?userId=${owner.userId}`]) {
       const response = await app.request("/api/v1/vaults" + query, { headers: headers() });
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ items: [{ vaultId }] });
@@ -1611,13 +1614,13 @@ describe("SQLite canonical sync", () => {
     for (const query of ["?userId=owner&organizationId=external", "?userId=", "?organizationId=", "?userId=%20owner", "?organizationId=%00"]) {
       expect((await app.request("/api/v1/vaults" + query, { headers: headers() })).status).toBe(400);
     }
-    for (const query of ["?userId=other", "?organizationId=unknown"]) {
+    for (const query of [`?userId=${other.userId}`, `?organizationId=${freshId()}`]) {
       expect((await app.request("/api/v1/vaults" + query, { headers: headers() })).status).toBe(403);
     }
     const session = await app.request("/api/v1/session", { headers: headers() });
     expect(await session.json()).toMatchObject({ capabilities: { sharing: true } });
     const organizations = await app.request("/api/v1/organizations", { headers: headers() });
-    expect(await organizations.json()).toMatchObject({ items: [{ id: "external" }], nextCursor: null });
+    expect(await organizations.json()).toMatchObject({ items: [{ id: "01990ab0-0000-7000-8000-000000000001" }], nextCursor: null });
     await store.close?.();
   });
 
@@ -1811,7 +1814,7 @@ describe("SQLite canonical sync", () => {
         "sync_changes", "sync_vault_state", "transaction_receipts", "search_documents", "jobs_search_index"]
         .map((table) => database.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all());
       for (const shared of [false, true]) {
-        if (shared) await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+        if (shared) await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "01990ab0-0000-7000-8000-000000000001"));
         const before = snapshot();
         const rejected = restore();
         const response = await send(rejected, other);
@@ -1829,7 +1832,7 @@ describe("SQLite canonical sync", () => {
       expect(await (await send(restored, owner)).json()).toEqual(receipt);
       expect(snapshot()).toEqual(after);
       expect(await store.sync.withIdentity(other, (sync) => sync.getMeeting(vaultId, meetingId))).toMatchObject({ name: "Meeting" });
-      await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", "external"));
+      await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", "01990ab0-0000-7000-8000-000000000001"));
       expect(await store.sync.withIdentity(other, (sync) => sync.getMeeting(vaultId, meetingId))).toBeNull();
       expect(await store.sync.withIdentity(owner, (sync) => sync.getVault(vaultId))).toMatchObject({ revision: 1, name: "Restored" });
     } finally {
@@ -1841,7 +1844,7 @@ describe("SQLite canonical sync", () => {
   it("rejects destructive Vault resets from shared members", async () => {
     const { store } = await setup();
     await createVault(store);
-    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "01990ab0-0000-7000-8000-000000000001"));
     const operationId = "019d4a01-1002-7000-8000-000000000002";
 
     await expect(commit(store, other, transaction("019d4a01-1002-7000-8000-000000000001", [{
@@ -1967,7 +1970,7 @@ describe("SQLite canonical sync", () => {
   it("starts a recreated Vault change feed after its latest reset", async () => {
     const { store } = await setup();
     await createVault(store);
-    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "01990ab0-0000-7000-8000-000000000001"));
     await commit(store, owner, transaction("019d4a01-1100-7000-8000-000000000001", [{
       id: "019d4a01-1100-7000-8000-000000000002",
       entity: "vault",
@@ -1993,7 +1996,7 @@ describe("SQLite canonical sync", () => {
     const existingClientChanges = await store.sync.withIdentity(owner, (sync) => sync.listChanges(vaultId, 1, 100, 100));
     expect(existingClientChanges.map(({ action }) => action)).toEqual(["reset", "upsert"]);
     expect(await store.sync.withIdentity(owner, (sync) => sync.listPermissions(vaultId)))
-      .toContainEqual(expect.objectContaining({ principalType: "organization", principalId: "external" }));
+      .toContainEqual(expect.objectContaining({ principalType: "organization", principalId: "01990ab0-0000-7000-8000-000000000001" }));
     await store.close?.();
   });
 
@@ -2647,8 +2650,8 @@ async function setup(searchEmbedding?: AppConfig["searchEmbedding"], captioningM
   const databasePath = join(directory, "server.sqlite");
   const store = createNodeApplicationStore({ ...testConfig(databasePath), searchEmbedding, captioningModel });
   await store.migrate();
-  await store.ensureIdentityUser(owner);
-  await store.ensureIdentityUser(other);
+  await seedHeaderIdentity(store, databasePath, owner);
+  await seedHeaderIdentity(store, databasePath, other);
   return { databasePath, directory, store };
 }
 
@@ -2739,7 +2742,7 @@ async function fileSetup(captioningModel?: string) {
   await uploadFile(service, owner, fileUploadRequest(file, bytes));
   const publish = () => service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id,
     baseRevision: null, data: { checksum: file.checksum, metadata: {} } }]));
-  const attach = () => service.commitTransaction(owner, wire([{ entity: "meeting_file", action: "upsert", entityId: file.id,
+  const attach = () => service.commitTransaction(owner, wire([{ entity: "meeting_attachment", action: "upsert", entityId: file.id,
     baseRevision: null, data: { fileId: file.id, meetingId, capturedAt: now.toISOString(), sessionId: null, createdAt: now.toISOString() } }]));
   return { ...setupValue, service, storage, transformer, file, bytes, publish, attach };
 }

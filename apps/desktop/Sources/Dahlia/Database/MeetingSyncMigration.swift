@@ -82,7 +82,7 @@ enum MeetingSyncMigration {
         transactionId BLOB NOT NULL REFERENCES sync_transactions(id) ON DELETE CASCADE,
         position INTEGER NOT NULL,
         id BLOB NOT NULL UNIQUE,
-        entity TEXT NOT NULL CHECK(entity IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_file', 'meeting_event', 'recording')),
+        entity TEXT NOT NULL CHECK(entity IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'meeting_event', 'recording')),
         action TEXT NOT NULL CHECK(action IN ('create', 'update', 'delete', 'upsert', 'patch', 'reset')),
         entityId BLOB NOT NULL,
         baseRevision INTEGER,

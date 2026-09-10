@@ -1,3 +1,4 @@
+import { seedHeaderIdentity, testUserID } from "./public-test-client";
 import { LocalObjectStorage } from "../src/storage/local";
 import { createAudioSummaryMethod } from "../src/summary/audio";
 import { DEFAULT_ACCOUNT_SETTINGS } from "../src/account-settings";
@@ -24,7 +25,7 @@ import type { Identity } from "../src/auth/identity";
 
 const dirs: string[] = [];
 afterEach(() => { vi.restoreAllMocks(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
-const owner: Identity = { userId: "owner", workspaceId: "personal:owner", source: "header" };
+const owner: Identity = { userId: testUserID("owner"), workspaceId: `personal:${testUserID("owner")}`, source: "header" };
 const output = { title: "Decisions", description: "Launch discussion", tags: ["launch"], action_items: [],
   sections: [{ heading: "Decisions", blocks: [{ type: "paragraph", level: 3, content: { text: "Ship next week", transcript_ref: null }, items: [], language: "", image_id: "" }] }] };
 const doc = () => summaryDocument(output, new Set());
@@ -33,7 +34,7 @@ async function setup() {
   const path = join(dir, "db.sqlite");
   const config: AppConfig = { authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite", databaseUrl: `file:${path}`,
     baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1_048_576 };
-  const store = createNodeApplicationStore(config); await store.migrate(); await store.ensureIdentityUser(owner);
+  const store = createNodeApplicationStore(config); await store.migrate(); await seedHeaderIdentity(store, path, owner);
   const sync = new MeetingSyncService(store.sync, new LocalObjectStorage(join(dir, "recordings"))); const vaultId = uuidV7(); const meetingId = uuidV7();
   await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [
     { id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { name: "Vault", createdAt: new Date().toISOString() } },
@@ -223,7 +224,9 @@ describe("server summary jobs", () => {
         data: { title: "Saved", document: savedDocument, createdAt: new Date().toISOString() },
       }] });
       const app = createApp({ config, authStore: store });
-      const headers = { "x-forwarded-email": "reader@example.com", "x-forwarded-user": "reader" };
+      const reader: Identity = { userId: testUserID("reader"), workspaceId: `personal:${testUserID("reader")}`, source: "header", email: "reader@example.com" };
+      await seedHeaderIdentity(store, path, reader);
+      const headers = { "x-forwarded-email": "reader@example.com", "x-forwarded-user": reader.userId };
       const base = `/api/v1/meetings/${meetingId}/summaries`;
       const routes = ["/latest", "", "/1"];
       for (const route of routes) {
@@ -232,7 +235,7 @@ describe("server summary jobs", () => {
       }
       const db = new DatabaseSync(path);
       try {
-        db.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', 'reader', 'member', 'owner', ?)").run(vaultId, Date.now());
+        db.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', ?, 'member', ?, ?)").run(vaultId, testUserID("reader"), owner.userId, Date.now());
         for (const route of routes) {
           const response = await app.request(`${base}${route}`, { headers });
           expect(response.status).toBe(200);
@@ -266,7 +269,7 @@ describe("server summary jobs", () => {
         expect((await app.request(`${base}/latest?manifest=invalid`, { headers })).status).toBe(400);
         expect((await app.request(`${base}?limit=101`, { headers })).status).toBe(400);
         expect((await app.request(`${base}/999999999999`, { headers })).status).toBe(400);
-        db.prepare("DELETE FROM vault_permissions WHERE principal_id = 'reader'").run();
+        db.prepare("DELETE FROM vault_permissions WHERE principal_id = ?").run(reader.userId);
         for (const route of routes) expect((await app.request(`${base}${route}`, { headers })).status).toBe(404);
       } finally { db.close(); }
     } finally { await store.close?.(); }
@@ -389,7 +392,7 @@ describe("server summary jobs", () => {
     const { store, service, config, meetingId } = await setup();
     try {
       const app = createApp({ config, authStore: store, summaryService: service });
-      const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner", "content-type": "application/json" };
+      const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": owner.userId, "content-type": "application/json" };
       const path = `/api/v1/meetings/${meetingId}/summary-jobs`;
       expect((await app.request(`${path}/latest`)).status).toBe(401);
       expect((await app.request(`${path}/latest`, { headers: { ...headers, "x-forwarded-user": "other", "x-forwarded-email": "other@example.com" } })).status).toBe(404);
@@ -427,7 +430,7 @@ describe("server summary jobs", () => {
     let notified!: () => void;
     const pending = new Promise<void>((resolve) => { release = resolve; });
     const notificationStarted = new Promise<void>((resolve) => { notified = resolve; });
-    const notify = vi.fn((ownerUserId: string) => { expect(ownerUserId).toBe("owner"); notified(); return pending; });
+    const notify = vi.fn((ownerUserId: string) => { expect(ownerUserId).toBe(owner.userId); notified(); return pending; });
     const app = createApp({ config, authStore: store, summaryService: service,
       onSyncMutation: (ownerUserId, context) => context.waitUntil(notify(ownerUserId)) });
     const worker = createWorkerHandler(async () => app);
@@ -435,7 +438,7 @@ describe("server summary jobs", () => {
       (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
     const waitUntil: Promise<unknown>[] = [];
     const execution = { waitUntil: (task: Promise<unknown>) => { waitUntil.push(task); } } as unknown as ExecutionContext;
-    const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner", "content-type": "application/json" };
+    const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": owner.userId, "content-type": "application/json" };
     const path = `/api/v1/meetings/${meetingId}/summary-jobs`;
     try {
       const original = await service.start(owner, vaultId, meetingId, { id: uuidV7() });
@@ -449,7 +452,7 @@ describe("server summary jobs", () => {
         new Promise<string>((resolve) => setImmediate(() => resolve("blocked"))),
       ])).toBe("returned");
       expect((await response).status).toBe(202);
-      expect(notify).toHaveBeenCalledWith("owner");
+      expect(notify).toHaveBeenCalledWith(owner.userId);
       expect(waitUntil).toEqual([pending]);
     } finally {
       release();
@@ -490,7 +493,7 @@ describe("server summary jobs", () => {
         if (String(url).endsWith("/token")) return Response.json({ access_token: "app-token", expires_in: 3600 });
         const headers = new Headers(init?.headers);
         expect(headers.get("authorization")).toBe(cloudflare ? "Bearer synthetic" : "Bearer app-token");
-        if (!cloudflare) expect(JSON.parse(headers.get("Databricks-Ai-Gateway-Request-Tags")!)).toEqual({ user_id: "owner" });
+        if (!cloudflare) expect(JSON.parse(headers.get("Databricks-Ai-Gateway-Request-Tags")!)).toEqual({ user_id: owner.userId });
         expect(headers.has("X-Forwarded-Access-Token")).toBe(false);
         const body = JSON.parse(String(init?.body)) as { input: { content: { type: string; text?: string; image_url?: string }[] }[] };
         expect(body).toMatchObject({ model: cloudflare ? "openai/gpt-4.1" : "catalog.ai.gpt-5-6-luna", stream: false, store: false, text: { format: { strict: true, name: "meeting_summary" } } });
@@ -588,7 +591,7 @@ function audioMethod(value: Awaited<ReturnType<typeof setup>>, result?: () => Re
     expect(String(url)).toBe("https://workspace.example/ai-gateway/mlflow/v1/chat/completions");
     const headers = new Headers(init?.headers);
     expect(headers.get("authorization")).toBe("Bearer app-token");
-    expect(JSON.parse(headers.get("Databricks-Ai-Gateway-Request-Tags")!)).toEqual({ user_id: "owner" });
+    expect(JSON.parse(headers.get("Databricks-Ai-Gateway-Request-Tags")!)).toEqual({ user_id: owner.userId });
     expect(headers.has("X-Forwarded-Access-Token")).toBe(false);
     expect(init?.body).toBeInstanceOf(ReadableStream);
     const body = JSON.parse(await new Response(init?.body).text()) as Record<string, unknown>;
@@ -754,11 +757,11 @@ describe("audio summary jobs", () => {
       expect(await service.start(owner, vaultId, meetingId, { id: uuidV7() })).toMatchObject({ method: "audio" });
       await addRecording(value, ["system"], 1);
       await expect(store.sync.withIdentity(owner, (scoped) => method.version(scoped, vaultId, meetingId))).rejects.toThrow("summary_audio_too_long");
-      const other = { ...owner, userId: "other" };
-      await store.ensureIdentityUser(other);
+      const other = { ...owner, userId: testUserID("other") };
+      await seedHeaderIdentity(store, value.path, other);
       await store.accountSettings.update(other.userId, { summary: { method: "audio" } });
       await expect(service.start(other, vaultId, meetingId, { id: uuidV7() })).rejects.toMatchObject({ status: 404 });
-      await expect(store.sync.withIdentity({ ...owner, userId: "other" }, (scoped) => method.version(scoped, vaultId, meetingId))).rejects.toThrow("summary_meeting_unavailable");
+      await expect(store.sync.withIdentity({ ...owner, userId: testUserID("other") }, (scoped) => method.version(scoped, vaultId, meetingId))).rejects.toThrow("summary_meeting_unavailable");
       expect(transport).not.toHaveBeenCalled();
     } finally { await store.close?.(); }
   });

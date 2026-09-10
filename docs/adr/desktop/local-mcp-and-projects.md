@@ -4,7 +4,7 @@
 
 ## Vault 境界
 
-署名済み stdio helper `dahlia-mcp` は起動時の `--vault-id <UUID>` に固定し、名前を認可に使わない。全 query を Vault で制約し、別 Vault の ID は not found。cursor にも Vault、meeting、ordering identity を含めて検証する。
+署名済み stdio helper `dahlia-mcp` は起動時の `--vault-id <vlt_TypeID>` に固定し、名前を認可に使わない。全 query を Vault で制約し、別 Vault の ID は not found。cursor にも Vault、meeting、ordering identity を含めて検証する。
 
 既定は SQLite read-only、明示 `--write` だけが公開 write tool を有効にする。helper は migration や permission 変更をせず、初期化時の schema 検証でアプリ更新後の初回起動を必要とする。
 

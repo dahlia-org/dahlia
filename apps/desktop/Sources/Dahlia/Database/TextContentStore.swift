@@ -194,7 +194,7 @@ enum TextContentStore {
         let documents = entity == .transcript ? [] : try Int64.fetchAll(
             db,
             sql: entity == .file
-                ? "SELECT id FROM search_documents WHERE kind = 'screenshot' AND sourceId IN (SELECT id FROM meeting_files WHERE fileId = ?)"
+                ? "SELECT id FROM search_documents WHERE kind = 'screenshot' AND sourceId IN (SELECT id FROM meeting_attachments WHERE fileId = ?)"
                 : "SELECT id FROM search_documents WHERE kind = 'meeting' AND sourceId = ?",
             arguments: [id]
         )

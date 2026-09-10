@@ -1,3 +1,4 @@
+import { testUserID } from "./public-test-client";
 import type { AuthStore } from "../src/auth/store";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../src/account-settings";
 
@@ -33,6 +34,7 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
       failStorageDelete: () => Promise.resolve(),
       withStorageKeyLock: (_storageKey, action) => action(),
     },
+    resolveHeaderUser: (identity) => Promise.resolve(testUserID(identity.userId)),
     ensureIdentityUser: () => Promise.resolve(true),
     seedDahliaClient: () => Promise.resolve(),
     listDahliaSessions: () => Promise.resolve([]),

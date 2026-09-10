@@ -1,3 +1,5 @@
+import { decodeId, encodeId, idPrefixes, type IDKind } from "./typeid";
+import { wireValue, wireURL, wireCursor } from "./public-wire";
 import {
   createMcpHandler,
   McpServer,
@@ -13,6 +15,8 @@ import type { AppConfig } from "./config";
 import { searchRequestSchema } from "./search/model";
 import { MeetingSyncService } from "./sync/service";
 
+const publicId = (kind: IDKind) => z.string().regex(new RegExp(`^${idPrefixes[kind]}_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$`));
+
 export const MCP_MAX_REQUEST_BYTES = 12 * 1024 * 1024;
 export function createServerMcpHandler(
   config: AppConfig,
@@ -25,45 +29,45 @@ export function createServerMcpHandler(
     if (sync && hasApiScope(authInfo?.scopes ?? [], MCP_READ_SCOPE)) {
       server.registerTool("search", {
         description: "Search meetings, screenshots and projects in a readable Vault. Returns up to 100 ranked results per kind.",
-        inputSchema: searchRequestSchema,
+        inputSchema: searchRequestSchema.safeExtend({ vaultId: publicId("vault"), projectId: publicId("project").optional() }),
         annotations: { readOnlyHint: true },
-      }, async (request) => jsonToolResult(() => sync.searchAll(identity, {
-        ...request, from: request.from?.toISOString(), to: request.to?.toISOString(),
+      }, async (request) => jsonToolResult("search", () => sync.searchAll(identity, {
+        ...request, vaultId: decodeId("vault", request.vaultId), projectId: request.projectId ? decodeId("project", request.projectId) : undefined, from: request.from?.toISOString(), to: request.to?.toISOString(),
       })));
-      const meetingInput = z.object({ vault_id: z.string(), meeting_id: z.string() }).strict();
+      const meetingInput = z.object({ vault_id: publicId("vault"), meeting_id: publicId("meeting") }).strict();
       server.registerTool("query_meetings", {
         description: "List meetings in a synchronized Vault you can read.",
         inputSchema: z.object({
-          vault_id: z.string(),
+          vault_id: publicId("vault"),
           query: z.string().optional(),
-          project_id: z.string().optional(),
+          project_id: publicId("project").optional(),
           cursor: z.string().optional(),
         }).strict(),
         annotations: { readOnlyHint: true },
-      }, async ({ vault_id, query, project_id, cursor }) => jsonToolResult(async () => sync.listMeetings(
+      }, async ({ vault_id, query, project_id, cursor }) => jsonToolResult("meetings", async () => sync.listMeetings(
         identity,
-        sync.parseId(vault_id),
+        decodeId("vault", vault_id),
         query,
         undefined,
-        project_id ? sync.parseId(project_id) : undefined,
-        cursor,
+        project_id ? decodeId("project", project_id) : undefined,
+        wireCursor(cursor, "meeting", "decode") as string | undefined,
       )));
       server.registerTool("query_projects", {
         description: "List the complete synchronized Project hierarchy in a Vault you can read.",
-        inputSchema: z.object({ vault_id: z.string(), type: z.enum([
+        inputSchema: z.object({ vault_id: publicId("vault"), type: z.enum([
           "customer", "internal", "personal", "undefined",
         ]).optional() }).strict(),
         annotations: { readOnlyHint: true },
-      }, async ({ vault_id, type }) => jsonToolResult(async () => {
-        const projects = await sync.listProjects(identity, sync.parseId(vault_id));
+      }, async ({ vault_id, type }) => jsonToolResult("array:project", async () => {
+        const projects = await sync.listProjects(identity, decodeId("vault", vault_id));
         return type ? projects.filter((project) => project.effectiveType === type) : projects;
       }));
       server.registerTool("get_project", {
-        description: "Get one synchronized Project by stable UUID.",
-        inputSchema: z.object({ vault_id: z.string(), project_id: z.string() }).strict(),
+        description: "Get one synchronized Project by stable proj_ TypeID.",
+        inputSchema: z.object({ vault_id: publicId("vault"), project_id: publicId("project") }).strict(),
         annotations: { readOnlyHint: true },
-      }, async ({ vault_id, project_id }) => jsonToolResult(async () => {
-        const project = await sync.getProject(identity, sync.parseId(vault_id), sync.parseId(project_id));
+      }, async ({ vault_id, project_id }) => jsonToolResult("project", async () => {
+        const project = await sync.getProject(identity, decodeId("vault", vault_id), decodeId("project", project_id));
         if (!project) throw new RequestError(404, "project_not_found");
         return project;
       }));
@@ -71,8 +75,8 @@ export function createServerMcpHandler(
         description: "Get one synchronized meeting you can read and its summary.",
         inputSchema: meetingInput,
         annotations: { readOnlyHint: true },
-      }, async ({ vault_id, meeting_id }) => jsonToolResult(async () => {
-        const meeting = await sync.getMeeting(identity, sync.parseId(vault_id), sync.parseId(meeting_id));
+      }, async ({ vault_id, meeting_id }) => jsonToolResult("meeting", async () => {
+        const meeting = await sync.getMeeting(identity, decodeId("vault", vault_id), decodeId("meeting", meeting_id));
         if (!meeting) throw new RequestError(404, "meeting_not_found");
         return meeting;
       }));
@@ -80,11 +84,11 @@ export function createServerMcpHandler(
         description: "Get the active transcript for a synchronized meeting you can read.",
         inputSchema: meetingInput.extend({ cursor: z.string().optional() }),
         annotations: { readOnlyHint: true },
-      }, async ({ vault_id, meeting_id, cursor }) => jsonToolResult(async () => sync.listTranscript(
+      }, async ({ vault_id, meeting_id, cursor }) => jsonToolResult("transcriptContent", async () => sync.listTranscript(
         identity,
-        sync.parseId(vault_id),
-        sync.parseId(meeting_id),
-        cursor,
+        decodeId("vault", vault_id),
+        decodeId("meeting", meeting_id),
+        wireCursor(cursor, "segment", "decode") as string | undefined,
       )));
       server.registerTool("query_screenshots", {
         description: "Search screenshot OCR and captions in a synchronized meeting you can read.",
@@ -117,9 +121,9 @@ export function createServerMcpHandler(
   }, { legacy: "reject" });
 }
 
-async function jsonToolResult(operation: () => Promise<unknown>): Promise<CallToolResult> {
+async function jsonToolResult(shape: string, operation: () => Promise<unknown>): Promise<CallToolResult> {
   try {
-    return { content: [{ type: "text", text: JSON.stringify(await operation()) }] };
+    return { content: [{ type: "text", text: JSON.stringify(wireValue(await operation(), shape, "encode")) }] };
   } catch (error) {
     if (error instanceof RequestError) {
       return { isError: true, content: [{ type: "text", text: error.code }] };
@@ -137,19 +141,19 @@ async function screenshotToolResult(
   query?: string,
   cursor?: string,
 ): Promise<CallToolResult> {
-  const vaultId = sync.parseId(vaultIdValue);
-  const meetingId = sync.parseId(meetingIdValue);
-  const page = await sync.listScreenshots(identity, vaultId, meetingId, query, undefined, cursor);
+  const vaultId = decodeId("vault", vaultIdValue);
+  const meetingId = decodeId("meeting", meetingIdValue);
+  const page = await sync.listScreenshots(identity, vaultId, meetingId, query, undefined, wireCursor(cursor, "screenshot", "decode") as string | undefined);
   return {
     content: [
       ...(page.nextCursor
-        ? [{ type: "text" as const, text: JSON.stringify({ nextCursor: page.nextCursor }) }]
+        ? [{ type: "text" as const, text: JSON.stringify({ nextCursor: wireCursor(page.nextCursor, "screenshot", "encode") }) }]
         : []),
       ...page.items.map((screenshot) => ({
       type: "resource_link" as const,
-      name: `Screenshot ${screenshot.screenshotId}`,
-      uri: `${config.baseUrl}/mcp/resources/vaults/${vaultId}/meetings/${meetingId}`
-        + `/screenshots/${screenshot.screenshotId}/content`,
+      name: `Screenshot ${encodeId("attachment", screenshot.screenshotId)}`,
+      uri: wireURL(`${config.baseUrl}/mcp/resources/vaults/${vaultId}/meetings/${meetingId}`
+        + `/screenshots/${screenshot.screenshotId}/content`, "encode"),
       mimeType: screenshot.contentType,
       })),
     ],

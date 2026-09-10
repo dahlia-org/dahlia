@@ -137,10 +137,10 @@ extension MeetingRepository {
     nonisolated static let pendingSearchScreenshotSQL = """
     (\(pendingSearchMeetingSQL)
     OR NOT EXISTS (SELECT 1 FROM sync_entity_state s WHERE s.vaultId = meetings.vaultId
-        AND s.entity = 'meeting_file' AND s.entityId = meeting_images.id AND s.confirmedRevision IS NOT NULL)
+        AND s.entity = 'meeting_attachment' AND s.entityId = meeting_images.id AND s.confirmedRevision IS NOT NULL)
     OR EXISTS (SELECT 1 FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
         WHERE t.vaultId = meetings.vaultId AND ((o.entity = 'file' AND o.entityId = meeting_images.fileId)
-            OR (o.entity = 'meeting_file' AND o.entityId = meeting_images.id))))
+            OR (o.entity = 'meeting_attachment' AND o.entityId = meeting_images.id))))
     """
 
     nonisolated static let pendingSearchMeetingSQL = """
