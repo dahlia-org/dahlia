@@ -27,11 +27,17 @@ import {
 
 import type { FileMetadata } from "../files/model";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../account-settings-model";
+import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from "../search/settings-model";
 
 import { user as authUser } from "./generated/postgres-auth-schema";
 
 export const appSchema = pgSchema("app");
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
+
+export const serverSettings = appSchema.table("server_settings", {
+  id: integer("id").primaryKey(),
+  searchWeights: jsonb("search_weights").$type<SearchSettings>().default(DEFAULT_SEARCH_SETTINGS).notNull(),
+}, (table) => [check("server_settings_singleton", sql`${table.id} = 1`)]);
 
 export const serverInitializations = appSchema.table("server_initializations", {
   name: text("name").primaryKey(),
@@ -414,6 +420,18 @@ export const searchDocument = appSchema.table("search_documents", {
   meetingId: uuid("meeting_id").notNull(),
   kind: text("kind").notNull(),
   searchText: text("search_text").default("").notNull(),
+  titleText: text("title_text").default("").notNull(),
+  tagsText: text("tags_text").default("").notNull(),
+  descriptionText: text("description_text").default("").notNull(),
+  summaryText: text("summary_text").default("").notNull(),
+  ocrText: text("ocr_text").default("").notNull(),
+  captionText: text("caption_text").default("").notNull(),
+  titleVector: tsvector("title_vector").generatedAlwaysAs(sql`to_tsvector('simple', title_text)`),
+  tagsVector: tsvector("tags_vector").generatedAlwaysAs(sql`to_tsvector('simple', tags_text)`),
+  descriptionVector: tsvector("description_vector").generatedAlwaysAs(sql`to_tsvector('simple', description_text)`),
+  summaryVector: tsvector("summary_vector").generatedAlwaysAs(sql`to_tsvector('simple', summary_text)`),
+  ocrVector: tsvector("ocr_vector").generatedAlwaysAs(sql`to_tsvector('simple', ocr_text)`),
+  captionVector: tsvector("caption_vector").generatedAlwaysAs(sql`to_tsvector('simple', caption_text)`),
   searchVector: tsvector("search_vector")
     .generatedAlwaysAs(sql`to_tsvector('simple', search_text)`),
   embeddingText: text("embedding_text"),

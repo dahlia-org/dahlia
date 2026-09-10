@@ -428,7 +428,7 @@ describe("partial text content", () => {
     await service.commitTransaction(owner, body(otherVaultId, [{ entity: "vault", action: "create", entityId: otherVaultId,
       baseRevision: null, data: { name: "Other", createdAt: new Date().toISOString() } }]));
     const meeting = raw.prepare("INSERT INTO meetings(meeting_id, vault_id, name, status, created_at, updated_at, active) VALUES (?, ?, 'Metadata', 'READY', 0, 0, 1)");
-    const document = raw.prepare("INSERT INTO search_documents(document_id, vault_id, meeting_id, kind, search_text, embedding_text, embedding_content_hash) VALUES (?, ?, ?, 'meeting', ?, ?, 'hash')");
+    const document = raw.prepare("INSERT INTO search_documents(document_id, vault_id, meeting_id, kind, summary_text, embedding_text, embedding_content_hash) VALUES (?, ?, ?, 'meeting', ?, ?, 'hash')");
     const ids = [id(), id()];
     for (const [index, text] of ["alpha beta", "alpha beta beta beta " + "noise ".repeat(10)].entries()) {
       const meetingId = ids[index]!;
@@ -451,7 +451,7 @@ describe("partial text content", () => {
   it("pages every FTS result without a hybrid candidate cap and rejects malformed cursors", async () => {
     const { raw, service, vaultId } = await setup();
     const meeting = raw.prepare("INSERT INTO meetings(meeting_id, vault_id, name, status, created_at, updated_at, active) VALUES (?, ?, 'Metadata', 'READY', 0, 0, 1)");
-    const document = raw.prepare("INSERT INTO search_documents(document_id, vault_id, meeting_id, kind, search_text, embedding_text, embedding_content_hash) VALUES (?, ?, ?, 'meeting', 'needle', ?, 'hash')");
+    const document = raw.prepare("INSERT INTO search_documents(document_id, vault_id, meeting_id, kind, summary_text, embedding_text, embedding_content_hash) VALUES (?, ?, ?, 'meeting', 'needle', ?, 'hash')");
     raw.exec("BEGIN");
     for (let index = 0; index < 1101; index += 1) {
       const meetingId = id();

@@ -12,6 +12,7 @@ import pg, { type Pool } from "pg";
 
 import type { AppConfig } from "../config";
 import type { PostgresMigrationDirectory } from "../migrations";
+import { SEARCH_FIELDS } from "../search/settings-model";
 import { createPostgresPool, POSTGRES_MIGRATION_SCHEMA, POSTGRES_SEARCH_PATH } from "./postgres";
 
 export type PostgresDatabase = NodePgDatabase & { $client: Pool };
@@ -132,6 +133,9 @@ export async function ensureSearchIndexes(pool: Pool, config: AppConfig): Promis
     await pool.query(
       "CREATE INDEX IF NOT EXISTS search_documents_search_bm25 ON app.search_documents USING lakebase_bm25 (search_vector)",
     );
+    for (const field of SEARCH_FIELDS) {
+      await pool.query(`CREATE INDEX IF NOT EXISTS search_documents_${field}_bm25 ON app.search_documents USING lakebase_bm25 (${field}_vector) WITH (k1 = 1.2, b = 0.75)`);
+    }
   } else if (config.databaseType === "postgres") {
     await pool.query(
       "CREATE INDEX IF NOT EXISTS search_documents_search_gin ON app.search_documents USING gin (search_vector)",

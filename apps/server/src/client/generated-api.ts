@@ -102,6 +102,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/search-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read server-wide full-text search weights; administrator only */
+        get: operations["getSearchSettings"];
+        /** Replace all six search weights (integers 1–10); applies to subsequent searches */
+        put: operations["updateSearchSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/members/{userId}": {
         parameters: {
             query?: never;
@@ -2487,6 +2505,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Administrator"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getSearchSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        title: number;
+                        tags: number;
+                        description: number;
+                        summary: number;
+                        ocr: number;
+                        caption: number;
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateSearchSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    title: number;
+                    tags: number;
+                    description: number;
+                    summary: number;
+                    ocr: number;
+                    caption: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        title: number;
+                        tags: number;
+                        description: number;
+                        summary: number;
+                        ocr: number;
+                        caption: number;
+                    };
                 };
             };
             default: components["responses"]["Problem"];

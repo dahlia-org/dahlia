@@ -90,7 +90,6 @@ BEGIN
 END $$;
 
 --> statement-breakpoint
-
 CREATE POLICY "account_settings_owner" ON "app"."account_settings" AS PERMISSIVE FOR ALL TO public USING ("app"."account_settings"."user_id" = nullif(current_setting('app.user_id', true), '')::uuid) WITH CHECK ("app"."account_settings"."user_id" = nullif(current_setting('app.user_id', true), '')::uuid);--> statement-breakpoint
 CREATE POLICY "meeting_attachment_select" ON "app"."meeting_attachments" AS PERMISSIVE FOR SELECT TO public USING ("app"."current_identity_can_read_vault"("app"."meeting_attachments"."vault_id"));--> statement-breakpoint
 CREATE POLICY "meeting_attachment_write" ON "app"."meeting_attachments" AS PERMISSIVE FOR ALL TO public USING ("app"."current_identity_owns_vault"("app"."meeting_attachments"."vault_id")) WITH CHECK ("app"."current_identity_owns_vault"("app"."meeting_attachments"."vault_id"));--> statement-breakpoint

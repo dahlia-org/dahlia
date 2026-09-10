@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "d877c99e-f662-4390-8d87-efff7869da3b",
+  "id": "24b73303-2cab-4ccc-8361-66d70232bff4",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -49,6 +49,18 @@
     {
       "isRlsEnabled": false,
       "name": "jobs_search_index",
+      "entityType": "tables",
+      "schema": "app"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "server_initializations",
+      "entityType": "tables",
+      "schema": "app"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "server_settings",
       "entityType": "tables",
       "schema": "app"
     },
@@ -166,10 +178,23 @@
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
-      "default": "'{\"method\":\"transcript\",\"detail\":\"high\",\"methodSettings\":{\"transcript\":{\"model\":\"gpt-5.4\",\"reasoningEffort\":\"medium\"},\"audio\":{\"model\":\"gemini-3-8-flash\",\"reasoningEffort\":\"medium\"}}}'",
+      "default": "'{\"style\":\"detailed\"}'",
       "generated": null,
       "identity": null,
       "name": "summary",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "account_settings"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'{\"location\":\"local\",\"remote\":{\"workflow\":\"transcribeThenSummarize\"}}'",
+      "generated": null,
+      "identity": null,
+      "name": "processing",
       "entityType": "columns",
       "schema": "app",
       "table": "account_settings"
@@ -669,6 +694,180 @@
       "table": "search_documents"
     },
     {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "''",
+      "generated": null,
+      "identity": null,
+      "name": "title_text",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "search_documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "''",
+      "generated": null,
+      "identity": null,
+      "name": "tags_text",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "search_documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "''",
+      "generated": null,
+      "identity": null,
+      "name": "description_text",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "search_documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "''",
+      "generated": null,
+      "identity": null,
+      "name": "summary_text",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "search_documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "''",
+      "generated": null,
+      "identity": null,
+      "name": "ocr_text",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "search_documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "''",
+      "generated": null,
+      "identity": null,
+      "name": "caption_text",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "search_documents"
+    },
+    {
+      "type": "tsvector",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": {
+        "as": "to_tsvector('simple', title_text)",
+        "type": "stored"
+      },
+      "identity": null,
+      "name": "title_vector",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "search_documents"
+    },
+    {
+      "type": "tsvector",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": {
+        "as": "to_tsvector('simple', tags_text)",
+        "type": "stored"
+      },
+      "identity": null,
+      "name": "tags_vector",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "search_documents"
+    },
+    {
+      "type": "tsvector",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": {
+        "as": "to_tsvector('simple', description_text)",
+        "type": "stored"
+      },
+      "identity": null,
+      "name": "description_vector",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "search_documents"
+    },
+    {
+      "type": "tsvector",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": {
+        "as": "to_tsvector('simple', summary_text)",
+        "type": "stored"
+      },
+      "identity": null,
+      "name": "summary_vector",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "search_documents"
+    },
+    {
+      "type": "tsvector",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": {
+        "as": "to_tsvector('simple', ocr_text)",
+        "type": "stored"
+      },
+      "identity": null,
+      "name": "ocr_vector",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "search_documents"
+    },
+    {
+      "type": "tsvector",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": {
+        "as": "to_tsvector('simple', caption_text)",
+        "type": "stored"
+      },
+      "identity": null,
+      "name": "caption_vector",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "search_documents"
+    },
+    {
       "type": "tsvector",
       "typeSchema": null,
       "notNull": false,
@@ -982,6 +1181,58 @@
       "entityType": "columns",
       "schema": "app",
       "table": "jobs_search_index"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "name",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "server_initializations"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "initialized_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "server_initializations"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "server_settings"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'{\"title\":5,\"tags\":3,\"description\":2,\"summary\":1,\"ocr\":1,\"caption\":2}'",
+      "generated": null,
+      "identity": null,
+      "name": "search_weights",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "server_settings"
     },
     {
       "type": "text",
@@ -4277,6 +4528,26 @@
     },
     {
       "columns": [
+        "name"
+      ],
+      "nameExplicit": false,
+      "name": "server_initializations_pkey",
+      "schema": "app",
+      "table": "server_initializations",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "server_settings_pkey",
+      "schema": "app",
+      "table": "server_settings",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
         "storage_key"
       ],
       "nameExplicit": false,
@@ -4550,6 +4821,13 @@
       "entityType": "checks",
       "schema": "app",
       "table": "jobs_search_index"
+    },
+    {
+      "value": "\"id\" = 1",
+      "name": "server_settings_singleton",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "server_settings"
     },
     {
       "value": "\"status\" IN ('pending', 'processing', 'failed')",

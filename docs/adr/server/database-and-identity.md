@@ -16,11 +16,13 @@
 
 2026-09-06: Server canonical model では Vault / Project と meeting が同じ正本を構成するため、未リリースの `core` / `content` を `app` に統合した。SQLite / D1 は prefix を除去する。baseline を直接更新し、旧開発 DB からの自動移行は提供しない。認可、保持期間、再生成可否はスキーマではなく各テーブルの責務で区別する。
 
-## リリース前 baseline 統合（2026-09-09）
+## リリース前 baseline 統合（2026-09-09、2026-09-10更新）
 
 ユーザー承認により未リリース Server の開発履歴を現行 Drizzle schema から再生成した初期 migration に統合する。既存開発 DB の自動変換は提供せず、新しい空 DB への明示的な切り替えを必要とする。Desktop と既にリリースしたユーザー DB の migration は変更しない。
 
 PostgreSQL は既存の生成 Auth baseline → application initial → runtime_support、SQLite / D1 は initial → runtime_support とする。Drizzle が生成した policy は参照先 identity function の後に作成するため runtime_support に置く。FORCE RLS、membership index、移管の DEFERRABLE 制約、SQLite FTS5 と trigger を維持し、旧テーブル作成・変換・backfill は除去する。snapshot は将来の差分生成用に保持し、配布 package は実行 SQL のみを含む。
+
+2026-09-10: 初期リリース前のため、組織初期化記録、現行アカウント設定、検索のフィールド別重みも initial に統合した。旧設定の変換、既存組織の backfill、旧検索列からの再構築は提供せず、空 DB に現行スキーマと FTS を直接作成する。
 
 以下の forward migration の説明は統合前の経緯であり、旧開発 DB からの移行保証ではない。リリース後は従来どおり forward-only とする。
 

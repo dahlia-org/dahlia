@@ -15,7 +15,6 @@ import { ObjectStorageError, type StorageReadMethod, type ObjectStorage } from "
 import { RequestError, boundedUploadBody, parseUpload, type ParsedUpload } from "../storage/upload";
 import { sha256, sha256Passthrough, sha256Stream } from "../storage/sha256";
 import {
-  createSearchText,
   createIntlSearchTokenizer,
   parseSearchQuery,
   SearchQueryError,
@@ -23,6 +22,7 @@ import {
   type SearchTokenizer,
 } from "../search/tokenizer";
 import { summarySearchableText } from "../search/summary";
+import { meetingSearchText, screenshotSearchText } from "../search/document";
 import type { SearchEmbedder } from "../search/embedding";
 import type {
   IdentitySyncStore,
@@ -126,6 +126,7 @@ export class MeetingSyncService {
       if ((meeting.summaryRevision ?? 0) !== job.summaryRevision) throw new SummaryError("summary_conflict");
       if (await method.version(scoped, job.vaultId, job.meetingId, job.input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
       const transcriptOperation = transcript ? await this.stageSummaryTranscript(scoped, job, transcript) : undefined;
+      const summaryDocument = JSON.stringify(document);
       const transaction = await normalizeTransaction({
         schemaVersion: 2, id: job.id, vaultId: job.vaultId, createdAt: job.createdAt.toISOString(),
         operations: [
@@ -135,13 +136,13 @@ export class MeetingSyncService {
               status: meeting.status, duration: meeting.duration, recordingStartedAt: meeting.recordingStartedAt?.toISOString() ?? null,
               updatedAt: new Date().toISOString() } },
           { id: uuidV7(), entity: "summary", action: "upsert", entityId: job.meetingId,
-            baseRevision: job.summaryRevision, data: { title: document.title, document: JSON.stringify(document), createdAt: job.createdAt.toISOString() } },
+            baseRevision: job.summaryRevision, data: { title: document.title, document: summaryDocument, createdAt: job.createdAt.toISOString() } },
         ],
       });
-      const summaryText = summarySearchableText(JSON.stringify(document));
+      const summaryText = summarySearchableText(summaryDocument);
       const embeddingText = summaryText.trim() || null;
       for (const operation of transaction.operations.filter((operation) => operation.entity !== "transcript")) Object.assign(operation.data!, {
-        searchText: createSearchText(this.tokenizer, [document.title, document.description, summaryText]),
+        ...meetingSearchText(this.tokenizer, document.title, document.description, summaryDocument),
         embeddingText, embeddingContentHash: await embeddingContentHash(embeddingText),
       });
       return scoped.completeSummaryJob(job, transaction);
@@ -208,7 +209,7 @@ export class MeetingSyncService {
     const embeddingText = [metadata.ocr_text, metadata.caption]
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0).join("\n") || null;
     return {
-      searchText: createSearchText(this.tokenizer, [metadata.ocr_text, metadata.caption]),
+      ...screenshotSearchText(this.tokenizer, metadata.ocr_text, metadata.caption),
       embeddingText,
       embeddingContentHash: await embeddingContentHash(embeddingText),
     };
@@ -246,7 +247,7 @@ export class MeetingSyncService {
             const summaryText = summarySearchableText(summaryDocument);
             const embeddingText = summaryText.trim() || null;
             Object.assign(data, {
-              searchText: createSearchText(this.tokenizer, [name, description, summaryText]),
+              ...meetingSearchText(this.tokenizer, name, description, summaryDocument),
               embeddingText,
               embeddingContentHash: await embeddingContentHash(embeddingText),
             });

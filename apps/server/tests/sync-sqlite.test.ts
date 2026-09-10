@@ -42,6 +42,23 @@ afterEach(() => {
 });
 
 describe("SQLite canonical sync", () => {
+  it("updates separate OCR and caption fields", async () => {
+    const { store, service, publish, attach, file, databasePath } = await fileSetup("caption-model");
+    await publish(); await attach();
+    await service.patchFile(owner, file.id, { baseRevision: 1, metadata: { ocrText: "Revenue", caption: "Architecture diagram" } });
+    const raw = new DatabaseSync(databasePath);
+    try {
+      const before = raw.prepare("SELECT * FROM search_documents WHERE kind = 'screenshot'").get();
+      expect(before).toMatchObject({ ocr_text: "revenue", caption_text: "architecture diagram", title_text: "", tags_text: "",
+        embedding_text: "Revenue\nArchitecture diagram" });
+      expect((await service.searchAll(owner, { vaultId, query: "Revenue architecture", kind: "screenshot" })).screenshots).toHaveLength(1);
+      await service.patchFile(owner, file.id, { baseRevision: 2, metadata: { ocrText: "Budget", caption: "" } });
+      expect((await service.searchAll(owner, { vaultId, query: "Revenue", kind: "screenshot" })).screenshots).toEqual([]);
+      expect((await service.searchAll(owner, { vaultId, query: "Architecture", kind: "screenshot" })).screenshots).toEqual([]);
+      expect((await service.searchAll(owner, { vaultId, query: "Budget", kind: "screenshot" })).screenshots).toHaveLength(1);
+    } finally { raw.close(); await store.close?.(); }
+  });
+
   it.each(["node", "worker"])("validates transfer requests and stops stale sync clients through %s", async (runtime) => {
     const { store, databasePath } = await setup();
     await createVault(store);

@@ -2,6 +2,14 @@ export function summarySearchableText(document: string | null): string {
   return summaryDisplayText(document);
 }
 
+export function summaryTags(document: string | null): string[] {
+  if (!document) return [];
+  let value: unknown;
+  try { value = JSON.parse(document); } catch { return []; }
+  return isObject(value) && Array.isArray(value.tags)
+    ? value.tags.filter((tag): tag is string => typeof tag === "string") : [];
+}
+
 export function summaryDisplayText(document: string | null): string {
   if (!document) return "";
   let value: unknown;
