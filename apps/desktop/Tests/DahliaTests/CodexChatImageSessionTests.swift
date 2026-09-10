@@ -162,39 +162,6 @@ import Foundation
         }
 
         @Test
-        func incompatiblePendingImageDoesNotBlockLiveTranscript() async throws {
-            let service = ImageChatService(supportsImages: true, sendBehavior: .delayFirstWithoutTurn)
-            let session = makeSession(service: service)
-            let png = try testPNGData()
-
-            await session.prepare()
-            session.toggleLiveMode()
-            session.draft = "Start"
-            session.sendDraft()
-            await waitUntilAsync { await service.isSendWaiting }
-
-            session.draft = "Image pending"
-            await session.addImageData([png])
-            session.sendDraft()
-            session.selectModel("text-only-model")
-            session.receiveFinalizedLiveTranscript("Live speech")
-            await service.resumeDelayedSend()
-
-            await waitUntilAsync { await service.sentInputs.count == 2 }
-            await waitUntil { !session.isGenerating }
-            let liveInputs = await service.sentInputs[1]
-            #expect(liveInputs.contains { input in
-                input.textValue?.contains("Live speech") == true
-            })
-            #expect(!liveInputs.contains { $0.isImage })
-
-            session.selectModel("default-model")
-            await waitUntilAsync { await service.sentInputs.count == 3 }
-            await waitUntil { !session.isGenerating }
-            #expect(await service.sentInputs[2].contains { $0.isImage })
-        }
-
-        @Test
         func meetingReferenceTextPrecedesMultipleImages() async throws {
             let service = ImageChatService(supportsImages: true)
             let session = makeSession(service: service)

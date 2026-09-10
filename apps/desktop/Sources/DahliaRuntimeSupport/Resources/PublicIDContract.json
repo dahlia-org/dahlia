@@ -731,6 +731,40 @@
     },
     "mcpOrganizationMembership": {
       "organization_id": "id:organization"
+    },
+    "liveSpeech": {
+      "id": "id:segment"
+    },
+    "liveState": {
+      "vaultId": "id:vault",
+      "meetingId": "id:meeting",
+      "sessionId": "id:recording",
+      "previews": "array:liveSpeech"
+    },
+    "liveList": {
+      "meetings": "array:liveState"
+    },
+    "livePage": {
+      "state": "liveState",
+      "confirmed": "array:liveSpeech",
+      "cursor": "cursor:live"
+    },
+    "mcpLiveState": {
+      "vault_id": "id:vault",
+      "meeting_id": "id:meeting",
+      "session_id": "id:recording",
+      "previews": "array:mcpSegment"
+    },
+    "mcpLiveList": {
+      "meetings": "array:mcpLiveState"
+    },
+    "mcpLivePage": {
+      "state": "mcpLiveState",
+      "confirmed": "array:mcpSegment",
+      "cursor": "cursor:live"
+    },
+    "mcpVaultList": {
+      "vaults": "array:vault"
     }
   },
   "routes": [
@@ -2043,6 +2077,37 @@
         "GET",
         "HEAD"
       ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/live-transcript",
+      "methods": [
+        "PUT"
+      ],
+      "request": "liveState",
+      "limit": 1048576
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/live-transcript",
+      "methods": [
+        "GET"
+      ],
+      "response": "livePage",
+      "query": {
+        "cursor": "cursor:live"
+      }
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/live-transcript/events",
+      "query": {
+        "cursor": "cursor:live"
+      },
+      "headers": {
+        "last-event-id": "cursor:live"
+      }
+    },
+    {
+      "path": "/api/v1/vaults/:vault/live-meetings",
+      "response": "liveList"
     }
   ]
 }

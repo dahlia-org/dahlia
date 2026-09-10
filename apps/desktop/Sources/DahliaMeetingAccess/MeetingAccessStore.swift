@@ -59,6 +59,19 @@ public final class MeetingAccessStore: Sendable {
         textResolver = nil
     }
 
+    func scoped(to vaultID: UUID) -> MeetingAccessStore {
+        MeetingAccessStore(copying: self, vaultID: vaultID)
+    }
+
+    private init(copying store: MeetingAccessStore, vaultID: UUID) {
+        database = store.database
+        self.vaultID = vaultID
+        allowsWrites = store.allowsWrites
+        screenshotCache = store.screenshotCache
+        imageResolver = store.imageResolver
+        textResolver = store.textResolver
+    }
+
     private func remoteSearch(
         query: String,
         kind: TextSearchKind,
@@ -101,7 +114,12 @@ public final class MeetingAccessStore: Sendable {
                 }
             } while true
         } catch {
-            return RemoteTextSearchResults(items: [], nextCursor: cursor, complete: false, error: "server_search_incomplete")
+            return RemoteTextSearchResults(
+                items: [],
+                nextCursor: cursor,
+                complete: false,
+                error: (error as? LiveTranscriptError)?.rawValue ?? (error as? TextContentError)?.rawValue ?? "server_search_incomplete"
+            )
         }
     }
 
@@ -937,7 +955,7 @@ extension MeetingAccessStore {
         return MeetingScreenshotImage(metadata: metadata, imageData: imageData, mimeType: mimeType)
     }
 
-    private func meetingExists(id: UUID, in db: Database) throws -> Bool {
+    func meetingExists(id: UUID, in db: Database) throws -> Bool {
         try Bool.fetchOne(
             db,
             sql: "SELECT EXISTS(SELECT 1 FROM meetings WHERE id = ? AND vaultId = ?)",
@@ -1077,7 +1095,7 @@ extension MeetingAccessStore {
         }
     }
 
-    func fetchVault(in db: Database) throws -> ScopedVault {
+    func validateSchema(in db: Database) throws {
         let meetingColumns = try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('meetings')")
         let summaryColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')"))
         let searchColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('search_documents_fts')"))
@@ -1102,6 +1120,10 @@ extension MeetingAccessStore {
         else {
             throw MeetingAccessError.databaseUpgradeRequired
         }
+    }
+
+    func fetchVault(in db: Database) throws -> ScopedVault {
+        try validateSchema(in: db)
         guard let row = try Row.fetchOne(
             db,
             sql: "SELECT id, name FROM vaults WHERE id = ?",

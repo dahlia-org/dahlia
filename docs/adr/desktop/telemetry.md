@@ -13,7 +13,7 @@ Sentry は匿名技術診断、TelemetryDeck は低頻度の機能利用を担�
 ## 許可した集計
 
 - 録音の初回 / 再開を固定 meetingScope で区別し、永続化成功分だけを分単位に四捨五入・最大360分の floatValue として送る。failed に時間を付けない。
-- chat は新規 manual prompt と Live Mode 有効化だけを数え、retry、transcript event、入力・生成内容を送らない。
+- chat は新規 manual prompt だけを数え、retry、transcript event、入力・生成内容を送らない。
 - 内蔵 chat の MCP terminal call を粗い category、read/write、成否で数える。外部 client と廃止した summary MCP origin は計測しない。
 - 同じ App ID の app / mcpHelper を固定 runtime で分け、本体 DAU / session は app に絞る。件数・user count はサービスの集計を使い、custom ID / 件数を送らない。
 

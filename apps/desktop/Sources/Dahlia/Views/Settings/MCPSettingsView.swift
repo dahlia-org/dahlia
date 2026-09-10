@@ -14,67 +14,63 @@ struct MCPSettingsView: View {
     init(vaults: [VaultRecord], currentVault: VaultRecord?) {
         self.vaults = vaults
         self.currentVault = currentVault
-        _selectedVaultID = State(initialValue: currentVault?.id ?? vaults.first?.id)
+        _selectedVaultID = State(initialValue: nil)
     }
 
     var body: some View {
         Form {
-            if let vault = selectedVault {
-                Section {
-                    MCPPreviewOptionsView(
-                        selectedClient: $selectedClient,
-                        selectedVaultID: $selectedVaultID,
-                        isWriteEnabled: $isWriteEnabled,
-                        availableVaults: availableVaults
-                    )
-                } header: {
-                    Text(L10n.mcpPreview)
-                } footer: {
-                    Text(L10n.mcpFooter)
-                }
+            Section {
+                MCPPreviewOptionsView(
+                    selectedClient: $selectedClient,
+                    selectedVaultID: $selectedVaultID,
+                    isWriteEnabled: $isWriteEnabled,
+                    availableVaults: availableVaults
+                )
+            } header: {
+                Text(L10n.mcpPreview)
+            } footer: {
+                Text(L10n.mcpFooter)
+            }
 
-                if let commands = commands(for: vault) {
-                    Section(L10n.mcpConfigurationOutput) {
-                        switch selectedClient {
-                        case .codex, .claude:
-                            if let command = commands.registrationCommand(for: selectedClient, writeEnabled: isWriteEnabled),
-                               let removalCommand = commands.removalCommand(for: selectedClient) {
-                                MCPCommandView(
-                                    title: selectedClient.displayName,
-                                    command: command,
-                                    removalCommand: removalCommand,
-                                    copiedCommand: copiedContent,
-                                    onCopy: copy
-                                )
-                            }
-                        case .mcpJSON:
-                            if let sample = commands.mcpJSONSample(writeEnabled: isWriteEnabled) {
-                                MCPJSONSampleView(
-                                    sample: sample,
-                                    isCopied: copiedContent == sample,
-                                    onCopy: copy
-                                )
-                            }
+            if let commands = commands(for: selectedVault) {
+                Section(L10n.mcpConfigurationOutput) {
+                    switch selectedClient {
+                    case .codex, .claude:
+                        if let command = commands.registrationCommand(for: selectedClient, writeEnabled: isWriteEnabled),
+                           let removalCommand = commands.removalCommand(for: selectedClient) {
+                            MCPCommandView(
+                                title: selectedClient.displayName,
+                                command: command,
+                                removalCommand: removalCommand,
+                                copiedCommand: copiedContent,
+                                onCopy: copy
+                            )
                         }
-                    }
-                } else {
-                    Section(L10n.mcpConfigurationOutput) {
-                        Text(L10n.mcpHelperUnavailable)
-                            .foregroundStyle(DahliaDesign.secondaryTextColor)
+                    case .mcpJSON:
+                        if let sample = commands.mcpJSONSample(writeEnabled: isWriteEnabled) {
+                            MCPJSONSampleView(
+                                sample: sample,
+                                isCopied: copiedContent == sample,
+                                onCopy: copy
+                            )
+                        }
                     }
                 }
             } else {
-                ContentUnavailableView(
-                    L10n.noVaultSelected,
-                    systemImage: "externaldrive.badge.questionmark",
-                    description: Text(L10n.selectVaultForMCP)
-                )
+                Section(L10n.mcpConfigurationOutput) {
+                    Text(L10n.mcpHelperUnavailable)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
+                }
             }
+
         }
         .formStyle(.grouped)
         .onAppear(perform: reconcileSelectedVault)
         .onChange(of: vaults) {
             reconcileSelectedVault()
+        }
+        .onChange(of: selectedVaultID) {
+            if selectedVaultID == nil { isWriteEnabled = false }
         }
         .onChange(of: currentVault?.id) {
             reconcileSelectedVault()
@@ -96,17 +92,17 @@ struct MCPSettingsView: View {
         availableVaults.first { $0.id == selectedVaultID }
     }
 
-    private func commands(for vault: VaultRecord) -> MCPRegistrationCommands? {
+    private func commands(for vault: VaultRecord?) -> MCPRegistrationCommands? {
         guard let helperURL = try? DahliaMCPBundle.executableURL() else { return nil }
         return MCPRegistrationCommands(
             helperURL: helperURL,
-            vaultID: vault.id
+            vaultID: vault?.id
         )
     }
 
     private func reconcileSelectedVault() {
-        guard selectedVault == nil else { return }
-        selectedVaultID = currentVault?.id ?? availableVaults.first?.id
+        if selectedVaultID != nil, selectedVault == nil { selectedVaultID = nil }
+        if selectedVaultID == nil { isWriteEnabled = false }
     }
 
     private func copy(_ command: String) {

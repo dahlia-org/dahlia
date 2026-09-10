@@ -2,7 +2,7 @@ import Foundation
 
 /// Content IPC carries scoped requests and results, never authentication material.
 public struct TextBrokerRequest: Codable, Sendable {
-    public enum Operation: String, Codable, Sendable { case meeting, transcript, touch, search }
+    public enum Operation: String, Codable, Sendable { case meeting, transcript, touch, search, liveMeetings, liveTranscript }
     public let operation: Operation
     public let meetingId: UUID?
     public let entity: TextContentEntity?

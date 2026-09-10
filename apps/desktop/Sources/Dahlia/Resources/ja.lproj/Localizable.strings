@@ -1190,15 +1190,6 @@
 "The selected model does not support images. Choose another model or remove the images." = "選択したモデルは画像に対応していません。別のモデルを選択するか、画像を削除してください。";
 "You can attach up to %lld images." = "画像は最大 %lld 枚まで添付できます。";
 "Could not attach %lld image(s)." = "%lld 枚の画像を添付できませんでした。";
-"Live mode" = "ライブモード";
-"Turn on live mode" = "ライブモードをオンにする";
-"Turn off live mode" = "ライブモードをオフにする";
-"Live mode on" = "ライブモード：オン";
-"I'll send you the live transcript of this meeting. You don't need to respond to every transcript update. Support me when needed." = "このミーティングのライブ文字起こしをあなたに送ります。送られてくるすべての文字起こしに反応する必要はありません。必要に応じてサポートしてください。";
-"Summarize the discussion so far." = "ここまでの内容を簡単に要約して。";
-"Explain what I just missed." = "今のよくわかってないので解説して。";
-"Review our past conversations." = "過去のやり取りを確認して";
-"Some older live transcript was skipped because the chat backlog was too large." = "チャットの待機量が上限を超えたため、古いライブ文字起こしの一部をスキップしました。";
 "The assistant wants to run a command." = "アシスタントがコマンドの実行を求めています。";
 "The assistant wants to change files." = "アシスタントがファイルの変更を求めています。";
 "The assistant wants to change Dahlia data." = "アシスタントが Dahlia データの変更を求めています。";
@@ -1259,7 +1250,7 @@
 "A Project cannot be moved inside itself or one of its descendants." = "Project を自分自身または子孫の配下へ移動できません。";
 "Projects support one level of subprojects. Choose a root Project as the parent." = "サブプロジェクトは1階層までです。親にはルート Project を選択してください。";
 "Another Project operation is already running for this Vault." = "この Vault では別の Project 操作を実行中です。";
-"The agent can read Meeting content and customer intelligence, including names and email addresses, from the selected Vault. Write access also allows creating, updating, and deleting customer intelligence, reorganizing Projects and meeting assignments, and replacing stored meeting summaries." = "Agent は選択した Vault にあるミーティングの内容と、氏名・メールアドレスを含む顧客情報を読み取れます。書き込みを許可すると、顧客情報の作成・更新・削除、Project とミーティング所属の整理、保存済みミーティング要約の置換も可能になります。";
+"mcp.scopeFooter" = "Agent は指定した範囲のミーティング本文、ライブ文字起こし、氏名・メールアドレスを含む顧客情報を読み取れます。「すべての追加済み保管庫」は、この Mac のローカル／Server 保管庫が対象です。書き込みには個別の保管庫を指定し、顧客情報、Project、ミーティング所属、保存済み要約を編集できます。";
 "Copy Command" = "コマンドをコピー";
 "Copy meeting_id" = "meeting_idをコピー";
 "Copies meeting_id to the clipboard" = "meeting_idをクリップボードにコピーします";
@@ -1276,7 +1267,6 @@
 "Re-register Dahlia" = "Dahlia を再登録";
 "If Dahlia is already registered, run this remove command before the registration command." = "Dahlia がすでに登録されている場合は、登録コマンドの前にこの削除コマンドを実行してください。";
 "The MCP helper is not available in this app build." = "このアプリビルドではMCPヘルパーを利用できません。";
-"Select a vault before configuring MCP." = "MCPを設定する前に保管庫を選択してください。";
 "%@ registration command" = "%@ 登録コマンド";
 "Turn on meeting notifications to choose notification conditions." = "通知条件を選ぶには、ミーティング通知をオンにしてください。";
 "Turn on live subtitle translation to choose a target language." = "翻訳先の言語を選ぶには、ライブ字幕翻訳をオンにしてください。";
@@ -1809,3 +1799,4 @@
 
 "Waiting for initial sync" = "初回同期を待っています";
 "Server meetings will appear after sync. An internet connection and sign-in are required." = "同期するとサーバーのミーティングが表示されます。インターネット接続とサインインが必要です。";
+"mcp.allVaults" = "すべての追加済み保管庫";

@@ -196,6 +196,17 @@ public enum PublicIDWire {
     public static func cursor(_ value: Any, kind: String, direction: Direction) throws -> Any {
         if value is NSNull { return value }
         guard let string = value as? String else { throw TypeID.Failure.invalidID }
+        if kind == "live" {
+            guard let data = Data(base64Encoded: string),
+                  var cursor = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { throw TypeID.Failure.invalidID }
+            for (key, type) in ["vaultId": TypeID.Kind.vault, "meetingId": .meeting, "sessionId": .recording, "generation": .transcript] {
+                if key == "generation", cursor[key] as? String == "none" { continue }
+                guard let value = cursor[key] else { throw TypeID.Failure.invalidID }
+                cursor[key] = try id(value, kind: type, direction: direction)
+            }
+            return try JSONSerialization.data(withJSONObject: cursor, options: [.sortedKeys]).base64EncodedString()
+        }
         if kind == "textSearch" {
             guard var parts = try JSONSerialization.jsonObject(with: Data(string.utf8)) as? [Any],
                   parts.count == 5 else { throw TypeID.Failure.invalidID }

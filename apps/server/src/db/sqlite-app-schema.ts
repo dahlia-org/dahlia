@@ -1,3 +1,4 @@
+import type { LiveSpeech } from "../live/model";
 import type { TranscriptMetadata } from "../sync/transcript";
 import type { SummaryMetadata } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
@@ -487,4 +488,14 @@ export const vaultTransfer = sqliteTable("vault_transfers", {
 }, (table) => [
   unique("vault_transfer_owner_key_unique").on(table.ownerUserId, table.idempotencyKey),
   index("vault_transfer_owner_sequence_idx").on(table.ownerUserId, table.sequence),
+]);
+
+export const liveTranscript = sqliteTable("live_transcripts", {
+  meetingId: text("meeting_id").primaryKey(), vaultId: text("vault_id").notNull(), sessionId: text("session_id").notNull(),
+  startedAt: sqliteTimestamp("started_at").notNull(), sequence: integer("sequence").notNull(),
+  status: text("status").$type<"recording" | "disabled" | "stopped" | "failed">().notNull(),
+  updatedAt: sqliteTimestamp("updated_at").notNull(), previews: text("previews", { mode: "json" }).$type<LiveSpeech[]>().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.vaultId, table.meetingId], foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId] }).onDelete("cascade"),
+  index("live_transcripts_vault_idx").on(table.vaultId, table.updatedAt),
 ]);

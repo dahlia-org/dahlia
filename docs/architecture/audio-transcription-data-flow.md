@@ -4,7 +4,7 @@
 永続化するまでの現在のデータフローを示す。横断的な信頼性 contract は
 [`ARCHITECTURE.md`](../../ARCHITECTURE.md)、設計判断の理由は [ADR index](../adr/README.md) を参照する。
 
-対象は capture、録音、逐次認識、ライブ字幕、ライブチャットへの文字起こし供給、リアルタイム／バッチ文字起こしの
+対象は capture、録音、逐次認識、ライブ字幕、MCP へのライブ文字起こし供給、リアルタイム／バッチ文字起こしの
 SQLite 保存までとする。要約、書き出し、チャットでの利用方法、音声の保持期限と削除 protocol の詳細は扱わない。
 
 最終確認日: 2026-09-09
@@ -15,7 +15,7 @@ SQLite 保存までとする。要約、書き出し、チャットでの利用�
 旧 `realtime` セッションの読み取りは維持するが、新規録音の方式選択UIは置かない。
 
 - 「ライブ文字起こしで初版を作成」は既定OFF。ONでは確定発話を初版として保存し、最終文字起こしの保存成功まで保持する。
-- ライブ字幕、ライブチャット、初版保存は独立したconsumer。同じ音源の認識器を共有し、字幕だけをONにしても初版を保存しない。
+- ライブ字幕と初版保存は独立したconsumer。ライブ MCP は初版設定を使う。同じ音源の認識器を共有し、字幕だけをONにしても初版を保存しない。
 - 「録音終了後に自動処理」は既定ON。OFFでは確認画面から同じ処理経路を開始する。
 - UIの処理場所はローカル／リモートの2択。Local Accountはローカル固定とする。リモートでは `transcriptionModel` の有無で、Gemini文字起こし後の要約／Geminiによる文字起こし・要約の一括生成を切り替える。
 
@@ -33,32 +33,21 @@ Server設定の読込や通信成功を録音開始条件にしない。未取�
 失敗時も録音と既存の結果を保持する。処理成功による録音の即時削除は行わず、アーカイブ・保存期間・明示的削除の既存方針に従う。
 
 文字起こし言語は保存音声のrange metadataとApple Speechによる最終文字起こしに使う。
-ライブ字幕言語は共有する逐次認識器（初版・字幕・チャット）に使う。字幕言語を変更してもCAF rangeは切り替えない。
+ライブ字幕言語は共有する逐次認識器（初版・字幕）に使う。字幕言語を変更してもCAF rangeは切り替えない。
 要約の出力言語はこれらと別の設定である。
 
 ## モードとライブ機能の組み合わせ
 
 `TranscriptionSessionPlan` が、ライブ初版とライブ機能から必要なruntimeを導出する。以下は旧セッションの互換経路も含む。新規batchセッションで `liveTranscriptDraftEnabled` がONなら、他のライブconsumerにかかわらず音源ごとに1個の認識器を使用し、確定イベントを初版へ保存する。
 
-| 正本文字起こし | ライブ字幕 | ライブチャット | 音源ごとの逐次認識器 | batch 音声録音 | 録音中の逐次イベントを正本として保存 | 正本の生成元 |
-| --- | --- | --- | --- | --- | --- | --- |
-| realtime | off | off | 1 | なし | 保存する | 逐次認識の確定イベント |
-| realtime | on | off | 1 | なし | 保存する | 逐次認識の確定イベント |
-| realtime | off | on | 1 | なし | 保存する | 逐次認識の確定イベント |
-| realtime | on | on | 1 | なし | 保存する | 逐次認識の確定イベント |
-| batch | off | off | 0 | あり | 保存しない | 停止後の ready CAF |
-| batch | on | off | 1 | あり | 保存しない | 停止後の ready CAF |
-| batch | off | on | 1 | あり | 保存しない | 停止後の ready CAF |
-| batch | on | on | 1 | あり | 保存しない | 停止後の ready CAF |
+| 最終方式 | ライブ初版 | ライブ字幕 | 音源ごとの認識器 | 録音中の初版保存 |
+| --- | --- | --- | --- | --- |
+| realtime（互換） | 任意 | 任意 | 1 | あり |
+| batch | on | 任意 | 1 | あり |
+| batch | off | on | 1 | なし |
+| batch | off | off | 0 | なし |
 
-この表の重要な読み方:
-
-- realtime では `persistsRealtimeTranscript == true` であり、字幕やチャットの有無は正本の保存方針を変えない。
-- batch では `recordsBatchAudio == true` であり、字幕やチャットのために逐次認識しても
-  `persistsRealtimeTranscript == false` のままである。
-- batch 中の字幕やチャットは低遅延の一時的な結果である。最終結果は ready CAF を再生して作り直すため、
-  録音中の表示と停止後の正本文字起こしは一致しない場合がある。
-- 逐次認識が不要な唯一の組み合わせは、ライブ字幕とライブチャットを使わない batch である。
+batch の最終結果は ready CAF から生成する。字幕だけを ON にしても初版保存やライブ MCP の未確定文配信は有効にしない。AI Chat から認識器を有効にする経路はない。
 
 ## 用語と保存保証
 
@@ -101,7 +90,7 @@ flowchart LR
     Meter -.-> LevelUI["録音パネル<br/>音源別レベルメーター"]
 
     Events --> Caption["session history + bounded rendering<br/>LiveCaptionStore / TranscriptStore"]
-    Events --> Chat["live transcript relay"]
+    Events --> Live["bounded live preview store / MCP"]
     Events -->|"realtime policy"| StreamWriter["TranscriptPersistenceWriter"]
     StreamWriter --> TranscriptDB[("SQLite<br/>transcript_segments")]
 
@@ -225,7 +214,7 @@ durable の境界は ingress ではなく SQLite commit である。
 
 ### バッチ文字起こしと字幕
 
-batch mode では、字幕またはライブチャットを有効にした場合だけ録音中の逐次認識を追加する。そのイベントは
+batch mode では、ライブ初版または字幕を有効にすると録音中の逐次認識を追加する。ライブ初版 ON では確定発話を保存し、字幕だけなら
 `TranscriptPersistencePolicy.deferred` により正本文字起こしとして保存しない。逐次認識が失敗しても audio recording が
 継続可能なら、ライブ機能を縮退して停止後の batch transcription を維持する。
 
@@ -310,7 +299,7 @@ sequenceDiagram
 | MainActor／UI の一時停止 | accepted audio と realtime persistence lane は UI を待たず進む | UI は解放後に SQLite または bounded projection から catch up |
 | audio writer queue overflow | silent drop を行わず、それ以前の ready segment を保持 | recording error。新規 buffer 受付を閉じる |
 | live recognition failure in realtime | 正本文字起こしを継続できない | fatal runtime failure として停止へ進む |
-| live recognition failure in batch | audio writer が健全なら正本音声を継続 | 字幕／chat を縮退し、停止後 batch を維持 |
+| live recognition failure in batch | audio writer が健全なら正本音声を継続 | ライブ初版／字幕を縮退し、停止後 batch を維持 |
 | realtime SQLite failure | pending event と順序を writer actor 内で保持 | exponential backoff。停止時にも flush failure を返す |
 | batch recognition failure／アプリ終了による中断 | 旧成功 transcript と ready audio を保持 | failure／interrupted state を保存し、手動再試行を待つ |
 | Apple Speech の無進捗停止 | 旧成功 transcript と ready audio を保持 | 待機時間を含む専用 failure state を保存し、自動再試行せず手動再試行を待つ |

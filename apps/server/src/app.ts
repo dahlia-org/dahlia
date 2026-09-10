@@ -547,6 +547,55 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     return context.json(await sync.searchText(identity, sync.parseId(context.req.param("vaultId")!),
       body.query, body.kind, body.cursor, body.limit === undefined ? undefined : String(body.limit)));
   });
+  registerApi(app, "putLiveTranscript", bodyLimit({ maxSize: 1024 * 1024,
+    onError: (context) => context.json({ error: "live_state_too_large" }, 413) }), async (context) => {
+    const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
+    await sync.putLiveState(identity, sync.parseId(context.req.param("meetingId")!), await context.req.json());
+    return context.body(null, 204);
+  });
+  registerApi(app, "listLiveMeetings", async (context) => {
+    const identity = await syncIdentity(context.req.raw);
+    context.header("Cache-Control", "no-store");
+    return context.json(await sync.listLiveMeetings(identity, sync.parseId(context.req.param("vaultId")!)));
+  });
+  registerApi(app, "getLiveTranscript", async (context) => {
+    const identity = await syncIdentity(context.req.raw);
+    const meetingId = sync.parseId(context.req.param("meetingId")!);
+    context.header("Cache-Control", "no-store");
+    return context.json(await sync.getLiveTranscript(identity, await sync.meetingVault(identity, meetingId), meetingId, context.req.query()));
+  });
+  registerApi(app, "getLiveTranscriptEvents", async (context) => {
+    const identity = await syncIdentity(context.req.raw);
+    const meetingId = sync.parseId(context.req.param("meetingId")!);
+    const vaultId = await sync.meetingVault(identity, meetingId);
+    let cursor = context.req.query("cursor") ?? context.req.header("last-event-id");
+    let page = await sync.getLiveTranscript(identity, vaultId, meetingId, { cursor, limit: context.req.query("limit") });
+    context.header("Cache-Control", "no-store");
+    return streamSSE(context, async (stream) => {
+      let previousState = "";
+      const deliver = async (write: () => Promise<unknown>) => {
+        const timeout = setTimeout(() => stream.abort(), 5000);
+        try { await write(); } finally { clearTimeout(timeout); }
+      };
+      try {
+        while (!stream.aborted) {
+          const state = JSON.stringify(page.state);
+          if (previousState !== state || page.confirmed.length || page.resetRequired) {
+            const wirePage = wireValue(page, "livePage", "encode") as typeof page;
+            await deliver(() => stream.writeSSE({ event: page.resetRequired ? "reset" : "transcript", id: wirePage.cursor, data: JSON.stringify(wirePage) }));
+            previousState = state;
+          } else { await deliver(() => stream.write(": heartbeat\n\n")); }
+          cursor = page.cursor;
+          await stream.sleep(page.hasMore ? 0 : 1000);
+          // Re-authorize both the request identity and Vault membership before every read/delivery.
+          const currentIdentity = await syncIdentity(context.req.raw);
+          page = await sync.getLiveTranscript(currentIdentity, vaultId, meetingId, { cursor, limit: context.req.query("limit") });
+        }
+      } catch {
+        if (!stream.aborted) await deliver(() => stream.writeSSE({ event: "error", data: JSON.stringify({ code: "live_stream_unavailable" }) }));
+      }
+    });
+  });
   registerApi(app, "getEvents", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     const suppliedCursor = context.req.query("cursor") ?? context.req.header("last-event-id");

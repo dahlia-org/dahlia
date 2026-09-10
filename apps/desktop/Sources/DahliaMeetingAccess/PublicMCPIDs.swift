@@ -24,9 +24,24 @@ enum PublicMCPIDs {
     }
 
     static func result(_ value: [String: Any], tool: String, arguments: [String: Any]) throws -> [String: Any] {
-        guard let original = value["structuredContent"] as? [String: Any],
-              var body = try PublicIDWire.transform(original, shape: "mcpResult", direction: .encode) as? [String: Any]
-        else { return value }
+        guard let original = value["structuredContent"] as? [String: Any] else { return value }
+        let shape = switch tool {
+        case "list_vaults": "mcpVaultList"
+        case "list_live_meetings": "mcpLiveList"
+        case "get_live_transcript": "mcpLivePage"
+        default: "mcpResult"
+        }
+        guard var body = try PublicIDWire.transform(original, shape: shape, direction: .encode) as? [String: Any] else { return value }
+        if tool != "list_vaults", let groups = original["vaults"] as? [[String: Any]] {
+            body["vaults"] = try groups.map { group in
+                var converted = group
+                if let id = group["vault_id"] { converted["vault_id"] = try PublicIDWire.id(id, kind: .vault, direction: .encode) }
+                if let nested = group["result"] as? [String: Any] {
+                    converted["result"] = try Self.result(["structuredContent": nested], tool: tool, arguments: arguments)["structuredContent"]
+                }
+                return converted
+            }
+        }
         if let relationship = original["relationship"] as? String, relationship.hasSuffix("_resource_reference"),
            let target = original["target_id"] {
             body["target_id"] = try PublicIDWire.transform(target, shape: "resourceID", direction: .encode, parent: arguments)
@@ -54,6 +69,10 @@ enum PublicMCPIDs {
     }
 
     private static func convertCursor(_ value: String, tool: String, direction: PublicIDWire.Direction) throws -> String {
+        if tool == "get_live_transcript" {
+            guard let cursor = try PublicIDWire.cursor(value, kind: "live", direction: direction) as? String else { throw TypeID.Failure.invalidID }
+            return cursor
+        }
         guard let data = Data(base64Encoded: value), var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw TypeID.Failure.invalidID
         }

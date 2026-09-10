@@ -848,6 +848,58 @@
       "consumers": [
         "apps/server/src/client/App.tsx"
       ]
+    },
+    {
+      "operationId": "putLiveTranscript",
+      "method": "PUT",
+      "path": "/api/v1/meetings/{meetingId}/live-transcript",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Add live transcript access and ephemeral preview publication.",
+      "consumers": [
+        "Desktop",
+        "MCP",
+        "SSE clients"
+      ]
+    },
+    {
+      "operationId": "getLiveTranscript",
+      "method": "GET",
+      "path": "/api/v1/meetings/{meetingId}/live-transcript",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Add live transcript access and ephemeral preview publication.",
+      "consumers": [
+        "Desktop",
+        "MCP",
+        "SSE clients"
+      ]
+    },
+    {
+      "operationId": "getLiveTranscriptEvents",
+      "method": "GET",
+      "path": "/api/v1/meetings/{meetingId}/live-transcript/events",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Add live transcript access and ephemeral preview publication.",
+      "consumers": [
+        "Desktop",
+        "MCP",
+        "SSE clients"
+      ]
+    },
+    {
+      "operationId": "listLiveMeetings",
+      "method": "GET",
+      "path": "/api/v1/vaults/{vaultId}/live-meetings",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Add live transcript access and ephemeral preview publication.",
+      "consumers": [
+        "Desktop",
+        "MCP",
+        "SSE clients"
+      ]
     }
   ],
   "delegated": [
@@ -1740,7 +1792,9 @@
       "get_meeting",
       "get_meeting_transcript",
       "query_screenshots",
-      "get_meeting_screenshots"
+      "get_meeting_screenshots",
+      "list_live_meetings",
+      "get_live_transcript"
     ],
     "authorization": "Read-only. Each call checks its capability scope and current Vault access."
   },

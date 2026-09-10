@@ -1,15 +1,5 @@
 import Foundation
 
-enum CodexChatFailedSubmission {
-    case manual(CodexChatManualSubmission)
-    case liveTranscript(String)
-}
-
-struct CodexChatLiveModeSubmissionState {
-    let isEnabled: Bool, includesContext: Bool
-    let generation: UInt
-}
-
 extension CodexChatSessionModel {
     func acceptedImageCandidates<Item>(from items: [Item]) -> [Item] {
         let availableSlots = max(
@@ -26,16 +16,9 @@ extension CodexChatSessionModel {
     func makeAppServerInputs(
         text: String?,
         context: CodexChatContext?,
-        includesLiveModeContext: Bool,
-        liveTranscript: String?,
         images: [CodexChatImageAttachment]
     ) -> [CodexAppServerInput] {
-        let textInputs = CodexChatPromptCodec.encodeTextBlocks(
-            text: text,
-            context: context,
-            includesLiveModeContext: includesLiveModeContext,
-            liveTranscript: liveTranscript
-        ).map(CodexAppServerInput.text)
+        let textInputs = CodexChatPromptCodec.encodeTextBlocks(text: text ?? "", context: context).map(CodexAppServerInput.text)
         return textInputs + images.map { .imageDataURI($0.dataURI) }
     }
 
@@ -43,7 +26,6 @@ extension CodexChatSessionModel {
         _ text: String,
         images: [CodexChatImageAttachment] = [],
         composerSnapshot: CodexChatComposerSnapshot? = nil,
-        liveTranscript: String? = nil,
         includesCurrentContext: Bool = true
     ) {
         guard isBoundToCurrentVault,
@@ -51,24 +33,17 @@ extension CodexChatSessionModel {
               !needsRestore,
               !isGenerating,
               !isTurnCleanupPending,
-              text.nilIfBlank != nil || !images.isEmpty || liveTranscript?.nilIfBlank != nil else { return }
+              text.nilIfBlank != nil || !images.isEmpty else { return }
         guard images.isEmpty || models.isEmpty || selectedModelSupportsImages else {
             noticeMessage = L10n.chatModelDoesNotSupportImages
             return
         }
-        prepareFailureStateForSubmission(liveTranscript: liveTranscript)
+        prepareFailureStateForSubmission()
         isGenerating = true
-        isPreparingTurn = liveTranscript == nil
-        isAwaitingTurnOutput = liveTranscript != nil
-        preparingManualComposerSnapshot = liveTranscript == nil ? composerSnapshot : nil
+        isPreparingTurn = true
+        isAwaitingTurnOutput = false
+        preparingManualComposerSnapshot = composerSnapshot
         errorMessage = nil
-        isActiveTurnLiveTranscript = liveTranscript != nil
-        let isLiveModeSnapshot = liveTranscript != nil || isLiveModeEnabled
-        let liveModeState = CodexChatLiveModeSubmissionState(
-            isEnabled: isLiveModeSnapshot,
-            includesContext: liveTranscript != nil && isLiveModeSnapshot && !didSendLiveModeContext,
-            generation: liveModeGeneration
-        )
         let submissionID = UUID.v7()
         activeSubmissionID = submissionID
         let approvalMethod = selectedApprovalMethod
@@ -78,9 +53,7 @@ extension CodexChatSessionModel {
                 text: text,
                 images: images,
                 composerSnapshot: composerSnapshot,
-                liveTranscript: liveTranscript,
                 includesCurrentContext: includesCurrentContext,
-                liveModeState: liveModeState,
                 approvalMethod: approvalMethod,
                 submissionID: submissionID
             )
@@ -88,36 +61,30 @@ extension CodexChatSessionModel {
     }
 
     func submitManualSubmission(_ submission: CodexChatManualSubmission) {
-        activeManualSubmissionLiveModeGeneration = submission.liveModeGeneration
         submit(
             submission.text,
             images: submission.images,
             composerSnapshot: submission.composerSnapshot,
             includesCurrentContext: submission.includesCurrentContext
         )
-        if !isGenerating {
-            activeManualSubmissionLiveModeGeneration = nil
-        }
+
     }
 
     func resolveContextAndRunTurn(
         text: String,
         images: [CodexChatImageAttachment],
         composerSnapshot: CodexChatComposerSnapshot?,
-        liveTranscript: String?,
         includesCurrentContext: Bool,
-        liveModeState: CodexChatLiveModeSubmissionState,
         approvalMethod: CodexChatApprovalMethod,
         submissionID: UUID
     ) async {
         defer {
             finishGeneration(submissionID: submissionID)
         }
-        let shouldResolveContext = includesCurrentContext && (!liveModeState.isEnabled || liveModeState.includesContext)
         let context: CodexChatContext?
         do {
-            context = try await resolveContext(if: shouldResolveContext)
-            try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
+            context = try await resolveContext(if: includesCurrentContext)
+            try ensureSubmissionCanContinue(submissionID)
         } catch is CancellationError {
             return
         } catch {
@@ -125,7 +92,6 @@ extension CodexChatSessionModel {
             recordFailedSubmission(
                 text: text,
                 images: images,
-                liveTranscript: liveTranscript,
                 includesCurrentContext: includesCurrentContext
             )
             errorMessage = error.localizedDescription
@@ -135,14 +101,12 @@ extension CodexChatSessionModel {
         let responseID = "pending-\(UUID.v7().uuidString)"
 
         _ = await runTurn(
-            text: liveTranscript == nil ? text : nil,
-            images: liveTranscript == nil ? images : [],
+            text: text,
+            images: images,
             composerSnapshot: composerSnapshot,
-            liveTranscript: liveTranscript,
             context: context,
             includesCurrentContext: includesCurrentContext,
             responseID: responseID,
-            liveModeState: liveModeState,
             approvalMethod: approvalMethod,
             submissionID: submissionID
         )
@@ -187,7 +151,6 @@ extension CodexChatSessionModel {
             text: submission.text,
             images: submission.images,
             composerSnapshot: composerSnapshot,
-            liveModeGeneration: submission.liveModeGeneration,
             includesCurrentContext: submission.includesCurrentContext
         ))
     }
@@ -198,6 +161,5 @@ extension CodexChatSessionModel {
         return try await contextProvider.currentContext(vaultID: vaultID)
     }
 
-    static let maximumPendingLiveTranscriptCharacters = 100_000
     static let maximumAttachedImages = CodexChatImageAttachment.maximumAttachmentCount
 }

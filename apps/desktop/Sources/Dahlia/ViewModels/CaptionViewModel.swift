@@ -155,8 +155,6 @@ final class CaptionViewModel: ObservableObject {
     }
 
     let liveCaptionStore = LiveCaptionStore()
-    var finalizedLiveTranscriptHandler: (@MainActor (String, Bool) -> Void)?
-    var chatLiveModeFailureHandler: (@MainActor () -> Void)?
 
     @Published var isListening = false
     @Published var isFinalizingRecording = false {
@@ -617,37 +615,6 @@ final class CaptionViewModel: ObservableObject {
         )
     }
 
-    func setChatLiveModeEnabled(_ isEnabled: Bool) {
-        guard isChatLiveModeEnabled != isEnabled else { return }
-        isChatLiveModeEnabled = isEnabled
-
-        guard var plan = activeTranscriptionPlan,
-              let recordingSessionId = activeRecordingSessionId else { return }
-        plan.liveChatEnabled = isEnabled
-        activeTranscriptionPlan = plan
-
-        guard case let .recording(activeSessionID) = recordingLifecycle,
-              activeSessionID == recordingSessionId else { return }
-        enqueueRecordingConfiguration { [weak self] _ in
-            guard let self,
-                  self.activeTranscriptionPlan?.liveChatEnabled == isEnabled else { return }
-            do {
-                let locale = self.appliedLiveRecognitionLocale()
-                let snapshot = try await self.recordingSessionController.setLiveChatEnabled(
-                    isEnabled,
-                    translateSegment: self.translationHandler(for: locale)
-                )
-                self.applyControllerSnapshot(snapshot)
-            } catch {
-                guard self.activeTranscriptionPlan?.liveChatEnabled == isEnabled else { return }
-                self.errorMessage = error.localizedDescription
-                self.isChatLiveModeEnabled = false
-                self.activeTranscriptionPlan?.liveChatEnabled = false
-                self.chatLiveModeFailureHandler?()
-            }
-        }
-    }
-
     /// 少なくとも 1 つの音声ソースが有効か。
     var hasEnabledAudioSource: Bool { isMicEnabled || isSystemAudioEnabled }
 
@@ -738,8 +705,6 @@ final class CaptionViewModel: ObservableObject {
     private var summaryPersistenceRecoveryTask: Task<String?, Never>?
     private var transcriptionEventPipeline: TranscriptionEventPipeline?
     private var liveCaptionEventRelay: LiveCaptionEventRelay?
-    private var liveTranscriptRelay: FinalizedLiveTranscriptRelay?
-    private var isChatLiveModeEnabled = false
     private var searchIndexer: SearchIndexer?
     private var batchTranscriptionCoordinator: BatchTranscriptionCoordinator?
     private var batchTranscriptionRecoveryTask: Task<Void, Never>?
@@ -3243,7 +3208,6 @@ final class CaptionViewModel: ObservableObject {
         persistenceService = nil
         transcriptionEventPipeline = nil
         liveCaptionEventRelay = nil
-        liveTranscriptRelay = nil
         stopAutomaticScreenshotCapture()
 
         if existingMeetingId == nil {
@@ -3333,6 +3297,16 @@ final class CaptionViewModel: ObservableObject {
                 persistencePolicy: request.persistencePolicy
             )
             persistenceService = service
+            LiveTranscriptStore.shared.begin(
+                LiveTranscriptState(
+                    vaultId: request.vaultId,
+                    meetingId: service.meetingId,
+                    sessionId: service.recordingSessionId,
+                    startedAt: request.recordingStartTime,
+                    enabled: activeTranscriptionPlan?.liveTranscriptDraftEnabled == true
+                ),
+                database: request.dbQueue
+            )
             installTranscriptionEventPipeline(persistenceService: service)
             currentMeetingId = existingMeetingId
             store.attachPagingContext(
@@ -3357,6 +3331,16 @@ final class CaptionViewModel: ObservableObject {
             persistencePolicy: request.persistencePolicy
         )
         persistenceService = service
+        LiveTranscriptStore.shared.begin(
+            LiveTranscriptState(
+                vaultId: request.vaultId,
+                meetingId: service.meetingId,
+                sessionId: service.recordingSessionId,
+                startedAt: request.recordingStartTime,
+                enabled: activeTranscriptionPlan?.liveTranscriptDraftEnabled == true
+            ),
+            database: request.dbQueue
+        )
         installTranscriptionEventPipeline(persistenceService: service)
         currentMeetingId = service.meetingId
         screenshotStore.replace(meetingID: service.meetingId, records: [])
@@ -3378,16 +3362,15 @@ final class CaptionViewModel: ObservableObject {
 
     private func installTranscriptionEventPipeline(persistenceService: MeetingPersistenceService) {
         let recordingTranscriptStore = store
+        let liveDatabase = currentDbQueue
+        let liveMeetingID = persistenceService.meetingId
         let liveCaptionEventRelay = LiveCaptionEventRelay { [weak self] events in
             for event in events {
                 self?.handleObservedTranscriptionEvent(event)
             }
         }
-        let liveTranscriptRelay = FinalizedLiveTranscriptRelay { [weak self] delivery in
-            self?.forwardFinalizedLiveTranscript(delivery)
-        }
+
         self.liveCaptionEventRelay = liveCaptionEventRelay
-        self.liveTranscriptRelay = liveTranscriptRelay
         transcriptionEventPipeline = TranscriptionEventPipeline(
             uiSink: { [weak self] events in
                 for event in events {
@@ -3395,11 +3378,8 @@ final class CaptionViewModel: ObservableObject {
                 }
             },
             eventObserver: { event in
+                if let liveDatabase { LiveTranscriptStore.shared.observe(event, meetingID: liveMeetingID, database: liveDatabase) }
                 await liveCaptionEventRelay.enqueue(event)
-                guard case let .finalized(segment) = event,
-                      segment.isConfirmed,
-                      let sessionID = segment.sessionId else { return }
-                await liveTranscriptRelay.enqueue(sessionID: sessionID, text: segment.text)
             },
             uiReloadSink: { [weak recordingTranscriptStore] in
                 guard let recordingTranscriptStore else { return }
@@ -3479,11 +3459,12 @@ final class CaptionViewModel: ObservableObject {
             }
         }
         await stoppingLiveCaptionEventRelay?.finish()
-        await liveTranscriptRelay?.finish()
         transcriptionEventPipeline = nil
         liveCaptionEventRelay = nil
-        liveTranscriptRelay = nil
         stopAutomaticScreenshotCapture()
+        if let meetingID = persistenceService?.meetingId, let database = currentDbQueue {
+            LiveTranscriptStore.shared.finish(meetingID: meetingID, database: database, failed: true)
+        }
         await persistenceService?.cancel()
         persistenceService = nil
         activeTranscriptionMode = nil
@@ -3640,7 +3621,6 @@ final class CaptionViewModel: ObservableObject {
         var transcriptionPlan = TranscriptionSessionPlan(
             finalMode: transcriptionMode,
             liveSubtitlesEnabled: AppSettings.shared.liveSubtitleOverlayEnabled,
-            liveChatEnabled: isChatLiveModeEnabled,
             liveTranscriptDraftEnabled: AppSettings.shared.liveTranscriptDraftEnabled
         )
         let finalTranscriptionLocale = resolvedTranscriptionLocale()
@@ -3683,6 +3663,9 @@ final class CaptionViewModel: ObservableObject {
                 )
             )
             try await dbQueue.write { db in try processing.saveForRecordingStart(sessionID: recordingSessionId, in: db) }
+            if let meetingID = currentMeetingId {
+                await LiveTranscriptPublisher.shared.start(meetingID: meetingID, database: dbQueue)
+            }
             meetingScope = persistenceService?.isFirstRecordingSession == true ? .new : .continued
             try await prepareAndStartRecordingController(RecordingControllerStartRequest(
                 dbQueue: dbQueue,
@@ -3847,7 +3830,6 @@ final class CaptionViewModel: ObservableObject {
         }
         let stoppingPipeline = transcriptionEventPipeline
         let stoppingLiveCaptionEventRelay = liveCaptionEventRelay
-        let stoppingLiveTranscriptRelay = liveTranscriptRelay
         if let stoppingPipeline {
             do {
                 try await stoppingPipeline.finish()
@@ -3859,10 +3841,8 @@ final class CaptionViewModel: ObservableObject {
             }
         }
         await stoppingLiveCaptionEventRelay?.finish()
-        await stoppingLiveTranscriptRelay?.finish()
         transcriptionEventPipeline = nil
         liveCaptionEventRelay = nil
-        liveTranscriptRelay = nil
         let stoppingPersistenceService = persistenceService
         let persistenceResult = await stoppingPersistenceService?.stop()
             ?? .failure(message: L10n.recordingSessionNotActive)
@@ -3887,6 +3867,9 @@ final class CaptionViewModel: ObservableObject {
         firstFailureMessage = firstFailureMessage ?? persistenceResult.failureMessage
         if let firstFailureMessage {
             errorMessage = firstFailureMessage
+        }
+        if let meetingID = context.meetingId, let database = context.dbQueue {
+            LiveTranscriptStore.shared.finish(meetingID: meetingID, database: database, failed: firstFailureMessage != nil)
         }
         await recordingSessionController.completeStop()
         activeTranscriptionMode = nil
@@ -5606,13 +5589,6 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
-    private func forwardFinalizedLiveTranscript(_ delivery: FinalizedLiveTranscriptRelay.Delivery) {
-        guard let plan = activeTranscriptionPlan,
-              plan.liveChatEnabled,
-              delivery.sessionID == activeRecordingSessionId else { return }
-        finalizedLiveTranscriptHandler?(delivery.text, delivery.wasTruncated)
-    }
-
     private func controllerSourceConfiguration(
         for source: RecordingAudioSource
     ) -> RecordingSessionController.SourceConfiguration {
@@ -5774,16 +5750,12 @@ final class CaptionViewModel: ObservableObject {
         while recordingLifecycle == .starting(recordingSessionId) {
             let desiredSubtitles = activeTranscriptionPlan?.liveSubtitlesEnabled
                 ?? AppSettings.shared.liveSubtitleOverlayEnabled
-            let desiredLiveChat = activeTranscriptionPlan?.liveChatEnabled ?? isChatLiveModeEnabled
-            guard plan.liveSubtitlesEnabled != desiredSubtitles ||
-                plan.liveChatEnabled != desiredLiveChat else { return plan }
+            guard plan.liveSubtitlesEnabled != desiredSubtitles else { return plan }
 
             try ensureSessionIsActive(recordingSessionId)
-            guard activeTranscriptionPlan?.liveSubtitlesEnabled == desiredSubtitles,
-                  activeTranscriptionPlan?.liveChatEnabled == desiredLiveChat else { continue }
+            guard activeTranscriptionPlan?.liveSubtitlesEnabled == desiredSubtitles else { continue }
 
             plan.liveSubtitlesEnabled = desiredSubtitles
-            plan.liveChatEnabled = desiredLiveChat
             return plan
         }
         throw CancellationError()
@@ -5805,17 +5777,8 @@ final class CaptionViewModel: ObservableObject {
                 applyControllerSnapshot(snapshot)
                 appliedPlan = snapshot.plan
             }
-            if appliedPlan.liveChatEnabled != latestPlan.liveChatEnabled {
-                let locale = appliedLiveRecognitionLocale()
-                let snapshot = try await recordingSessionController.setLiveChatEnabled(
-                    latestPlan.liveChatEnabled,
-                    translateSegment: translationHandler(for: locale)
-                )
-                applyControllerSnapshot(snapshot)
-                appliedPlan = snapshot.plan
-            }
-            guard activeTranscriptionPlan?.liveSubtitlesEnabled == latestPlan.liveSubtitlesEnabled,
-                  activeTranscriptionPlan?.liveChatEnabled == latestPlan.liveChatEnabled else {
+
+            guard activeTranscriptionPlan?.liveSubtitlesEnabled == latestPlan.liveSubtitlesEnabled else {
                 continue
             }
             return latestPlan

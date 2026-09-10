@@ -84,33 +84,6 @@ import Foundation
         }
 
         @Test
-        func liveTranscriptShowsThinkingDuringContextResolution() async {
-            let service = TestCodexChatService(mode: .complete)
-            let settings = AppSettings()
-            settings.currentVault = Self.testVault()
-            let contextProvider = TestCodexChatContextProvider(shouldBlock: true)
-            let session = CodexChatSessionModel(
-                modelID: "default-model",
-                effort: "medium",
-                service: service,
-                settings: settings,
-                contextProvider: contextProvider
-            )
-
-            session.toggleLiveMode()
-            session.receiveFinalizedLiveTranscript("Live speech")
-            await waitUntil { contextProvider.requestCount == 1 }
-
-            #expect(!session.isPreparingTurn)
-            #expect(session.messages.isEmpty)
-            #expect(session.showsStandaloneThinking)
-
-            session.stop()
-            await waitUntil { !session.isGenerating }
-            contextProvider.resume()
-        }
-
-        @Test
         func repeatedManualSubmitWhilePreparingIsIgnored() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()

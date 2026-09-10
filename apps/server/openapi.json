@@ -5959,6 +5959,235 @@
         ],
         "additionalProperties": false
       },
+      "LiveTranscriptUpdate": {
+        "type": "object",
+        "properties": {
+          "vaultId": {
+            "type": "string",
+            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "meetingId": {
+            "type": "string",
+            "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "sessionId": {
+            "type": "string",
+            "pattern": "^rec_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "recording",
+              "disabled",
+              "stopped",
+              "failed"
+            ]
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "previews": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/LiveSpeech"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string",
+                      "maxLength": 16000
+                    },
+                    "audioSource": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
+                    "speakerLabel": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    }
+                  }
+                }
+              ]
+            },
+            "maxItems": 8
+          }
+        },
+        "required": [
+          "vaultId",
+          "meetingId",
+          "sessionId",
+          "startedAt",
+          "status",
+          "sequence",
+          "updatedAt",
+          "previews"
+        ],
+        "additionalProperties": false
+      },
+      "LiveSpeech": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^seg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "text": {
+            "type": "string"
+          },
+          "audioSource": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "speakerLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "startedAt",
+          "text"
+        ]
+      },
+      "LiveTranscriptPage": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/LiveTranscriptState"
+          },
+          "confirmedState": {
+            "type": "string",
+            "enum": [
+              "not_synced",
+              "last_synced"
+            ]
+          },
+          "confirmedThrough": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "confirmed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LiveSpeech"
+            }
+          },
+          "cursor": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Opaque cursor. Pass back unchanged with the original filters."
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "resetRequired": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "state",
+          "confirmedState",
+          "confirmedThrough",
+          "confirmed",
+          "cursor",
+          "hasMore",
+          "resetRequired"
+        ]
+      },
+      "LiveTranscriptState": {
+        "type": "object",
+        "properties": {
+          "vaultId": {
+            "type": "string",
+            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "meetingId": {
+            "type": "string",
+            "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "sessionId": {
+            "type": "string",
+            "pattern": "^rec_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "recording",
+              "disabled",
+              "stopped",
+              "failed",
+              "disconnected"
+            ]
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "previews": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LiveSpeech"
+            },
+            "maxItems": 8
+          }
+        },
+        "required": [
+          "vaultId",
+          "meetingId",
+          "sessionId",
+          "startedAt",
+          "status",
+          "sequence",
+          "updatedAt",
+          "previews"
+        ]
+      },
       "MeetingFile": {
         "type": "object",
         "properties": {
@@ -8816,6 +9045,203 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TextSearchResults"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/meetings/{meetingId}/live-transcript": {
+      "put": {
+        "operationId": "putLiveTranscript",
+        "summary": "Publish latest owner-only previews; monotonic session sequence, expires after 45 seconds",
+        "tags": [
+          "meetings"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "meetingId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveTranscriptUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success; no response body."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "get": {
+        "operationId": "getLiveTranscript",
+        "summary": "Read confirmed speech and replaceable previews",
+        "tags": [
+          "meetings"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "meetingId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveTranscriptPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/{vaultId}/live-meetings": {
+      "get": {
+        "operationId": "listLiveMeetings",
+        "summary": "List recently published live sessions",
+        "tags": [
+          "vaults"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "vaultId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "meetings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LiveTranscriptState"
+                      }
+                    }
+                  },
+                  "required": [
+                    "meetings"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/meetings/{meetingId}/live-transcript/events": {
+      "get": {
+        "operationId": "getLiveTranscriptEvents",
+        "summary": "SSE live speech; resume by cursor or Last-Event-ID; reset means replace accumulated confirmed speech",
+        "tags": [
+          "meetings"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "meetingId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "required": false,
+            "name": "last-event-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Live transcript pages as transcript or reset events. Comment heartbeats. Errors terminate the stream.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }

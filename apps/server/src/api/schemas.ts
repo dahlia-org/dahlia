@@ -130,3 +130,14 @@ export const textSearchRequest = z.object({ query: z.string().min(1).max(500), k
   cursor: cursor.optional(), limit: z.number().int().min(1).max(200).optional(),
 }).strict().openapi("TextSearchRequest");
 export const textSearchResults = page(z.object({ id, meetingId: id, snippet: z.string() })).extend({ version: z.literal(1), scope: z.literal("server") }).openapi("TextSearchResults");
+
+export const liveSpeech = z.object({ id, startedAt: date, endedAt: date.nullish(), text: z.string(), audioSource: z.string().nullish(), speakerLabel: z.string().nullish() }).openapi("LiveSpeech");
+export const liveState = z.object({ vaultId: id, meetingId: id, sessionId: id, startedAt: date,
+  status: z.enum(["recording", "disabled", "stopped", "failed", "disconnected"]), sequence: integer, updatedAt: date,
+  previews: z.array(liveSpeech).max(8) }).openapi("LiveTranscriptState");
+export const liveStateInput = liveState.extend({ status: z.enum(["recording", "disabled", "stopped", "failed"]),
+  previews: z.array(liveSpeech.extend({ text: z.string().max(16000), audioSource: z.string().max(200).nullish(), speakerLabel: z.string().max(200).nullish() })).max(8) }).strict().openapi("LiveTranscriptUpdate");
+export const liveTranscriptPage = z.object({ state: liveState, confirmedState: z.enum(["not_synced", "last_synced"]),
+  confirmedThrough: z.iso.datetime().nullable(), confirmed: z.array(liveSpeech), cursor,
+  hasMore: z.boolean(), resetRequired: z.boolean() }).openapi("LiveTranscriptPage");
+export const liveReadQuery = z.object({ cursor: z.string().max(2048).optional(), limit: z.string().regex(/^[1-9][0-9]*$/).optional() }).strict();

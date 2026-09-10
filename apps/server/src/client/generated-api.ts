@@ -579,6 +579,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/meetings/{meetingId}/live-transcript": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read confirmed speech and replaceable previews */
+        get: operations["getLiveTranscript"];
+        /** Publish latest owner-only previews; monotonic session sequence, expires after 45 seconds */
+        put: operations["putLiveTranscript"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{vaultId}/live-meetings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List recently published live sessions */
+        get: operations["listLiveMeetings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/meetings/{meetingId}/live-transcript/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** SSE live speech; resume by cursor or Last-Event-ID; reset means replace accumulated confirmed speech */
+        get: operations["getLiveTranscriptEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/events": {
         parameters: {
             query?: never;
@@ -2238,6 +2290,58 @@ export interface components {
             cursor?: string;
             limit?: number;
         };
+        LiveTranscriptUpdate: {
+            vaultId: string;
+            meetingId: string;
+            sessionId: string;
+            /** Format: date-time */
+            startedAt: string;
+            /** @enum {string} */
+            status: "recording" | "disabled" | "stopped" | "failed";
+            sequence: number;
+            /** Format: date-time */
+            updatedAt: string;
+            previews: (components["schemas"]["LiveSpeech"] & {
+                text?: string;
+                audioSource?: string | null;
+                speakerLabel?: string | null;
+            })[];
+        };
+        LiveSpeech: {
+            id: string;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            endedAt?: string | null;
+            text: string;
+            audioSource?: string | null;
+            speakerLabel?: string | null;
+        };
+        LiveTranscriptPage: {
+            state: components["schemas"]["LiveTranscriptState"];
+            /** @enum {string} */
+            confirmedState: "not_synced" | "last_synced";
+            /** Format: date-time */
+            confirmedThrough: string | null;
+            confirmed: components["schemas"]["LiveSpeech"][];
+            /** @description Opaque cursor. Pass back unchanged with the original filters. */
+            cursor: string;
+            hasMore: boolean;
+            resetRequired: boolean;
+        };
+        LiveTranscriptState: {
+            vaultId: string;
+            meetingId: string;
+            sessionId: string;
+            /** Format: date-time */
+            startedAt: string;
+            /** @enum {string} */
+            status: "recording" | "disabled" | "stopped" | "failed" | "disconnected";
+            sequence: number;
+            /** Format: date-time */
+            updatedAt: string;
+            previews: components["schemas"]["LiveSpeech"][];
+        };
         MeetingFile: {
             id: string;
             vaultId: string;
@@ -3415,6 +3519,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TextSearchResults"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getLiveTranscript: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: string;
+            };
+            header?: never;
+            path: {
+                meetingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveTranscriptPage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    putLiveTranscript: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                meetingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LiveTranscriptUpdate"];
+            };
+        };
+        responses: {
+            /** @description Success; no response body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listLiveMeetings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vaultId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        meetings: components["schemas"]["LiveTranscriptState"][];
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getLiveTranscriptEvents: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: string;
+            };
+            header?: {
+                "last-event-id"?: string;
+            };
+            path: {
+                meetingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Live transcript pages as transcript or reset events. Comment heartbeats. Errors terminate the stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
                 };
             };
             default: components["responses"]["Problem"];

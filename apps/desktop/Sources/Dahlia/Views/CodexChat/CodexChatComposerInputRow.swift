@@ -69,11 +69,6 @@ struct CodexChatComposerInputRow: View {
                     isEnabled: true,
                     action: session.stop
                 )
-            } else if !session.liveModeEnabled, !session.hasComposerContent {
-                CodexChatLiveModeStartButton(
-                    isEnabled: session.isBoundToCurrentVault && !session.isRestoring && !session.needsRestore,
-                    action: session.startLiveMode
-                )
             } else {
                 CodexChatActionButton(
                     label: L10n.sendMessage,

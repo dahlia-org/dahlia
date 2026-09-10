@@ -100,9 +100,8 @@
             let runtime = try await makeRuntime(mode: .batch, liveSubtitlesEnabled: false, liveTranscriptDraftEnabled: true)
             #expect(await runtime.controller.resourceCounts().recognizers == 2)
             _ = try await runtime.controller.setLiveSubtitlesEnabled(true, translateSegment: nil)
-            _ = try await runtime.controller.setLiveChatEnabled(true, translateSegment: nil)
             _ = try await runtime.controller.setLiveSubtitlesEnabled(false, translateSegment: nil)
-            let snapshot = try await runtime.controller.setLiveChatEnabled(false, translateSegment: nil)
+            let snapshot = try await runtime.controller.setLiveSubtitlesEnabled(false, translateSegment: nil)
             #expect(snapshot.plan.persistsRealtimeTranscript)
             #expect(snapshot.plan.recordsBatchAudio)
             #expect(await runtime.controller.resourceCounts().recognizers == 2)
@@ -134,28 +133,6 @@
             #expect(await realtime.controller.resourceCounts().recognizers == 2)
             _ = try await realtime.controller.stop()
             await realtime.controller.completeStop()
-        }
-
-        @Test
-        func liveChatKeepsBatchRecognizerWhenSubtitlesAreDisabled() async throws {
-            let runtime = try await makeRuntime(mode: .batch, liveSubtitlesEnabled: false)
-
-            var snapshot = try await runtime.controller.setLiveChatEnabled(true, translateSegment: nil)
-            #expect(snapshot.plan.liveChatEnabled)
-            #expect(await runtime.controller.resourceCounts().recognizers == 2)
-
-            snapshot = try await runtime.controller.setLiveSubtitlesEnabled(true, translateSegment: nil)
-            snapshot = try await runtime.controller.setLiveSubtitlesEnabled(false, translateSegment: nil)
-            #expect(snapshot.plan.liveChatEnabled)
-            #expect(!snapshot.plan.liveSubtitlesEnabled)
-            #expect(await runtime.controller.resourceCounts().recognizers == 2)
-
-            snapshot = try await runtime.controller.setLiveChatEnabled(false, translateSegment: nil)
-            #expect(!snapshot.plan.requiresLiveRecognition)
-            #expect(await runtime.controller.resourceCounts().recognizers == 0)
-
-            _ = try await runtime.controller.stop()
-            await runtime.controller.completeStop()
         }
 
         @Test
@@ -571,7 +548,6 @@
             mode: TranscriptionMode,
             liveSubtitlesEnabled: Bool,
             liveTranscriptDraftEnabled: Bool = false,
-            liveChatEnabled: Bool = false,
             recognitionFailureMode: FakeRecognitionFailureMode = .none,
             failingRecognitionFinishSource: RecordingAudioSource? = nil,
             failingCaptureDeviceID: AudioDeviceID? = nil,
@@ -599,7 +575,6 @@
             let plan = TranscriptionSessionPlan(
                 finalMode: mode,
                 liveSubtitlesEnabled: liveSubtitlesEnabled,
-                liveChatEnabled: liveChatEnabled,
                 liveTranscriptDraftEnabled: liveTranscriptDraftEnabled
             )
             try await controller.prepare(

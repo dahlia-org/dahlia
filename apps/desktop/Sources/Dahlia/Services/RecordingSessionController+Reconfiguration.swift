@@ -32,23 +32,6 @@ extension RecordingSessionController {
         )
     }
 
-    func setLiveChatEnabled(
-        _ isEnabled: Bool,
-        translateSegment: ProgressiveSegmentTranslationHandler?
-    ) async throws -> Snapshot {
-        guard case let .capturing(snapshot) = state else {
-            throw RecordingSessionControllerError.sessionNotActive
-        }
-        guard snapshot.plan.liveChatEnabled != isEnabled else { return snapshot }
-        var updatedPlan = snapshot.plan
-        updatedPlan.liveChatEnabled = isEnabled
-        return try await applyLiveRecognitionPlan(
-            updatedPlan,
-            replacing: snapshot,
-            translateSegment: translateSegment
-        )
-    }
-
     private func applyLiveRecognitionPlan(
         _ updatedPlan: TranscriptionSessionPlan,
         replacing snapshot: Snapshot,

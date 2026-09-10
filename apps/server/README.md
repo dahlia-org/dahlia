@@ -664,3 +664,9 @@ TEST_DATABASE_URL=postgresql://test@127.0.0.1:55491/dahlia_jobs pnpm test:worker
 ```
 
 The workerd check uses Wrangler's installed Miniflare and local R2/Images/Queue bindings, validates independent event connections and checksum-verified audio streaming, and reports its test bundle size and startup time. It creates only local temporary state and uses synthetic inputs; it does not contact an AI provider or provision Cloudflare resources. `pnpm check` separately verifies the deployment bundle. Real Hyperdrive, provider credentials and production Images remain deployment checks.
+
+### Live transcripts
+
+The read-only MCP tools `list_live_meetings` and `get_live_transcript` use current Vault sharing permissions. Desktop publishes bounded current previews through the owner-only live-transcript API; confirmed speech continues through ordinary transcript sync. HTTP reads and the separate `/api/v1/meetings/{meetingId}/live-transcript/events` SSE route share the same service. Reconnect with `Last-Event-ID`, rebuild on `reset`, and stop on `error`. Slow subscribers are disconnected after a five-second stalled write. Existing sync SSE is unchanged.
+
+Preview heartbeat is 15 seconds, expiry is 45 seconds, and expired previews are hidden. `confirmedState` and `confirmedThrough` describe the independent confirmed-data sync status. See [ライブ MCP / English quick reference](../../docs/live-mcp.md) for registration, polling, status semantics, and endpoints.

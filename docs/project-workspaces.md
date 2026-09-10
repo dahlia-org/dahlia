@@ -103,6 +103,8 @@ Meeting–Project is an exclusive assignment: a Meeting has zero or one `project
 
 ## MCP contract
 
+For multi-vault read access and live transcripts, see [Live MCP](live-mcp.md).
+
 Public MCP customer-organization IDs use `org_` TypeIDs in queries, trees, memberships, references, mutations, and cursor scopes. Transcript provenance uses `rec_` for recording-session IDs. Desktop storage retains UUIDs; provider metadata and domain names keep their original values.
 
 `dahlia-mcp --vault-id <vlt_TypeID>` is read-only. Adding the sole capability flag, `--write`, publishes update tools.

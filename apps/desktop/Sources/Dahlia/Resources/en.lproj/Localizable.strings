@@ -1190,15 +1190,6 @@
 "The selected model does not support images. Choose another model or remove the images." = "The selected model does not support images. Choose another model or remove the images.";
 "You can attach up to %lld images." = "You can attach up to %lld images.";
 "Could not attach %lld image(s)." = "Could not attach %lld image(s).";
-"Live mode" = "Live mode";
-"Turn on live mode" = "Turn on live mode";
-"Turn off live mode" = "Turn off live mode";
-"Live mode on" = "Live mode on";
-"I'll send you the live transcript of this meeting. You don't need to respond to every transcript update. Support me when needed." = "I'll send you the live transcript of this meeting. You don't need to respond to every transcript update. Support me when needed.";
-"Summarize the discussion so far." = "Summarize the discussion so far.";
-"Explain what I just missed." = "Explain what I just missed.";
-"Review our past conversations." = "Review our past conversations.";
-"Some older live transcript was skipped because the chat backlog was too large." = "Some older live transcript was skipped because the chat backlog was too large.";
 "The assistant wants to run a command." = "The assistant wants to run a command.";
 "The assistant wants to change files." = "The assistant wants to change files.";
 "The assistant wants to change Dahlia data." = "The assistant wants to change Dahlia data.";
@@ -1259,7 +1250,7 @@
 "A Project cannot be moved inside itself or one of its descendants." = "A Project cannot be moved inside itself or one of its descendants.";
 "Projects support one level of subprojects. Choose a root Project as the parent." = "Projects support one level of subprojects. Choose a root Project as the parent.";
 "Another Project operation is already running for this Vault." = "Another Project operation is already running for this Vault.";
-"The agent can read Meeting content and customer intelligence, including names and email addresses, from the selected Vault. Write access also allows creating, updating, and deleting customer intelligence, reorganizing Projects and meeting assignments, and replacing stored meeting summaries." = "The agent can read Meeting content and customer intelligence, including names and email addresses, from the selected Vault. Write access also allows creating, updating, and deleting customer intelligence, reorganizing Projects and meeting assignments, and replacing stored meeting summaries.";
+"mcp.scopeFooter" = "Agents can read meeting content, live transcripts, and customer intelligence, including names and email addresses, from the chosen vault scope. All added vaults includes local and Server vaults on this Mac. Write access requires one selected vault and allows edits to customer intelligence, Projects, meeting assignments, and stored summaries.";
 "Copy Command" = "Copy Command";
 "Copy meeting_id" = "Copy meeting_id";
 "Copies meeting_id to the clipboard" = "Copies meeting_id to the clipboard";
@@ -1276,7 +1267,6 @@
 "Re-register Dahlia" = "Re-register Dahlia";
 "If Dahlia is already registered, run this remove command before the registration command." = "If Dahlia is already registered, run this remove command before the registration command.";
 "The MCP helper is not available in this app build." = "The MCP helper is not available in this app build.";
-"Select a vault before configuring MCP." = "Select a vault before configuring MCP.";
 "%@ registration command" = "%@ registration command";
 "Turn on meeting notifications to choose notification conditions." = "Turn on meeting notifications to choose notification conditions.";
 "Turn on live subtitle translation to choose a target language." = "Turn on live subtitle translation to choose a target language.";
@@ -1809,3 +1799,4 @@
 
 "Waiting for initial sync" = "Waiting for initial sync";
 "Server meetings will appear after sync. An internet connection and sign-in are required." = "Server meetings will appear after sync. An internet connection and sign-in are required.";
+"mcp.allVaults" = "All added vaults";

@@ -361,7 +361,7 @@ import Foundation
         }
 
         @Test
-        func telemetryCountsManualPromptsAndLiveModeTransitionsWithoutCountingRetriesOrTranscripts() async {
+        func telemetryCountsManualPromptsWithoutCountingRetries() async {
             let service = TestCodexChatService(mode: .complete, restoredApprovalMethod: .fullAccess)
             let settings = AppSettings()
             settings.currentVault = Self.testVault()
@@ -374,65 +374,16 @@ import Foundation
                 usageTelemetryReporter: { events.append($0) }
             )
 
-            session.toggleLiveMode()
-            session.receiveFinalizedLiveTranscript("Finalized speech")
             await waitUntil { !session.isGenerating }
             session.draft = "Question"
             session.sendDraft()
             await waitUntil { !session.isGenerating }
             session.retry()
             await waitUntil { !session.isGenerating }
-            session.disableLiveMode()
-            session.toggleLiveMode()
 
             #expect(events == [
-                .aiChatLiveModeEnabled,
                 .aiChatPromptSubmitted,
-                .aiChatLiveModeEnabled,
             ])
-        }
-
-        @Test
-        func liveTranscriptIsSentWithoutAddingAUserMessageAndManualChatStaysVisible() async {
-            let service = TestCodexChatService(mode: .staleRollout)
-            let settings = AppSettings()
-            settings.currentVault = Self.testVault()
-            let session = CodexChatSessionModel(
-                modelID: "default-model",
-                effort: "medium",
-                approvalMethod: .ask,
-                service: service,
-                settings: settings
-            )
-
-            session.toggleLiveMode()
-            session.receiveFinalizedLiveTranscript("Finalized speech")
-            await waitUntil { !session.isGenerating }
-
-            #expect(session.messages.allSatisfy { $0.role == .assistant })
-            #expect(await service.sentTextBlocks == [
-                [
-                    TestCodexChatFixtures.liveTranscriptContext,
-                    "<live_transcript source=\"dahlia\">Finalized speech</live_transcript>",
-                ],
-            ])
-            #expect(await service.threadNames == [L10n.chatLiveMode])
-
-            session.receiveFinalizedLiveTranscript("More finalized speech")
-            await waitUntil { !session.isGenerating }
-
-            #expect(await service.sentTextBlocks.last == [
-                "<live_transcript source=\"dahlia\">More finalized speech</live_transcript>",
-            ])
-
-            session.draft = "A visible question"
-            session.sendDraft()
-            await waitUntil { !session.isGenerating }
-
-            #expect(session.messages.filter { $0.role == .user }.map(\.text) == ["A visible question"])
-            #expect(await service.sentTextBlocks.last == ["A visible question"])
-            #expect(session.title == "A visible question")
-            #expect(await service.threadNames == [L10n.chatLiveMode, "A visible question"])
         }
 
         @Test
@@ -1214,142 +1165,7 @@ import Foundation
 
     }
 
-    extension CodexChatSessionModelTests {
-        @Test
-        func failedLiveTranscriptCanBeRetriedWithoutBecomingVisible() async throws {
-            let service = TestCodexChatService(mode: .failThenComplete)
-            let settings = AppSettings()
-            settings.currentVault = Self.testVault()
-            let session = CodexChatSessionModel(
-                modelID: "default-model",
-                effort: "medium",
-                service: service,
-                settings: settings
-            )
-
-            session.toggleLiveMode()
-            session.receiveFinalizedLiveTranscript("Retry this speech")
-            await waitUntil { !session.isGenerating }
-
-            #expect(session.failedLiveTranscript == "Retry this speech")
-            #expect(session.hasRetryableSubmission)
-            #expect(session.messages.allSatisfy { $0.role != .user })
-
-            session.retry()
-            await waitUntil { !session.isGenerating }
-
-            #expect(session.failedLiveTranscript == nil)
-            let sentTextBlocks = await service.sentTextBlocks
-            try #require(sentTextBlocks.count == 2)
-            #expect(sentTextBlocks[0] == sentTextBlocks[1])
-            #expect(session.messages.allSatisfy { $0.role != .user })
-        }
-
-        @Test
-        func disablingLiveModeCancelsTranscriptBeforeContextResolutionCompletes() async {
-            let service = TestCodexChatService(mode: .complete)
-            let settings = AppSettings()
-            settings.currentVault = Self.testVault()
-            let contextProvider = TestCodexChatContextProvider(shouldBlock: true)
-            let session = CodexChatSessionModel(
-                modelID: "default-model",
-                effort: "medium",
-                service: service,
-                settings: settings,
-                contextProvider: contextProvider
-            )
-
-            session.toggleLiveMode()
-            session.receiveFinalizedLiveTranscript("Do not send this")
-            await waitUntil { contextProvider.requestCount == 1 }
-            session.disableLiveMode()
-            await waitUntil { !session.isGenerating }
-
-            #expect(await service.sentTextBlocks.isEmpty)
-            #expect(session.failedLiveTranscript == nil)
-            contextProvider.resume()
-        }
-
-        @Test
-        func manualSendAfterLiveFailureSteersTheRecoveredTranscript() async {
-            let service = TestCodexChatService(mode: .failThenComplete)
-            let settings = AppSettings()
-            settings.currentVault = Self.testVault()
-            let session = CodexChatSessionModel(
-                modelID: "default-model",
-                effort: "medium",
-                service: service,
-                settings: settings
-            )
-
-            session.toggleLiveMode()
-            session.receiveFinalizedLiveTranscript("Failed live speech")
-            await waitUntil { !session.isGenerating }
-            #expect(session.failedLiveTranscript == "Failed live speech")
-
-            session.draft = "Manual recovery"
-            session.sendDraft()
-            await waitUntilAsync { await service.steeredTextBlocks.count == 1 }
-            await waitUntil { !session.isGenerating }
-
-            let sentTextBlocks = await service.sentTextBlocks
-            #expect(sentTextBlocks[1].last == "Manual recovery")
-            #expect(await service.steeredTextBlocks[0].last == "<live_transcript source=\"dahlia\">Failed live speech</live_transcript>")
-            #expect(session.failedLiveTranscript == nil)
-        }
-
-        @Test
-        func retryUsesTheMostRecentlyFailedManualSubmission() async {
-            let service = TestCodexChatService(mode: .alwaysFail)
-            let settings = AppSettings()
-            settings.currentVault = Self.testVault()
-            let session = CodexChatSessionModel(
-                modelID: "default-model",
-                effort: "medium",
-                service: service,
-                settings: settings
-            )
-
-            session.toggleLiveMode()
-            session.receiveFinalizedLiveTranscript("Earlier live failure")
-            await waitUntil { !session.isGenerating }
-
-            session.draft = "Latest manual failure"
-            session.sendDraft()
-            await waitUntil { !session.isGenerating }
-            session.retry()
-            await waitUntilAsync { await service.sentTextBlocks.count == 3 }
-            await waitUntil { !session.isGenerating }
-
-            let sentTextBlocks = await service.sentTextBlocks
-            #expect(sentTextBlocks[1].last == "Latest manual failure")
-            #expect(sentTextBlocks[2].last == "Latest manual failure")
-        }
-
-        @Test
-        func truncatedLiveTranscriptUsesNoticeWithoutRetryError() async {
-            let service = TestCodexChatService(mode: .block)
-            let settings = AppSettings()
-            settings.currentVault = Self.testVault()
-            let session = CodexChatSessionModel(
-                modelID: "default-model",
-                effort: "medium",
-                service: service,
-                settings: settings
-            )
-
-            session.toggleLiveMode()
-            session.receiveFinalizedLiveTranscript("Truncated speech", wasTruncated: true)
-            await waitUntilAsync { await service.sentTextBlocks.count == 1 }
-
-            #expect(session.isGenerating)
-            #expect(session.noticeMessage == L10n.chatLiveTranscriptBacklogTruncated)
-            #expect(session.errorMessage == nil)
-
-            session.disableLiveMode()
-            await waitUntil { !session.isGenerating }
-        }
-    }
+    extension CodexChatSessionModelTests {}
 
     actor TestCodexChatService: CodexChatServicing {
         struct ApprovalDecision: Equatable {

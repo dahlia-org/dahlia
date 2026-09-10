@@ -18,7 +18,6 @@ final class CodexChatCoordinator {
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let contextProvider: CodexChatContextProvider
     @ObservationIgnored private var historyGeneration = 0
-    @ObservationIgnored var liveModeStatusDidChange: (@MainActor (Bool) -> Void)?
 
     init(
         service: any CodexChatServicing = CodexChatService.shared,
@@ -210,18 +209,6 @@ final class CodexChatCoordinator {
         )
     }
 
-    func receiveFinalizedLiveTranscript(_ text: String, wasTruncated: Bool = false) {
-        for session in sessions.values where session.isLiveModeEnabled {
-            session.receiveFinalizedLiveTranscript(text, wasTruncated: wasTruncated)
-        }
-    }
-
-    func disableLiveMode() {
-        for session in sessions.values where session.isLiveModeEnabled {
-            session.disableLiveMode()
-        }
-    }
-
     func refreshHistory() async {
         historyGeneration += 1
         let generation = historyGeneration
@@ -272,11 +259,8 @@ final class CodexChatCoordinator {
               !preservesGeneratingSession || !session.hasPendingGenerationWork
         else { return false }
         sessions.removeValue(forKey: id)
-        let wasLive = session.isLiveModeEnabled
         session.release()
-        if wasLive {
-            notifyLiveModeStatusChanged()
-        }
+
         return true
     }
 
@@ -315,9 +299,7 @@ final class CodexChatCoordinator {
     }
 
     private func configureSessionHandlers(for session: CodexChatSessionModel) {
-        session.setLiveModeChangeHandler { [weak self] _ in
-            self?.notifyLiveModeStatusChanged()
-        }
+
         session.setThreadDidStartHandler { [weak self, weak session] in
             guard let self, let session, session.id != self.dockedSessionID else { return }
             Task { await self.refreshHistory() }
@@ -330,7 +312,4 @@ final class CodexChatCoordinator {
         }
     }
 
-    private func notifyLiveModeStatusChanged() {
-        liveModeStatusDidChange?(sessions.values.contains(where: \.isLiveModeEnabled))
-    }
 }

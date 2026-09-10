@@ -1,3 +1,4 @@
+import type { StoredLiveState, LiveSpeech } from "../live/model";
 import type { TranscriptVersion } from "./transcript";
 import type { SummaryVersion } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
@@ -224,6 +225,11 @@ export interface VaultTransferRecord {
 }
 
 export interface IdentitySyncStore {
+  putLiveState(state: StoredLiveState): Promise<boolean>;
+  getLiveState(vaultId: string, meetingId: string): Promise<StoredLiveState | null>;
+  listLiveStates(vaultId: string): Promise<StoredLiveState[]>;
+  liveSegments(state: StoredLiveState): Promise<{ generation: string; segments: LiveSpeech[] }>;
+
   vaultTransferAudience(sourceVaultId: string, destinationVaultId: string): Promise<{ audienceHash: string; removed: { id: string; name: string; email: string }[]; added: { id: string; name: string; email: string }[] }>;
   transferVault(request: VaultTransferRequest): Promise<VaultTransferRecord>;
   getVaultRelocations(vaultId: string): Promise<VaultRelocations>;

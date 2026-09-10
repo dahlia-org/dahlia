@@ -70,11 +70,11 @@
         }
 
         @Test
-        func failedChatOnlyLocaleChangePreservesOldRecognizers() async throws {
+        func failedLiveDraftLocaleChangePreservesOldRecognizers() async throws {
             let runtime = try await RecordingSessionControllerTests().makeRuntime(
                 mode: .batch,
                 liveSubtitlesEnabled: false,
-                liveChatEnabled: true,
+                liveTranscriptDraftEnabled: true,
                 recognitionFailureMode: .sessionPreparationAfterInitial
             )
             await runtime.probe.clear()

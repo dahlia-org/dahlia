@@ -3,11 +3,10 @@
 struct TranscriptionSessionPlan: Equatable {
     let finalMode: TranscriptionMode
     var liveSubtitlesEnabled: Bool
-    var liveChatEnabled = false
     var liveTranscriptDraftEnabled = false
-    /// 正本文字起こし、ライブ字幕、またはライブチャットのために逐次認識が必要か。
+    /// 正本文字起こし、ライブ初版、またはライブ字幕のために逐次認識が必要か。
     var requiresLiveRecognition: Bool {
-        finalMode == .realtime || liveTranscriptDraftEnabled || liveSubtitlesEnabled || liveChatEnabled
+        finalMode == .realtime || liveTranscriptDraftEnabled || liveSubtitlesEnabled
     }
 
     /// バッチ文字起こし用の音声を録音するか。

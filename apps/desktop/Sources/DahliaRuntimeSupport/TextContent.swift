@@ -2,10 +2,11 @@ import CryptoKit
 import Foundation
 
 public enum TextContentError: String, Error, Codable, Sendable, LocalizedError {
-    case unavailable, incomplete, stale, deleted, authorizationRequired, updateRequired, changed, integrityFailure
+    case unavailable, offline, incomplete, stale, deleted, authorizationRequired, updateRequired, changed, integrityFailure
 
     public var errorDescription: String? {
         switch self {
+        case .offline: "The server cannot be reached while offline."
         case .unavailable: "The text is not available on this device. Connect to the server and retry."
         case .incomplete: "The complete text has not been downloaded."
         case .stale: "The saved text is an older version."

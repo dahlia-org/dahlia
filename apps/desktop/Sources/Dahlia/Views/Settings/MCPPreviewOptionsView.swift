@@ -30,6 +30,7 @@ struct MCPPreviewOptionsView: View {
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
 
                 Picker(L10n.vault, selection: $selectedVaultID) {
+                    Text(L10n.mcpAllVaults).tag(nil as UUID?)
                     ForEach(availableVaults) { vault in
                         Text(MCPVaultDisplayName.resolve(for: vault, among: availableVaults))
                             .tag(Optional(vault.id))
@@ -48,6 +49,7 @@ struct MCPPreviewOptionsView: View {
                 Toggle(L10n.mcpAllowWriteAccess, isOn: $isWriteEnabled)
                     .labelsHidden()
                     .toggleStyle(.switch)
+                    .disabled(selectedVaultID == nil)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

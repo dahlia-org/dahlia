@@ -11,6 +11,7 @@ Dahlia は Desktop、Server / Private Web、公開サイトを持つモノレポ
 | Desktop | [README](../README.md) / [日本語](../README_ja.md) | macOS の導入・ビルド・利用 |
 | Desktop | [音声・文字起こし](architecture/audio-transcription-data-flow.md) | capture、保存、開始・停止・異常時の data flow |
 | Desktop | [Project workspaces](project-workspaces.md) | ローカル Project、Vault、MCP の操作契約 |
+| Desktop / Server | [Live MCP](live-mcp.md) | 全保管庫参照、ライブ差分取得と SSE（日英） |
 | Desktop | [Customer intelligence](customer-intelligence-workspace.md) / [Conversation analytics](conversation-analytics.md) | 顧客情報、Insight、Topic のモデルと操作 |
 | Desktop | [Calendar schema](calendar-event-schema.md) | 予定のキーと Meeting との関係 |
 | Desktop | [Telemetry](telemetry.md) / [Release versioning](desktop-release-versioning.md) | 匿名収集規則、desktop release の版管理 |

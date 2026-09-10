@@ -18,7 +18,8 @@ public final class DahliaMCPServer {
         }
     }
 
-    private let store: MeetingAccessStore
+    let store: MeetingAccessStore
+    let vaultScope: UUID?
     private let telemetryOrigin: MCPUsageTelemetryEvent.Origin?
     private let usageTelemetryReporter: (MCPUsageTelemetryEvent) -> Void
     private var initialized = false
@@ -29,8 +30,22 @@ public final class DahliaMCPServer {
         usageTelemetryReporter: @escaping (MCPUsageTelemetryEvent) -> Void = { _ in }
     ) {
         self.store = store
+        vaultScope = store.vaultID
         self.telemetryOrigin = telemetryOrigin
         self.usageTelemetryReporter = usageTelemetryReporter
+    }
+
+    public init(
+        databaseURL: URL = MeetingAccessStore.defaultDatabaseURL,
+        vaultID: UUID? = nil,
+        allowsWrites: Bool = false,
+        textResolver: (@Sendable (UUID, TextBrokerRequest) throws -> Data)? = nil
+    ) throws {
+        guard !allowsWrites || vaultID != nil else { throw MeetingAccessError.vaultNotFound }
+        store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vaultID ?? UUID(), allowsWrites: allowsWrites, textResolver: textResolver)
+        vaultScope = vaultID
+        telemetryOrigin = nil
+        usageTelemetryReporter = { _ in }
     }
 
     public func handleLine(_ line: String) -> String? {
@@ -61,7 +76,7 @@ public final class DahliaMCPServer {
     private func handleRequest(method: String, id: Any, params: Any?) throws -> String {
         switch method {
         case "initialize":
-            _ = try store.scopedVault()
+            if vaultScope != nil { _ = try store.scopedVault() } else { try store.database.read(store.validateSchema(in:)) }
             return response(id: id, result: initializationResult)
         case "ping":
             return response(id: id, result: [:])
@@ -80,7 +95,10 @@ public final class DahliaMCPServer {
     private var initializationResult: [String: Any] {
         let accessInstructions = store.allowsWrites
             ? "Read and write access to one configured Dahlia vault. "
-            : "Read-only access to one configured Dahlia vault. "
+            :
+            (vaultScope == nil ?
+                "Read-only access to all vaults added to this Mac. Use list_vaults to discover them. Query tools group results by vault; continue pages with vault_id and that vault’s cursor. " :
+                "Read-only access to one configured Dahlia vault. ")
         let writeInstructions = store.allowsWrites
             ? "Query or get each record before updating or deleting it. Customer-intelligence create, update, delete, set, "
             + "and remove tools "
@@ -191,6 +209,10 @@ public final class DahliaMCPServer {
                 id: id,
                 result: toolError(code: error.reasonCode, message: error.localizedDescription)
             )
+        } catch let error as LiveTranscriptError {
+            return response(id: id, result: toolError(code: error.rawValue, message: error.rawValue))
+        } catch let error as TextContentError {
+            return response(id: id, result: toolError(code: error.rawValue, message: error.localizedDescription))
         } catch let error as DatabaseError
             where error.resultCode == .SQLITE_BUSY || error.resultCode == .SQLITE_LOCKED {
             return response(
@@ -221,7 +243,7 @@ public final class DahliaMCPServer {
     ) -> (category: MCPUsageTelemetryEvent.Category, operation: MCPUsageTelemetryEvent.Operation) {
         guard let name else { return (.unknown, .read) }
         let operation: MCPUsageTelemetryEvent.Operation = if name.hasPrefix("query_")
-            || name.hasPrefix("get_") {
+            || name.hasPrefix("get_") || name.hasPrefix("list_") {
             .read
         } else {
             .write
@@ -250,7 +272,7 @@ public final class DahliaMCPServer {
     }
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length
-    private func executeTool(named name: String, arguments: [String: Any]) throws -> [String: Any] {
+    func executeScopedTool(named name: String, arguments: [String: Any]) throws -> [String: Any] {
         switch name {
         case "query_meetings":
             try validate(arguments, allowedKeys: [
@@ -784,14 +806,14 @@ public final class DahliaMCPServer {
         }
     }
 
-    private func requiredUUID(_ arguments: [String: Any], key: String) throws -> UUID {
+    func requiredUUID(_ arguments: [String: Any], key: String) throws -> UUID {
         guard let value = try string(arguments, key: key), let uuid = UUID(uuidString: value) else {
             throw ParameterError("\(key) must be a UUID string")
         }
         return uuid
     }
 
-    private func optionalUUID(_ arguments: [String: Any], key: String) throws -> UUID? {
+    func optionalUUID(_ arguments: [String: Any], key: String) throws -> UUID? {
         guard arguments[key] != nil else { return nil }
         return try requiredUUID(arguments, key: key)
     }
@@ -909,20 +931,20 @@ public final class DahliaMCPServer {
         return ids
     }
 
-    private func validate(_ arguments: [String: Any], allowedKeys: Set<String>) throws {
+    func validate(_ arguments: [String: Any], allowedKeys: Set<String>) throws {
         let unexpected = Set(arguments.keys).subtracting(allowedKeys)
         guard unexpected.isEmpty else {
             throw ParameterError("Unexpected parameters: \(unexpected.sorted().joined(separator: ", "))")
         }
     }
 
-    private func string(_ arguments: [String: Any], key: String) throws -> String? {
+    func string(_ arguments: [String: Any], key: String) throws -> String? {
         guard let value = arguments[key] else { return nil }
         guard let string = value as? String else { throw ParameterError("\(key) must be a string") }
         return string
     }
 
-    private func integer(_ arguments: [String: Any], key: String) throws -> Int? {
+    func integer(_ arguments: [String: Any], key: String) throws -> Int? {
         guard let value = arguments[key] else { return nil }
         guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else {
             throw ParameterError("\(key) must be an integer")
@@ -991,7 +1013,7 @@ public final class DahliaMCPServer {
         return date
     }
 
-    private func toolResult(_ value: some Encodable) throws -> [String: Any] {
+    func toolResult(_ value: some Encodable) throws -> [String: Any] {
         let data = try encoded(value)
         let object = try JSONSerialization.jsonObject(with: data)
         guard let text = String(data: data, encoding: .utf8) else {
@@ -1065,15 +1087,15 @@ public final class DahliaMCPServer {
             ?? #"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Internal error"}}"#
     }
 
-    private struct ParameterError: LocalizedError {
+    struct ParameterError: LocalizedError {
         let message: String
         init(_ message: String) { self.message = message }
         var errorDescription: String? { message }
     }
 }
 
-private extension DahliaMCPServer {
-    private static func idSchema(_ kind: TypeID.Kind, nullable: Bool = false) -> [String: Any] {
+extension DahliaMCPServer {
+    static func idSchema(_ kind: TypeID.Kind, nullable: Bool = false) -> [String: Any] {
         ["type": nullable ? ["string", "null"] : ["string"], "pattern": "^\(kind.rawValue)_[0-7][0-9a-hjkmnp-tv-z]{25}$"]
     }
 
@@ -1410,10 +1432,7 @@ private extension DahliaMCPServer {
     }
 
     private var toolDefinitions: [[String: Any]] {
-        if store.allowsWrites {
-            return Self.readOnlyToolDefinitions + Self.writeToolDefinitions
-        }
-        return Self.readOnlyToolDefinitions
+        workspaceToolDefinitions + (store.allowsWrites ? Self.writeToolDefinitions : [])
     }
 
     private static var projectTypeSchema: [String: Any] {
@@ -1860,7 +1879,7 @@ private extension DahliaMCPServer {
         )
     }
 
-    private static var readOnlyToolDefinitions: [[String: Any]] {
+    static var readOnlyToolDefinitions: [[String: Any]] {
         allMeetingToolDefinitions + [
             [
                 "name": "query_projects",
