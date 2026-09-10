@@ -15,7 +15,7 @@ final class VaultAISettingsModel {
         }
     }
 
-    /// These two settings belong to the Local Account and survive vault activation.
+    /// Mac-wide inference preferences survive activation of either local or Server Vaults.
     var localProvider: AIAccountProvider {
         didSet { persistLocalAccountSettingsIfChanged(oldValue, localProvider) }
     }
@@ -93,16 +93,24 @@ final class VaultAISettingsModel {
     }
 
     func inheritLocalAccountSettings(from dbQueue: DatabaseQueue) async throws {
-        guard !setupDefaults.bool(forKey: LocalAccountAISettings.migrationKey) else { return }
+        let migratesProvider = !setupDefaults.bool(forKey: LocalAccountAISettings.migrationKey)
+        let migratesSummary = !setupDefaults.bool(forKey: LocalAccountAISettings.summaryMigrationKey)
+        guard migratesProvider || migratesSummary else { return }
         let previousVault = try await MeetingRepository(dbQueue: dbQueue).fetchLatestLocalAccountVault()
-        guard !setupDefaults.bool(forKey: LocalAccountAISettings.migrationKey) else { return }
         isApplying = true
-        if let previousVault {
+        if migratesProvider, let previousVault {
             localProvider = previousVault.localProvider
             databricksProfile = previousVault.databricksProfile
         }
         isApplying = false
-        localAccountSettings.save(to: setupDefaults)
+        if migratesProvider { localAccountSettings.save(to: setupDefaults) }
+        if migratesSummary {
+            if let previousVault {
+                setupDefaults.set(previousVault.summaryModelID, forKey: LocalAccountAISettings.summaryModelKey)
+                setupDefaults.set(previousVault.summaryReasoningEffort, forKey: LocalAccountAISettings.summaryReasoningEffortKey)
+            }
+            setupDefaults.set(true, forKey: LocalAccountAISettings.summaryMigrationKey)
+        }
     }
 
     func activate(vault: VaultRecord) {

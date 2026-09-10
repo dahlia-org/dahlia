@@ -41,6 +41,7 @@ Server / Private Web、配置、API、認可、storage。
 Desktop / Server / 外部 client 間の契約。
 
 - [Desktop / Server / MCP の OAuth 契約](shared/oauth.md)
+- [文字起こし・要約の処理場所](shared/transcription-summary-processing.md)
 - [Desktop / Server の canonical sync](shared/sync.md)
 - [Desktop / Gateway の AI timeout](shared/ai-timeouts.md)
 

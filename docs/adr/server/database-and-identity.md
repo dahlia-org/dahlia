@@ -74,6 +74,10 @@ PATCH は指定された末端項目だけを DB の現在行に適用し、同�
 FORCE RLS は backfill transaction 内だけ解除し commit 前に復元する。旧 API 形式は維持せず Desktop / Web / Server を同時更新する。
 既存 summary job と履歴の設定は移行しない。
 
+2026-09-10の[文字起こし・要約の処理場所](../shared/transcription-summary-processing.md)により、要約JSONの現行形式は
+`{ mode, remote: { detail, model, reasoningEffort, transcriptionModel? } }`へ置き換えた。追加のforward migrationは旧`transcript`を
+`local`、旧`cloudTranscription` / `audio`を対応する`remote`設定へ変換する。PATCHの末端更新、内部revision、既存job保持の原則は維持する。
+
 ## 運用テーブルと番号の整理（2026-09-09）
 
 ジョブテーブルは `jobs_search_index`、`jobs_storage_delete`、`jobs_image_analysis`、`jobs_summary` に統一する。Desktop の検索ジョブも `jobs_search_index` とする。既存ジョブの状態を保持する追加 migration を使う。

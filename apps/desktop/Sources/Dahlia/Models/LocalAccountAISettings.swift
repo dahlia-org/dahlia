@@ -1,12 +1,20 @@
 import Foundation
 
+/// Mac-wide inference preferences. The historical type and storage keys remain for migration compatibility.
 struct LocalAccountAISettings: Equatable, Sendable {
     static let providerKey = "codexAccountProvider"
     static let databricksProfileKey = "llmDatabricksProfile"
     static let migrationKey = "localAccountAISettingsMigrated"
+    static let summaryMigrationKey = "localAccountSummarySettingsMigrated"
+    static let summaryModelKey = "codexModelID"
+    static let summaryReasoningEffortKey = "codexReasoningEffort"
 
     var provider: AIAccountProvider
     var databricksProfile: String
+
+    var runtimeProvider: CodexRuntimeProvider {
+        .init(accountConnectionID: nil, localProvider: provider, databricksProfile: databricksProfile)
+    }
 
     init(provider: AIAccountProvider, databricksProfile: String) {
         self.provider = provider

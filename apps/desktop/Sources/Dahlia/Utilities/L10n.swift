@@ -5,6 +5,82 @@ import Foundation
 
 /// ローカライズ文字列への型安全なアクセスを提供する。
 enum L10n { // swiftlint:disable:this type_body_length
+    static var settingsCheckAdvancedModels: String { String(localized: "settings.organization.checkAdvancedModels", bundle: bundle) }
+    static var settingsDataAndAccounts: String { String(localized: "settings.organization.settingsDataAndAccounts", bundle: bundle) }
+    static var generationAndAnalysis: String { String(localized: "settings.organization.generationAndAnalysis", bundle: bundle) }
+    static var searchSettings: String { String(localized: "settings.organization.searchSettings", bundle: bundle) }
+    static var settingsAccountIntro: String { String(localized: "settings.organization.settingsAccountIntro", bundle: bundle) }
+    static var settingsAccountsIntro: String { String(localized: "settings.organization.settingsAccountsIntro", bundle: bundle) }
+    static var settingsExportIntro: String { String(localized: "settings.organization.settingsExportIntro", bundle: bundle) }
+    static var settingsAccountSelectionDescription: String { String(
+        localized: "settings.organization.settingsAccountSelectionDescription",
+        bundle: bundle
+    ) }
+    static var settingsLoading: String { String(localized: "settings.organization.settingsLoading", bundle: bundle) }
+    static var settingsApplyNextGeneration: String { String(localized: "settings.organization.settingsApplyNextGeneration", bundle: bundle) }
+    static var settingsSummaryOutput: String { String(localized: "settings.organization.settingsSummaryOutput", bundle: bundle) }
+    static var settingsOutputLanguageDescription: String {
+        String(localized: "settings.organization.settingsOutputLanguageDescription", bundle: bundle)
+    }
+
+    static var settingsServerProcessingDescription: String { String(
+        localized: "settings.organization.settingsServerProcessingDescription",
+        bundle: bundle
+    ) }
+    static var settingsLocalAnalysisLanguages: String { String(localized: "settings.organization.settingsLocalAnalysisLanguages", bundle: bundle) }
+    static var settingsAnalysisLanguagesDescription: String { String(
+        localized: "settings.organization.settingsAnalysisLanguagesDescription",
+        bundle: bundle
+    ) }
+    static var settingsDuringRecording: String { String(localized: "settings.organization.settingsDuringRecording", bundle: bundle) }
+    static var settingsAfterRecording: String { String(localized: "settings.organization.settingsAfterRecording", bundle: bundle) }
+    static var settingsAudioStorage: String { String(localized: "settings.organization.settingsAudioStorage", bundle: bundle) }
+    static var settingsAutomaticExport: String { String(localized: "settings.organization.settingsAutomaticExport", bundle: bundle) }
+    static var settingsChooseSummaryPreferences: String { String(localized: "settings.organization.settingsChooseSummaryPreferences", bundle: bundle)
+    }
+
+    static var summaryStyleConciseDescription: String { String(localized: "settings.organization.summaryStyleConciseDescription", bundle: bundle) }
+    static var summaryStyleStandardDescription: String { String(localized: "settings.organization.summaryStyleStandardDescription", bundle: bundle) }
+    static var summaryStyleDetailedDescription: String { String(localized: "settings.organization.summaryStyleDetailedDescription", bundle: bundle) }
+    static var summaryStyleEventDescription: String { String(localized: "settings.organization.summaryStyleEventDescription", bundle: bundle) }
+    static var summaryStyleTimelineDescription: String { String(localized: "settings.organization.summaryStyleTimelineDescription", bundle: bundle) }
+    static var macInferencePreferences: String { String(localized: "settings.preferences.macInferencePreferences", bundle: bundle) }
+    static var usesMacInferencePreferences: String { String(localized: "settings.preferences.usesMacInferencePreferences", bundle: bundle) }
+    static var accountPreferences: String { String(localized: "settings.preferences.accountPreferences", bundle: bundle) }
+    static var accountPreferencesScope: String { String(localized: "settings.preferences.accountPreferencesScope", bundle: bundle) }
+    static var accountSummaryPreferencesDescription: String { String(
+        localized: "settings.preferences.accountSummaryPreferencesDescription",
+        bundle: bundle
+    ) }
+    static var summaryStyle: String { String(localized: "settings.preferences.summaryStyle", bundle: bundle) }
+    static var recordingSettings: String { String(localized: "settings.preferences.recordingSettings", bundle: bundle) }
+    static var localModelPreferences: String { String(localized: "settings.preferences.localModelPreferences", bundle: bundle) }
+    static var localModelPreferencesDescription: String { String(localized: "settings.preferences.localModelPreferencesDescription", bundle: bundle) }
+    static var serverProcessingAdvanced: String { String(localized: "settings.preferences.serverProcessingAdvanced", bundle: bundle) }
+    static var processingWorkflow: String { String(localized: "settings.preferences.processingWorkflow", bundle: bundle) }
+    static var transcribeThenSummarize: String { String(localized: "settings.preferences.transcribeThenSummarize", bundle: bundle) }
+    static var combinedTranscriptionSummary: String { String(localized: "settings.preferences.combinedTranscriptionSummary", bundle: bundle) }
+    static var summaryModel: String { String(localized: "settings.preferences.summaryModel", bundle: bundle) }
+    static var automaticModelPreference: String { String(localized: "settings.preferences.automaticModelPreference", bundle: bundle) }
+    static var unavailableModelPreference: String { String(localized: "settings.preferences.unavailableModelPreference", bundle: bundle) }
+    static var checkModelPreference: String { String(localized: "settings.preferences.checkModelPreference", bundle: bundle) }
+    static var automaticModelPreferenceDescription: String { String(
+        localized: "settings.preferences.automaticModelPreferenceDescription",
+        bundle: bundle
+    ) }
+    static var transcriptionAndSummary: String { String(localized: "settings.processing.title", bundle: bundle) }
+    static var appliesToAccount: String { String(localized: "settings.processing.account", bundle: bundle) }
+    static var settingsScope: String { String(localized: "settings.processing.scope", bundle: bundle) }
+    static var syncedDahliaAccount: String { String(localized: "settings.processing.synced", bundle: bundle) }
+    static var processingLocation: String { String(localized: "settings.processing.location", bundle: bundle) }
+    static var localProcessing: String { String(localized: "settings.processing.local", bundle: bundle) }
+    static var remoteProcessing: String { String(localized: "settings.processing.remote", bundle: bundle) }
+    static var localAccountScopeDescription: String { String(localized: "settings.processing.localScope", bundle: bundle) }
+    static var syncedAccountScopeDescription: String { String(localized: "settings.processing.syncedScope", bundle: bundle) }
+    static var localProcessingDescription: String { String(localized: "settings.processing.localDescription", bundle: bundle) }
+    static var transcribeBeforeSummary: String { String(localized: "settings.processing.transcribeFirst", bundle: bundle) }
+    static var thisMac: String { String(localized: "settings.processing.thisMac", bundle: bundle) }
+    static var thisMacSettingsDescription: String { String(localized: "settings.processing.thisMacDescription", bundle: bundle) }
     static var transcriptFullTranscriptionUnavailable: String { String(localized: "transcript.fullTranscriptionUnavailable", bundle: bundle) }
     static var serverSearchPendingUnavailable: String { String(localized: "search.server.pendingUnavailable", bundle: bundle) }
     static var serverSearchRanked: String { String(localized: "search.server.ranked", bundle: bundle) }
@@ -1315,12 +1391,10 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Show live subtitles when recording starts.",
         bundle: bundle
     ) }
-    static var liveSubtitleOverlayDescription: String {
-        [
-            String(localized: "Live subtitles are available with both real-time and batch transcription.", bundle: bundle),
-            String(localized: "In batch mode, subtitles are temporary and the final transcript is created after recording stops.", bundle: bundle),
-        ].joined(separator: " ")
-    }
+    static var liveSubtitleOverlayDescription: String { String(
+        localized: "Show speech as subtitles during recording. The final transcript is created separately after recording stops.",
+        bundle: bundle
+    ) }
 
     static var enableLiveSubtitlesToConfigure: String { String(
         localized: "Turn on live subtitles to choose their source and line count.",
@@ -2072,7 +2146,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var batchAudioRetentionPeriod: String { String(localized: "Recording Retention", bundle: bundle) }
     static var batchAudioRetentionPeriodDescription: String { String(
         // swiftlint:disable:next line_length
-        localized: "Successfully transcribed batch recordings become eligible for deletion this long after both recording and transcription finish. Failed or unfinished transcriptions are kept. Real-time transcription does not save audio files.",
+        localized: "Recordings become eligible for deletion this long after both recording and transcription finish. Audio with failed or unfinished transcription is kept.",
         bundle: bundle
     ) }
     static var forever: String { String(localized: "Forever", bundle: bundle) }
@@ -2091,7 +2165,7 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var liveSubtitleTranslation: String { String(localized: "Live Subtitle Translation", bundle: bundle) }
     static var liveSubtitleTranslationDescription: String { String(
-        localized: "Translate live subtitles into the selected target language. With real-time transcription, translations are also saved.",
+        localized: "Translate live subtitles for display. This does not change the language of the saved transcript.",
         bundle: bundle
     ) }
     static var translationTargetLanguage: String { String(localized: "Target Language", bundle: bundle) }

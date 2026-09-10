@@ -746,8 +746,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         AIAccountProvider.chatGPTSubscription.rawValue
     @AppStorage(LocalAccountAISettings.databricksProfileKey) var codexDatabricksProfile = ""
     @AppStorage("codexConfiguredDatabricksProfile") var codexConfiguredDatabricksProfile = ""
-    @AppStorage("codexModelID") var codexModelID = "gpt-5.6-luna"
-    @AppStorage("codexReasoningEffort") var codexReasoningEffort = "high"
+    @AppStorage(LocalAccountAISettings.summaryModelKey) var codexModelID = "gpt-5.6-luna"
+    @AppStorage(LocalAccountAISettings.summaryReasoningEffortKey) var codexReasoningEffort = "high"
     @AppStorage("codexChatModelID") var codexChatModelID = ""
     @AppStorage("codexChatReasoningEffort") var codexChatReasoningEffort = CodexReasoningEffortOption.defaultValue
     @AppStorage(llmSummaryLanguageUserDefaultsKey) var llmSummaryLanguageRawValue = SummaryLanguage.ja.rawValue

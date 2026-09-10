@@ -19,11 +19,7 @@ enum SummaryService {
         recordingSessions: [RecordingSessionTimeline] = [],
         generationSettings: SummaryGenerationSettings? = nil
     ) async throws -> GeneratedSummary {
-        var generationSettings = generationSettings ?? .current()
-        if let connectionID = generationSettings.runtimeProvider.accountConnectionID {
-            let settings = try await ServerAccountSettingsModel.shared.loadedSettings(connectionID: connectionID)
-            generationSettings = generationSettings.applying(language: settings.outputLanguage)
-        }
+        let generationSettings = generationSettings ?? .current()
 
         let systemPrompt = summaryGenerationInstructions(generationSettings: generationSettings)
         let inputs = try await makeCodexInputs(.init(
@@ -34,7 +30,18 @@ enum SummaryService {
             recordingSessions: recordingSessions
         ))
 
-        let responseText = try await CodexAppServerService.shared.generate(.init(
+        let service: CodexAppServerService
+        if generationSettings.runtimeProvider.accountConnectionID == nil {
+            guard LocalAccountAISettings(defaults: .standard).runtimeProvider == generationSettings.runtimeProvider else {
+                throw CodexConfigurationError.providerChanged(generationSettings.runtimeProvider.displayName)
+            }
+            try await CodexRuntimeContextCoordinator.macInference.activate(provider: generationSettings.runtimeProvider)
+            service = .macInference
+        } else {
+            // Previously captured Server-Gateway requests retain their original provider.
+            service = .shared
+        }
+        let responseText = try await service.generate(.init(
             model: generationSettings.modelID,
             reasoningEffort: generationSettings.reasoningEffort,
             developerInstructions: systemPrompt,

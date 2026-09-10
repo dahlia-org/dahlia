@@ -15,16 +15,6 @@ final class ServerAccountSettingsModel {
         var isAvailable = false
         var errorMessage: String?
         var summaryMethods: [String] = []
-        var recordingProcessingMethods: [RecordingProcessingMethod] {
-            RecordingProcessingMethod.allCases.filter { method in
-                switch method {
-                case .transcript: summaryMethods.contains("transcript")
-                case .cloudTranscription: summaryMethods.contains("transcript") && summaryMethods.contains("audio")
-                case .audio: summaryMethods.contains("audio")
-                }
-            }
-        }
-
         var summaryModels: [ServerSummaryService.Model] = []
         var modelErrorMessage: String?
         var canEdit: Bool { settings != nil && isAvailable && !isLoading && !isSaving }
@@ -133,7 +123,12 @@ final class ServerAccountSettingsModel {
                 try Task.checkCancellation()
                 if settings == nil {
                     settings = try await Self.patch(
-                        .init(outputLanguage: initial.outputLanguage, analysisLanguages: initial.analysisLanguages, initialize: true),
+                        .init(
+                            outputLanguage: initial.outputLanguage,
+                            analysisLanguages: initial.analysisLanguages,
+                            initialize: true,
+                            summary: .init(style: initial.summary?.style)
+                        ),
                         client: client, connectionID: connectionID, origin: connection.origin
                     )
                 }

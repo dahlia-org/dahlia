@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createContractApp as createApp } from "./api-test-client";
 import { loadConfig } from "../src/config";
-import { DEFAULT_ACCOUNT_SETTINGS } from "../src/account-settings";
 import { testStore } from "./test-store";
 
 describe("account settings API", () => {
@@ -30,23 +29,40 @@ describe("account settings API", () => {
     const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner", "content-type": "application/json" };
     const patch = (body: unknown) => app.request("/api/v1/account/settings", { method: "PATCH", headers, body: JSON.stringify(body) });
     expect(await (await app.request("/api/v1/capabilities", { headers })).json()).toEqual({});
-    const summary = { method: "transcript", detail: "high", methodSettings: { transcript: { model: "saved-model", reasoningEffort: "high" } } };
-    expect((await patch({ initialize: true, outputLanguage: "en", analysisLanguages: { scope: "all", identifiers: [] }, summary })).status).toBe(200);
-    const response = await patch({ summary: { detail: "low" } });
+    const processing = { location: "remote", remote: {
+      workflow: "transcribeThenSummarize", summaryModel: "saved-model", reasoningEffort: "high", transcriptionModel: "gemini-3-8-flash",
+    } } as const;
+    const summary = { style: "detailed" };
+    expect((await patch({ initialize: true, outputLanguage: "en", analysisLanguages: { scope: "all", identifiers: [] }, summary, processing })).status).toBe(200);
+    const response = await patch({ summary: { style: "concise" } });
     expect(await response.json()).toEqual({ settings: {
       outputLanguage: "en", analysisLanguages: { scope: "all", identifiers: [] },
-      summary: { ...summary, detail: "low", methodSettings: { audio: DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings.audio, transcript: summary.methodSettings.transcript } },
+      summary: { style: "concise" }, processing,
     } });
+    expect(await (await patch({ processing: { remote: { transcriptionModel: null } } })).json()).toMatchObject({
+      settings: { summary: { style: "concise" }, processing: { location: "remote", remote: { summaryModel: "saved-model", reasoningEffort: "high" } } },
+    });
     for (const body of [
-      {}, { summary: {} }, { summary: { methodSettings: { audio: {} } } }, { summary: { detail: null } },
-      { summaryMethod: "transcript" }, { transcriptSummary: summary.methodSettings.transcript }, { settings: { summary } },
-      { summary: { method: "gemini" } }, { summary: { unknown: true } },
-      { summary: { methodSettings: { gemini: {} } } },
-      { summary: { methodSettings: { transcript: { unknown: true } } } },
-      { summary: { methodSettings: { transcript: { detail: "invalid" } } } },
-      { summary: { methodSettings: { transcript: { detail: "low" } } } },
-      { summary: { methodSettings: { transcript: { model: "" } } } },
-      { summary: { methodSettings: { transcript: { reasoningEffort: "invalid" } } } },
+      {}, { summary: {} }, { processing: { remote: {} } }, { processing: { remote: { detail: null } } },
+      { summaryMethod: "transcript" }, { transcriptSummary: processing.remote }, { settings: { summary } },
+      { summary: { style: null } }, { processing: { remote: { workflow: null } } },
+      { summary: { mode: "audio" } }, { summary: { unknown: true } },
+      { summary: { method: "transcript" } }, { summary: { methodSettings: {} } },
+      { processing: { remote: { unknown: true } } },
+      { summary: { style: "invalid" } },
+      { processing: { remote: { summaryModel: "" } } },
+      { processing: { remote: { transcriptionModel: "" } } },
+      { processing: { remote: { reasoningEffort: "invalid" } } },
     ]) expect((await patch(body)).status).toBe(400);
+    for (const location of ["local", "remote"]) {
+      expect(await (await patch({ processing: { location } })).json()).toMatchObject({
+        settings: { summary: { style: "concise" }, processing: { location, remote: { summaryModel: "saved-model" } } },
+      });
+    }
+    const cleared = await (await patch({ processing: { remote: { summaryModel: null, reasoningEffort: null } } })).json();
+    expect(cleared).toEqual({ settings: {
+      outputLanguage: "en", analysisLanguages: { scope: "all", identifiers: [] },
+      summary: { style: "concise" }, processing: { location: "remote", remote: { workflow: "transcribeThenSummarize" } },
+    } });
   });
 });

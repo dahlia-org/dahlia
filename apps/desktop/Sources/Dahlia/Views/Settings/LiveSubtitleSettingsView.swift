@@ -19,6 +19,18 @@ struct LiveSubtitleSettingsView: View {
             }
 
             Section {
+                DahliaMenuPicker(
+                    title: L10n.liveSubtitleLanguage,
+                    selection: $settings.liveSubtitleLocale,
+                    options: SettingsLanguageOptions.locales(
+                        from: supportedLocales.filter { settings.isLanguageEnabled($0.identifier) },
+                        including: settings.liveSubtitleLocale
+                    ).map(\.identifier)
+                ) { identifier in
+                    Locale(identifier: identifier).localizedString(forIdentifier: identifier) ?? identifier
+                }
+                .disabled(isLoadingLocales)
+
                 Toggle(isOn: $settings.includesMicrophoneInLiveSubtitles) {
                     Text(L10n.includeMicrophone)
                     Text(L10n.liveSubtitleMicrophoneDescription)

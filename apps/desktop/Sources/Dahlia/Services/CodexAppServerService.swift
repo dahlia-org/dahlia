@@ -36,6 +36,20 @@ actor CodexAppServerService {
 
     static let shared = CodexAppServerService()
 
+    /// Mac inference is independent of the selected Vault's chat/Gateway context.
+    static let macInference = CodexAppServerService(
+        launcher: BundledCodexAppServerLauncher(
+            tokenBrokerAuthorization: DahliaTokenBrokerAuthorization(),
+            runtimeProviderResolver: { LocalAccountAISettings(defaults: .standard).runtimeProvider }
+        ),
+        configurationReadiness: {
+            CodexRuntimeContextStore.macInference.isConfigured
+                && CodexRuntimeContextStore.macInference.provider == LocalAccountAISettings(defaults: .standard).runtimeProvider
+        },
+        accountProviderResolver: { LocalAccountAISettings(defaults: .standard).provider },
+        runtimeProviderResolver: { LocalAccountAISettings(defaults: .standard).runtimeProvider }
+    )
+
     /// Account management uses the local credential store without changing the
     /// active provider's configuration or its token-broker authorization.
     static let localAccount = CodexAppServerService(

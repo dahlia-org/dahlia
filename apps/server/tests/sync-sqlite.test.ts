@@ -736,24 +736,24 @@ describe("SQLite canonical sync", () => {
     ]);
     expect(await store.accountSettings.get(owner.userId)).toEqual({ ...DEFAULT_ACCOUNT_SETTINGS, outputLanguage: "fr", analysisLanguages: { scope: "all", identifiers: [] } });
     await Promise.all([
-      store.accountSettings.update(owner.userId, { summary: { methodSettings: { transcript: { model: "saved-model" } } } }),
-      store.accountSettings.update(owner.userId, { summary: { detail: "low" } }),
+      store.accountSettings.update(owner.userId, { processing: { remote: { summaryModel: "saved-model" } } }),
+      store.accountSettings.update(owner.userId, { summary: { style: "concise" } }),
     ]);
-    expect(await store.accountSettings.get(owner.userId)).toMatchObject({ summary: {
-      method: "transcript", detail: "low", methodSettings: { transcript: { model: "saved-model", reasoningEffort: "medium" } },
+    expect(await store.accountSettings.get(owner.userId)).toMatchObject({ summary: { style: "concise" }, processing: {
+      location: "local", remote: { ...DEFAULT_ACCOUNT_SETTINGS.processing.remote, summaryModel: "saved-model" },
     } });
     const version = await store.accountSettings.getRevision(owner.userId);
-    await store.accountSettings.update(owner.userId, { summary: { detail: "low" } });
+    await store.accountSettings.update(owner.userId, { summary: { style: "concise" } });
     expect(await store.accountSettings.getRevision(owner.userId)).toBe(version);
     await Promise.all([
-      store.accountSettings.update(owner.userId, { summary: { methodSettings: { audio: { model: "audio-model" } } } }),
-      store.accountSettings.update(owner.userId, { summary: { methodSettings: { audio: { reasoningEffort: "high" } } } }),
+      store.accountSettings.update(owner.userId, { processing: { remote: { summaryModel: "audio-model" } } }),
+      store.accountSettings.update(owner.userId, { processing: { remote: { reasoningEffort: "high" } } }),
     ]);
-    expect((await store.accountSettings.get(owner.userId))?.summary.methodSettings.audio).toEqual({ model: "audio-model", reasoningEffort: "high" });
+    expect((await store.accountSettings.get(owner.userId))?.processing.remote).toMatchObject({ summaryModel: "audio-model", reasoningEffort: "high" });
     expect(await store.accountSettings.getRevision(owner.userId)).toBe(version! + 2);
-    await store.accountSettings.update(owner.userId, { summary: { detail: "medium" } });
-    await store.accountSettings.update(owner.userId, { summary: { detail: "high" } });
-    expect((await store.accountSettings.get(owner.userId))?.summary.detail).toBe("high");
+    await store.accountSettings.update(owner.userId, { summary: { style: "standard" } });
+    await store.accountSettings.update(owner.userId, { summary: { style: "detailed" } });
+    expect((await store.accountSettings.get(owner.userId))?.summary.style).toBe("detailed");
     expect(await store.accountSettings.get(other.userId)).toBeNull();
     await store.close?.();
   });

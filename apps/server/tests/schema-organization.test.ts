@@ -54,3 +54,41 @@ it.each(["sqlite", "d1"])("creates canonical tables, defaults, and cascading rel
     expect(db.prepare("SELECT * FROM meeting_events").all()).toEqual([]);
   } finally { db.close(); }
 });
+
+it.each(["sqlite", "d1"])("migrates every legacy summary mode (%s)", (dialect) => {
+  const db = new DatabaseSync(":memory:");
+  const files = serverMigrationManifest.sqlite.files;
+  const path = (file: string) => dialect === "d1"
+    ? file.replace("drizzle/sqlite/", "drizzle/d1/").replace("/migration.sql", ".sql")
+    : file;
+  try {
+    for (const file of files.slice(0, files.findIndex((file) => file.includes("chilly_warstar")))) db.exec(readFileSync(new URL(`../${path(file)}`, import.meta.url), "utf8"));
+    for (const method of ["transcript", "cloudTranscription", "audio"] as const) {
+      db.prepare("INSERT INTO user(id, name, email, updated_at) VALUES (?, ?, ?, 1)")
+        .run(method, method, `${method}@example.com`);
+      const summary = { method, detail: method === "audio" ? "standard" : "detailed", methodSettings: {
+        transcript: { model: "saved-summary", reasoningEffort: "high" },
+        audio: { model: "saved-audio", reasoningEffort: "low" },
+      } };
+      db.prepare("INSERT INTO account_settings(user_id, summary, output_language, analysis_languages) VALUES (?, ?, 'ja', '{}')")
+        .run(method, JSON.stringify(summary));
+    }
+    for (const file of files.slice(files.findIndex((file) => file.includes("chilly_warstar")))) db.exec(readFileSync(new URL(`../${path(file)}`, import.meta.url), "utf8"));
+    const summaries: Record<string, unknown> = Object.fromEntries(
+      (db.prepare("SELECT user_id, summary, processing FROM account_settings ORDER BY user_id").all() as
+        Array<{ user_id: string; summary: string; processing: string }>)
+        .map((row) => [row.user_id, { summary: JSON.parse(row.summary) as unknown, processing: JSON.parse(row.processing) as unknown }]),
+    );
+    expect(summaries).toEqual({
+      audio: { summary: { style: "standard" }, processing: { location: "remote", remote: {
+        workflow: "combined", summaryModel: "saved-audio", reasoningEffort: "low",
+      } } },
+      cloudTranscription: { summary: { style: "detailed" }, processing: { location: "remote", remote: {
+        workflow: "transcribeThenSummarize", summaryModel: "saved-summary", reasoningEffort: "high", transcriptionModel: "saved-audio",
+      } } },
+      transcript: { summary: { style: "detailed" }, processing: { location: "local", remote: {
+        workflow: "transcribeThenSummarize", summaryModel: "saved-summary", reasoningEffort: "high", transcriptionModel: "gemini-3-8-flash",
+      } } },
+    });
+  } finally { db.close(); }
+});

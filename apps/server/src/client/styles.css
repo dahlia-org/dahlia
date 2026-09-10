@@ -482,8 +482,13 @@ a.metadata-chip:hover { background: #e8e8e8; }
 .history-toolbar > span { padding: 5px 8px; border-radius: 5px; background: var(--sidebar); }
 .settings-section > p { max-width: 690px; color: var(--muted); font-size: 13px; line-height: 1.7; }
 .settings-section .section-label { color: var(--ink); font-weight: 600; font-size: 15px; }
-.settings-save-status { display: flex; align-items: center; gap: 8px; margin: -18px 0 30px; color: var(--muted); font-size: 12px; }
+.settings-save-status { display: flex; align-items: center; gap: 8px; margin: 24px 0; color: var(--muted); font-size: 12px; }
 .settings-save-status[data-saved="true"] { color: var(--green); }
+.account-settings p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.7; }
+.settings-advanced > summary { padding: 10px 0; cursor: pointer; font-size: 13px; font-weight: 600; }
+.settings-advanced > summary:hover { color: var(--plum); }
+.settings-advanced > summary:focus-visible { outline: 2px solid var(--plum); outline-offset: 4px; }
+.settings-advanced[open] > :not(summary) { margin-top: 16px; }
 .account-settings > button { justify-self: end; }
 .screenshot-grid figure { padding: 12px; overflow: hidden; }
 .screenshot-grid figure > a:last-child { display: inline-flex; margin-top: 10px; color: var(--plum); font-size: 12px; }

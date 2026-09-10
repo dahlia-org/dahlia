@@ -1,15 +1,10 @@
 import Speech
 import SwiftUI
 
-/// 設定画面「文字起こし」タブ。認識方法と利用する言語を管理する。
+/// このMac固有の録音設定。アカウントの生成設定とは独立する。
 struct TranscriptionSettingsView: View {
+    let onOpenAccountSettings: () -> Void
     @ObservedObject private var settings = AppSettings.shared
-    @Bindable private var accountSettings = ServerAccountSettingsModel.shared
-    private var connectionID: UUID? { settings.currentVault?.accountConnectionId }
-    private var processingMethods: [RecordingProcessingMethod] {
-        connectionID.map { accountSettings.state(for: $0).recordingProcessingMethods } ?? [.transcript]
-    }
-
     @State private var supportedLocales: [Locale] = []
     @State private var isLoadingLocales = true
     @State private var pendingShorterAudioRetentionPeriod: BatchAudioRetentionPeriod?
@@ -18,38 +13,61 @@ struct TranscriptionSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Picker(L10n.processingMethod, selection: Binding(
-                    get: { connectionID.flatMap { accountSettings.state(for: $0).settings?.summary?.method }
-                        .flatMap(RecordingProcessingMethod.init(rawValue:)) ?? .transcript
-                    },
-                    set: { value in
-                        if let connectionID { accountSettings.save(.init(summary: .init(method: value.rawValue)), connectionID: connectionID) }
-                    }
-                )) {
-                    ForEach(processingMethods) { Text($0.displayName).tag($0) }
-                }
-                .disabled(processingMethods.isEmpty || (connectionID.map { !accountSettings.state(for: $0).canEdit } ?? true))
                 Toggle(L10n.liveTranscriptDraft, isOn: $settings.liveTranscriptDraftEnabled)
                     .toggleStyle(.switch)
-                Toggle(L10n.automaticRecordingProcessing, isOn: $settings.automaticRecordingProcessingEnabled)
-                    .toggleStyle(.switch)
+                DahliaMenuPicker(
+                    title: L10n.transcriptionLanguage,
+                    description: L10n.transcriptionLanguageDescription,
+                    selection: $settings.transcriptionLocale,
+                    options: transcriptionLocaleOptions.map(\.identifier)
+                ) { identifier in
+                    Locale(identifier: identifier).localizedString(forIdentifier: identifier) ?? identifier
+                }
+                .disabled(isLoadingLocales)
+
+                Toggle(isOn: $settings.automaticMeetingEndRecordingStopEnabled) {
+                    Text(L10n.automaticMeetingEndRecordingStop)
+                    Text(L10n.automaticMeetingEndRecordingStopDescription)
+                }
+                .toggleStyle(.switch)
+            } header: {
+                Text(L10n.settingsDuringRecording)
             }
 
-            Group {
-                Section {
-                    DahliaMenuPicker(
-                        title: L10n.transcriptionLanguage,
-                        selection: $settings.transcriptionLocale,
-                        options: transcriptionLocaleOptions.map(\.identifier)
-                    ) { identifier in
-                        Locale(identifier: identifier).localizedString(forIdentifier: identifier) ?? identifier
+            Section {
+                Toggle(L10n.automaticRecordingProcessing, isOn: $settings.automaticRecordingProcessingEnabled)
+                    .toggleStyle(.switch)
+                Button(L10n.settingsChooseSummaryPreferences, systemImage: "arrow.right", action: onOpenAccountSettings)
+                DisclosureGroup(L10n.settingsAutomaticExport) {
+                    Toggle(isOn: $settings.exportBatchSummaryToVault) {
+                        Text(L10n.exportBatchSummaryToVault)
+                        Text(L10n.exportBatchSummaryToVaultDescription)
                     }
-                    .disabled(isLoadingLocales)
-                } footer: {
-                    Text(L10n.transcriptionLanguageDescription)
+                    .toggleStyle(.switch)
+                    Toggle(isOn: $settings.exportBatchSummaryToGoogleDocs) {
+                        Text(L10n.exportBatchSummaryToGoogleDocs)
+                        Text(L10n.exportBatchSummaryToGoogleDocsDescription)
+                    }
+                    .toggleStyle(.switch)
                 }
+            } header: {
+                Text(L10n.settingsAfterRecording)
+            }
 
-                Section {
+            Section {
+                DahliaMenuPicker(
+                    title: L10n.batchAudioRetentionPeriod,
+                    description: L10n.batchAudioRetentionPeriodDescription,
+                    selection: audioRetentionPeriodSelection,
+                    options: BatchAudioRetentionPeriod.allCases,
+                    label: \.displayName
+                )
+            } header: {
+                Text(L10n.settingsAudioStorage)
+            }
+
+            Section {
+                DisclosureGroup(L10n.advanced) {
                     DahliaMenuPicker(
                         title: L10n.batchTranscriptionStallTimeout,
                         description: L10n.batchTranscriptionStallTimeoutDescription,
@@ -57,43 +75,14 @@ struct TranscriptionSettingsView: View {
                         options: BatchTranscriptionStallTimeout.allCases,
                         label: \.displayName
                     )
-
-                    DahliaMenuPicker(
-                        title: L10n.batchAudioRetentionPeriod,
-                        description: L10n.batchAudioRetentionPeriodDescription,
-                        selection: audioRetentionPeriodSelection,
-                        options: BatchAudioRetentionPeriod.allCases,
-                        label: \.displayName
-                    )
-
-                    Toggle(isOn: $settings.exportBatchSummaryToVault) {
-                        Text(L10n.exportBatchSummaryToVault)
-                        Text(L10n.exportBatchSummaryToVaultDescription)
+                    Toggle(isOn: $settings.forceEchoCancellationForExternalMicrophone) {
+                        Text(L10n.externalMicrophoneEchoCancellation)
+                        Text(L10n.externalMicrophoneEchoCancellationDescription)
                     }
                     .toggleStyle(.switch)
-
-                    Toggle(isOn: $settings.exportBatchSummaryToGoogleDocs) {
-                        Text(L10n.exportBatchSummaryToGoogleDocs)
-                        Text(L10n.exportBatchSummaryToGoogleDocsDescription)
-                    }
-                    .toggleStyle(.switch)
-                } header: {
-                    Text(L10n.processingConfirmationTitle)
+                    Text(L10n.builtInMicrophoneEchoCancellationDescription).foregroundStyle(.secondary)
                 }
             }
-
-            Section {
-                Toggle(isOn: $settings.forceEchoCancellationForExternalMicrophone) {
-                    Text(L10n.externalMicrophoneEchoCancellation)
-                    Text(L10n.externalMicrophoneEchoCancellationDescription)
-                }
-                .toggleStyle(.switch)
-            } header: {
-                Text(L10n.audioInput)
-            } footer: {
-                Text(L10n.builtInMicrophoneEchoCancellationDescription)
-            }
-
         }
         .formStyle(.grouped)
         .confirmationDialog(
@@ -145,11 +134,10 @@ struct TranscriptionSettingsView: View {
     }
 
     private var transcriptionLocaleOptions: [Locale] {
-        var locales = supportedLocales.filter { settings.isLanguageEnabled($0.identifier) }
-        if !locales.contains(where: { $0.identifier == settings.transcriptionLocale }) {
-            locales.append(Locale(identifier: settings.transcriptionLocale))
-        }
-        return locales.sortedByLocalizedName()
+        SettingsLanguageOptions.locales(
+            from: supportedLocales.filter { settings.isLanguageEnabled($0.identifier) },
+            including: settings.transcriptionLocale
+        )
     }
 
     private func loadSupportedLocales() async {

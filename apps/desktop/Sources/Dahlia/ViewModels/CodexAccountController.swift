@@ -19,6 +19,9 @@ final class CodexAccountController {
         urlOpener: any CodexLoginURLOpening = WorkspaceCodexLoginURLOpener(),
         authenticationDidChange: @escaping @MainActor @Sendable () async throws -> Void = {
             try await CodexAccountController.reloadLocalRuntimeAfterAuthenticationChange()
+            try await CodexAccountController.reloadLocalRuntimeAfterAuthenticationChange(
+                contextStore: .macInference, service: .macInference
+            )
         }
     ) {
         self.service = service

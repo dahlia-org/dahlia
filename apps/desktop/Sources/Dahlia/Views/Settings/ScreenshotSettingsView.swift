@@ -10,15 +10,6 @@ struct ScreenshotSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Picker(L10n.screenshotCacheLimit, selection: $screenshotCacheGiB) {
-                    ForEach([1, 2, 5, 10], id: \.self) { size in
-                        Text("\(size) GiB").tag(size)
-                    }
-                }
-            } footer: {
-                Text(L10n.screenshotCacheDescription)
-            }
-            Section {
                 Toggle(isOn: $settings.automaticScreenshotEnabled) {
                     Text(L10n.automaticScreenshots)
                     Text(L10n.automaticScreenshotsToggleDescription)
@@ -83,6 +74,15 @@ struct ScreenshotSettingsView: View {
                     Text(L10n.imageTextLanguages)
                     Text(L10n.imageTextLanguagesDescription)
                 }
+            }
+            Section {
+                Picker(L10n.screenshotCacheLimit, selection: $screenshotCacheGiB) {
+                    ForEach([1, 2, 5, 10], id: \.self) { size in
+                        Text("\(size) GiB").tag(size)
+                    }
+                }
+            } footer: {
+                Text(L10n.screenshotCacheDescription)
             }
         }
         .formStyle(.grouped)

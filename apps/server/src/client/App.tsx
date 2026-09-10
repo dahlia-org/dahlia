@@ -434,8 +434,7 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
   return (
     <>
       {dialog}
-      <PageHeader title={uiText("Account settings", "アカウント設定")} description={uiText("Make Dahlia work the way you do.", "出力や要約の設定、アカウントへのアクセスを管理します。")} />
-      <ServerSummarySettings />
+      <PageHeader title={uiText("Account settings", "アカウント設定")} description={uiText("Applies to every vault in this account and syncs across your devices.", "このアカウントのすべての保管庫に適用され、ほかの端末にも同期されます。")} />
       <section className="section-block settings-section">
         <h2 className="section-label">{uiText("Account", "アカウント")}</h2>
         <div className="panel account-card"><dl className="account-details">
@@ -443,6 +442,7 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
           <div><dt>{uiText("Email address", "メールアドレス")}</dt><dd>{session.user.email || "—"}</dd></div>
         </dl></div>
       </section>
+      <ServerSummarySettings />
       {extensions.flatMap((extension) => extension.navigation ?? []).filter((item) => !isServerNavigation(item)).map((item) =>
         (!item.capability || session.capabilities[item.capability]) && <a className="text-link" key={item.path} href={item.path}><MenuIcon name="document" />{item.label}</a>)}
       {sessionsEnabled && <section className="section-block">

@@ -41,6 +41,7 @@ export const serverInitializations = appSchema.table("server_initializations", {
 export const accountSettings = appSchema.table("account_settings", {
   userId: uuid("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
   summary: jsonb("summary").$type<AccountSettings["summary"]>().default(DEFAULT_ACCOUNT_SETTINGS.summary).notNull(),
+  processing: jsonb("processing").$type<AccountSettings["processing"]>().default(DEFAULT_ACCOUNT_SETTINGS.processing).notNull(),
   revision: integer("revision").default(1).notNull(),
   outputLanguage: text("output_language").$type<AccountSettings["outputLanguage"]>().notNull(),
   analysisLanguages: jsonb("analysis_languages").$type<AccountSettings["analysisLanguages"]>().notNull(),

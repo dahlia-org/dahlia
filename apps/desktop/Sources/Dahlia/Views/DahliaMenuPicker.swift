@@ -8,31 +8,19 @@ struct DahliaMenuPicker<Value: Hashable>: View {
     let label: (Value) -> String
 
     var body: some View {
-        LabeledContent {
-            Menu {
-                ForEach(options, id: \.self) { option in
-                    Button {
-                        selection = option
-                    } label: {
-                        if option == selection {
-                            Label(label(option), systemImage: "checkmark")
-                        } else {
-                            Text(label(option))
-                        }
-                    }
-                }
-            } label: {
-                Label(label(selection), systemImage: "chevron.up.chevron.down")
+        Picker(selection: $selection) {
+            if !options.contains(selection) {
+                Text(label(selection)).tag(selection).disabled(true)
             }
-            .menuStyle(.borderlessButton)
-            .buttonStyle(.dahlia())
-            .accessibilityLabel(title)
-            .accessibilityValue(label(selection))
+            ForEach(options, id: \.self) { option in
+                Text(label(option)).tag(option)
+            }
         } label: {
             Text(title)
             if let description {
                 Text(description)
             }
         }
+        .pickerStyle(.menu)
     }
 }

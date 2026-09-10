@@ -8,6 +8,35 @@
     @MainActor
     struct LocalAccountAISettingsTests {
         @Test
+        func localInferenceUsesMacPreferencesForEitherAccountAndKeepsAccountOutputChoices() async throws {
+            let suiteName = "MacInferenceSettingsTests-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let model = VaultAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
+            model.localProvider = .databricks
+            model.databricksProfile = "MAC"
+            var server = makeVault(openedAt: .now)
+            server.accountConnectionId = .v7()
+            server.summaryModelID = "not-the-mac-model"
+            model.activate(vault: server)
+            #expect(await model.waitForRuntimeContext())
+            let account = ServerAccountSettings(
+                processing: .init(location: .local), summary: .init(style: .concise),
+                outputLanguage: .fr, analysisLanguages: .init(scope: .all, identifiers: [])
+            )
+            let captured = SummaryGenerationSettings.current(vaultAISettings: model, accountSettings: account)
+            #expect(captured.modelID == AppSettings.shared.codexModelID.nilIfBlank)
+            #expect(captured.reasoningEffort == AppSettings.shared.codexReasoningEffort)
+            #expect(captured.runtimeProvider == .databricks(profile: "MAC"))
+            #expect(captured.languageDisplayName == SummaryLanguage.fr.displayName)
+            #expect(captured.detailLevelInstruction == SummaryDetailLevel.concise.instruction)
+            model.activate(vault: makeVault(openedAt: .now))
+            #expect(await model.waitForRuntimeContext())
+            #expect(SummaryGenerationSettings.current(vaultAISettings: model, accountSettings: account).runtimeProvider == captured.runtimeProvider)
+            #expect(captured.applying(detailLevel: .detailed).sourceAccountConnectionID == captured.sourceAccountConnectionID)
+        }
+
+        @Test
         func inheritsTheLatestLocalVaultOnceAndKeepsExplicitChangesAfterRestart() async throws {
             let suiteName = "LocalAccountAISettingsTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -20,6 +49,8 @@
             var latest = makeVault(openedAt: Date(timeIntervalSince1970: 2))
             latest.localProvider = .databricks
             latest.databricksProfile = "LOCAL"
+            latest.summaryModelID = "latest-summary"
+            latest.summaryReasoningEffort = "max"
             var server = makeVault(openedAt: Date(timeIntervalSince1970: 3))
             server.accountConnectionId = connection.id
             server.databricksProfile = "SERVER"
@@ -35,6 +66,8 @@
             try await model.inheritLocalAccountSettings(from: database.dbQueue)
 
             #expect(model.localAccountSettings == .init(provider: .databricks, databricksProfile: "LOCAL"))
+            #expect(defaults.string(forKey: LocalAccountAISettings.summaryModelKey) == "latest-summary")
+            #expect(defaults.string(forKey: LocalAccountAISettings.summaryReasoningEffortKey) == "max")
             model.databricksProfile = "CHANGED"
             let restored = VaultAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
             restored.configure(dbQueue: database.dbQueue)
@@ -61,6 +94,7 @@
 
             #expect(model.localAccountSettings == .init(provider: .databricks, databricksProfile: "LEGACY"))
             #expect(defaults.bool(forKey: LocalAccountAISettings.migrationKey))
+            #expect(defaults.bool(forKey: LocalAccountAISettings.summaryMigrationKey))
         }
 
         @Test

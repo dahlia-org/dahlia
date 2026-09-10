@@ -1,5 +1,6 @@
 import type { GeneratedTranscript } from "./transcription";
 import type { SummaryMetadata } from "./metadata";
+import type { GenerationPreferences } from "./preferences";
 import { z } from "zod";
 import type { AccountSettings } from "../account-settings";
 import { uuidV7 } from "../id";
@@ -82,6 +83,7 @@ export type SummaryDocument = ReturnType<typeof summaryDocument> & { metadata?: 
 export interface SummaryMethod {
   readonly id: SummaryJob["method"];
   captureSettings(settings: AccountSettings, detail?: z.infer<typeof summaryDetailSchema>): SummaryJob["settings"];
+  resolvePreferences?(preferences: GenerationPreferences, input: SummaryInput): Promise<{ settings: TranscriptSettings; input: SummaryInput }>;
   validateSettings?(settings: TranscriptSettings, input?: SummaryInput): Promise<void>;
   version(store: IdentitySyncStore, vaultId: string, meetingId: string, input?: SummaryInput | null): Promise<string>;
   transcribe?(job: SummaryJob, signal: AbortSignal): Promise<GeneratedTranscript>;

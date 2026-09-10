@@ -1401,7 +1401,7 @@ struct ServerCapabilities: Decodable {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             version = try container.decode(Int.self, forKey: .version)
             // Future summary payloads must not disable unrelated capabilities.
-            sources = version == 1 ? try container.decode([String].self, forKey: .sources) : []
+            sources = version <= 2 ? try container.decode([String].self, forKey: .sources) : []
         }
     }
 

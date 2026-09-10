@@ -804,6 +804,7 @@ final class CaptionViewModel: ObservableObject {
     private let transcriptTranslationService = TranscriptTranslationService()
     private let automaticScreenshotCaptureControl: AutomaticScreenshotCaptureControl
     private let summaryGenerationRunner: SummaryGenerationRunner
+    private let summaryAccountSettingsLoader: @MainActor (UUID) async throws -> ServerAccountSettings
     private let summaryJobSleeper: SummaryJobSleeper
     private let googleDocsSummaryExporter: SummaryGoogleDocsExporter
     private let summaryDocumentLoader: SummaryDocumentLoader
@@ -836,6 +837,9 @@ final class CaptionViewModel: ObservableObject {
                 generationSettings: input.generationSettings
             )
         },
+        summaryAccountSettingsLoader: @escaping @MainActor (UUID) async throws -> ServerAccountSettings = {
+            try await ServerAccountSettingsModel.shared.loadedSettings(connectionID: $0)
+        },
         summaryJobSleeper: @escaping SummaryJobSleeper = { try await Task.sleep(for: $0) },
         googleDocsSummaryExporter: @escaping SummaryGoogleDocsExporter = { document, context, fileName in
             try await GoogleDocsSummaryExportService.exportSummary(
@@ -861,6 +865,7 @@ final class CaptionViewModel: ObservableObject {
             capture: automaticScreenshotCapture
         )
         self.summaryGenerationRunner = summaryGenerationRunner
+        self.summaryAccountSettingsLoader = summaryAccountSettingsLoader
         self.summaryJobSleeper = summaryJobSleeper
         self.googleDocsSummaryExporter = googleDocsSummaryExporter
         self.summaryDocumentLoader = summaryDocumentLoader
@@ -1582,6 +1587,7 @@ final class CaptionViewModel: ObservableObject {
                     localeIdentifier: execution.confirmation.suggestedLocaleIdentifier,
                     method: .transcript, options: options,
                     generationSettings: .current(detailLevel: options.detailLevel), serverSettings: nil,
+                    summaryMode: .local,
                     stage: .transcribing
                 )
             }
@@ -3543,16 +3549,25 @@ final class CaptionViewModel: ObservableObject {
             ),
             detailLevel: AppSettings.shared.summaryDetailLevel
         )
-        let generationSettings = SummaryGenerationSettings.current(detailLevel: options.detailLevel)
         let connectionID = try await dbQueue.read { db in try VaultRecord.fetchOne(db, key: vaultID)?.accountConnectionId }
         let serverSettings = connectionID.flatMap { ServerAccountSettingsModel.shared.state(for: $0).settings }
         if let detail = serverSettings?.summary?.detailLevel {
             options = .init(exportOptions: options.exportOptions, detailLevel: detail)
         }
+        var generationSettings = SummaryGenerationSettings.current(
+            detailLevel: options.detailLevel, accountSettings: serverSettings ?? .initialValues()
+        )
+        generationSettings.accountConnectionID = connectionID
+        let method: RecordingProcessingMethod = switch serverSettings?.processing?.location {
+        case .remote:
+            serverSettings?.processing?.remote.workflow == .combined ? .audio : .cloudTranscription
+        default:
+            .transcript
+        }
         return RecordingProcessing(
             id: .v7(), automatic: automatic, liveDraft: plan.liveTranscriptDraftEnabled, localeIdentifier: locale.identifier,
-            method: serverSettings?.summary.flatMap { RecordingProcessingMethod(rawValue: $0.method) } ?? .transcript,
-            options: options, generationSettings: generationSettings.applying(detailLevel: options.detailLevel), serverSettings: serverSettings
+            method: method, options: options, generationSettings: generationSettings.applying(detailLevel: options.detailLevel),
+            serverSettings: serverSettings, summaryMode: serverSettings?.processing?.location ?? .local
         )
     }
 
@@ -4274,7 +4289,8 @@ final class CaptionViewModel: ObservableObject {
         let noteText: String?
         let recordingSessions: [RecordingSessionTimeline]
         let options: SummaryGenerationOptions
-        let generationSettings: SummaryGenerationSettings
+        var generationSettings: SummaryGenerationSettings
+        var accountSettings: ServerAccountSettings?
         let retriesFailedPersistence: Bool
         let telemetryTrigger: UsageTelemetryEvent.SummaryTrigger
     }
@@ -4527,7 +4543,7 @@ final class CaptionViewModel: ObservableObject {
             noteText: noteText.nilIfBlank,
             recordingSessions: store.recordingSessions,
             options: options,
-            generationSettings: .current(detailLevel: options.detailLevel),
+            generationSettings: .current(detailLevel: options.detailLevel, accountSettings: .initialValues()),
             retriesFailedPersistence: true,
             telemetryTrigger: .manual
         )
@@ -4656,7 +4672,7 @@ final class CaptionViewModel: ObservableObject {
             noteText: snapshot.2?.text.nilIfBlank,
             recordingSessions: snapshot.3.map(RecordingSessionTimeline.init),
             options: options,
-            generationSettings: generationSettings ?? .current(detailLevel: options.detailLevel),
+            generationSettings: generationSettings ?? .current(detailLevel: options.detailLevel, accountSettings: .initialValues()),
             retriesFailedPersistence: false,
             telemetryTrigger: telemetryTrigger
         )
@@ -4714,7 +4730,32 @@ final class CaptionViewModel: ObservableObject {
         return true
     }
 
+    private func prepareAccountSummaryRequest(
+        _ request: SummaryGenerationRequest, target: ServerSummaryService.Target?
+    ) async throws -> SummaryGenerationRequest {
+        var request = request
+        guard let target else {
+            guard request.accountSettings == nil else { throw ServerSummaryService.Failure.unavailable }
+            request.generationSettings.accountConnectionID = nil
+            return request
+        }
+        if request.accountSettings != nil {
+            guard request.generationSettings.sourceAccountConnectionID == target.connectionID
+            else { throw ServerSummaryService.Failure.unavailable }
+        } else {
+            request.accountSettings = try await summaryAccountSettingsLoader(target.connectionID)
+        }
+        guard let accountSettings = request.accountSettings, accountSettings.processing != nil else {
+            throw ServerSummaryService.Failure.unavailable
+        }
+        request.generationSettings = request.generationSettings.applying(
+            accountSettings: accountSettings, connectionID: target.connectionID, detailLevel: request.options.detailLevel
+        )
+        return request
+    }
+
     private func runSummaryGeneration(_ request: SummaryGenerationRequest, job: SummaryGenerationJob) async {
+        var preparedRequest = request
         for entity in [TextContentEntity.summary, .transcript] {
             await MeetingContentProvider.shared.retain(entity: entity, id: request.meetingId, dbQueue: request.dbQueue)
         }
@@ -4737,12 +4778,24 @@ final class CaptionViewModel: ObservableObject {
         do {
             let sessionID = job.recordingSessionID
             let expectedJobID = job.id
-            let processing = try await request.dbQueue.read { db in
+            let processing = try await preparedRequest.dbQueue.read { db in
                 let saved = try sessionID.flatMap { try RecordingProcessing.load(sessionID: $0, in: db) }
                 guard sessionID == nil || (saved?.id == expectedJobID && saved?.stage != .cancelled) else { throw CancellationError() }
                 return saved
             }
-            if let target = try await ServerSummaryService.shared.target(meetingID: request.meetingId, dbQueue: request.dbQueue) {
+            let target = try await ServerSummaryService.shared.target(meetingID: preparedRequest.meetingId, dbQueue: preparedRequest.dbQueue)
+            let usesServerSummary: Bool
+            if let processing {
+                usesServerSummary = processing.usesServerSummary
+                    ?? (preparedRequest.generationSettings.runtimeProvider.accountConnectionID != nil)
+            } else {
+                preparedRequest = try await prepareAccountSummaryRequest(preparedRequest, target: target)
+                usesServerSummary = preparedRequest.accountSettings?.processing?.location == .remote
+            }
+            try Task.checkCancellation()
+            let request = preparedRequest
+            if usesServerSummary {
+                guard let target else { throw ServerSummaryService.Failure.unavailable }
                 if job.recordingSessionID == nil { configureServerSummaryActions(job: job, target: target, request: request) }
                 job.progress.summaryGeneration = .running
                 job.progress.vaultExport = .skipped
@@ -4753,6 +4806,7 @@ final class CaptionViewModel: ObservableObject {
                     detail: request.options.detailLevel?.rawValue,
                     dbQueue: request.dbQueue,
                     processing: processing,
+                    accountSettings: request.accountSettings,
                     onPrepared: { body in
                         guard let sessionID else { return }
                         try await request.dbQueue.write { db in
@@ -5074,7 +5128,7 @@ final class CaptionViewModel: ObservableObject {
                         createdAt: request.recordingStartedAt,
                         screenshots: screenshots,
                         accountScope: AppAccountScope(
-                            connectionID: request.generationSettings.runtimeProvider.accountConnectionID
+                            connectionID: request.generationSettings.sourceAccountConnectionID
                         )
                     ),
                     fileName: generatedSummary.fileName

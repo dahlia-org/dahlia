@@ -220,7 +220,7 @@ RRF で統合し、embedding の未設定・未完成・障害時は FTS に縮�
 すべての検索 query は `vault_id` 経由の permission／RLS を通す。現時点の D1 adapter は domain transaction の複数 statement を
 atomic batch にできないため meeting sync capability を fail-closed とし、D1 の FTS-only 検索は atomic batch adapter 実装後の target state とする。
 Node の画像解析 worker は canonical 登録済みの会議画像をファイル単位で扱い、既存1280px variant と App service principal を使って不足する OCR・caption を生成する。現在の所有権・checksum・revision・lease を再確認し、正本・差分・検索 projection・embedding job を同じ transaction で更新する。Desktop は Local Account の画像だけを解析する。
-Server の出力言語・画像解析言語は本人の account settings API を正本とし、Desktop はメモリに保持する。SSE は invalidation のみ、再接続時に再取得する。設定用のローカル table・revision・再送 queue は作らず、設定や認証の取得を録音開始・継続・停止の前提にしない。会議要約生成は引き続き Desktop が担当する。
+Server の出力言語・画像解析言語は本人の account settings API を正本とし、Desktop はメモリに保持する。SSE は invalidation のみ、再接続時に再取得する。設定用のローカル table・revision・再送 queue は作らず、設定や認証の取得を録音開始・継続・停止の前提にしない。文字起こしと要約は[処理場所の契約](docs/adr/shared/transcription-summary-processing.md)に従い、localではDesktop、remoteではServerが担当する。
 翻訳文、音声、SQLite file、note、tag、calendar、
 Project は階層参照と meeting 絞り込みのためだけに同期し、Server の全文・vector projection へは含めない。transcript の `audio_source` は `mic`／`system` の収録経路、nullable な `speaker_label` は将来の話者分離ラベルとし、音声特徴量は同期しない。runtime と data boundary の判断は次を正本とする。
 

@@ -1,4 +1,5 @@
 import { testUserID } from "./public-test-client";
+import { accountSettingsSchema } from "../src/account-settings-model";
 import type { AuthStore } from "../src/auth/store";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../src/account-settings";
 
@@ -11,12 +12,15 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
       get: (userId) => Promise.resolve(settings.get(userId) ?? null),
       update: (userId, patch, initialize) => {
         const current = settings.get(userId) ?? DEFAULT_ACCOUNT_SETTINGS;
+        const remote = { ...current.processing.remote, ...patch.processing?.remote };
+        for (const key of ["summaryModel", "transcriptionModel", "reasoningEffort"] as const) {
+          if (remote[key] === null) delete remote[key];
+        }
         const value = initialize && settings.has(userId) ? settings.get(userId)!
-          : { ...current, ...patch, summary: {
-            detail: patch.summary?.detail ?? current.summary.detail,
-            method: patch.summary?.method ?? current.summary.method,
-            methodSettings: { audio: { ...current.summary.methodSettings.audio, ...patch.summary?.methodSettings?.audio }, transcript: { ...current.summary.methodSettings.transcript, ...patch.summary?.methodSettings?.transcript } },
-          } };
+          : accountSettingsSchema.parse({ ...current, ...patch,
+            summary: { ...current.summary, ...patch.summary },
+            processing: { ...current.processing, ...patch.processing, remote },
+          });
         settings.set(userId, value);
         return Promise.resolve(value);
       },

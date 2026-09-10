@@ -74,10 +74,11 @@ it("backfills existing SQLite default organizations without changing ownership",
   const path = join(directory, "auth.sqlite");
   const database = new DatabaseSync(path);
   const files = serverMigrationManifest.sqlite.files;
+  const migrationIndex = files.findIndex((file) => file.includes("default_organization_initialization"));
   try {
-    for (const file of files.slice(0, -1)) database.exec(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
+    for (const file of files.slice(0, migrationIndex)) database.exec(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
     database.exec("INSERT INTO organization(id, name, slug, created_at) VALUES ('01990ab0-0000-7000-8000-000000000001', 'Custom name', 'external', 1000)");
-    database.exec(readFileSync(new URL(`../${files.at(-1)!}`, import.meta.url), "utf8"));
+    database.exec(readFileSync(new URL(`../${files[migrationIndex]!}`, import.meta.url), "utf8"));
     expect(database.prepare("SELECT name, initialized_at FROM server_initializations").all())
       .toEqual([{ name: "default_organization", initialized_at: 1000 }]);
     expect(database.prepare("SELECT name FROM organization").all()).toEqual([{ name: "Custom name" }]);

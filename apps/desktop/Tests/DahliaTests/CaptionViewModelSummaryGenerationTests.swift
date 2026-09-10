@@ -25,9 +25,15 @@ import GRDB
             let processing = RecordingProcessing(
                 id: id, automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
                 options: options, generationSettings: .current(), serverSettings: nil,
+                summaryMode: .local,
                 sessionIDs: [sessionID], stage: .transcribing,
-                serverRequest: .init(id: id.uuidString.lowercased(), input: .init(type: "transcript", version: "1"),
-                                     model: "gpt-5.4", detailLevel: "high", summaryLanguage: "en")
+                serverRequest: .init(
+                    id: id.uuidString.lowercased(),
+                    input: .init(type: "transcript", version: "1"),
+                    model: "gpt-5.4",
+                    detailLevel: "high",
+                    summaryLanguage: "en"
+                )
             )
             try await fixture.database.dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
             viewModel.registerPendingBatchSummaryForTesting(
@@ -121,7 +127,11 @@ import GRDB
                     recordingSessionID: sessionID, jobID: id
                 )
             }
-            let saved = SummaryService.GeneratedSummary(document: SummaryDocument(title: "Saved", sections: []), fileName: "summary.md", markdown: "Saved")
+            let saved = SummaryService.GeneratedSummary(
+                document: SummaryDocument(title: "Saved", sections: []),
+                fileName: "summary.md",
+                markdown: "Saved"
+            )
             let processing = RecordingProcessing(
                 id: id, automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
                 options: .init(exportOptions: .init(exportsToVault: false, exportsToGoogleDocs: true)),
@@ -134,7 +144,9 @@ import GRDB
             )
             var generationCalls = 0
             var exportCalls = 0
-            let restored = CaptionViewModel(summaryGenerationRunner: { _ in generationCalls += 1; return saved }, googleDocsSummaryExporter: { _, _, _ in
+            let restored = CaptionViewModel(summaryGenerationRunner: { _ in generationCalls += 1
+                return saved
+            }, googleDocsSummaryExporter: { _, _, _ in
                 exportCalls += 1
                 return "restored-file"
             })
@@ -1198,7 +1210,8 @@ import GRDB
             let restored = CaptionViewModel(summaryGenerationRunner: runner.run)
             try await restored.restoreRecordingProcessingForTesting(dbQueue: fixture.database.dbQueue)
             #expect(restored.summaryGenerationJobs.count == (cancelSecond ? 1 : 0))
-            #expect(restored.summaryGenerationJobs.allSatisfy { $0.isCancelled })
+            let allCancelled = restored.summaryGenerationJobs.allSatisfy(\.isCancelled)
+            #expect(allCancelled)
             #expect(runner.calls.count == (cancelSecond ? 2 : 3))
         }
 

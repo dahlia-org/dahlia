@@ -25,6 +25,7 @@ struct RecordingProcessing: Codable, Sendable {
     var options: SummaryGenerationOptions
     var generationSettings: SummaryGenerationSettings
     let serverSettings: ServerAccountSettings?
+    var summaryMode: ServerAccountSettings.SummaryMode?
     var sessionIDs: [UUID] = []
     var stage: Stage = .recorded
     var error: String?
@@ -35,6 +36,12 @@ struct RecordingProcessing: Codable, Sendable {
     var generatedSummary: SummaryService.GeneratedSummary?
     var summaryApplied: Bool?
 
+    var usesServerSummary: Bool? {
+        if let summaryMode { return summaryMode == .remote }
+        if serverRequest != nil || method != .transcript || serverSettings?.legacyMethod != nil { return true }
+        return nil
+    }
+
     mutating func prepareRetry(serverJob: ServerSummaryService.Job?) {
         if serverRequest == nil || serverJob?.isRetryable == true {
             id = .v7()
@@ -43,7 +50,8 @@ struct RecordingProcessing: Codable, Sendable {
             if let body = serverRequest {
                 serverRequest = .init(
                     id: id.uuidString.lowercased(), input: body.input, model: body.model,
-                    detailLevel: body.detailLevel, summaryLanguage: body.summaryLanguage
+                    detailLevel: body.detailLevel, summaryLanguage: body.summaryLanguage,
+                    reasoningEffort: body.reasoningEffort, preferences: body.preferences
                 )
             }
         }

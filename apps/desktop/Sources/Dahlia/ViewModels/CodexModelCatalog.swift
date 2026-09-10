@@ -16,7 +16,7 @@ final class CodexModelCatalog {
         self.service = service
     }
 
-    func load(forceRefresh: Bool = false) async {
+    func load(forceRefresh: Bool = false, prepare: @Sendable () async throws -> Void = {}) async {
         loadGeneration += 1
         let generation = loadGeneration
         hasAttemptedLoad = true
@@ -29,6 +29,7 @@ final class CodexModelCatalog {
         }
 
         do {
+            try await prepare()
             let loadedModels = try await service.models(forceRefresh: forceRefresh)
             guard loadGeneration == generation, !Task.isCancelled else { return }
             models = loadedModels

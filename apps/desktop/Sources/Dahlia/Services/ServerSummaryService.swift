@@ -35,7 +35,7 @@ actor ServerSummaryService {
         let supportsJSONSchema: Bool?
         let summaryMethods: [String]?
         var supportsStructuredSummary: Bool { supportsJSONSchema == true }
-        var supportsAudioSummary: Bool { slug.hasPrefix("gemini-") && inputModalities?.contains("audio") == true }
+        var supportsAudioSummary: Bool { supportsStructuredSummary && slug.hasPrefix("gemini-") && inputModalities?.contains("audio") == true }
         func supportsSummary(method: String) -> Bool {
             let source = method == "audio" ? "audio" : "transcript"
             return supportsStructuredSummary && (summaryMethods?.contains(source) ?? true)
@@ -83,9 +83,11 @@ actor ServerSummaryService {
     struct Request: Codable, Sendable {
         let id: String
         let input: Input
-        let model: String
-        let detailLevel: String
-        let summaryLanguage: String
+        var model: String?
+        var detailLevel: String?
+        var summaryLanguage: String?
+        var reasoningEffort: String?
+        var preferences: ServerAccountSettings.GenerationPreferences?
     }
 
     enum Failure: LocalizedError {
@@ -131,7 +133,7 @@ actor ServerSummaryService {
             try await $0.getCapabilities().ok.body.json
         }
         let summary = try JSONDecoder().decode(ServerCapabilities.self, from: data).meetingSummaryGeneration
-        guard let summary, summary.version == 1 else { return [] }
+        guard let summary, summary.version == 2 else { return [] }
         return summary.sources
     }
 
@@ -176,13 +178,27 @@ actor ServerSummaryService {
     }
 
     func start(_ target: Target, request body: Request) async throws -> Job? {
+        if body.preferences != nil {
+            typealias Body = Operations.StartSummaryJob.Input.Body.JsonPayload.Value3Payload
+            let value = try JSONDecoder().decode(Body.self, from: JSONEncoder().encode(body))
+            return try await start(target, body: .init(value3: value))
+        }
         typealias Body = Operations.StartSummaryJob.Input.Body.JsonPayload.Value1Payload
-        guard let detail = Body.DetailPayload(rawValue: SummaryDetailLevel.fromPersistedValue(body.detailLevel).rawValue),
-              let language = Body.OutputLanguagePayload(rawValue: body.summaryLanguage) else { throw Failure.unavailable }
+        guard let detailLevel = body.detailLevel, let summaryLanguage = body.summaryLanguage, let selectedModel = body.model,
+              let detail = Body.DetailPayload(rawValue: SummaryDetailLevel.fromPersistedValue(detailLevel).rawValue),
+              let language = Body.OutputLanguagePayload(rawValue: summaryLanguage) else { throw Failure.unavailable }
         let input = try JSONDecoder().decode(Body.InputPayload.self, from: JSONEncoder().encode(body.input))
+        let reasoningEffort = body.reasoningEffort.flatMap(Body.ReasoningEffortPayload.init(rawValue:))
         return try await start(
             target,
-            body: .init(value1: Body(id: body.id, input: input, model: body.model, detail: detail, outputLanguage: language))
+            body: .init(value1: Body(
+                id: body.id,
+                input: input,
+                model: selectedModel,
+                detail: detail,
+                outputLanguage: language,
+                reasoningEffort: reasoningEffort
+            ))
         )
     }
 
@@ -220,6 +236,7 @@ actor ServerSummaryService {
         detail: String?,
         dbQueue: DatabaseQueue,
         processing: RecordingProcessing? = nil,
+        accountSettings: ServerAccountSettings? = nil,
         onPrepared: @Sendable (Request) async throws -> Void = { _ in },
         onStage: @MainActor @Sendable (String) async -> Void = { _ in }
     ) async throws {
@@ -241,11 +258,14 @@ actor ServerSummaryService {
         }
         if job == nil {
             let body: Request
-            if let saved = processing?.serverRequest {
+            if var saved = processing?.serverRequest {
+                if saved.preferences == nil {
+                    saved.reasoningEffort = saved.reasoningEffort ?? processing?.serverSettings?.processing?.remote.reasoningEffort
+                }
                 body = saved
             } else {
                 let settings: ServerAccountSettings
-                if let captured = processing?.serverSettings {
+                if let captured = processing?.serverSettings ?? accountSettings {
                     settings = captured
                 } else {
                     guard let origin = URL(string: target.origin) else { throw URLError(.badURL) }
@@ -256,7 +276,10 @@ actor ServerSummaryService {
                     else { throw Failure.unavailable }
                     settings = saved
                 }
-                let method = processing?.method ?? RecordingProcessingMethod(rawValue: settings.summary?.method ?? "transcript") ?? .transcript
+                let isLegacyProcessing = processing != nil && processing?.summaryMode == nil
+                guard let summary = settings.summary, let accountProcessing = settings.processing,
+                      accountProcessing.location == .remote || settings.legacyMethod != nil || isLegacyProcessing else { throw Failure.unavailable }
+                let method = processing?.method ?? (accountProcessing.remote.workflow == .combined ? .audio : .cloudTranscription)
                 let input: Input
                 if method == .transcript {
                     guard let version = try await dbQueue.read({ db in try TranscriptRecord.current(target.meetingID, in: db)?.version }) else {
@@ -273,22 +296,14 @@ actor ServerSummaryService {
                     }
                     input = try await Input(
                         type: "recording",
-                        recordings: recordings(target, numbers: numbers),
-                        transcriptionModel: method == .cloudTranscription ? settings.summary?.methodSettings.audio?.model : nil
+                        recordings: recordings(target, numbers: numbers)
                     )
-                    if method == .cloudTranscription, input.transcriptionModel == nil { throw Failure.unavailable }
                 }
-                guard let selected = method == .audio ? settings.summary?.methodSettings.audio : settings.summary?.methodSettings.transcript else {
-                    throw Failure.unavailable
-                }
-                body = Request(
-                    id: id.uuidString.lowercased(),
-                    input: input,
-                    model: selected.model,
-                    detailLevel: detail.map { SummaryDetailLevel.fromPersistedValue($0).rawValue } ?? settings.summary?.detailLevel?
-                        .rawValue ?? "high",
-                    summaryLanguage: settings.outputLanguage.rawValue
-                )
+                var preferences = settings.generationPreferences
+                preferences.processing.location = .remote
+                preferences.processing.remote.workflow = method == .audio ? .combined : .transcribeThenSummarize
+                preferences.summary.style = detail.map { SummaryStyle(detailLevel: .fromPersistedValue($0)) } ?? summary.style
+                body = Request(id: id.uuidString.lowercased(), input: input, preferences: preferences)
                 try await onPrepared(body)
             }
             try Task.checkCancellation()

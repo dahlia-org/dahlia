@@ -8,6 +8,18 @@
 
     @MainActor
     struct RecordingProcessingTests {
+        @Test
+        func legacyTranscriptServerSettingsRemainServerRoutedAfterReload() throws {
+            let settings = try JSONDecoder().decode(ServerAccountSettings.self, from: Data("""
+            {"summary":{"method":"transcript","detail":"high","methodSettings":{"transcript":{"model":"saved","reasoningEffort":"high"}}},
+             "outputLanguage":"ja","analysisLanguages":{"scope":"all","identifiers":[]}}
+            """.utf8))
+            let processing = Self.processing(serverSettings: settings)
+            let restored = try JSONDecoder().decode(RecordingProcessing.self, from: JSONEncoder().encode(processing))
+            #expect(restored.usesServerSummary == true)
+            #expect(restored.serverSettings?.legacyMethod == "transcript")
+        }
+
         @Test(arguments: [String?.none, "pending", "processing", "succeeded", "failed", "cancelled"])
         func serverRetryPreservesIdentityUnlessTheAttemptIsTerminal(status: String?) throws {
             var processing = Self.processing(method: .cloudTranscription)
@@ -16,7 +28,7 @@
             processing.error = "Network interrupted"
             processing.serverRequest = .init(
                 id: originalID.uuidString.lowercased(), input: .init(type: "recording", recordings: []),
-                model: "gemini", detailLevel: "max", summaryLanguage: "ja"
+                model: "gemini", detailLevel: "max", summaryLanguage: "ja", reasoningEffort: "high"
             )
             let job = status.map { ServerSummaryService.Job(id: originalID.uuidString.lowercased(), status: $0, error: nil, stage: nil) }
             #expect(job?.isTerminal == status.map { ["failed", "cancelled", "succeeded"].contains($0) })
@@ -28,6 +40,7 @@
             #expect(restored.stage == .uploading)
             #expect(restored.error == nil)
             #expect(restored.serverRequest?.summaryLanguage == "ja")
+            #expect(restored.serverRequest?.reasoningEffort == "high")
         }
 
         @Test(arguments: [false, true])
@@ -262,7 +275,11 @@
             )
         }
 
-        private static func processing(method: RecordingProcessingMethod = .transcript, automatic: Bool = true) -> RecordingProcessing {
+        private static func processing(
+            method: RecordingProcessingMethod = .transcript,
+            automatic: Bool = true,
+            serverSettings: ServerAccountSettings? = nil
+        ) -> RecordingProcessing {
             .init(
                 id: .v7(),
                 automatic: automatic,
@@ -277,7 +294,7 @@
                     languageDisplayName: "English",
                     runtimeProvider: .chatGPTSubscription
                 ),
-                serverSettings: nil
+                serverSettings: serverSettings
             )
         }
     }

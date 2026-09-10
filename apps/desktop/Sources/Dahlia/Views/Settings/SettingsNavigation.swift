@@ -15,10 +15,14 @@ enum SettingsNavigation {
 
     static func visibleSelection(_ selection: SettingsCategory) -> SettingsCategory {
         switch selection {
-        case .dahliaAccounts, .vault, .modelProvider:
+        case .language, .appearance:
+            .general
+        case .dahliaAccounts, .vault:
             .accountsAndVaults
-        case .instructions, .mcp:
-            .aiSummary
+        case .modelProvider:
+            .macInference
+        case .aiSummary, .instructions, .mcp:
+            .accountPreferences
         default:
             selection
         }

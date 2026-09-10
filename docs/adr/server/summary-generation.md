@@ -2,6 +2,12 @@
 
 対象: Desktop / Private Web / Node Server。採択: 2026-09-08。
 
+## 処理場所の統合（2026-09-10）
+
+[文字起こし・要約の処理場所](../shared/transcription-summary-processing.md)に従い、Server Accountは `processing.location` でlocal／remoteを共有する。アカウントの `summary.style`・出力言語と、`processing.remote` のworkflow・モデル・推論強度を分離する。workflowは文字起こし後に要約／一括生成を明示し、省略モデル・推論強度は受付時に自動解決する。処理場所・workflowの切替で既存overrideを削除しない。Mac推論設定はどのアカウントにも紐付けない。
+
+local選択中はDesktopのApple Speechと内蔵Codexを使い、Server要約APIを呼ばない。remoteは常に録音入力を使う。開始済みジョブの固定設定とDesktopの永続スナップショットは維持し、失敗時の自動切替は行わない。以下の2026-09-08節にある方式別設定の記述は、この統合判断に置き換えられた。
+
 ## 実行と方法の境界
 
 Server アカウントの要約は Server が非同期で生成・保存する。Local アカウントの内蔵 Codex 経路は維持する。
@@ -46,7 +52,7 @@ Server transcript には Desktop の session ID / 累積 offset がないため�
 
 モデル候補は Desktop/Web とも `/api/v1/models` の同じ一覧を使う。要約のSP呼び出しもGatewayと同じ短名→schema付き名の解決を使い、既存設定に保存された当該schema付き名は短名へ正規化してから解決する。失敗はworkerで内容・認証情報を含めず記録し、`summary_input_changed` は画面で入力更新による失敗として示す。
 
-機能検出は `GET /api/v1/capabilities` の `meetingSummaryGeneration: { version, sources }` に統合する。登録済み方式から sources を導出する。sources は要約の主素材（transcript / audio）の選択肢であり、どちらも画像を併用できる。未対応はキーを省略し、capabilities 自体が空の場合も未対応とする。要約設定は `summary.method`・共通の `summary.detail`・方式別の `summary.methodSettings` にまとめ、PATCH は指定した葉だけ更新する。DBは下記の機能別集約により `summary` 列へ移行する。開始済みジョブの設定スナップショットは変更しない。`outputLanguage` はアカウント設定直下に維持する。
+機能検出は `GET /api/v1/capabilities` の `meetingSummaryGeneration: { version, sources }` に統合する。生成capabilityはversion 2とし、登録済み方式から sources を導出する。未対応はキーを省略し、capabilities 自体が空の場合も未対応とする。PATCHは指定した葉だけ更新し、remoteのsummaryModel・transcriptionModel・reasoningEffortはnullで自動へ戻す。開始済みジョブの設定スナップショットは変更しない。`outputLanguage` はアカウント設定直下に維持する。
 
 Desktop の設定キャッシュが未取得のときは詳細度 override を送らず、Server のアカウント既定値を使う。確認画面で明示選択した詳細度は維持する。canonical 要約の新しい版を受け取ったら古いエクスポート参照を無効化するが、同じ版の再取得・キャッシュ解放では保持する。出力先のファイル自体は削除しない。
 

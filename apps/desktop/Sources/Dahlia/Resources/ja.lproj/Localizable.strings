@@ -1,3 +1,46 @@
+"settings.organization.checkAdvancedModels" = "利用できないモデルが指定されています。詳細設定で変更するか「自動」に戻してください。";
+"settings.organization.settingsDataAndAccounts" = "データ管理";
+"settings.organization.generationAndAnalysis" = "要約と画像解析";
+"settings.organization.searchSettings" = "設定を検索";
+"settings.organization.settingsAccountIntro" = "まとめ方や処理方法をアカウントごとに設定します。";
+"settings.organization.settingsAccountsIntro" = "接続先のアカウントと、それぞれの保管庫を管理します。";
+"settings.organization.settingsExportIntro" = "サイドバーで選択中のアカウントの書き出し先を、このMacで設定します。";
+"settings.organization.settingsAccountSelectionDescription" = "編集対象を選んでも、開いている保管庫は変わりません。";
+"settings.organization.settingsLoading" = "設定を読み込み中…";
+"settings.organization.settingsApplyNextGeneration" = "変更は自動保存され、次回の生成から適用されます。";
+"settings.organization.settingsSummaryOutput" = "生成結果";
+"settings.organization.settingsOutputLanguageDescription" = "出力言語は要約と画像の説明に共通です。音声認識の言語は変更しません。";
+"settings.organization.settingsServerProcessingDescription" = "録音音声をサーバーに送り、サーバーのAI接続先で文字起こしと要約を作成します。";
+"settings.organization.settingsLocalAnalysisLanguages" = "画像の解析には「一般」で選んだ、このMacの対象言語を使用します。";
+"settings.organization.settingsAnalysisLanguagesDescription" = "画像に含まれる文字の言語を指定します。録音や字幕の言語は変更しません。";
+"settings.organization.settingsDuringRecording" = "録音中";
+"settings.organization.settingsAfterRecording" = "録音後";
+"settings.organization.settingsAudioStorage" = "音声の保存";
+"settings.organization.settingsAutomaticExport" = "自動書き出し";
+"settings.organization.settingsChooseSummaryPreferences" = "まとめ方・処理場所を設定…";
+"settings.organization.summaryStyleConciseDescription" = "決定事項・課題・次のアクションを短くまとめます。";
+"settings.organization.summaryStyleStandardDescription" = "主な話題を、必要な背景とともにバランスよくまとめます。";
+"settings.organization.summaryStyleDetailedDescription" = "話題ごとの背景・理由・未解決事項まで詳しく残します。";
+"settings.organization.summaryStyleEventDescription" = "講演やセッションの主張・デモ・学びを流れに沿ってまとめます。";
+"settings.organization.summaryStyleTimelineDescription" = "発言やデモ、質疑応答を時系列で詳しく辿れる形にします。";
+"settings.preferences.macInferencePreferences" = "このMacのAI";
+"settings.preferences.usesMacInferencePreferences" = "このMacで文字起こしし、「このMacのAI」の接続先へ文字起こしや画像を送って要約します。AIの接続先・モデルは全アカウントで共通です。";
+"settings.preferences.accountPreferences" = "アカウント設定";
+"settings.preferences.accountPreferencesScope" = "下のアカウント選択に応じて切り替わります。この領域の変更は表示中のアカウントに適用されます。";
+"settings.preferences.accountSummaryPreferencesDescription" = "まとめ方と出力言語は処理場所にかかわらず共通です。変更は次回の処理から適用されます。Macでの要約も、接続先のAIへ文字起こしや画像を送信します。";
+"settings.preferences.summaryStyle" = "まとめ方";
+"settings.preferences.recordingSettings" = "録音";
+"settings.preferences.localModelPreferences" = "このMacの要約モデル";
+"settings.preferences.localModelPreferencesDescription" = "このMacで処理するすべてのアカウントに共通です。モデル設定はサーバーに同期されません。";
+"settings.preferences.serverProcessingAdvanced" = "サーバー処理の詳細設定";
+"settings.preferences.processingWorkflow" = "処理方式";
+"settings.preferences.transcribeThenSummarize" = "文字起こししてから要約";
+"settings.preferences.combinedTranscriptionSummary" = "文字起こしと要約を一括生成";
+"settings.preferences.summaryModel" = "要約モデル";
+"settings.preferences.automaticModelPreference" = "自動";
+"settings.preferences.unavailableModelPreference" = "この方式では利用不可";
+"settings.preferences.checkModelPreference" = "モデルとの対応を確認";
+"settings.preferences.automaticModelPreferenceDescription" = "自動では対応する既定モデルと推論強度を使います。明示指定は処理方式を切り替えても保持します。利用できない指定は自動変更せず、生成時にエラーを表示します。";
 /* Common */
 "Delete" = "削除";
 "Remove from Project" = "プロジェクトを解除";
@@ -407,14 +450,13 @@
 "Subtitles" = "字幕";
 "Live subtitles on" = "表示中";
 "Live subtitles off" = "非表示";
-"Live Subtitle Overlay" = "ライブ字幕オーバーレイ";
+"Live Subtitle Overlay" = "字幕の表示";
 "Show live subtitles when recording starts." = "録音開始時にライブ字幕を表示します。";
-"Live subtitles are available with both real-time and batch transcription." = "ライブ字幕はリアルタイム文字起こしとバッチ文字起こしの両方で利用できます。";
-"In batch mode, subtitles are temporary and the final transcript is created after recording stops." = "バッチ方式では字幕は一時的な表示で、最終的な文字起こしは録音停止後に作成されます。";
+"Show speech as subtitles during recording. The final transcript is created separately after recording stops." = "録音中の発話を字幕で表示します。最終的な文字起こしは、録音停止後に別途作成します。";
 "Include Microphone" = "マイク入力を含める";
 "Include microphone input in live subtitles. This does not change recorded audio or the final transcript." = "ライブ字幕にマイク入力を含めます。録音音声や最終的な文字起こしには影響しません。";
-"Overlay Segment Count" = "表示セグメント数";
-"Choose how many recent transcript segments are visible at once in the live subtitle overlay." = "ライブ字幕オーバーレイに一度に表示する最近の文字起こしセグメント数を選びます。";
+"Overlay Segment Count" = "表示する発話数";
+"Choose how many recent transcript segments are visible at once in the live subtitle overlay." = "字幕に一度に表示する、直近の発話の数を選びます。";
 "Live subtitles stopped because the audio format could not be converted." = "音声形式を変換できなかったため、ライブ字幕を停止しました。";
 
 /* Detail Tabs */
@@ -575,7 +617,7 @@
 "Choose one or both conditions. Calendar notifications use events from enabled calendar sources." = "1つまたは両方の条件を選択できます。カレンダー通知には、有効なカレンダーソースの予定が使用されます。";
 "Choose which languages are available for transcription and automatic detection." = "文字起こしと自動判定で利用する言語を選びます。";
 "Live Subtitle Translation" = "ライブ字幕翻訳";
-"Translate live subtitles into the selected target language. With real-time transcription, translations are also saved." = "ライブ字幕を選択した翻訳先の言語へ翻訳します。リアルタイム文字起こしでは、翻訳結果も保存します。";
+"Translate live subtitles for display. This does not change the language of the saved transcript." = "表示する字幕を翻訳します。保存する文字起こしの言語は変更しません。";
 "Target Language" = "翻訳先の言語";
 "Choose which language translated live subtitles should use." = "翻訳したライブ字幕に使う言語を選びます。";
 "Translation is automatically disabled when the target language matches the transcription language." = "翻訳先の言語が文字起こし言語と同じ場合、翻訳は自動的に無効になります。";
@@ -905,7 +947,7 @@
 "Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved. Real-time transcription uses the live subtitle language. Change it in Language settings or from the recording panel." = "録音中に文字起こしを表示します。録音後の文字起こしより精度が低下する場合があり、音声ファイルは保存されません。リアルタイム文字起こしにはライブ字幕言語を使用します。言語設定または録音パネルから変更できます。";
 "Record audio first, then create a higher-accuracy transcript after recording stops." = "先に音声を録音し、録音終了後に高精度な文字起こしを作成します。";
 "Recording Retention" = "録音データの保存期間";
-"Successfully transcribed batch recordings become eligible for deletion this long after both recording and transcription finish. Failed or unfinished transcriptions are kept. Real-time transcription does not save audio files." = "文字起こしに成功したバッチ録音は、録音と文字起こしの両方が完了してから指定期間後に削除対象になります。失敗または未完了の文字起こしは保持します。リアルタイム文字起こしでは音声ファイルを保存しません。";
+"Recordings become eligible for deletion this long after both recording and transcription finish. Audio with failed or unfinished transcription is kept." = "録音と文字起こしの両方が完了してから、指定期間後に音声が削除対象になります。文字起こしに失敗した音声や未処理の音声は保持します。";
 "Forever" = "無期限";
 "Shorten Recording Retention?" = "録音データの保存期間を短縮しますか？";
 "Existing batch recordings older than the new retention period may be permanently deleted immediately." = "新しい保存期間を過ぎている既存のバッチ録音は、直ちに完全削除される場合があります。";
@@ -1700,6 +1742,19 @@
 "serverSummaryTranscript" = "文字起こしと画像";
 
 "serverSummaryDescription" = "サーバーで生成します。画面を閉じても処理は続きます。詳細度は要約のソース間で共通です。エクスポートは生成後に個別に行います。";
+"settings.processing.title" = "文字起こしと要約";
+"settings.processing.account" = "適用対象";
+"settings.processing.scope" = "保存先";
+"settings.processing.synced" = "Dahliaアカウント（同期）";
+"settings.processing.location" = "処理する場所";
+"settings.processing.local" = "このMac";
+"settings.processing.remote" = "サーバー";
+"settings.processing.localScope" = "このMacのローカルアカウントに属する、すべての保管庫に適用されます。";
+"settings.processing.syncedScope" = "このアカウントのすべての保管庫に適用され、ほかの端末にも同期されます。";
+"settings.processing.localDescription" = "このMacのApple Speechで文字起こしし、このMacに設定したAI接続先で要約します。";
+"settings.processing.transcribeFirst" = "先に文字起こしする";
+"settings.processing.thisMac" = "このMac";
+"settings.processing.thisMacDescription" = "このMacだけに適用されます。アカウントを切り替えても変わりません。";
 
 "serverSummaryUnavailable" = "このサーバーでは要約生成を利用できません。";
 

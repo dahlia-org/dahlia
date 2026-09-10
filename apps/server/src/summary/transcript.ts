@@ -1,4 +1,6 @@
 import { summaryResponseMetadataSchema } from "./metadata";
+import { summaryStyleDetail } from "../account-settings-model";
+import { resolveSummaryPreferences } from "./preferences";
 import { Buffer } from "node:buffer";
 import { z } from "zod";
 import type { AppConfig } from "../config";
@@ -62,7 +64,13 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
   const { provider, backend } = execution;
   return {
     id: "transcript",
-    captureSettings: (settings, detail) => ({ ...settings.summary.methodSettings.transcript, detail: detail ?? settings.summary.detail }),
+    captureSettings: (settings, detail) => ({
+      model: settings.processing.remote.summaryModel ?? "gemini-3-8-flash", reasoningEffort: settings.processing.remote.reasoningEffort ?? "medium",
+      detail: detail ?? summaryStyleDetail(settings.summary.style),
+    }),
+    async resolvePreferences(preferences, input) {
+      return resolveSummaryPreferences(preferences, input, await backend.listModels({ signal: AbortSignal.timeout(30_000) }), execution.normalizeModel);
+    },
     async version(scoped, vaultId, meetingId, input) { return fingerprint(await collectSummaryInput(scoped, vaultId, meetingId, true, input)); },
     async validateSettings(settings, input) {
       if (!input && provider.backend === "databricks") return;

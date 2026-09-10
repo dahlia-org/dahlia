@@ -160,6 +160,7 @@ import Foundation
             #expect(catalog.resolvedEffort(current: "", modelID: "default-model") == "medium")
             #expect(catalog.resolvedEffort(current: "high", modelID: "default-model") == "high")
             #expect(catalog.resolvedEffort(current: "unsupported", modelID: "default-model") == "medium")
+            #expect(catalog.resolvedEffort(current: "max", modelID: "default-model") == "medium")
             #expect(catalog.resolvedEffort(current: "high", modelID: "missing") == nil)
             await service.shutdown()
         }

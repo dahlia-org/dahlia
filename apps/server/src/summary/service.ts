@@ -1,16 +1,23 @@
 import { z } from "zod";
-import { normalizeSummaryDetail, outputLanguageSchema } from "../account-settings-model";
+import { generationPreferencesSchema, normalizeSummaryDetail, outputLanguageSchema, summaryModelSettingsSchema } from "../account-settings-model";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettingsStore } from "../account-settings";
 import type { Identity } from "../auth/identity";
 import { RequestError } from "../storage/upload";
 import type { MeetingSyncStore } from "../sync/types";
-import { SummaryError, summaryDetailSchema, summaryInputSchema, type SummaryJob, type SummaryMethod } from "./model";
+import { SummaryError, summaryDetailSchema, summaryInputSchema, type SummaryInput, type SummaryJob, type SummaryMethod } from "./model";
 
+const preferencesInputSchema = z.discriminatedUnion("type", [
+  summaryInputSchema.options[0],
+  summaryInputSchema.options[1].omit({ transcriptionModel: true }),
+]);
 export const summaryStartSchema = z.union([
   z.object({ id: z.uuidv7().meta({ format: "uuidv7" }), input: summaryInputSchema, model: z.string().trim().min(1).max(200),
-    detail: summaryDetailSchema, outputLanguage: outputLanguageSchema }).strict(),
+    detail: summaryDetailSchema, outputLanguage: outputLanguageSchema,
+    reasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional() }).strict(),
   // Existing clients may omit the explicit input; already accepted jobs keep their original settings.
   z.object({ id: z.uuidv7().meta({ format: "uuidv7" }), detail: summaryDetailSchema.optional(), outputLanguage: outputLanguageSchema.optional() }).strict(),
+  z.object({ id: z.uuidv7().meta({ format: "uuidv7" }), input: preferencesInputSchema,
+    preferences: generationPreferencesSchema }).strict(),
 ]);
 export type SummaryRequest = z.infer<typeof summaryStartSchema>;
 
@@ -84,27 +91,36 @@ export class SummaryService {
     if (!parsed.success) throw new RequestError(400, "invalid_summary_request");
     const settings = await this.settings.get(identity.userId) ?? DEFAULT_ACCOUNT_SETTINGS;
     const request = parsed.data;
-    const input = "input" in request ? request.input : undefined;
-    const requestHash = JSON.stringify({ vaultId, meetingId,
-      ...("input" in request ? { input: request.input, model: request.model, detail: request.detail } : { detail: request.detail ?? null }),
+    let input: SummaryInput | undefined = "input" in request ? request.input : undefined;
+    const requestHash = "preferences" in request ? JSON.stringify({ vaultId, meetingId, input, preferences: request.preferences }) : JSON.stringify({ vaultId, meetingId,
+      ...("input" in request ? { input: request.input, model: request.model, detail: request.detail,
+        reasoningEffort: request.reasoningEffort ?? null } : { detail: request.detail ?? null }),
       ...(request.outputLanguage === undefined ? {} : { outputLanguage: request.outputLanguage }) });
     // Authorize and recover accepted requests before any provider I/O. Recheck under the lock before insertion.
     const accepted = await this.status(identity, vaultId, meetingId, request.id);
     if (accepted) {
-      if (normalizeSummaryRequestHash(accepted.requestHash) !== requestHash) throw new RequestError(409, "summary_id_reused");
+      if (!summaryRequestHashesMatch(accepted.requestHash, requestHash)) throw new RequestError(409, "summary_id_reused");
       return accepted;
     }
-    if (!input && settings.summary.method === "cloudTranscription") throw new RequestError(400, "summary_input_required");
-    const methodID = (input?.type === "recording" ? "audio" : input?.type) ?? (settings.summary.method === "cloudTranscription" ? "audio" : settings.summary.method);
+    if (!input && settings.processing.location === "remote") throw new RequestError(400, "summary_input_required");
+    const methodID = (input?.type === "recording" ? "audio" : input?.type) ?? "transcript";
     const method = this.methods.find((method) => method.id === methodID);
     if (!method) throw new RequestError(400, "summary_method_unavailable");
-    const captured = method.captureSettings(settings, request.detail);
-    if (input?.type === "recording" && input.transcriptionModel) {
-      captured.model = settings.summary.methodSettings.transcript.model;
-      captured.reasoningEffort = settings.summary.methodSettings.transcript.reasoningEffort;
+    let captured = method.captureSettings(settings, "detail" in request ? request.detail : undefined);
+    if ("model" in request) {
+      captured.model = request.model;
+      if (request.reasoningEffort !== undefined) captured.reasoningEffort = request.reasoningEffort;
     }
-    if ("model" in request) captured.model = request.model;
-    try { await method.validateSettings?.(captured, input); }
+    try {
+      if ("preferences" in request) {
+        if (!method.resolvePreferences) throw new SummaryError("summary_method_unavailable");
+        const resolved = await method.resolvePreferences(request.preferences, request.input);
+        captured = resolved.settings;
+        input = resolved.input;
+      } else {
+        await method.validateSettings?.(captured, input);
+      }
+    }
     catch (error) {
       if (error instanceof SummaryError) throw new RequestError(error.retryable ? 503 : 400, error.code);
       throw error;
@@ -116,7 +132,7 @@ export class SummaryService {
       if (!meeting) throw new RequestError(404, "summary_meeting_unavailable");
       const previous = await scoped.getSummaryJob(vaultId, meetingId, parsed.data.id);
       if (previous) {
-        if (normalizeSummaryRequestHash(previous.requestHash) !== requestHash) throw new RequestError(409, "summary_id_reused");
+        if (!summaryRequestHashesMatch(previous.requestHash, requestHash)) throw new RequestError(409, "summary_id_reused");
         return previous;
       }
       const current = await scoped.getSummaryJob(vaultId, meetingId);
@@ -136,7 +152,8 @@ export class SummaryService {
         input: input ?? null, transcriptRevision: meeting.transcriptRevision ?? 0,
         stage: methodID === "transcript" ? "summarizing" : input?.type === "recording" && input.transcriptionModel ? "transcribing" : "generating",
         transcriptResult: null,
-        outputLanguage: request.outputLanguage ?? settings.outputLanguage, requestHash, summaryRevision: meeting.summaryRevision ?? 0,
+        outputLanguage: "preferences" in request ? request.preferences.outputLanguage : request.outputLanguage ?? settings.outputLanguage,
+        requestHash, summaryRevision: meeting.summaryRevision ?? 0,
         inputVersion,
         status: "pending", attempts: 0, createdAt: now, availableAt: now, claimedAt: null, leaseExpiresAt: null, lastErrorCode: null,
       };
@@ -159,4 +176,14 @@ function normalizeSummaryRequestHash(hash: string): string {
     key === "detailLevel" ? "detail" : key === "summaryLanguage" ? "outputLanguage" : key,
     ["detail", "detailLevel"].includes(key) && typeof field === "string" ? normalizeSummaryDetail(field) : field,
   ])));
+}
+
+function summaryRequestHashesMatch(existingHash: string, requestHash: string): boolean {
+  const existingJSON: unknown = JSON.parse(normalizeSummaryRequestHash(existingHash));
+  const requestJSON: unknown = JSON.parse(requestHash);
+  const record = z.record(z.string(), z.unknown());
+  const existing = record.parse(existingJSON);
+  const request = record.parse(requestJSON);
+  if (!("reasoningEffort" in existing) && "reasoningEffort" in request) delete request.reasoningEffort;
+  return JSON.stringify(existing) === JSON.stringify(request);
 }

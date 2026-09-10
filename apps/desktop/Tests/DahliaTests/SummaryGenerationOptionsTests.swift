@@ -5,13 +5,12 @@
 
     @MainActor
     struct SummaryGenerationOptionsTests {
-        @Test(arguments: ["transcript", "audio"])
-        func batchDefaultsUseServerDetailWithoutChangingExports(method: String) {
+        @Test
+        func batchDefaultsUseAccountStyleInEitherLocationWithoutChangingExports() {
             let local = AppSettings.shared.batchSummaryGenerationOptions()
             var server = ServerAccountSettings.initialValues()
-            server.summary = .init(method: method, detail: "standard", methodSettings: .init(
-                transcript: .init(), audio: .init(model: "gemini-3-8-flash")
-            ))
+            server.processing = .init(location: .remote)
+            server.summary = .init(style: .standard)
             let options = AppSettings.shared.batchSummaryGenerationOptions(serverSettings: server)
             #expect(options.detailLevel == .standard)
             #expect(options.exportOptions == local.exportOptions)
@@ -19,6 +18,11 @@
             let unavailable = AppSettings.shared.batchSummaryGenerationOptions(serverSettings: nil)
             #expect(unavailable.detailLevel == nil)
             #expect(unavailable.exportOptions == local.exportOptions)
+            let loaded = SummaryGenerationSettings.current(accountSettings: server)
+                .applying(accountSettings: server, connectionID: .v7(), detailLevel: unavailable.detailLevel)
+            #expect(loaded.detailLevelInstruction == SummaryDetailLevel.standard.instruction)
+            server.processing?.location = .local
+            #expect(AppSettings.shared.batchSummaryGenerationOptions(serverSettings: server).detailLevel == .standard)
         }
 
         @Test

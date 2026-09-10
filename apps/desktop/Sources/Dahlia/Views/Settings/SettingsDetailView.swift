@@ -10,35 +10,36 @@ struct SettingsDetailView: View {
     let onShowUnprocessedRecordings: (UUID) -> Void
 
     @ObservedObject private var appSettings = AppSettings.shared
+    @State private var settingsAccountID: UUID?
     @State private var dahliaAccountController = DahliaCloudAccountController.shared
 
     var body: some View {
         VStack(spacing: 0) {
-            Form {
-                Section {
-                    EmptyView()
-                } header: {
-                    HStack {
-                        Text(selection.label)
-                            .font(.title2)
-                            .foregroundStyle(DahliaDesign.primaryTextColor)
-                            .accessibilityAddTraits(.isHeader)
-
-                        Spacer()
-
-                        if selection == .general {
-                            Button(L10n.initialSetup, action: mainWindowNavigation.openSetupTour)
-                                .buttonStyle(.dahlia(.primary))
-                        }
-                    }
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(SettingsNavigation.visibleSelection(selection).label)
+                        .font(.title2)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(scopeDescription)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                if selection == .general {
+                    Button(L10n.initialSetup, action: mainWindowNavigation.openSetupTour)
+                        .buttonStyle(.dahlia())
                 }
             }
-            .formStyle(.grouped)
-            .frame(height: 64)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 8)
             .padding(.top, DahliaDesign.windowHeaderHeight)
 
             selectedSettings
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onChange(of: appSettings.currentVault?.accountConnectionId, initial: true) { _, connectionID in
+            settingsAccountID = connectionID
         }
         .onChange(of: selection) { _, selection in
             if selection != .accountsAndVaults { mainWindowNavigation.dismissDahliaSignIn() }
@@ -48,9 +49,11 @@ struct SettingsDetailView: View {
     @ViewBuilder
     private var selectedSettings: some View {
         switch selection {
-        case .general:
+        case .general, .language, .appearance:
             GeneralSettingsView()
-        case .accountsAndVaults, .dahliaAccounts, .vault, .modelProvider:
+        case .macInference, .modelProvider:
+            MacInferenceSettingsView()
+        case .accountsAndVaults, .dahliaAccounts, .vault:
             AccountsAndVaultsSettingsView(
                 appDatabase: appDatabase,
                 vaultModel: vaultManagementModel,
@@ -59,10 +62,6 @@ struct SettingsDetailView: View {
                 onShowSignIn: mainWindowNavigation.openDahliaSignIn,
                 onUpdateVault: updateCurrentVaultIfNeeded
             )
-        case .language:
-            LanguageSettingsView()
-        case .appearance:
-            AppearanceSettingsView()
         case .permissions:
             PermissionSettingsView()
         case .backups:
@@ -73,18 +72,25 @@ struct SettingsDetailView: View {
             )
         case .search:
             SearchSettingsView(database: appDatabase)
+        case .accountPreferences, .aiSummary, .mcp:
+            AccountProcessingSettingsView(
+                connectionID: $settingsAccountID,
+                onOpenMacInference: { selection = .macInference },
+                onOpenLanguageSettings: { selection = .general }
+            )
         case .transcription:
-            TranscriptionSettingsView()
+            TranscriptionSettingsView(onOpenAccountSettings: {
+                settingsAccountID = appSettings.currentVault?.accountConnectionId
+                selection = .accountPreferences
+            })
         case .liveSubtitles:
             LiveSubtitleSettingsView()
         case .screenshots:
-            ScreenshotSettingsView(onOpenLanguageSettings: { selection = .language })
+            ScreenshotSettingsView(onOpenLanguageSettings: { selection = .general })
         case .calendar:
             CalendarSettingsView()
         case .cloudStorage:
             CloudStorageSettingsView()
-        case .aiSummary, .mcp:
-            AISummarySettingsView()
         case .instructions:
             InstructionsSettingsView(sidebarViewModel: sidebarViewModel)
         case .betaFeatures:
@@ -93,6 +99,17 @@ struct SettingsDetailView: View {
             DeveloperSettingsView()
         case .audioDiagnostics:
             DebugSettingsView()
+        }
+    }
+
+    private var scopeDescription: String {
+        switch SettingsNavigation.visibleSelection(selection) {
+        case .accountPreferences: L10n.settingsAccountIntro
+        case .accountsAndVaults: L10n.settingsAccountsIntro
+        case .backups: L10n.backupLocalVaultsOnly
+        case .macInference: L10n.localModelPreferencesDescription
+        case .cloudStorage: L10n.settingsExportIntro
+        default: L10n.thisMacSettingsDescription
         }
     }
 

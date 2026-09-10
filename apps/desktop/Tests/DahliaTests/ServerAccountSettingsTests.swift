@@ -6,16 +6,6 @@
 
     @MainActor
     struct ServerAccountSettingsTests {
-        @Test(arguments: [[], ["transcript"], ["audio"], ["transcript", "audio"]])
-        func recordingChoicesRequireTheirServerMethods(methods: [String]) {
-            var state = ServerAccountSettingsModel.State()
-            state.summaryMethods = methods
-            let choices = state.recordingProcessingMethods
-            #expect(choices.contains(.transcript) == methods.contains("transcript"))
-            #expect(choices.contains(.audio) == methods.contains("audio"))
-            #expect(choices.contains(.cloudTranscription) == (methods.contains("transcript") && methods.contains("audio")))
-        }
-
         @Test
         func initializesOnceAndKeepsMemoryReadOnlyAfterFailureOrDisconnect() async {
             let account = connection()
@@ -141,7 +131,7 @@
                 requests.withLock { $0.append(path) }
                 let body: String = switch path {
                 case "/api/v1/capabilities":
-                    #"{"meetingSummaryGeneration":{"version":1,"sources":["transcript","audio"]}}"#
+                    #"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"]}}"#
                 case "/api/v1/models":
                     #"{"data":[],"models":[]}"#
                 default:
@@ -179,7 +169,7 @@
                 let body: String
                 switch request.url!.path {
                 case "/api/v1/capabilities":
-                    body = #"{"meetingSummaryGeneration":{"version":1,"sources":["transcript"]}}"#
+                    body = #"{"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#
                 case "/api/v1/models":
                     let id: String
                     if request.value(forHTTPHeaderField: "Authorization") == "Bearer old-token" {
@@ -237,7 +227,7 @@
         }
 
         private nonisolated static func response(_ language: String) -> String {
-            "{\"settings\":{\"summary\":{\"method\":\"transcript\",\"detail\":\"high\",\"methodSettings\":{\"audio\":{\"model\":\"gemini-3-8-flash\",\"reasoningEffort\":\"medium\"},\"transcript\":{\"model\":\"gpt-5.4\",\"reasoningEffort\":\"medium\"}}},\"outputLanguage\":\"\(language)\",\"analysisLanguages\":{\"scope\":\"all\",\"identifiers\":[]}}}"
+            "{\"settings\":{\"summary\":{\"style\":\"detailed\"},\"processing\":{\"location\":\"local\",\"remote\":{\"workflow\":\"transcribeThenSummarize\"}},\"outputLanguage\":\"\(language)\",\"analysisLanguages\":{\"scope\":\"all\",\"identifiers\":[]}}}"
         }
     }
 
