@@ -333,6 +333,8 @@ test_sparkle_appcast_creation() {
         '<https://github.com/dahlia-org/dahlia/releases/download/v1.2.3/>' \
         '<--release-notes-url-prefix>' \
         '<https://github.com/dahlia-org/dahlia/releases/download/v1.2.3/>' \
+        '<--full-release-notes-url>' \
+        '<https://github.com/dahlia-org/dahlia/releases>' \
         "<${release_dir}>" \
         > "$expected_generate_appcast_log"
     diff -u "$expected_generate_appcast_log" "$generate_appcast_log"

@@ -11,3 +11,5 @@ Create `.build/release-notes/release-note-ja.md` and `.build/release-notes/relea
 - End each file with its localized label and the same compare URL when the previous tag and repository URL are available.
 
 Check both files against the inspected diff. Reject any claim that is unsupported or belongs only to an excluded module.
+
+The release script sets Sparkle's full release notes URL to the GitHub Releases page so “Version History” opens in the browser; the localized Markdown assets remain the per-version update notes.

@@ -398,6 +398,7 @@ EOF
         --account "$sparkle_key_account" \
         --download-url-prefix "https://github.com/${RELEASE_REPOSITORY}/releases/download/${TAG_NAME}/" \
         --release-notes-url-prefix "https://github.com/${RELEASE_REPOSITORY}/releases/download/${TAG_NAME}/" \
+        --full-release-notes-url "https://github.com/${RELEASE_REPOSITORY}/releases" \
         "$SPARKLE_RELEASE_DIR"
 
     if [ ! -s "${SPARKLE_RELEASE_DIR}/appcast.xml" ]; then
