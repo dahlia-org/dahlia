@@ -13,7 +13,7 @@
                 let url = try #require(request.url)
                 #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test")
                 #expect(url.path == "/api/v1/vaults")
-                #expect(url.query == "scope=accessible")
+                #expect(url.query == nil)
                 return response(url, body: vaultPage("2"))
             })
             #expect(result.count == 1)

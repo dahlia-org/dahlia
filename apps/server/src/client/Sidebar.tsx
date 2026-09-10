@@ -60,7 +60,7 @@ export function SidebarProvider({ session, children }: { session: SessionInfo; c
   const organizations = organizationsQuery.data;
   const organizationAllowed = !organizationId || organizations?.some(({ id }) => id === organizationId);
   const vaultsQuery = useLiveJSON<{ items: SyncedVaultInfo[] }>(session.capabilities.sync && organizationAllowed
-    ? apiQuery("listVaults", { params: { query: { organizationId: organizationId || undefined } } }) : undefined);
+    ? apiQuery("listVaults", { params: { query: organizationId ? { organizationId } : { owner: session.user.id } } }) : undefined);
   const select = (id: string) => {
     save(`dahlia:sidebar:${session.user.id}:organization`, id);
     setOrganizationId(id);

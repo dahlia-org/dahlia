@@ -635,7 +635,8 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
 
 function VaultTransfer({ vault }: { vault: SyncedVaultInfo }) {
   const { dialog, openDialog } = useActionDialog();
-  const targets = useLiveJSON<{ items: SyncedVaultInfo[] }>(apiQuery("listVaults", {}));
+  const { userId } = useSidebar();
+  const targets = useLiveJSON<{ items: SyncedVaultInfo[] }>(apiQuery("listVaults", { params: { query: { owner: userId } } }));
   const [destinationId, setDestinationId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();

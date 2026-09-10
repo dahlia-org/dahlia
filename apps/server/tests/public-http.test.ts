@@ -109,6 +109,12 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
     expect(publicSchema("TransactionReceipt").safeParse(receipt).success).toBe(true);
     expect(receipt).toMatchObject({ id: create.id, records: [ { entity: "vault", id: vlt }, { entity: "meeting", id: mtg } ] });
     expect(await (await post(create)).json()).toEqual(receipt);
+    const owned = await send(`/api/v1/vaults?owner=${encodeId("user", userID)}`);
+    expect(owned.status).toBe(200);
+    expect(await owned.json()).toMatchObject({ items: [{ vaultId: vlt }] });
+    for (const invalidOwner of [userID, encodeId("organization", userID), encodeId("team", userID)]) {
+      expect((await send(`/api/v1/vaults?owner=${invalidOwner}`)).status).toBe(400);
+    }
     const invalidID = await send(`/api/v1/vaults/${vault}`);
     expect(invalidID.status).toBe(400);
     expect(invalidID.headers.get("content-type")).toContain("application/problem+json");

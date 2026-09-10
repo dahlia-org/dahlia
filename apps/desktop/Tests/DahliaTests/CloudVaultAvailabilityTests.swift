@@ -18,7 +18,7 @@
             let ownedPage = try page([owner])
             let sharedPage = try page([owner, member])
             let worker = SyncWorker(dbQueue: database.dbQueue, apiClient: client(connection: connection) { request in
-                #expect(request.url?.query == "scope=accessible")
+                #expect(request.url?.query == nil)
                 return (200, [:], shared.withLock { $0 } ? sharedPage : ownedPage)
             })
             defer { ImageURLProtocol.remove(origin: connection.origin) }

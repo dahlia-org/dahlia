@@ -12,7 +12,7 @@ Server account の Vault / Project / meeting は Desktop と Web が共有する
 
 ## Server 保管庫の自動発見（2026-09-10）
 
-Desktop は `GET /api/v1/vaults?scope=accessible` で直接ユーザー共有・組織・チーム共有を含むサインイン済み接続の owner / member 保管庫を同期開始、foreground 復帰、定期同期、SSE 接続・通知時に発見し、設定での取り込みなしで一覧・同期対象にする。メタデータは自動同期し、本文・画像は既存の必要時取得を使う。初回同期前は空の保管庫と区別して表示する。
+Desktop は `GET /api/v1/vaults` で直接ユーザー共有・組織・チーム共有を含むサインイン済み接続の owner / member 保管庫を同期開始、foreground 復帰、定期同期、SSE 接続・通知時に発見し、設定での取り込みなしで一覧・同期対象にする。メタデータは自動同期し、本文・画像は既存の必要時取得を使う。初回同期前は空の保管庫と区別して表示する。所有者で絞る場合は `owner=user_…` を指定し、常に閲覧権限との積集合を返す。組織共有の `organizationId` は所有者とは別の条件として維持し、両者の併用は拒否する。
 登録は接続を再検査する SQLite transaction で冪等に行い、確定 revision と作業コピーを同時に保存する。登録による upload は作らない。Server 所属 Vault は常に利用可能として表示し、Desktop の Vault 削除操作によるローカル登録解除は提供しない。Local Account の Vault 削除とサインアウト時のデータ処理は維持する。同一 ID の Local Vault や別接続の Vault は自動移行しない。既存の同期待ち操作、cursor、最終選択は維持する。通信失敗や一覧からの欠落だけでは削除せず、権限失効は既存の同期・データ保全経路で処理する。サインイン操作から Local Vault の移行確認は出さず、明示移行操作を使う。
 
 ## 同期対象とモデル

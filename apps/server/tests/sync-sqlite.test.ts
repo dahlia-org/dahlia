@@ -1586,8 +1586,8 @@ describe("SQLite canonical sync", () => {
     // Two access paths must still produce one Vault.
     await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "01990ab0-0000-7000-8000-000000000001"));
     expect(await service.listVaults(other, undefined, "01990ab0-0000-7000-8000-000000000001")).toHaveLength(1);
-    expect(await service.listVaults(other)).toEqual([]);
-    expect(await service.listVaults(other, undefined, undefined, "accessible")).toMatchObject([{ vaultId, role: "member" }]);
+    expect(await service.listVaults(other, other.userId)).toEqual([]);
+    expect(await service.listVaults(other)).toMatchObject([{ vaultId, role: "member" }]);
     const database = new DatabaseSync(databasePath);
     database.exec(`
       INSERT INTO organization (id, name, slug, created_at) VALUES ('another', 'Another', 'another', 0);
@@ -1603,7 +1603,7 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
-  it.each(["node", "worker"])("discovers direct-user shares through the accessible scope on %s", async (runtime) => {
+  it.each(["node", "worker"])("lists all accessible Vaults by default and filters their owner on %s", async (runtime) => {
     const { store, databasePath } = await setup();
     await createVault(store);
     const database = new DatabaseSync(databasePath);
@@ -1620,12 +1620,14 @@ describe("SQLite canonical sync", () => {
       expect(response.status).toBe(200);
       return response.json();
     };
-    expect(await list("")).toMatchObject({ items: [] });
-    expect(await list("?scope=accessible")).toMatchObject({ items: [{ vaultId, role: "member" }] });
-    expect(await list("?scope=accessible", owner.userId)).toMatchObject({ items: [{ vaultId, role: "owner" }] });
-    expect(await list("?scope=accessible", "unrelated")).toMatchObject({ items: [] });
+    expect(await list("")).toMatchObject({ items: [{ vaultId, role: "member" }] });
+    expect(await list("", owner.userId)).toMatchObject({ items: [{ vaultId, role: "owner" }] });
+    expect(await list("", "unrelated")).toMatchObject({ items: [] });
+    expect(await list(`?owner=${owner.userId}`)).toMatchObject({ items: [{ vaultId, role: "member" }] });
+    expect(await list(`?owner=${other.userId}`)).toMatchObject({ items: [] });
+    expect(await list(`?owner=${owner.userId}`, "unrelated")).toMatchObject({ items: [] });
     database.prepare("DELETE FROM vault_permissions WHERE principal_id = ? AND role = 'member'").run(other.userId);
-    expect(await list("?scope=accessible")).toMatchObject({ items: [] });
+    expect(await list("")).toMatchObject({ items: [] });
     database.close();
     await store.close?.();
   });
@@ -1634,17 +1636,16 @@ describe("SQLite canonical sync", () => {
     const { store, databasePath } = await setup();
     await createVault(store);
     const app = createApp({ config: testConfig(databasePath), authStore: store });
-    for (const query of ["", `?userId=${owner.userId}`]) {
+    for (const query of ["", `?owner=${owner.userId}`]) {
       const response = await app.request("/api/v1/vaults" + query, { headers: headers() });
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ items: [{ vaultId }] });
     }
-    for (const query of ["?userId=owner&organizationId=external", "?userId=", "?organizationId=", "?userId=%20owner", "?organizationId=%00", "?scope=unknown", `?scope=accessible&userId=${owner.userId}`, `?scope=accessible&organizationId=${freshId()}`]) {
+    for (const query of ["?owner=", "?organizationId=", "?owner=%20owner", "?organizationId=%00", "?scope=accessible",
+      `?userId=${owner.userId}`, `?owner=${owner.userId}&organizationId=${freshId()}`]) {
       expect((await app.request("/api/v1/vaults" + query, { headers: headers() })).status).toBe(400);
     }
-    for (const query of [`?userId=${other.userId}`, `?organizationId=${freshId()}`]) {
-      expect((await app.request("/api/v1/vaults" + query, { headers: headers() })).status).toBe(403);
-    }
+    expect((await app.request(`/api/v1/vaults?organizationId=${freshId()}`, { headers: headers() })).status).toBe(403);
     const session = await app.request("/api/v1/session", { headers: headers() });
     expect(await session.json()).toMatchObject({ capabilities: { sharing: true } });
     const organizations = await app.request("/api/v1/organizations", { headers: headers() });

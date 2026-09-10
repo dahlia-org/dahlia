@@ -6974,7 +6974,7 @@
               "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": false,
-            "name": "userId",
+            "name": "owner",
             "in": "query"
           },
           {
@@ -6986,17 +6986,6 @@
             },
             "required": false,
             "name": "organizationId",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "enum": [
-                "accessible"
-              ]
-            },
-            "required": false,
-            "name": "scope",
             "in": "query"
           }
         ],

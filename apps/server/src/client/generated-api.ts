@@ -2677,9 +2677,8 @@ export interface operations {
     listVaults: {
         parameters: {
             query?: {
-                userId?: string;
+                owner?: string;
                 organizationId?: string;
-                scope?: "accessible";
             };
             header?: never;
             path?: never;
