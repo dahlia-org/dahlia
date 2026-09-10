@@ -9,8 +9,8 @@ struct DatabricksOAuthCredential: Codable, Sendable {
 }
 
 struct DatabricksOAuthStorage: Sendable {
-    var loadConnections: @Sendable () throws -> [DatabricksConnection]
-    var saveConnections: @Sendable ([DatabricksConnection]) throws -> Void
+    var loadConnection: @Sendable () throws -> DatabricksConnection?
+    var saveConnection: @Sendable (DatabricksConnection?) throws -> Void
     var loadCredential: @Sendable (UUID) throws -> DatabricksOAuthCredential?
     var saveCredential: @Sendable (UUID, DatabricksOAuthCredential) throws -> Void
     var deleteCredential: @Sendable (UUID) throws -> Void
@@ -18,12 +18,16 @@ struct DatabricksOAuthStorage: Sendable {
     static func local(profile: DahliaRuntimeProfile = DahliaApplicationSupport.profile()) -> Self {
         let prefix = "databricksOAuth.\(profile.rawValue)"
         return Self(
-            loadConnections: {
-                guard let data = UserDefaults.standard.data(forKey: prefix + ".connections") else { return [] }
-                return try JSONDecoder().decode([DatabricksConnection].self, from: data)
+            loadConnection: {
+                guard let data = UserDefaults.standard.data(forKey: prefix + ".connection") else { return nil }
+                return try JSONDecoder().decode(DatabricksConnection.self, from: data)
             },
-            saveConnections: { connections in
-                try UserDefaults.standard.set(JSONEncoder().encode(connections), forKey: prefix + ".connections")
+            saveConnection: { connection in
+                if let connection {
+                    try UserDefaults.standard.set(JSONEncoder().encode(connection), forKey: prefix + ".connection")
+                } else {
+                    UserDefaults.standard.removeObject(forKey: prefix + ".connection")
+                }
             },
             loadCredential: { id in
                 guard let value = KeychainService.load(key: prefix + "." + id.uuidString) else { return nil }

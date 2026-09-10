@@ -1796,9 +1796,7 @@
 
 "Connect a Databricks workspace." = "Connect a Databricks workspace.";
 
-"Databricks Connection" = "Databricks Connection";
 
-"Connect and select a Databricks workspace." = "Connect and select a Databricks workspace.";
 
 "Dahlia securely stores this workspace sign-in on this Mac." = "Dahlia securely stores this workspace sign-in on this Mac.";
 
@@ -1809,3 +1807,5 @@
 "Databricks sign-in timed out. Please sign in again." = "Databricks sign-in timed out. Please sign in again.";
 
 "Databricks sign-in returned an invalid response. Please sign in again." = "Databricks sign-in returned an invalid response. Please sign in again.";
+
+"Sign out before connecting to another Databricks workspace." = "Sign out before connecting to another Databricks workspace.";

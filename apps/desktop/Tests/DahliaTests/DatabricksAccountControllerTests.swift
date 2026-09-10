@@ -5,15 +5,14 @@
 
     @MainActor
     struct DatabricksAccountControllerTests {
-        @Test func loadsAppConnectionsAndRemovesOnlySelectedConnection() async {
-            let first = DatabricksConnection(id: UUID(), name: "One", host: "https://one.example.com")
-            let second = DatabricksConnection(id: UUID(), name: "Two", host: "https://two.example.com")
-            let memory = DatabricksTestStorage(connections: [first, second])
+        @Test func loadsAndRemovesTheWorkspaceConnection() async {
+            let first = DatabricksConnection(id: UUID(), host: "https://one.example.com")
+            let memory = DatabricksTestStorage(connection: first)
             let controller = DatabricksAccountController(service: DatabricksOAuthService(storage: memory.storage))
             await controller.load()
-            #expect(controller.connections == [first, second])
+            #expect(controller.connection == first)
             #expect(await controller.remove(first.id))
-            #expect(controller.connections == [second])
+            #expect(controller.connection == nil)
         }
 
         @Test func invalidWorkspaceDoesNotChangeExistingConnections() async {
@@ -22,7 +21,7 @@
             #expect(await controller.signIn(workspaceURL: "http://example.com") == nil)
             #expect(controller.errorMessage != nil)
             #expect(!controller.isBusy)
-            #expect(controller.connections.isEmpty)
+            #expect(controller.connection == nil)
         }
     }
 #endif

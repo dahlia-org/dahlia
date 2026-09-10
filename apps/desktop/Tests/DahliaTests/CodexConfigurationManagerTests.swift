@@ -49,7 +49,6 @@ import Foundation
                 homeLocator: ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
             )
             let profile = try await databricksProfile(
-                name: "Team's Profile",
                 host: "https://dbc.example.com/"
             )
 
@@ -92,7 +91,7 @@ import Foundation
                 runtimeProfile: .production
             )
             _ = try await manager.configureDatabricks(
-                profile: databricksProfile(name: "WORK", host: "https://dbc.example.com")
+                profile: databricksProfile(host: "https://dbc.example.com")
             )
 
             let accountConfigURL = try locator.homeURL(connectionID: connectionID).appending(path: "config.toml")
@@ -112,7 +111,7 @@ import Foundation
             defer { try? FileManager.default.removeItem(at: rootURL) }
             let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
             let manager = CodexConfigurationManager(homeLocator: locator)
-            let profile = try await databricksProfile(name: "DEFAULT", host: "https://dbc.example.com")
+            let profile = try await databricksProfile(host: "https://dbc.example.com")
             _ = try await manager.configureDatabricks(profile: profile)
             let configURL = try locator.homeURL().appending(path: "config.toml")
             var originalConfiguration = try String(contentsOf: configURL, encoding: .utf8)
@@ -203,15 +202,15 @@ import Foundation
             let manager = CodexConfigurationManager(
                 homeLocator: ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
             )
-            let profile = try await databricksProfile(name: "DEFAULT", host: "http://dbc.example.com")
+            let profile = try await databricksProfile(host: "http://dbc.example.com")
 
             await #expect(throws: CodexConfigurationError.self) {
                 try await manager.configureDatabricks(profile: profile)
             }
         }
 
-        private func databricksProfile(name: String, host: String) async throws -> DatabricksConnection {
-            DatabricksConnection(id: UUID(), name: name, host: host)
+        private func databricksProfile(host: String) async throws -> DatabricksConnection {
+            DatabricksConnection(id: UUID(), host: host)
         }
     }
 #endif

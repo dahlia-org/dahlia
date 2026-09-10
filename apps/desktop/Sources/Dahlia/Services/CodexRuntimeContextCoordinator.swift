@@ -60,7 +60,7 @@ actor CodexRuntimeContextCoordinator {
             _ = try await configurationManager.configureChatGPTSubscription()
         case let .databricks(profileName):
             guard let id = UUID(uuidString: profileName),
-                  let profile = try await databricksClient.connections().first(where: { $0.id == id })
+                  let profile = try await databricksClient.currentConnection(), profile.id == id
             else { throw CodexConfigurationError.databricksProfileRequired }
             _ = try await configurationManager.configureDatabricks(profile: profile)
         }

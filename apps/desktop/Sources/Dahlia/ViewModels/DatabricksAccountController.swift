@@ -4,7 +4,7 @@ import Observation
 @MainActor
 @Observable
 final class DatabricksAccountController {
-    private(set) var connections: [DatabricksConnection] = []
+    private(set) var connection: DatabricksConnection?
     private(set) var isBusy = false
     private(set) var errorMessage: String?
     private let service: DatabricksOAuthService
@@ -13,7 +13,7 @@ final class DatabricksAccountController {
 
     func load() async {
         do {
-            connections = try await service.connections()
+            connection = try await service.currentConnection()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -25,7 +25,7 @@ final class DatabricksAccountController {
         errorMessage = nil
         defer { isBusy = false }
         do {
-            let connection = try await service.signIn(workspaceURL: workspaceURL, name: "")
+            let connection = try await service.signIn(workspaceURL: workspaceURL)
             try Task.checkCancellation()
             await load()
             return connection.id.uuidString

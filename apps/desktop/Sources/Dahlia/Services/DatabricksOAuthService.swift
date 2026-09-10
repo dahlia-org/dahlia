@@ -18,8 +18,8 @@ actor DatabricksOAuthService {
         let generation: UUID
     }
 
-    private var pending: [UUID: Pending] = [:]
-    private var generations: [UUID: UUID] = [:]
+    private var pending: Pending?
+    private var generation = UUID()
 
     init(
         session: URLSession = URLSession(configuration: .ephemeral, delegate: OAuthNoRedirectDelegate(), delegateQueue: nil),
@@ -31,30 +31,29 @@ actor DatabricksOAuthService {
         self.authorize = authorize
     }
 
-    func connections() throws -> [DatabricksConnection] { try storage.loadConnections() }
+    func currentConnection() throws -> DatabricksConnection? { try storage.loadConnection() }
 
     func connection(id: UUID) throws -> DatabricksConnection {
-        guard let connection = try connections().first(where: { $0.id == id }) else {
+        guard let connection = try currentConnection(), connection.id == id else {
             throw DahliaCloudError.noCredential
         }
         return connection
     }
 
-    func signIn(workspaceURL: String, name: String) async throws -> DatabricksConnection {
+    func signIn(workspaceURL: String) async throws -> DatabricksConnection {
         let url = try CodexConfigurationManager().normalizedDatabricksWorkspaceURL(workspaceURL)
-        if let connection = try connections().first(where: { $0.host == url.absoluteString }) {
+        if let connection = try currentConnection() {
+            guard connection.host == url.absoluteString else { throw DatabricksOAuthError.workspaceAlreadyConnected }
             _ = try await accessToken(connectionID: connection.id, forceRefresh: true, loginOnly: true)
             return connection
         }
-        let connection = DatabricksConnection(id: .v7(), name: name.nilIfBlank ?? url.host!, host: url.absoluteString)
+        let connection = DatabricksConnection(id: .v7(), host: url.absoluteString)
         let credential = try await login(connection)
         try Task.checkCancellation()
-        // A connection becomes selectable only after its credential is durable.
-        var saved = try connections()
-        guard !saved.contains(where: { $0.host == connection.host }) else { throw DahliaCloudError.duplicateConnection }
+        // Publish the sole connection only after its credential is durable.
+        guard try currentConnection() == nil else { throw DatabricksOAuthError.workspaceAlreadyConnected }
         try storage.saveCredential(connection.id, credential)
-        saved.append(connection)
-        do { try storage.saveConnections(saved) } catch {
+        do { try storage.saveConnection(connection) } catch {
             try? storage.deleteCredential(connection.id)
             throw error
         }
@@ -62,21 +61,23 @@ actor DatabricksOAuthService {
     }
 
     func remove(connectionID: UUID) throws {
-        generations[connectionID] = UUID()
-        pending.removeValue(forKey: connectionID)?.task.cancel()
+        _ = try connection(id: connectionID)
+        generation = UUID()
+        pending?.task.cancel()
+        pending = nil
         try storage.deleteCredential(connectionID)
-        try storage.saveConnections(connections().filter { $0.id != connectionID })
+        try storage.saveConnection(nil)
     }
 
     func accessToken(connectionID: UUID, forceRefresh: Bool = false, loginOnly: Bool = false) async throws -> String {
         let connection = try connection(id: connectionID)
         try Task.checkCancellation()
-        if let operation = pending[connectionID] {
+        if let operation = pending {
             if loginOnly, !operation.loginOnly {
                 // An explicit sign-in must still open the browser after a pending refresh.
                 _ = try? await waitForToken(operation.task)
                 try Task.checkCancellation()
-                if pending[connectionID]?.generation == operation.generation { pending[connectionID] = nil }
+                if pending?.generation == operation.generation { pending = nil }
                 return try await accessToken(connectionID: connectionID, forceRefresh: forceRefresh, loginOnly: true)
             }
             let token = try await waitForToken(operation.task)
@@ -89,7 +90,7 @@ actor DatabricksOAuthService {
             return old.accessToken
         }
         let generation = UUID()
-        generations[connectionID] = generation
+        self.generation = generation
         let task = Task {
             let updated: DatabricksOAuthCredential
             if !loginOnly, let old {
@@ -105,13 +106,13 @@ actor DatabricksOAuthService {
                 updated = try await self.login(connection)
             }
             try Task.checkCancellation()
-            guard self.generations[connectionID] == generation else { throw CancellationError() }
+            guard self.generation == generation else { throw CancellationError() }
             _ = try self.connection(id: connectionID)
             try self.storage.saveCredential(connectionID, updated)
             return updated.accessToken
         }
-        pending[connectionID] = Pending(task: task, loginOnly: loginOnly, generation: generation)
-        defer { if generations[connectionID] == generation { pending[connectionID] = nil } }
+        pending = Pending(task: task, loginOnly: loginOnly, generation: generation)
+        defer { if self.generation == generation { pending = nil } }
         return try await withTaskCancellationHandler {
             let token = try await task.value
             try Task.checkCancellation()
@@ -264,12 +265,14 @@ actor DatabricksOAuthService {
 
 enum DatabricksOAuthError: LocalizedError, Equatable {
     case callbackUnavailable
+    case workspaceAlreadyConnected
     case authorizationTimedOut
     case invalidAuthorizationResponse
 
     var errorDescription: String? {
         switch self {
         case .callbackUnavailable: L10n.databricksCallbackUnavailable
+        case .workspaceAlreadyConnected: L10n.databricksWorkspaceAlreadyConnected
         case .authorizationTimedOut: L10n.databricksAuthorizationTimedOut
         case .invalidAuthorizationResponse: L10n.databricksInvalidAuthorizationResponse
         }

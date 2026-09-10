@@ -2694,8 +2694,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var codexWaitingForBrowserSignIn: String { String(localized: "Waiting for browser sign-in…", bundle: bundle) }
     static var cancelSignIn: String { String(localized: "Cancel Sign-In", bundle: bundle) }
     static var signOut: String { String(localized: "Sign Out", bundle: bundle) }
-    static var databricksProfile: String { String(localized: "Databricks Connection", bundle: bundle) }
-    static var databricksProfileRequired: String { String(localized: "Connect and select a Databricks workspace.", bundle: bundle) }
+    static var databricksProfileRequired: String { String(localized: "Connect a Databricks workspace.", bundle: bundle) }
     static var databricksWorkspaceURLInvalid: String { String(
         localized: "Enter a valid HTTPS Databricks workspace root URL.",
         bundle: bundle
@@ -3565,6 +3564,10 @@ extension L10n {
     ) }
     static var databricksInvalidAuthorizationResponse: String { String(
         localized: "Databricks sign-in returned an invalid response. Please sign in again.",
+        bundle: bundle
+    ) }
+    static var databricksWorkspaceAlreadyConnected: String { String(
+        localized: "Sign out before connecting to another Databricks workspace.",
         bundle: bundle
     ) }
     static var databricksCallbackUnavailable: String { String(

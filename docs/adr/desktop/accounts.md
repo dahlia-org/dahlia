@@ -26,7 +26,7 @@ model discovery と生成は同じ root provider を使い、別の provider 専
 
 public client は `databricks-cli`、redirect URI は `http://localhost:8020`、scope は `offline_access all-apis` に固定する。64 バイトの PKCE verifier と S256、state を使い、8020 が使用中なら別ポートへ変更せず失敗を表示する。Workspace discovery の authorization / token endpoint を検証し、取得不能・不正なら同一 Workspace の `/oidc/v1/authorize` と `/oidc/v1/token` を使う。Dahlia Server の resource / userinfo フローとは分離する。
 
-Databricks 接続は UUID、表示名、HTTPS Workspace origin をこの Mac の設定に保存する。同じ Workspace は既存接続を再認証し、異なる Workspace を複数登録できる。従来の `databricksProfile` 設定値は新しい接続の UUID を保持する互換フィールドとして使い、CLI profile 名には解決しない。旧 Vault 列と登録済み migration は保持する。credential は実行環境と接続 ID ごとの Keychain に保存し、refresh rotation の保存失敗では新 token を公開しない。サインアウトは選択接続と local credential を削除し、進行中更新の結果を拒否する。
+Databricks 接続は HTTPS Workspace origin と認証境界用 UUID をこの Mac に1件だけ保存する。表示名・接続一覧・選択は持たず、Codex 設定は常に `model_providers.databricks` を使う。同じ Workspace は再認証し、別 Workspace への変更はサインアウト後に行う。従来の `databricksProfile` 設定値は新しい接続の UUID を保持する互換フィールドとして使い、CLI profile 名には解決しない。旧 Vault 列と登録済み migration は保持する。credential は実行環境と接続 ID ごとの Keychain に保存し、refresh rotation の保存失敗では新 token を公開しない。サインアウトは選択接続と local credential を削除し、進行中更新の結果を拒否する。
 
 Databricks / Dahlia Server の認証コマンドは共通の `auth-helper token --provider <databricks|dahlia> --connection-id <UUID> --profile <production|development>` に移す。MCP executable は認証コマンドを持たない。helper は token broker のクライアントだけを担い、接続 URL・OAuth・Keychain は Desktop が所有する。broker は接続種別・ID、実行環境、helper 実行ファイル、親 Codex PID を検証し、認証完了後も認可を再検証する。token は認証コマンドの標準出力から Codex に渡し、config・環境変数・log には残さない。
 

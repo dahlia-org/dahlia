@@ -102,8 +102,8 @@ struct CodexRuntimeAccountIsolationTests {
         defer { try? FileManager.default.removeItem(at: rootURL) }
         let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
         let configurationManager = CodexConfigurationManager(homeLocator: locator)
-        let connection = DatabricksConnection(id: UUID(), name: "WORK", host: "https://dbc.example.com")
-        let memory = DatabricksTestStorage(connections: [connection])
+        let connection = DatabricksConnection(id: UUID(), host: "https://dbc.example.com")
+        let memory = DatabricksTestStorage(connection: connection)
         let databricksClient = DatabricksOAuthService(storage: memory.storage)
         let first = TestCodexAppServerTransport(mode: .generationBlocks)
         let second = TestCodexAppServerTransport(mode: .models)

@@ -24,29 +24,7 @@ struct DatabricksAccountSettingsView<LeadingContent: View>: View {
     var body: some View {
         Section {
             leadingContent
-            Picker(L10n.databricksProfile, selection: $vaultSettings.databricksProfile) {
-                Text(L10n.notSelected).tag("")
-                if !vaultSettings.databricksProfile.isEmpty,
-                   !controller.connections.contains(where: { $0.id.uuidString == vaultSettings.databricksProfile }) {
-                    Text(L10n.dahliaNotSignedIn).tag(vaultSettings.databricksProfile)
-                }
-                ForEach(controller.connections) { connection in
-                    Text(connection.name).tag(connection.id.uuidString)
-                }
-            }
-            .disabled(controller.isBusy)
-            if let selected = controller.connections.first(where: { $0.id.uuidString == vaultSettings.databricksProfile }) {
-                LabeledContent(L10n.databricksWorkspaceURL, value: selected.host)
-                Button(L10n.signOut) {
-                    signInTask = Task {
-                        if await controller.remove(selected.id), vaultSettings.databricksProfile == selected.id.uuidString {
-                            vaultSettings.databricksProfile = ""
-                        }
-                    }
-                }
-                .buttonStyle(.dahlia())
-                .disabled(controller.isBusy)
-            } else if !vaultSettings.databricksProfile.isEmpty {
+            if controller.connection == nil, !vaultSettings.databricksProfile.isEmpty {
                 Text(L10n.databricksReconnectRequired).foregroundStyle(.secondary)
             }
             TextField(
@@ -55,8 +33,20 @@ struct DatabricksAccountSettingsView<LeadingContent: View>: View {
                 prompt: Text(L10n.databricksWorkspaceURLPlaceholder)
             )
             .textContentType(.URL)
-            .disabled(controller.isBusy)
+            .disabled(controller.isBusy || controller.connection != nil)
             .onSubmit(signIn)
+            if let connection = controller.connection {
+                Button(L10n.signOut) {
+                    signInTask = Task {
+                        if await controller.remove(connection.id) {
+                            vaultSettings.databricksProfile = ""
+                            workspaceURL = ""
+                        }
+                    }
+                }
+                .buttonStyle(.dahlia())
+                .disabled(controller.isBusy)
+            }
             if controller.isBusy {
                 HStack {
                     ProgressView().controlSize(.small)
@@ -77,7 +67,10 @@ struct DatabricksAccountSettingsView<LeadingContent: View>: View {
         } footer: {
             if let footer { Text(footer) }
         }
-        .task { await controller.load() }
+        .task {
+            await controller.load()
+            workspaceURL = controller.connection?.host ?? ""
+        }
         .onDisappear { signInTask?.cancel() }
     }
 
@@ -86,7 +79,7 @@ struct DatabricksAccountSettingsView<LeadingContent: View>: View {
         signInTask = Task {
             if let id = await controller.signIn(workspaceURL: workspaceURL), !Task.isCancelled {
                 vaultSettings.databricksProfile = id
-                workspaceURL = ""
+                workspaceURL = controller.connection?.host ?? ""
             }
         }
     }
