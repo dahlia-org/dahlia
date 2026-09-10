@@ -23,26 +23,39 @@ export const summaryModelSettingsSchema = z.object({
   model: z.string().trim().min(1).max(200),
   reasoningEffort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]),
 }).strict();
-export const remoteSummarySettingsSchema = summaryModelSettingsSchema.extend({
-  detail: summaryDetailSchema,
-  transcriptionModel: z.string().trim().min(1).max(200).optional(),
+export const summaryStyles = ["concise", "standard", "detailed", "eventSummary", "eventTimeline"] as const;
+export const summaryStyleSchema = z.enum(summaryStyles);
+export function summaryStyleDetail(style: z.infer<typeof summaryStyleSchema>): z.infer<typeof summaryDetailSchema> {
+  return { concise: "low", standard: "medium", detailed: "high", eventSummary: "xhigh", eventTimeline: "max" }[style] as z.infer<typeof summaryDetailSchema>;
+}
+const modelPreference = z.string().trim().min(1).max(200);
+export const remoteProcessingSchema = z.object({
+  workflow: z.enum(["transcribeThenSummarize", "combined"]),
+  summaryModel: modelPreference.optional(),
+  transcriptionModel: modelPreference.optional(),
+  reasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional(),
 }).strict();
-const summarySchema = z.object({ mode: summaryModeSchema, remote: remoteSummarySettingsSchema }).strict();
-export const accountSettingsSchema = z.object({ outputLanguage: outputLanguageSchema, analysisLanguages, summary: summarySchema }).strict();
+export const processingSchema = z.object({ location: summaryModeSchema, remote: remoteProcessingSchema }).strict();
+const summarySchema = z.object({ style: summaryStyleSchema }).strict();
+export const generationPreferencesSchema = z.object({ outputLanguage: outputLanguageSchema, processing: processingSchema, summary: summarySchema }).strict();
+export const accountSettingsSchema = generationPreferencesSchema.extend({ analysisLanguages }).strict();
 export type AccountSettings = z.infer<typeof accountSettingsSchema>;
 export const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = {
   outputLanguage: "ja",
-  summary: { mode: "local", remote: {
-    detail: "high", model: "gemini-3-8-flash", reasoningEffort: "medium",
-    transcriptionModel: "gemini-3-8-flash",
-  } },
+  processing: { location: "local", remote: { workflow: "transcribeThenSummarize" } },
+  summary: { style: "detailed" },
   analysisLanguages: { scope: "all", identifiers: [] },
 };
 export const accountSettingsPatchSchema = z.object({
   outputLanguage: outputLanguageSchema.optional(), analysisLanguages: analysisLanguages.optional(),
-  summary: z.object({
-    mode: summaryModeSchema.optional(),
-    remote: remoteSummarySettingsSchema.partial().extend({ transcriptionModel: remoteSummarySettingsSchema.shape.transcriptionModel.nullable() }).strict().optional(),
+  summary: summarySchema.partial().optional(),
+  processing: z.object({
+    location: summaryModeSchema.optional(),
+    remote: remoteProcessingSchema.partial().extend({
+      summaryModel: modelPreference.nullable().optional(),
+      transcriptionModel: modelPreference.nullable().optional(),
+      reasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.nullable().optional(),
+    }).strict().optional(),
   }).strict().optional(),
   initialize: z.boolean().optional(),
 }).strict().refine((patch) => {
@@ -50,7 +63,6 @@ export const accountSettingsPatchSchema = z.object({
     return patch.outputLanguage !== undefined && patch.analysisLanguages !== undefined;
   }
   if (patch.outputLanguage !== undefined || patch.analysisLanguages !== undefined) return true;
-  const summary = patch.summary;
-  return summary?.mode !== undefined || Object.keys(summary?.remote ?? {}).length > 0;
+  return patch.summary?.style !== undefined || patch.processing?.location !== undefined || Object.keys(patch.processing?.remote ?? {}).length > 0;
 });
 export type AccountSettingsPatch = Omit<z.infer<typeof accountSettingsPatchSchema>, "initialize">;

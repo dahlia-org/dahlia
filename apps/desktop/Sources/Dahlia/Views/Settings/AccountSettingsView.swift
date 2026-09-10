@@ -10,16 +10,16 @@ struct AccountSettingsView: View {
         case .chatGPTSubscription:
             ChatGPTAccountSettingsView(
                 controller: chatGPTController,
-                title: L10n.localAccountModelProvider,
-                footer: localProviderFooter
+                title: L10n.modelProvider,
+                footer: localProviderDescription
             ) {
                 providerPicker
             }
         case .databricks:
             DatabricksAccountSettingsView(
                 controller: databricksController,
-                title: L10n.localAccountModelProvider,
-                footer: localProviderFooter
+                title: L10n.modelProvider,
+                footer: localProviderDescription
             ) {
                 providerPicker
             }
@@ -39,7 +39,6 @@ struct AccountSettingsView: View {
     private var providerPicker: some View {
         DahliaMenuPicker(
             title: L10n.modelProvider,
-            description: L10n.aiAccountDescription,
             selection: $vaultSettings.localProvider,
             options: AIAccountProvider.allCases,
             label: \.displayName
@@ -49,10 +48,6 @@ struct AccountSettingsView: View {
                 || databricksController.isBusy
                 || (vaultSettings.isLocalAccount && vaultSettings.isSwitchingRuntime)
         )
-    }
-
-    private var localProviderFooter: String {
-        "\(L10n.aiAccountSettingsDescription)\n\(localProviderDescription)"
     }
 
     private var localProviderDescription: String {

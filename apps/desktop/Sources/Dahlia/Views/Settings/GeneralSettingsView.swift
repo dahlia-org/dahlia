@@ -1,25 +1,33 @@
 import SwiftUI
 
-/// 設定画面「一般」タブ。録音と通知の基本設定を管理する。
+/// Mac-wide appearance, language, and notification preferences.
 struct GeneralSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @AppStorage(AppSettings.meetingSidebarRowStyleUserDefaultsKey)
+    private var meetingSidebarRowStyle = MeetingSidebarRowStyle.standard.rawValue
 
     var body: some View {
         Form {
+            Section(L10n.display) {
+                DahliaMenuPicker(
+                    title: L10n.appLanguage,
+                    selection: $settings.appLanguage,
+                    options: AppLanguage.allCases,
+                    label: \.displayName
+                )
+                DahliaSegmentedPicker(
+                    title: L10n.sidebarDisplayStyle,
+                    selection: $meetingSidebarRowStyle,
+                    options: MeetingSidebarRowStyle.allCases.map(\.rawValue)
+                ) { MeetingSidebarRowStyle.resolved(rawValue: $0).label }
+            }
+
             Section {
                 AppLanguageSelectionRow()
             } header: {
                 Text(L10n.appLanguages)
             } footer: {
                 Text(L10n.appLanguagesDescription)
-            }
-
-            Section(L10n.automaticRecordingStop) {
-                Toggle(isOn: $settings.automaticMeetingEndRecordingStopEnabled) {
-                    Text(L10n.automaticMeetingEndRecordingStop)
-                    Text(L10n.automaticMeetingEndRecordingStopDescription)
-                }
-                .toggleStyle(.switch)
             }
 
             Section {
@@ -71,5 +79,8 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear {
+            meetingSidebarRowStyle = MeetingSidebarRowStyle.resolved(rawValue: meetingSidebarRowStyle).rawValue
+        }
     }
 }

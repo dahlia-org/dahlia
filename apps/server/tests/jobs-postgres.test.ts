@@ -1,3 +1,4 @@
+import { summaryStyleDetail } from "../src/account-settings-model";
 import { describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { connectPostgresUrl } from "../src/db/postgres";
@@ -20,8 +21,8 @@ describe.runIf(databaseUrl)("PostgreSQL targeted summary delivery", () => {
     const document = summaryDocument({ title: "Synthetic", description: "test", tags: [], action_items: [], sections: [{ heading: "Test", blocks: [{ type: "paragraph", level: 3, content: { text: "Synthetic", transcript_ref: null }, items: [], language: "", image_id: "" }] }] }, new Set());
     let generations = 0;
     const method: SummaryMethod = { id: "transcript", captureSettings: (settings) => ({
-      model: settings.summary.remote.model, reasoningEffort: settings.summary.remote.reasoningEffort,
-      detail: settings.summary.remote.detail,
+      model: (settings.processing.remote.summaryModel ?? "gemini-3-8-flash"), reasoningEffort: (settings.processing.remote.reasoningEffort ?? "medium"),
+      detail: summaryStyleDetail(settings.summary.style),
     }),
       version: () => Promise.resolve("v1"), generate: async () => {
         generations++;

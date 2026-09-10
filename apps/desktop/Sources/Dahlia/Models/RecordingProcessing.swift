@@ -38,7 +38,7 @@ struct RecordingProcessing: Codable, Sendable {
 
     var usesServerSummary: Bool? {
         if let summaryMode { return summaryMode == .remote }
-        if serverRequest != nil || method != .transcript || serverSettings?.summary?.legacyMethod != nil { return true }
+        if serverRequest != nil || method != .transcript || serverSettings?.legacyMethod != nil { return true }
         return nil
     }
 
@@ -51,7 +51,7 @@ struct RecordingProcessing: Codable, Sendable {
                 serverRequest = .init(
                     id: id.uuidString.lowercased(), input: body.input, model: body.model,
                     detailLevel: body.detailLevel, summaryLanguage: body.summaryLanguage,
-                    reasoningEffort: body.reasoningEffort
+                    reasoningEffort: body.reasoningEffort, preferences: body.preferences
                 )
             }
         }

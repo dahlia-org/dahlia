@@ -2,6 +2,7 @@ import Synchronization
 
 final class CodexRuntimeContextStore: Sendable {
     static let shared = CodexRuntimeContextStore()
+    static let macInference = CodexRuntimeContextStore()
 
     private struct State: Sendable {
         var provider = CodexRuntimeProvider.chatGPTSubscription

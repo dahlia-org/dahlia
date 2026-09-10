@@ -273,13 +273,20 @@ The optional `transcriptionModel` must support JSON Schema output, because remot
 
 `GET /api/v1/capabilities` includes `meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"] }` when the runtime has registered those generators. Sources identify the accepted primary inputs: transcript or recorded audio, and both may also use images. Node supports the configured Databricks backend; PostgreSQL/Hyperdrive Workers advertise the capability when a supported backend, summary Queue, and Images binding are configured. D1 Workers and unsupported backends omit it. An empty capabilities object also means summary generation is unsupported. There is no separate summary methods endpoint.
 
-Account settings include `summary: { mode: "local" | "remote", remote: { detail, model, reasoningEffort, transcriptionModel? } }`. Select models from the shared `/api/v1/models` catalog; do not use the legacy initial value `gpt-5.4` unless it is actually available. Explicit summary inputs require `supports_json_schema: true`; recording input additionally requires audio support. Omitting `transcriptionModel` uses direct audio generation; setting it transcribes remotely before generating the summary. Summary calls share Gateway short-name/schema and auto-review alias resolution. Reasoning choices come from the model catalog and accept `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra`; detail accepts `low`, `medium`, `high`, `xhigh`, or `max`. Defaults are reasoning `medium` and detail `high`. The old detail keys `concise`, `standard`, `detailed`, and `eventSession` normalize to the first four new keys at the compatibility boundary; labels and generation policies are preserved. `max` adds Event Play-by-Play granularity without changing the transcript schema. Configure these in Web Settings or Desktop Transcription & Summary settings. PATCH has no `settings` wrapper and merges only supplied fields at every summary nesting level: `{ "summary": { "remote": { "detail": "low" } } }` preserves the mode, model, reasoning effort and other settings. Unknown keys, modes and invalid values are rejected. `outputLanguage` stays at the account settings root and retains its existing scope. Uninitialized accounts return `{ "settings": null }`; `initialize` still creates settings only if absent. Queued job settings are retained; account settings use the consolidated `summary` column described below.
+Account preferences separate intent from model API parameters:
+`summary: { style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline" }` and
+`processing: { location: "local" | "remote", remote: { workflow: "transcribeThenSummarize" | "combined", summaryModel?, transcriptionModel?, reasoningEffort? } }`.
+Defaults are local processing, detailed style, and transcribe-then-summarize. Model and effort overrides are absent by default (Automatic). The Server resolves known preferred models against the shared `/api/v1/models` catalog and uses its default reasoning level. Explicit unavailable choices fail instead of being silently replaced. Styles map to existing job detail values only at execution.
 
-Account settings are personal, shared across devices, and separate from organization policy, credentials, and device-local configuration. `outputLanguage` applies to both summaries and image captions; Web shows it even when summary generation is unavailable. `analysisLanguages` is one atomic scope/list value. Remote summary detail, model, reasoning effort and optional transcription model are preserved while local processing is selected. Controls save only changed fields; choosing a model saves its compatible reasoning effort in the same PATCH. Unknown fields, unsupported nulls and empty patches are rejected. Concurrent edits to distinct leaves are preserved; the last database write wins for the same leaf. No ETag or conflict revision is required.
+Account settings are personal and shared across devices. `outputLanguage` applies to summaries and image captions even when the account processes on Mac. `analysisLanguages` is one atomic scope/list value. Mac inference provider/model/effort are device preferences, independent of both local and Server accounts. Web cannot execute local processing.
 
-The table keeps `user_id`, `output_language`, `analysis_languages`, `summary`, and internal `revision`. PostgreSQL uses JSONB; SQLite/D1 use JSON text. Partial updates operate atomically on the current row and increment `revision` only when a supplied value differs. SSE polls this revision every two seconds instead of loading the full settings document. This reduces read payload/decoding, not query count. Desktop and Web refetch settings on `account_settings` notifications and reconnection; saving or refetching settings does not reload the model catalog. Settings notifications do not refresh unrelated Web data.
+The settings page identifies the signed-in account before its preferences. Result style (with an explanation) and output language come first, followed by processing location; model and workflow overrides are in a collapsed advanced section. Changes save automatically. Initial loading or failure does not display editable placeholder defaults; failed refreshes preserve confirmed values read-only with a retry action. Mac processing explicitly describes the transcripts and images sent to that Mac's configured AI provider.
 
-Upgrade Server, Web, and Desktop together: the new wire format accepts only `summary.mode` and `summary.remote`. Forward migrations preserve language settings, choose the previous remote models and detail, then remove the three old summary columns. PostgreSQL backfill temporarily relaxes FORCE RLS only inside the migration transaction and restores it before commit. Existing summary jobs and history are not rewritten. This migration does not add legacy API translation or execute a production deployment.
+PATCH changes only supplied leaves, e.g. `{ "summary": { "style": "concise" } }`. Omitted fields are preserved; `null` clears summaryModel, transcriptionModel or reasoningEffort to Automatic. Switching location/workflow preserves inactive overrides. Null workflow/style, unknown keys and empty patches are rejected. Concurrent edits to distinct leaves are preserved; the last database write wins for the same leaf. No ETag or conflict revision is required.
+
+The table keeps `user_id`, `output_language`, `analysis_languages`, `summary`, `processing`, and internal `revision`. PostgreSQL uses JSONB; SQLite/D1 use JSON text. Atomic partial updates increment revision only when supplied values differ. SSE polls this revision every two seconds; clients refetch on account-settings notifications and reconnect without reloading the model catalog or unrelated Web data.
+
+Upgrade Server, Web, and Desktop together. Forward migrations move previous summary.mode/remote values into processing and semantic summary.style, preserving language and overrides. PostgreSQL temporarily relaxes FORCE RLS only inside the migration transaction and restores it before commit. Existing jobs/history are not rewritten; their accepted requests remain readable. Migration execution is explicit.
 
 
 Explicit job retries retain the captured input references and settings, but recapture summary/transcript revisions and the input fingerprint under the Vault lock. Changes after retry acceptance still reject the result.
@@ -293,25 +300,30 @@ type SummaryRequest = {
   id: string; // sjob_ TypeID backed by UUIDv7; stable across uncertain-response retries
   input:
     | { type: "transcript"; version: string }
-    | {
-        type: "recording";
-        recordings: { micFileId: string | null; systemFileId: string | null }[];
+    | { type: "recording"; recordings: { micFileId: string | null; systemFileId: string | null }[] };
+  preferences: {
+    outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
+    summary: { style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline" };
+    processing: {
+      location: "remote";
+      remote: {
+        workflow: "transcribeThenSummarize" | "combined";
+        summaryModel?: string;
         transcriptionModel?: string;
+        reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
       };
-  model: string;
-  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-  detail: "low" | "medium" | "high" | "xhigh" | "max";
-  outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
+    };
+  };
 };
 ```
 
-The meeting is identified only by the route. Transcript `version` selects the exact retained version in that meeting; missing versions never fall back to latest. Recording pairs are ordered, nonempty, and identify canonically attached files from that meeting. Each pair must contain at least one track. Empty, null, unsupported `transcriptionModel` values and unauthorized/mismatched files are rejected. Omitting `transcriptionModel` selects one Gemini generation returning both transcript and summary; supplying it transcribes with that model, saves the validated transcript, then summarizes that saved text with `model`. Model audio/structured-output capabilities are validated. Both audio paths share one transcript schema. Clients initialize `outputLanguage` from account `outputLanguage` and send it explicitly; it is independent of speech recognition language.
+The meeting is identified only by the route. Transcript version selects an exact retained version; missing versions never fall back to latest. Recording pairs are ordered, nonempty and canonically attached to this meeting, with at least one track each. Unauthorized/mismatched files are rejected. Workflow explicitly selects separate recognition/summary or combined audio generation; inactive transcription overrides are ignored for combined generation. Both audio paths share the same transcript schema and validate model audio/structured-output capabilities. The preferences snapshot carries the account's output language independently of recognition language.
 
 Acceptance freezes input, settings, language and conflict revisions and returns 202 with `{ job }` and `Location: /api/v1/meetings/{meetingId}/summary-jobs/{jobId}`. Reuse the same ID and body after an uncertain response; different content with that ID or another active job returns 409. GET that location returns that individual job; `/summary-jobs/latest` returns the most recent job. States are `pending`, `processing`, `succeeded`, `failed`, and `cancelled`. Processing stages are `transcribing`, `summarizing`, `generating` (combined), and `saving`. Failures include a bounded error code and the retained stage.
 
 POST `summary/job/{id}/cancel` cancels an active job. POST `summary/job/{id}/retry` with `{ id: "<new sjob_TypeID>" }` retries a failed/cancelled job with its frozen input/settings and saved transcription checkpoint. A saved transcript survives summary failure; direct output is validated and committed atomically with both results. Cancellation and leases fence delayed output, and conflict revisions protect newer edits. Success follows durable canonical result storage. Existing inputless `{ id, detail?, outputLanguage? }` requests remain supported for existing transcript/audio clients, but cannot silently select cloud transcription.
 
-Account `summary.mode` is `local` or `remote`. Remote processing uses `summary.remote.transcriptionModel` for recognition when present and `summary.remote.model` for summary generation. All routes authenticate the current Vault owner; browser writes require the configured origin.
+Account `processing.location` is `local` or `remote`; `processing.remote` owns the remote workflow and overrides. All routes authenticate the current Vault owner; browser writes require the configured origin.
 
 Jobs survive client closure and Server restart. A 5-minute lease fences completion; each generation attempt has a 4-minute deadline and at most three attempts. The Databricks App SP sends transcript requests through the existing Responses adapter with `store: false` and audio requests through Chat Completions without the unsupported `store` parameter, using strict structured output and the authenticated executor's `user_id` request tag. Interactive Gateway OBO behavior is unchanged. No new SDK or environment secret is required.
 
@@ -571,7 +583,7 @@ Live refreshes preserve current tabs, filters, loaded pages, scroll, and an open
 
 Node and PostgreSQL/Hyperdrive Workers with the Databricks or Cloudflare backend support `meetingSummaryGeneration.sources: ["transcript", "audio"]`. In Private Web, **Processing location** selects local Mac or remote Server processing; remote processing can optionally transcribe before generating the summary. Audio model choices use the existing `/api/v1/models` list, restricted to Gemini models whose catalog metadata includes audio input. The worker validates the model and reasoning effort against that same catalog before reading recording bytes.
 
-`GET/PATCH /api/v1/account/settings` exposes `summary.mode` and `summary.remote: { detail, model, reasoningEffort, transcriptionModel? }`. The remote defaults are `gemini-3-8-flash`, `medium`, and `high`; the default mode remains `local`. Switching processing location preserves the remote settings, and nested PATCH still changes only supplied fields. Set `transcriptionModel` to use remote transcription before summary generation or set it to `null` for direct audio generation. If a configured model is unavailable, select an available compatible model. Output language and per-job detail overrides remain shared.
+`GET/PATCH /api/v1/account/settings` exposes `summary.style`, `processing.location`, and remote workflow/model/effort preferences. See Server summary generation above for Automatic defaults, leaf PATCH semantics and immutable job snapshots.
 
 Audio generation reads all committed mic/system recordings across all sessions, alongside meeting/project context and the existing sampled screenshots. It sends the original `audio/mp4` through Databricks Chat Completions `audio_url` inline data, streaming Base64 and verifying size/checksum without buffering whole recordings. It does not send transcript text, transcode audio, publish recording URLs, or persist intermediate transcripts. Start times and manifest ranges provide alignment across parallel tracks and screenshots.
 

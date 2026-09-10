@@ -6,10 +6,11 @@
     @MainActor
     struct SummaryGenerationOptionsTests {
         @Test
-        func batchDefaultsUseRemoteDetailWithoutChangingExports() {
+        func batchDefaultsUseAccountStyleInEitherLocationWithoutChangingExports() {
             let local = AppSettings.shared.batchSummaryGenerationOptions()
             var server = ServerAccountSettings.initialValues()
-            server.summary = .init(mode: .remote, remote: .init(detail: "medium", transcriptionModel: nil))
+            server.processing = .init(location: .remote)
+            server.summary = .init(style: .standard)
             let options = AppSettings.shared.batchSummaryGenerationOptions(serverSettings: server)
             #expect(options.detailLevel == .standard)
             #expect(options.exportOptions == local.exportOptions)
@@ -17,8 +18,8 @@
             let unavailable = AppSettings.shared.batchSummaryGenerationOptions(serverSettings: nil)
             #expect(unavailable.detailLevel == local.detailLevel)
             #expect(unavailable.exportOptions == local.exportOptions)
-            server.summary?.mode = .local
-            #expect(AppSettings.shared.batchSummaryGenerationOptions(serverSettings: server).detailLevel == local.detailLevel)
+            server.processing?.location = .local
+            #expect(AppSettings.shared.batchSummaryGenerationOptions(serverSettings: server).detailLevel == .standard)
         }
 
         @Test

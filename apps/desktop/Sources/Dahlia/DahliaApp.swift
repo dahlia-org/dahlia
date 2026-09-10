@@ -835,6 +835,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             await CodexAppServerService.shared.shutdown()
+            await CodexAppServerService.macInference.shutdown()
             await CodexAppServerService.localAccount.shutdown()
             sender.reply(toApplicationShouldTerminate: true)
         }

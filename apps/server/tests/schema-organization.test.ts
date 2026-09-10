@@ -62,7 +62,7 @@ it.each(["sqlite", "d1"])("migrates every legacy summary mode (%s)", (dialect) =
     ? file.replace("drizzle/sqlite/", "drizzle/d1/").replace("/migration.sql", ".sql")
     : file;
   try {
-    for (const file of files.slice(0, -1)) db.exec(readFileSync(new URL(`../${path(file)}`, import.meta.url), "utf8"));
+    for (const file of files.slice(0, files.findIndex((file) => file.includes("chilly_warstar")))) db.exec(readFileSync(new URL(`../${path(file)}`, import.meta.url), "utf8"));
     for (const method of ["transcript", "cloudTranscription", "audio"] as const) {
       db.prepare("INSERT INTO user(id, name, email, updated_at) VALUES (?, ?, ?, 1)")
         .run(method, method, `${method}@example.com`);
@@ -73,20 +73,22 @@ it.each(["sqlite", "d1"])("migrates every legacy summary mode (%s)", (dialect) =
       db.prepare("INSERT INTO account_settings(user_id, summary, output_language, analysis_languages) VALUES (?, ?, 'ja', '{}')")
         .run(method, JSON.stringify(summary));
     }
-    db.exec(readFileSync(new URL(`../${path(files.at(-1)!)}`, import.meta.url), "utf8"));
+    for (const file of files.slice(files.findIndex((file) => file.includes("chilly_warstar")))) db.exec(readFileSync(new URL(`../${path(file)}`, import.meta.url), "utf8"));
     const summaries: Record<string, unknown> = Object.fromEntries(
-      (db.prepare("SELECT user_id, summary FROM account_settings ORDER BY user_id").all() as
-        Array<{ user_id: string; summary: string }>)
-        .map((row) => [row.user_id, JSON.parse(row.summary) as unknown]),
+      (db.prepare("SELECT user_id, summary, processing FROM account_settings ORDER BY user_id").all() as
+        Array<{ user_id: string; summary: string; processing: string }>)
+        .map((row) => [row.user_id, { summary: JSON.parse(row.summary) as unknown, processing: JSON.parse(row.processing) as unknown }]),
     );
     expect(summaries).toEqual({
-      audio: { mode: "remote", remote: { detail: "medium", model: "saved-audio", reasoningEffort: "low" } },
-      cloudTranscription: { mode: "remote", remote: {
-        detail: "high", model: "saved-summary", reasoningEffort: "high", transcriptionModel: "saved-audio",
-      } },
-      transcript: { mode: "local", remote: {
-        detail: "high", model: "gemini-3-8-flash", reasoningEffort: "medium", transcriptionModel: "gemini-3-8-flash",
-      } },
+      audio: { summary: { style: "standard" }, processing: { location: "remote", remote: {
+        workflow: "combined", summaryModel: "saved-audio", reasoningEffort: "low",
+      } } },
+      cloudTranscription: { summary: { style: "detailed" }, processing: { location: "remote", remote: {
+        workflow: "transcribeThenSummarize", summaryModel: "saved-summary", reasoningEffort: "high", transcriptionModel: "saved-audio",
+      } } },
+      transcript: { summary: { style: "detailed" }, processing: { location: "local", remote: {
+        workflow: "transcribeThenSummarize", summaryModel: "gemini-3-8-flash", reasoningEffort: "medium", transcriptionModel: "gemini-3-8-flash",
+      } } },
     });
   } finally { db.close(); }
 });

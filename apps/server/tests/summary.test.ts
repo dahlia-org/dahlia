@@ -1,4 +1,5 @@
 import { seedHeaderIdentity, testUserID } from "./public-test-client";
+import { summaryStyleDetail } from "../src/account-settings-model";
 import { LocalObjectStorage } from "../src/storage/local";
 import { createAudioSummaryMethod } from "../src/summary/audio";
 import { DEFAULT_ACCOUNT_SETTINGS } from "../src/account-settings";
@@ -42,8 +43,8 @@ async function setup() {
       data: { name: "Meeting", description: "", status: "READY", projectId: null, duration: 60, recordingStartedAt: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } },
   ] });
   const method: SummaryMethod = { id: "transcript", captureSettings: (settings, detail) => ({
-    model: settings.summary.remote.model, reasoningEffort: settings.summary.remote.reasoningEffort,
-    detail: detail ?? settings.summary.remote.detail,
+    model: (settings.processing.remote.summaryModel ?? "gemini-3-8-flash"), reasoningEffort: (settings.processing.remote.reasoningEffort ?? "medium"),
+    detail: detail ?? summaryStyleDetail(settings.summary.style),
   }), version: vi.fn(async () => "version1"), generate: vi.fn(async () => doc()) };
   const service = new SummaryService(store.sync, store.accountSettings, [method]);
   return { store, sync, method, service, vaultId, meetingId, config, path };
@@ -68,7 +69,7 @@ describe("server summary jobs", () => {
         raw.prepare("UPDATE jobs_summary SET settings = ? WHERE id = ?").run(historical, job.id);
         expect(await service.cancel(owner, vaultId, meetingId, job.id)).toMatchObject({ status: "cancelled", settings: { detail: current } });
         expect(await store.summaryJobs.claim()).toBeNull();
-        expect(accountSettingsPatchSchema.safeParse({ summary: { remote: { detail: legacy } } }).success).toBe(false);
+        expect(accountSettingsPatchSchema.safeParse({ processing: { remote: { detail: legacy } } }).success).toBe(false);
       } finally { raw.close(); await store.close?.(); }
     });
 
@@ -165,7 +166,7 @@ describe("server summary jobs", () => {
         response: { model: "returned-model", usage: { input_tokens: 10, output_tokens_details: { reasoning_tokens: 2 } } },
       } });
       for (const [model, reasoningEffort] of [["first-model", "low"], ["second-model", "high"]] as const) {
-        await store.accountSettings.update(owner.userId, { summary: { remote: { model, reasoningEffort } } });
+        await store.accountSettings.update(owner.userId, { processing: { remote: { summaryModel: model, reasoningEffort } } });
         await service.start(owner, vaultId, meetingId, { id: uuidV7() });
         await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
       }
@@ -300,18 +301,18 @@ describe("server summary jobs", () => {
     } finally { await store.close?.(); }
   });
 
-  it("reads persisted settings from the consolidated summary column", async () => {
+  it("reads persisted preferences from their owning columns", async () => {
     const { store, path } = await setup();
     try {
       await store.accountSettings.update(owner.userId, { outputLanguage: "en" });
       const database = new DatabaseSync(path);
-      database.prepare("UPDATE account_settings SET summary = ? WHERE user_id = ?")
-        .run(JSON.stringify({ ...DEFAULT_ACCOUNT_SETTINGS.summary, remote: {
-          ...DEFAULT_ACCOUNT_SETTINGS.summary.remote, detail: "low", model: "existing-model", reasoningEffort: "high",
-        } }), owner.userId);
+      database.prepare("UPDATE account_settings SET summary = ?, processing = ? WHERE user_id = ?")
+        .run(JSON.stringify({ style: "concise" }), JSON.stringify({
+          location: "local", remote: { workflow: "combined", summaryModel: "existing-model", reasoningEffort: "high" },
+        }), owner.userId);
       database.close();
-      expect(await store.accountSettings.get(owner.userId)).toMatchObject({ outputLanguage: "en", summary: {
-        mode: "local", remote: { detail: "low", model: "existing-model", reasoningEffort: "high" },
+      expect(await store.accountSettings.get(owner.userId)).toMatchObject({ outputLanguage: "en", summary: { style: "concise" }, processing: {
+        location: "local", remote: { workflow: "combined", summaryModel: "existing-model", reasoningEffort: "high" },
       } });
     } finally { await store.close?.(); }
   });
@@ -369,9 +370,9 @@ describe("server summary jobs", () => {
   it("fixes settings at start, keeps starts idempotent and saves through canonical delta and search", async () => {
     const { store, sync, method, service, vaultId, meetingId } = await setup();
     try {
-      await store.accountSettings.update(owner.userId, { summary: { remote: { detail: "medium", model: "model1", reasoningEffort: "high" } } });
+      await store.accountSettings.update(owner.userId, { summary: { style: "standard" }, processing: { remote: { summaryModel: "model1", reasoningEffort: "high" } } });
       const id = uuidV7(); const job = await service.start(owner, vaultId, meetingId, { id, detail: "low" });
-      await store.accountSettings.update(owner.userId, { outputLanguage: "en", summary: { remote: { detail: "high", model: "model2", reasoningEffort: "low" } } });
+      await store.accountSettings.update(owner.userId, { outputLanguage: "en", summary: { style: "detailed" }, processing: { remote: { summaryModel: "model2", reasoningEffort: "low" } } });
       expect(await service.start(owner, vaultId, meetingId, { id, detail: "low" })).toEqual(job);
       expect(job.settings).toEqual({ model: "model1", reasoningEffort: "high", detail: "low" });
       expect(job.outputLanguage).toBe("ja");
@@ -505,8 +506,8 @@ describe("server summary jobs", () => {
     const { store, sync, vaultId, meetingId } = await setup();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
-      await store.accountSettings.update(owner.userId, { summary: { remote: {
-        model: cloudflare ? "gpt-4.1" : withImages ? "catalog.ai.gpt-5-6-luna" : "gpt-5-6-luna", reasoningEffort: cloudflare ? "none" : "medium",
+      await store.accountSettings.update(owner.userId, { processing: { remote: {
+        summaryModel: cloudflare ? "gpt-4.1" : withImages ? "catalog.ai.gpt-5-6-luna" : "gpt-5-6-luna", reasoningEffort: cloudflare ? "none" : "medium",
       } } });
       const patchId = uuidV7(); const hash = "a".repeat(64);
       await sync.putTranscriptChunk(owner, meetingId, patchId, 0, hash, {
@@ -651,6 +652,33 @@ function audioMethod(value: Awaited<ReturnType<typeof setup>>, result?: (body: R
 }
 
 describe("audio summary jobs", () => {
+  it("freezes resolved preferences and recovers accepted requests without model discovery", async () => {
+    const value = await setup();
+    const { store, vaultId, meetingId } = value;
+    try {
+      await addRecording(value);
+      const { method } = audioMethod(value);
+      const resolve = vi.spyOn(method, "resolvePreferences");
+      const service = new SummaryService(store.sync, store.accountSettings, [method]);
+      const preferences = { outputLanguage: "fr" as const,
+        summary: { style: "eventTimeline" as const },
+        processing: { location: "remote" as const, remote: { workflow: "combined" as const } } };
+      const request = { id: uuidV7(), input: await recordingInput(value), preferences };
+      const job = await service.start(owner, vaultId, meetingId, request);
+      expect(job).toMatchObject({ outputLanguage: "fr", stage: "generating",
+        settings: { model: "gemini-3-8-flash", detail: "max" } });
+      await store.accountSettings.update(owner.userId, { summary: { style: "concise" }, outputLanguage: "en" });
+      resolve.mockRejectedValue(new Error("catalog offline"));
+      expect(await service.start(owner, vaultId, meetingId, request)).toEqual(job);
+      expect(resolve).toHaveBeenCalledTimes(1);
+      await expect(service.start(owner, vaultId, meetingId, { ...request, preferences: { ...preferences, outputLanguage: "ja" } }))
+        .rejects.toMatchObject({ status: 409 });
+      await service.cancel(owner, vaultId, meetingId, job.id);
+      expect(await service.retry(owner, vaultId, meetingId, job.id, { id: uuidV7() }))
+        .toMatchObject({ settings: job.settings, input: job.input, outputLanguage: job.outputLanguage });
+    } finally { await store.close?.(); }
+  });
+
   it.each(["summary", "transcript", "input"])("rebases %s guards on explicit retry and still rejects later changes", async (changed) => {
     const value = await setup(); const { store, sync, vaultId, meetingId } = value;
     try {
@@ -693,7 +721,7 @@ describe("audio summary jobs", () => {
     const value = await setup(); const { store, sync, vaultId, meetingId } = value;
     try {
       await addRecording(value);
-      await store.accountSettings.update(owner.userId, { summary: { mode: "remote" } });
+      await store.accountSettings.update(owner.userId, { processing: { location: "remote" } });
       const legacyVersion = await store.sync.withIdentity(owner, async (scoped) => {
         const context = await collectSummaryInput(scoped, vaultId, meetingId, false);
         const records = await scoped.listRecordings(meetingId, 0, 200);
@@ -732,8 +760,8 @@ describe("audio summary jobs", () => {
           contentType: "image/webp", storageKey: "unused", contentLength: 1, contentHash: "a".repeat(64), ocrText: "slide evidence", caption: "Excluded audio image description" }],
       }));
       vi.spyOn(sync, "readFileContent").mockResolvedValue({ file: {} as never, upstream: new Response(new Uint8Array([1])), contentType: "image/webp" });
-      await store.accountSettings.update(owner.userId, { summary: { mode: "remote", remote: {
-        model: "catalog.ai.gemini-3-8-flash", detail: "medium", transcriptionModel: null,
+      await store.accountSettings.update(owner.userId, { summary: { style: "standard" }, processing: { location: "remote", remote: {
+        summaryModel: "catalog.ai.gemini-3-8-flash", transcriptionModel: null,
       } } });
       const { method, calls } = audioMethod(value);
       const service = new SummaryService(store.sync, store.accountSettings, [method]);
@@ -741,9 +769,9 @@ describe("audio summary jobs", () => {
       const job = await service.start(owner, vaultId, meetingId, request);
       expect(await service.start(owner, vaultId, meetingId, request)).toEqual(job);
       expect(job.settings.detail).toBe("low");
-      await store.accountSettings.update(owner.userId, { summary: { mode: "local" } });
-      expect(await store.accountSettings.get(owner.userId)).toMatchObject({ summary: { mode: "local", remote: {
-        detail: "medium", model: "catalog.ai.gemini-3-8-flash", reasoningEffort: "medium",
+      await store.accountSettings.update(owner.userId, { processing: { location: "local" } });
+      expect(await store.accountSettings.get(owner.userId)).toMatchObject({ summary: { style: "standard" }, processing: { location: "local", remote: {
+        summaryModel: "catalog.ai.gemini-3-8-flash",
       } } });
       await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
       expect(await service.status(owner, vaultId, meetingId)).toMatchObject({ method: "audio", status: "succeeded" });
@@ -791,7 +819,7 @@ describe("audio summary jobs", () => {
     try {
       const { method, transport } = audioMethod(value);
       const service = new SummaryService(store.sync, store.accountSettings, [method]);
-      await store.accountSettings.update(owner.userId, { summary: { mode: "remote" } });
+      await store.accountSettings.update(owner.userId, { processing: { location: "remote" } });
       await expect(store.sync.withIdentity(owner, (scoped) => method.version(scoped, vaultId, meetingId, {
         type: "recording", recordings: [],
       }))).rejects.toThrow("summary_audio_empty");
@@ -801,7 +829,7 @@ describe("audio summary jobs", () => {
       await expect(store.sync.withIdentity(owner, (scoped) => method.version(scoped, vaultId, meetingId))).rejects.toThrow("summary_audio_too_long");
       const other = { ...owner, userId: testUserID("other") };
       await seedHeaderIdentity(store, value.path, other);
-      await store.accountSettings.update(other.userId, { summary: { mode: "remote" } });
+      await store.accountSettings.update(other.userId, { processing: { location: "remote" } });
       const callsBeforeUnauthorizedStart = transport.mock.calls.length;
       await expect(service.start(other, vaultId, meetingId, await audioRequest(value))).rejects.toMatchObject({ status: 404 });
       await expect(store.sync.withIdentity({ ...owner, userId: testUserID("other") }, (scoped) => method.version(scoped, vaultId, meetingId))).rejects.toThrow("summary_meeting_unavailable");
@@ -814,7 +842,7 @@ describe("audio summary jobs", () => {
     try {
       await addRecording(value, ["mic"]);
       const read = vi.spyOn(sync, "recordingContent");
-      await store.accountSettings.update(owner.userId, { summary: { mode: "remote", remote: { model, transcriptionModel: null } } });
+      await store.accountSettings.update(owner.userId, { processing: { location: "remote", remote: { summaryModel: model, transcriptionModel: null } } });
       const { method, calls } = audioMethod(value, undefined, ["gemini-3-8-flash", "gpt-5-6-terra", "codex-auto-review"]);
       const service = new SummaryService(store.sync, store.accountSettings, [method]);
       await expect(service.start(owner, vaultId, meetingId, await audioRequest(value)))
@@ -831,7 +859,7 @@ describe("audio summary jobs", () => {
         id: uuidV7(), entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 0,
         data: { title: "Manual", document: JSON.stringify({ ...doc(), title: "Manual" }), createdAt: new Date().toISOString() },
       }] });
-      await store.accountSettings.update(owner.userId, { summary: { mode: "remote", remote: { transcriptionModel: null } } });
+      await store.accountSettings.update(owner.userId, { processing: { location: "remote", remote: { transcriptionModel: null } } });
       const { method } = audioMethod(value, () => {
         if (scenario === "size") return new Response(null, { status: 413 });
         if (scenario === "invalid") return Response.json({ choices: [{ finish_reason: "stop", message: { content: "not-json" } }] });
@@ -872,8 +900,8 @@ async function recordingInput(value: Awaited<ReturnType<typeof setup>>, transcri
 
 async function audioRequest(value: Awaited<ReturnType<typeof setup>>, id = uuidV7(), detail?: "low" | "medium" | "high" | "xhigh" | "max") {
   const settings = await value.store.accountSettings.get(owner.userId) ?? DEFAULT_ACCOUNT_SETTINGS;
-  return { id, input: await recordingInput(value), model: settings.summary.remote.model,
-    detail: detail ?? settings.summary.remote.detail, outputLanguage: settings.outputLanguage };
+  return { id, input: await recordingInput(value), model: (settings.processing.remote.summaryModel ?? "gemini-3-8-flash"),
+    detail: detail ?? summaryStyleDetail(settings.summary.style), outputLanguage: settings.outputLanguage };
 }
 
 describe("staged summary generation", () => {
@@ -883,7 +911,7 @@ describe("staged summary generation", () => {
       const service = new SummaryService(value.store.sync, value.store.accountSettings, [value.method]);
       const request = { id: uuidV7() };
       const accepted = await service.start(owner, value.vaultId, value.meetingId, request);
-      await value.store.accountSettings.update(owner.userId, { summary: { mode: "remote" } });
+      await value.store.accountSettings.update(owner.userId, { processing: { location: "remote" } });
       expect(await service.start(owner, value.vaultId, value.meetingId, request)).toEqual(accepted);
       await expect(service.start(owner, value.vaultId, value.meetingId, { id: uuidV7() }))
         .rejects.toMatchObject({ code: "summary_input_required" });
@@ -1008,7 +1036,7 @@ describe("staged summary generation", () => {
       finish(doc()); await processing;
       expect((await service.status(owner, vaultId, meetingId))?.status).toBe("cancelled");
       expect(await store.sync.withIdentity(owner, (scoped) => scoped.listSummaryVersions(vaultId, meetingId, 100))).toEqual([]);
-      await store.accountSettings.update(owner.userId, { outputLanguage: "fr", summary: { remote: { detail: "low" } } });
+      await store.accountSettings.update(owner.userId, { outputLanguage: "fr", summary: { style: "concise" } });
       const id = uuidV7(); const retried = await service.retry(owner, vaultId, meetingId, job.id, { id });
       expect(retried).toMatchObject({ outputLanguage: "en", settings: job.settings, inputVersion: job.inputVersion });
       expect(await service.retry(owner, vaultId, meetingId, job.id, { id })).toEqual(retried);

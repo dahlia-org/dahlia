@@ -1,14 +1,14 @@
 // Run pnpm dev:client and open /tests/browser/account-settings.html. No backend is contacted.
 import { createRoot } from "react-dom/client";
 import { ServerSummarySettings } from "../../src/client/SummaryGeneration";
-import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettingsPatch } from "../../src/account-settings-model";
+import { DEFAULT_ACCOUNT_SETTINGS, accountSettingsSchema, type AccountSettingsPatch } from "../../src/account-settings-model";
 import { accountSettingsEvent } from "../../src/client/live-data";
 import { modelList } from "../../src/ai-gateway/models";
 import "../../src/client/styles.css";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
 let settings = structuredClone(DEFAULT_ACCOUNT_SETTINGS);
-settings.summary.mode = "remote";
+settings.processing.location = "remote";
 let remoteCapability = false;
 let modelReads = 0;
 let failPatch = false;
@@ -36,16 +36,14 @@ window.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     patches.push(patch);
     if (failPatch) return Response.json({ error: "save_failed" }, { status: 503 });
     await patchGate?.promise;
-    const remote = { ...settings.summary.remote,
-      ...(patch.summary?.remote?.detail === undefined ? {} : { detail: patch.summary.remote.detail }),
-      ...(patch.summary?.remote?.model === undefined ? {} : { model: patch.summary.remote.model }),
-      ...(patch.summary?.remote?.reasoningEffort === undefined ? {} : { reasoningEffort: patch.summary.remote.reasoningEffort }),
-      ...(typeof patch.summary?.remote?.transcriptionModel === "string"
-        ? { transcriptionModel: patch.summary.remote.transcriptionModel } : {}) };
-    if (patch.summary?.remote?.transcriptionModel === null) delete remote.transcriptionModel;
-    settings = { ...settings, ...patch, summary: {
-      mode: patch.summary?.mode ?? settings.summary.mode, remote,
-    } };
+    const remote = { ...settings.processing.remote, ...patch.processing?.remote };
+    for (const key of ["summaryModel", "transcriptionModel", "reasoningEffort"] as const) {
+      if (remote[key] === null) delete remote[key];
+    }
+    settings = accountSettingsSchema.parse({ ...settings, ...patch,
+      summary: { ...settings.summary, ...patch.summary },
+      processing: { ...settings.processing, ...patch.processing, remote },
+    });
     return Response.json({ settings });
   }
   const snapshot = structuredClone(settings);
@@ -83,36 +81,37 @@ async function run() {
   first.render(<ServerSummarySettings />);
   await ready();
   choose("Processing location", "local");
-  await until(() => settings.summary.mode === "local");
+  await until(() => settings.processing.location === "local");
   first.unmount();
 
   remoteCapability = true;
-  settings.summary.mode = "remote";
-  settings.summary.remote.transcriptionModel = "catalog.ai.unavailable";
+  settings.processing.location = "remote";
+  settings.processing.remote.transcriptionModel = "catalog.ai.unavailable";
   createRoot(document.getElementById("root")!).render(<ServerSummarySettings />);
   await ready();
   await until(() => document.querySelectorAll('[role="combobox"]').length >= 5 && modelReads === 1);
-  assert(select("Transcription model").value === "", "Unavailable transcription model appeared selected");
+  document.querySelector("details")!.open = true;
+  assert(select("Transcription model").value === "catalog.ai.unavailable", "Unavailable explicit choice was silently replaced");
   choose("Transcription model", "gemini-3-8-flash");
-  await until(() => settings.summary.remote.transcriptionModel === "gemini-3-8-flash");
+  await until(() => settings.processing.remote.transcriptionModel === "gemini-3-8-flash");
   await ready();
-  choose("Detail", "low");
-  await until(() => settings.summary.remote.detail === "low");
+  choose("Summary style", "concise");
+  await until(() => settings.summary.style === "concise");
   await ready();
-  assert(JSON.stringify(patches.at(-1)) === '{"summary":{"remote":{"detail":"low"}}}', "Detail PATCH must be remote");
+  assert(JSON.stringify(patches.at(-1)) === '{"summary":{"style":"concise"}}', "Style PATCH must be account scoped");
 
   // A notification starts an old GET while PATCH is in flight. Its response must not undo the save.
   patchGate = gate();
-  choose("Detail", "medium");
-  await until(() => patches.at(-1)?.summary?.remote?.detail === "medium");
+  choose("Summary style", "standard");
+  await until(() => patches.at(-1)?.summary?.style === "standard");
   const staleRead = gate(); readGate = staleRead; readStarted = false;
   window.dispatchEvent(new Event(accountSettingsEvent));
   await until(() => readStarted);
   patchGate.release(); patchGate = undefined;
-  await until(() => select("Detail").value === "medium");
+  await until(() => select("Summary style").value === "standard");
   staleRead.release();
   await ready();
-  assert(select("Detail").value === "medium", "Old GET overwrote PATCH");
+  assert(select("Summary style").value === "standard", "Old GET overwrote PATCH");
   assert(modelReads === 1, "Settings updates reloaded models");
 
   settings.outputLanguage = "fr";
@@ -120,13 +119,13 @@ async function run() {
   await until(() => select("Output language").value === "fr");
   await ready();
   failPatch = true;
-  choose("Detail", "high");
+  choose("Summary style", "detailed");
   await until(() => document.querySelector('[role="alert"]'));
   await ready();
-  assert(select("Detail").value === "medium", "Failed save discarded confirmed settings");
+  assert(select("Summary style").value === "standard", "Failed save discarded confirmed settings");
   failPatch = false;
-  choose("Detail", "high");
-  await until(() => select("Detail").value === "high");
+  choose("Summary style", "detailed");
+  await until(() => select("Summary style").value === "detailed");
   await ready();
   assert(!document.querySelector('[role="alert"]'), "Retry did not clear the save error");
   assert(modelReads === 1, "Retry reloaded models");

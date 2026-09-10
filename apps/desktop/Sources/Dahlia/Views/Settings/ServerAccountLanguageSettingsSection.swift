@@ -11,20 +11,6 @@ struct ServerAccountLanguageSettingsSection: View {
 
     var body: some View {
         Section {
-            if state.settings != nil {
-                Picker(L10n.summaryOutputLanguage, selection: outputLanguage) {
-                    ForEach(SummaryLanguage.allCases) { language in
-                        Text(language.displayName).tag(language)
-                    }
-                }
-                .disabled(!state.canEdit)
-            }
-        } header: {
-            Text(L10n.summaryOutputLanguage)
-        } footer: {
-            Text(L10n.serverAccountSettingsDescription)
-        }
-        Section {
             if let settings = state.settings {
                 DisclosureGroup {
                     Picker(L10n.languageRange, selection: languageScope) {
@@ -61,28 +47,11 @@ struct ServerAccountLanguageSettingsSection: View {
                     .foregroundStyle(.secondary)
             }
 
-            if state.isLoading || state.isSaving {
-                ProgressView().controlSize(.small)
-            }
-            if let error = state.errorMessage {
-                Text(error).foregroundStyle(.secondary)
-                Button(L10n.retry) { model.refresh(connectionID: connectionID) }
-                    .disabled(state.isLoading || state.isSaving)
-            }
-        } header: {
-            Text(L10n.imageAnalysisLanguages)
+        } footer: {
+            Text(L10n.settingsAnalysisLanguagesDescription)
         }
         .task(id: connectionID) {
-            if let task = model.refresh(connectionID: connectionID) { await task.value }
             languages = await AppLanguageCatalog.load()
-        }
-    }
-
-    private var outputLanguage: Binding<SummaryLanguage> {
-        Binding {
-            state.settings?.outputLanguage ?? .ja
-        } set: { language in
-            model.save(.init(outputLanguage: language), connectionID: connectionID)
         }
     }
 

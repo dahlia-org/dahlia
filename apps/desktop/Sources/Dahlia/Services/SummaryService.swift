@@ -30,7 +30,18 @@ enum SummaryService {
             recordingSessions: recordingSessions
         ))
 
-        let responseText = try await CodexAppServerService.shared.generate(.init(
+        let service: CodexAppServerService
+        if generationSettings.runtimeProvider.accountConnectionID == nil {
+            guard LocalAccountAISettings(defaults: .standard).runtimeProvider == generationSettings.runtimeProvider else {
+                throw CodexConfigurationError.providerChanged(generationSettings.runtimeProvider.displayName)
+            }
+            try await CodexRuntimeContextCoordinator.macInference.activate(provider: generationSettings.runtimeProvider)
+            service = .macInference
+        } else {
+            // Previously captured Server-Gateway requests retain their original provider.
+            service = .shared
+        }
+        let responseText = try await service.generate(.init(
             model: generationSettings.modelID,
             reasoningEffort: generationSettings.reasoningEffort,
             developerInstructions: systemPrompt,

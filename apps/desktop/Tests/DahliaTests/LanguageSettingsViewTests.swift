@@ -8,11 +8,11 @@
         @Test
         func localeOptionsRetainOnlyTheirOwnSelection() {
             let enabledLocales = [Locale(identifier: "en_US")]
-            let transcriptionOptions = LanguageSettingsView.localeOptions(
+            let transcriptionOptions = SettingsLanguageOptions.locales(
                 from: enabledLocales,
                 including: "ja_JP"
             )
-            let liveSubtitleOptions = LanguageSettingsView.localeOptions(
+            let liveSubtitleOptions = SettingsLanguageOptions.locales(
                 from: enabledLocales,
                 including: "fr_FR"
             )

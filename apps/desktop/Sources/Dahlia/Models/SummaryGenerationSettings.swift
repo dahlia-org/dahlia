@@ -7,30 +7,31 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
     let detailLevelInstruction: String
     let languageDisplayName: String
     let runtimeProvider: CodexRuntimeProvider
+    var accountConnectionID: UUID?
+
+    var sourceAccountConnectionID: UUID? { accountConnectionID ?? runtimeProvider.accountConnectionID }
 
     @MainActor
     static func current(
         _ settings: AppSettings = .shared,
         vaultAISettings: VaultAISettingsModel = .shared,
-        detailLevel: SummaryDetailLevel? = nil
+        detailLevel: SummaryDetailLevel? = nil,
+        accountSettings: ServerAccountSettings? = nil
     ) -> Self {
-        let usesVaultSettings = vaultAISettings.vaultID == settings.currentVault?.id
-        let localProvider = usesVaultSettings
-            ? vaultAISettings.localProvider
-            : settings.configuredCodexAccountProvider ?? settings.codexAccountProvider
-        let databricksProfile = usesVaultSettings
-            ? vaultAISettings.databricksProfile
-            : settings.codexDatabricksProfile
+        let account = accountSettings ?? settings.currentVault?.accountConnectionId.flatMap {
+            ServerAccountSettingsModel.shared.state(for: $0).settings
+        }
         return Self(
             modelID: settings.codexModelID.nilIfBlank,
             reasoningEffort: settings.codexReasoningEffort,
-            detailLevelInstruction: (detailLevel ?? settings.summaryDetailLevel).instruction,
-            languageDisplayName: settings.llmSummaryLanguage.displayName,
+            detailLevelInstruction: (detailLevel ?? account?.summary?.detailLevel ?? settings.summaryDetailLevel).instruction,
+            languageDisplayName: (account?.outputLanguage ?? settings.llmSummaryLanguage).displayName,
             runtimeProvider: CodexRuntimeProvider(
-                accountConnectionID: usesVaultSettings ? vaultAISettings.accountConnectionID : nil,
-                localProvider: localProvider,
-                databricksProfile: databricksProfile
-            )
+                accountConnectionID: nil,
+                localProvider: vaultAISettings.localProvider,
+                databricksProfile: vaultAISettings.databricksProfile
+            ),
+            accountConnectionID: settings.currentVault?.accountConnectionId
         )
     }
 
@@ -41,7 +42,19 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
             reasoningEffort: reasoningEffort,
             detailLevelInstruction: detailLevel.instruction,
             languageDisplayName: languageDisplayName,
-            runtimeProvider: runtimeProvider
+            runtimeProvider: runtimeProvider,
+            accountConnectionID: accountConnectionID
+        )
+    }
+
+    func applying(accountSettings: ServerAccountSettings, connectionID: UUID, detailLevel: SummaryDetailLevel?) -> Self {
+        Self(
+            modelID: modelID,
+            reasoningEffort: reasoningEffort,
+            detailLevelInstruction: (detailLevel ?? accountSettings.summary?.detailLevel)?.instruction ?? detailLevelInstruction,
+            languageDisplayName: accountSettings.outputLanguage.displayName,
+            runtimeProvider: runtimeProvider,
+            accountConnectionID: connectionID
         )
     }
 

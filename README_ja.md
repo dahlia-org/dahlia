@@ -32,7 +32,9 @@ macOS ネイティブのリアルタイム文字起こしアプリです。マ�
 
 新規インストールでは、Dahlia が `Documents/Dahlia` を作成して `Default` という保管庫として登録し、自動的に開きます。既存の保管庫登録は維持されます。自動設定に失敗した場合は保管庫管理画面が表示され、フォルダを手動で選択できます。
 
-Dahlia は、同梱 Codex の状態と認証を他の Codex アプリや Codex CLI から分離して管理します。**設定 → AI 接続**で、ChatGPT Subscription を選ぶか、「プロファイルを新規作成」から Databricks CLI プロファイル名と workspace URL を入力してブラウザでサインインします。既存の Databricks OAuth プロファイルも引き続き選択できます。Databricks CLI は同梱せず、未導入時は設定画面から公式手順・ライセンスを確認し、Terminal で `brew install databricks/tap/databricks` を実行できます。ChatGPT 認証は Dahlia の Application Support ディレクトリに保存され、Databricks のトークンは Databricks CLI が管理します。
+Dahlia は、同梱 Codex の状態と認証を他の Codex アプリや Codex CLI から分離して管理します。**設定 → このMacのAI → AI接続**で、ChatGPT Subscription を選ぶか、「プロファイルを新規作成」から Databricks CLI プロファイル名と workspace URL を入力してブラウザでサインインします。既存の Databricks OAuth プロファイルも引き続き選択できます。Databricks CLI は同梱せず、未導入時は設定画面から公式手順・ライセンスを確認し、Terminal で `brew install databricks/tap/databricks` を実行できます。ChatGPT 認証は Dahlia の Application Support ディレクトリに保存され、Databricks のトークンは Databricks CLI が管理します。
+
+設定は「このMac」（一般・録音・ライブ字幕・スクリーンショット・AI・アクセス権限）と「アカウント設定 → 要約と画像解析」を分けています。開いている保管庫を切り替えずに編集対象アカウントを選べます。生成結果の好みはそのアカウントの保管庫に共通で、サーバーアカウントでは他の端末にも同期されます。AIの接続先とモデルはMac全体で共通です。表示と対象言語は「一般」、録音・字幕の認識言語はそれぞれの画面で設定します。設定検索は画面名だけでなく項目名でも探せます。検索の調整・ベータ機能・開発者設定・診断は「詳細」を開くと表示されます。以前の設定へのリンクも、統合後の画面に引き継がれます。
 
 バッチ文字起こしの自動判定を初めて使うときは、固定リビジョンの多言語 WhisperKit `tiny` モデルと tokenizer を取得し、Dahlia の Application Support ディレクトリへキャッシュします。言語判定と文字起こしはデバイス上で行い、録音音声はアップロードしません。
 

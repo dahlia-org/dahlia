@@ -17,7 +17,7 @@
             let processing = Self.processing(serverSettings: settings)
             let restored = try JSONDecoder().decode(RecordingProcessing.self, from: JSONEncoder().encode(processing))
             #expect(restored.usesServerSummary == true)
-            #expect(restored.serverSettings?.summary?.legacyMethod == "transcript")
+            #expect(restored.serverSettings?.legacyMethod == "transcript")
         }
 
         @Test(arguments: [String?.none, "pending", "processing", "succeeded", "failed", "cancelled"])

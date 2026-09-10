@@ -15,7 +15,7 @@ final class VaultAISettingsModel {
         }
     }
 
-    /// These two settings belong to the Local Account and survive vault activation.
+    /// Mac-wide inference preferences survive activation of either local or Server Vaults.
     var localProvider: AIAccountProvider {
         didSet { persistLocalAccountSettingsIfChanged(oldValue, localProvider) }
     }

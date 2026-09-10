@@ -160,7 +160,7 @@ import DahliaRuntimeSupport
                 }
                 if request.url!.path == "/api/v1/account/settings" {
                     return (200, [:], Data("""
-                    {"settings":{"summary":{"mode":"remote","remote":{"detail":"high","model":"gemini-3-8-flash","reasoningEffort":"medium","transcriptionModel":"gemini-3-8-flash"}},
+                    {"settings":{"summary":{"style":"detailed"},"processing":{"location":"remote","remote":{"workflow":"transcribeThenSummarize"}},
                     "outputLanguage":"ja","analysisLanguages":{"scope":"all","identifiers":[]}}}
                     """.utf8))
                 }
@@ -308,8 +308,8 @@ import DahliaRuntimeSupport
                 """.utf8
             )
             let response = try JSONDecoder().decode(ServerAccountSettings.Response.self, from: body)
-            #expect(response.settings?.summary?.remote.model == "catalog.ai.model")
-            #expect(response.settings?.summary?.mode == .local)
+            #expect(response.settings?.processing?.remote.summaryModel == "catalog.ai.model")
+            #expect(response.settings?.processing?.location == .local)
             let patch = try JSONEncoder().encode(ServerAccountSettings.Patch(outputLanguage: .en))
             let json = try #require(JSONSerialization.jsonObject(with: patch) as? [String: String])
             #expect(json == ["outputLanguage": "en"])
@@ -319,19 +319,19 @@ import DahliaRuntimeSupport
         func summaryDetailIsIndependentOfMethod() throws {
             let body = Data(
                 """
-                {"method":"audio","detail":"standard","methodSettings":{
+                {"outputLanguage":"ja","analysisLanguages":{"scope":"all","identifiers":[]},"summary":{"method":"audio","detail":"standard","methodSettings":{
                   "transcript":{"model":"gpt-5.4","reasoningEffort":"high"},
                   "audio":{"model":"gemini-3-8-flash","reasoningEffort":"medium"}
-                }}
+                }}}
                 """.utf8
             )
-            var summary = try JSONDecoder().decode(ServerAccountSettings.Summary.self, from: body)
-            #expect(summary.remote.model == "gemini-3-8-flash")
-            #expect(summary.remote.reasoningEffort == "medium")
-            #expect(summary.mode == .remote)
-            #expect(summary.detailLevel == .standard)
-            summary.mode = .local
-            #expect(summary.detailLevel == .standard)
+            var settings = try JSONDecoder().decode(ServerAccountSettings.self, from: body)
+            #expect(settings.processing?.remote.summaryModel == "gemini-3-8-flash")
+            #expect(settings.processing?.remote.reasoningEffort == "medium")
+            #expect(settings.processing?.location == .remote)
+            #expect(settings.summary?.detailLevel == .standard)
+            settings.processing?.location = .local
+            #expect(settings.summary?.detailLevel == .standard)
         }
 
         @Test
@@ -398,11 +398,11 @@ import DahliaRuntimeSupport
         }
 
         @Test
-        func encodesRemoteSummaryDetailPatch() throws {
-            let patch = ServerAccountSettings.Patch(summary: .init(remote: .init(detail: "low")))
+        func encodesAccountStylePatch() throws {
+            let patch = ServerAccountSettings.Patch(summary: .init(style: .concise))
             let data = try JSONEncoder().encode(patch)
-            let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: [String: [String: String]]])
-            #expect(json == ["summary": ["remote": ["detail": "low"]]])
+            let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: [String: String]])
+            #expect(json == ["summary": ["style": "concise"]])
             let response = try JSONDecoder().decode(ServerAccountSettings.Response.self, from: Data(#"{"settings":null}"#.utf8))
             #expect(response.settings == nil)
         }
@@ -449,9 +449,10 @@ import DahliaRuntimeSupport
                 ).insert(db)
             }
             let settings = ServerAccountSettings(
-                summary: .init(mode: .remote, remote: .init(
-                    detail: "max", model: "summary-model", reasoningEffort: "low", transcriptionModel: "gemini-audio"
+                processing: .init(location: .remote, remote: .init(
+                    summaryModel: "summary-model", transcriptionModel: "gemini-audio", reasoningEffort: "low"
                 )),
+                summary: .init(style: .eventTimeline),
                 outputLanguage: .en,
                 analysisLanguages: .init(scope: .all, identifiers: [])
             )
@@ -527,16 +528,16 @@ import DahliaRuntimeSupport
             }
             #expect(stages.withLock { $0.last } == "saving")
             let data = try #require(bodies.withLock { $0.first })
-            let body = try JSONDecoder().decode(Operations.StartSummaryJob.Input.Body.JsonPayload.Value1Payload.self, from: data)
-            guard case let .case2(input) = body.input else { Issue.record("Expected recording input")
-                return
-            }
-            #expect(input.recordings.count == 1)
-            #expect(input.recordings.first?.micFileId == fileID.uuidString.lowercased())
-            #expect(input.transcriptionModel == "gemini-audio")
-            #expect(body.model == "summary-model")
-            #expect(body.reasoningEffort?.rawValue == "low")
-            #expect(body.outputLanguage.rawValue == "en")
+            let body = try JSONDecoder().decode(ServerSummaryService.Request.self, from: data)
+            #expect(body.input.type == "recording")
+            #expect(body.input.recordings?.count == 1)
+            #expect(body.input.recordings?.first?.micFileId == fileID.uuidString.lowercased())
+            #expect(body.input.transcriptionModel == nil)
+            #expect(body.preferences?.processing.remote.transcriptionModel == "gemini-audio")
+            #expect(body.preferences?.processing.remote.summaryModel == "summary-model")
+            #expect(body.preferences?.processing.remote.reasoningEffort == "low")
+            #expect(body.preferences?.outputLanguage == .en)
+            #expect(body.preferences?.summary.style == .eventTimeline)
             let sessions = try await queue.read { db in try RecordingSessionRecord.fetchAll(db) }
             #expect((sessions.first { $0.id == first }?.batchCompletedAt != nil) == (status == "succeeded"))
             #expect(sessions.first { $0.id == later }?.batchCompletedAt == nil)

@@ -9,7 +9,7 @@ import { refreshData, useLiveJSON } from "./live-data";
 import { encodeId } from "../typeid";
 import { uuidV7 } from "../id";
 import type { GatewayModelList } from "../ai-gateway/backend";
-import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings, type AccountSettingsPatch } from "../account-settings-model";
+import { DEFAULT_ACCOUNT_SETTINGS, summaryStyles, summaryStyleDetail, type AccountSettings, type AccountSettingsPatch } from "../account-settings-model";
 type SummaryRequest = operations["startSummaryJob"]["requestBody"]["content"]["application/json"];
 import { isAudioSummaryModel, isSummaryModel } from "../summary/audio-model";
 import { CODEX_AUTO_REVIEW_ALIAS } from "../ai-gateway/model-alias";
@@ -26,6 +26,13 @@ type Job = components["schemas"]["SummaryJob"] | null;
 const details = ["low", "medium", "high", "xhigh", "max"] as const;
 const detailLabel = (detail: typeof details[number]) => ({ low: uiText("Concise", "簡潔"), medium: uiText("Standard", "標準"),
   high: uiText("Detailed", "詳細"), xhigh: uiText("Event session", "イベントセッション"), max: uiText("Event Play-by-Play", "イベント実況中継") })[detail];
+const styleDescription = (style: AccountSettings["summary"]["style"]) => ({
+  concise: uiText("Decisions, issues, and next actions, with minimal detail.", "決定事項・課題・次のアクションを短くまとめます。"),
+  standard: uiText("Main topics with enough context to understand them.", "主な話題を、必要な背景とともにバランスよくまとめます。"),
+  detailed: uiText("Topics, background, reasoning, open questions, and next steps.", "話題ごとの背景・理由・未解決事項まで詳しく残します。"),
+  eventSummary: uiText("Key claims, demonstrations, and takeaways from a talk or session.", "講演やセッションの主張・デモ・学びを流れに沿ってまとめます。"),
+  eventTimeline: uiText("Follow an event in order, including demonstrations and Q&A.", "発言やデモ、質疑応答を時系列で詳しく辿れる形にします。"),
+})[style];
 
 function useSummaryMethods() {
   const capabilities = useLiveJSON<{ meetingSummaryGeneration?: { version: number; sources: string[] } }>(apiQuery("getCapabilities", {}));
@@ -35,14 +42,14 @@ function useSummaryMethods() {
 
 export function ServerSummarySettings() {
   const capabilities = useSummaryMethods();
-  const methods = capabilities.methods;
-  const remoteSupported = methods.includes("audio");
+  const remoteSupported = capabilities.methods.includes("audio");
   const query = useLiveJSON<{ settings: AccountSettings | null }>(apiQuery("getSettings", {}), "account");
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const catalog = useLiveJSON<GatewayModelList>(remoteSupported ? "/api/v1/models" : undefined, "manual");
   const settings = query.data?.settings;
+  const editingDisabled = saving || query.loading || !!query.error;
 
   const save = async (patch: AccountSettingsPatch) => {
     setSaving(true); setSaved(false); setError(undefined);
@@ -54,90 +61,94 @@ export function ServerSummarySettings() {
     finally { setSaving(false); }
   };
   const summary = settings?.summary ?? DEFAULT_ACCOUNT_SETTINGS.summary;
-  const remote = summary.remote;
-  const transcribesFirst = remote.transcriptionModel !== undefined;
-  const saveRemote = (value: Omit<Partial<AccountSettings["summary"]["remote"]>, "transcriptionModel"> & { transcriptionModel?: string | null }) =>
-    save({ summary: { remote: value } });
-  const modelsFor = (transcription: boolean) => catalog.data?.data.filter((model) => model.id !== CODEX_AUTO_REVIEW_ALIAS
-    && isSummaryModel(model.id, catalog.data!, transcription ? "transcript" : "audio")) ?? [];
-  const models = modelsFor(transcribesFirst);
+  const processing = settings?.processing ?? DEFAULT_ACCOUNT_SETTINGS.processing;
+  const remote = processing.remote;
+  const transcribesFirst = remote.workflow === "transcribeThenSummarize";
+  const saveRemote = (value: NonNullable<NonNullable<AccountSettingsPatch["processing"]>["remote"]>) =>
+    save({ processing: { remote: value } });
+  const models = catalog.data?.data.filter((model) => model.id !== CODEX_AUTO_REVIEW_ALIAS
+    && isSummaryModel(model.id, catalog.data!, transcribesFirst ? "transcript" : "audio")) ?? [];
   const audioModels = catalog.data?.data.filter((model) => isAudioSummaryModel(model.id, catalog.data!)) ?? [];
   const selectedTranscriptionModel = audioModels.find((model) => model.id === remote.transcriptionModel
     || remote.transcriptionModel?.endsWith(`.${model.id}`));
-  const selected = models.find((model) => model.id === remote.model || remote.model.endsWith(`.${model.id}`));
-  const metadata = catalog.data?.models.find((model) => model.slug === selected?.id);
+  const selectedSummaryModel = models.find((model) => model.id === remote.summaryModel || remote.summaryModel?.endsWith(`.${model.id}`));
+  const metadata = catalog.data?.models.find((model) => model.slug === selectedSummaryModel?.id);
   const efforts = metadata?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
-  const reasoningEffortFor = (modelID: string) => {
-    const model = catalog.data?.models.find((model) => model.slug === modelID);
-    const supported = model?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
-    if (supported.includes(remote.reasoningEffort)) return remote.reasoningEffort;
-    return (model?.default_reasoning_level ?? supported[0] ?? "none") as typeof remote.reasoningEffort;
-  };
-  const setTranscribesFirst = (enabled: boolean) => {
-    const transcriptionModel = enabled ? audioModels[0]?.id : null;
-    if (transcriptionModel === undefined) return;
-    const nextModels = modelsFor(enabled);
-    const next = nextModels.find((model) => model.id === remote.model || remote.model.endsWith(`.${model.id}`)) ?? nextModels[0];
-    if (!next) return;
-    void saveRemote({ transcriptionModel, model: next.id, reasoningEffort: reasoningEffortFor(next.id) });
-  };
+  if (!query.data) return <section className="section-block settings-section" aria-busy={query.loading}>
+    {query.error ? <p className="error" role="alert">{uiText("Could not load account settings. Your saved preferences have not changed.", "アカウント設定を読み込めませんでした。保存済みの設定は変更されていません。")}
+      <button className="secondary" onClick={query.reload}>{uiText("Retry", "再試行")}</button></p>
+      : <p role="status">{uiText("Loading settings…", "設定を読み込み中…")}</p>}
+  </section>;
   return <>
     <p className="settings-save-status" role="status" data-saved={saved && !saving}>{saving ? uiText("Saving changes…", "変更を保存中…") : saved ? uiText("Changes saved", "変更を保存しました") : uiText("Changes save automatically and apply to your next summary.", "変更は自動で保存され、次回の要約から適用されます。")}</p>
+    {(error || query.error) && <p role="alert" className="error">{error ?? query.error?.message} {query.error && <button className="secondary" onClick={query.reload}>{uiText("Retry", "再試行")}</button>}</p>}
     <section className="section-block settings-section">
-      <h2 className="section-label">{uiText("Output language", "出力言語")}</h2>
-      <p>{uiText("Shared by summaries and image analysis.", "要約と画像解析に共通で使用します。")}</p>
-      <fieldset className="account-settings" disabled={saving || query.loading}>
+      <h2 className="section-label">{uiText("Results", "生成結果")}</h2>
+      <fieldset className="account-settings" disabled={editingDisabled}>
+        <label>{uiText("Summary style", "まとめ方")}<Select value={summary.style}
+          onValueChange={(value) => void save({ summary: { style: value as AccountSettings["summary"]["style"] } })}>
+          {summaryStyles.map((style) => <option key={style} value={style}>{detailLabel(summaryStyleDetail(style))}</option>)}
+        </Select></label>
+        <p>{styleDescription(summary.style)}</p>
         <label>{uiText("Output language", "出力言語")}<Select value={settings?.outputLanguage ?? DEFAULT_ACCOUNT_SETTINGS.outputLanguage}
           onValueChange={(value) => void save({ outputLanguage: value as AccountSettings["outputLanguage"] })}>
           {Object.entries({ ja: "日本語", en: "English", zh: "中文", ko: "한국어", fr: "Français", de: "Deutsch", es: "Español" }).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </Select></label>
+        <p>{uiText("Shared by summaries and image analysis. Speech recognition languages are unchanged.", "出力言語は要約と画像の説明に共通です。音声認識の言語は変更しません。")}</p>
       </fieldset>
     </section>
     <section className="section-block settings-section">
-    <h2 className="section-label">{uiText("Transcription and summary", "文字起こしと要約")}</h2>
-    <p>{uiText("This setting is shared by every device signed in to this Dahlia account.", "この設定はDahliaアカウントにサインインしているすべての端末で共有されます。")}</p>
-    <fieldset className="account-settings" disabled={saving || query.loading}>
-      <label>{uiText("Processing location", "処理する場所")}<Select value={summary.mode}
-        onValueChange={(value) => void save({ summary: { mode: value as AccountSettings["summary"]["mode"] } })}>
-        <option value="local">{uiText("Local (Dahlia for Mac)", "ローカル（Dahlia for Mac）")}</option>
-        {(remoteSupported || summary.mode === "remote") && <option value="remote" disabled={!remoteSupported}>
-          {uiText("Remote (server)", "リモート（サーバー）")}</option>}
-      </Select></label>
-      {summary.mode === "local" && <p>{uiText("Dahlia for Mac creates the transcript and summary. Generation is unavailable on the web.", "Dahlia for Macで文字起こしと要約を作成します。Webからは生成できません。")}</p>}
-      {capabilities.loading && <p role="status">{uiText("Checking server capabilities…", "サーバー機能を確認中…")}</p>}
-      {summary.mode === "remote" && !remoteSupported && !capabilities.loading && <p>{uiText("Remote processing is unavailable on this server.", "このサーバーではリモート処理を利用できません。")}</p>}
-      {capabilities.error && <p role="alert" className="error">{capabilities.error.message} <button className="secondary"
-        onClick={capabilities.reload}>{uiText("Retry", "再試行")}</button></p>}
-      {summary.mode === "remote" && remoteSupported && <>
-      <label><input type="checkbox" checked={transcribesFirst}
-        disabled={catalog.loading || !audioModels.length} onChange={(event) => setTranscribesFirst(event.target.checked)} />
-        {uiText("Transcribe before generating the summary", "先に文字起こしする")}</label>
-      <label>{uiText("Detail", "詳細度")}<Select value={remote.detail}
-        onValueChange={(value) => void saveRemote({ detail: value as AccountSettings["summary"]["remote"]["detail"] })}>
-        {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
-      </Select></label>
-      <label>{uiText("Model", "モデル")}<Select value={selected?.id ?? ""} disabled={catalog.loading || !models.length}
-        onValueChange={(value) => void saveRemote({ model: value, reasoningEffort: reasoningEffortFor(value) })}>
-        {!selected && <option value="" disabled>{uiText("Select an available model", "利用可能なモデルを選択")}</option>}
-        {models.map((model) => <option key={model.id} value={model.id}>{model.display_name}</option>)}
-      </Select></label>
-      {catalog.error && <p role="alert" className="error">{catalog.error.message}</p>}
-      {!catalog.loading && !models.length && <p>{uiText("No models available", "利用可能なモデルがありません")}</p>}
-      <button className="secondary" onClick={catalog.reload} disabled={catalog.loading}>{uiText("Reload models", "モデル一覧を再取得")}</button>
-      <label>{uiText("Reasoning effort", "推論強度")}<Select value={efforts.includes(remote.reasoningEffort) ? remote.reasoningEffort : ""} disabled={!efforts.length}
-        onValueChange={(value) => void saveRemote({ reasoningEffort: value as typeof remote.reasoningEffort })}>
-        {!efforts.includes(remote.reasoningEffort) && <option value="" disabled>{uiText("Select reasoning effort", "推論強度を選択")}</option>}
-        {efforts.map((effort) => <option key={effort}>{effort}</option>)}
-      </Select></label>
-      {transcribesFirst && <label>{uiText("Transcription model", "文字起こしモデル")}<Select
-        value={selectedTranscriptionModel?.id ?? ""} onValueChange={(value) => void saveRemote({ transcriptionModel: value })}>
-        {!selectedTranscriptionModel && <option value="" disabled>{uiText("Select an available model", "利用可能なモデルを選択")}</option>}
-        {audioModels.map((entry) => <option key={entry.id} value={entry.id}>{entry.display_name}</option>)}
-      </Select></label>}
-      </>}
-    </fieldset>
+      <h2 className="section-label">{uiText("Transcription and summary", "文字起こしと要約")}</h2>
+      <fieldset className="account-settings" disabled={editingDisabled}>
+        <label>{uiText("Processing location", "処理する場所")}<Select value={processing.location}
+          onValueChange={(value) => void save({ processing: { location: value as AccountSettings["processing"]["location"] } })}>
+          <option value="local">{uiText("Dahlia for Mac", "Dahlia for Mac")}</option>
+          {(remoteSupported || processing.location === "remote") && <option value="remote" disabled={!remoteSupported}>
+            {uiText("Server", "サーバー")}</option>}
+        </Select></label>
+        {processing.location === "local" && <p>{uiText("Dahlia for Mac transcribes locally and sends transcripts and images to the AI provider configured on that Mac. Generation is unavailable on the web.", "Dahlia for Macで文字起こしし、そのMacに設定したAI接続先へ文字起こしや画像を送って要約します。Webからは生成できません。")}</p>}
+        {processing.location === "remote" && <p>{uiText("Sends recordings to the server for transcription and summarization using its connected AI.", "録音音声をサーバーに送り、サーバーのAI接続先で文字起こしと要約を作成します。")}</p>}
+        {capabilities.loading && <p role="status">{uiText("Checking server capabilities…", "サーバー機能を確認中…")}</p>}
+        {processing.location === "remote" && !remoteSupported && !capabilities.loading && <p>{uiText("Remote processing is unavailable on this server.", "このサーバーではリモート処理を利用できません。")}</p>}
+        {capabilities.error && <p role="alert" className="error">{capabilities.error.message} <button className="secondary"
+          onClick={capabilities.reload}>{uiText("Retry", "再試行")}</button></p>}
+        {processing.location === "remote" && catalog.data && ((remote.summaryModel && !selectedSummaryModel)
+          || (transcribesFirst && remote.transcriptionModel && !selectedTranscriptionModel)) && <p role="status">{uiText(
+          "A selected model is unavailable. Open advanced settings to change it or choose Automatic.",
+          "利用できないモデルが指定されています。詳細設定で変更するか「自動」に戻してください。",
+        )}</p>}
+        {processing.location === "remote" && remoteSupported && <details className="settings-advanced">
+          <summary>{uiText("Advanced server settings", "サーバー処理の詳細設定")}</summary>
+          <p>{uiText("Automatic uses supported product defaults. Explicit selections are retained when switching workflows.", "自動では対応する既定モデルを使用します。処理方式を切り替えても、指定したモデルは保持されます。")}</p>
+          <label>{uiText("Workflow", "処理方式")}<Select value={remote.workflow}
+            onValueChange={(value) => void saveRemote({ workflow: value as typeof remote.workflow })}>
+            <option value="transcribeThenSummarize">{uiText("Transcribe, then summarize", "文字起こししてから要約")}</option>
+            <option value="combined">{uiText("Generate together", "文字起こしと要約を一括生成")}</option>
+          </Select></label>
+          <label>{uiText("Summary model", "要約モデル")}<Select value={selectedSummaryModel?.id ?? remote.summaryModel ?? ""} disabled={catalog.loading}
+            onValueChange={(value) => void saveRemote({ summaryModel: value || null })}>
+            <option value="">{uiText("Automatic", "自動")}</option>
+            {remote.summaryModel && !selectedSummaryModel && <option value={remote.summaryModel} disabled>{remote.summaryModel} — {uiText("Unavailable for this workflow", "この方式では利用不可")}</option>}
+            {models.map((model) => <option key={model.id} value={model.id}>{model.display_name}</option>)}
+          </Select></label>
+          <label>{uiText("Reasoning effort", "推論強度")}<Select value={remote.reasoningEffort ?? ""}
+            onValueChange={(value) => void saveRemote({ reasoningEffort: value ? value as typeof remote.reasoningEffort : null })}>
+            <option value="">{uiText("Automatic", "自動")}</option>
+            {remote.reasoningEffort && !efforts.includes(remote.reasoningEffort) && <option value={remote.reasoningEffort} disabled>{remote.reasoningEffort} — {uiText("Check model compatibility", "モデルとの対応を確認")}</option>}
+            {efforts.map((effort) => <option key={effort}>{effort}</option>)}
+          </Select></label>
+          {transcribesFirst && <label>{uiText("Transcription model", "文字起こしモデル")}<Select
+            value={selectedTranscriptionModel?.id ?? remote.transcriptionModel ?? ""} onValueChange={(value) => void saveRemote({ transcriptionModel: value || null })}>
+            <option value="">{uiText("Automatic", "自動")}</option>
+            {remote.transcriptionModel && !selectedTranscriptionModel && <option value={remote.transcriptionModel} disabled>{remote.transcriptionModel} — {uiText("Unavailable", "利用不可")}</option>}
+            {audioModels.map((entry) => <option key={entry.id} value={entry.id}>{entry.display_name}</option>)}
+          </Select></label>}
+          {catalog.error && <p role="alert" className="error">{catalog.error.message}</p>}
+          {!catalog.loading && !models.length && <p>{uiText("No models available", "利用可能なモデルがありません")}</p>}
+          <button className="secondary" onClick={catalog.reload} disabled={catalog.loading}>{uiText("Reload models", "モデル一覧を再取得")}</button>
+        </details>}
+      </fieldset>
     </section>
-    {(error || query.error) && <p role="alert" className="error">{error ?? query.error?.message} {query.error && <button className="secondary" onClick={query.reload}>{uiText("Retry", "再試行")}</button>}</p>}
   </>;
 }
 
@@ -154,19 +165,23 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
   const requestID = useRef<string | undefined>(undefined);
   const requestBody = useRef<SummaryRequest | undefined>(undefined);
   const job = query.data?.job;
+  function clearPendingRequest() {
+    requestID.current = undefined;
+    requestBody.current = undefined;
+  }
   useEffect(() => {
     if (!enabled) return;
     const timer = window.setInterval(query.reload, 5000);
     return () => window.clearInterval(timer);
   }, [enabled, meetingId]); // reload uses the query's current queue.
   useEffect(() => {
-    if (job?.id === requestID.current) { requestID.current = undefined; requestBody.current = undefined; }
+    if (job?.id === requestID.current) clearPendingRequest();
     if (job?.status === "succeeded" && completed.current !== job.id) {
       completed.current = job.id; refreshData();
     }
   }, [job?.id, job?.status]);
   if (!enabled) return null;
-  const remoteEnabled = remoteSupported && accountQuery.data?.settings?.summary.mode === "remote";
+  const remoteEnabled = remoteSupported && accountQuery.data?.settings?.processing.location === "remote";
   const active = job?.status === "pending" || job?.status === "processing";
   const start = async () => {
     setStarting(true); setError(undefined);
@@ -175,7 +190,7 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
       if (!requestBody.current) {
         const account = await api.getSettings({});
         const settings = account.settings ?? DEFAULT_ACCOUNT_SETTINGS;
-        if (settings.summary.mode !== "remote") throw new Error(uiText(
+        if (settings.processing.location !== "remote") throw new Error(uiText(
           "This account processes summaries in Dahlia for Mac.",
           "このアカウントはDahlia for Macで要約を処理します。",
         ));
@@ -187,18 +202,16 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
           recordings.push(...page.items.map(({ audio }) => ({ micFileId: audio.mic?.fileId ?? null, systemFileId: audio.system?.fileId ?? null })));
           cursor = page.nextCursor;
         } while (cursor !== null);
-        const input: Extract<SummaryRequest, { input: unknown }>["input"] = { type: "recording", recordings,
-          ...(settings.summary.remote.transcriptionModel ? { transcriptionModel: settings.summary.remote.transcriptionModel } : {}) };
+        const input: Extract<SummaryRequest, { input: unknown }>["input"] = { type: "recording", recordings };
         requestBody.current = { id: requestID.current, input,
-          model: settings.summary.remote.model,
-          detail: (detail || settings.summary.remote.detail) as typeof details[number], outputLanguage: settings.outputLanguage,
-          reasoningEffort: settings.summary.remote.reasoningEffort };
+          preferences: { processing: settings.processing, outputLanguage: settings.outputLanguage,
+            summary: { style: detail ? summaryStyles[details.indexOf(detail as typeof details[number])]! : settings.summary.style } } };
       }
       await api.startSummaryJob({ params: { path: { meetingId } }, body: requestBody.current });
-      requestID.current = undefined; requestBody.current = undefined; query.reload();
+      clearPendingRequest(); query.reload();
     } catch (error) {
       if (error instanceof RequestError && error.status === 400) {
-        requestID.current = undefined; requestBody.current = undefined;
+        clearPendingRequest();
       }
       setError(error instanceof Error ? summaryErrors[error.message] ?? error.message : uiText("Could not start summary", "要約を開始できません")); query.reload();
     }
@@ -212,7 +225,7 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
       const params = { path: { meetingId, jobId: job.id } };
       if (action === "retry") await api.retrySummaryJob({ params, body: { id: requestID.current } });
       else await api.cancelSummaryJob({ params });
-      requestID.current = undefined; requestBody.current = undefined; query.reload();
+      clearPendingRequest(); query.reload();
     } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     finally { setStarting(false); }
   };
@@ -234,7 +247,7 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
     <div className="generation-copy"><strong><MenuIcon name="sparkles" />{uiText("AI summary", "AI 要約")}</strong><span>{uiText("Turn this conversation into clear next steps.", "会話のポイントと、次のアクションを整理します。")}</span></div>
     <div className="generation-controls">
     <Select aria-label={uiText("Summary detail", "要約の詳細度")} value={detail} disabled={active || starting}
-      onValueChange={(value) => { setDetail(value); requestID.current = undefined; requestBody.current = undefined; }}>
+      onValueChange={(value) => { setDetail(value); clearPendingRequest(); }}>
       <option value="">{uiText("Account default", "アカウント設定")}</option>
       {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
     </Select>

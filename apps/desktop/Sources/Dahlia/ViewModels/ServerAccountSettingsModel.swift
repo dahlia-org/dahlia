@@ -123,7 +123,12 @@ final class ServerAccountSettingsModel {
                 try Task.checkCancellation()
                 if settings == nil {
                     settings = try await Self.patch(
-                        .init(outputLanguage: initial.outputLanguage, analysisLanguages: initial.analysisLanguages, initialize: true),
+                        .init(
+                            outputLanguage: initial.outputLanguage,
+                            analysisLanguages: initial.analysisLanguages,
+                            initialize: true,
+                            summary: .init(style: initial.summary?.style)
+                        ),
                         client: client, connectionID: connectionID, origin: connection.origin
                     )
                 }

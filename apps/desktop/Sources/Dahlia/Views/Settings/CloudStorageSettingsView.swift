@@ -8,6 +8,7 @@ struct CloudStorageSettingsView: View {
     @State private var isShowingExportFolderAlert = false
     @State private var googleOAuthConsent = GoogleOAuthConsentState()
     @State private var vaultSettings = VaultAISettingsModel.shared
+    @State private var accountController = DahliaCloudAccountController.shared
 
     private var accountScope: AppAccountScope {
         AppAccountScope(connectionID: vaultSettings.accountConnectionID)
@@ -16,6 +17,9 @@ struct CloudStorageSettingsView: View {
     var body: some View {
         Form {
             Section {
+                LabeledContent(L10n.appliesToAccount, value: accountController.connections.first {
+                    $0.id == vaultSettings.accountConnectionID
+                }?.displayName ?? (vaultSettings.accountConnectionID == nil ? L10n.localAccount : L10n.dahliaAccount))
                 connectionRow
 
                 if driveStore.isAuthorized {
@@ -58,18 +62,6 @@ struct CloudStorageSettingsView: View {
                 }
             }
 
-            Section {
-                LabeledContent {
-                    Button(L10n.comingSoon) {}
-                        .buttonStyle(.dahlia())
-                        .disabled(true)
-                } label: {
-                    Text(L10n.notion)
-                    Text(L10n.notionExportDescription)
-                }
-            } header: {
-                Text(L10n.notion)
-            }
         }
         .formStyle(.grouped)
         .task(id: accountScope) {

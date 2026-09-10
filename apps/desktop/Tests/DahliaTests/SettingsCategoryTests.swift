@@ -8,11 +8,22 @@ import Foundation
         @Test
         func groupsContainEveryCategoryOnce() {
             let groupedCategories = SettingsGroup.allCases.flatMap(\.categories)
-            let hiddenCategories: Set<SettingsCategory> = [.dahliaAccounts, .vault, .modelProvider, .aiSummary, .instructions, .mcp]
+            let hiddenCategories: Set<SettingsCategory> = [
+                .dahliaAccounts,
+                .vault,
+                .modelProvider,
+                .aiSummary,
+                .instructions,
+                .mcp,
+                .language,
+                .appearance,
+            ]
             let expectedCategories = SettingsCategory.allCases.filter { !hiddenCategories.contains($0) }
 
             #expect(SettingsCategory.allCases == [
                 .accountsAndVaults,
+                .accountPreferences,
+                .macInference,
                 .general,
                 .dahliaAccounts,
                 .language,
@@ -43,17 +54,17 @@ import Foundation
             #expect(!groupedCategories.contains(.aiSummary))
             #expect(SettingsGroup.allCases.last == .advanced)
             #expect(SettingsGroup.app.categories == [
-                .accountsAndVaults,
                 .general,
-                .language,
-                .appearance,
+                .transcription,
+                .liveSubtitles,
+                .screenshots,
+                .macInference,
                 .permissions,
-                .backups,
-                .search,
             ])
-            #expect(SettingsGroup.meetings.label == L10n.meetings)
-            #expect(SettingsGroup.meetings.categories == [.transcription, .liveSubtitles, .screenshots])
-            #expect(SettingsGroup.advanced.categories == [.betaFeatures, .developer, .audioDiagnostics])
+            #expect(SettingsGroup.account.categories == [.accountPreferences])
+            #expect(SettingsGroup.app.label == L10n.thisMac)
+            #expect(SettingsGroup.data.categories == [.accountsAndVaults, .backups])
+            #expect(SettingsGroup.advanced.categories == [.search, .betaFeatures, .developer, .audioDiagnostics])
             #expect(!AppSettings.defaultCustomerIntelligenceBetaEnabled)
             #expect(!AppSettings.defaultConversationAnalyticsBetaEnabled)
             #expect(DetailTab.allCases == [.summary, .notes, .screenshots, .transcript, .conversationAnalytics])
@@ -61,13 +72,36 @@ import Foundation
 
         @Test
         func hiddenSelectionsResolveToVisibleSettings() {
-            #expect(SettingsNavigation.visibleSelection(.instructions) == .transcription)
-            #expect(SettingsNavigation.visibleSelection(.mcp) == .transcription)
-            #expect(SettingsNavigation.visibleSelection(.aiSummary) == .transcription)
+            #expect(SettingsNavigation.visibleSelection(.language) == .general)
+            #expect(SettingsNavigation.visibleSelection(.appearance) == .general)
+            #expect(SettingsNavigation.visibleSelection(.instructions) == .accountPreferences)
+            #expect(SettingsNavigation.visibleSelection(.mcp) == .accountPreferences)
+            #expect(SettingsNavigation.visibleSelection(.aiSummary) == .accountPreferences)
             #expect(SettingsNavigation.visibleSelection(.dahliaAccounts) == .accountsAndVaults)
             #expect(SettingsNavigation.visibleSelection(.vault) == .accountsAndVaults)
-            #expect(SettingsNavigation.visibleSelection(.modelProvider) == .accountsAndVaults)
+            #expect(SettingsNavigation.visibleSelection(.modelProvider) == .macInference)
             #expect(SettingsNavigation.visibleSelection(.calendar) == .calendar)
+        }
+
+        @Test
+        func searchFindsControlsAndDoesNotDependOnTechnicalCategoryNames() {
+            #expect(SettingsCategory.general.matches(L10n.appLanguage))
+            #expect(SettingsCategory.transcription.matches(L10n.batchAudioRetentionPeriod))
+            #expect(SettingsCategory.liveSubtitles.matches(L10n.translationTargetLanguage))
+            #expect(SettingsCategory.macInference.matches("  chatGPT \n "))
+            #expect(SettingsCategory.cloudStorage.matches("google"))
+            #expect(SettingsCategory.accountPreferences.matches(L10n.imageAnalysisLanguages))
+            #expect(SettingsCategory.general.matches(" \n "))
+            #expect(!SettingsCategory.general.matches("not-a-setting"))
+            #expect(!SettingsCategory.macInference.matches("ChatGPT not-a-setting"))
+        }
+
+        @Test
+        func everySavedCategoryResolvesToAnAccessibleDestination() {
+            let visible = Set(SettingsGroup.allCases.flatMap(\.categories))
+            for category in SettingsCategory.allCases {
+                #expect(visible.contains(SettingsNavigation.visibleSelection(category)))
+            }
         }
 
         @Test
@@ -80,7 +114,7 @@ import Foundation
 
             defaults.set(SettingsCategory.instructions.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
 
-            #expect(SettingsNavigation.savedSelection(in: defaults) == .transcription)
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .accountPreferences)
 
             defaults.set(SettingsCategory.dahliaAccounts.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
             #expect(SettingsNavigation.savedSelection(in: defaults) == .accountsAndVaults)

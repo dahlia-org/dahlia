@@ -31,7 +31,7 @@ struct SummaryGenerationConfirmationView: View {
         let connectionID = AppSettings.shared.currentVault?.accountConnectionId
         let serverDetail = connectionID.flatMap { connectionID -> SummaryDetailLevel? in
             guard let summary = ServerAccountSettingsModel.shared.state(for: connectionID).settings?.summary else { return nil }
-            return summary.mode == .remote ? summary.detailLevel : initialDetailLevel
+            return summary.detailLevel
         }
         _detailLevel = State(initialValue: connectionID == nil ? initialDetailLevel : serverDetail)
         _selectedProjectId = State(initialValue: initialProjectId)

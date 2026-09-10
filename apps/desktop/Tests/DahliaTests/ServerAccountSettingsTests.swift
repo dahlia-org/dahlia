@@ -227,7 +227,7 @@
         }
 
         private nonisolated static func response(_ language: String) -> String {
-            "{\"settings\":{\"summary\":{\"mode\":\"local\",\"remote\":{\"detail\":\"high\",\"model\":\"gemini-3-8-flash\",\"reasoningEffort\":\"medium\",\"transcriptionModel\":\"gemini-3-8-flash\"}},\"outputLanguage\":\"\(language)\",\"analysisLanguages\":{\"scope\":\"all\",\"identifiers\":[]}}}"
+            "{\"settings\":{\"summary\":{\"style\":\"detailed\"},\"processing\":{\"location\":\"local\",\"remote\":{\"workflow\":\"transcribeThenSummarize\"}},\"outputLanguage\":\"\(language)\",\"analysisLanguages\":{\"scope\":\"all\",\"identifiers\":[]}}}"
         }
     }
 

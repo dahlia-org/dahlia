@@ -5,7 +5,7 @@ import type { PostgresDatabase, SQLiteDatabase } from "./db/client";
 import * as postgresSchema from "./db/auth-schema";
 import * as sqliteSchema from "./db/sqlite-schema";
 
-import { accountSettingsSchema, normalizeSummaryDetail, DEFAULT_ACCOUNT_SETTINGS, type AccountSettings, type AccountSettingsPatch } from "./account-settings-model";
+import { accountSettingsSchema, DEFAULT_ACCOUNT_SETTINGS, type AccountSettings, type AccountSettingsPatch } from "./account-settings-model";
 export { accountSettingsPatchSchema, DEFAULT_ACCOUNT_SETTINGS, type AccountSettings, type AccountSettingsPatch } from "./account-settings-model";
 
 export interface AccountSettingsStore {
@@ -30,11 +30,11 @@ export function createAccountSettingsStore(
     const [row] = await connection.select({
       outputLanguage: table.outputLanguage,
       summary: table.summary,
+      processing: table.processing,
       analysisLanguages: table.analysisLanguages,
     }).from(table).where(eq(table.userId, userId));
     if (!row) return null;
-    return accountSettingsSchema.parse({ ...row, summary: { ...row.summary,
-      remote: { ...row.summary.remote, detail: normalizeSummaryDetail(row.summary.remote.detail) } } });
+    return accountSettingsSchema.parse(row);
   };
   return {
     getRevision: (userId) => withUser(userId, async (connection) => {
@@ -43,44 +43,46 @@ export function createAccountSettingsStore(
     }),
     get: (userId) => withUser(userId, (connection) => read(connection, userId)),
     update: (userId, patch, initialize = false) => withUser(userId, async (connection) => {
-      const remotePatch = patch.summary?.remote;
-      const remote: AccountSettings["summary"]["remote"] = { ...DEFAULT_ACCOUNT_SETTINGS.summary.remote };
-      if (remotePatch?.detail !== undefined) remote.detail = remotePatch.detail;
-      if (remotePatch?.model !== undefined) remote.model = remotePatch.model;
-      if (remotePatch?.reasoningEffort !== undefined) remote.reasoningEffort = remotePatch.reasoningEffort;
-      if (remotePatch?.transcriptionModel === null) delete remote.transcriptionModel;
-      else if (remotePatch?.transcriptionModel !== undefined) remote.transcriptionModel = remotePatch.transcriptionModel;
+      const remote = { ...DEFAULT_ACCOUNT_SETTINGS.processing.remote, ...patch.processing?.remote };
+      for (const key of ["summaryModel", "transcriptionModel", "reasoningEffort"] as const) {
+        if (remote[key] === null) delete remote[key];
+      }
       const values = {
         userId, outputLanguage: patch.outputLanguage ?? DEFAULT_ACCOUNT_SETTINGS.outputLanguage,
         analysisLanguages: patch.analysisLanguages ?? DEFAULT_ACCOUNT_SETTINGS.analysisLanguages,
-        summary: { mode: patch.summary?.mode ?? DEFAULT_ACCOUNT_SETTINGS.summary.mode, remote },
+        summary: { ...DEFAULT_ACCOUNT_SETTINGS.summary, ...patch.summary },
+        processing: { location: patch.processing?.location ?? DEFAULT_ACCOUNT_SETTINGS.processing.location,
+          remote: remote as AccountSettings["processing"]["remote"] },
       };
       // Update only supplied leaves against the locked current row, never a fetched snapshot.
-      let summary: SQL = sql`${table.summary}`;
+      const documents = { summary: sql`${table.summary}`, processing: sql`${table.processing}` };
       const differences: SQL[] = [];
-      const setLeaf = (path: string[], value: string | null) => {
+      const setLeaf = (document: keyof typeof documents, path: string[], value: string | null) => {
+        const column = table[document];
+        const current = documents[document];
         if (isPostgres) {
           const jsonPath = sql`ARRAY[${sql.join(path.map((part) => sql`${part}`), sql`, `)}]::text[]`;
           if (value === null) {
-            differences.push(sql`${table.summary} #> ${jsonPath} IS NOT NULL`);
-            summary = sql`${summary} #- ${jsonPath}`;
+            differences.push(sql`${column} #> ${jsonPath} IS NOT NULL`);
+            documents[document] = sql`${current} #- ${jsonPath}`;
           } else {
-            differences.push(sql`${table.summary} #>> ${jsonPath} IS DISTINCT FROM ${value}`);
-            summary = sql`jsonb_set(${summary}, ${jsonPath}, ${JSON.stringify(value)}::jsonb)`;
+            differences.push(sql`${column} #>> ${jsonPath} IS DISTINCT FROM ${value}`);
+            documents[document] = sql`jsonb_set(${current}, ${jsonPath}, ${JSON.stringify(value)}::jsonb)`;
           }
           return;
         }
         const jsonPath = "$." + path.join(".");
         if (value === null) {
-          differences.push(sql`json_type(${table.summary}, ${jsonPath}) IS NOT NULL`);
-          summary = sql`json_remove(${summary}, ${jsonPath})`;
+          differences.push(sql`json_type(${column}, ${jsonPath}) IS NOT NULL`);
+          documents[document] = sql`json_remove(${current}, ${jsonPath})`;
         } else {
-          differences.push(sql`json_extract(${table.summary}, ${jsonPath}) IS NOT ${value}`);
-          summary = sql`json_set(${summary}, ${jsonPath}, ${value})`;
+          differences.push(sql`json_extract(${column}, ${jsonPath}) IS NOT ${value}`);
+          documents[document] = sql`json_set(${current}, ${jsonPath}, ${value})`;
         }
       };
-      if (patch.summary?.mode !== undefined) setLeaf(["mode"], patch.summary.mode);
-      for (const [key, value] of Object.entries(patch.summary?.remote ?? {})) setLeaf(["remote", key], value);
+      if (patch.summary?.style !== undefined) setLeaf("summary", ["style"], patch.summary.style);
+      if (patch.processing?.location !== undefined) setLeaf("processing", ["location"], patch.processing.location);
+      for (const [key, value] of Object.entries(patch.processing?.remote ?? {})) setLeaf("processing", ["remote", key], value);
       if (patch.outputLanguage !== undefined) differences.push(sql`${table.outputLanguage} <> ${patch.outputLanguage}`);
       if (patch.analysisLanguages !== undefined) differences.push(isPostgres
         ? sql`${table.analysisLanguages} IS DISTINCT FROM ${JSON.stringify(patch.analysisLanguages)}::jsonb`
@@ -88,7 +90,8 @@ export function createAccountSettingsStore(
       const changes = {
         ...(patch.outputLanguage !== undefined ? { outputLanguage: patch.outputLanguage } : {}),
         ...(patch.analysisLanguages !== undefined ? { analysisLanguages: patch.analysisLanguages } : {}),
-        ...(patch.summary !== undefined ? { summary } : {}),
+        ...(patch.summary !== undefined ? { summary: documents.summary } : {}),
+        ...(patch.processing !== undefined ? { processing: documents.processing } : {}),
         revision: sql`${table.revision} + 1`,
       };
       const insert = connection.insert(table).values(values);

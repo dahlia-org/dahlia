@@ -1,4 +1,5 @@
 import { testUserID } from "./public-test-client";
+import { accountSettingsSchema } from "../src/account-settings-model";
 import type { AuthStore } from "../src/auth/store";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../src/account-settings";
 
@@ -11,18 +12,15 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
       get: (userId) => Promise.resolve(settings.get(userId) ?? null),
       update: (userId, patch, initialize) => {
         const current = settings.get(userId) ?? DEFAULT_ACCOUNT_SETTINGS;
-        const remote: AccountSettings["summary"]["remote"] = { ...current.summary.remote,
-          ...(patch.summary?.remote?.detail === undefined ? {} : { detail: patch.summary.remote.detail }),
-          ...(patch.summary?.remote?.model === undefined ? {} : { model: patch.summary.remote.model }),
-          ...(patch.summary?.remote?.reasoningEffort === undefined ? {} : { reasoningEffort: patch.summary.remote.reasoningEffort }),
-          ...(typeof patch.summary?.remote?.transcriptionModel === "string"
-            ? { transcriptionModel: patch.summary.remote.transcriptionModel } : {}) };
-        if (patch.summary?.remote?.transcriptionModel === null) delete remote.transcriptionModel;
+        const remote = { ...current.processing.remote, ...patch.processing?.remote };
+        for (const key of ["summaryModel", "transcriptionModel", "reasoningEffort"] as const) {
+          if (remote[key] === null) delete remote[key];
+        }
         const value = initialize && settings.has(userId) ? settings.get(userId)!
-          : { ...current, ...patch, summary: {
-            mode: patch.summary?.mode ?? current.summary.mode,
-            remote,
-          } };
+          : accountSettingsSchema.parse({ ...current, ...patch,
+            summary: { ...current.summary, ...patch.summary },
+            processing: { ...current.processing, ...patch.processing, remote },
+          });
         settings.set(userId, value);
         return Promise.resolve(value);
       },

@@ -1517,22 +1517,26 @@ export interface components {
             settings: {
                 /** @enum {string} */
                 outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
+                processing: {
+                    /** @enum {string} */
+                    location: "local" | "remote";
+                    remote: {
+                        /** @enum {string} */
+                        workflow: "transcribeThenSummarize" | "combined";
+                        summaryModel?: string;
+                        transcriptionModel?: string;
+                        /** @enum {string} */
+                        reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                    };
+                };
+                summary: {
+                    /** @enum {string} */
+                    style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
+                };
                 analysisLanguages: {
                     /** @enum {string} */
                     scope: "all" | "selected";
                     identifiers: string[];
-                };
-                summary: {
-                    /** @enum {string} */
-                    mode: "local" | "remote";
-                    remote: {
-                        model: string;
-                        /** @enum {string} */
-                        reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-                        /** @enum {string} */
-                        detail: "low" | "medium" | "high" | "xhigh" | "max";
-                        transcriptionModel?: string;
-                    };
                 };
             } | null;
         };
@@ -2614,14 +2618,18 @@ export interface operations {
                     };
                     summary?: {
                         /** @enum {string} */
-                        mode?: "local" | "remote";
+                        style?: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
+                    };
+                    processing?: {
+                        /** @enum {string} */
+                        location?: "local" | "remote";
                         remote?: {
-                            model?: string;
                             /** @enum {string} */
-                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-                            /** @enum {string} */
-                            detail?: "low" | "medium" | "high" | "xhigh" | "max";
+                            workflow?: "transcribeThenSummarize" | "combined";
+                            summaryModel?: string | null;
                             transcriptionModel?: string | null;
+                            /** @enum {string|null} */
+                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | null;
                         };
                     };
                     initialize?: boolean;
@@ -3036,6 +3044,40 @@ export interface operations {
                     detail?: "low" | "medium" | "high" | "xhigh" | "max";
                     /** @enum {string} */
                     outputLanguage?: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
+                } | {
+                    id: string;
+                    input: {
+                        /** @enum {string} */
+                        type: "transcript";
+                        version: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "recording";
+                        recordings: {
+                            micFileId: string | null;
+                            systemFileId: string | null;
+                        }[];
+                    };
+                    preferences: {
+                        /** @enum {string} */
+                        outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
+                        processing: {
+                            /** @enum {string} */
+                            location: "local" | "remote";
+                            remote: {
+                                /** @enum {string} */
+                                workflow: "transcribeThenSummarize" | "combined";
+                                summaryModel?: string;
+                                transcriptionModel?: string;
+                                /** @enum {string} */
+                                reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                            };
+                        };
+                        summary: {
+                            /** @enum {string} */
+                            style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
+                        };
+                    };
                 };
             };
         };

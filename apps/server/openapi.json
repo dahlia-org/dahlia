@@ -2326,6 +2326,81 @@
                   "es"
                 ]
               },
+              "processing": {
+                "type": "object",
+                "properties": {
+                  "location": {
+                    "type": "string",
+                    "enum": [
+                      "local",
+                      "remote"
+                    ]
+                  },
+                  "remote": {
+                    "type": "object",
+                    "properties": {
+                      "workflow": {
+                        "type": "string",
+                        "enum": [
+                          "transcribeThenSummarize",
+                          "combined"
+                        ]
+                      },
+                      "summaryModel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "transcriptionModel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "reasoningEffort": {
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "minimal",
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max",
+                          "ultra"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "workflow"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "location",
+                  "remote"
+                ],
+                "additionalProperties": false
+              },
+              "summary": {
+                "type": "object",
+                "properties": {
+                  "style": {
+                    "type": "string",
+                    "enum": [
+                      "concise",
+                      "standard",
+                      "detailed",
+                      "eventSummary",
+                      "eventTimeline"
+                    ]
+                  }
+                },
+                "required": [
+                  "style"
+                ],
+                "additionalProperties": false
+              },
               "analysisLanguages": {
                 "type": "object",
                 "properties": {
@@ -2350,73 +2425,13 @@
                   "identifiers"
                 ],
                 "additionalProperties": false
-              },
-              "summary": {
-                "type": "object",
-                "properties": {
-                  "mode": {
-                    "type": "string",
-                    "enum": [
-                      "local",
-                      "remote"
-                    ]
-                  },
-                  "remote": {
-                    "type": "object",
-                    "properties": {
-                      "model": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "reasoningEffort": {
-                        "type": "string",
-                        "enum": [
-                          "none",
-                          "minimal",
-                          "low",
-                          "medium",
-                          "high",
-                          "xhigh",
-                          "max",
-                          "ultra"
-                        ]
-                      },
-                      "detail": {
-                        "type": "string",
-                        "enum": [
-                          "low",
-                          "medium",
-                          "high",
-                          "xhigh",
-                          "max"
-                        ]
-                      },
-                      "transcriptionModel": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      }
-                    },
-                    "required": [
-                      "model",
-                      "reasoningEffort",
-                      "detail"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "required": [
-                  "mode",
-                  "remote"
-                ],
-                "additionalProperties": false
               }
             },
             "required": [
               "outputLanguage",
-              "analysisLanguages",
-              "summary"
+              "processing",
+              "summary",
+              "analysisLanguages"
             ],
             "additionalProperties": false
           }
@@ -6799,7 +6814,23 @@
                   "summary": {
                     "type": "object",
                     "properties": {
-                      "mode": {
+                      "style": {
+                        "type": "string",
+                        "enum": [
+                          "concise",
+                          "standard",
+                          "detailed",
+                          "eventSummary",
+                          "eventTimeline"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "processing": {
+                    "type": "object",
+                    "properties": {
+                      "location": {
                         "type": "string",
                         "enum": [
                           "local",
@@ -6809,33 +6840,20 @@
                       "remote": {
                         "type": "object",
                         "properties": {
-                          "model": {
+                          "workflow": {
                             "type": "string",
+                            "enum": [
+                              "transcribeThenSummarize",
+                              "combined"
+                            ]
+                          },
+                          "summaryModel": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
                             "minLength": 1,
                             "maxLength": 200
-                          },
-                          "reasoningEffort": {
-                            "type": "string",
-                            "enum": [
-                              "none",
-                              "minimal",
-                              "low",
-                              "medium",
-                              "high",
-                              "xhigh",
-                              "max",
-                              "ultra"
-                            ]
-                          },
-                          "detail": {
-                            "type": "string",
-                            "enum": [
-                              "low",
-                              "medium",
-                              "high",
-                              "xhigh",
-                              "max"
-                            ]
                           },
                           "transcriptionModel": {
                             "type": [
@@ -6844,6 +6862,23 @@
                             ],
                             "minLength": 1,
                             "maxLength": 200
+                          },
+                          "reasoningEffort": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "enum": [
+                              "none",
+                              "minimal",
+                              "low",
+                              "medium",
+                              "high",
+                              "xhigh",
+                              "max",
+                              "ultra",
+                              null
+                            ]
                           }
                         },
                         "additionalProperties": false
@@ -7821,6 +7856,189 @@
                     },
                     "required": [
                       "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^sjob_[0-7][0-9abcdefghjkmnpqrstvwxyz]{9}[ef][0-9abcdefghjkmnpqrstvwxyz]{2}[89abrstv][0-9abcdefghjkmnpqrstvwxyz]{12}$"
+                      },
+                      "input": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "transcript"
+                                ]
+                              },
+                              "version": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "version"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "recording"
+                                ]
+                              },
+                              "recordings": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "micFileId": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "pattern": "^file_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                                    },
+                                    "systemFileId": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "pattern": "^file_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                                    }
+                                  },
+                                  "required": [
+                                    "micFileId",
+                                    "systemFileId"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "minItems": 1,
+                                "maxItems": 1000
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "recordings"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "preferences": {
+                        "type": "object",
+                        "properties": {
+                          "outputLanguage": {
+                            "type": "string",
+                            "enum": [
+                              "ja",
+                              "en",
+                              "zh",
+                              "ko",
+                              "fr",
+                              "de",
+                              "es"
+                            ]
+                          },
+                          "processing": {
+                            "type": "object",
+                            "properties": {
+                              "location": {
+                                "type": "string",
+                                "enum": [
+                                  "local",
+                                  "remote"
+                                ]
+                              },
+                              "remote": {
+                                "type": "object",
+                                "properties": {
+                                  "workflow": {
+                                    "type": "string",
+                                    "enum": [
+                                      "transcribeThenSummarize",
+                                      "combined"
+                                    ]
+                                  },
+                                  "summaryModel": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "transcriptionModel": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "reasoningEffort": {
+                                    "type": "string",
+                                    "enum": [
+                                      "none",
+                                      "minimal",
+                                      "low",
+                                      "medium",
+                                      "high",
+                                      "xhigh",
+                                      "max",
+                                      "ultra"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "workflow"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "location",
+                              "remote"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "summary": {
+                            "type": "object",
+                            "properties": {
+                              "style": {
+                                "type": "string",
+                                "enum": [
+                                  "concise",
+                                  "standard",
+                                  "detailed",
+                                  "eventSummary",
+                                  "eventTimeline"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "style"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "outputLanguage",
+                          "processing",
+                          "summary"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "input",
+                      "preferences"
                     ],
                     "additionalProperties": false
                   }

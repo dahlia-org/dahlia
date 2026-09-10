@@ -3,6 +3,7 @@ import GRDB
 
 actor CodexRuntimeContextCoordinator {
     static let shared = CodexRuntimeContextCoordinator()
+    static let macInference = CodexRuntimeContextCoordinator(service: .macInference, contextStore: .macInference)
 
     private var repository: MeetingRepository?
     private let configurationManager: CodexConfigurationManager
@@ -33,6 +34,10 @@ actor CodexRuntimeContextCoordinator {
             localProvider: settings.localProvider,
             databricksProfile: settings.databricksProfile
         )
+        try await activate(provider: provider)
+    }
+
+    func activate(provider: CodexRuntimeProvider) async throws {
         guard !contextStore.isConfigured
             || contextStore.provider != provider
             || configuredProvider != provider
