@@ -51,6 +51,7 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
     revokeDahliaSession: () => Promise.resolve(false),
     listServerUsers: () => Promise.resolve([]),
     listServerOrganizations: () => Promise.resolve([]),
+    getServerOrganization: () => Promise.resolve(null),
     listAdminUsers: () => Promise.resolve([]),
     isAdminUser: () => Promise.resolve(false),
     addAdminUser: () => Promise.resolve(null),

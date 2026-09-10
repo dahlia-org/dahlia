@@ -136,3 +136,31 @@ describe("administration", () => {
     })).status).toBe(409);
   });
 });
+
+
+it.each(["node", "worker"])("opens organization directory details only for administrators through %s", async (runtime) => {
+  const { store } = administrativeStore();
+  const id = "019d4a01-2000-7000-8000-000000000001";
+  const member = { id: "019d4a01-2000-7000-8000-000000000002", userId: "019d4a01-2000-7000-8000-000000000003", role: "member", name: "Member", email: "member@example.com" };
+  const calls: unknown[] = [];
+  store.getServerOrganization = (organizationId, limit, membersOffset, teamsOffset) => {
+    calls.push([organizationId, limit, membersOffset, teamsOffset]);
+    return Promise.resolve(organizationId === id ? { id, name: "Other organization", slug: "other", members: Array.from({ length: 101 }, () => member), teams: [] } : null);
+  };
+  const app = createApp({ config, authStore: store });
+  const worker = createWorkerHandler(async () => app);
+  const fetchWorker = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+  const send = (path = id, headers: Record<string, string> = ownerHeaders) => {
+    const request = new Request(`${config.baseUrl}/api/v1/admin/organizations/${path}`, { headers });
+    return runtime === "node" ? app.request(request) : fetchWorker(request, {} as Cloudflare.Env, {} as ExecutionContext);
+  };
+  const response = await send(`${id}?membersOffset=100&teamsOffset=200`);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ name: "Other organization", members: Array.from({ length: 100 }, () => member), hasMoreMembers: true, hasMoreTeams: false });
+  expect(calls).toEqual([[id, 101, 100, 200]]);
+  expect((await send(id, { ...ownerHeaders, "X-Forwarded-Email": "member@example.com" })).status).toBe(403);
+  expect((await send(id, {})).status).toBe(401);
+  expect(calls).toHaveLength(1);
+  expect((await send(`${id}?membersOffset=-1`)).status).toBe(400);
+  expect((await send("019d4a01-2000-7000-8000-000000000099")).status).toBe(404);
+});

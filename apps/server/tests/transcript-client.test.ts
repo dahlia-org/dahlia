@@ -11,15 +11,16 @@ it.each([
   [null, "2026-09-09T00:00:00Z", "Recent generation activity"],
   [null, "2026-09-08T23:54:59Z", "No recent generation activity"],
   [null, null, "Activity unknown"],
-])("renders activity for endedAt=%s and latestSegmentCreatedAt=%s", (endedAt, latestSegmentCreatedAt, label) => {
+])("renders speaker badges without activity status for endedAt=%s and latestSegmentCreatedAt=%s", (endedAt, latestSegmentCreatedAt, label) => {
   vi.stubGlobal("navigator", { language: "en" });
   vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-09T00:00:00Z"));
-  const query = { data: { transcript: { endedAt, latestSegmentCreatedAt }, items: [] },
+  const query = { data: { transcript: { endedAt, latestSegmentCreatedAt }, items: [{ segmentId: "sample", startedAt: "2026-09-09T00:00:00Z", speakerLabel: "Participant A", text: "Preview transcript" }] },
     error: undefined, loading: false, reload: vi.fn(), replace: vi.fn() };
   vi.spyOn(liveData, "useLiveQuery").mockReturnValue(query);
   vi.spyOn(liveData, "useLivePage").mockReturnValue({ ...query, loadingMore: false, loadMore: vi.fn() });
-  expect(renderToStaticMarkup(createElement(TranscriptHistory, { meetingId: "meeting", timeBase: "2026-09-09T00:00:00Z" })))
-    .toContain(`>${label}</span>`);
+  const html = renderToStaticMarkup(createElement(TranscriptHistory, { meetingId: "meeting", timeBase: "2026-09-09T00:00:00Z" }));
+  expect(html).not.toContain(label);
+  expect(html).toContain('<span class="transcript-speaker">Participant A</span>Preview transcript');
 });
 
 it("retains the visible page depth and rejects mixed versions during refresh", async () => {

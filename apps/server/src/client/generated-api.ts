@@ -171,6 +171,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/organizations/{organizationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Organization directory details; administrator only, independent of membership */
+        get: operations["getServerOrganization"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/account/settings": {
         parameters: {
             query?: never;
@@ -851,6 +868,41 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{vaultId}/permission-targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search own organizations, their teams and co-members; owner only; 50 per type per page */
+        get: operations["searchPermissionTargets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{vaultId}/permissions/users/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Grant read-only access to a fellow organization member; owner only */
+        put: operations["putUserPermission"];
+        post?: never;
+        /** Revoke direct user access; owner only */
+        delete: operations["deleteUserPermission"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2669,6 +2721,46 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    getServerOrganization: {
+        parameters: {
+            query?: {
+                membersOffset?: string;
+                teamsOffset?: string;
+            };
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"] & {
+                        members: {
+                            id: string;
+                            userId: string;
+                            role: string;
+                            name: string;
+                            email: string;
+                        }[];
+                        teams: {
+                            id: string;
+                            name: string;
+                        }[];
+                        hasMoreMembers: boolean;
+                        hasMoreTeams: boolean;
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     getSettings: {
         parameters: {
             query?: never;
@@ -4310,6 +4402,87 @@ export interface operations {
                         }[];
                     };
                 };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    searchPermissionTargets: {
+        parameters: {
+            query?: {
+                q?: string;
+                /** @description Opaque cursor. Pass back unchanged with the original filters. */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                vaultId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            /** @enum {string} */
+                            principalType: "user" | "organization" | "team";
+                            principalId: string;
+                            name: string;
+                            detail: string;
+                        }[];
+                        /** @description Opaque cursor. Pass back unchanged with the original filters. */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    putUserPermission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vaultId: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success; no response body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteUserPermission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vaultId: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success; no response body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Problem"];
         };

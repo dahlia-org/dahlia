@@ -2046,6 +2046,29 @@
         "GET",
         "HEAD"
       ]
+    },
+    {
+      "path": "/api/v1/admin/organizations/:organization",
+      "response": "organization",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/permission-targets",
+      "response": "permissions",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/vaults/:vault/permissions/users/:user",
+      "methods": [
+        "PUT",
+        "DELETE"
+      ]
     }
   ]
 }

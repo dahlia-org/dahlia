@@ -1676,6 +1676,85 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   }, 15000);
 
+  it.each(["node", "worker"])("pages through identically named sharing targets on %s so every grant remains revocable", async (runtime) => {
+    const { store, databasePath } = await setup();
+    await createVault(store);
+    const teamIds: string[] = [];
+    for (let index = 0; index < 51; index++) {
+      const team = (await store.createExternalTeam(owner.userId, "Repeated team"))!;
+      teamIds.push(team.id);
+    }
+    const lastTeamId = teamIds.toSorted().at(-1)!;
+    const service = new MeetingSyncService(store.sync);
+    await service.putMemberPermission(owner, vaultId, "team", lastTeamId);
+    const app = createApp({ config: testConfig(databasePath), authStore: store });
+    const worker = createWorkerHandler(async () => app);
+    const fetchWorker = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+    const request = (path: string, method = "GET"): Promise<Response> => {
+      const req = new Request(`http://localhost:5173/api/v1/vaults/${vaultId}/${path}`, { method, headers: headers() });
+      return Promise.resolve(runtime === "node" ? app.request(req) : fetchWorker(req, {} as Cloudflare.Env, {} as ExecutionContext));
+    };
+    const pageSchema = z.object({ items: z.array(z.object({ principalId: z.string() })), nextCursor: z.string().nullable() });
+    const first = pageSchema.parse(await (await request("permission-targets?q=Repeated%20team")).json());
+    expect(first.items).toHaveLength(50);
+    expect(first.nextCursor).not.toBeNull();
+    expect(first.items.map((item) => item.principalId)).not.toContain(lastTeamId);
+    const second = pageSchema.parse(await (await request(`permission-targets?q=Repeated%20team&cursor=${first.nextCursor}`)).json());
+    expect(second.items).toEqual([{ principalId: lastTeamId }]);
+    expect(second.nextCursor).toBeNull();
+    expect(new Set([...first.items, ...second.items].map((item) => item.principalId)).size).toBe(51);
+    expect((await request(`permissions/teams/${second.items[0]!.principalId}`, "DELETE")).status).toBe(204);
+    expect((await service.listPermissions(owner, vaultId)).some((permission) => permission.principalId === lastTeamId)).toBe(false);
+    for (const cursor of ["-1", "1.5", "abc", "9007199254740992"]) {
+      expect((await request(`permission-targets?cursor=${cursor}`)).status).toBe(400);
+    }
+    await store.close?.();
+  });
+
+  it.each(["node", "worker"])("searches scoped sharing targets and protects direct grants on %s", async (runtime) => {
+    const { store, databasePath } = await setup();
+    await createVault(store);
+    const team = (await store.createExternalTeam(owner.userId, "Design 100%"))!;
+    const app = createApp({ config: testConfig(databasePath), authStore: store });
+    const worker = createWorkerHandler(async () => app);
+    const fetchWorker = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+    const request = async (path: string, method = "GET", user = owner.userId, origin = "http://localhost:5173"): Promise<Response> => {
+      const req = new Request(`http://localhost:5173/api/v1/vaults/${vaultId}/${path}`, { method,
+        headers: { ...headers(), origin, "x-forwarded-user": user, "x-forwarded-email": `${user}@example.com` } });
+      return Promise.resolve(runtime === "node" ? app.request(req) : fetchWorker(req, {} as Cloudflare.Env, {} as ExecutionContext));
+    };
+    expect(await (await request("permission-targets")).json()).toHaveProperty("items", expect.arrayContaining([
+      expect.objectContaining({ principalType: "organization" }),
+      expect.objectContaining({ principalType: "team", principalId: team.id }),
+      expect.objectContaining({ principalType: "user", principalId: other.userId }),
+    ]));
+    expect(await (await request("permission-targets?q=100%25")).json()).toMatchObject({ items: [{ principalId: team.id }] });
+    expect(await (await request("permission-targets?q=does-not-exist")).json()).toEqual({ items: [], nextCursor: null });
+    expect((await request(`permission-targets?q=${"a".repeat(201)}`)).status).toBe(400);
+    expect((await request("permission-targets", "GET", other.userId)).status).toBe(404);
+    expect((await request(`permissions/users/${other.userId}`, "PUT", owner.userId, "https://evil.example")).status).toBe(403);
+    expect((await request(`permissions/users/${other.userId}`, "PUT", other.userId)).status).toBe(404);
+    expect((await request(`permissions/users/${owner.userId}`, "PUT")).status).toBe(404);
+    expect((await request(`permissions/users/${owner.userId}`, "DELETE")).status).toBe(404);
+    expect((await request(`permissions/users/${other.userId}`, "PUT")).status).toBe(204);
+    expect(await store.sync.withIdentity(other, (scoped) => scoped.listVaults())).toMatchObject([{ vaultId, role: "member" }]);
+    expect((await request("permission-targets", "GET", other.userId)).status).toBe(404);
+    const raw = new DatabaseSync(databasePath);
+    raw.prepare("DELETE FROM member WHERE user_id = ?").run(other.userId);
+    // Existing direct grants can be found and revoked after leaving the organization.
+    expect(await (await request("permission-targets")).json()).toHaveProperty("items", expect.arrayContaining([
+      expect.objectContaining({ principalType: "user", principalId: other.userId }),
+    ]));
+    expect((await request(`permissions/users/${other.userId}`, "DELETE")).status).toBe(204);
+    expect((await request(`permissions/users/${other.userId}`, "PUT")).status).toBe(404);
+    const targets = z.object({ items: z.array(z.object({ principalId: z.string() })) }).parse(await (await request("permission-targets")).json());
+    expect(targets.items.some((item) => item.principalId === other.userId || item.principalId === owner.userId)).toBe(false);
+    expect(await store.sync.withIdentity(other, (scoped) => scoped.listVaults())).toEqual([]);
+    expect(await store.sync.withIdentity(owner, (scoped) => scoped.listVaults())).toMatchObject([{ vaultId, role: "owner" }]);
+    raw.close();
+    await store.close?.();
+  });
+
   it("filters Vaults by owner or current organization and Team membership", async () => {
     const { store, databasePath } = await setup();
     await createVault(store);

@@ -26,7 +26,7 @@ async function until(predicate: () => unknown) {
     await new Promise(requestAnimationFrame);
   }
 }
-function title() { return document.querySelector<HTMLInputElement>('input[type="number"]')!; }
+function title() { return document.querySelector<HTMLInputElement>('input[type="range"]')!; }
 function type(value: string) {
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(title(), value);
   title().dispatchEvent(new Event("input", { bubbles: true }));
@@ -35,15 +35,20 @@ async function run() {
   const root = createRoot(document.getElementById("root")!);
   const render = (key: number) => root.render(<main style={{ padding: 24 }}><AdminSearchSettings key={key} /></main>);
   render(0);
-  await until(() => document.querySelectorAll('input[type="number"]').length === 6);
+  await until(() => document.querySelectorAll('input[type="range"]').length === 6);
   assert([...document.querySelectorAll<HTMLInputElement>("input")].map((input) => input.value).join(",") === "5,3,2,1,1,2", "Wrong defaults");
-  assert(title().labels?.[0]?.textContent === "Title", "Missing accessible label");
+  const ranges = [...document.querySelectorAll<HTMLInputElement>('input[type="range"]')];
+  assert(ranges.every((range, index) => index === 0 || range.getBoundingClientRect().top > ranges[index - 1]!.getBoundingClientRect().bottom), "Sliders must form a single vertical column");
+  assert(title().labels?.[0]?.textContent?.startsWith("Title"), "Missing accessible label");
   const form = () => document.querySelector("form")!;
   type("11"); await new Promise(requestAnimationFrame);
-  assert(!form().checkValidity(), "Out-of-range weight accepted");
+  assert(title().value === "10", "Slider did not clamp to maximum");
+  type("0"); await new Promise(requestAnimationFrame);
+  assert(title().value === "1", "Slider did not clamp to minimum");
   type("1.5"); await new Promise(requestAnimationFrame);
-  assert(!form().checkValidity(), "Fractional weight accepted");
+  assert(Number.isInteger(title().valueAsNumber), "Fractional weight accepted");
   type("9"); await new Promise(requestAnimationFrame);
+  assert(title().nextElementSibling?.textContent === "9", "Visible value did not follow slider");
   form().requestSubmit();
   await until(() => document.querySelector('[role="status"]')?.textContent === "Search settings saved.");
   assert(saved.title === 9 && writes === 1, "Save did not reach the API");

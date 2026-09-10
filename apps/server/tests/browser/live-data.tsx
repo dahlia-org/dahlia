@@ -70,6 +70,7 @@ window.fetch = async (input, init) => {
   if (url.pathname === "/api/v1/vaults") return Response.json({ items: vaults });
   if (url.pathname === "/api/v1/vaults/v2/meetings") return Response.json({ items: [] });
   if (url.pathname === "/api/v1/organizations/o1/teams") return Response.json({ items: [], nextCursor: null });
+  if (url.pathname === `${base}/permission-targets`) return Response.json({ items: [{ principalType: "organization", principalId: "o1", name: "Example organization", detail: "example" }] });
   if (url.pathname === `${base}/permissions`) return Response.json({ items: sharingEnabled ? [{ principalType: "organization", principalId: "o1", role: "member" }] : [] });
   if (url.pathname === `${base}/permissions/organizations/o1`) {
     sharingEnabled = request.method === "PUT";
@@ -399,6 +400,8 @@ async function run() {
   document.querySelector<HTMLAnchorElement>('a[href="/vaults/v1"]')!.click();
   await until(() => document.querySelector('input[aria-label="Search meetings"]'));
   button("Permissions").click();
+  await until(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Manage sharing"));
+  button("Manage sharing").click();
   await until(() => document.querySelector<HTMLInputElement>(".share-row input"));
   const shareCheckbox = document.querySelector<HTMLInputElement>(".share-row input")!;
   assert(!shareCheckbox.checked, "Sharing fixture started enabled");
@@ -408,6 +411,7 @@ async function run() {
   assert(shareCheckbox === document.querySelector(".share-row input"), "Sharing update replaced checkbox");
   shareCheckbox.click();
   await until(() => !shareCheckbox.checked && !sharingEnabled);
+  button("Done").click();
   button("Meetings").click();
   await until(() => document.querySelector('input[aria-label="Search meetings"]'));
   const search = document.querySelector<HTMLInputElement>('input[aria-label="Search meetings"]')!;

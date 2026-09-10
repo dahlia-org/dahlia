@@ -70,6 +70,11 @@ export interface AdminUserRecord {
 export interface ServerUserRecord extends AdminUserRecord { role: string | null }
 export interface ServerOrganizationRecord { id: string; name: string; slug: string; memberCount: number; teamCount: number }
 
+export interface ServerOrganizationDetails {
+  id: string; name: string; slug: string;
+  members: OrganizationMemberRecord[]; teams: { id: string; name: string }[];
+}
+
 export type RemoveAdminResult = "removed" | "not_found" | "last_admin";
 
 export interface OrganizationRecord {
@@ -129,6 +134,7 @@ export interface ApplicationStore {
   revokeDahliaSession(userId: string, refreshTokenId: string): Promise<boolean>;
   listServerUsers(limit: number, offset: number): Promise<ServerUserRecord[]>;
   listServerOrganizations(limit: number, offset: number): Promise<ServerOrganizationRecord[]>;
+  getServerOrganization(organizationId: string, limit: number, membersOffset: number, teamsOffset: number): Promise<ServerOrganizationDetails | null>;
   listAdminUsers(): Promise<AdminUserRecord[]>;
   isAdminUser(userId: string): Promise<boolean>;
   addAdminUser(email: string): Promise<AdminUserRecord | null>;
@@ -433,6 +439,20 @@ export function createPostgresApplicationStore(
       memberCount: sql<number>`(select count(*) from ${postgresAuthSchema.member} where ${postgresAuthSchema.member.organizationId} = ${postgresAuthSchema.organization}."id")`.mapWith(Number),
       teamCount: sql<number>`(select count(*) from ${postgresAuthSchema.team} where ${postgresAuthSchema.team.organizationId} = ${postgresAuthSchema.organization}."id")`.mapWith(Number),
     }).from(postgresAuthSchema.organization).orderBy(asc(postgresAuthSchema.organization.name), asc(postgresAuthSchema.organization.id)).limit(limit).offset(offset),
+    async getServerOrganization(organizationId, limit, membersOffset, teamsOffset) {
+      const [organization] = await db.select({ id: postgresAuthSchema.organization.id, name: postgresAuthSchema.organization.name, slug: postgresAuthSchema.organization.slug })
+        .from(postgresAuthSchema.organization).where(eq(postgresAuthSchema.organization.id, organizationId)).limit(1);
+      if (!organization) return null;
+      const members = await db.select({ id: postgresAuthSchema.member.id, userId: postgresAuthSchema.user.id, role: postgresAuthSchema.member.role,
+        name: postgresAuthSchema.user.name, email: postgresAuthSchema.user.email })
+        .from(postgresAuthSchema.member).innerJoin(postgresAuthSchema.user, eq(postgresAuthSchema.member.userId, postgresAuthSchema.user.id))
+        .where(eq(postgresAuthSchema.member.organizationId, organizationId))
+        .orderBy(asc(postgresAuthSchema.user.name), asc(postgresAuthSchema.member.id)).limit(limit).offset(membersOffset);
+      const teams = await db.select({ id: postgresAuthSchema.team.id, name: postgresAuthSchema.team.name })
+        .from(postgresAuthSchema.team).where(eq(postgresAuthSchema.team.organizationId, organizationId))
+        .orderBy(asc(postgresAuthSchema.team.name), asc(postgresAuthSchema.team.id)).limit(limit).offset(teamsOffset);
+      return { ...organization, members, teams };
+    },
     listAdminUsers: () => db.select({
       id: postgresAuthSchema.user.id,
       name: postgresAuthSchema.user.name,
@@ -932,6 +952,20 @@ export function createSqliteApplicationStore(
       memberCount: sql<number>`(select count(*) from ${sqliteAuthSchema.member} where ${sqliteAuthSchema.member.organizationId} = ${sqliteAuthSchema.organization}."id")`.mapWith(Number),
       teamCount: sql<number>`(select count(*) from ${sqliteAuthSchema.team} where ${sqliteAuthSchema.team.organizationId} = ${sqliteAuthSchema.organization}."id")`.mapWith(Number),
     }).from(sqliteAuthSchema.organization).orderBy(asc(sqliteAuthSchema.organization.name), asc(sqliteAuthSchema.organization.id)).limit(limit).offset(offset),
+    async getServerOrganization(organizationId, limit, membersOffset, teamsOffset) {
+      const [organization] = await db.select({ id: sqliteAuthSchema.organization.id, name: sqliteAuthSchema.organization.name, slug: sqliteAuthSchema.organization.slug })
+        .from(sqliteAuthSchema.organization).where(eq(sqliteAuthSchema.organization.id, organizationId)).limit(1);
+      if (!organization) return null;
+      const members = await db.select({ id: sqliteAuthSchema.member.id, userId: sqliteAuthSchema.user.id, role: sqliteAuthSchema.member.role,
+        name: sqliteAuthSchema.user.name, email: sqliteAuthSchema.user.email })
+        .from(sqliteAuthSchema.member).innerJoin(sqliteAuthSchema.user, eq(sqliteAuthSchema.member.userId, sqliteAuthSchema.user.id))
+        .where(eq(sqliteAuthSchema.member.organizationId, organizationId))
+        .orderBy(asc(sqliteAuthSchema.user.name), asc(sqliteAuthSchema.member.id)).limit(limit).offset(membersOffset);
+      const teams = await db.select({ id: sqliteAuthSchema.team.id, name: sqliteAuthSchema.team.name })
+        .from(sqliteAuthSchema.team).where(eq(sqliteAuthSchema.team.organizationId, organizationId))
+        .orderBy(asc(sqliteAuthSchema.team.name), asc(sqliteAuthSchema.team.id)).limit(limit).offset(teamsOffset);
+      return { ...organization, members, teams };
+    },
     listAdminUsers: () => db.select({
       id: sqliteAuthSchema.user.id,
       name: sqliteAuthSchema.user.name,

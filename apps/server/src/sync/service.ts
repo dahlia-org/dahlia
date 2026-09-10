@@ -1157,6 +1157,16 @@ export class MeetingSyncService {
     return { capturedAt: parsed.data[0], screenshotId: parsed.data[1] };
   }
 
+  async searchPermissionTargets(identity: Identity, vaultId: string, query: string, cursor?: string) {
+    const offset = cursor === undefined ? 0 : Number(cursor);
+    if (cursor !== undefined && (!/^(0|[1-9]\d*)$/.test(cursor) || !Number.isSafeInteger(offset))) {
+      throw new RequestError(400, "invalid_permission_target_cursor");
+    }
+    const page = await this.store.withIdentity(identity, (scoped) => scoped.searchPermissionTargets(vaultId, query, offset));
+    if (!page) throw new RequestError(404, "vault_not_found");
+    return page;
+  }
+
   async listPermissions(identity: Identity, vaultId: string) {
     const permissions = await this.store.withIdentity(identity, (scoped) => scoped.listPermissions(vaultId));
     if (!permissions) throw new RequestError(404, "vault_not_found");

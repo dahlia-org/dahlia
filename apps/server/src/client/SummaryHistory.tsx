@@ -27,7 +27,7 @@ export function SummaryHistory({ meetingId, latest, selected, onSelect }: {
     audio: uiText("Audio", "音声"), note: uiText("Notes", "メモ"), context: uiText("Meeting context", "会議情報") };
   const detailLabels: Record<string, string> = { low: uiText("Concise", "簡潔"), medium: uiText("Standard", "標準"),
     high: uiText("Detailed", "詳細"), xhigh: uiText("Event session", "イベントセッション"), max: uiText("Event Play-by-Play", "イベント実況中継") };
-  return <>
+  return <div className="summary-history">
     <div className="history-toolbar">
       <label>{uiText("Version", "バージョン")} <Select value={selected ?? "latest"}
         onValueChange={(value) => onSelect(value === "latest" ? null : Number(value))}>
@@ -66,5 +66,5 @@ export function SummaryHistory({ meetingId, latest, selected, onSelect }: {
       </details>}
       <SummaryContent document={parseSummary(raw)} />
     </> : (selected === null && latest) && <p className="content-empty">{uiText("No summary yet", "要約はまだありません")}</p>}
-  </>;
+  </div>;
 }

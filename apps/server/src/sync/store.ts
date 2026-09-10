@@ -2693,6 +2693,36 @@ function createIdentityStore(
       const rank = new Map(ids.map((id, index) => [id, index]));
       return rows.sort((left, right) => rank.get(left.screenshotId)! - rank.get(right.screenshotId)!).slice(0, limit);
     },
+    async searchPermissionTargets(vaultId, query, offset) {
+      const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
+        .where(and(ownedVault(vaultId), isNull(schema.syncedVault.deletingAt))).limit(1);
+      if (!vault) return null;
+      const organizations = db.select({ id: schema.member.organizationId }).from(schema.member)
+        .where(eq(schema.member.userId, userPrincipalId));
+      const granted = (type: string, id: AnyColumn) => exists(db.select({ id: schema.syncedVaultPermission.principalId })
+        .from(schema.syncedVaultPermission).where(and(eq(schema.syncedVaultPermission.vaultId, vaultId),
+          eq(schema.syncedVaultPermission.principalType, type), eq(schema.syncedVaultPermission.principalId, id),
+          eq(schema.syncedVaultPermission.role, "member"))));
+      const pattern = `%${query.toLowerCase().replace(/[\\%_]/g, "\\$&")}%`;
+      const matches = (column: AnyColumn) => sql`lower(${column}) like ${pattern} escape '\\'`;
+      const organizationsFound = await db.select({ principalId: schema.organization.id, name: schema.organization.name, detail: schema.organization.slug })
+        .from(schema.organization).where(and(or(inArray(schema.organization.id, organizations), granted("organization", schema.organization.id)),
+          or(matches(schema.organization.name), matches(schema.organization.slug)))).orderBy(asc(schema.organization.name), asc(schema.organization.id)).limit(51).offset(offset);
+      const teamsFound = await db.select({ principalId: schema.team.id, name: schema.team.name, detail: schema.organization.name })
+        .from(schema.team).innerJoin(schema.organization, eq(schema.organization.id, schema.team.organizationId))
+        .where(and(or(inArray(schema.team.organizationId, organizations), granted("team", schema.team.id)), matches(schema.team.name)))
+        .orderBy(asc(schema.team.name), asc(schema.team.id)).limit(51).offset(offset);
+      const usersFound = await db.select({ principalId: schema.user.id, name: schema.user.name, detail: schema.user.email }).from(schema.user)
+        .where(and(sql`${schema.user.id} <> ${userPrincipalId}`, or(inArray(schema.user.id,
+          db.select({ id: schema.member.userId }).from(schema.member).where(inArray(schema.member.organizationId, organizations))), granted("user", schema.user.id)),
+          or(matches(schema.user.name), matches(schema.user.email)))).orderBy(asc(schema.user.name), asc(schema.user.id)).limit(51).offset(offset);
+      return {
+        items: [...organizationsFound.slice(0, 50).map((row) => ({ ...row, principalType: "organization" as const })),
+          ...teamsFound.slice(0, 50).map((row) => ({ ...row, principalType: "team" as const })),
+          ...usersFound.slice(0, 50).map((row) => ({ ...row, principalType: "user" as const }))],
+        nextCursor: [organizationsFound, teamsFound, usersFound].some((rows) => rows.length > 50) ? String(offset + 50) : null,
+      };
+    },
     async listPermissions(vaultId) {
       const [vault] = await db.select({ role: vaultRole(schema.syncedVault.vaultId) })
         .from(schema.syncedVault).where(and(
@@ -2731,6 +2761,14 @@ function createIdentityStore(
           ))
           .where(eq(schema.team.id, principalId)).limit(1);
         if (!team) return false;
+      } else if (principalType === "user") {
+        if (principalId === userPrincipalId) return false;
+        const organizations = db.select({ id: schema.member.organizationId }).from(schema.member)
+          .where(eq(schema.member.userId, userPrincipalId));
+        const [membership] = await db.select({ id: schema.member.id }).from(schema.member).where(and(
+          eq(schema.member.userId, principalId), inArray(schema.member.organizationId, organizations),
+        )).limit(1);
+        if (!membership) return false;
       } else {
         return false;
       }
@@ -2746,7 +2784,7 @@ function createIdentityStore(
     async deleteMemberPermission(vaultId, principalType, principalId) {
       const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
         .where(ownedVault(vaultId)).limit(1);
-      if (!vault || principalType === "user") return false;
+      if (!vault) return false;
       const [deleted] = await db.delete(schema.syncedVaultPermission).where(and(
         eq(schema.syncedVaultPermission.vaultId, vaultId),
         eq(schema.syncedVaultPermission.principalType, principalType),
