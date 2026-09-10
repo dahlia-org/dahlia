@@ -22,7 +22,7 @@ describe("model catalog", () => {
     expect(new Set(catalog.models.map(({ slug }) => slug)).size).toBe(catalog.models.length);
   });
 
-  it("returns discovered definitions unchanged, including priority and hidden Gemini", () => {
+  it("returns discovered definitions unchanged, including priority and visible Gemini", () => {
     const entries = catalog.models.map(({ slug }) => ({ id: slug, displayName: "Provider name" })).reverse();
     const list = modelList(entries);
     expect(list.models).toEqual([...catalog.models, ...hiddenModels]);
@@ -91,17 +91,17 @@ describe("model catalog", () => {
     expect(model.supported_reasoning_levels.map(({ effort }) => effort)).toEqual(["none", "low", "high", "max"]);
   });
 
-  it.each(["gemini-3-8-flash", "gemini-3-7-flash"])("hides %s while retaining audio summary metadata", (id) => {
+  it.each(["gemini-3-8-flash", "gemini-3-7-flash"])("shows %s while retaining audio summary metadata", (id) => {
     const list = modelList([{ id }]);
     expect(list.data[0]?.id).toBe(id);
-    expect(list.models[0]).toMatchObject({ visibility: "hide", default_reasoning_level: "medium" });
+    expect(list.models[0]).toMatchObject({ visibility: "list", default_reasoning_level: "medium", use_responses_lite: false });
     expect(list.models[0]?.supported_reasoning_levels.map(({ effort }) => effort)).toEqual(["low", "medium", "high"]);
   });
 
   it("keeps Cloudflare native IDs and audio summary settings independent", () => {
     const list = cloudflareModels();
     expect(list.data.map(({ id }) => id)).toEqual(["gpt-5.6-luna", "gpt-4.1", "gemini-3-flash"]);
-    expect(list.models.find(({ slug }) => slug === "gemini-3-flash")).toMatchObject({ visibility: "hide", summary_methods: ["audio"] });
+    expect(list.models.find(({ slug }) => slug === "gemini-3-flash")).toMatchObject({ visibility: "list", summary_methods: ["audio"], use_responses_lite: false });
     expect(list.models.find(({ slug }) => slug === "gpt-4.1")).toMatchObject({ visibility: "list", summary_methods: ["transcript"] });
   });
 });

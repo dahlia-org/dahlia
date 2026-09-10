@@ -108,7 +108,7 @@
       "display_name": "Gemini 3 Flash",
       "description": null,
       "shell_type": "default",
-      "visibility": "hide",
+      "visibility": "list",
       "supported_in_api": true,
       "priority": 99,
       "default_reasoning_level": "medium",
@@ -137,7 +137,8 @@
       ],
       "summary_methods": [
         "audio"
-      ]
+      ],
+      "use_responses_lite": false
     }
   ]
 }

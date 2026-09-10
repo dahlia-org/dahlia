@@ -981,7 +981,7 @@
         }
       ],
       "shell_type": "unified_exec",
-      "visibility": "hide",
+      "visibility": "list",
       "minimal_client_version": "0.144.0",
       "supported_in_api": true,
       "availability_nux": null,
@@ -1076,7 +1076,7 @@
         }
       ],
       "shell_type": "unified_exec",
-      "visibility": "hide",
+      "visibility": "list",
       "minimal_client_version": "0.144.0",
       "supported_in_api": true,
       "availability_nux": null,
