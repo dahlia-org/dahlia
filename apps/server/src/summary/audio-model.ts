@@ -8,7 +8,7 @@ export function isAudioSummaryModel(id: string, catalog: GatewayModelList): bool
 
 export function isStructuredSummaryModel(id: string, catalog: GatewayModelList): boolean {
   return catalog.data.some((model) => model.id === id)
-    && catalog.models.some((model) => model.slug === id);
+    && catalog.models.some((model) => model.slug === id && model.supported_in_api);
 }
 
 export function isSummaryModel(id: string, catalog: GatewayModelList, method: "transcript" | "audio"): boolean {

@@ -29,6 +29,6 @@ export function modelList(entries: ModelInfo[], definitions: readonly CodexModel
       id: entry.id, object: "model", created: 0, owned_by: "dahlia",
       display_name: entry.displayName?.trim() || models.get(entry.id)?.display_name || entry.id,
     })),
-    models: definitions.filter((model) => available.has(model.slug)).map((model) => ({ ...model })),
+    models: definitions.filter((model) => available.has(model.slug) || (model.visibility === "hide" && !model.supported_in_api)).map((model) => ({ ...model })),
   };
 }

@@ -7,6 +7,8 @@ import catalog from "../src/ai-gateway/databricks-models.json";
 // Codex main 713caa89f389acd9cbcd77016edbb607273826af, only hyphenating slugs and clearing available_in_plans.
 const upstreamHashes: [string, string][] = [["gpt-6-astra","0c583692f053474cbd5b39b6f570094e4a0d407ab65f2e7cf49b5e9c50881259"],["gpt-5-6-sol","cdb22ce782efd51d35e02b9df0d4e5fbf88e304a4feaef7b4b04c78d3375f93f"],["gpt-5-6-terra","25f6bda9a542fab0ed1d76d11487c9f8d9e5ac202b68a86e918173fa1e05c95f"],["gpt-5-6-luna","1fa2793ecd8581b715c8bcd436e034cb440bf2680bc6e7572ee91a727332b4f8"],["gpt-5-5","0118f80b60c256561c482cb8cba18d7a8ac261bb878ca059076e87c3ee13ae2a"]];
 
+const hiddenModels = catalog.models.filter((model) => !model.supported_in_api);
+
 describe("model catalog", () => {
   it.each(upstreamHashes)("preserves upstream GPT metadata for %s", (slug, digest) => {
     const model = catalog.models.find((model) => model.slug === slug);
@@ -14,9 +16,9 @@ describe("model catalog", () => {
   });
 
   it("contains only the requested GPT families and Databricks IDs", () => {
-    expect(catalog.models.filter(({ slug }) => slug.startsWith("gpt-")).map(({ slug }) => slug))
+    expect(catalog.models.filter(({ slug }) => slug.startsWith("gpt-") && !hiddenModels.some((model) => model.slug === slug)).map(({ slug }) => slug))
       .toEqual(upstreamHashes.map(([slug]) => slug));
-    expect(catalog.models.every(({ slug }) => !slug.includes("."))).toBe(true);
+    expect(catalog.models.filter((model) => model.supported_in_api).every(({ slug }) => !slug.includes("."))).toBe(true);
     expect(new Set(catalog.models.map(({ slug }) => slug)).size).toBe(catalog.models.length);
   });
 
@@ -25,14 +27,27 @@ describe("model catalog", () => {
     const list = modelList(entries);
     expect(list.models).toEqual(catalog.models);
     expect(list.data.every(({ display_name }) => display_name === "Provider name")).toBe(true);
-    expect(modelList([]).models).toEqual([]);
+    expect(modelList([]).models).toEqual(hiddenModels);
   });
 
   it("does not normalize IDs or create definitions for unknown models", () => {
     const ids = ["gpt-5.6-sol", "system.ai.gpt-5-6-sol", "GPT-5-6-SOL", " gpt-5-6-sol ", "gpt-future", "glm-future", "custom"];
     const list = modelList(ids.map((id) => ({ id })));
-    expect(list.models).toEqual([]);
-    expect(list.data.map(({ id, display_name }) => [id, display_name])).toEqual(ids.map((id) => [id, id]));
+    expect(list.models).toEqual(hiddenModels);
+    expect(list.data.map(({ id, display_name }) => [id, display_name])).toEqual(ids.map((id) => [id, catalog.models.find((model) => model.slug === id)?.display_name ?? id]));
+  });
+
+  it("always returns explicit hidden built-ins without publishing them as available", () => {
+    const list = modelList([{ id: "gpt-5-5" }]);
+    expect(hiddenModels.map(({ slug }) => slug)).toEqual([
+      "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-daybreak-blue-latest",
+      "gpt-daybreak-red-latest", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.2",
+    ]);
+    expect(list.data.map(({ id }) => id)).toEqual(["gpt-5-5"]);
+    for (const model of hiddenModels) {
+      expect(list.models.find(({ slug }) => slug === model.slug)).toMatchObject({ visibility: "hide", supported_in_api: false });
+    }
+    expect(list.models.find(({ slug }) => slug === "gpt-5-5")?.visibility).toBe("list");
   });
 
   it("uses the JSON display name when no provider name is supplied", () => {
