@@ -11,11 +11,14 @@ final class DatabricksAccountController {
 
     init(service: DatabricksOAuthService = .shared) { self.service = service }
 
-    func load() async {
+    @discardableResult
+    func load() async -> String? {
         do {
             connection = try await service.currentConnection()
+            return connection?.id.uuidString
         } catch {
             errorMessage = error.localizedDescription
+            return nil
         }
     }
 

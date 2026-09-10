@@ -68,7 +68,9 @@ struct DatabricksAccountSettingsView<LeadingContent: View>: View {
             if let footer { Text(footer) }
         }
         .task {
-            await controller.load()
+            if let id = await controller.load() {
+                vaultSettings.databricksProfile = id
+            }
             workspaceURL = controller.connection?.host ?? ""
         }
         .onDisappear { signInTask?.cancel() }

@@ -35,6 +35,29 @@
         static let host = "https://workspace.example.com"
         static let token = #"{"access_token":"access","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}"#
 
+        @Test @MainActor func restoresSelectionAfterCancellationFollowingConnectionSave() async throws {
+            let memory = DatabricksTestStorage()
+            var storage = memory.storage
+            let save = storage.saveConnection
+            storage.saveConnection = { connection in
+                try save(connection)
+                withUnsafeCurrentTask { $0?.cancel() }
+            }
+            let session = makeSession { request in
+                request.url!.path.contains(".well-known") ? (404, "") : (200, Self.token)
+            }
+            defer { session.invalidateAndCancel() }
+            let service = DatabricksOAuthService(session: session, storage: storage) { url in
+                URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
+            }
+            let controller = DatabricksAccountController(service: service)
+            let signIn = Task { await controller.signIn(workspaceURL: Self.host) }
+            #expect(await signIn.value == nil)
+            let saved = try #require(memory.state.withLock { $0.connection })
+            #expect(await controller.load() == saved.id.uuidString)
+            #expect(controller.connection == saved)
+        }
+
         @Test(arguments: [true, false])
         func pkceAndDiscoveryFallback(discovery: Bool) async throws {
             let memory = DatabricksTestStorage()
