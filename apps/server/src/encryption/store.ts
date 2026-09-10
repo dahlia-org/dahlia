@@ -83,21 +83,25 @@ export function createContentEncryption(db: NodePgDatabase, schema: ContentSchem
     const vaultId = await vaultFor(context);
     const key = await cipher(vaultId);
     if (!key) return { ...values, encryptedPayload: undefined };
-    const columns = getTableColumns(table) as Record<string, AnyColumn>;
-    let sameVault: SQL;
-    if (columns.vaultId) {
-      sameVault = eq(columns.vaultId, vaultId);
-    } else if (columns.meetingId) {
-      sameVault = inArray(columns.meetingId, db.select({ id: schema.syncedMeeting.meetingId }).from(schema.syncedMeeting)
-        .where(eq(schema.syncedMeeting.vaultId, vaultId)));
-    } else {
-      sameVault = inArray(columns.transcriptId!, db.select({ id: schema.transcript.id }).from(schema.transcript)
-        .innerJoin(schema.syncedMeeting, eq(schema.syncedMeeting.meetingId, schema.transcript.meetingId))
-        .where(eq(schema.syncedMeeting.vaultId, vaultId)));
+    let previous: Row = {};
+    // Fully supplied protected fields need no preservation read, including segment upserts and copies.
+    if (Object.keys(policy.fields).some((field) => values[field] === undefined)) {
+      const columns = getTableColumns(table) as Record<string, AnyColumn>;
+      let sameVault: SQL;
+      if (columns.vaultId) {
+        sameVault = eq(columns.vaultId, vaultId);
+      } else if (columns.meetingId) {
+        sameVault = inArray(columns.meetingId, db.select({ id: schema.syncedMeeting.meetingId }).from(schema.syncedMeeting)
+          .where(eq(schema.syncedMeeting.vaultId, vaultId)));
+      } else {
+        sameVault = inArray(columns.transcriptId!, db.select({ id: schema.transcript.id }).from(schema.transcript)
+          .innerJoin(schema.syncedMeeting, eq(schema.syncedMeeting.meetingId, schema.transcript.meetingId))
+          .where(eq(schema.syncedMeeting.vaultId, vaultId)));
+      }
+      // Preserve omitted fields only within this Vault; ID collisions follow the caller's normal conflict handling.
+      const [existing] = await db.select().from(table).where(and(sameVault, ...policy.ids.map((id) => eq(columns[id]!, context[id])))).limit(1);
+      previous = existing ? (await read(table, [{ ...existing, ...keyFields }], vaultId))[0]! : {};
     }
-    // Preserve omitted fields only within this Vault; ID collisions follow the caller's normal conflict handling.
-    const [existing] = await db.select().from(table).where(and(sameVault, ...policy.ids.map((id) => eq(columns[id]!, context[id])))).limit(1);
-    const previous: Row = existing ? (await read(table, [{ ...existing, ...keyFields }], vaultId))[0]! : {};
     const fields = Object.fromEntries(Object.entries(policy.fields).map(([field, fallback]) => [field,
       values[field] !== undefined ? values[field] : previous[field] ?? fallback]));
     const masked: Row = { ...values };

@@ -221,12 +221,12 @@ it("restores a database backup only with its matching master key", async () => {
 });
 
 
-it.each(["none", "server"] as const)("keeps transcript batch Vault resolution bounded (%s)", async (mode) => {
+it.each(["none", "server"] as const)("avoids per-segment preservation lookups for full transcript writes (%s)", async (mode) => {
   const f = await setup(mode), meetingId = uuidV7(), patchId = uuidV7(), now = new Date();
   const metadata = { provider: "test", request: { model: "test" }, runs: [{ generatedBy: "desktop", inputTypes: ["audio"] }] };
   await f.commit(f.transaction([{ id: uuidV7(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
     data: { projectId: null, name: "Meeting", description: "", status: "READY", createdAt: now, updatedAt: now } }]));
-  const segments = Array.from({ length: 250 }, () => ({ segmentId: uuidV7(), startedAt: now, endedAt: null, createdAt: now,
+  const segments = Array.from({ length: 500 }, () => ({ segmentId: uuidV7(), startedAt: now, endedAt: null, createdAt: now,
     text: "batch transcript", speakerLabel: null, audioSource: "mic" }));
   const hash = "b".repeat(64);
   await f.store.sync.withIdentity(owner, (sync) => sync.putTranscriptChunk(f.vaultId, meetingId, patchId, 0, hash, segments, []));
@@ -237,18 +237,30 @@ it.each(["none", "server"] as const)("keeps transcript batch Vault resolution bo
         segmentCount: segments.length, deletionCount: 0, chunks: [{ index: 0, sha256: hash, segmentCount: segments.length, deletionCount: 0 }] } }]));
     const patchQueries = prepare.mock.calls.map(([query]) => query);
     prepare.mockClear();
+    const updatePatch = uuidV7();
+    const updated = { ...segments[0]!, text: "updated transcript", speakerLabel: "Speaker" };
+    await f.store.sync.withIdentity(owner, (sync) => sync.putTranscriptChunk(f.vaultId, meetingId, updatePatch, 0, hash, [updated], []));
+    prepare.mockClear();
+    await f.commit(f.transaction([{ id: updatePatch, entity: "transcript", action: "patch", entityId: meetingId, baseRevision: 1,
+      data: { transcript: { id: patchId, startedAt: now, endedAt: null, metadata }, mode: "append", patchId: updatePatch,
+        segmentCount: 1, deletionCount: 0, chunks: [{ index: 0, sha256: hash, segmentCount: 1, deletionCount: 0 }] } }]));
+    const updateQueries = prepare.mock.calls.map(([query]) => query);
+    prepare.mockClear();
     const nextPatch = uuidV7();
-    await f.commit(f.transaction([{ id: nextPatch, entity: "transcript", action: "patch", entityId: meetingId, baseRevision: 1,
+    await f.commit(f.transaction([{ id: nextPatch, entity: "transcript", action: "patch", entityId: meetingId, baseRevision: 2,
       data: { transcript: { id: nextPatch, startedAt: now, endedAt: null, metadata }, mode: "append", patchId: nextPatch,
         segmentCount: 0, deletionCount: 0, chunks: [] } }]));
     const copyQueries = prepare.mock.calls.map(([query]) => query);
-    for (const queries of [patchQueries, copyQueries]) {
+    for (const queries of [patchQueries, updateQueries, copyQueries]) {
       expect(queries.filter((query) => /^select "meeting_id" from "transcripts"/i.test(query))).toHaveLength(0);
+      expect(queries.filter((query) => /^select /i.test(query)
+        && query.includes('from "transcript_segments"') && query.includes('"segment_id" = ?'))).toHaveLength(0);
     }
     if (mode === "none") expect(copyQueries.filter((query) => /^insert into "transcript_segments".* select /i.test(query))).toHaveLength(1);
-    const read = (version: number) => f.store.sync.withIdentity(owner, (sync) => sync.listTranscript(f.vaultId, meetingId, 300, undefined, version));
+    const read = (version: number) => f.store.sync.withIdentity(owner, (sync) => sync.listTranscript(f.vaultId, meetingId, 600, undefined, version));
     expect(await read(2)).toEqual(await read(1));
-    expect(await read(2)).toHaveLength(250);
+    expect(await read(2)).toHaveLength(500);
+    expect(await read(2)).toEqual(expect.arrayContaining([expect.objectContaining({ text: "updated transcript", speakerLabel: "Speaker" })]));
   } finally { prepare.mockRestore(); }
 });
 
