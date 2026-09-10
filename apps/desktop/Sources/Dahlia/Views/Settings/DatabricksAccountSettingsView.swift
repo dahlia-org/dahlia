@@ -54,7 +54,7 @@ struct DatabricksAccountSettingsView<LeadingContent: View>: View {
                     Button(L10n.cancelSignIn) { signInTask?.cancel() }
                         .buttonStyle(.dahlia())
                 }
-            } else {
+            } else if controller.connection == nil {
                 Button(L10n.signInWithDatabricks, action: signIn)
                     .buttonStyle(.dahlia(.primary))
                     .disabled(workspaceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

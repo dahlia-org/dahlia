@@ -48,7 +48,7 @@ import Foundation
             let manager = CodexConfigurationManager(
                 homeLocator: ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
             )
-            let profile = try await databricksProfile(
+            let profile = databricksProfile(
                 host: "https://dbc.example.com/"
             )
 
@@ -111,7 +111,7 @@ import Foundation
             defer { try? FileManager.default.removeItem(at: rootURL) }
             let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
             let manager = CodexConfigurationManager(homeLocator: locator)
-            let profile = try await databricksProfile(host: "https://dbc.example.com")
+            let profile = databricksProfile(host: "https://dbc.example.com")
             _ = try await manager.configureDatabricks(profile: profile)
             let configURL = try locator.homeURL().appending(path: "config.toml")
             var originalConfiguration = try String(contentsOf: configURL, encoding: .utf8)
@@ -202,14 +202,14 @@ import Foundation
             let manager = CodexConfigurationManager(
                 homeLocator: ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
             )
-            let profile = try await databricksProfile(host: "http://dbc.example.com")
+            let profile = databricksProfile(host: "http://dbc.example.com")
 
             await #expect(throws: CodexConfigurationError.self) {
                 try await manager.configureDatabricks(profile: profile)
             }
         }
 
-        private func databricksProfile(host: String) async throws -> DatabricksConnection {
+        private func databricksProfile(host: String) -> DatabricksConnection {
             DatabricksConnection(id: UUID(), host: host)
         }
     }
