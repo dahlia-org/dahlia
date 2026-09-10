@@ -24,13 +24,13 @@
     },
     {
       "isRlsEnabled": true,
-      "name": "meeting_events",
+      "name": "meeting_attachments",
       "entityType": "tables",
       "schema": "app"
     },
     {
       "isRlsEnabled": true,
-      "name": "meeting_files",
+      "name": "meeting_events",
       "entityType": "tables",
       "schema": "app"
     },
@@ -149,7 +149,7 @@
       "schema": "app"
     },
     {
-      "type": "text",
+      "type": "uuid",
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
@@ -240,7 +240,7 @@
       "table": "jobs_image_analysis"
     },
     {
-      "type": "text",
+      "type": "uuid",
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
@@ -354,6 +354,110 @@
       "name": "id",
       "entityType": "columns",
       "schema": "app",
+      "table": "meeting_attachments"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "vault_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "meeting_attachments"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "meeting_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "meeting_attachments"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "file_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "meeting_attachments"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "captured_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "meeting_attachments"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "meeting_attachments"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "meeting_attachments"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "revision",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "meeting_attachments"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "app",
       "table": "meeting_events"
     },
     {
@@ -370,7 +474,7 @@
       "table": "meeting_events"
     },
     {
-      "type": "text",
+      "type": "uuid",
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
@@ -498,110 +602,6 @@
       "entityType": "columns",
       "schema": "app",
       "table": "meeting_events"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "meeting_files"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "vault_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "meeting_files"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "meeting_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "meeting_files"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "file_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "meeting_files"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "captured_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "meeting_files"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "session_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "meeting_files"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "meeting_files"
-    },
-    {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "1",
-      "generated": null,
-      "identity": null,
-      "name": "revision",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "meeting_files"
     },
     {
       "type": "uuid",
@@ -841,7 +841,7 @@
       "table": "jobs_search_index"
     },
     {
-      "type": "text",
+      "type": "uuid",
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
@@ -1231,7 +1231,7 @@
       "table": "jobs_summary"
     },
     {
-      "type": "text",
+      "type": "uuid",
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
@@ -1478,7 +1478,7 @@
       "table": "sync_changes"
     },
     {
-      "type": "text",
+      "type": "uuid",
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
@@ -1595,7 +1595,7 @@
       "table": "transaction_receipts"
     },
     {
-      "type": "text",
+      "type": "uuid",
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
@@ -1686,7 +1686,7 @@
       "table": "transaction_receipts"
     },
     {
-      "type": "text",
+      "type": "uuid",
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
@@ -2609,7 +2609,7 @@
       "table": "vault_permissions"
     },
     {
-      "type": "text",
+      "type": "uuid",
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
@@ -2635,7 +2635,7 @@
       "table": "vault_permissions"
     },
     {
-      "type": "text",
+      "type": "uuid",
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
@@ -2882,7 +2882,7 @@
       "table": "vault_transfers"
     },
     {
-      "type": "text",
+      "type": "uuid",
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
@@ -3012,6 +3012,41 @@
           "opclass": null
         },
         {
+          "value": "id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "meeting_attachments_vault_meeting_id_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "meeting_attachments"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "vault_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "meeting_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
           "value": "occurred_at",
           "isExpression": false,
           "asc": true,
@@ -3063,41 +3098,6 @@
       "entityType": "indexes",
       "schema": "app",
       "table": "meeting_events"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "vault_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "meeting_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "meeting_files_vault_meeting_id_idx",
-      "entityType": "indexes",
-      "schema": "app",
-      "table": "meeting_files"
     },
     {
       "nameExplicit": true,
@@ -3702,6 +3702,44 @@
     {
       "nameExplicit": false,
       "columns": [
+        "vault_id",
+        "meeting_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "meetings",
+      "columnsTo": [
+        "vault_id",
+        "meeting_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "meeting_attachments_fnlH8jMHLYfd_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "meeting_attachments"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "vault_id",
+        "file_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "files",
+      "columnsTo": [
+        "vault_id",
+        "file_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "meeting_attachments_sV1ehoid9FNK_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "meeting_attachments"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
         "vault_id"
       ],
       "schemaTo": "app",
@@ -3732,44 +3770,6 @@
       "entityType": "fks",
       "schema": "app",
       "table": "meeting_events"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
-        "vault_id",
-        "meeting_id"
-      ],
-      "schemaTo": "app",
-      "tableTo": "meetings",
-      "columnsTo": [
-        "vault_id",
-        "meeting_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "meeting_files_7HfrsfdhAdbg_fkey",
-      "entityType": "fks",
-      "schema": "app",
-      "table": "meeting_files"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
-        "vault_id",
-        "file_id"
-      ],
-      "schemaTo": "app",
-      "tableTo": "files",
-      "columnsTo": [
-        "vault_id",
-        "file_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "NO ACTION",
-      "name": "meeting_files_vault_id_file_id_files_vault_id_file_id_fkey",
-      "entityType": "fks",
-      "schema": "app",
-      "table": "meeting_files"
     },
     {
       "nameExplicit": true,
@@ -4260,9 +4260,9 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "meeting_events_pkey",
+      "name": "meeting_attachments_pkey",
       "schema": "app",
-      "table": "meeting_events",
+      "table": "meeting_attachments",
       "entityType": "pks"
     },
     {
@@ -4270,9 +4270,9 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "meeting_files_pkey",
+      "name": "meeting_events_pkey",
       "schema": "app",
-      "table": "meeting_files",
+      "table": "meeting_events",
       "entityType": "pks"
     },
     {
@@ -4402,10 +4402,10 @@
         "file_id"
       ],
       "nullsNotDistinct": false,
-      "name": "meeting_files_meeting_file_unique",
+      "name": "meeting_attachments_meeting_attachment_unique",
       "entityType": "uniques",
       "schema": "app",
-      "table": "meeting_files"
+      "table": "meeting_attachments"
     },
     {
       "nameExplicit": true,
@@ -4566,7 +4566,7 @@
       "table": "jobs_summary"
     },
     {
-      "value": "\"entity\" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_file', 'recording')",
+      "value": "\"entity\" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')",
       "name": "sync_change_entity_check",
       "entityType": "checks",
       "schema": "app",
@@ -4662,12 +4662,38 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"account_settings\".\"user_id\" = nullif(current_setting('app.user_id', true), '')",
-      "withCheck": "\"app\".\"account_settings\".\"user_id\" = nullif(current_setting('app.user_id', true), '')",
+      "using": "\"app\".\"account_settings\".\"user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "\"app\".\"account_settings\".\"user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
       "name": "account_settings_owner",
       "entityType": "policies",
       "schema": "app",
       "table": "account_settings"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"meeting_attachments\".\"vault_id\")",
+      "withCheck": null,
+      "name": "meeting_attachment_select",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "meeting_attachments"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"meeting_attachments\".\"vault_id\")",
+      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"app\".\"meeting_attachments\".\"vault_id\")",
+      "name": "meeting_attachment_write",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "meeting_attachments"
     },
     {
       "as": "PERMISSIVE",
@@ -4694,32 +4720,6 @@
       "entityType": "policies",
       "schema": "app",
       "table": "meeting_events"
-    },
-    {
-      "as": "PERMISSIVE",
-      "for": "SELECT",
-      "roles": [
-        "public"
-      ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"meeting_files\".\"vault_id\")",
-      "withCheck": null,
-      "name": "meeting_file_select",
-      "entityType": "policies",
-      "schema": "app",
-      "table": "meeting_files"
-    },
-    {
-      "as": "PERMISSIVE",
-      "for": "ALL",
-      "roles": [
-        "public"
-      ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"meeting_files\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"app\".\"meeting_files\".\"vault_id\")",
-      "name": "meeting_file_write",
-      "entityType": "policies",
-      "schema": "app",
-      "table": "meeting_files"
     },
     {
       "as": "PERMISSIVE",
@@ -4805,8 +4805,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"jobs_summary\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')",
-      "withCheck": "\"app\".\"jobs_summary\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')",
+      "using": "\"app\".\"jobs_summary\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "\"app\".\"jobs_summary\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
       "name": "summary_job_owner",
       "entityType": "policies",
       "schema": "app",
@@ -4818,8 +4818,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"transaction_receipts\".\"owner_user_id\" = current_setting('app.user_id', true)",
-      "withCheck": "\"app\".\"transaction_receipts\".\"owner_user_id\" = current_setting('app.user_id', true)",
+      "using": "\"app\".\"transaction_receipts\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "\"app\".\"transaction_receipts\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
       "name": "transaction_receipt_owner",
       "entityType": "policies",
       "schema": "app",
@@ -5104,8 +5104,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"vault_transfers\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')",
-      "withCheck": "\"app\".\"vault_transfers\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')",
+      "using": "\"app\".\"vault_transfers\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "\"app\".\"vault_transfers\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
       "name": "vault_transfer_owner",
       "entityType": "policies",
       "schema": "app",
@@ -5145,7 +5145,7 @@
       "schema": "app"
     },
     {
-      "definition": "\n  SELECT m.id AS screenshot_id, f.file_id, m.vault_id, m.meeting_id,\n    coalesce(m.captured_at, m.created_at) AS captured_at, f.content_type,\n    'files/' || f.file_id || '/original' AS storage_key,\n    f.size AS content_length, substr(f.checksum, 9) AS content_hash, f.active,\n    f.metadata ->> 'ocr_text' AS ocr_text,\n    f.metadata ->> 'caption' AS caption,\n    m.revision\n  FROM app.meeting_files m JOIN app.files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id\n  WHERE f.metadata ->> 'source' = 'screenshot'\n",
+      "definition": "\n  SELECT m.id AS screenshot_id, f.file_id, m.vault_id, m.meeting_id,\n    coalesce(m.captured_at, m.created_at) AS captured_at, f.content_type,\n    'files/' || f.file_id || '/original' AS storage_key,\n    f.size AS content_length, substr(f.checksum, 9) AS content_hash, f.active,\n    f.metadata ->> 'ocr_text' AS ocr_text,\n    f.metadata ->> 'caption' AS caption,\n    m.revision\n  FROM app.meeting_attachments m JOIN app.files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id\n  WHERE f.metadata ->> 'source' = 'screenshot'\n",
       "with": {
         "checkOption": null,
         "securityBarrier": null,

@@ -169,7 +169,7 @@
 
             let credential = try await service.signIn()
 
-            #expect(credential.account.id == "db-user")
+            #expect(credential.account.id == "01a00000-0000-7000-8000-000000000001")
             #expect(recorder.requests.contains { $0.url?.path == "/api/v1/session" })
             let authorizationURL = try #require(recorder.authorizationURL)
             #expect(URLComponents(url: authorizationURL, resolvingAgainstBaseURL: false)?.queryItems?
@@ -883,9 +883,9 @@
                 body = "{\"sub\":\"user-1\",\"name\":\"User One\",\"email\":\"user@example.com\"}"
             case "/api/v1/session":
                 body = """
-                {"user":{"id":"db-user","name":"DB User","email":"db@example.com"},
+                {"user":{"id":"user_01m0000000e008000000000001","name":"DB User","email":"db@example.com"},
                 "capabilities":{"admin":false,"sessions":false,"sync":true,"sharing":true},
-                "workspace":{"id":"db-user","type":"personal"}}
+                "workspace":{"id":"personal:user_01m0000000e008000000000001","type":"personal"}}
                 """
             default:
                 body = "{}"

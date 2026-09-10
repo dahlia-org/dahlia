@@ -36,7 +36,7 @@ extension MeetingContentProvider {
                         try Row.fetchAll(db, sql: """
                         SELECT entity, entityId FROM sync_content_state WHERE complete = 0 AND lastAccessedAt IS NULL
                         AND (entityId = ? AND entity IN ('summary', 'transcript')
-                          OR entity = 'file' AND entityId IN (SELECT fileId FROM meeting_files WHERE meetingId = ?))
+                          OR entity = 'file' AND entityId IN (SELECT fileId FROM meeting_attachments WHERE meetingId = ?))
                         """, arguments: [meetingId, meetingId]).map { ($0["entity"] as String, $0["entityId"] as UUID) }
                     }
                     for (raw, id) in content {

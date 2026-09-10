@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import DahliaServerAPI
 import Foundation
 import HTTPTypes
@@ -73,19 +74,60 @@ struct SyncAPIMiddleware: ClientMiddleware {
         next: @Sendable (HTTPRequest, HTTPBody?, URL) async throws -> (HTTPResponse, HTTPBody?)
     ) async throws -> (HTTPResponse, HTTPBody?) {
         var request = request
+        let method = request.method.rawValue
+        guard let internalURL = URL(string: request.path ?? "/", relativeTo: baseURL)?.absoluteURL else {
+            throw URLError(.badURL)
+        }
+        let route = PublicIDWire.route(path: internalURL.path, method: method)
+        guard let publicURL = try URL(string: PublicIDWire.url(internalURL.absoluteString, direction: .encode, method: method)) else {
+            throw URLError(.badURL)
+        }
+        request.path = publicURL.path + (publicURL.query.map { "?\($0)" } ?? "")
+        for (name, shape) in route?.headers ?? [:] {
+            guard let field = HTTPField.Name(name), let value = request.headerFields[field] else { continue }
+            request.headerFields[field] = try PublicIDWire.transform(value, shape: shape, direction: .encode) as? String
+        }
         request.headerFields[.authorization] = "Bearer \(token)"
         request.headerFields[.init("X-Dahlia-Vault-Transfers")!] = "1"
-        if let preservingJSONBody { request.headerFields[.contentLength] = String(preservingJSONBody.count) }
-        let (response, body) = try await next(request, preservingJSONBody.map(HTTPBody.init) ?? body, baseURL)
-        guard (200 ..< 300).contains(response.status.code) else {
-            let data = if let body { try await Data(collecting: body, upTo: maximumBytes ?? Int.max) } else { Data() }
-            throw SyncHTTPError(status: response.status.code, body: data)
+        var responseShape = route?.response
+        let internalBody = preservingJSONBody.map(HTTPBody.init) ?? body
+        let publicBody: HTTPBody?
+        if let shape = route?.request, let internalBody {
+            let data = try await Data(collecting: internalBody, upTo: 64 * 1024 * 1024)
+            if responseShape == "textSearch",
+               let request = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               request["kind"] as? String == "screenshot" {
+                responseShape = "textScreenshotSearch"
+            }
+            let converted = try PublicIDWire.data(data, shape: shape, direction: .encode)
+            request.headerFields[.contentLength] = String(converted.count)
+            publicBody = HTTPBody(converted)
+        } else {
+            publicBody = internalBody
+            if let preservingJSONBody { request.headerFields[.contentLength] = String(preservingJSONBody.count) }
         }
-        guard capture != nil || maximumBytes != nil, let body else { return (response, body) }
+        var (response, responseBody) = try await next(request, publicBody, baseURL)
+        if let location = response.headerFields[.location] {
+            response.headerFields[.location] = try PublicIDWire.url(location, direction: .decode)
+        }
+        guard (200 ..< 300).contains(response.status.code) else {
+            let data = if let responseBody { try await Data(collecting: responseBody, upTo: maximumBytes ?? Int.max) } else { Data() }
+            let decoded = (try? PublicIDWire.data(data, shape: "error", direction: .decode)) ?? data
+            throw SyncHTTPError(status: response.status.code, body: decoded)
+        }
+        let isJSON = response.headerFields[.contentType].map { $0.contains("json") } ?? true
+        if let shape = responseShape, isJSON, let publicResponseBody = responseBody {
+            let data = try await Data(collecting: publicResponseBody, upTo: maximumBytes ?? Int.max)
+            let screenshotSearch = shape == "textSearch" && internalURL.query?.contains("kind=screenshot") == true
+            let converted = try PublicIDWire.data(data, shape: screenshotSearch ? "textScreenshotSearch" : shape, direction: .decode)
+            responseBody = HTTPBody(converted)
+            response.headerFields[.contentLength] = String(converted.count)
+        }
+        guard capture != nil || maximumBytes != nil, let responseBody else { return (response, responseBody) }
         var bytes = Data()
         let limit = maximumBytes ?? Int.max
-        if case let .known(length) = body.length, length > limit { throw URLError(.dataLengthExceedsMaximum) }
-        for try await chunk in body {
+        if case let .known(length) = responseBody.length, length > limit { throw URLError(.dataLengthExceedsMaximum) }
+        for try await chunk in responseBody {
             guard chunk.count <= limit - bytes.count else { throw URLError(.dataLengthExceedsMaximum) }
             bytes.append(contentsOf: chunk)
         }

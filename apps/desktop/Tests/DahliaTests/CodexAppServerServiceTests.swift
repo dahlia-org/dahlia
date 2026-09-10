@@ -1427,7 +1427,7 @@ import Foundation
                     .string("DAHLIA_RUNTIME_PROFILE=development"),
                     .string(executableURL.path),
                     .string("--vault-id"),
-                    .string(vaultID.uuidString),
+                    .string(TypeID.encode(vaultID, as: .vault)),
                     .string("--write"),
                     .string("--telemetry-origin"),
                     .string("codexChat"),

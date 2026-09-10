@@ -1,4 +1,5 @@
 import { apiUrls } from "./generated-operations";
+import { encodeId } from "../typeid";
 import { apiOperations as api } from "./generated-operations";
 import type { components } from "./generated-api";
 import { apiQuery, mapQuery } from "./live-data";
@@ -143,14 +144,14 @@ type WithoutOperationId<T> = T extends unknown ? Omit<T, "id"> : never;
 type SyncOperation = WithoutOperationId<components["schemas"]["Transaction"]["operations"][number]>;
 
 export async function commitSyncTransaction(vaultId: string, operations: SyncOperation[], onRecovery: (active: boolean) => void = () => {}) {
-  const transactionId = uuidV7();
+  const transactionId = encodeId("transaction", uuidV7());
   const request = {
     body: {
       schemaVersion: 2 as const,
       id: transactionId,
       vaultId,
       createdAt: new Date().toISOString(),
-      operations: operations.map((operation) => ({ ...operation, id: uuidV7() })),
+      operations: operations.map((operation) => ({ ...operation, id: encodeId("operation", uuidV7()) })),
     },
   };
   type Receipt = { id: string; status: "committed" | "unknown"; receipt?: "full" | "compact" };
@@ -488,7 +489,7 @@ function Vaults({ home = false }: { home?: boolean }) {
     confirmLabel: uiText("Create Vault", "保管庫を作成"),
     fields: [{ name: "name", label: uiText("Vault name", "保管庫名"), required: true }],
     onSubmit: async ({ name }) => {
-      const id = uuidV7();
+      const id = encodeId("vault", uuidV7());
       await commitSyncTransaction(id, [{ entity: "vault", action: "create", entityId: id, baseRevision: null,
         data: { name: name!.trim(), createdAt: new Date().toISOString() } }], setRecovering);
       navigateDashboard(`/vaults/${id}`);
@@ -660,7 +661,7 @@ function VaultTransfer({ vault }: { vault: SyncedVaultInfo }) {
         uiText("Devices without access will pause sync and keep local data. Unsynced data is not transferred.",
           "移管先を閲覧できない端末はローカルデータを保持して同期を停止します。未同期データは移管されません。"),
       ].filter(Boolean).join("\n\n");
-      const key = uuidV7();
+      const key = encodeId("transaction", uuidV7());
       const body = { destinationVaultId: target.vaultId, sourceRevision: source.revision, destinationRevision: target.revision, audienceHash: audience.audienceHash };
       openDialog({ title: uiText("Transfer content", "内容を移管"), description,
         confirmLabel: uiText("Transfer", "移管する"), destructive: true,
@@ -766,7 +767,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
       { name: "description", label: uiText("Description", "説明"), multiline: true },
     ],
     onSubmit: async ({ name, description }) => {
-      const id = uuidV7();
+      const id = encodeId("project", uuidV7());
       await commitSyncTransaction(vaultId, [{ entity: "project", action: "create", entityId: id, baseRevision: null,
         data: { parentProjectId: null, name: name!.trim(), description: description ?? "", projectType: "undefined", createdAt: new Date().toISOString() } }], setRecovering);
       navigateDashboard(`/projects/${id}`);

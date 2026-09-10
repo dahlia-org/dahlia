@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "@hono/zod-openapi";
 import { normalizeSummaryDetail } from "../account-settings-model";
 
 const reasoning = z.object({ effort: z.string().max(100).nullish(), summary: z.string().max(100).nullish() });
@@ -15,7 +15,7 @@ export const summaryResponseMetadataSchema = z.object({
     input_tokens_details: z.object({ cached_tokens: tokens }).nullish(),
     output_tokens_details: z.object({ reasoning_tokens: tokens }).nullish(),
   }).nullish(),
-});
+}).openapi("SummaryResponseMetadata");
 export const summaryMetadataSchema = z.object({
   generatedBy: z.enum(["server", "local_codex"]),
   inputTypes: z.array(z.enum(["transcript", "image", "audio", "note", "context"])).max(5),

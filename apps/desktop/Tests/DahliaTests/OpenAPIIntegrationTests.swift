@@ -1,5 +1,6 @@
 #if canImport(Testing)
     import CryptoKit
+    import DahliaRuntimeSupport
     import DahliaServerAPI
     import Foundation
     import HTTPTypes
@@ -9,6 +10,75 @@
     @testable import Dahlia
 
     struct SyncAPIMiddlewareTests {
+        @Test(arguments: ["meeting", "screenshot"])
+        func textSearchUsesBodyKindAndRoundTripsCursor(kind: String) async throws {
+            let vaultID = "019f0d36-0520-7000-8000-000000000001"
+            let rowID = "019f0d36-0520-7000-8000-000000000002"
+            let origin = try #require(URL(string: "https://example.com"))
+            let url = try #require(URL(string: "/api/v1/vaults/\(vaultID)/text-search", relativeTo: origin))
+            let cursor = String(decoding: try JSONSerialization.data(withJSONObject: [vaultID, kind, "needle", 1, 1]), as: UTF8.self)
+            let publicCursor = try #require(PublicIDWire.cursor(cursor, kind: "textSearch", direction: .encode) as? String)
+            let publicRowID = TypeID.encode(try #require(UUID(uuidString: rowID)), as: kind == "screenshot" ? .attachment : .meeting)
+            let requestData = try JSONSerialization.data(withJSONObject: ["kind": kind, "query": "needle", "cursor": cursor])
+            let responseData = try JSONSerialization.data(withJSONObject: [
+                "items": [["id": publicRowID, "meetingId": TypeID.encode(try #require(UUID(uuidString: rowID)), as: .meeting)]],
+                "nextCursor": publicCursor,
+            ])
+            let capture = SyncJSONResponse()
+            let middleware = SyncAPIMiddleware(token: "test", maximumBytes: nil, preservingJSONBody: nil, capture: capture)
+            _ = try await middleware.intercept(
+                HTTPRequest(method: .post, scheme: "https", authority: "example.com", path: url.path),
+                body: HTTPBody(requestData), baseURL: origin, operationID: "textSearch"
+            ) { _, body, _ in
+                let bytes = try await Data(collecting: #require(body), upTo: 16384)
+                let request = try #require(JSONSerialization.jsonObject(with: bytes) as? [String: String])
+                #expect(request["cursor"] == publicCursor)
+                #expect(request["kind"] == kind)
+                return (HTTPResponse(status: .ok), HTTPBody(responseData))
+            }
+            let decoded = try #require(capture.value.withLock { $0 })
+            let page = try #require(JSONSerialization.jsonObject(with: decoded) as? [String: Any])
+            #expect((page["items"] as? [[String: String]])?.first?["id"] == rowID)
+            #expect(page["nextCursor"] as? String == cursor)
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.httpBody = requestData
+            #expect(try PublicIDWire.response(responseData, request: request) == decoded)
+        }
+
+        @Test
+        func convertsPublicResponseIDsWithoutAnExplicitContentType() async throws {
+            let id = "019f0d36-0520-7000-8000-000000000001"
+            let capture = SyncJSONResponse()
+            let middleware = SyncAPIMiddleware(token: "test", maximumBytes: nil, preservingJSONBody: nil, capture: capture)
+            let bytes = try PublicIDWire.data(Data("{\"vaultId\":\"\(id)\"}".utf8), shape: "vault", direction: .encode)
+            _ = try await middleware.intercept(
+                HTTPRequest(method: .get, scheme: "https", authority: "example.com", path: "/api/v1/vaults/\(id)"),
+                body: nil, baseURL: #require(URL(string: "https://example.com")), operationID: "getVault"
+            ) { request, _, _ in
+                #expect(request.path?.contains("/vlt_") == true)
+                return (HTTPResponse(status: .ok), HTTPBody(bytes))
+            }
+            let data = try #require(capture.value.withLock { $0 })
+            #expect(try JSONSerialization.jsonObject(with: data) as? [String: String] == ["vaultId": id])
+        }
+
+        @Test
+        func preservesPlainTextAuthorizationErrors() async throws {
+            let middleware = SyncAPIMiddleware(token: "test", maximumBytes: nil, preservingJSONBody: nil, capture: nil)
+            let bytes = Data("forbidden".utf8)
+            do {
+                _ = try await middleware.intercept(
+                    HTTPRequest(method: .post, scheme: "https", authority: "example.com", path: "/api/v1/transactions"),
+                    body: nil, baseURL: #require(URL(string: "https://example.com")), operationID: "commitTransaction"
+                ) { _, _, _ in (HTTPResponse(status: .forbidden), HTTPBody(bytes)) }
+                Issue.record("Expected authorization failure")
+            } catch let error as SyncHTTPError {
+                #expect(error.body == bytes)
+                #expect(error.blockedReason == .authorization)
+            }
+        }
+
         @Test(arguments: [false, true])
         func sharedNullableDTOsPreserveRecordsAndTombstones(deleted: Bool) throws {
             let id = "019f0d36-0520-7000-8000-000000000001"

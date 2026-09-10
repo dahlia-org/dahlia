@@ -60,8 +60,8 @@ extension MeetingRepository {
             SELECT entity, entityId, confirmedRevision FROM sync_entity_state
             WHERE vaultId = ? AND (
                 (entity IN ('meeting', 'summary', 'transcript') AND entityId = ?)
-                OR (entity = 'meeting_file' AND entityId IN (SELECT id FROM meeting_files WHERE meetingId = ?))
-                OR (entity = 'file' AND entityId IN (SELECT fileId FROM meeting_files WHERE meetingId = ?))
+                OR (entity = 'meeting_attachment' AND entityId IN (SELECT id FROM meeting_attachments WHERE meetingId = ?))
+                OR (entity = 'file' AND entityId IN (SELECT fileId FROM meeting_attachments WHERE meetingId = ?))
             ) ORDER BY entity, entityId
             """,
             arguments: [vault.id, meetingId, meetingId, meetingId]
@@ -69,7 +69,7 @@ extension MeetingRepository {
         let content = try MeetingSyncSnapshot.Content.fetchAll(db, sql: """
         SELECT entity, entityId, residentRevision, complete, present, contentCount, fetchError FROM sync_content_state
         WHERE vaultId = ? AND (entityId = ? AND entity IN ('summary', 'transcript')
-          OR entity = 'file' AND entityId IN (SELECT fileId FROM meeting_files WHERE meetingId = ?))
+          OR entity = 'file' AND entityId IN (SELECT fileId FROM meeting_attachments WHERE meetingId = ?))
         ORDER BY entity, entityId
         """, arguments: [vault.id, meetingId, meetingId])
         return MeetingSyncSnapshot(

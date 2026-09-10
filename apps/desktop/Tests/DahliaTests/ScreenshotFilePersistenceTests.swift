@@ -47,7 +47,7 @@
                 "name":"capture","metadata":{"source":"screenshot"},
                 "createdAt":"2026-09-06T00:00:00Z","updatedAt":"2026-09-06T00:00:00Z"
               }},
-              {"entity":"meeting_file","id":"\(stored.id)","revision":1,"record":{
+              {"entity":"meeting_attachment","id":"\(stored.id)","revision":1,"record":{
                 "meetingId":"\(stored.meetingId)","fileId":"\(stored.originalFileId)",
                 "capturedAt":"\(stored.capturedAt.ISO8601Format())","createdAt":"2026-09-06T00:00:00Z"
               }}
@@ -61,15 +61,15 @@
             }
             try await SyncTransactionQueue.complete(transaction, response: response, dbQueue: fixture.database.dbQueue)
             if laterDeletion != "none" {
-                #expect(try await fixture.database.dbQueue.read { try MeetingFileRecord.fetchOne($0, key: stored.id) } == nil)
+                #expect(try await fixture.database.dbQueue.read { try MeetingAttachmentRecord.fetchOne($0, key: stored.id) } == nil)
                 let next = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.database.dbQueue))
                 #expect(next.operations.count == 1)
                 #expect(next.operations.first?.action == .delete)
-                #expect(next.operations.first?.entity == (laterDeletion == "meeting" ? .meeting : .meetingFile))
+                #expect(next.operations.first?.entity == (laterDeletion == "meeting" ? .meeting : .meetingAttachment))
                 #expect(try await fixture.database.dbQueue.read { db in
                     try Int.fetchOne(
                         db,
-                        sql: "SELECT confirmedRevision FROM sync_entity_state WHERE entity = 'meeting_file' AND entityId = ?",
+                        sql: "SELECT confirmedRevision FROM sync_entity_state WHERE entity = 'meeting_attachment' AND entityId = ?",
                         arguments: [stored.id]
                     )
                 } == 1)
@@ -104,7 +104,7 @@
             try await queue.write { db in
                 try db
                     .execute(
-                        sql: "CREATE TRIGGER reject_capture BEFORE INSERT ON meeting_files BEGIN SELECT RAISE(ABORT, 'injected commit failure'); END"
+                        sql: "CREATE TRIGGER reject_capture BEFORE INSERT ON meeting_attachments BEGIN SELECT RAISE(ABORT, 'injected commit failure'); END"
                     )
             }
             await #expect(throws: (any Error).self) { try await fixture.provider.persistCapture(fixture.image, dbQueue: queue) }

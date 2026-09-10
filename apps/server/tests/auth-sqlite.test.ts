@@ -1,3 +1,6 @@
+import { uuidV7 } from "../src/id";
+import { EXTERNAL_ORGANIZATION_ID, EXTERNAL_DEFAULT_TEAM_ID } from "../src/auth/ids";
+import { decodeId, encodeId } from "../src/typeid";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -15,7 +18,6 @@ import { initializeDahliaAuth } from "../src/auth/better-auth";
 import { createNodeAuthStore } from "../src/auth/node-store";
 import type { AppConfig } from "../src/config";
 import type { MigrationManifest } from "../src/migrations";
-import { uuidV7 } from "../src/id";
 
 const directories: string[] = [];
 
@@ -67,25 +69,25 @@ describe("SQLite Better Auth store", () => {
       expect(database.prepare("SELECT count(*) AS count FROM member").get()).toEqual({ count: 1 });
       expect(await store.isAdminUser(first)).toBe(true);
       expect(await store.isAdminUser(second)).toBe(false);
-      expect(await store.getExternalOrganization(first)).toMatchObject({ id: "external", name: "Default Organization", role: "owner" });
-      database.prepare("UPDATE organization SET name = 'external' WHERE id = 'external'").run();
+      expect(await store.getExternalOrganization(first)).toMatchObject({ id: EXTERNAL_ORGANIZATION_ID, name: "Default Organization", role: "owner" });
+      database.prepare("UPDATE organization SET name = 'external' WHERE id = '01990ab0-0000-7000-8000-000000000001'").run();
       await store.ensureIdentityUser(identity(first));
       expect(await store.getExternalOrganization(first)).toMatchObject({ name: "Default Organization" });
-      database.prepare("UPDATE organization SET name = 'My Organization' WHERE id = 'external'").run();
+      database.prepare("UPDATE organization SET name = 'My Organization' WHERE id = '01990ab0-0000-7000-8000-000000000001'").run();
       await store.ensureIdentityUser(identity(first));
       expect(await store.getExternalOrganization(first)).toMatchObject({ name: "My Organization" });
-      database.prepare("INSERT INTO team (id, name, organization_id, created_at) VALUES ('external-default', 'Existing team', 'external', 1000)").run();
+      database.prepare("INSERT INTO team (id, name, organization_id, created_at) VALUES ('01990ab0-0000-7000-8000-000000000002', 'Existing team', '01990ab0-0000-7000-8000-000000000001', 1000)").run();
       await store.ensureIdentityUser(identity(first));
       expect(await store.listExternalTeams(first)).toHaveLength(1);
-      expect(await store.deleteExternalTeam(first, "external-default")).toBe(true);
-      expect(database.prepare("SELECT user_id FROM team_member WHERE team_id = 'external-default'").all())
+      expect(await store.deleteExternalTeam(first, EXTERNAL_DEFAULT_TEAM_ID)).toBe(true);
+      expect(database.prepare("SELECT user_id FROM team_member WHERE team_id = '01990ab0-0000-7000-8000-000000000002'").all())
         .toEqual([]);
       // A deliberate membership removal must remain effective on subsequent requests.
       database.prepare("DELETE FROM member WHERE user_id = ?").run(first);
-      database.prepare("UPDATE organization SET name = 'external' WHERE id = 'external'").run();
+      database.prepare("UPDATE organization SET name = 'external' WHERE id = '01990ab0-0000-7000-8000-000000000001'").run();
       await Promise.all([store.ensureIdentityUser(identity(first)), store.ensureIdentityUser(identity(first))]);
       await store.ensureIdentityUser(identity(second));
-      expect(database.prepare("SELECT user_id, role FROM member WHERE organization_id = 'external'").all())
+      expect(database.prepare("SELECT user_id, role FROM member WHERE organization_id = '01990ab0-0000-7000-8000-000000000001'").all())
         .toEqual([]);
       // Deleting the initial account must not try to restore its dangling metadata ID.
       database.exec("PRAGMA foreign_keys = ON");
@@ -121,17 +123,19 @@ describe("SQLite Better Auth store", () => {
     const raw = new DatabaseSync(path);
     const page = z.object({ items: z.array(z.object({ id: z.string() }).passthrough()), hasMore: z.boolean() });
     try {
-      raw.prepare('INSERT INTO organization (id, name, slug, created_at) VALUES (?, ?, ?, ?)').run("other", "Other organization", "other", Date.now());
-      raw.prepare('INSERT INTO member (id, organization_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)').run("other-member", "other", "member@example.com", "owner", Date.now());
-      raw.prepare('INSERT INTO team (id, name, organization_id, created_at) VALUES (?, ?, ?, ?)').run("other-team", "Other team", "other", Date.now());
+      const otherOrg = uuidV7();
+      const memberID = String(raw.prepare('SELECT user_id FROM account WHERE account_id = ?').get("member@example.com")!.user_id);
+      raw.prepare('INSERT INTO organization (id, name, slug, created_at) VALUES (?, ?, ?, ?)').run(otherOrg, "Other organization", "other", Date.now());
+      raw.prepare('INSERT INTO member (id, organization_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)').run(uuidV7(), otherOrg, memberID, "owner", Date.now());
+      raw.prepare('INSERT INTO team (id, name, organization_id, created_at) VALUES (?, ?, ?, ?)').run(uuidV7(), "Other team", otherOrg, Date.now());
       const organizations = page.parse(await (await send("/api/v1/admin/organizations")).json());
-      expect(organizations.items).toContainEqual({ id: "other", name: "Other organization", slug: "other", memberCount: 1, teamCount: 1 });
+      expect(organizations.items).toContainEqual({ id: encodeId("organization", otherOrg), name: "Other organization", slug: "other", memberCount: 1, teamCount: 1 });
       expect(organizations.hasMore).toBe(false);
       const users = page.parse(await (await send("/api/v1/admin/users")).json());
       expect(users.items.map(({ email, role }) => ({ email, role }))).toEqual([{ email: "admin@example.com", role: "admin" }, { email: "member@example.com", role: "user" }]);
       expect(users.hasMore).toBe(false);
       expect(Object.keys(users.items[0]!).sort()).toEqual(["createdAt", "email", "id", "name", "role"]);
-      for (let index = 0; index < 100; index++) raw.prepare('INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)').run(`u${index}`, `User ${index}`, `u${index}@example.com`, Date.now(), Date.now());
+      for (let index = 0; index < 100; index++) raw.prepare('INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)').run(uuidV7(), `User ${index}`, `u${index}@example.com`, Date.now(), Date.now());
       const first = page.parse(await (await send("/api/v1/admin/users")).json());
       const second = page.parse(await (await send("/api/v1/admin/users?offset=100")).json());
       expect(first.items).toHaveLength(100); expect(first.hasMore).toBe(true);
@@ -159,11 +163,11 @@ describe("SQLite Better Auth store", () => {
       } }))));
     expect(responses.map(({ status }) => status)).toEqual([200, 200]);
     const database = new DatabaseSync(path);
-    expect(database.prepare("SELECT count(*) AS count FROM organization WHERE id = 'external'").get()).toEqual({ count: 1 });
-    expect(database.prepare("SELECT count(*) AS count FROM member WHERE organization_id = 'external' AND role = 'owner'").get())
+    expect(database.prepare("SELECT count(*) AS count FROM organization WHERE id = '01990ab0-0000-7000-8000-000000000001'").get()).toEqual({ count: 1 });
+    expect(database.prepare("SELECT count(*) AS count FROM member WHERE organization_id = '01990ab0-0000-7000-8000-000000000001' AND role = 'owner'").get())
       .toEqual({ count: 1 });
-    expect(database.prepare("SELECT count(*) AS count FROM team WHERE id = 'external-default'").get()).toEqual({ count: 0 });
-    expect(database.prepare("SELECT count(*) AS count FROM team_member WHERE team_id = 'external-default'").get())
+    expect(database.prepare("SELECT count(*) AS count FROM team WHERE id = '01990ab0-0000-7000-8000-000000000002'").get()).toEqual({ count: 0 });
+    expect(database.prepare("SELECT count(*) AS count FROM team_member WHERE team_id = '01990ab0-0000-7000-8000-000000000002'").get())
       .toEqual({ count: 0 });
     database.close();
     await store.close?.();
@@ -191,19 +195,20 @@ describe("SQLite Better Auth store", () => {
     expect(first.status).toBe(200);
 
     const database = new DatabaseSync(path);
+    const userID = decodeId("user", z.object({ user: z.object({ id: z.string() }) }).parse(await first.json()).user.id);
     expect(database.prepare(
       'SELECT id, name, email, email_verified, role FROM "user" WHERE id = ?',
-    ).get("stable-user-id")).toEqual({
-      id: "stable-user-id",
+    ).get(userID)).toEqual({
+      id: userID,
       name: "First Name",
       email: "user@example.com",
       email_verified: 1,
       role: "admin",
     });
-    expect(database.prepare('SELECT id, name, slug FROM organization WHERE id = ?').get("external"))
-      .toEqual({ id: "external", name: "Default Organization", slug: "external" });
-    expect(database.prepare('SELECT user_id, role FROM member WHERE organization_id = ?').get("external"))
-      .toEqual({ user_id: "stable-user-id", role: "owner" });
+    expect(database.prepare('SELECT id, name, slug FROM organization WHERE id = ?').get(EXTERNAL_ORGANIZATION_ID))
+      .toEqual({ id: EXTERNAL_ORGANIZATION_ID, name: "Default Organization", slug: "external" });
+    expect(database.prepare('SELECT user_id, role FROM member WHERE organization_id = ?').get(EXTERNAL_ORGANIZATION_ID))
+      .toEqual({ user_id: userID, role: "owner" });
     expect(database.prepare('SELECT id, name, organization_id FROM team WHERE id = ?').get("external-default"))
       .toBeUndefined();
     expect(database.prepare('SELECT user_id FROM team_member WHERE team_id = ?').get("external-default"))
@@ -215,7 +220,7 @@ describe("SQLite Better Auth store", () => {
       "X-Forwarded-User": "stable-user-id",
     } });
     expect(updated.status).toBe(200);
-    expect(database.prepare('SELECT name, email FROM "user" WHERE id = ?').get("stable-user-id"))
+    expect(database.prepare('SELECT name, email FROM "user" WHERE id = ?').get(userID))
       .toEqual({ name: "Renamed User", email: "renamed@example.com" });
 
     const conflict = await app.request("/api/v1/session", { headers: {
@@ -230,10 +235,11 @@ describe("SQLite Better Auth store", () => {
       "X-Forwarded-Email": "second@example.com",
       "X-Forwarded-User": "second-user-id",
     } })).status).toBe(200);
+    const secondID = String(database.prepare("SELECT user_id FROM account WHERE account_id = ?").get("second-user-id")!.user_id);
     expect(database.prepare('SELECT role FROM member WHERE organization_id = ? AND user_id = ?')
-      .get("external", "second-user-id")).toEqual({ role: "member" });
+      .get(EXTERNAL_ORGANIZATION_ID, secondID)).toEqual({ role: "member" });
     expect(database.prepare('SELECT 1 FROM team_member WHERE team_id = ? AND user_id = ?')
-      .get("external-default", "second-user-id")).toBeUndefined();
+      .get(EXTERNAL_DEFAULT_TEAM_ID, secondID)).toBeUndefined();
     expect((await app.request("/api/v1/session", { headers: {
       "X-Forwarded-Email": "renamed@example.com",
       "X-Forwarded-Preferred-Username": "Renamed User",
@@ -250,9 +256,9 @@ describe("SQLite Better Auth store", () => {
     `).run(
       "019d493d-f5f4-7b8b-a9da-8ef51975b171",
       "019d493e-0147-7cf6-b56c-b036960bba02",
-      "stable-user-id",
+      userID,
     );
-    database.prepare('DELETE FROM "user" WHERE id = ?').run("stable-user-id");
+    database.prepare('DELETE FROM "user" WHERE id = ?').run(userID);
     expect(database.prepare("SELECT count(*) AS count FROM jobs_search_index").get()).toEqual({ count: 0 });
 
     const now = Date.now();
@@ -350,7 +356,8 @@ describe("SQLite Better Auth store", () => {
     expect(unauthorizedMcp.headers.get("www-authenticate"))
       .toContain('resource_metadata="http://localhost:5173/.well-known/oauth-protected-resource/mcp"');
     expect((await app.request("/api/auth/organization/list")).status).toBe(401);
-    expect((await app.request("/api/auth/admin/list-users")).status).toBe(401);
+    const unauthorizedAdmin = await app.request("/api/auth/admin/list-users");
+    expect(unauthorizedAdmin.status, await unauthorizedAdmin.text()).toBe(401);
     expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('organization', 'member', 'invitation', 'team', 'team_member') ORDER BY name").all())
       .toEqual([{ name: "invitation" }, { name: "member" }, { name: "organization" }, { name: "team" }, { name: "team_member" }]);
     expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'member_user_organization_idx'").get())

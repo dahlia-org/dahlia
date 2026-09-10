@@ -26,7 +26,7 @@ it.each(["sqlite", "d1"])("creates canonical tables, defaults, and cascading rel
         VALUES ('event', 'vault', 'owner', 'meeting', 'meeting_created', 1, 1);
       INSERT INTO files(file_id, vault_id, uri, size, content_type, checksum, name, metadata)
         VALUES ('file', 'vault', 'files/file/original', 5, 'image/png', 'SHA-256:test', 'image.png', '{"source":"screenshot"}');
-      INSERT INTO meeting_files(id, vault_id, meeting_id, file_id) VALUES ('link', 'vault', 'meeting', 'file');
+      INSERT INTO meeting_attachments(id, vault_id, meeting_id, file_id) VALUES ('link', 'vault', 'meeting', 'file');
       INSERT INTO recordings(session_id, meeting_id, number, started_at, ended_at, audio, revision, created_at, updated_at)
         VALUES ('session', 'meeting', 1, 1, 2, '{"mic":{"generation":"upload-token","active":false}}', 7, 1, 2);
       INSERT INTO account_settings(user_id, output_language, analysis_languages, revision)
@@ -47,7 +47,7 @@ it.each(["sqlite", "d1"])("creates canonical tables, defaults, and cascading rel
     expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     db.exec("DELETE FROM meetings WHERE meeting_id = 'meeting'");
     expect(db.prepare("SELECT * FROM recordings").all()).toEqual([]);
-    expect(db.prepare("SELECT * FROM meeting_files").all()).toEqual([]);
+    expect(db.prepare("SELECT * FROM meeting_attachments").all()).toEqual([]);
     expect(db.prepare("SELECT count(*) AS count FROM files").get()).toEqual({ count: 1 });
     expect(db.prepare("SELECT count(*) AS count FROM meeting_events").get()).toEqual({ count: 1 });
     db.exec("DELETE FROM vaults WHERE vault_id = 'vault'");

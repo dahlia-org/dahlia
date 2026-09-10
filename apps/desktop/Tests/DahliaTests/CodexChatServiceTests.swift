@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 @testable import Dahlia
 
@@ -751,7 +752,7 @@ import Foundation
                 "dahlia": .object([
                     "args": .array([
                         .string("--vault-id"),
-                        .string(vaultID.uuidString),
+                        .string(TypeID.encode(vaultID, as: .vault)),
                         .string("--write"),
                         .string("--telemetry-origin"),
                         .string("codexChat"),

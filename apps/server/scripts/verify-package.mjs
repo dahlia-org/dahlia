@@ -125,7 +125,7 @@ try {
       || !applicationMigration.includes('REFERENCES "auth"."user"("id")')
       || !applicationMigration.includes('CREATE TABLE "app"."vaults"')
       || !fileRlsMigration.includes('ALTER TABLE "app"."files" FORCE ROW LEVEL SECURITY')
-      || !fileRlsMigration.includes('ALTER TABLE "app"."meeting_files" FORCE ROW LEVEL SECURITY')
+      || !fileRlsMigration.includes('ALTER TABLE "app"."meeting_attachments" FORCE ROW LEVEL SECURITY')
     ) {
       throw new Error("Package assets are incomplete");
     }

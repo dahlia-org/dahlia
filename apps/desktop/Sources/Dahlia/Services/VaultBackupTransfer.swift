@@ -10,7 +10,7 @@ enum VaultBackupTransfer {
         "files", "projects", "organizations", "contacts", "instructions", "insights", "conversation_topics",
     ]
     static let meetingTables = [
-        "recording_sessions", "transcript_segments", "notes", "meeting_files", "summaries", "action_items",
+        "recording_sessions", "transcript_segments", "notes", "meeting_attachments", "summaries", "action_items",
         "summary_exports", "meeting_conversation_metrics", "meeting_conversation_source_metrics", "meeting_tags",
         "meeting_participants", "summary_bodies",
     ]
@@ -44,7 +44,7 @@ enum VaultBackupTransfer {
         var mappings: [String: [DatabaseValue: DatabaseValue]] = [
             "vaults": [vaultId.databaseValue: destinationVault.id.databaseValue],
         ]
-        // meeting_files triggers inspect OCR to choose indexing or analysis, so restore file text first.
+        // meeting_attachments triggers inspect OCR to choose indexing or analysis, so restore file text first.
         let tables = vaultTables + ["file_text_bodies", "meetings"] + meetingTables
             + referenceTables.keys.sorted().filter { $0 != "file_text_bodies" }
         if remapIDs {
@@ -90,7 +90,7 @@ enum VaultBackupTransfer {
                     let value: DatabaseValue = row[column]
                     if value.isNull { return value }
                     if remapIDs, table == "summary_bodies", column == "document" {
-                        return try remapSummary(row["document"], screenshots: mappings["meeting_files"] ?? [:]).databaseValue
+                        return try remapSummary(row["document"], screenshots: mappings["meeting_attachments"] ?? [:]).databaseValue
                     }
                     let referencedTable: String? = if column == "id" {
                         table

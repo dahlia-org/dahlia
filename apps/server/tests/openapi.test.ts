@@ -5,13 +5,14 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import createClient from "openapi-fetch";
 import { validate } from "./api-test-client";
-import { createApp } from "../src/app";
+import { createApp } from "./public-test-client";
 import { contracts, openapiDocument } from "../src/api/contracts";
 import { createDahliaAuth } from "../src/auth/better-auth";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { LocalObjectStorage } from "../src/storage/local";
 import type { paths } from "../src/client/generated-api";
 import { testStore } from "./test-store";
+import { encodeId, type IDKind } from "../src/typeid";
 
 const config = { authProvider: "header" as const, authHeader: "X-Forwarded-Email", databaseType: "sqlite" as const,
   baseUrl: "http://localhost:5173", storageBackend: "databricks" as const, storageDatabricksVolumePath: "/Volumes/test/app/files", oauthRedirectUris: [], maxRequestBytes: 8 * 1024 * 1024 };
@@ -135,7 +136,7 @@ it("keeps every published JSON example valid against the source wire schema", ()
     const source = contracts[contract.operationId as keyof typeof contracts] as import("@hono/zod-openapi").RouteConfig;
     const requestMedia = source.request?.body?.content?.["application/json"];
     const requestSchema = requestMedia && !("$ref" in requestMedia) ? requestMedia.schema : undefined;
-    if (requestSchema instanceof z.ZodType && request && !("$ref" in request)) {
+    if (requestSchema instanceof z.ZodType && request && !("$ref" in request) && request.content["application/json"]?.example !== undefined) {
       const parsed = requestSchema.safeParse(request.content["application/json"]?.example);
       expect.soft(parsed.success, `${contract.operationId} request: ${JSON.stringify(parsed.error?.issues)}`).toBe(true);
     }
@@ -147,7 +148,7 @@ it("keeps every published JSON example valid against the source wire schema", ()
       expect(response).toBeDefined();
       if ("$ref" in response) throw new Error("Expected a concrete shared response");
       for (const [type, media] of Object.entries(response.content ?? {})) {
-        if (!type.includes("json")) continue;
+        if (!type.includes("json") || media.example === undefined) continue;
         const declared = source.responses[status] as { content?: Record<string, { schema: z.ZodType }> };
         const parsed = declared.content![type]!.schema.safeParse(media.example);
         expect.soft(parsed.success, `${contract.operationId} ${status}: ${JSON.stringify(parsed.error?.issues)}`).toBe(true);
@@ -156,22 +157,40 @@ it("keeps every published JSON example valid against the source wire schema", ()
   }
 });
 
-it("shares error responses and nullable record DTOs without losing their contracts", () => {
+it("shares metadata and authentication while retaining public and browser-only overrides", () => {
   const spec = openapiDocument();
-  const responses = spec.components!.responses! as Record<string, PublishedResponse>;
-  expect(Object.keys(responses)).toHaveLength(18);
+  expect(spec.security).toEqual([{ bearerAuth: [] }, { browserSession: [] }, { trustedProxy: [] }]);
   for (const contract of Object.values(contracts)) {
     const operation = spec.paths![contract.path]![contract.method as "get"]!;
-    for (const [status, response] of Object.entries(operation.responses!)) {
-      if (Number(status) < 400) continue;
-      expect(response).toEqual({ $ref: `#/components/responses/Problem${status}` });
-      const shared = responses[`Problem${status}`]!;
-      if ("$ref" in shared) throw new Error("Expected a concrete shared response");
-      const source = contract.responses[status]!;
-      if ("$ref" in source) throw new Error("Expected a source response definition");
-      expect(shared.headers).toEqual(source.headers);
-      expect(shared.content!["application/problem+json"]!.schema).toEqual({ $ref: "#/components/schemas/Problem" });
-      expect(shared.content!["application/problem+json"]!.example).toMatchObject({ status: Number(status) });
+    expect(operation.security).toEqual(contract.security);
+  }
+  expect(spec.paths!["/healthz"]!.get!.security).toEqual([]);
+  expect(spec.paths!["/openapi.json"]!.get!.security).toEqual([]);
+  expect(spec.paths!["/api/v1/session"]!.get!.security).toEqual([{ browserSession: [] }, { trustedProxy: [] }]);
+  expect(spec.paths!["/api/v1/vaults"]!.get!.security).toBeUndefined();
+  const schemas = spec.components!.schemas!;
+  for (const name of ["Transcript", "NullableTranscript"]) {
+    expect(schemas[name]).toMatchObject({ properties: { metadata: { $ref: "#/components/schemas/NullableTranscriptMetadata" } } });
+  }
+  expect(schemas.Summary).toMatchObject({ properties: { metadata: { $ref: "#/components/schemas/NullableSummaryMetadata" } } });
+  expect(schemas.NullableSummaryMetadata).toMatchObject({ properties: { response: { $ref: "#/components/schemas/SummaryResponseMetadata" } } });
+  expect(JSON.stringify(spec)).not.toContain("019f0d36-0520-7000-8000-000000000001");
+  expect(JSON.stringify(spec)).not.toContain('"format":"uuid"');
+  expect(schemas.Person).toMatchObject({ properties: { id: { pattern: "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$" } } });
+  expect(schemas.TeamMember).toMatchObject({ properties: { id: { pattern: "^tmem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$" } } });
+});
+
+it("shares error responses and nullable record DTOs without losing their contracts", () => {
+  const spec = openapiDocument();
+  for (const contract of Object.values(contracts)) {
+    const operation = spec.paths![contract.path]![contract.method as "get"]!;
+    expect(Object.keys(operation.responses!)).toEqual(Object.keys(contract.responses));
+    expect(Object.keys(operation.responses!).filter((status) => Number(status) >= 400)).toEqual([]);
+    if (contract.responses.default) {
+      expect(operation.responses!.default).toEqual({ $ref: "#/components/responses/Problem" });
+      expect(spec.components!.responses!.Problem).toMatchObject({
+        content: { "application/problem+json": { schema: { $ref: "#/components/schemas/Problem" } } },
+      });
     }
   }
   // Nullable components preserve tombstones without unsupported Swift unions or allOf that rejects null.
@@ -212,4 +231,25 @@ it("audits the concrete installed Better Auth endpoints and MCP tools", async ()
     const mcpSource = await readFile(new URL("../src/mcp.ts", import.meta.url), "utf8");
     expect([...mcpSource.matchAll(/server.registerTool\("([^"]+)"/g)].map((match) => match[1]).sort()).toEqual(audit.mcp.tools.toSorted());
   } finally { await store.close?.(); await rm(directory, { recursive: true, force: true }); }
+});
+
+it("preserves UUIDv7 version and variant constraints in public input IDs", () => {
+  const spec = openapiDocument();
+  const paths: [string, IDKind][] = [
+    ["components|schemas|Transaction|properties|id", "transaction"],
+    ["components|schemas|Transaction|properties|operations|items|anyOf|0|properties|id", "operation"],
+    ["paths|/api/v1/file-uploads|post|requestBody|content|application/json|schema|properties|id", "file"],
+    [`paths|${contracts.startSummaryJob.path}|post|requestBody|content|application/json|schema|anyOf|0|properties|id`, "summaryJob"],
+    [`paths|${contracts.retrySummaryJob.path}|post|requestBody|content|application/json|schema|properties|id`, "summaryJob"],
+    [`paths|${contracts.transferVault.path}|post|parameters|1|schema`, "transaction"],
+  ];
+  for (const [path, kind] of paths) {
+    let schema: unknown = spec;
+    for (const key of path.split("|")) schema = (schema as Record<string, unknown>)[key];
+    const pattern = new RegExp(z.object({ pattern: z.string() }).parse(schema).pattern);
+    for (const version of [0, 4, 7, 8]) for (const variant of [0, 8, 9, 10, 11, 12, 15]) {
+      const uuid = `ffffffff-ffff-${version}fff-${variant.toString(16)}fff-ffffffffffff`;
+      expect(pattern.test(encodeId(kind, uuid)), `${path}: ${uuid}`).toBe(version === 7 && variant >= 8 && variant <= 11);
+    }
+  }
 });

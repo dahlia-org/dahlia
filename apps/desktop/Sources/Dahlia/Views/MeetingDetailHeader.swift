@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import SwiftUI
 
 /// ミーティング詳細のタイトル。クリックでインライン編集できる。
@@ -106,7 +107,7 @@ private struct MeetingNameHeader: View {
     private func copyMeetingID() {
         guard let meetingID else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(meetingID.uuidString, forType: .string)
+        NSPasteboard.general.setString(TypeID.encode(meetingID, as: .meeting), forType: .string)
         copyCount += 1
     }
 }

@@ -1,3 +1,5 @@
+import { decodeId, type IDKind } from "../typeid";
+
 export interface DashboardCapabilities {
   admin: boolean;
   sessions: boolean;
@@ -58,23 +60,21 @@ export function resolveDashboardRoute(
     ? { page: "organization", organizationSlug: organization[1] }
     : { redirect: "/dashboard" };
   const invitation = path.match(/^\/accept-invitation\/([^/]+)$/);
-  if (invitation) {
+  if (invitation && validID("invitation", invitation[1])) {
     return capabilities.sharing && capabilities.sessions
       ? { page: "invitation", invitationId: invitation[1] }
       : { redirect: "/dashboard" };
   }
   if (path === "/vaults") return capabilities.sync ? { page: "vaults" } : { redirect: "/dashboard" };
   const detail = path.match(/^\/(meetings|projects|files)\/([^/]+)$/);
-  if (detail) {
+  if (detail && validID(({ meetings: "meeting", projects: "project", files: "file" } as const)[detail[1] as "meetings" | "projects" | "files"], detail[2])) {
     if (!capabilities.sync) return { redirect: "/dashboard" };
     if (detail[1] === "meetings") return { page: "meeting", meetingId: detail[2] };
     if (detail[1] === "projects") return { page: "project", projectId: detail[2] };
     return { page: "file", fileId: detail[2] };
   }
-  const legacy = path.match(/^\/vaults\/[^/]+\/(meetings|projects)\/([^/]+)$/);
-  if (legacy) return { redirect: capabilities.sync ? `/${legacy[1]}/${legacy[2]}` : "/dashboard" };
   const vault = path.match(/^\/vaults\/([^/]+)$/);
-  if (vault) return capabilities.sync ? { page: "vault", vaultId: vault[1] } : { redirect: "/dashboard" };
+  if (vault && validID("vault", vault[1])) return capabilities.sync ? { page: "vault", vaultId: vault[1] } : { redirect: "/dashboard" };
   if (path === "/dashboard/settings") {
     return { page: "settings" };
   }
@@ -87,4 +87,8 @@ export function resolveDashboardRoute(
   if (path === "/admin/organizations") return capabilities.admin ? { page: "admin-organizations" } : { redirect: "/dashboard" };
   if (path === "/admin/settings") return capabilities.admin ? { page: "admin-settings" } : { redirect: "/dashboard" };
   return { redirect: "/dashboard" };
+}
+
+function validID(kind: IDKind, value: string | undefined): boolean {
+  try { decodeId(kind, value ?? ""); return true; } catch { return false; }
 }

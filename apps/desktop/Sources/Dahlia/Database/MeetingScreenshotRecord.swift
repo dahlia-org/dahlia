@@ -72,7 +72,7 @@ struct MeetingScreenshotRecord: Codable, FetchableRecord, PersistableRecord, Sen
             ).insert(db)
             try FileTextBodyRecord(fileId: originalFileId, ocrText: ocrText, caption: caption).insert(db)
         }
-        try MeetingFileRecord(
+        try MeetingAttachmentRecord(
             id: id,
             meetingId: meetingId,
             fileId: originalFileId,

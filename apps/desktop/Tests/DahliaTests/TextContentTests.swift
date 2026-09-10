@@ -9,7 +9,7 @@
 
     @MainActor
     struct TextContentTests {
-        @Test(arguments: ["file", "vault", "meeting", "meeting_file", "transcript", "other-file"])
+        @Test(arguments: ["file", "vault", "meeting", "meeting_attachment", "transcript", "other-file"])
         func recordingFileFetchProtectsOnlyRelatedPendingWrites(pending: String) async throws {
             let fixture = try textFixture()
             let fileId = UUID.v7()
@@ -25,7 +25,7 @@
                     createdAt: .now,
                     updatedAt: .now
                 ).insert(db)
-                try MeetingFileRecord(id: fileId, meetingId: fixture.meetingId, fileId: fileId, capturedAt: .now, createdAt: .now).insert(db)
+                try MeetingAttachmentRecord(id: fileId, meetingId: fixture.meetingId, fileId: fileId, capturedAt: .now, createdAt: .now).insert(db)
                 try FileTextBodyRecord(fileId: fileId, ocrText: "local", caption: "local").save(db)
                 try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'file', ?, 1)", arguments: [fixture.vaultId, fileId])
                 try db.execute(
@@ -92,7 +92,7 @@
                     localReference: reference,
                     remoteReference: reference
                 ).insert(db)
-                try MeetingFileRecord(id: fileId, meetingId: fixture.meetingId, fileId: fileId, capturedAt: .now, createdAt: .now).insert(db)
+                try MeetingAttachmentRecord(id: fileId, meetingId: fixture.meetingId, fileId: fileId, capturedAt: .now, createdAt: .now).insert(db)
                 try FileTextBodyRecord(fileId: fileId, ocrText: nil, caption: nil).save(db)
                 try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'file', ?, 1)", arguments: [fixture.vaultId, fileId])
                 try db.execute(
@@ -981,13 +981,22 @@
                 #expect(request.url?.path == "/api/v1/vaults/\(fixture.vaultId.uuidString.lowercased())/text-search")
                 let input = ImageURLProtocol.requestJSON(request)
                 #expect(input?["query"] as? String == "match")
-                let next = input?["cursor"] as? String == "next"
+                let next = input?["cursor"] is String
                 let id = next ? includedId : fixture.meetingId
                 let body: [String: Any] = [
                     "version": 1,
                     "scope": "server",
                     "items": [["id": id.uuidString, "meetingId": id.uuidString, "snippet": "Server-only match"]],
-                    "nextCursor": next ? NSNull() : "next",
+                    "nextCursor": next ? NSNull() : String(
+                        decoding: (try? JSONSerialization.data(withJSONObject: [
+                            fixture.vaultId.uuidString.lowercased(),
+                            "meeting",
+                            "match",
+                            1,
+                            200,
+                        ])) ?? Data(),
+                        as: UTF8.self
+                    ),
                 ]
                 do {
                     return try (200, [:], JSONSerialization.data(withJSONObject: body))
@@ -1450,7 +1459,7 @@
                             contentHash: String(repeating: "0", count: 64)
                         ).jsonString()
                     ).insert(db)
-                    try MeetingFileRecord(id: id, meetingId: fixture.meetingId, fileId: id, capturedAt: .now, createdAt: .now).insert(db)
+                    try MeetingAttachmentRecord(id: id, meetingId: fixture.meetingId, fileId: id, capturedAt: .now, createdAt: .now).insert(db)
                 }
                 try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, ?, ?, 3)", arguments: [fixture.vaultId, entity.rawValue, id])
                 try db.execute(
@@ -1649,7 +1658,7 @@
                     "byteCount": pageDigest.byteCount,
                     "count": 1,
                     "items": [item],
-                    "nextCursor": index == 0 ? "page2" : NSNull(),
+                    "nextCursor": index == 0 ? "2026-01-01T00:00:00.000Z,\(segmentId.uuidString.lowercased())" : NSNull(),
                 ])
             }
             let origin = try queue.write { db -> String in

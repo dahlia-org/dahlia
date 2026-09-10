@@ -13,7 +13,7 @@ enum SyncEntity: String, Codable, DatabaseValueConvertible, Sendable {
     case transcript
     case file
     case recording
-    case meetingFile = "meeting_file"
+    case meetingAttachment = "meeting_attachment"
     case meetingEvent = "meeting_event"
 }
 
@@ -640,7 +640,7 @@ enum SyncTransactionQueue {
                         from: SyncJSON.encoder.encode(value)
                     )
                     let parentMeetingId: UUID? = switch record.entity {
-                    case .meetingFile, .recording: canonical.meetingId
+                    case .meetingAttachment, .recording: canonical.meetingId
                     case .summary, .transcript: record.id
                     default: nil
                     }
@@ -801,8 +801,8 @@ enum SyncTransactionQueue {
             try RecordingArchiveRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
         case .file:
             try FileRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
-        case .meetingFile:
-            try MeetingFileRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
+        case .meetingAttachment:
+            try MeetingAttachmentRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
         case .transcript:
             if let info = value.transcript {
                 try TranscriptRecord.applyCanonical(meetingId: id, info: info, in: db)

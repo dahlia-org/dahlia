@@ -134,7 +134,7 @@ struct SyncResetSnapshot {
         meetings = ids[.meeting, default: []]
         summaries = ids[.summary, default: []]
         transcripts = ids[.transcript, default: []]
-        screenshots = ids[.meetingFile, default: []]
+        screenshots = ids[.meetingAttachment, default: []]
         files = ids[.file, default: []]
         recordings = ids[.recording, default: []]
     }
@@ -154,7 +154,7 @@ struct SyncResetSnapshot {
         meetings = ids(.meeting)
         summaries = ids(.summary)
         transcripts = ids(.transcript)
-        screenshots = ids(.meetingFile)
+        screenshots = ids(.meetingAttachment)
         files = ids(.file)
         recordings = ids(.recording)
     }
@@ -568,7 +568,8 @@ actor SyncWorker {
             }
             let body = chunk.body
             let data = chunk.data
-            let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            let publicData = try PublicIDWire.data(data, shape: "chunk", direction: .encode)
+            let hash = SHA256.hash(data: publicData).map { String(format: "%02x", $0) }.joined()
             if sendUploads {
                 let input = try SyncJSON.decoder.decode(Operations.PutTranscriptChunk.Input.Body.JsonPayload.self, from: data)
                 _ = try await apiClient.perform(origin: origin, connectionId: transaction.connectionId, preservingJSONBody: data) {
@@ -1164,7 +1165,7 @@ actor SyncWorker {
             switch change.entity {
             case .summary, .transcript:
                 return change.entityId
-            case .meetingFile, .recording:
+            case .meetingAttachment, .recording:
                 return change.record?.meetingId
             case .vault, .project, .meeting, .file, .meetingEvent:
                 return nil
@@ -1182,7 +1183,7 @@ actor SyncWorker {
 
     static func missingParentFileIDs(in changes: [SyncChangePage.Change], vaultId: UUID, dbQueue: DatabaseQueue) async throws -> [UUID] {
         let referenced = Set(changes.compactMap { change in
-            change.entity == .meetingFile && change.action == "upsert" ? change.record?.fileId : nil
+            change.entity == .meetingAttachment && change.action == "upsert" ? change.record?.fileId : nil
         })
         return try await dbQueue.read { db in
             try referenced.filter { id in
@@ -1317,7 +1318,7 @@ actor SyncWorker {
         }
         let deletes = current.values.filter { $0.action == "delete" }.sorted { $0.sequence < $1.sequence }
         return (reset.map { [$0] } ?? []) + sorted(.vault) + orderedProjects + sorted(.meeting) + sorted(.summary)
-            + sorted(.transcript) + sorted(.file) + sorted(.meetingFile) + deletes
+            + sorted(.transcript) + sorted(.file) + sorted(.meetingAttachment) + deletes
     }
 
     private func pullTargets() async throws -> [SyncTarget] {

@@ -39,7 +39,7 @@ export const serverInitializations = appSchema.table("server_initializations", {
 });
 
 export const accountSettings = appSchema.table("account_settings", {
-  userId: text("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
   summary: jsonb("summary").$type<AccountSettings["summary"]>().default(DEFAULT_ACCOUNT_SETTINGS.summary).notNull(),
   revision: integer("revision").default(1).notNull(),
   outputLanguage: text("output_language").$type<AccountSettings["outputLanguage"]>().notNull(),
@@ -47,8 +47,8 @@ export const accountSettings = appSchema.table("account_settings", {
 }, (table) => [
   pgPolicy("account_settings_owner", {
     for: "all",
-    using: sql`${table.userId} = nullif(current_setting('app.user_id', true), '')`,
-    withCheck: sql`${table.userId} = nullif(current_setting('app.user_id', true), '')`,
+    using: sql`${table.userId} = nullif(current_setting('app.user_id', true), '')::uuid`,
+    withCheck: sql`${table.userId} = nullif(current_setting('app.user_id', true), '')::uuid`,
   }),
 ]).enableRLS();
 
@@ -134,9 +134,9 @@ export const syncedProject = appSchema.table("projects", {
 export const syncedVaultPermission = appSchema.table("vault_permissions", {
   vaultId: uuid("vault_id").notNull(),
   principalType: text("principal_type").notNull(),
-  principalId: text("principal_id").notNull(),
+  principalId: uuid("principal_id").notNull(),
   role: text("role").notNull(),
-  grantedByUserId: text("granted_by_user_id").notNull(),
+  grantedByUserId: uuid("granted_by_user_id").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   primaryKey({
@@ -205,7 +205,7 @@ export const syncedMeeting = appSchema.table("meetings", {
 export const meetingEvent = appSchema.table("meeting_events", {
   id: uuid("id").primaryKey(),
   vaultId: uuid("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
-  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  ownerUserId: uuid("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   meetingId: uuid("meeting_id").notNull(),
   kind: text("kind").notNull(),
   occurredAt: timestamp("occurred_at").notNull(),
@@ -362,7 +362,7 @@ export const syncedRecording = appSchema.table("recordings", {
   pgPolicy("recording_write", { for: "all", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" WHERE "meeting_id" = ${table.meetingId} AND "app"."current_identity_owns_vault"("vault_id"))`, withCheck: sql`EXISTS (SELECT 1 FROM "app"."meetings" WHERE "meeting_id" = ${table.meetingId} AND "app"."current_identity_owns_vault"("vault_id"))` }),
 ]).enableRLS();
 
-export const meetingFile = appSchema.table("meeting_files", {
+export const meetingAttachment = appSchema.table("meeting_attachments", {
   id: uuid("id").primaryKey(),
   vaultId: uuid("vault_id").notNull(),
   meetingId: uuid("meeting_id").notNull(),
@@ -374,13 +374,13 @@ export const meetingFile = appSchema.table("meeting_files", {
 }, (table) => [
   foreignKey({ columns: [table.vaultId, table.meetingId], foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId] }).onDelete("cascade"),
   foreignKey({ columns: [table.vaultId, table.fileId], foreignColumns: [syncedFile.vaultId, syncedFile.fileId] }),
-  unique("meeting_files_meeting_file_unique").on(table.meetingId, table.fileId),
-  index("meeting_files_vault_meeting_id_idx").on(table.vaultId, table.meetingId, table.id),
-  pgPolicy("meeting_file_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})` }),
-  pgPolicy("meeting_file_write", { for: "all", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` })
+  unique("meeting_attachments_meeting_attachment_unique").on(table.meetingId, table.fileId),
+  index("meeting_attachments_vault_meeting_id_idx").on(table.vaultId, table.meetingId, table.id),
+  pgPolicy("meeting_attachment_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})` }),
+  pgPolicy("meeting_attachment_write", { for: "all", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` })
 ]).enableRLS();
 
-// Read-only image projection. All writes belong to files and meeting_files.
+// Read-only image projection. All writes belong to files and meeting_attachments.
 export const syncedScreenshot = appSchema.view("meeting_images", {
   screenshotId: uuid("screenshot_id").notNull(),
   fileId: uuid("file_id").notNull(),
@@ -403,7 +403,7 @@ export const syncedScreenshot = appSchema.view("meeting_images", {
     f.metadata ->> 'ocr_text' AS ocr_text,
     f.metadata ->> 'caption' AS caption,
     m.revision
-  FROM app.meeting_files m JOIN app.files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id
+  FROM app.meeting_attachments m JOIN app.files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id
   WHERE f.metadata ->> 'source' = 'screenshot'
 `);
 
@@ -469,7 +469,7 @@ export const searchEmbedding = appSchema.table("search_embeddings", {
 export const searchIndexJob = appSchema.table("jobs_search_index", {
   vaultId: uuid("vault_id").notNull(),
   documentId: uuid("document_id").notNull(),
-  ownerUserId: text("owner_user_id").notNull(),
+  ownerUserId: uuid("owner_user_id").notNull(),
   model: text("model").notNull(),
   dimensions: integer("dimensions").notNull(),
   generation: integer("generation").default(1).notNull(),
@@ -499,7 +499,7 @@ export const searchIndexJob = appSchema.table("jobs_search_index", {
 
 export const syncTransactionReceipt = appSchema.table("transaction_receipts", {
   transactionId: uuid("transaction_id").primaryKey(),
-  ownerUserId: text("owner_user_id").notNull(),
+  ownerUserId: uuid("owner_user_id").notNull(),
   vaultId: uuid("vault_id").notNull(),
   requestHash: text("request_hash").notNull(),
   responseJson: jsonb("response_json"),
@@ -515,14 +515,14 @@ export const syncTransactionReceipt = appSchema.table("transaction_receipts", {
   index("transaction_receipt_owner_created_idx").on(table.ownerUserId, table.createdAt),
   pgPolicy("transaction_receipt_owner", {
     for: "all",
-    using: sql`${table.ownerUserId} = current_setting('app.user_id', true)`,
-    withCheck: sql`${table.ownerUserId} = current_setting('app.user_id', true)`,
+    using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,
+    withCheck: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,
   }),
 ]).enableRLS();
 
 export const syncChange = appSchema.table("sync_changes", {
   sequence: bigserial("sequence", { mode: "number" }).primaryKey(),
-  ownerUserId: text("owner_user_id").notNull(),
+  ownerUserId: uuid("owner_user_id").notNull(),
   vaultId: uuid("vault_id").notNull(),
   entity: text("entity").notNull(),
   entityId: uuid("entity_id").notNull(),
@@ -531,7 +531,7 @@ export const syncChange = appSchema.table("sync_changes", {
   transactionId: uuid("transaction_id").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  check("sync_change_entity_check", sql`${table.entity} IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_file', 'recording')`),
+  check("sync_change_entity_check", sql`${table.entity} IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')`),
   check("sync_change_action_check", sql`${table.action} IN ('upsert', 'delete', 'reset')`),
   index("sync_change_owner_vault_sequence_idx").on(table.ownerUserId, table.vaultId, table.sequence),
   index("sync_change_owner_sequence_idx").on(table.ownerUserId, table.sequence),
@@ -539,7 +539,7 @@ export const syncChange = appSchema.table("sync_changes", {
 
 // Survives Vault deletion and ledger pruning; contains no canonical content.
 export const syncVaultState = appSchema.table("sync_vault_state", {
-  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  ownerUserId: uuid("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   vaultId: uuid("vault_id").notNull(),
   latestSequence: bigint("latest_sequence", { mode: "number" }).default(0).notNull(),
   prunedThrough: bigint("pruned_through", { mode: "number" }).default(0).notNull(),
@@ -566,7 +566,7 @@ export const storageDeleteJob = appSchema.table("jobs_storage_delete", {
 export const imageAnalysisJob = appSchema.table("jobs_image_analysis", {
   fileId: uuid("file_id").primaryKey().references(() => syncedFile.fileId, { onDelete: "cascade" }),
   vaultId: uuid("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
-  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  ownerUserId: uuid("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   model: text("model").notNull(),
   status: text("status").default("pending").notNull(),
   attempts: integer("attempts").default(0).notNull(),
@@ -584,7 +584,7 @@ export const summaryJob = appSchema.table("jobs_summary", {
   id: uuid("id").primaryKey(),
   vaultId: uuid("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
   meetingId: uuid("meeting_id").notNull().references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),
-  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  ownerUserId: uuid("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   method: text("method").$type<"transcript" | "audio">().notNull(),
   settings: jsonb("settings").$type<SummaryJob["settings"]>().notNull(),
   input: jsonb("input").$type<SummaryJob["input"]>(),
@@ -607,8 +607,8 @@ export const summaryJob = appSchema.table("jobs_summary", {
   uniqueIndex("summary_job_active_meeting_idx").on(table.meetingId).where(sql`${table.status} IN ('pending', 'processing')`),
   index("summary_job_owner_created_idx").on(table.ownerUserId, table.createdAt),
   pgPolicy("summary_job_owner", {
-    for: "all", using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')`,
-    withCheck: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')`,
+    for: "all", using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,
+    withCheck: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,
   }),
 ]).enableRLS();
 
@@ -632,7 +632,7 @@ export const summary = appSchema.table("summaries", {
 export const vaultTransfer = appSchema.table("vault_transfers", {
   sequence: bigserial("sequence", { mode: "number" }).primaryKey(),
   id: uuid("id").notNull().unique(),
-  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  ownerUserId: uuid("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   idempotencyKey: uuid("idempotency_key").notNull(),
   requestHash: text("request_hash").notNull(),
   sourceVaultId: uuid("source_vault_id").notNull(),
@@ -647,7 +647,7 @@ export const vaultTransfer = appSchema.table("vault_transfers", {
   }),
   pgPolicy("vault_transfer_owner", {
     for: "all",
-    using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')`,
-    withCheck: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')`,
+    using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,
+    withCheck: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,
   }),
 ]).enableRLS();

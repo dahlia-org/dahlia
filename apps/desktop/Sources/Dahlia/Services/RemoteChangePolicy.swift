@@ -76,9 +76,9 @@ enum RemoteChangePolicy {
         case .summary, .transcript:
             meetings.insert(id)
         case .file:
-            try meetings.formUnion(UUID.fetchAll(db, sql: "SELECT meetingId FROM meeting_files WHERE fileId = ?", arguments: [id]))
-        case .meetingFile:
-            if let link = try MeetingFileRecord.fetchOne(db, key: id) {
+            try meetings.formUnion(UUID.fetchAll(db, sql: "SELECT meetingId FROM meeting_attachments WHERE fileId = ?", arguments: [id]))
+        case .meetingAttachment:
+            if let link = try MeetingAttachmentRecord.fetchOne(db, key: id) {
                 meetings.insert(link.meetingId)
                 keys.insert(.init(entity: .file, id: link.fileId))
             }
@@ -111,14 +111,14 @@ enum RemoteChangePolicy {
         let related = try references(entity, id: id, record: record, in: db)
         let destructive = action == "delete" || action == "reset"
         if entity == .file, destructive,
-           try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM meeting_files WHERE fileId = ?)", arguments: [id]) == true { return false }
+           try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM meeting_attachments WHERE fileId = ?)", arguments: [id]) == true { return false }
         let pending = try Row.fetchCursor(db, sql: """
         SELECT o.entity, o.entityId, o.action, o.payloadJSON
         FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
         WHERE t.vaultId = ? AND (
             o.entity = 'vault' OR o.entity = ? AND o.entityId = ?
             OR o.action IN ('delete', 'reset', 'create') OR ?
-            OR ? AND o.entity = 'meeting_file' OR ? AND o.entity = 'file'
+            OR ? AND o.entity = 'meeting_attachment' OR ? AND o.entity = 'file'
         )
         """, arguments: [
             vaultId,
@@ -126,7 +126,7 @@ enum RemoteChangePolicy {
             id,
             destructive || entity == .project || entity == .vault,
             entity == .file,
-            entity == .meetingFile,
+            entity == .meetingAttachment,
         ])
         while let row = try pending.next() {
             let localEntity: SyncEntity = row["entity"]
@@ -135,8 +135,8 @@ enum RemoteChangePolicy {
             let localKey = Key(entity: localEntity, id: localId)
             if entity == .vault || localEntity == .vault || key == localKey { return false }
             if localAction == "delete" || localAction == "reset" || localAction == "create", related.contains(localKey) { return false }
-            if entity == .meetingFile, localEntity == .file, related.contains(localKey) { return false }
-            guard destructive || entity == .project || (entity == .file && localEntity == .meetingFile) else { continue }
+            if entity == .meetingAttachment, localEntity == .file, related.contains(localKey) { return false }
+            guard destructive || entity == .project || (entity == .file && localEntity == .meetingAttachment) else { continue }
             let payload: String? = row["payloadJSON"]
             let localRecord = try payload.map { try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: Data($0.utf8)) }
             let localReferences = try references(localEntity, id: localId, record: localRecord, in: db)
@@ -147,8 +147,8 @@ enum RemoteChangePolicy {
             if entity == .transcript, id == meeting { return false }
             if entity == .file, related.contains(.init(entity: .meeting, id: meeting)),
                let checksum = record?.checksum, let file = try FileRecord.fetchOne(db, key: id), checksum != file.checksum { return false }
-            if entity == .meetingFile, related.contains(.init(entity: .meeting, id: meeting)),
-               let record, let link = try MeetingFileRecord.fetchOne(db, key: id),
+            if entity == .meetingAttachment, related.contains(.init(entity: .meeting, id: meeting)),
+               let record, let link = try MeetingAttachmentRecord.fetchOne(db, key: id),
                record.fileId != link.fileId || record.meetingId != link.meetingId || record.sessionId != link.sessionId || record.capturedAt != link
                .capturedAt { return false }
             if destructive {

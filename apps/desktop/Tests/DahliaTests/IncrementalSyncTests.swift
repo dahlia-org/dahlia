@@ -119,8 +119,8 @@
             let expected = try await SyncWorker.transcriptChunks(
                 SyncTransactionQueue.transcriptPatch(operationId: operationId, dbQueue: fixture.queue)
             )
-            let expectedManifest = expected.map { chunk in
-                SHA256.hash(data: chunk.data).map { String(format: "%02x", $0) }.joined()
+            let expectedManifest = try expected.map { chunk in
+                SHA256.hash(data: try PublicIDWire.data(chunk.data, shape: "chunk", direction: .encode)).map { String(format: "%02x", $0) }.joined()
             }
             let manifests = Mutex<[Data]>([])
             let uploadedHashes = Mutex<[String]>([])
@@ -136,7 +136,11 @@
                 }
                 if request.httpMethod == "PUT" {
                     #expect(body.count <= 6 * 1024 * 1024)
-                    let hash = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
+                    guard let publicBody = try? PublicIDWire.data(body, shape: "chunk", direction: .encode) else {
+                        Issue.record("Invalid transcript chunk")
+                        return (400, [:], Data())
+                    }
+                    let hash = SHA256.hash(data: publicBody).map { String(format: "%02x", $0) }.joined()
                     #expect(request.value(forHTTPHeaderField: "X-Dahlia-Content-SHA256") == hash)
                     uploadedHashes.withLock { $0.append(hash) }
                     return (204, [:], Data())
@@ -499,7 +503,7 @@
             try await fixture.queue.write { db in
                 try db.execute(sql: "UPDATE recording_sessions SET endedAt = ?", arguments: [Date()])
                 try SyncTransactionQueue.discard(vaultId: fixture.vaultId, in: db)
-                try db.execute(sql: "DELETE FROM meeting_files WHERE fileId = ?", arguments: [fixture.fileId])
+                try db.execute(sql: "DELETE FROM meeting_attachments WHERE fileId = ?", arguments: [fixture.fileId])
             }
             context = try await fixture.context()
             #expect(try await RemoteChangeApplier.applyIncremental(
@@ -526,7 +530,7 @@
                 "name": "Restored", "status": "READY", "createdAt": "2026-09-07T00:00:00Z", "updatedAt": "2026-09-07T00:00:00Z",
                 "contentOmitted": true, "hasSummary": false, "contentCount": 0,
             ])
-            let link = try fixture.change(.meetingFile, id: fixture.fileId, revision: 1, fields: [
+            let link = try fixture.change(.meetingAttachment, id: fixture.fileId, revision: 1, fields: [
                 "meetingId": fixture.meetingId.uuidString, "fileId": fixture.fileId.uuidString, "createdAt": "2026-09-07T00:00:00Z",
             ])
             let records = try [meeting, file, link].map { try wireChange($0, vaultId: fixture.vaultId) }
@@ -661,7 +665,7 @@
             let fixture = try Fixture()
             let fileId = UUID.v7()
             let timestamp = "2026-09-07T00:00:00Z"
-            let changes = try page(vaultId: fixture.vaultId, [fixture.change(.meetingFile, id: .v7(), revision: 1, fields: [
+            let changes = try page(vaultId: fixture.vaultId, [fixture.change(.meetingAttachment, id: .v7(), revision: 1, fields: [
                 "fileId": fileId.uuidString, "meetingId": fixture.meetingId.uuidString,
                 "capturedAt": timestamp, "createdAt": timestamp,
             ])], cursor: "after")
@@ -886,7 +890,7 @@
                         updatedAt: .now
                     ).insert(db)
                     try FileTextBodyRecord(fileId: fileId, ocrText: "local OCR", caption: "local caption").insert(db)
-                    try MeetingFileRecord(id: fileId, meetingId: meetingId, fileId: fileId, capturedAt: .now, createdAt: .now).insert(db)
+                    try MeetingAttachmentRecord(id: fileId, meetingId: meetingId, fileId: fileId, capturedAt: .now, createdAt: .now).insert(db)
                     try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'file', ?, 1)", arguments: [vaultId, fileId])
                     try TextContentStore.registerLocal(entity: .file, id: fileId, vaultId: vaultId, in: db)
                 }

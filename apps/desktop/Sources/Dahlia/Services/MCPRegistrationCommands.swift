@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 
 struct MCPRegistrationCommands: Equatable {
@@ -12,8 +13,8 @@ struct MCPRegistrationCommands: Equatable {
     ) {
         helperPath = helperURL.path
         helper = Self.shellQuote(helperURL.path)
-        self.vaultID = vaultID.uuidString
-        vault = Self.shellQuote(vaultID.uuidString)
+        self.vaultID = TypeID.encode(vaultID, as: .vault)
+        vault = Self.shellQuote(TypeID.encode(vaultID, as: .vault))
     }
 
     func registrationCommand(for client: MCPClient, writeEnabled: Bool) -> String? {

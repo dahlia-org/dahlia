@@ -6,7 +6,7 @@ import { summaryMetadataSchema } from "../summary/metadata";
 import { summaryInputSchema, transcriptSettingsSchema } from "../summary/model";
 import { transactionDataSchemas, transactionOperationSchema, transactionSchema } from "../sync/schemas";
 
-export const id = z.string().uuid().openapi({ example: "019f0d36-0520-7000-8000-000000000001" });
+export const id = z.string().uuid();
 export const principalId = z.string().min(1).max(200);
 export const date = z.string().datetime({ offset: true });
 export const integer = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -41,13 +41,13 @@ export const meetingFile = z.object({ id, vaultId: id, meetingId: id, fileId: id
 }).openapi("MeetingFile");
 export const transcript = z.object({ id, meetingId: id, version: integer, syncRevision: integer,
   status: z.enum(["active", "inactive", "ended", "unknown"]), startedAt: date.nullable(), endedAt: date.nullable(),
-  latestSegmentCreatedAt: date.nullable(), createdAt: date, metadata: transcriptMetadataSchema.nullable(),
+  latestSegmentCreatedAt: date.nullable(), createdAt: date, metadata: transcriptMetadataSchema.nullable().openapi("NullableTranscriptMetadata"),
 }).openapi("Transcript");
 export const segment = z.object({ segmentId: id, startedAt: date, endedAt: date.nullable(), text: z.string(), createdAt: date.nullable(),
   audioSource: z.string().nullable(), speakerLabel: z.string().nullable(),
 }).openapi("TranscriptSegment");
 export const summary = z.object({ id, meetingId: id, version: integer, title: z.string(), document: z.string(),
-  createdAt: date.nullable(), savedAt: date, metadata: summaryMetadataSchema.nullable(),
+  createdAt: date.nullable(), savedAt: date, metadata: summaryMetadataSchema.nullable().openapi("NullableSummaryMetadata"),
 }).openapi("Summary");
 const summaryProjection = z.object({ id: id.nullable(), meetingId: id, version: integer.nullable(), title: z.string().nullable(),
   createdAt: date.nullable(), document: z.string().nullable().optional(), ...contentFields,
@@ -62,7 +62,7 @@ export const recording = z.object({ id: integer, startedAt: date, endedAt: date,
 }).openapi("Recording");
 const recordingProjection = recording.extend({ recordingNumber: integer, sessionId: id, meetingId: id, vaultId: id, revision: integer }).openapi("RecordingProjection");
 const canonicalSchemas = { vault, project, meeting, summary: summaryProjection, transcript: transcriptProjection, file,
-  meeting_file: meetingFile, recording: recordingProjection, meeting_event: z.object({}) };
+  meeting_attachment: meetingFile, recording: recordingProjection, meeting_event: z.object({}) };
 // Name the nullable object itself: Swift cannot generate the equivalent anyOf([$ref, null]).
 const nullableCanonicalSchemas = Object.fromEntries(Object.entries(canonicalSchemas).map(([entity, record]) => [
   entity, z.object(record.shape).nullable().openapi(`Nullable${entity.split("_").map((part) => part[0]!.toUpperCase() + part.slice(1)).join("")}Record`),
@@ -70,7 +70,7 @@ const nullableCanonicalSchemas = Object.fromEntries(Object.entries(canonicalSche
 export const canonicalRecord = z.union(Object.entries(nullableCanonicalSchemas).map(([entity, record]) => z.object({
   entity: z.literal(entity), id, revision: integer.nullable(), record: record.optional(),
 }))).openapi("CanonicalRecord");
-export const syncEntity = z.enum(["vault", "project", "meeting", "summary", "transcript", "file", "meeting_file", "recording", "meeting_event"]);
+export const syncEntity = z.enum(["vault", "project", "meeting", "summary", "transcript", "file", "meeting_attachment", "recording", "meeting_event"]);
 export const conflict = z.union(Object.entries(nullableCanonicalSchemas).map(([entity, record]) => z.object({
   entity: z.literal(entity), id, clientBaseRevision: integer.nullable(), serverRevision: integer.nullable(),
   record,

@@ -1,11 +1,11 @@
 CREATE SCHEMA "auth";
 --> statement-breakpoint
 CREATE TABLE "auth"."account" (
-	"id" text PRIMARY KEY,
+	"id" uuid PRIMARY KEY,
 	"issuer" text NOT NULL,
 	"account_id" text NOT NULL,
 	"provider_id" text NOT NULL,
-	"user_id" text NOT NULL,
+	"user_id" uuid NOT NULL,
 	"access_token" text,
 	"refresh_token" text,
 	"id_token" text,
@@ -18,19 +18,19 @@ CREATE TABLE "auth"."account" (
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."invitation" (
-	"id" text PRIMARY KEY,
-	"organization_id" text NOT NULL,
+	"id" uuid PRIMARY KEY,
+	"organization_id" uuid NOT NULL,
 	"email" text NOT NULL,
 	"role" text,
 	"team_id" text,
 	"status" text DEFAULT 'pending' NOT NULL,
 	"expires_at" timestamp NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	"inviter_id" text NOT NULL
+	"inviter_id" uuid NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."jwks" (
-	"id" text PRIMARY KEY,
+	"id" uuid PRIMARY KEY,
 	"public_key" text NOT NULL,
 	"private_key" text NOT NULL,
 	"created_at" timestamp NOT NULL,
@@ -40,24 +40,24 @@ CREATE TABLE "auth"."jwks" (
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."member" (
-	"id" text PRIMARY KEY,
-	"organization_id" text NOT NULL,
-	"user_id" text NOT NULL,
+	"id" uuid PRIMARY KEY,
+	"organization_id" uuid NOT NULL,
+	"user_id" uuid NOT NULL,
 	"role" text DEFAULT 'member' NOT NULL,
 	"created_at" timestamp NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."oauth_access_token" (
-	"id" text PRIMARY KEY,
+	"id" uuid PRIMARY KEY,
 	"token" text UNIQUE,
 	"client_id" text NOT NULL,
-	"session_id" text,
-	"user_id" text,
+	"session_id" uuid,
+	"user_id" uuid,
 	"reference_id" text,
 	"authorization_code_id" text,
 	"resources" text[],
 	"requested_user_info_claims" text[],
-	"refresh_id" text,
+	"refresh_id" uuid,
 	"expires_at" timestamp,
 	"created_at" timestamp,
 	"revoked" timestamp,
@@ -66,7 +66,7 @@ CREATE TABLE "auth"."oauth_access_token" (
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."oauth_client" (
-	"id" text PRIMARY KEY,
+	"id" uuid PRIMARY KEY,
 	"client_id" text NOT NULL UNIQUE,
 	"client_secret" text,
 	"client_discovery_id" text,
@@ -76,7 +76,7 @@ CREATE TABLE "auth"."oauth_client" (
 	"subject_type" text,
 	"scopes" text[],
 	"client_credentials_scopes" text[] DEFAULT '{}'::text[],
-	"user_id" text,
+	"user_id" uuid,
 	"created_at" timestamp,
 	"updated_at" timestamp,
 	"name" text,
@@ -110,7 +110,7 @@ CREATE TABLE "auth"."oauth_client_assertion" (
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."oauth_client_resource" (
-	"id" text PRIMARY KEY,
+	"id" uuid PRIMARY KEY,
 	"client_id" text NOT NULL,
 	"resource_id" text NOT NULL,
 	"metadata" jsonb,
@@ -118,9 +118,9 @@ CREATE TABLE "auth"."oauth_client_resource" (
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."oauth_consent" (
-	"id" text PRIMARY KEY,
+	"id" uuid PRIMARY KEY,
 	"client_id" text NOT NULL,
-	"user_id" text,
+	"user_id" uuid,
 	"reference_id" text,
 	"resources" text[],
 	"requested_user_info_claims" text[],
@@ -130,11 +130,11 @@ CREATE TABLE "auth"."oauth_consent" (
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."oauth_refresh_token" (
-	"id" text PRIMARY KEY,
+	"id" uuid PRIMARY KEY,
 	"token" text NOT NULL UNIQUE,
 	"client_id" text NOT NULL,
-	"session_id" text,
-	"user_id" text NOT NULL,
+	"session_id" uuid,
+	"user_id" uuid NOT NULL,
 	"reference_id" text,
 	"authorization_code_id" text,
 	"resources" text[],
@@ -151,7 +151,7 @@ CREATE TABLE "auth"."oauth_refresh_token" (
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."oauth_resource" (
-	"id" text PRIMARY KEY,
+	"id" uuid PRIMARY KEY,
 	"identifier" text NOT NULL UNIQUE,
 	"name" text NOT NULL,
 	"access_token_ttl" integer,
@@ -169,7 +169,7 @@ CREATE TABLE "auth"."oauth_resource" (
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."organization" (
-	"id" text PRIMARY KEY,
+	"id" uuid PRIMARY KEY,
 	"name" text NOT NULL,
 	"slug" text NOT NULL UNIQUE,
 	"logo" text,
@@ -178,38 +178,38 @@ CREATE TABLE "auth"."organization" (
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."session" (
-	"id" text PRIMARY KEY,
+	"id" uuid PRIMARY KEY,
 	"expires_at" timestamp NOT NULL,
 	"token" text NOT NULL UNIQUE,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp NOT NULL,
 	"ip_address" text,
 	"user_agent" text,
-	"user_id" text NOT NULL,
-	"impersonated_by" text,
-	"active_organization_id" text,
-	"active_team_id" text
+	"user_id" uuid NOT NULL,
+	"impersonated_by" uuid,
+	"active_organization_id" uuid,
+	"active_team_id" uuid
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."team" (
-	"id" text PRIMARY KEY,
+	"id" uuid PRIMARY KEY,
 	"name" text NOT NULL,
 	"member_count" integer DEFAULT 0 NOT NULL,
-	"organization_id" text NOT NULL,
+	"organization_id" uuid NOT NULL,
 	"created_at" timestamp NOT NULL,
 	"updated_at" timestamp
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."team_member" (
-	"id" text PRIMARY KEY,
-	"team_id" text NOT NULL,
-	"user_id" text NOT NULL,
+	"id" uuid PRIMARY KEY,
+	"team_id" uuid NOT NULL,
+	"user_id" uuid NOT NULL,
 	"membership_key" text UNIQUE,
 	"created_at" timestamp
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."user" (
-	"id" text PRIMARY KEY,
+	"id" uuid PRIMARY KEY,
 	"name" text NOT NULL,
 	"email" text NOT NULL UNIQUE,
 	"email_verified" boolean DEFAULT false NOT NULL,
@@ -223,7 +223,7 @@ CREATE TABLE "auth"."user" (
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."verification" (
-	"id" text PRIMARY KEY,
+	"id" uuid PRIMARY KEY,
 	"identifier" text NOT NULL,
 	"value" text NOT NULL,
 	"expires_at" timestamp NOT NULL,

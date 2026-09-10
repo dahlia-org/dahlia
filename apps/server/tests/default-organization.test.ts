@@ -1,3 +1,5 @@
+import { EXTERNAL_ORGANIZATION_ID } from "../src/auth/ids";
+import { encodeId } from "../src/typeid";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { serverMigrationManifest } from "../src/migrations";
@@ -43,10 +45,10 @@ for (const databaseType of ["sqlite", "postgres"] as const) {
         const headers = { cookie, origin: config.baseUrl };
         let app = createApp({ config, authStore: store, auth });
         expect((await app.request("/api/v1/session", { headers })).status).toBe(200);
-        expect(await store.getExternalOrganization(user.id)).toMatchObject({ id: "external", role: "owner" });
+        expect(await store.getExternalOrganization(user.id)).toMatchObject({ id: EXTERNAL_ORGANIZATION_ID, role: "owner" });
         const deleted = await app.request("/api/auth/organization/delete", {
           method: "POST", headers: { ...headers, "content-type": "application/json" },
-          body: JSON.stringify({ organizationId: "external" }),
+          body: JSON.stringify({ organizationId: encodeId("organization", EXTERNAL_ORGANIZATION_ID) }),
         });
         expect(deleted.status, await deleted.text()).toBe(200);
         expect(await store.listServerOrganizations(10, 0)).toEqual([]);
@@ -74,7 +76,7 @@ it("backfills existing SQLite default organizations without changing ownership",
   const files = serverMigrationManifest.sqlite.files;
   try {
     for (const file of files.slice(0, -1)) database.exec(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
-    database.exec("INSERT INTO organization(id, name, slug, created_at) VALUES ('external', 'Custom name', 'external', 1000)");
+    database.exec("INSERT INTO organization(id, name, slug, created_at) VALUES ('01990ab0-0000-7000-8000-000000000001', 'Custom name', 'external', 1000)");
     database.exec(readFileSync(new URL(`../${files.at(-1)!}`, import.meta.url), "utf8"));
     expect(database.prepare("SELECT name, initialized_at FROM server_initializations").all())
       .toEqual([{ name: "default_organization", initialized_at: 1000 }]);

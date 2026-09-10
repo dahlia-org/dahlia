@@ -146,7 +146,7 @@ final class SyncSnapshotStore: Sendable {
         case .summary: 4
         case .transcript: 5
         case .file: 6
-        case .meetingFile: 7
+        case .meetingAttachment: 7
         case .meetingEvent: 8
         case .recording: 9
         }

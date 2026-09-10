@@ -20,7 +20,7 @@ Generated from apps/server/api-audit.json by pnpm openapi:generate. The independ
 
 ## Dahlia-owned operations
 
-All listed operations use the generated Web and Desktop clients where a bundled consumer exists. Database and sync queue representations are separate from these wire DTOs. Null clears an explicitly nullable property; omitted PATCH properties remain unchanged. IDs are UUID/UUIDv7 except identity-provider IDs, integer history versions, recording numbers and opaque cursors. See openapi.json for per-field bounds and ordering.
+All listed operations use the generated Web and Desktop clients where a bundled consumer exists. Database and sync queue representations are separate from these wire DTOs. Null clears an explicitly nullable property; omitted PATCH properties remain unchanged. Public entity IDs are kind-prefixed TypeIDs; runtime and database models retain UUID/UUIDv7. Integer history versions, recording numbers, OAuth protocol identifiers and opaque cursors keep their own formats. See openapi.json for per-field bounds and ordering.
 
 | Operation | Classification | Method / path | Previous | Reason | Consumers |
 | --- | --- | --- | --- | --- | --- |

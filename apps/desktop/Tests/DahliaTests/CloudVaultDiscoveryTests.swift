@@ -1,4 +1,5 @@
 #if canImport(Testing)
+    import DahliaRuntimeSupport
     import Foundation
     import HTTPTypes
     import OpenAPIRuntime
@@ -37,7 +38,7 @@
 
     private func vaultPage(_ suffix: String, role: String = "member") -> String {
         """
-        {"items":[{"vaultId":"019d3f46-7e0d-7d21-98d9-f1456c0bfb5\(suffix)","name":"Vault",
+        {"items":[{"vaultId":"\(TypeID.encode(UUID(uuidString: "019d3f46-7e0d-7d21-98d9-f1456c0bfb5" + suffix)!, as: .vault))","name":"Vault",
         "revision":1,"createdAt":"2026-09-03T00:00:00.000Z","updatedAt":"2026-09-03T00:00:00.000Z","role":"\(role)"}],"nextCursor":null}
         """
     }

@@ -7,10 +7,10 @@ import type { MeetingSyncStore } from "../sync/types";
 import { SummaryError, summaryDetailSchema, summaryInputSchema, type SummaryJob, type SummaryMethod } from "./model";
 
 export const summaryStartSchema = z.union([
-  z.object({ id: z.uuidv7(), input: summaryInputSchema, model: z.string().trim().min(1).max(200),
+  z.object({ id: z.uuidv7().meta({ format: "uuidv7" }), input: summaryInputSchema, model: z.string().trim().min(1).max(200),
     detail: summaryDetailSchema, outputLanguage: outputLanguageSchema }).strict(),
   // Existing clients may omit the explicit input; already accepted jobs keep their original settings.
-  z.object({ id: z.uuidv7(), detail: summaryDetailSchema.optional(), outputLanguage: outputLanguageSchema.optional() }).strict(),
+  z.object({ id: z.uuidv7().meta({ format: "uuidv7" }), detail: summaryDetailSchema.optional(), outputLanguage: outputLanguageSchema.optional() }).strict(),
 ]);
 export type SummaryRequest = z.infer<typeof summaryStartSchema>;
 

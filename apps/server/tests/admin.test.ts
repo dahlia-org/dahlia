@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createApp } from "../src/app";
+import { createApp } from "./public-test-client";
 import type { Identity } from "../src/auth/identity";
 import type { AdminUserRecord } from "../src/auth/store";
 import type { AppConfig } from "../src/config";
@@ -96,16 +96,16 @@ describe("administration", () => {
       body: JSON.stringify({ email: " SECOND@example.com " }),
     });
     expect(added.status).toBe(201);
-    expect(users.get("second@example.com")?.role).toBe("admin");
+    expect([...users.values()].find((user) => user.email === "second@example.com")?.role).toBe("admin");
     expect(await (await app.request("/api/v1/admin/members", { headers: ownerHeaders })).json()).toMatchObject({ items: [
       { email: "owner@example.com", role: "admin", removable: true },
       { email: "second@example.com", role: "admin", removable: true },
     ], nextCursor: null });
-    expect((await app.request("/api/v1/admin/members/second%40example.com", {
+    expect((await app.request(`/api/v1/admin/members/${[...users.values()].find((user) => user.email === "second@example.com")!.id}`, {
       method: "DELETE",
       headers: ownerHeaders,
     })).status).toBe(204);
-    expect((await app.request("/api/v1/admin/members/owner%40example.com", {
+    expect((await app.request(`/api/v1/admin/members/${[...users.values()].find((user) => user.email === "owner@example.com")!.id}`, {
       method: "DELETE",
       headers: ownerHeaders,
     })).status).toBe(409);

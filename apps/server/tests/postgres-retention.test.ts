@@ -34,7 +34,7 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
       await raw.query("SELECT set_config('app.user_id', $1, true)", [userId]);
       await raw.query(`INSERT INTO app.files(file_id, vault_id, uri, size, content_type, checksum, name, metadata, active, uploaded_at, revision)
         SELECT gen_random_uuid(), $1, '/Volumes/test/app/files/test', 1, 'image/png', 'SHA-256:' || repeat('a', 64), 'capture.png', '{"source":"screenshot"}', true, now(), 1 FROM generate_series(1, 105)`, [vaultId]);
-      await raw.query(`INSERT INTO app.meeting_files(id, vault_id, meeting_id, file_id, captured_at)
+      await raw.query(`INSERT INTO app.meeting_attachments(id, vault_id, meeting_id, file_id, captured_at)
         SELECT file_id, vault_id, $2, file_id, now() FROM app.files WHERE vault_id = $1`, [vaultId, meetingId]);
       await raw.query("COMMIT");
       await store.sync.withIdentity(identity, (sync) => sync.commitTransaction({
@@ -54,7 +54,7 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
       expect(second.hasMore).toBe(false);
       expect(second.cursor).toBe(recreated.cursor);
       const items = [...first.items, ...second.items];
-      expect(items.filter(({ entity, action }) => entity === "meeting_file" && action === "delete")).toHaveLength(105);
+      expect(items.filter(({ entity, action }) => entity === "meeting_attachment" && action === "delete")).toHaveLength(105);
       const summary = items.find(({ entity }) => entity === "summary");
       expect(summary).toMatchObject({ record: { contentOmitted: true, contentPresent: false } });
       expect(summary?.record).not.toHaveProperty("document");

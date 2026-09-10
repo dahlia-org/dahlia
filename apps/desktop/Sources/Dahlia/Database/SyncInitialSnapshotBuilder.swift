@@ -314,23 +314,23 @@ enum SyncInitialSnapshotBuilder {
         var lastScreenshotId: UUID?
         while true {
             let cursor = lastScreenshotId
-            let screenshot = try await dbQueue.write { db -> MeetingFileRecord? in
+            let screenshot = try await dbQueue.write { db -> MeetingAttachmentRecord? in
                 guard try canContinue(markerId: markerId, vaultId: vaultId, in: db) else { return nil }
                 let screenshot = if let cursor {
-                    try MeetingFileRecord.fetchOne(
+                    try MeetingAttachmentRecord.fetchOne(
                         db,
-                        sql: "SELECT * FROM meeting_files WHERE meetingId = ? AND id > ? ORDER BY id LIMIT 1",
+                        sql: "SELECT * FROM meeting_attachments WHERE meetingId = ? AND id > ? ORDER BY id LIMIT 1",
                         arguments: [meetingId, cursor]
                     )
                 } else {
-                    try MeetingFileRecord.fetchOne(
+                    try MeetingAttachmentRecord.fetchOne(
                         db,
-                        sql: "SELECT * FROM meeting_files WHERE meetingId = ? ORDER BY id LIMIT 1",
+                        sql: "SELECT * FROM meeting_attachments WHERE meetingId = ? ORDER BY id LIMIT 1",
                         arguments: [meetingId]
                     )
                 }
                 guard let screenshot else { return nil }
-                let operation = try meetingFileOperation(screenshot)
+                let operation = try meetingAttachmentOperation(screenshot)
                 try SyncTransactionRecorder.record(
                     vaultId: vaultId,
                     operations: [operation],
@@ -469,8 +469,8 @@ enum SyncInitialSnapshotBuilder {
         )
     }
 
-    static func meetingFileOperation(_ screenshot: MeetingScreenshotRecord) throws -> SyncOperationDraft {
-        try meetingFileOperation(MeetingFileRecord(
+    static func meetingAttachmentOperation(_ screenshot: MeetingScreenshotRecord) throws -> SyncOperationDraft {
+        try meetingAttachmentOperation(MeetingAttachmentRecord(
             id: screenshot.id,
             meetingId: screenshot.meetingId,
             fileId: screenshot.originalFileId,
@@ -480,8 +480,8 @@ enum SyncInitialSnapshotBuilder {
         ))
     }
 
-    static func meetingFileOperation(_ link: MeetingFileRecord) throws -> SyncOperationDraft {
-        try operation(entity: .meetingFile, action: .upsert, id: link.id, payload: [
+    static func meetingAttachmentOperation(_ link: MeetingAttachmentRecord) throws -> SyncOperationDraft {
+        try operation(entity: .meetingAttachment, action: .upsert, id: link.id, payload: [
             "meetingId": json(link.meetingId), "fileId": json(link.fileId), "capturedAt": json(link.capturedAt),
             "sessionId": json(link.sessionId), "createdAt": link.createdAt.ISO8601Format(),
         ])

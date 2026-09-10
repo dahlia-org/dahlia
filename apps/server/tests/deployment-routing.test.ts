@@ -293,10 +293,10 @@ describe("deployment routing", () => {
     expect(auth).toContain('CREATE TABLE "auth"."user"');
     expect(auth).toContain('"role" text');
     expect(auth).toContain('"banned" boolean');
-    expect(auth).toContain('"impersonated_by" text');
+    expect(auth).toContain('"impersonated_by" uuid');
     expect(auth).toContain('CREATE TABLE "auth"."team"');
     expect(auth).toContain('CREATE TABLE "auth"."team_member"');
-    expect(auth).toContain('"active_team_id" text');
+    expect(auth).toContain('"active_team_id" uuid');
     expect(auth).toContain('"team_id" text');
     expect(postgres).not.toContain('CREATE TABLE "auth".');
     expect(postgres).toContain('REFERENCES "auth"."user"("id")');
