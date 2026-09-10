@@ -6,7 +6,7 @@
 
 認証・管理・同期で DB を分けず、Drizzle の単一 application database に統一する。認証方式、DB、AI provider、storage の選択は独立させる。
 
-- PostgreSQL / Lakebase は `auth`（生成 Better Auth）、`app`（Vault / Project、permission、job、meeting、transcript、screenshot、同期履歴）、`search`（文書・テキスト・vector）、`crypto`（wrapped Vault key）。検索 projection は `search.documents` に置き、`search → app → auth` の参照を持つ。検索データ全体は暗号化対象外だが、Vault 単位の RLS / FORCE RLS を適用する。`jobs_search_index` は `app` に残す。
+- PostgreSQL / Lakebase は `auth`（生成 Better Auth）、`app`（Vault / Project、permission、meeting、transcript、screenshot、同期履歴）、`search`（文書・テキスト・vector）、`crypto`（wrapped Vault key）、`jobs`（summary / image_analysis / search_index / storage_delete）。検索 projection は `search.documents` に置き、`search → app → auth` の参照を持つ。検索データ全体は暗号化対象外だが、Vault 単位の RLS / FORCE RLS を適用する。ジョブは `jobs → app / auth` の参照を持つ。
 - SQLite / D1 は Better Auth を top-level、Dahlia table は prefix なしにする。PostgreSQL の content ID は native UUID、非 UUID の user / workspace ID や hash は text。SQLite / D1 も境界で canonical UUID を検証する。
 - Better Auth schema は生成物として手編集しない。全認証方式で Auth → application の順に migration を適用する。PostgreSQL の ledger は `drizzle.__dahlia_auth_migrations` と `drizzle.__dahlia_server_migrations` に分離し、SQLite / D1 は単一 baseline を使う。
 - Node は SQLite / PostgreSQL / Lakebase、Workers は D1 / Hyperdrive / direct PostgreSQL を対象とする。DB 接続可能性と個別 capability の有効性は別であり、D1 sync の制限を解除したとは扱わない。
@@ -82,7 +82,7 @@ FORCE RLS は backfill transaction 内だけ解除し commit 前に復元する�
 
 ## 運用テーブルと番号の整理（2026-09-09）
 
-ジョブテーブルは `jobs_search_index`、`jobs_storage_delete`、`jobs_image_analysis`、`jobs_summary` に統一する。Desktop の検索ジョブも `jobs_search_index` とする。既存ジョブの状態を保持する追加 migration を使う。
+PostgreSQL / Lakebase のジョブは `jobs.search_index`、`jobs.storage_delete`、`jobs.image_analysis`、`jobs.summary` に配置する。SQLite / D1 は `jobs_*`、Desktop の検索ジョブは `jobs_search_index` を維持する。要約ジョブの暗号化ポリシー・AAD・HMAC purpose は物理名から独立した既存の `jobs_summary` を維持する。未リリース Server の baseline を更新し、既存開発 DB は [データを保持する手順](../../../apps/server/docs/jobs-schema-move.md)で手動移行する。
 
 `recordings` は `meeting_id` を外部キーとし、Vault は親会議から導出する。PostgreSQL RLS と共通 store の認可をともに親会議経由にし、API の `vaultId` は維持する。`meeting_events.vault_id` は会議削除後の履歴認可のため、`meeting_attachments.vault_id` は同一 Vault の複合外部キー制約のため維持する。
 

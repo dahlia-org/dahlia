@@ -32,6 +32,7 @@ import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from "../search/settings
 import { user as authUser } from "./generated/postgres-auth-schema";
 
 export const appSchema = pgSchema("app");
+export const jobsSchema = pgSchema("jobs");
 export const searchSchema = pgSchema("search");
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
@@ -470,7 +471,7 @@ export const searchDocument = searchSchema.table("documents", {
   }),
 ]).enableRLS();
 
-export const searchIndexJob = appSchema.table("jobs_search_index", {
+export const searchIndexJob = jobsSchema.table("search_index", {
   vaultId: uuid("vault_id").notNull(),
   documentId: uuid("document_id").notNull(),
   ownerUserId: uuid("owner_user_id").notNull(),
@@ -553,7 +554,7 @@ export const syncVaultState = appSchema.table("sync_vault_state", {
   check("sync_vault_state_boundary_check", sql`${table.prunedThrough} >= 0 AND ${table.latestSequence} >= ${table.prunedThrough}`),
 ]);
 
-export const storageDeleteJob = appSchema.table("jobs_storage_delete", {
+export const storageDeleteJob = jobsSchema.table("storage_delete", {
   storageKey: text("storage_key").primaryKey(),
   attempts: integer("attempts").default(0).notNull(),
   status: text("status").default("pending").notNull(),
@@ -568,10 +569,10 @@ export const storageDeleteJob = appSchema.table("jobs_storage_delete", {
 ]);
 
 // Operational queue metadata only; canonical image/text access remains owner-scoped.
-export const imageAnalysisJob = appSchema.table("jobs_image_analysis", {
-  fileId: uuid("file_id").primaryKey().references(() => syncedFile.fileId, { onDelete: "cascade" }),
-  vaultId: uuid("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
-  ownerUserId: uuid("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+export const imageAnalysisJob = jobsSchema.table("image_analysis", {
+  fileId: uuid("file_id").primaryKey(),
+  vaultId: uuid("vault_id").notNull(),
+  ownerUserId: uuid("owner_user_id").notNull(),
   model: text("model").notNull(),
   status: text("status").default("pending").notNull(),
   attempts: integer("attempts").default(0).notNull(),
@@ -580,17 +581,20 @@ export const imageAnalysisJob = appSchema.table("jobs_image_analysis", {
   leaseExpiresAt: timestamp("lease_expires_at"),
   lastErrorCode: text("last_error_code"),
 }, (table) => [
+  foreignKey({ name: "jobs_image_analysis_file_id_files_file_id_fkey", columns: [table.fileId], foreignColumns: [syncedFile.fileId] }).onDelete("cascade"),
+  foreignKey({ name: "jobs_image_analysis_vault_id_vaults_vault_id_fkey", columns: [table.vaultId], foreignColumns: [syncedVault.vaultId] }).onDelete("cascade"),
+  foreignKey({ name: "jobs_image_analysis_owner_user_id_user_id_fkey", columns: [table.ownerUserId], foreignColumns: [authUser.id] }).onDelete("cascade"),
   check("image_analysis_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
   index("image_analysis_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
 ]);
 
 // Settings and input fingerprints are owner-private; no transcript or provider credentials are queued.
-export const summaryJob = appSchema.table("jobs_summary", {
+export const summaryJob = jobsSchema.table("summary", {
   encryptedPayload: text("encrypted_payload"),
   id: uuid("id").primaryKey(),
-  vaultId: uuid("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
-  meetingId: uuid("meeting_id").notNull().references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),
-  ownerUserId: uuid("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  vaultId: uuid("vault_id").notNull(),
+  meetingId: uuid("meeting_id").notNull(),
+  ownerUserId: uuid("owner_user_id").notNull(),
   method: text("method").$type<"transcript" | "audio">().notNull(),
   settings: jsonb("settings").$type<SummaryJob["settings"]>().notNull(),
   input: jsonb("input").$type<SummaryJob["input"]>(),
@@ -609,6 +613,9 @@ export const summaryJob = appSchema.table("jobs_summary", {
   inputVersion: text("input_version").notNull(),
   requestHash: text("request_hash").notNull(),
 }, (table) => [
+  foreignKey({ name: "jobs_summary_vault_id_vaults_vault_id_fkey", columns: [table.vaultId], foreignColumns: [syncedVault.vaultId] }).onDelete("cascade"),
+  foreignKey({ name: "jobs_summary_meeting_id_meetings_meeting_id_fkey", columns: [table.meetingId], foreignColumns: [syncedMeeting.meetingId] }).onDelete("cascade"),
+  foreignKey({ name: "jobs_summary_owner_user_id_user_id_fkey", columns: [table.ownerUserId], foreignColumns: [authUser.id] }).onDelete("cascade"),
   check("summary_job_status_check", sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled')`),
   uniqueIndex("summary_job_active_meeting_idx").on(table.meetingId).where(sql`${table.status} IN ('pending', 'processing')`),
   index("summary_job_owner_created_idx").on(table.ownerUserId, table.createdAt),

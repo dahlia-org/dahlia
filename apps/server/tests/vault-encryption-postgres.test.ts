@@ -1,3 +1,4 @@
+import type { SummaryJob } from "../src/summary/model";
 import { expect, it, vi } from "vitest";
 import { Client, Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -5,7 +6,7 @@ import { createPostgresMeetingSyncStore } from "../src/sync/store";
 import { createPostgresSearchIndexStore } from "../src/search/index-store";
 import { MeetingSyncService } from "../src/sync/service";
 import { createNodeApplicationStore } from "../src/auth/node-store";
-import { encodeBase64, encryptionConfig } from "../src/encryption/crypto";
+import { createVaultCipher, unwrapDataKey, encodeBase64, encryptionConfig } from "../src/encryption/crypto";
 import { uuidV7 } from "../src/id";
 import type { Identity } from "../src/auth/identity";
 import type { SyncTransaction } from "../src/sync/types";
@@ -39,6 +40,39 @@ it.runIf(process.env.TEST_ENCRYPTION_DATABASE_URL)("stores ciphertext under Post
     ] };
     await store.sync.withIdentity(owner, (sync) => sync.commitTransaction(tx));
     expect(await store.sync.withIdentity(owner, (sync) => sync.getMeeting(vaultId, meetingId))).toMatchObject({ name: "PG_PRIVATE_MEETING" });
+    const job: SummaryJob = { id: uuidV7(), vaultId, meetingId, ownerUserId: owner.userId, method: "transcript",
+      settings: { detail: "medium", model: "PG_PRIVATE_MODEL", reasoningEffort: "low" },
+      input: { type: "transcript", version: "PG_PRIVATE_INPUT" },
+      transcriptResult: { transcriptId: uuidV7(), version: "1" },
+      inputVersion: "PG_PRIVATE_VERSION", requestHash: "PG_PRIVATE_REQUEST", outputLanguage: "ja",
+      status: "pending", attempts: 0, createdAt: now, availableAt: now, claimedAt: null,
+      leaseExpiresAt: null, lastErrorCode: null, summaryRevision: 0 };
+    await store.sync.withIdentity(owner, (sync) => sync.insertSummaryJob(job));
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
+    const raw = (await client.query<{ encrypted_payload: string; input_version: string; request_hash: string }>("SELECT * FROM jobs.summary WHERE id = $1", [job.id])).rows[0]!;
+    expect(JSON.stringify(raw)).not.toContain("PG_PRIVATE");
+    const wrapped = (await client.query<{ wrapped_key: string }>("SELECT wrapped_key FROM crypto.vault_keys WHERE vault_id = $1", [vaultId])).rows[0]!.wrapped_key;
+    const cipher = await createVaultCipher(vaultId, await unwrapDataKey(encryption, vaultId, wrapped));
+    const fields = { settings: job.settings, input: job.input, transcriptResult: job.transcriptResult,
+      inputVersion: job.inputVersion, requestHash: job.requestHash };
+    expect(await cipher.decrypt("jobs_summary", JSON.stringify([job.id]), "content", raw.encrypted_payload)).toEqual(fields);
+    expect(raw.input_version).toBe(await cipher.hash("jobs_summary.inputVersion", job.inputVersion));
+    expect(raw.request_hash).toBe(await cipher.hash("jobs_summary.requestHash", job.requestHash));
+    // Independent old-format ciphertext, as retained by ALTER TABLE SET SCHEMA/RENAME.
+    const legacy = await cipher.encrypt("jobs_summary", JSON.stringify([job.id]), "content", fields);
+    await client.query("UPDATE jobs.summary SET encrypted_payload = $1 WHERE id = $2", [legacy, job.id]);
+    await client.query("COMMIT");
+    expect((await client.query("SELECT * FROM jobs.summary WHERE id = $1", [job.id])).rows).toEqual([]);
+    expect(await store.summaryJobs.claim({ id: job.id, ownerUserId: member.userId })).toBeNull();
+    const claimed = (await store.summaryJobs.claim({ id: job.id, ownerUserId: owner.userId }))!;
+    expect(claimed).toMatchObject(fields);
+    await store.summaryJobs.fail(claimed, "temporary", true);
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getSummaryJob(vaultId, meetingId, job.id)))
+      .toMatchObject({ ...fields, status: "pending", attempts: 1 });
+    expect(await store.sync.withIdentity(owner, (sync) => sync.cancelSummaryJob(vaultId, meetingId, job.id)))
+      .toMatchObject({ ...fields, status: "cancelled" });
+
     expect(await store.sync.withIdentity(member, (sync) => sync.getMeeting(vaultId, meetingId))).toBeNull();
     expect((await client.query("SELECT * FROM crypto.vault_keys")).rows).toEqual([]);
     await client.query("BEGIN");
@@ -65,9 +99,9 @@ it.runIf(process.env.TEST_ENCRYPTION_DATABASE_URL)("stores ciphertext under Post
       }],
     });
     await rename("Searchable title", 1);
-    await client.query("UPDATE app.jobs_search_index SET available_at = '2000-01-01' WHERE vault_id = $1", [vaultId]);
-    const [job] = await index.claim("test", 32, 100);
-    const document = (await index.load(job!))!;
+    await client.query("UPDATE jobs.search_index SET available_at = '2000-01-01' WHERE vault_id = $1", [vaultId]);
+    const [indexJob] = await index.claim("test", 32, 100);
+    const document = (await index.load(indexJob!))!;
     expect(document.embeddingText).toBe("searchable title");
     const vector = [1, ...new Array<number>(31).fill(0)];
     expect(await index.save(document, "test", 32, vector)).toBe(true);
@@ -84,13 +118,13 @@ it.runIf(process.env.TEST_ENCRYPTION_DATABASE_URL)("stores ciphertext under Post
     expect((await client.query("SELECT embedding, embedding_model FROM search.documents WHERE vault_id = $1", [vaultId])).rows)
       .toEqual([{ embedding: null, embedding_model: null }]);
     await client.query("COMMIT");
-    await client.query("UPDATE app.jobs_search_index SET available_at = '2000-01-01' WHERE vault_id = $1", [vaultId]);
+    await client.query("UPDATE jobs.search_index SET available_at = '2000-01-01' WHERE vault_id = $1", [vaultId]);
     const [pending] = await index.claim("test", 32, 100);
     const oldModel = (await index.load(pending!))!;
     await client.query("BEGIN");
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
     await client.query("UPDATE search.documents SET embedding = $1, embedding_model = 'new-model' WHERE vault_id = $2", [vector, vaultId]);
-    await client.query("DELETE FROM app.jobs_search_index WHERE vault_id = $1", [vaultId]);
+    await client.query("DELETE FROM jobs.search_index WHERE vault_id = $1", [vaultId]);
     const lateSave = index.save(oldModel, "test", 32, vector);
     await vi.waitFor(async () => {
       expect(Number((await client.query<{ n: string }>("SELECT count(*) AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%documents%'")).rows[0]!.n)).toBeGreaterThan(0);

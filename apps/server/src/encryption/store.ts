@@ -55,8 +55,10 @@ export function createContentEncryption(db: NodePgDatabase, schema: ContentSchem
     }
     throw new EncryptionError();
   }
+  // Persisted AAD and HMAC purposes must survive physical table renames in either dialect.
+  const encryptionName = (table: ContentTable) => table === schema.summaryJob ? "jobs_summary" : getTableName(table);
   function identity(table: ContentTable, row: Row) {
-    const policy = policies[getTableName(table)]!;
+    const policy = policies[encryptionName(table)]!;
     if (policy.ids.some((id) => row[id] === undefined)) throw new EncryptionError();
     return JSON.stringify(policy.ids.map((id) => row[id]));
   }
@@ -67,8 +69,8 @@ export function createContentEncryption(db: NodePgDatabase, schema: ContentSchem
       const key = await cipher(vaultId ?? await vaultFor(row));
       if (key) {
         if (typeof encryptedPayload !== "string") throw new EncryptionError();
-        const fields = await key.decrypt<Row>(getTableName(table), identity(table, row), "content", encryptedPayload);
-        for (const field of Object.keys(policies[getTableName(table)]!.fields)) {
+        const fields = await key.decrypt<Row>(encryptionName(table), identity(table, row), "content", encryptedPayload);
+        for (const field of Object.keys(policies[encryptionName(table)]!.fields)) {
           if (field in plain && field in fields) plain[field as keyof typeof plain] = fields[field] as never;
         }
       } else if (encryptedPayload) throw new EncryptionError();
@@ -78,7 +80,7 @@ export function createContentEncryption(db: NodePgDatabase, schema: ContentSchem
   }
   async function write<T extends Row>(table: ContentTable, values: T, keyFields: Row = {}): Promise<T & { encryptedPayload?: string | null }> {
     const context = { ...keyFields, ...values };
-    const tableName = getTableName(table);
+    const tableName = encryptionName(table);
     const policy = policies[tableName]!;
     const vaultId = await vaultFor(context);
     const key = await cipher(vaultId);

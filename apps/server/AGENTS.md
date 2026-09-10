@@ -60,7 +60,7 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 
 ## Database and Migrations
 
-- Better Auth and Dahlia application tables share one Drizzle application database. All authentication modes use the generated `auth` tables and `app` for all Dahlia-owned tables. Header mode projects validated users into `auth.user` without starting the Better Auth runtime. References flow from `app` to `auth`. Node supports SQLite, PostgreSQL, and Lakebase; Workers support D1, Hyperdrive, and direct PostgreSQL.
+- Better Auth and Dahlia application tables share one Drizzle application database. All authentication modes use the generated `auth` tables and `app` for canonical data, `search` for search projections, `crypto` for wrapped keys, and `jobs` for job tables. Header mode projects validated users into `auth.user` without starting the Better Auth runtime. References flow from `jobs` to `app` / `auth` and from `app` to `auth`. Node supports SQLite, PostgreSQL, and Lakebase; Workers support D1, Hyperdrive, and direct PostgreSQL.
 - Released migrations are immutable. Add forward-only migrations; never edit, reorder, or silently omit an existing migration.
 - Treat the Drizzle schemas as the source of truth and use Drizzle Kit to generate migrations. Hand-write SQL only for data migrations or DDL that Drizzle cannot express, using a new custom migration while keeping the declarative schema synchronized.
 - `pnpm db:generate-auth` uses the pinned official Better Auth CLI to regenerate only `src/db/generated/postgres-auth-schema.ts` and `src/db/generated/sqlite-auth-schema.ts`. Keep those outputs unmodified and keep Dahlia-owned tables in the adjacent dialect-specific app schema files.
