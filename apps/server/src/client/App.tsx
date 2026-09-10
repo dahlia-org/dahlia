@@ -848,6 +848,7 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
           </a> : <span className="metadata-chip">{uiText("Unassigned", "未分類")}</span>}
           <SummaryTags document={document} />
         </div>
+        {meeting.description?.trim() && <details className="meeting-description"><summary>{uiText("Description", "説明")}</summary><p>{meeting.description}</p></details>}
       </header>}
       {dialog}
       {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}

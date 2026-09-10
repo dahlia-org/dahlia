@@ -723,3 +723,7 @@ kbd { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; font-
 .sharing-results .share-row > span { flex: 1; overflow-wrap: anywhere; }
 
 .meeting-row .hover-preview-trigger { display: flex; }
+
+.meeting-description { margin-top: 12px; color: var(--muted); font-size: 13px; }
+.meeting-description summary { cursor: pointer; }
+.meeting-description p { white-space: pre-wrap; overflow-wrap: anywhere; }

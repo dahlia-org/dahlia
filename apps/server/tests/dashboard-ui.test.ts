@@ -70,7 +70,7 @@ describe("desktop-style meeting layout", () => {
     const query = vi.spyOn(liveData, "useLiveJSON");
     const page = vi.spyOn(liveData, "useLivePage");
     const empty = { data: undefined, error: undefined, loading: true, reload: vi.fn(), replace: vi.fn() };
-    const meeting = { meetingId: "m1", name: "Planning", description: "Header description should be hidden", createdAt: "2026-09-07T00:00:00Z" };
+    const meeting = { meetingId: "m1", name: "Planning", description: "Description available to read-only members", createdAt: "2026-09-07T00:00:00Z" };
     const render = () => renderToStaticMarkup(createElement(SyncedMeeting, { vaultId: "v1", meetingId: "m1" }));
     page.mockReturnValue({ ...empty, loadingMore: false, loadMore: vi.fn() });
     try {
@@ -87,7 +87,8 @@ describe("desktop-style meeting layout", () => {
         const html = render();
         expect(query).toHaveBeenCalledWith(expect.objectContaining({ key: "[\"getMeeting\",{\"params\":{\"path\":{\"meetingId\":\"m1\"}}}]" }));
         expect(query).toHaveBeenCalledWith(expect.objectContaining({ key: "[\"getLatestSummary\",{\"params\":{\"path\":{\"meetingId\":\"m1\"}}}]" }));
-        expect(html).not.toContain("Header description should be hidden");
+        expect(html.includes("Description available to read-only members")).toBe(ready === "both");
+        if (ready === "both") expect(html).toContain('<details class="meeting-description"><summary>説明</summary><p>Description available to read-only members</p></details>');
         expect(html.includes("<h1>")).toBe(ready === "both");
         expect(html.includes("Planning")).toBe(ready === "both");
         expect(html).not.toContain("<h1>ミーティング</h1>");
