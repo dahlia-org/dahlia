@@ -9,10 +9,12 @@ SET "summary" = jsonb_build_object(
       WHEN 'detailed' THEN 'high' WHEN 'eventSession' THEN 'xhigh'
       ELSE coalesce("summary"->>'detail', 'high') END,
     'model', CASE "summary"->>'method'
+      WHEN 'transcript' THEN coalesce("summary"#>>'{methodSettings,transcript,model}', 'gemini-3-8-flash')
       WHEN 'cloudTranscription' THEN coalesce("summary"#>>'{methodSettings,transcript,model}', 'gemini-3-8-flash')
       WHEN 'audio' THEN coalesce("summary"#>>'{methodSettings,audio,model}', 'gemini-3-8-flash')
       ELSE 'gemini-3-8-flash' END,
     'reasoningEffort', CASE "summary"->>'method'
+      WHEN 'transcript' THEN coalesce("summary"#>>'{methodSettings,transcript,reasoningEffort}', 'medium')
       WHEN 'cloudTranscription' THEN coalesce("summary"#>>'{methodSettings,transcript,reasoningEffort}', 'medium')
       WHEN 'audio' THEN coalesce("summary"#>>'{methodSettings,audio,reasoningEffort}', 'medium')
       ELSE 'medium' END,

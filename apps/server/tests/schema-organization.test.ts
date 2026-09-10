@@ -87,7 +87,7 @@ it.each(["sqlite", "d1"])("migrates every legacy summary mode (%s)", (dialect) =
         workflow: "transcribeThenSummarize", summaryModel: "saved-summary", reasoningEffort: "high", transcriptionModel: "saved-audio",
       } } },
       transcript: { summary: { style: "detailed" }, processing: { location: "local", remote: {
-        workflow: "transcribeThenSummarize", summaryModel: "gemini-3-8-flash", reasoningEffort: "medium", transcriptionModel: "gemini-3-8-flash",
+        workflow: "transcribeThenSummarize", summaryModel: "saved-summary", reasoningEffort: "high", transcriptionModel: "gemini-3-8-flash",
       } } },
     });
   } finally { db.close(); }

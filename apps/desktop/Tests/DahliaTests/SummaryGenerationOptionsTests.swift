@@ -16,8 +16,11 @@
             #expect(options.exportOptions == local.exportOptions)
             #expect(local.detailLevel == AppSettings.shared.summaryDetailLevel)
             let unavailable = AppSettings.shared.batchSummaryGenerationOptions(serverSettings: nil)
-            #expect(unavailable.detailLevel == local.detailLevel)
+            #expect(unavailable.detailLevel == nil)
             #expect(unavailable.exportOptions == local.exportOptions)
+            let loaded = SummaryGenerationSettings.current(accountSettings: server)
+                .applying(accountSettings: server, connectionID: .v7(), detailLevel: unavailable.detailLevel)
+            #expect(loaded.detailLevelInstruction == SummaryDetailLevel.standard.instruction)
             server.processing?.location = .local
             #expect(AppSettings.shared.batchSummaryGenerationOptions(serverSettings: server).detailLevel == .standard)
         }

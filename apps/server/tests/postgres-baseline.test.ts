@@ -53,7 +53,7 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
         workflow: "transcribeThenSummarize", summaryModel: "saved-summary", reasoningEffort: "high", transcriptionModel: "saved-audio",
       } } },
       transcript: { summary: { style: "detailed" }, processing: { location: "local", remote: {
-        workflow: "transcribeThenSummarize", summaryModel: "gemini-3-8-flash", reasoningEffort: "medium", transcriptionModel: "gemini-3-8-flash",
+        workflow: "transcribeThenSummarize", summaryModel: "saved-summary", reasoningEffort: "high", transcriptionModel: "gemini-3-8-flash",
       } } },
     };
     for (const method of Object.keys(expected) as (keyof typeof expected)[]) {

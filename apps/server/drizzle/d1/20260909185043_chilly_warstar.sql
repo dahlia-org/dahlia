@@ -43,8 +43,8 @@ SET `summary` = CASE json_extract(`summary`, '$.method')
         WHEN 'concise' THEN 'low' WHEN 'standard' THEN 'medium'
         WHEN 'detailed' THEN 'high' WHEN 'eventSession' THEN 'xhigh'
         ELSE coalesce(json_extract(`summary`, '$.detail'), 'high') END,
-      'model', 'gemini-3-8-flash',
-      'reasoningEffort', 'medium',
+      'model', coalesce(json_extract(`summary`, '$.methodSettings.transcript.model'), 'gemini-3-8-flash'),
+      'reasoningEffort', coalesce(json_extract(`summary`, '$.methodSettings.transcript.reasoningEffort'), 'medium'),
       'transcriptionModel', 'gemini-3-8-flash'
     )
   )
