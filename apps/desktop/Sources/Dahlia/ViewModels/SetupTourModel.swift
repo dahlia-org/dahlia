@@ -14,6 +14,7 @@ final class SetupTourModel {
     private(set) var errorMessage: String?
     private(set) var selectedVaultURL: URL
     private(set) var selectedVaultName: String?
+    private(set) var selectedExistingVaultID: UUID?
     private(set) var didSelectVaultLocation = false
     private(set) var selectedAccountConnectionID: UUID?
     private(set) var isAccountSelectionConfirmed: Bool
@@ -79,6 +80,10 @@ final class SetupTourModel {
     }
 
     func selectAccountConnection(_ connectionID: UUID?) {
+        if connectionID != selectedAccountConnectionID, selectedExistingVaultID != nil {
+            selectedExistingVaultID = nil
+            isVaultLocationConfirmed = false
+        }
         selectedAccountConnectionID = connectionID
         isAccountSelectionConfirmed = true
         errorMessage = nil
@@ -86,6 +91,7 @@ final class SetupTourModel {
     }
 
     func selectVaultURL(_ url: URL) {
+        selectedExistingVaultID = nil
         selectedVaultURL = url
         selectedVaultName = nil
         didSelectVaultLocation = true
@@ -96,8 +102,19 @@ final class SetupTourModel {
 
     func selectPathlessVault(named name: String) {
         guard let name = DahliaProjectName.normalizedName(name) else { return }
+        selectedExistingVaultID = nil
         selectedVaultName = name
         selectedVaultURL = VaultManagementModel.defaultVaultURL
+        didSelectVaultLocation = true
+        isVaultLocationConfirmed = true
+        errorMessage = nil
+        persistProgress()
+    }
+
+    func selectExistingVault(_ vault: VaultRecord) {
+        guard vault.accountConnectionId == selectedAccountConnectionID else { return }
+        selectedExistingVaultID = vault.id
+        selectedVaultName = nil
         didSelectVaultLocation = true
         isVaultLocationConfirmed = true
         errorMessage = nil
@@ -112,6 +129,7 @@ final class SetupTourModel {
 
     var keepsOriginalVault: Bool {
         guard let originalVault else { return false }
+        if let selectedExistingVaultID { return selectedExistingVaultID == originalVault.id }
         return selectedVaultName == nil && (!didSelectVaultLocation
             || originalVault.url?.standardizedFileURL == selectedVaultURL.standardizedFileURL
         )
@@ -161,7 +179,8 @@ final class SetupTourModel {
             step: currentStep,
             vaultURL: selectedVaultURL,
             vaultName: selectedVaultName,
-            isVaultConfirmed: isVaultLocationConfirmed,
+            // Revalidate an automatically discovered selection after relaunch.
+            isVaultConfirmed: isVaultLocationConfirmed && selectedExistingVaultID == nil,
             accountConnectionID: selectedAccountConnectionID,
             isAccountSelectionConfirmed: isAccountSelectionConfirmed,
             in: progressDefaults

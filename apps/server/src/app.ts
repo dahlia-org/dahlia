@@ -664,7 +664,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   });
   registerApi(app, "listVaults", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json({ items: await sync.listVaults(identity, context.req.query("userId"), context.req.query("organizationId")), nextCursor: null });
+    return context.json({ items: await sync.listVaults(identity, context.req.query("owner"), context.req.query("organizationId")), nextCursor: null });
   });
   registerApi(app, "getVault", async (context) => {
     const identity = await syncIdentity(context.req.raw);

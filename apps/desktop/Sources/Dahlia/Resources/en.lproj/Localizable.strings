@@ -1806,3 +1806,6 @@
 "Quit Dahlia and check the details below before opening it again." = "Quit Dahlia and check the details below before opening it again.";
 "Some data could not be restored. You can continue with the available data and review the result in Backup settings." = "Some data could not be restored. You can continue with the available data and review the result in Backup settings.";
 "Quit Dahlia" = "Quit Dahlia";
+
+"Waiting for initial sync" = "Waiting for initial sync";
+"Server meetings will appear after sync. An internet connection and sign-in are required." = "Server meetings will appear after sync. An internet connection and sign-in are required.";

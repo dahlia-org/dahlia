@@ -253,7 +253,10 @@ struct DahliaApp: App {
             }
             .onChange(of: dahliaAccountController.connections) {
                 ServerAccountSettingsModel.shared.updateConnections(dahliaAccountController.connections)
-                Task { await reconcileVaultsAfterAccountChange() }
+                Task {
+                    await reconcileVaultsAfterAccountChange()
+                    await meetingSyncWorker?.applicationBecameActive()
+                }
             }
             .modifier(MainWindowOpenWindowRegistrationModifier())
             .environment(mainWindowNavigation)
@@ -409,8 +412,10 @@ struct DahliaApp: App {
         ServerAccountSettingsModel.shared.updateConnections(dahliaAccountController.connections)
         let meetingSyncWorker = SyncWorker(dbQueue: db.dbQueue) {
             await reconcileVaultsAfterAccountChange()
+            await dahliaAccountController.reload()
         }
         self.meetingSyncWorker = meetingSyncWorker
+        dahliaAccountController.syncWorker = meetingSyncWorker
         // Backup restore only changes local vaults; existing canonical sync resumes normally.
         await meetingSyncWorker.start()
         do {
@@ -486,17 +491,11 @@ struct DahliaApp: App {
     }
 
     private func signInToDahlia(_ configuration: DahliaCloudConfiguration) {
-        let targetVaultID = AppSettings.shared.currentVault?.id
         guard let task = dahliaAccountController.startSignIn(configuration: configuration) else { return }
         Task { @MainActor in
             await task.value
             if dahliaAccountController.errorMessage == nil,
-               let connection = dahliaAccountController.completedSignInConnection(matching: configuration) {
-                if let targetVaultID,
-                   let vault = vaultManagementModel.vaults.first(where: { $0.id == targetVaultID }),
-                   vault.accountConnectionId == nil {
-                    await vaultManagementModel.requestServerAdoption(for: vault, connection: connection)
-                }
+               dahliaAccountController.completedSignInConnection(matching: configuration) != nil {
                 mainWindowNavigation.dismissDahliaSignIn()
             }
         }

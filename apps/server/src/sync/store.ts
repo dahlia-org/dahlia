@@ -388,11 +388,11 @@ function createIdentityStore(
   embeddingConfig?: AppConfig["searchEmbedding"],
 ): IdentitySyncStore {
   const userPrincipalId = identity.userId;
-  const ownerAccess = (vault: AnyColumn) => exists(
+  const ownerAccess = (vault: AnyColumn, ownerId = userPrincipalId) => exists(
     db.select({ value: sql`1` }).from(schema.syncedVaultPermission).where(and(
       eq(schema.syncedVaultPermission.vaultId, vault),
       eq(schema.syncedVaultPermission.principalType, "user"),
-      eq(schema.syncedVaultPermission.principalId, userPrincipalId),
+      eq(schema.syncedVaultPermission.principalId, ownerId),
       eq(schema.syncedVaultPermission.role, "owner"),
     )),
   );
@@ -2390,7 +2390,7 @@ function createIdentityStore(
         )),
       )).orderBy(asc(schema.organization.name), asc(schema.organization.id));
     },
-    async listVaults(organizationId) {
+    async listVaults(organizationId, owner) {
       const membership = organizationId ? and(
         eq(schema.member.userId, userPrincipalId),
         eq(schema.member.organizationId, organizationId),
@@ -2415,7 +2415,7 @@ function createIdentityStore(
                   )))),
             ),
           )))
-        : ownerAccess(schema.syncedVault.vaultId);
+        : owner ? ownerAccess(schema.syncedVault.vaultId, owner) : undefined;
       const rows = await db.select({
         vaultId: schema.syncedVault.vaultId,
         name: schema.syncedVault.name,

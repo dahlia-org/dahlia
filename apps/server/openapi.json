@@ -6952,7 +6952,7 @@
               "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": false,
-            "name": "userId",
+            "name": "owner",
             "in": "query"
           },
           {

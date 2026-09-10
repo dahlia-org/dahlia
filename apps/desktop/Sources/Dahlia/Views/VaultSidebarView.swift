@@ -49,7 +49,7 @@ struct VaultSidebarView: View {
                     mainWindowNavigation.isShowingSettings
                         || selectedVault == nil
                         || isCurrentVaultSelected
-                        || selectedVault?.requiresServerDeletionBeforeRemoval == true
+                        || selectedVault?.accountConnectionId != nil
                 )
                 .confirmationDialog(
                     L10n.removeVaultConfirmation(selectedVault?.name ?? ""),
@@ -113,7 +113,7 @@ struct VaultSidebarView: View {
     }
 
     private func requestRemoval() {
-        guard let selectedVault, !isCurrentVaultSelected, !selectedVault.requiresServerDeletionBeforeRemoval else { return }
+        guard let selectedVault, !isCurrentVaultSelected, selectedVault.accountConnectionId == nil else { return }
         isShowingRemovalConfirmation = true
     }
 

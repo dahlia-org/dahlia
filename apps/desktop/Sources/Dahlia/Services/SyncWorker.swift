@@ -222,6 +222,8 @@ actor SyncWorker {
     private var drainTask: Task<Void, Never>?
     private var eventTasks: [UUID: Task<Void, Never>] = [:]
     private var isPulling = false
+    private var discoveryTask: Task<Void, Error>?
+    private var suspendedDiscoveryConnections: Set<UUID> = []
     private var transferConnections: Set<UUID> = []
     private struct PullKey: Hashable { let database: ObjectIdentifier
         let vaultId: UUID
@@ -270,6 +272,7 @@ actor SyncWorker {
     }
 
     func stop() async {
+        discoveryTask?.cancel()
         drainTask?.cancel()
         await drainTask?.value
         drainTask = nil
@@ -698,10 +701,48 @@ actor SyncWorker {
         }
     }
 
+    func suspendCloudVaultDiscovery(connectionID: UUID) async {
+        suspendedDiscoveryConnections.insert(connectionID)
+        // Drain the write before sign-out disposes its working copies.
+        _ = try? await discoveryTask?.value
+    }
+
+    func resumeCloudVaultDiscovery(connectionID: UUID) {
+        suspendedDiscoveryConnections.remove(connectionID)
+    }
+
+    func discoverCloudVaults() async throws {
+        if let discoveryTask { return try await discoveryTask.value }
+        let task = Task { try await performCloudVaultDiscovery() }
+        discoveryTask = task
+        defer { discoveryTask = nil }
+        try await task.value
+    }
+
+    private func performCloudVaultDiscovery() async throws {
+        let connections = try await dbQueue.read { try DahliaAccountConnectionRecord.fetchAll($0) }
+        for connection in connections where !suspendedDiscoveryConnections.contains(connection.id) {
+            do {
+                try Task.checkCancellation()
+                let vaults = try await CloudVaultDiscovery.fetch(connection: connection, apiClient: apiClient)
+                guard !suspendedDiscoveryConnections.contains(connection.id) else { continue }
+                if try await MeetingRepository.registerDiscoveredCloudVaults(vaults, connection: connection, dbQueue: dbQueue) {
+                    await vaultsDidChange()
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // A failed listing is not evidence of deletion or lost access.
+                continue
+            }
+        }
+    }
+
     private func pullRemoteChanges() async throws {
         guard !isPulling else { return }
         isPulling = true
         defer { isPulling = false }
+        try await discoverCloudVaults()
         for target in try await pullTargets() {
             do {
                 try await ScreenshotContentProvider.shared.migrateLegacyImages(vaultId: target.vaultId, dbQueue: dbQueue)
@@ -1339,6 +1380,7 @@ actor SyncWorker {
                     try await $0.getEvents().ok.body.textEventStream
                 }
                 _ = await MainActor.run { ServerAccountSettingsModel.shared.refresh(connectionID: connectionId) }
+                try await pullRemoteChanges()
                 for try await event in body.asDecodedServerSentEvents() {
                     try Task.checkCancellation()
                     if event.event == "account_settings" {

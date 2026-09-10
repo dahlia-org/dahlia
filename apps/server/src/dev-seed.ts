@@ -25,7 +25,7 @@ export function installDevelopmentSeed(config: AppConfig, store: ApplicationStor
 }
 
 async function seedEmptyAccount(identity: Identity, sync: MeetingSyncService): Promise<void> {
-  if ((await sync.listVaults(identity)).length) return;
+  if ((await sync.listVaults(identity, identity.userId)).length) return;
   const now = new Date().toISOString();
   const vaultId = uuidV7();
   const projectId = uuidV7();

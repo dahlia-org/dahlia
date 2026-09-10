@@ -120,6 +120,7 @@ struct VaultPickerView: View {
             await model.configure(appDatabase: appDatabase)
             reconcileSelection()
         }
+        .onChange(of: model.vaults.map(\.id)) { reconcileSelection() }
         .fileImporter(
             isPresented: $isShowingFolderPicker,
             allowedContentTypes: [.folder],

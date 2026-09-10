@@ -1806,3 +1806,6 @@
 "Quit Dahlia and check the details below before opening it again." = "以下の詳細を確認し、Dahliaを終了してから再度起動してください。";
 "Some data could not be restored. You can continue with the available data and review the result in Backup settings." = "復元できなかったデータがあります。利用可能なデータで続け、設定のバックアップで結果を確認できます。";
 "Quit Dahlia" = "Dahliaを終了";
+
+"Waiting for initial sync" = "初回同期を待っています";
+"Server meetings will appear after sync. An internet connection and sign-in are required." = "同期するとサーバーのミーティングが表示されます。インターネット接続とサインインが必要です。";

@@ -8,35 +8,16 @@
 
     struct CloudVaultDiscoveryTests {
         @Test
-        func combinesOwnedAndSharedVaultsWithoutDuplicates() async throws {
+        func requestsAccessibleVaultsIncludingDirectUserShares() async throws {
             let result = try await CloudVaultDiscovery.fetch(connection: connection, token: "test", transport: DiscoveryTransport { request in
                 let url = try #require(request.url)
                 #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test")
-                if url.path == "/api/v1/organizations" {
-                    return response(url, body: #"""
-                    {"items":[{"id":"org_01m0000000e008000000000001","name":"A","slug":"a"},
-                    {"id":"org_01m0000000e008000000000002","name":"B","slug":"b"}],"nextCursor":null}
-                    """#)
-                }
-                let organization = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                    .queryItems?.first?.value
-                return response(url, body: organization == nil ? vaultPage("1", role: "owner") : vaultPage("2"))
-            })
-            #expect(result.count == 2)
-            #expect(result.map(\.role) == ["owner", "member"])
-        }
-
-        @Test
-        func keepsPersonalVaultsWhenMembershipWasRevoked() async throws {
-            let result = try await CloudVaultDiscovery.fetch(connection: connection, token: "test", transport: DiscoveryTransport { request in
-                let url = try #require(request.url)
-                if url.path == "/api/v1/organizations" {
-                    return response(url, body: #"{"items":[{"id":"org_01m0000000e008000000000003","name":"R","slug":"r"}],"nextCursor":null}"#)
-                }
-                return url.query == nil ? response(url, body: vaultPage("1", role: "owner"))
-                    : response(url, status: 403, body: "{}")
+                #expect(url.path == "/api/v1/vaults")
+                #expect(url.query == nil)
+                return response(url, body: vaultPage("2"))
             })
             #expect(result.count == 1)
+            #expect(result.first?.role == "member")
         }
 
         @Test
@@ -44,8 +25,7 @@
             await #expect(throws: (any Error).self) {
                 try await CloudVaultDiscovery.fetch(connection: connection, token: "test", transport: DiscoveryTransport { request in
                     let url = try #require(request.url)
-                    return url.path == "/api/v1/organizations" ? response(url, status: 500, body: "{}")
-                        : response(url, body: vaultPage("1"))
+                    return response(url, status: 500, body: "{}")
                 })
             }
         }

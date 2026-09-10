@@ -241,8 +241,10 @@ struct SetupTourView: View {
                 model.finishCompletion(errorMessage: L10n.vaultOperationFailed)
                 return
             }
-            let vault: VaultRecord? = if let originalVault = model.originalVault,
-                                         model.keepsOriginalVault {
+            let vault: VaultRecord? = if let selectedID = model.selectedExistingVaultID {
+                vaultManagementModel.vaults.first { $0.id == selectedID && $0.accountConnectionId == model.selectedAccountConnectionID }
+            } else if let originalVault = model.originalVault,
+                      model.keepsOriginalVault {
                 originalVault
             } else if let name = model.selectedVaultName {
                 await vaultManagementModel.createVault(named: name)
@@ -251,7 +253,8 @@ struct SetupTourView: View {
             }
             guard let vault else {
                 vaultManagementModel.isShowingError = false
-                model.finishCompletion(errorMessage: vaultManagementModel.errorMessage)
+                let errorMessage = vaultManagementModel.errorMessage
+                model.finishCompletion(errorMessage: errorMessage.isEmpty ? L10n.vaultOperationFailed : errorMessage)
                 return
             }
             guard await onComplete(vault, model.selectedAccountConnectionID) else {

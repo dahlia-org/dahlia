@@ -123,6 +123,45 @@ final class MeetingRepository {
         }
     }
 
+    /// Discovery creates a working copy, never a local upload or an implicit account transfer.
+    nonisolated static func registerDiscoveredCloudVaults(
+        _ cloudVaults: [CloudVaultRecord],
+        connection: DahliaAccountConnectionRecord,
+        dbQueue: DatabaseQueue
+    ) async throws -> Bool {
+        try await dbQueue.write { db in
+            try Task.checkCancellation()
+            guard let current = try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id),
+                  current.origin == connection.origin, current.clientID == connection.clientID else { return false }
+            var changed = false
+            for cloud in cloudVaults where cloud.connectionId == connection.id {
+                if var existing = try VaultRecord.fetchOne(db, key: cloud.vaultId) {
+                    guard existing.accountConnectionId == connection.id,
+                          existing.syncConfirmedConnectionId == connection.id,
+                          existing.syncRole != cloud.role else { continue }
+                    existing.syncRole = cloud.role
+                    try existing.update(db)
+                    changed = true
+                    continue
+                }
+                var vault = VaultRecord(
+                    id: cloud.vaultId, path: nil, icon: cloud.icon, color: cloud.color,
+                    name: cloud.name, createdAt: cloud.createdAt, lastOpenedAt: .distantPast
+                )
+                vault.accountConnectionId = connection.id
+                vault.syncConfirmedConnectionId = connection.id
+                vault.syncRole = cloud.role
+                try vault.insert(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, ?)",
+                    arguments: [vault.id, vault.id, cloud.revision]
+                )
+                changed = true
+            }
+            return changed
+        }
+    }
+
     /// 保管庫の表示名を更新する。
     nonisolated func updateVaultName(id: UUID, name: String, appearance: ProjectAppearance? = nil) async throws -> VaultRecord? {
         try await dbQueue.write { db in

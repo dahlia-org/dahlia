@@ -279,7 +279,7 @@ export interface IdentitySyncStore {
   listFiles(vaultId: string, after: string | undefined, limit: number): Promise<FileRecord[]>;
   listMeetingAttachments(vaultId: string, meetingId: string, after: string | undefined, limit: number): Promise<(MeetingAttachmentRecord & { file: FileRecord })[]>;
   listOrganizations(): Promise<{ id: string; name: string; slug: string }[]>;
-  listVaults(organizationId?: string): Promise<SyncVaultRecord[]>;
+  listVaults(organizationId?: string, owner?: string): Promise<SyncVaultRecord[]>;
   getVault(vaultId: string): Promise<SyncVaultRecord | null>;
   listProjects(vaultId: string): Promise<SyncProjectView[]>;
   searchProjectActivity(vaultId: string, filters: SyncSearchFilters): Promise<{ projectId: string | null; updatedAt: string }[]>;

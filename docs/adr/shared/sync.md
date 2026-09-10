@@ -10,6 +10,11 @@ Server account の Vault / Project / meeting は Desktop と Web が共有する
 - サインアウト前に local working copy を削除するか Local Account へ移す。どちらも Server record は残す。Local Account への移動では metadata 同期を完了し、全本文と不足する画像原本を先に揃え、ファイル参照の保存と queue、confirmed revision、cursor、接続関連の解除を同じ SQLite transaction で確定する。取得失敗時は接続と未送信データを保持する。
 - export folder は任意の端末固有設定で、同期しない。未設定でも SQLite と同期データは利用でき、Markdown export / filesystem watch だけを無効にする。
 
+## Server 保管庫の自動発見（2026-09-10）
+
+Desktop は `GET /api/v1/vaults` で直接ユーザー共有・組織・チーム共有を含むサインイン済み接続の owner / member 保管庫を同期開始、foreground 復帰、定期同期、SSE 接続・通知時に発見し、設定での取り込みなしで一覧・同期対象にする。メタデータは自動同期し、本文・画像は既存の必要時取得を使う。初回同期前は空の保管庫と区別して表示する。所有者で絞る場合は `owner=user_…` を指定し、常に閲覧権限との積集合を返す。組織共有の `organizationId` は所有者とは別の条件として維持し、両者の併用は拒否する。
+登録は接続を再検査する SQLite transaction で冪等に行い、確定 revision と作業コピーを同時に保存する。登録による upload は作らない。Server 所属 Vault は常に利用可能として表示し、Desktop の Vault 削除操作によるローカル登録解除は提供しない。Local Account の Vault 削除とサインアウト時のデータ処理は維持する。同一 ID の Local Vault や別接続の Vault は自動移行しない。既存の同期待ち操作、cursor、最終選択は維持する。通信失敗や一覧からの欠落だけでは削除せず、権限失効は既存の同期・データ保全経路で処理する。サインイン操作から Local Vault の移行確認は出さず、明示移行操作を使う。
+
 ## 同期対象とモデル
 
 Vault 名・アイコン・色、2段階 Project 階層と名前・説明・アイコン・色、meeting metadata、summary document、transcript 原文、screenshot bytes / MIME / OCR / AI caption を同期する。翻訳文、SQLite ファイル、端末の export path は対象外。2026-09-07: 新規バッチ録音の結合音声は [専用の音声保管契約](recording-audio-archive.md) で追加した。note、tag、calendar metadata、音声特徴量をこの同期契約へ追加しない。
