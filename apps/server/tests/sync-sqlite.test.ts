@@ -42,6 +42,94 @@ afterEach(() => {
 });
 
 describe("SQLite canonical sync", () => {
+  it("invalidates embeddings by current search input and rejects stale models and deleted results", async () => {
+    const { store, databasePath } = await setup({ model: "model", dimensions: 32 });
+    await createVault(store);
+    const service = new MeetingSyncService(store.sync);
+    const raw = new DatabaseSync(databasePath);
+    const vector = [1, ...new Array<number>(31).fill(0)];
+    const index = store.searchIndex!;
+    const claim = async (model = "model") => {
+      raw.exec("UPDATE jobs_search_index SET available_at = 0");
+      const jobs = await index.claim(model, 32, 100);
+      return (await index.load(jobs.find((job) => job.documentId === meetingId)!))!;
+    };
+    const projection = () => raw.prepare("SELECT * FROM search_documents WHERE document_id = ?").get(meetingId)!;
+    const search = (model: string) => store.sync.withIdentity(owner, (scoped) => scoped.listMeetings(vaultId,
+      { text: "absent", tokens: ["absent"], embedding: { model, dimensions: 32, vector } }, 10));
+    try {
+      await service.commitTransaction(owner, wire([{ entity: "meeting", action: "create", entityId: meetingId,
+        baseRevision: null, data: { ...meetingData(), createdAt: now.toISOString(), updatedAt: now.toISOString(), recordingStartedAt: now.toISOString(), projectId: null } }]));
+      const first = await claim();
+      expect(first.embeddingText).toBe("meeting");
+      expect(await index.save(first, "model", 32, vector)).toBe(true);
+      expect(await search("model")).toHaveLength(1);
+      await service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId,
+        baseRevision: 1, data: { updatedAt: now.toISOString(), recordingStartedAt: now.toISOString(), projectId: null, name: "Renamed", description: "", status: "READY", duration: 60 } }]));
+      expect(projection()).toMatchObject({ embedding: null, embedding_model: null });
+      expect(await index.save(first, "model", 32, vector)).toBe(false);
+      const renamed = await claim();
+      expect(renamed.embeddingText).toBe("renamed");
+      expect(renamed.contentHash).not.toBe(first.contentHash);
+      await service.commitTransaction(owner, wire([{ entity: "summary", action: "upsert", entityId: meetingId,
+        baseRevision: 0, data: { title: "Summary", document: JSON.stringify({ description: "New summary", sections: [] }), createdAt: now.toISOString() } }]));
+      expect(await index.save(renamed, "model", 32, vector)).toBe(false);
+      const summary = await claim();
+      expect(summary.embeddingText).toContain("new summary");
+      await expect(index.save(summary, "model", 32, [1])).rejects.toThrow("embedding_dimensions_invalid");
+      expect(await index.save(summary, "model", 32, vector)).toBe(true);
+      expect(await search("next-model")).toEqual([]);
+      await index.reconcile("next-model", 32);
+      const next = await claim("next-model");
+      expect(await index.save(summary, "model", 32, vector)).toBe(false);
+      expect(await index.save(next, "next-model", 32, vector)).toBe(true);
+      expect(await search("next-model")).toHaveLength(1);
+      expect(await search("model")).toEqual([]);
+      await index.reconcile("third-model", 32);
+      const delayed = await claim("third-model");
+      await service.commitTransaction(owner, wire([{ entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 2, data: {} }]));
+      expect(await index.save(delayed, "third-model", 32, vector)).toBe(false);
+      expect(projection()).toBeUndefined();
+      const columns = raw.prepare("PRAGMA table_info(search_documents)").all().map((row) => row.name);
+      expect(columns).toEqual(expect.arrayContaining(["embedding", "embedding_model", "embedding_content_hash"]));
+      expect(columns).not.toEqual(expect.arrayContaining(["embedding_text"]));
+      expect(columns).not.toContain("embedding_dimensions");
+      expect(raw.prepare("SELECT name FROM sqlite_master WHERE name = 'search_embeddings'").get()).toBeUndefined();
+    } finally { raw.close(); await store.close?.(); }
+  });
+
+  it("uses current OCR and caption hashes for image embeddings and rejects late attachment results", async () => {
+    const { store, service, publish, attach, file, databasePath } = await fileSetup("caption-model");
+    await publish(); await attach();
+    const raw = new DatabaseSync(databasePath);
+    const vector = [1, ...new Array<number>(31).fill(0)];
+    const index = store.searchIndex!;
+    const claim = async () => {
+      raw.exec("UPDATE jobs_search_index SET available_at = 0");
+      const jobs = await index.claim("embedding", 32, 100);
+      return (await index.load(jobs.find((job) => job.documentId === file.id)!))!;
+    };
+    try {
+      await service.patchFile(owner, file.id, { baseRevision: 1, metadata: { ocrText: "Revenue", caption: "Diagram" } });
+      const first = await claim();
+      expect(first.embeddingText).toBe("revenue diagram");
+      expect(await index.save(first, "embedding", 32, vector)).toBe(true);
+      await service.patchFile(owner, file.id, { baseRevision: 2, metadata: { ocrText: "Budget" } });
+      expect(raw.prepare("SELECT embedding FROM search_documents WHERE document_id = ?").get(file.id)).toMatchObject({ embedding: null });
+      const ocr = await claim();
+      expect(ocr.contentHash).not.toBe(first.contentHash);
+      expect(ocr.embeddingText).toBe("budget diagram");
+      await service.patchFile(owner, file.id, { baseRevision: 3, metadata: { caption: "New caption" } });
+      expect(await index.save(ocr, "embedding", 32, vector)).toBe(false);
+      const caption = await claim();
+      expect(caption.contentHash).not.toBe(ocr.contentHash);
+      expect(caption.embeddingText).toBe("budget new caption");
+      await service.commitTransaction(owner, wire([{ entity: "meeting_attachment", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
+      expect(await index.save(caption, "embedding", 32, vector)).toBe(false);
+    } finally { raw.close(); await store.close?.(); }
+  });
+
+
   it("updates separate OCR and caption fields", async () => {
     const { store, service, publish, attach, file, databasePath } = await fileSetup("caption-model");
     await publish(); await attach();
@@ -49,8 +137,7 @@ describe("SQLite canonical sync", () => {
     const raw = new DatabaseSync(databasePath);
     try {
       const before = raw.prepare("SELECT * FROM search_documents WHERE kind = 'screenshot'").get();
-      expect(before).toMatchObject({ ocr_text: "revenue", caption_text: "architecture diagram", title_text: "", tags_text: "",
-        embedding_text: "Revenue\nArchitecture diagram" });
+      expect(before).toMatchObject({ ocr_text: "revenue", caption_text: "architecture diagram", title_text: "", tags_text: "" });
       expect((await service.searchAll(owner, { vaultId, query: "Revenue architecture", kind: "screenshot" })).screenshots).toHaveLength(1);
       await service.patchFile(owner, file.id, { baseRevision: 2, metadata: { ocrText: "Budget", caption: "" } });
       expect((await service.searchAll(owner, { vaultId, query: "Revenue", kind: "screenshot" })).screenshots).toEqual([]);
@@ -335,10 +422,11 @@ describe("SQLite canonical sync", () => {
     } finally { await store.close?.(); }
   });
 
-  it.each(["node", "worker"])("serves the common POST search with prefiltered candidates through %s", async (runtime) => {
-    const { store, databasePath } = await setup();
-    await createVault(store);
-    const app = createApp({ config: testConfig(databasePath), authStore: store });
+  it.each(["node", "worker"].flatMap((runtime) => ["none", "server"].map((mode) => [runtime, mode] as const)))("serves the common POST search with prefiltered candidates through %s (%s)", async (runtime, mode) => {
+    const encryption: AppConfig["encryption"] = mode === "server" ? { activeKeyId: "1", masterKeys: new Map([["1", new Uint8Array(32).fill(1)]]) } : undefined;
+    const { store, databasePath } = await setup(undefined, undefined, encryption);
+    await createVault(store, mode);
+    const app = createApp({ config: { ...testConfig(databasePath), encryption }, authStore: store });
     const worker = createWorkerHandler(async () => app);
     const fetchWorker = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
     const send = (body: unknown, user = owner.userId) => {
@@ -805,9 +893,9 @@ describe("SQLite canonical sync", () => {
     expect(await service.getFile(owner, file.id)).toMatchObject({ revision: 2, metadata: { ocrText: "", caption: "Architecture diagram" } });
     expect(await service.latestCursor(owner)).not.toBe(cursor);
     const database = new DatabaseSync(databasePath);
-    expect(database.prepare("SELECT embedding_text FROM search_documents WHERE kind = 'screenshot'").all())
-      .toEqual([{ embedding_text: "Architecture diagram" }, { embedding_text: "Architecture diagram" }]);
-    expect(database.prepare("SELECT count(*) AS n FROM jobs_search_index").get()).toMatchObject({ n: 2 });
+    expect(database.prepare("SELECT caption_text FROM search_documents WHERE kind = 'screenshot'").all())
+      .toEqual([{ caption_text: "architecture diagram" }, { caption_text: "architecture diagram" }]);
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_search_index WHERE document_id IN (SELECT document_id FROM search_documents WHERE kind = 'screenshot')").get()).toMatchObject({ n: 2 });
     expect(database.prepare("SELECT count(*) AS n FROM jobs_image_analysis").get()).toMatchObject({ n: 0 });
     database.close();
     await jobs.reconcile(captioner.model);
@@ -2672,7 +2760,7 @@ describe("SQLite canonical sync", () => {
     const database = new DatabaseSync(databasePath);
     const insert = database.prepare(`
       INSERT INTO search_documents
-        (document_id, vault_id, meeting_id, kind, search_text, embedding_text, embedding_content_hash)
+        (document_id, vault_id, meeting_id, kind, search_text, summary_text, embedding_content_hash)
       VALUES (?, ?, ?, 'meeting', '', 'summary', 'hash')
     `);
     database.exec("BEGIN");
@@ -2690,25 +2778,25 @@ describe("SQLite canonical sync", () => {
   });
 });
 
-async function setup(searchEmbedding?: AppConfig["searchEmbedding"], captioningModel?: string) {
+async function setup(searchEmbedding?: AppConfig["searchEmbedding"], captioningModel?: string, encryption?: AppConfig["encryption"]) {
   const directory = mkdtempSync(join(tmpdir(), "dahlia-sync-"));
   directories.push(directory);
   const databasePath = join(directory, "server.sqlite");
-  const store = createNodeApplicationStore({ ...testConfig(databasePath), searchEmbedding, captioningModel });
+  const store = createNodeApplicationStore({ ...testConfig(databasePath), searchEmbedding, captioningModel, encryption });
   await store.migrate();
   await seedHeaderIdentity(store, databasePath, owner);
   await seedHeaderIdentity(store, databasePath, other);
   return { databasePath, directory, store };
 }
 
-async function createVault(store: ReturnType<typeof createNodeApplicationStore>) {
+async function createVault(store: ReturnType<typeof createNodeApplicationStore>, encryption = "none") {
   return commit(store, owner, transaction("019d4a00-0000-7000-8000-000000000001", [{
     id: "019d4a00-0000-7000-8000-000000000002",
     entity: "vault",
     action: "create",
     entityId: vaultId,
     baseRevision: null,
-    data: { name: "Vault", createdAt: now },
+    data: { name: "Vault", createdAt: now, encryption },
   }]));
 }
 

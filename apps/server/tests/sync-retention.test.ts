@@ -146,6 +146,23 @@ describe("sync history retention", () => {
     expect(raw.prepare("SELECT cursor FROM transaction_receipts").get()).toEqual({ cursor: decodeSyncCursor(receipt.cursor) });
   });
 
+  it("compacts plaintext receipts in bounded SQL batches and resumes without work", async () => {
+    const { store, raw, vaultId, create } = await setup();
+    const copy = raw.prepare(`INSERT INTO transaction_receipts
+      (transaction_id, owner_user_id, vault_id, request_hash, response_json, results_json, cursor, created_at)
+      SELECT ?, owner_user_id, vault_id, request_hash, response_json, results_json, cursor, created_at
+      FROM transaction_receipts WHERE transaction_id = ?`);
+    for (let i = 1; i < 1_000; i++) copy.run(id(), create.id);
+    expire(raw);
+    const prepare = vi.spyOn(DatabaseSync.prototype, "prepare");
+    expect(await store.sync.pruneHistoryBatch({ ownerUserId: owner.userId, vaultId })).toMatchObject({ receiptsCompacted: 1_000 });
+    expect(prepare.mock.calls.filter(([query]) => /^update "transaction_receipts"/i.test(query))).toHaveLength(10);
+    expect(raw.prepare("SELECT count(*) AS count FROM transaction_receipts WHERE response_json IS NOT NULL").get()).toEqual({ count: 0 });
+    prepare.mockClear();
+    expect(await store.sync.pruneHistoryBatch({ ownerUserId: owner.userId, vaultId })).toEqual({ changesDeleted: 0, receiptsCompacted: 0 });
+    expect(prepare.mock.calls.filter(([query]) => /^update "transaction_receipts"/i.test(query))).toHaveLength(0);
+  });
+
   it("keeps the exact 90-day boundary and compacts only older data", async () => {
     const { store, raw } = await setup();
     const time = Date.now();
@@ -428,7 +445,7 @@ describe("partial text content", () => {
     await service.commitTransaction(owner, body(otherVaultId, [{ entity: "vault", action: "create", entityId: otherVaultId,
       baseRevision: null, data: { name: "Other", createdAt: new Date().toISOString() } }]));
     const meeting = raw.prepare("INSERT INTO meetings(meeting_id, vault_id, name, status, created_at, updated_at, active) VALUES (?, ?, 'Metadata', 'READY', 0, 0, 1)");
-    const document = raw.prepare("INSERT INTO search_documents(document_id, vault_id, meeting_id, kind, summary_text, embedding_text, embedding_content_hash) VALUES (?, ?, ?, 'meeting', ?, ?, 'hash')");
+    const document = raw.prepare("INSERT INTO search_documents(document_id, vault_id, meeting_id, kind, summary_text, search_text, embedding_content_hash) VALUES (?, ?, ?, 'meeting', ?, ?, 'hash')");
     const ids = [id(), id()];
     for (const [index, text] of ["alpha beta", "alpha beta beta beta " + "noise ".repeat(10)].entries()) {
       const meetingId = ids[index]!;
@@ -451,7 +468,7 @@ describe("partial text content", () => {
   it("pages every FTS result without a hybrid candidate cap and rejects malformed cursors", async () => {
     const { raw, service, vaultId } = await setup();
     const meeting = raw.prepare("INSERT INTO meetings(meeting_id, vault_id, name, status, created_at, updated_at, active) VALUES (?, ?, 'Metadata', 'READY', 0, 0, 1)");
-    const document = raw.prepare("INSERT INTO search_documents(document_id, vault_id, meeting_id, kind, summary_text, embedding_text, embedding_content_hash) VALUES (?, ?, ?, 'meeting', 'needle', ?, 'hash')");
+    const document = raw.prepare("INSERT INTO search_documents(document_id, vault_id, meeting_id, kind, summary_text, search_text, embedding_content_hash) VALUES (?, ?, ?, 'meeting', 'needle', ?, 'hash')");
     raw.exec("BEGIN");
     for (let index = 0; index < 1101; index += 1) {
       const meetingId = id();

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { encryptionConfig, type EncryptionConfig } from "./encryption/crypto";
 
 import { UPSTREAM_MODEL_MAX_LENGTH } from "./ai-gateway/model-alias";
 
@@ -46,6 +47,7 @@ export interface S3StorageConfig {
 }
 
 export interface AppConfig {
+  encryption?: EncryptionConfig;
   authProvider: AuthProvider;
   authHeader: string;
   databaseType: DatabaseType;
@@ -249,6 +251,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   }
 
   const config: AppConfig = {
+    encryption: encryptionConfig(env),
     authProvider,
     authHeader: env.DAHLIA_AUTH_HEADER?.trim() || "X-Forwarded-Email",
     databaseType,

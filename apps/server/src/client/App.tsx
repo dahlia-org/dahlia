@@ -484,15 +484,21 @@ function Vaults({ home = false }: { home?: boolean }) {
   const recent = useLiveJSON<{ items: SyncedMeetingInfo[] }>(home && recentVault ? apiQuery("listMeetings", { params: { path: { vaultId: recentVault.vaultId } } }) : undefined);
   const [recovering, setRecovering] = useState(false);
 
+  const { data: encryptionCapabilities } = useLiveJSON<{ vaultEncryption?: { version: number } }>(apiQuery("getCapabilities", {}));
   const createVault = () => openDialog({
     title: uiText("New Vault", "保管庫を作成"),
-    description: uiText("Keep related meetings together. Only you can access a new Vault until you share it.", "関連するミーティングをまとめる場所です。共有するまでは、あなたのみが閲覧できます。"),
+    description: encryptionCapabilities?.vaultEncryption
+      ? uiText("Server encryption protects database content except search data. All search text, vectors and indexes remain unencrypted, including titles, summaries and image text. File content and local copies are not encrypted by this setting.", "Server 暗号化は検索データを除く DB 内の内容を保護します。会議名・要約・画像の文字情報を含む検索用テキスト、ベクトル、索引はすべて暗号化対象外です。ファイル本体と端末内データは対象外です。")
+      : uiText("Keep related meetings together. Only you can access a new Vault until you share it.", "関連するミーティングをまとめる場所です。共有するまでは、あなたのみが閲覧できます。"),
     confirmLabel: uiText("Create Vault", "保管庫を作成"),
-    fields: [{ name: "name", label: uiText("Vault name", "保管庫名"), required: true }],
-    onSubmit: async ({ name }) => {
+    fields: [{ name: "name", label: uiText("Vault name", "保管庫名"), required: true },
+      ...(encryptionCapabilities?.vaultEncryption ? [{ name: "encryption", label: uiText("Database encryption", "DB 内データの暗号化"), value: "none", options: [
+        { value: "none", label: uiText("None", "暗号化しない") }, { value: "server", label: uiText("Server encryption (excluding search)", "Server 暗号化（検索データを除く）") },
+      ] }] : [])],
+    onSubmit: async ({ name, encryption }) => {
       const id = encodeId("vault", uuidV7());
       await commitSyncTransaction(id, [{ entity: "vault", action: "create", entityId: id, baseRevision: null,
-        data: { name: name!.trim(), createdAt: new Date().toISOString() } }], setRecovering);
+        data: { name: name!.trim(), ...(encryption === "server" ? { encryption: "server" as const } : {}), createdAt: new Date().toISOString() } }], setRecovering);
       navigateDashboard(`/vaults/${id}`);
     },
   });

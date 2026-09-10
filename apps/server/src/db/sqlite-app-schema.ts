@@ -33,6 +33,8 @@ export const accountSettings = sqliteTable("account_settings", {
 });
 
 export const syncedVault = sqliteTable("vaults", {
+  encryption: text("encryption").$type<"none" | "server">().default("none").notNull(),
+  encryptedPayload: text("encrypted_payload"),
   vaultId: text("vault_id").primaryKey(),
   name: text("name").notNull(),
   icon: text("icon"),
@@ -44,6 +46,7 @@ export const syncedVault = sqliteTable("vaults", {
 });
 
 export const syncedProject = sqliteTable("projects", {
+  encryptedPayload: text("encrypted_payload"),
   projectId: text("project_id").primaryKey(),
   vaultId: text("vault_id").notNull(),
   parentProjectId: text("parent_project_id"),
@@ -97,6 +100,7 @@ export const syncedVaultPermission = sqliteTable("vault_permissions", {
 ]);
 
 export const syncedMeeting = sqliteTable("meetings", {
+  encryptedPayload: text("encrypted_payload"),
   meetingId: text("meeting_id").primaryKey(),
   vaultId: text("vault_id").notNull(),
   projectId: text("project_id"),
@@ -162,6 +166,7 @@ export const recordingSession = sqliteView("recording_sessions", {
 `);
 
 export const transcript = sqliteTable("transcripts", {
+  encryptedPayload: text("encrypted_payload"),
   id: text("id").primaryKey(),
   meetingId: text("meeting_id").notNull(),
   version: integer("version").notNull(),
@@ -177,6 +182,7 @@ export const transcript = sqliteTable("transcripts", {
 ]);
 
 export const syncedTranscriptSegment = sqliteTable("transcript_segments", {
+  encryptedPayload: text("encrypted_payload"),
   transcriptId: text("transcript_id").notNull(),
   segmentId: text("segment_id").notNull(),
   startedAt: sqliteTimestamp("started_at").notNull(),
@@ -199,6 +205,7 @@ export const syncedTranscriptSegment = sqliteTable("transcript_segments", {
 ]);
 
 export const transcriptPatchChunk = sqliteTable("transcript_patch_chunks", {
+  encryptedPayload: text("encrypted_payload"),
   vaultId: text("vault_id").notNull(),
   meetingId: text("meeting_id").notNull(),
   patchId: text("patch_id").notNull(),
@@ -215,6 +222,7 @@ export const transcriptPatchChunk = sqliteTable("transcript_patch_chunks", {
 ]);
 
 export const syncedFile = sqliteTable("files", {
+  encryptedPayload: text("encrypted_payload"),
   fileId: text("file_id").primaryKey(),
   vaultId: text("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
   uri: text("uri").notNull(),
@@ -310,8 +318,9 @@ export const searchDocument = sqliteTable("search_documents", {
   summaryText: text("summary_text").default("").notNull(),
   ocrText: text("ocr_text").default("").notNull(),
   captionText: text("caption_text").default("").notNull(),
-  embeddingText: text("embedding_text"),
   embeddingContentHash: text("embedding_content_hash"),
+  embedding: blob("embedding", { mode: "buffer" }),
+  embeddingModel: text("embedding_model"),
   updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 }, (table) => [
   primaryKey({ columns: [table.vaultId, table.documentId] }),
@@ -319,26 +328,10 @@ export const searchDocument = sqliteTable("search_documents", {
     columns: [table.vaultId, table.meetingId],
     foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId],
   }).onDelete("cascade"),
+  check("search_document_embedding_dimensions_check", sql`${table.embedding} IS NULL OR (length(${table.embedding}) BETWEEN 128 AND 4096 AND length(${table.embedding}) % 4 = 0)`),
   check("search_document_kind_check", sql`${table.kind} IN ('meeting', 'screenshot')`),
   index("search_document_vault_kind_meeting_document_idx")
     .on(table.vaultId, table.kind, table.meetingId, table.documentId),
-]);
-
-export const searchEmbedding = sqliteTable("search_embeddings", {
-  vaultId: text("vault_id").notNull(),
-  documentId: text("document_id").notNull(),
-  model: text("model").notNull(),
-  dimensions: integer("dimensions").notNull(),
-  contentHash: text("content_hash").notNull(),
-  embedding: blob("embedding", { mode: "buffer" }).notNull(),
-  updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
-}, (table) => [
-  primaryKey({ columns: [table.vaultId, table.documentId] }),
-  foreignKey({
-    columns: [table.vaultId, table.documentId],
-    foreignColumns: [searchDocument.vaultId, searchDocument.documentId],
-  }).onDelete("cascade"),
-  check("search_embedding_dimensions_check", sql`${table.dimensions} BETWEEN 32 AND 1024`),
 ]);
 
 export const searchIndexJob = sqliteTable("jobs_search_index", {
@@ -371,6 +364,7 @@ export const searchIndexJob = sqliteTable("jobs_search_index", {
 ]);
 
 export const syncTransactionReceipt = sqliteTable("transaction_receipts", {
+  encryptedPayload: text("encrypted_payload"),
   transactionId: text("transaction_id").primaryKey(),
   ownerUserId: text("owner_user_id").notNull(),
   vaultId: text("vault_id").notNull(),
@@ -445,6 +439,7 @@ export const imageAnalysisJob = sqliteTable("jobs_image_analysis", {
 
 // Settings and input fingerprints are owner-private; no transcript or provider credentials are queued.
 export const summaryJob = sqliteTable("jobs_summary", {
+  encryptedPayload: text("encrypted_payload"),
   id: text("id").primaryKey(),
   vaultId: text("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
   meetingId: text("meeting_id").notNull().references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),
@@ -473,6 +468,7 @@ export const summaryJob = sqliteTable("jobs_summary", {
 ]);
 
 export const summary = sqliteTable("summaries", {
+  encryptedPayload: text("encrypted_payload"),
   id: text("id").primaryKey(),
   meetingId: text("meeting_id").notNull(),
   version: integer("version").notNull(),
@@ -500,3 +496,10 @@ export const vaultTransfer = sqliteTable("vault_transfers", {
   unique("vault_transfer_owner_key_unique").on(table.ownerUserId, table.idempotencyKey),
   index("vault_transfer_owner_sequence_idx").on(table.ownerUserId, table.sequence),
 ]);
+
+export const vaultKey = sqliteTable("vault_keys", {
+  vaultId: text("vault_id").primaryKey(),
+  ownerUserId: text("owner_user_id").notNull(),
+  wrappedKey: text("wrapped_key").notNull(),
+  createdAt: sqliteTimestamp("created_at").default(sql`(unixepoch() * 1000)`).notNull(),
+});

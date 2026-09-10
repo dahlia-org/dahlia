@@ -1,3 +1,5 @@
+import { createContentEncryption } from "../encryption/store";
+import type { EncryptionConfig } from "../encryption/crypto";
 import { and, asc, eq, exists, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
@@ -20,7 +22,7 @@ export interface ImageAnalysisQueueStore extends ImageAnalysisStore {
   due(model: string, ownerUserId: string, after?: string): Promise<ImageAnalysisReference[]>;
 }
 
-export function createImageAnalysisStore(database: PostgresDatabase | SQLiteDatabase, isPostgres: boolean): ImageAnalysisQueueStore {
+export function createImageAnalysisStore(database: PostgresDatabase | SQLiteDatabase, isPostgres: boolean, encryption?: EncryptionConfig): ImageAnalysisQueueStore {
   const db = database as NodePgDatabase;
   const schema = (isPostgres ? postgresSchema : sqliteSchema) as typeof postgresSchema;
   const jobs = schema.imageAnalysisJob;
@@ -32,7 +34,8 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
     });
   async function reconcilePage(model: string, userId: string, after?: string, batchSize = 100): Promise<string | undefined> {
     const rows = await withOwner(userId, async (transaction) => {
-      const page = await transaction.select({ fileId: files.fileId, vaultId: files.vaultId, metadata: files.metadata })
+      const content = createContentEncryption(transaction, schema, userId, encryption);
+      const page = await content.read(files, await transaction.select({ encryptedPayload: files.encryptedPayload, fileId: files.fileId, vaultId: files.vaultId, metadata: files.metadata })
         .from(files).leftJoin(jobs, eq(jobs.fileId, files.fileId))
         .where(and(
           eq(files.active, true), isNotNull(files.uploadedAt), inArray(files.contentType, [...imageContentTypes]),
@@ -50,7 +53,7 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
               eq(schema.syncedMeeting.vaultId, schema.meetingAttachment.vaultId),
               eq(schema.syncedMeeting.meetingId, schema.meetingAttachment.meetingId),
             )).where(and(eq(schema.meetingAttachment.fileId, files.fileId), isNull(schema.syncedMeeting.deletingAt)))),
-        )).orderBy(asc(files.fileId)).limit(batchSize);
+        )).orderBy(asc(files.fileId)).limit(batchSize));
       const missing = page.filter((row) => needsImageAnalysis(row.metadata));
       if (missing.length) {
         await transaction.insert(jobs).values(missing.map(({ fileId, vaultId }) => ({

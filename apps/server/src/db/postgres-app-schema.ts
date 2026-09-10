@@ -32,6 +32,7 @@ import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from "../search/settings
 import { user as authUser } from "./generated/postgres-auth-schema";
 
 export const appSchema = pgSchema("app");
+export const searchSchema = pgSchema("search");
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
 export const serverSettings = appSchema.table("server_settings", {
@@ -60,6 +61,8 @@ export const accountSettings = appSchema.table("account_settings", {
 ]).enableRLS();
 
 export const syncedVault = appSchema.table("vaults", {
+  encryption: text("encryption").$type<"none" | "server">().default("none").notNull(),
+  encryptedPayload: text("encrypted_payload"),
   vaultId: uuid("vault_id").primaryKey(),
   name: text("name").notNull(),
   icon: text("icon"),
@@ -69,6 +72,7 @@ export const syncedVault = appSchema.table("vaults", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
+  check("vault_encryption_check", sql`${table.encryption} IN ('none', 'server')`),
   pgPolicy("vault_select", {
     for: "select",
     using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})`,
@@ -89,6 +93,7 @@ export const syncedVault = appSchema.table("vaults", {
 ]).enableRLS();
 
 export const syncedProject = appSchema.table("projects", {
+  encryptedPayload: text("encrypted_payload"),
   projectId: uuid("project_id").primaryKey(),
   vaultId: uuid("vault_id").notNull(),
   parentProjectId: uuid("parent_project_id"),
@@ -169,6 +174,7 @@ export const syncedVaultPermission = appSchema.table("vault_permissions", {
 ]);
 
 export const syncedMeeting = appSchema.table("meetings", {
+  encryptedPayload: text("encrypted_payload"),
   meetingId: uuid("meeting_id").primaryKey(),
   vaultId: uuid("vault_id").notNull(),
   projectId: uuid("project_id"),
@@ -247,6 +253,7 @@ export const recordingSession = appSchema.view("recording_sessions", {
 `);
 
 export const transcript = appSchema.table("transcripts", {
+  encryptedPayload: text("encrypted_payload"),
   id: uuid("id").primaryKey(),
   meetingId: uuid("meeting_id").notNull(),
   version: integer("version").notNull(),
@@ -264,6 +271,7 @@ export const transcript = appSchema.table("transcripts", {
 ]).enableRLS();
 
 export const syncedTranscriptSegment = appSchema.table("transcript_segments", {
+  encryptedPayload: text("encrypted_payload"),
   transcriptId: uuid("transcript_id").notNull(),
   segmentId: uuid("segment_id").notNull(),
   startedAt: timestamp("started_at").notNull(),
@@ -297,6 +305,7 @@ export const syncedTranscriptSegment = appSchema.table("transcript_segments", {
 ]).enableRLS();
 
 export const transcriptPatchChunk = appSchema.table("transcript_patch_chunks", {
+  encryptedPayload: text("encrypted_payload"),
   vaultId: uuid("vault_id").notNull(),
   meetingId: uuid("meeting_id").notNull(),
   patchId: uuid("patch_id").notNull(),
@@ -326,6 +335,7 @@ export const transcriptPatchChunk = appSchema.table("transcript_patch_chunks", {
 ]).enableRLS();
 
 export const syncedFile = appSchema.table("files", {
+  encryptedPayload: text("encrypted_payload"),
   fileId: uuid("file_id").primaryKey(),
   vaultId: uuid("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
   uri: text("uri").notNull(),
@@ -414,7 +424,7 @@ export const syncedScreenshot = appSchema.view("meeting_images", {
   WHERE f.metadata ->> 'source' = 'screenshot'
 `);
 
-export const searchDocument = appSchema.table("search_documents", {
+export const searchDocument = searchSchema.table("documents", {
   documentId: uuid("document_id").notNull(),
   vaultId: uuid("vault_id").notNull(),
   meetingId: uuid("meeting_id").notNull(),
@@ -434,8 +444,9 @@ export const searchDocument = appSchema.table("search_documents", {
   captionVector: tsvector("caption_vector").generatedAlwaysAs(sql`to_tsvector('simple', caption_text)`),
   searchVector: tsvector("search_vector")
     .generatedAlwaysAs(sql`to_tsvector('simple', search_text)`),
-  embeddingText: text("embedding_text"),
   embeddingContentHash: text("embedding_content_hash"),
+  embedding: real("embedding").array(),
+  embeddingModel: text("embedding_model"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   primaryKey({ name: "search_document_pk", columns: [table.vaultId, table.documentId] }),
@@ -444,6 +455,7 @@ export const searchDocument = appSchema.table("search_documents", {
     columns: [table.vaultId, table.meetingId],
     foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId],
   }).onDelete("cascade"),
+  check("search_document_embedding_dimensions_check", sql`${table.embedding} IS NULL OR cardinality(${table.embedding}) BETWEEN 32 AND 1024`),
   check("search_document_kind_check", sql`${table.kind} IN ('meeting', 'screenshot')`),
   index("search_document_vault_kind_meeting_document_idx")
     .on(table.vaultId, table.kind, table.meetingId, table.documentId),
@@ -452,33 +464,6 @@ export const searchDocument = appSchema.table("search_documents", {
     using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})`,
   }),
   pgPolicy("search_document_write", {
-    for: "all",
-    using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
-    withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
-  }),
-]).enableRLS();
-
-export const searchEmbedding = appSchema.table("search_embeddings", {
-  vaultId: uuid("vault_id").notNull(),
-  documentId: uuid("document_id").notNull(),
-  model: text("model").notNull(),
-  dimensions: integer("dimensions").notNull(),
-  contentHash: text("content_hash").notNull(),
-  embedding: real("embedding").array().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  primaryKey({ name: "search_embedding_pk", columns: [table.vaultId, table.documentId] }),
-  foreignKey({
-    name: "search_embedding_document_fk",
-    columns: [table.vaultId, table.documentId],
-    foreignColumns: [searchDocument.vaultId, searchDocument.documentId],
-  }).onDelete("cascade"),
-  check("search_embedding_dimensions_check", sql`${table.dimensions} BETWEEN 32 AND 1024`),
-  pgPolicy("search_embedding_select", {
-    for: "select",
-    using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})`,
-  }),
-  pgPolicy("search_embedding_write", {
     for: "all",
     using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
     withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
@@ -517,6 +502,7 @@ export const searchIndexJob = appSchema.table("jobs_search_index", {
 ]);
 
 export const syncTransactionReceipt = appSchema.table("transaction_receipts", {
+  encryptedPayload: text("encrypted_payload"),
   transactionId: uuid("transaction_id").primaryKey(),
   ownerUserId: uuid("owner_user_id").notNull(),
   vaultId: uuid("vault_id").notNull(),
@@ -600,6 +586,7 @@ export const imageAnalysisJob = appSchema.table("jobs_image_analysis", {
 
 // Settings and input fingerprints are owner-private; no transcript or provider credentials are queued.
 export const summaryJob = appSchema.table("jobs_summary", {
+  encryptedPayload: text("encrypted_payload"),
   id: uuid("id").primaryKey(),
   vaultId: uuid("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
   meetingId: uuid("meeting_id").notNull().references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),
@@ -632,6 +619,7 @@ export const summaryJob = appSchema.table("jobs_summary", {
 ]).enableRLS();
 
 export const summary = appSchema.table("summaries", {
+  encryptedPayload: text("encrypted_payload"),
   id: uuid("id").primaryKey(),
   meetingId: uuid("meeting_id").notNull(),
   version: integer("version").notNull(),
@@ -669,4 +657,15 @@ export const vaultTransfer = appSchema.table("vault_transfers", {
     using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,
     withCheck: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,
   }),
+]).enableRLS();
+
+export const cryptoSchema = pgSchema("crypto");
+export const vaultKey = cryptoSchema.table("vault_keys", {
+  vaultId: uuid("vault_id").primaryKey(),
+  ownerUserId: uuid("owner_user_id").notNull(),
+  wrappedKey: text("wrapped_key").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  pgPolicy("vault_key_read", { for: "select", using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid OR "app"."current_identity_can_read_vault"(${table.vaultId})` }),
+  pgPolicy("vault_key_write", { for: "all", using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`, withCheck: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid` }),
 ]).enableRLS();

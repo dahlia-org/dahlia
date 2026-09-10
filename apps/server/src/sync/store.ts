@@ -1,3 +1,4 @@
+import { createContentEncryption } from "../encryption/store";
 import { EXTERNAL_ORGANIZATION_ID } from "../auth/ids";
 import { sha256 } from "../storage/sha256";
 import { storedTranscriptSettingsSchema } from "../summary/model";
@@ -77,6 +78,7 @@ export function createPostgresMeetingSyncStore(
   db: PostgresDatabase,
   searchBackend: SyncSearchBackend = "postgres",
   embeddingConfig?: AppConfig["searchEmbedding"],
+  encryption?: AppConfig["encryption"],
 ): MeetingSyncStore {
   let available: Promise<boolean> | undefined;
   const isAvailable = () => available ??= roleSupportsRls(db);
@@ -84,7 +86,7 @@ export function createPostgresMeetingSyncStore(
   return {
     isAvailable,
     ...storageDeletes,
-    ...createHistoryMaintenanceStore(db, postgresSchema, true),
+    ...createHistoryMaintenanceStore(db, postgresSchema, true, encryption),
     async withIdentity(identity, action) {
       if (!await isAvailable()) throw new SyncStoreUnavailableError();
       return db.transaction(async (transaction) => {
@@ -101,6 +103,7 @@ export function createPostgresMeetingSyncStore(
           identity,
           searchBackend,
           embeddingConfig,
+          encryption,
         ));
       });
     },
@@ -110,6 +113,7 @@ export function createPostgresMeetingSyncStore(
 export function createSqliteMeetingSyncStore(
   db: SQLiteDatabase,
   embeddingConfig?: AppConfig["searchEmbedding"],
+  encryption?: AppConfig["encryption"],
 ): MeetingSyncStore {
   const storageDeletes = createStorageDeleteStore(
     db as unknown as PostgresDatabase,
@@ -119,7 +123,7 @@ export function createSqliteMeetingSyncStore(
   return {
     isAvailable: () => Promise.resolve(true),
     ...storageDeletes,
-    ...createHistoryMaintenanceStore(db as unknown as PostgresDatabase, sqliteSchema as unknown as SyncSchema, false),
+    ...createHistoryMaintenanceStore(db as unknown as PostgresDatabase, sqliteSchema as unknown as SyncSchema, false, encryption),
     withIdentity: (identity, action) => Promise.resolve(db.transaction(async (transaction) => {
       return action(createIdentityStore(
         transaction as unknown as PostgresDatabase,
@@ -127,6 +131,7 @@ export function createSqliteMeetingSyncStore(
         identity,
         "sqlite",
         embeddingConfig,
+        encryption,
       ));
     })),
   };
@@ -165,7 +170,7 @@ export function createUnavailableMeetingSyncStore(): MeetingSyncStore {
   };
 }
 
-function createHistoryMaintenanceStore(db: PostgresDatabase, schema: SyncSchema, isPostgres: boolean) {
+function createHistoryMaintenanceStore(db: PostgresDatabase, schema: SyncSchema, isPostgres: boolean, encryption?: AppConfig["encryption"]) {
   return {
     async listHistoryTargets(after?: SyncHistoryTarget): Promise<SyncHistoryTarget[]> {
       return db.select({ ownerUserId: schema.syncVaultState.ownerUserId, vaultId: schema.syncVaultState.vaultId })
@@ -210,13 +215,20 @@ function createHistoryMaintenanceStore(db: PostgresDatabase, schema: SyncSchema,
             isNotNull(schema.syncTransactionReceipt.responseJson),
           )).orderBy(asc(schema.syncTransactionReceipt.createdAt), asc(schema.syncTransactionReceipt.transactionId))
           .limit(SYNC_RETENTION_BATCH_SIZE);
-        // SQLite's parameter limit is lower than the maintenance batch size.
-        for (const batch of batches(receipts, 100)) {
-          await transaction.update(schema.syncTransactionReceipt).set({ responseJson: null })
-            .where(and(
-              eq(schema.syncTransactionReceipt.ownerUserId, target.ownerUserId),
-              inArray(schema.syncTransactionReceipt.transactionId, batch.map(({ id }) => id)),
-            ));
+        const content = createContentEncryption(transaction, schema, target.ownerUserId, encryption);
+        if (receipts.length && await content.cipher(target.vaultId)) {
+          for (const receipt of receipts) {
+            await transaction.update(schema.syncTransactionReceipt).set(await content.write(schema.syncTransactionReceipt, { responseJson: null },
+              { transactionId: receipt.id, vaultId: target.vaultId }))
+              .where(and(eq(schema.syncTransactionReceipt.ownerUserId, target.ownerUserId), eq(schema.syncTransactionReceipt.transactionId, receipt.id)));
+          }
+        } else {
+          // SQLite's parameter limit is lower than the maintenance batch size.
+          for (const batch of batches(receipts, 100)) {
+            await transaction.update(schema.syncTransactionReceipt).set({ responseJson: null })
+              .where(and(eq(schema.syncTransactionReceipt.ownerUserId, target.ownerUserId),
+                inArray(schema.syncTransactionReceipt.transactionId, batch.map(({ id }) => id))));
+          }
         }
         return { changesDeleted: expired.length, receiptsCompacted: receipts.length };
       });
@@ -319,6 +331,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
     if (role?.rolsuper !== false || role.rolbypassrls !== false) return false;
     const tables = [
       "app.vaults",
+      "crypto.vault_keys",
       "app.projects",
       "app.transaction_receipts",
       "app.vault_transfers",
@@ -330,8 +343,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "app.files",
       "app.meeting_attachments",
       "app.recordings",
-      "app.search_documents",
-      "app.search_embeddings",
+      "search.documents",
       "app.account_settings",
       "app.jobs_summary",
       "app.summaries",
@@ -389,9 +401,11 @@ function createIdentityStore(
   identity: Identity,
   searchBackend: SyncSearchBackend,
   embeddingConfig?: AppConfig["searchEmbedding"],
+  encryption?: AppConfig["encryption"],
 ): IdentitySyncStore {
   const userPrincipalId = identity.userId;
   let searchSettings: Promise<SearchSettings> | undefined;
+  const content = createContentEncryption(db, schema, userPrincipalId, encryption, (vault) => readable(vault));
   const ownerAccess = (vault: AnyColumn, ownerId = userPrincipalId) => exists(
     db.select({ value: sql`1` }).from(schema.syncedVaultPermission).where(and(
       eq(schema.syncedVaultPermission.vaultId, vault),
@@ -507,11 +521,12 @@ function createIdentityStore(
       if (previous.requestHash !== request.requestHash) throw new SyncTransactionError(409, "idempotency_key_reused");
       return previous;
     }
-    const vaults = await db.select().from(schema.syncedVault).where(and(
+    const vaults = await content.read(schema.syncedVault, await db.select().from(schema.syncedVault).where(and(
       inArray(schema.syncedVault.vaultId, [sourceVaultId, destinationVaultId]), ownerAccess(schema.syncedVault.vaultId),
       isNull(schema.syncedVault.deletingAt),
-    ));
+    )));
     if (vaults.length !== 2) throw new SyncTransactionError(404, "vault_not_found");
+    if (vaults.some((vault) => vault.encryption === "server")) throw new SyncTransactionError(409, "encrypted_vault_transfer_unsupported");
     for (const vault of vaults) {
       const expected = vault.vaultId === sourceVaultId ? request.sourceRevision : request.destinationRevision;
       if (vault.revision !== expected) throw new SyncTransactionError(409, "revision_conflict");
@@ -543,7 +558,7 @@ function createIdentityStore(
       ),
     )).limit(1);
     if (busy) throw new SyncTransactionError(409, "transfer_processing");
-    const projects = await db.select().from(schema.syncedProject).where(inArray(schema.syncedProject.vaultId, affected));
+    const projects = await content.read(schema.syncedProject, await db.select().from(schema.syncedProject).where(inArray(schema.syncedProject.vaultId, affected)));
     const roots = projects.filter((project) => project.parentProjectId === null);
     const nameKey = (value: string) => [...value.normalize("NFC")].map((character) => character === "ı" ? character : character.toUpperCase().toLowerCase()).join("").normalize("NFC");
     if (roots.some((source) => source.vaultId === sourceVaultId && roots.some((destination) =>
@@ -575,7 +590,7 @@ function createIdentityStore(
     }
     for (const table of [schema.syncedProject, schema.syncedMeeting, schema.syncedFile,
       schema.meetingAttachment, schema.meetingEvent, schema.transcriptPatchChunk, schema.searchDocument,
-      schema.searchEmbedding, schema.searchIndexJob, schema.imageAnalysisJob, schema.summaryJob]) {
+      schema.searchIndexJob, schema.imageAnalysisJob, schema.summaryJob]) {
       await db.update(table).set({ vaultId: destinationVaultId }).where(eq(table.vaultId, sourceVaultId));
     }
     // Transcript and summary history follows the unchanged meeting ID. Object keys never change.
@@ -636,10 +651,10 @@ function createIdentityStore(
     }
     const vaults: VaultRelocations["vaults"] = [];
     for (const id of new Set(destinations.values())) {
-      const [vault] = await db.select({ vaultId: schema.syncedVault.vaultId, name: schema.syncedVault.name,
+      const [vault] = await content.read(schema.syncedVault, await db.select({ encryption: schema.syncedVault.encryption, encryptedPayload: schema.syncedVault.encryptedPayload, vaultId: schema.syncedVault.vaultId, name: schema.syncedVault.name,
         icon: schema.syncedVault.icon, color: schema.syncedVault.color, revision: schema.syncedVault.revision,
         createdAt: schema.syncedVault.createdAt, updatedAt: schema.syncedVault.updatedAt, role: vaultRole(schema.syncedVault.vaultId),
-      }).from(schema.syncedVault).where(and(eq(schema.syncedVault.vaultId, id), readable(schema.syncedVault.vaultId), isNull(schema.syncedVault.deletingAt))).limit(1);
+      }).from(schema.syncedVault).where(and(eq(schema.syncedVault.vaultId, id), readable(schema.syncedVault.vaultId), isNull(schema.syncedVault.deletingAt))).limit(1));
       if (!vault) throw new SyncTransactionError(403, "transfer_access_required");
       vaults.push(vault);
     }
@@ -647,10 +662,11 @@ function createIdentityStore(
   }
 
   async function projectViews(vaultId: string): Promise<SyncProjectView[]> {
-    const projects = await db.select().from(schema.syncedProject).where(and(
+    const projects = await content.read(schema.syncedProject, await db.select().from(schema.syncedProject).where(and(
       readable(schema.syncedProject.vaultId),
       eq(schema.syncedProject.vaultId, vaultId),
-    )).orderBy(asc(schema.syncedProject.parentProjectId), asc(schema.syncedProject.name), asc(schema.syncedProject.projectId));
+    )).orderBy(asc(schema.syncedProject.parentProjectId), asc(schema.syncedProject.name), asc(schema.syncedProject.projectId)));
+    if (await content.cipher(vaultId)) projects.sort((a, b) => (a.parentProjectId ?? "").localeCompare(b.parentProjectId ?? "") || a.name.localeCompare(b.name) || a.projectId.localeCompare(b.projectId));
     const counts = await db.select({ projectId: schema.syncedMeeting.projectId, meetingCount: count() })
       .from(schema.syncedMeeting).where(and(
         readableMeeting(vaultId),
@@ -691,7 +707,6 @@ function createIdentityStore(
     kind: "meeting" | "screenshot";
     searchText: string;
     searchFields: SearchDocumentFields;
-    embeddingText: string | null;
     embeddingContentHash: string | null;
     currentEmbeddingContentHash: string | null;
   };
@@ -708,7 +723,6 @@ function createIdentityStore(
         kind: input.kind,
         searchText: input.searchText,
         ...input.searchFields,
-        embeddingText: input.embeddingText,
         embeddingContentHash: input.embeddingContentHash,
         updatedAt: now,
       }))).onConflictDoUpdate({
@@ -718,14 +732,15 @@ function createIdentityStore(
           kind: sql`excluded.kind`,
           searchText: sql`excluded.search_text`,
           ...Object.fromEntries(SEARCH_FIELDS.map((field) => [`${field}Text`, sql`excluded.${sql.identifier(`${field}_text`)}`])),
-          embeddingText: sql`excluded.embedding_text`,
+          embedding: sql`CASE WHEN ${schema.searchDocument.embeddingContentHash} = excluded.embedding_content_hash THEN ${schema.searchDocument.embedding} ELSE NULL END`,
+          embeddingModel: sql`CASE WHEN ${schema.searchDocument.embeddingContentHash} = excluded.embedding_content_hash THEN ${schema.searchDocument.embeddingModel} ELSE NULL END`,
           embeddingContentHash: sql`excluded.embedding_content_hash`,
           updatedAt: now,
         },
       });
     }
 
-    const withoutEmbedding = inputs.filter((input) => !embeddingConfig || !input.embeddingText || !input.embeddingContentHash);
+    const withoutEmbedding = inputs.filter((input) => !embeddingConfig || !input.embeddingContentHash);
     for (let offset = 0; offset < withoutEmbedding.length; offset += batchSize) {
       const batch = withoutEmbedding.slice(offset, offset + batchSize);
       const documentIds = batch.map(({ documentId }) => documentId);
@@ -734,15 +749,14 @@ function createIdentityStore(
         eq(schema.searchIndexJob.vaultId, vaultId),
         inArray(schema.searchIndexJob.documentId, documentIds),
       ));
-      await db.delete(schema.searchEmbedding).where(and(
-        eq(schema.searchEmbedding.vaultId, vaultId),
-        inArray(schema.searchEmbedding.documentId, documentIds),
+      await db.update(schema.searchDocument).set({ embedding: null, embeddingModel: null }).where(and(
+        eq(schema.searchDocument.vaultId, vaultId),
+        inArray(schema.searchDocument.documentId, documentIds),
       ));
     }
 
     if (!embeddingConfig) return;
-    const changed = inputs.filter((input) => input.embeddingText
-      && input.embeddingContentHash
+    const changed = inputs.filter((input) => input.embeddingContentHash
       && input.currentEmbeddingContentHash !== input.embeddingContentHash);
     const availableAt = new Date(Date.now() + 5_000);
     for (let offset = 0; offset < changed.length; offset += batchSize) {
@@ -794,7 +808,7 @@ function createIdentityStore(
         const fieldVector = schema.searchDocument[`${field}Vector`];
         if (!fieldVector) throw new Error("search_vector_not_configured");
         const score = searchBackend === "lakebase"
-          ? sql`${fieldVector} <@> to_bm25query(to_tsvector('simple', ${query.text}), ${`app.search_documents_${field}_bm25`}::regclass)`
+          ? sql`${fieldVector} <@> to_bm25query(to_tsvector('simple', ${query.text}), ${`search.search_documents_${field}_bm25`}::regclass)`
           : sql`-ts_rank_cd(${fieldVector}, (${rankQuery}))`;
         return sql`${weights[field]} * (${score})`;
       }), sql` + `)})`,
@@ -870,31 +884,25 @@ function createIdentityStore(
       eq(schema.searchDocument.vaultId, vaultId),
       eq(schema.searchDocument.kind, kind),
       ...(meetingId ? [eq(schema.searchDocument.meetingId, meetingId)] : []),
-      eq(schema.searchEmbedding.model, embedding.model),
-      eq(schema.searchEmbedding.dimensions, embedding.dimensions),
-      eq(schema.searchEmbedding.contentHash, schema.searchDocument.embeddingContentHash),
+      eq(schema.searchDocument.embeddingModel, embedding.model),
+      isNotNull(schema.searchDocument.embedding),
+      sql`${searchBackend === "sqlite" ? sql`length(${schema.searchDocument.embedding}) / 4` : sql`cardinality(${schema.searchDocument.embedding})`} = ${embedding.dimensions}`,
     );
     if (searchBackend === "sqlite") {
       const rows = kind === "meeting"
         ? await db.select({
             documentId: schema.searchDocument.documentId,
-            vector: schema.searchEmbedding.embedding,
+            vector: schema.searchDocument.embedding,
             sortTime: schema.syncedMeeting.createdAt,
-          }).from(schema.searchDocument).innerJoin(schema.searchEmbedding, and(
-            eq(schema.searchEmbedding.vaultId, schema.searchDocument.vaultId),
-            eq(schema.searchEmbedding.documentId, schema.searchDocument.documentId),
-          )).innerJoin(schema.syncedMeeting, and(
+          }).from(schema.searchDocument).innerJoin(schema.syncedMeeting, and(
             eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
             eq(schema.syncedMeeting.meetingId, schema.searchDocument.documentId),
           )).where(and(common, searchFilters(vaultId, "meeting", query.filters)))
         : await db.select({
             documentId: schema.searchDocument.documentId,
-            vector: schema.searchEmbedding.embedding,
+            vector: schema.searchDocument.embedding,
             sortTime: schema.syncedScreenshot.capturedAt,
-          }).from(schema.searchDocument).innerJoin(schema.searchEmbedding, and(
-            eq(schema.searchEmbedding.vaultId, schema.searchDocument.vaultId),
-            eq(schema.searchEmbedding.documentId, schema.searchDocument.documentId),
-          )).innerJoin(schema.syncedScreenshot, and(
+          }).from(schema.searchDocument).innerJoin(schema.syncedScreenshot, and(
             eq(schema.syncedScreenshot.vaultId, schema.searchDocument.vaultId),
             eq(schema.syncedScreenshot.screenshotId, schema.searchDocument.documentId),
           )).where(and(common, eq(schema.syncedScreenshot.active, true), searchFilters(vaultId, "screenshot", query.filters)));
@@ -914,14 +922,11 @@ function createIdentityStore(
       `${searchBackend === "postgres" ? "public." : ""}vector(${embedding.dimensions})`,
     );
     const distance = sql<number>`(
-      ${schema.searchEmbedding.embedding}::${vectorType}
+      ${schema.searchDocument.embedding}::${vectorType}
       <=> ${JSON.stringify(embedding.vector)}::${vectorType}
     )`;
     const base = db.select({ documentId: schema.searchDocument.documentId, distance })
-      .from(schema.searchDocument).innerJoin(schema.searchEmbedding, and(
-        eq(schema.searchEmbedding.vaultId, schema.searchDocument.vaultId),
-        eq(schema.searchEmbedding.documentId, schema.searchDocument.documentId),
-      ));
+      .from(schema.searchDocument);
     const rows = kind === "meeting"
       ? await base.innerJoin(schema.syncedMeeting, and(
           eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
@@ -985,15 +990,40 @@ function createIdentityStore(
     ))));
   }
 
+  async function readMeetings<T extends { vaultId: string; meetingId: string; name: string; description: string; summaryTitle: string | null; summaryDocument: string | null }>(rows: T[]): Promise<T[]> {
+    const plain = await content.read(schema.syncedMeeting, rows);
+    for (const row of plain) {
+      if (!await content.cipher(row.vaultId)) continue;
+      const summary = await getSummaryVersion(row.vaultId, row.meetingId);
+      row.summaryTitle = summary?.title ?? null;
+      row.summaryDocument = summary?.document ?? null;
+    }
+    return plain;
+  }
+
+  async function readScreenshots<T extends { vaultId: string; fileId: string; ocrText: string | null; caption: string | null; contentHash: string }>(rows: T[]): Promise<T[]> {
+    for (const row of rows) {
+      if (!await content.cipher(row.vaultId)) continue;
+      const [file] = await content.read(schema.syncedFile, await db.select().from(schema.syncedFile)
+        .where(and(eq(schema.syncedFile.fileId, row.fileId), eq(schema.syncedFile.vaultId, row.vaultId), readable(schema.syncedFile.vaultId))).limit(1));
+      if (!file) throw new SyncTransactionError(404, "file_not_found");
+      row.ocrText = file.metadata.ocr_text ?? null;
+      row.caption = file.metadata.caption ?? null;
+      row.contentHash = file.checksum.slice(8);
+    }
+    return rows;
+  }
+
   async function getSummaryVersion(vaultId: string, meetingId: string, version?: number) {
-    const [row] = await db.select().from(schema.summary).where(and(
+    const [row] = await content.read(schema.summary, await db.select().from(schema.summary).where(and(
       readableSummary(vaultId, meetingId),
       version === undefined ? undefined : eq(schema.summary.version, version),
-    )).orderBy(desc(schema.summary.version)).limit(1);
+    )).orderBy(desc(schema.summary.version)).limit(1));
     return row ? { ...row, metadata: row.metadata ? summaryMetadataSchema.parse(row.metadata) : null } : null;
   }
 
   const transcriptSelection = {
+    encryptedPayload: schema.transcript.encryptedPayload,
     id: schema.transcript.id, meetingId: schema.transcript.meetingId,
     version: schema.transcript.version, syncRevision: schema.transcript.syncRevision,
     startedAt: schema.transcript.startedAt, endedAt: schema.transcript.endedAt,
@@ -1002,11 +1032,11 @@ function createIdentityStore(
       .mapWith(schema.syncedTranscriptSegment.createdAt),
   };
   async function getTranscript(vaultId: string, meetingId: string, version?: number): Promise<TranscriptVersion | null> {
-    const [row] = await db.select(transcriptSelection).from(schema.transcript)
+    const [row] = await content.read(schema.transcript, await db.select(transcriptSelection).from(schema.transcript)
       .innerJoin(schema.syncedMeeting, eq(schema.transcript.meetingId, schema.syncedMeeting.meetingId)).where(and(
         readable(schema.syncedMeeting.vaultId), eq(schema.syncedMeeting.vaultId, vaultId), eq(schema.transcript.meetingId, meetingId),
         version === undefined ? undefined : eq(schema.transcript.version, version),
-      )).orderBy(desc(schema.transcript.version)).limit(1);
+      )).orderBy(desc(schema.transcript.version)).limit(1));
     return row ? { ...row, status: transcriptStatus(row.endedAt, row.latestSegmentCreatedAt) } : null;
   }
 
@@ -1018,26 +1048,26 @@ function createIdentityStore(
   ): Promise<SyncCanonicalRecord> {
     const canAccess = access === "owner" ? ownerAccess : readable;
     if (entity === "vault") {
-      const [record] = await db.select().from(schema.syncedVault).where(and(
+      const [record] = await content.read(schema.syncedVault, await db.select().from(schema.syncedVault).where(and(
         eq(schema.syncedVault.vaultId, vaultId),
         canAccess(schema.syncedVault.vaultId),
-      )).limit(1);
+      )).limit(1));
       return { entity, id: entityId, revision: record?.revision ?? null, record: record ?? null };
     }
     if (entity === "project") {
-      const [record] = await db.select().from(schema.syncedProject).where(and(
+      const [record] = await content.read(schema.syncedProject, await db.select().from(schema.syncedProject).where(and(
         eq(schema.syncedProject.vaultId, vaultId),
         eq(schema.syncedProject.projectId, entityId),
         canAccess(schema.syncedProject.vaultId),
-      )).limit(1);
+      )).limit(1));
       return { entity, id: entityId, revision: record?.revision ?? null, record: record ?? null };
     }
     if (["meeting", "summary", "transcript"].includes(entity)) {
-      const [record] = await db.select().from(schema.syncedMeeting).where(and(
+      const [record] = await content.read(schema.syncedMeeting, await db.select().from(schema.syncedMeeting).where(and(
         eq(schema.syncedMeeting.vaultId, vaultId),
         eq(schema.syncedMeeting.meetingId, entityId),
         canAccess(schema.syncedMeeting.vaultId),
-      )).limit(1);
+      )).limit(1));
       if (!record) return { entity, id: entityId, revision: null, record: null };
       if (entity === "transcript") {
         return { entity, id: entityId, revision: record.transcriptRevision ?? null,
@@ -1066,10 +1096,10 @@ function createIdentityStore(
         record: record && record.revision > 0 ? recordingCanonical(record) : null };
     }
     if (entity === "file") {
-      const [record] = await db.select().from(schema.syncedFile).where(and(
+      const [record] = await content.read(schema.syncedFile, await db.select().from(schema.syncedFile).where(and(
         eq(schema.syncedFile.vaultId, vaultId), eq(schema.syncedFile.fileId, entityId), canAccess(schema.syncedFile.vaultId),
         ...(access === "read" ? [eq(schema.syncedFile.active, true)] : []),
-      )).limit(1);
+      )).limit(1));
       return { entity, id: entityId, revision: record?.active ? record.revision : null,
         record: record ? { ...fileResponse(record), active: record.active } : null };
     }
@@ -1277,19 +1307,21 @@ function createIdentityStore(
     if (searchBackend !== "sqlite") {
       await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`transaction:${transaction.id}`}, 0))`);
     }
-    const [receipt] = await db.select().from(schema.syncTransactionReceipt).where(
+    const [storedReceipt] = await db.select().from(schema.syncTransactionReceipt).where(
       eq(schema.syncTransactionReceipt.transactionId, transaction.id),
     ).limit(1);
-    if (!receipt) return null;
+    if (!storedReceipt) return null;
     const [owner] = await db.select({ id: schema.syncedVaultPermission.principalId })
       .from(schema.syncedVaultPermission).where(and(
         eq(schema.syncedVaultPermission.vaultId, transaction.vaultId),
         eq(schema.syncedVaultPermission.role, "owner"),
         eq(schema.syncedVaultPermission.principalType, "user"),
       )).limit(1);
-    if ((owner && owner.id !== userPrincipalId) || receipt.ownerUserId !== userPrincipalId) {
+    if ((owner && owner.id !== userPrincipalId) || storedReceipt.ownerUserId !== userPrincipalId) {
       throw new SyncTransactionError(404, "vault_not_found");
     }
+    const [receipt] = await content.read(schema.syncTransactionReceipt, [storedReceipt]);
+    if (!receipt) return null;
     if (receipt.vaultId !== transaction.vaultId || receipt.requestHash !== transaction.requestHash) {
       throw new SyncTransactionError(409, "idempotency_key_reused");
     }
@@ -1400,17 +1432,19 @@ function createIdentityStore(
           const [existing] = await db.select({
             id: schema.syncedVault.vaultId,
             revision: schema.syncedVault.revision,
+            encryption: schema.syncedVault.encryption,
           }).from(schema.syncedVault)
             .where(eq(schema.syncedVault.vaultId, transaction.vaultId)).limit(1);
+          if (existing && data.encryption !== undefined && data.encryption !== existing.encryption) throw new SyncTransactionError(409, "vault_encryption_immutable");
           if (existing?.revision === 0) {
-            const [restored] = await db.update(schema.syncedVault).set({
+            const [restored] = await db.update(schema.syncedVault).set(await content.write(schema.syncedVault, {
               name: String(data.name),
               icon: data.icon as string | null | undefined,
               color: data.color as string | null | undefined,
               revision: 1,
               createdAt: data.createdAt as Date,
               updatedAt: now,
-            }).where(ownedVault(transaction.vaultId)).returning({ id: schema.syncedVault.vaultId });
+            }, { vaultId: transaction.vaultId })).where(ownedVault(transaction.vaultId)).returning({ id: schema.syncedVault.vaultId });
             if (!restored) throw new SyncTransactionError(404, "vault_not_found", [], operation.id);
           } else {
             if (existing) throw new SyncTransactionError(409, "revision_conflict", [{
@@ -1430,7 +1464,10 @@ function createIdentityStore(
             if (owner && owner.id !== userPrincipalId) {
               throw new SyncTransactionError(404, "vault_not_found", [], operation.id);
             }
-            await db.insert(schema.syncedVault).values({
+            if (await content.cipher(transaction.vaultId)) throw new SyncTransactionError(409, "vault_id_reused");
+            if (data.encryption === "server") await content.create(transaction.vaultId);
+            await db.insert(schema.syncedVault).values(await content.write(schema.syncedVault, {
+              encryption: data.encryption === "server" ? "server" : "none",
               vaultId: transaction.vaultId,
               name: String(data.name),
               icon: data.icon as string | null | undefined,
@@ -1438,7 +1475,7 @@ function createIdentityStore(
               revision: 1,
               createdAt: data.createdAt as Date,
               updatedAt: now,
-            });
+            }));
             await db.insert(schema.syncedVaultPermission).values({
               vaultId: transaction.vaultId,
               principalType: "user",
@@ -1449,13 +1486,17 @@ function createIdentityStore(
           }
         } else if (operation.action === "update") {
           await assertRevision(transaction, "vault", operation.entityId, operation.baseRevision);
-          await db.update(schema.syncedVault).set({
+          if (data.encryption !== undefined) {
+            const existing = await canonicalRecord("vault", transaction.vaultId, operation.entityId);
+            if (data.encryption !== existing.record?.encryption) throw new SyncTransactionError(409, "vault_encryption_immutable");
+          }
+          await db.update(schema.syncedVault).set(await content.write(schema.syncedVault, {
             name: String(data.name),
             icon: data.icon as string | null | undefined,
             color: data.color as string | null | undefined,
             revision: sql`${schema.syncedVault.revision} + 1`,
             updatedAt: now,
-          }).where(ownedVault(transaction.vaultId));
+          }, { vaultId: transaction.vaultId })).where(ownedVault(transaction.vaultId));
         } else if (operation.action === "reset") {
           const [owned] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
             .where(ownedVault(transaction.vaultId)).limit(1);
@@ -1499,7 +1540,7 @@ function createIdentityStore(
         if (operation.action === "create") {
           const parentProjectId = data.parentProjectId as string | null;
           await assertProjectHierarchy(transaction.vaultId, operation.entityId, parentProjectId, operation.id);
-          await db.insert(schema.syncedProject).values({
+          await db.insert(schema.syncedProject).values(await content.write(schema.syncedProject, {
             projectId: operation.entityId,
             vaultId: transaction.vaultId,
             parentProjectId,
@@ -1511,13 +1552,13 @@ function createIdentityStore(
             revision: 1,
             createdAt: data.createdAt as Date,
             updatedAt: now,
-          });
+          }));
         } else if (operation.action === "update") {
           const parentProjectId = data.parentProjectId as string | null;
           await assertRevision(transaction, "project", operation.entityId, operation.baseRevision,
             parentProjectId ? [{ entity: "project", id: parentProjectId }] : []);
           await assertProjectHierarchy(transaction.vaultId, operation.entityId, parentProjectId, operation.id);
-          await db.update(schema.syncedProject).set({
+          await db.update(schema.syncedProject).set(await content.write(schema.syncedProject, {
             parentProjectId,
             name: String(data.name),
             icon: parentProjectId ? null : data.icon as string | null | undefined,
@@ -1526,7 +1567,7 @@ function createIdentityStore(
             projectType: data.projectType as string | null,
             revision: sql`${schema.syncedProject.revision} + 1`,
             updatedAt: now,
-          }).where(and(
+          }, { projectId: operation.entityId, vaultId: transaction.vaultId })).where(and(
             eq(schema.syncedProject.vaultId, transaction.vaultId),
             eq(schema.syncedProject.projectId, operation.entityId),
             ownerAccess(schema.syncedProject.vaultId),
@@ -1565,16 +1606,16 @@ function createIdentityStore(
             active: true,
           };
           if (existing) {
-            await db.update(schema.syncedMeeting).set(values).where(ownedMeeting(transaction.vaultId, operation.entityId));
+            await db.update(schema.syncedMeeting).set(await content.write(schema.syncedMeeting, values, { meetingId: operation.entityId, vaultId: transaction.vaultId })).where(ownedMeeting(transaction.vaultId, operation.entityId));
           } else {
-            await db.insert(schema.syncedMeeting).values(values);
+            await db.insert(schema.syncedMeeting).values(await content.write(schema.syncedMeeting, values));
           }
         } else if (operation.action === "update") {
           const projectId = data.projectId as string | null;
           await assertRevision(transaction, "meeting", operation.entityId, operation.baseRevision,
             projectId ? [{ entity: "project", id: projectId }] : []);
           await assertProjectReference(transaction.vaultId, projectId, operation.id);
-          await db.update(schema.syncedMeeting).set({
+          await db.update(schema.syncedMeeting).set(await content.write(schema.syncedMeeting, {
             projectId,
             name: String(data.name),
             description: stringField(data, "description"),
@@ -1583,7 +1624,7 @@ function createIdentityStore(
             recordingStartedAt: data.recordingStartedAt as Date | null,
             updatedAt: data.updatedAt as Date,
             revision: sql`${schema.syncedMeeting.revision} + 1`,
-          }).where(ownedMeeting(transaction.vaultId, operation.entityId));
+          }, { meetingId: operation.entityId, vaultId: transaction.vaultId })).where(ownedMeeting(transaction.vaultId, operation.entityId));
         } else if (operation.action === "delete") {
           await assertRevision(transaction, "meeting", operation.entityId, operation.baseRevision);
           const attachments = await db.select({ id: schema.meetingAttachment.id }).from(schema.meetingAttachment).where(and(
@@ -1622,9 +1663,9 @@ function createIdentityStore(
         } else {
           const latest = await getSummaryVersion(transaction.vaultId, operation.entityId);
           const metadata = summaryMetadata(String(data.document));
-          await db.insert(schema.summary).values({ id: uuidV7(), meetingId: operation.entityId,
+          await db.insert(schema.summary).values(await content.write(schema.summary, { id: uuidV7(), meetingId: operation.entityId,
             version: (latest?.version ?? 0) + 1, title: String(data.title), document: String(data.document),
-            createdAt: data.createdAt as Date, savedAt: now, metadata });
+            createdAt: data.createdAt as Date, savedAt: now, metadata }));
         }
         await db.update(schema.syncedMeeting).set({
           summaryRevision: sql`${schema.syncedMeeting.summaryRevision} + 1`,
@@ -1646,10 +1687,10 @@ function createIdentityStore(
           eq(schema.transcriptPatchChunk.meetingId, operation.entityId),
           eq(schema.transcriptPatchChunk.patchId, patchId),
         );
-        const storedChunks = await db.select({
+        const storedChunks = await content.read(schema.transcriptPatchChunk, await db.select({ vaultId: schema.transcriptPatchChunk.vaultId, meetingId: schema.transcriptPatchChunk.meetingId, patchId: schema.transcriptPatchChunk.patchId, encryptedPayload: schema.transcriptPatchChunk.encryptedPayload,
           chunkIndex: schema.transcriptPatchChunk.chunkIndex,
           contentHash: schema.transcriptPatchChunk.contentHash,
-        }).from(schema.transcriptPatchChunk).where(patchScope).orderBy(asc(schema.transcriptPatchChunk.chunkIndex));
+        }).from(schema.transcriptPatchChunk).where(patchScope).orderBy(asc(schema.transcriptPatchChunk.chunkIndex)));
         if (storedChunks.length !== expectedChunks.length) {
           throw new SyncTransactionError(422, "transcript_patch_incomplete", [], operation.id);
         }
@@ -1674,20 +1715,29 @@ function createIdentityStore(
           if (mode === "append" && (incoming.endedAt !== null || (latest && !sameTranscriptModel(latest.metadata, incoming.metadata)))) {
             throw new SyncTransactionError(409, "transcript_model_changed", [], operation.id);
           }
-          await db.insert(schema.transcript).values({ ...incoming, meetingId: operation.entityId,
-            version: (latest?.version ?? 0) + 1, syncRevision: Number(operation.baseRevision) + 1, createdAt: now });
+          await db.insert(schema.transcript).values(await content.write(schema.transcript, { ...incoming, meetingId: operation.entityId,
+            version: (latest?.version ?? 0) + 1, syncRevision: Number(operation.baseRevision) + 1, createdAt: now }));
           if (mode === "append" && latest) {
-            // Copy once at live-version start. Each version is independently readable.
-            await db.insert(schema.syncedTranscriptSegment).select(db.select({
-              transcriptId: sql<string>`${incoming.id}`.as("transcript_id"),
-              segmentId: schema.syncedTranscriptSegment.segmentId,
-              startedAt: schema.syncedTranscriptSegment.startedAt,
-              endedAt: schema.syncedTranscriptSegment.endedAt,
-              text: schema.syncedTranscriptSegment.text,
-              createdAt: schema.syncedTranscriptSegment.createdAt,
-              audioSource: schema.syncedTranscriptSegment.audioSource,
-              speakerLabel: schema.syncedTranscriptSegment.speakerLabel,
-            }).from(schema.syncedTranscriptSegment).where(eq(schema.syncedTranscriptSegment.transcriptId, latest.id)));
+            if (!await content.cipher(transaction.vaultId)) {
+              // Copy once at live-version start. Each version is independently readable.
+              await db.insert(schema.syncedTranscriptSegment).select(db.select({
+                ...getTableColumns(schema.syncedTranscriptSegment),
+                transcriptId: sql<string>`${incoming.id}`.as("transcript_id"),
+              }).from(schema.syncedTranscriptSegment).where(eq(schema.syncedTranscriptSegment.transcriptId, latest.id)));
+            } else {
+              // A different transcript ID changes the authenticated row identity.
+              let afterSegment: string | undefined;
+              while (true) {
+                const page = await content.read(schema.syncedTranscriptSegment, await db.select().from(schema.syncedTranscriptSegment)
+                  .where(and(eq(schema.syncedTranscriptSegment.transcriptId, latest.id),
+                    afterSegment ? gt(schema.syncedTranscriptSegment.segmentId, afterSegment) : undefined))
+                  .orderBy(asc(schema.syncedTranscriptSegment.segmentId)).limit(250), transaction.vaultId);
+                if (!page.length) break;
+                await db.insert(schema.syncedTranscriptSegment).values(await content.writeMany(schema.syncedTranscriptSegment,
+                  page.map((segment) => ({ ...segment, transcriptId: incoming.id })), { vaultId: transaction.vaultId }));
+                afterSegment = page.at(-1)!.segmentId;
+              }
+            }
           }
         }
         if (mode === "replace" && data.deletionCount) throw new SyncTransactionError(422, "invalid_transcript_replacement", [], operation.id);
@@ -1696,9 +1746,9 @@ function createIdentityStore(
         let deletionCount = 0;
         // Keep one chunk's text in memory. Every chunk still publishes in this single transaction.
         for (const expected of expectedChunks) {
-          const [chunk] = await db.select().from(schema.transcriptPatchChunk).where(and(
+          const [chunk] = await content.read(schema.transcriptPatchChunk, await db.select().from(schema.transcriptPatchChunk).where(and(
             patchScope, eq(schema.transcriptPatchChunk.chunkIndex, expected.index),
-          )).limit(1);
+          )).limit(1));
           if (!chunk || chunk.contentHash !== expected.sha256) {
             throw new SyncTransactionError(422, "transcript_patch_hash_mismatch", [], operation.id);
           }
@@ -1720,16 +1770,17 @@ function createIdentityStore(
             inArray(schema.syncedTranscriptSegment.segmentId, payload.deletions),
           ));
           for (const batch of batches(payload.segments, 250)) {
-            await db.insert(schema.syncedTranscriptSegment).values(batch.map((segment) => ({
+            await db.insert(schema.syncedTranscriptSegment).values(await content.writeMany(schema.syncedTranscriptSegment, batch.map((segment) => ({
               ...segment, transcriptId: incoming.id,
               startedAt: new Date(segment.startedAt),
               endedAt: segment.endedAt ? new Date(segment.endedAt) : null,
               createdAt: segment.createdAt ? new Date(segment.createdAt) : null,
-            }))).onConflictDoUpdate({
+            })), { vaultId: transaction.vaultId })).onConflictDoUpdate({
               target: [schema.syncedTranscriptSegment.transcriptId, schema.syncedTranscriptSegment.segmentId],
               set: {
                 startedAt: sql`excluded.started_at`, endedAt: sql`excluded.ended_at`, text: sql`excluded.text`,
                 audioSource: sql`excluded.audio_source`, speakerLabel: sql`excluded.speaker_label`,
+                encryptedPayload: sql`excluded.encrypted_payload`,
               },
             });
           }
@@ -1738,7 +1789,7 @@ function createIdentityStore(
           throw new SyncTransactionError(422, "invalid_transcript_patch", [], operation.id);
         }
         if (sameVersion) {
-          await db.update(schema.transcript).set({ ...incoming, syncRevision: Number(operation.baseRevision) + 1 })
+          await db.update(schema.transcript).set(await content.write(schema.transcript, { ...incoming, syncRevision: Number(operation.baseRevision) + 1 }, { vaultId: transaction.vaultId }))
             .where(eq(schema.transcript.id, incoming.id));
         }
         await db.update(schema.syncedMeeting).set({
@@ -1773,10 +1824,10 @@ function createIdentityStore(
           revision: record.revision + 1, updatedAt: now,
         }).where(eq(schema.syncedRecording.sessionId, operation.entityId));
       } else if (operation.entity === "file") {
-        const [file] = await db.select().from(schema.syncedFile).where(and(
+        const [file] = await content.read(schema.syncedFile, await db.select().from(schema.syncedFile).where(and(
           eq(schema.syncedFile.fileId, operation.entityId), eq(schema.syncedFile.vaultId, transaction.vaultId),
           ownerAccess(schema.syncedFile.vaultId),
-        )).limit(1);
+        )).limit(1));
         if (!file && operation.baseRevision !== null) await assertRevision(transaction, "file", operation.entityId, operation.baseRevision);
         if (!file) throw new SyncTransactionError(422, "file_content_missing", [], operation.id);
         if (file.active || operation.baseRevision !== null) {
@@ -1800,10 +1851,10 @@ function createIdentityStore(
         }
         const metadata = { ...file.metadata, ...data.metadata as Partial<FileMetadata> };
         if (metadata.source !== file.metadata.source) throw new SyncTransactionError(409, "file_source_immutable", [], operation.id);
-        await db.update(schema.syncedFile).set({ active: true, metadata,
+        await db.update(schema.syncedFile).set(await content.write(schema.syncedFile, { active: true, metadata,
           name: typeof data.name === "string" ? data.name : file.name,
           revision: file.revision + 1, updatedAt: now,
-        }).where(eq(schema.syncedFile.fileId, file.fileId));
+        }, { fileId: file.fileId, vaultId: transaction.vaultId })).where(eq(schema.syncedFile.fileId, file.fileId));
       } else if (operation.entity === "meeting_attachment") {
         const previous = await canonicalRecord("meeting_attachment", transaction.vaultId, operation.entityId);
         if (previous.record !== null || operation.baseRevision !== null || operation.action === "delete") {
@@ -1830,9 +1881,9 @@ function createIdentityStore(
         if (previous.record && (previous.record.meetingId !== meetingId || previous.record.fileId !== fileId)) {
           throw new SyncTransactionError(409, "meeting_attachment_identity_immutable", [], operation.id);
         }
-        const [file] = await db.select().from(schema.syncedFile).where(and(
+        const [file] = await content.read(schema.syncedFile, await db.select().from(schema.syncedFile).where(and(
           eq(schema.syncedFile.fileId, fileId), eq(schema.syncedFile.vaultId, transaction.vaultId), eq(schema.syncedFile.active, true),
-        )).limit(1);
+        )).limit(1));
         if (!file) throw new SyncTransactionError(422, "file_not_found", [], operation.id);
         const values = { capturedAt: data.capturedAt as Date | null, sessionId: data.sessionId as string | null,
           revision: (previous.revision ?? 0) + 1 };
@@ -1860,22 +1911,21 @@ function createIdentityStore(
           kind: "meeting",
           searchText: data.searchText,
           searchFields: data.searchFields as SearchDocumentFields,
-          embeddingText: data.embeddingText as string | null,
           embeddingContentHash: data.embeddingContentHash as string | null,
           currentEmbeddingContentHash: current?.hash ?? null,
         }]);
       }
       if (operation.entity === "file" || operation.entity === "meeting_attachment") {
-        const images = await db.select().from(schema.syncedScreenshot).where(and(
+        const images = await readScreenshots(await db.select().from(schema.syncedScreenshot).where(and(
           eq(schema.syncedScreenshot.vaultId, transaction.vaultId),
           operation.entity === "file" ? eq(schema.syncedScreenshot.fileId, operation.entityId) : eq(schema.syncedScreenshot.screenshotId, operation.entityId),
-        ));
+        )));
         for (const image of images) {
           const [current] = await db.select({ hash: schema.searchDocument.embeddingContentHash }).from(schema.searchDocument)
             .where(and(eq(schema.searchDocument.vaultId, transaction.vaultId), eq(schema.searchDocument.documentId, image.screenshotId))).limit(1);
           await updateSearchDocuments([{
             documentId: image.screenshotId, vaultId: transaction.vaultId, meetingId: image.meetingId, kind: "screenshot",
-            searchText: typeof data.searchText === "string" ? data.searchText : "", embeddingText: data.embeddingText as string | null ?? null,
+            searchText: typeof data.searchText === "string" ? data.searchText : "",
             searchFields: data.searchFields as SearchDocumentFields,
             embeddingContentHash: data.embeddingContentHash as string | null ?? null, currentEmbeddingContentHash: current?.hash ?? null,
           }]);
@@ -1893,7 +1943,7 @@ function createIdentityStore(
       cursor: encodeSyncCursor(cursor),
       records,
     };
-    await db.insert(schema.syncTransactionReceipt).values({
+    await db.insert(schema.syncTransactionReceipt).values(await content.write(schema.syncTransactionReceipt, {
       transactionId: transaction.id,
       ownerUserId: userPrincipalId,
       vaultId: transaction.vaultId,
@@ -1903,7 +1953,7 @@ function createIdentityStore(
         ? JSON.stringify(records.map(({ entity, id, revision }) => ({ entity, id, revision })))
         : records.map(({ entity, id, revision }) => ({ entity, id, revision })),
       cursor,
-    });
+    }));
     return searchBackend === "sqlite"
       ? JSON.parse(JSON.stringify(response)) as SyncTransactionResponse
       : response;
@@ -1934,6 +1984,7 @@ function createIdentityStore(
             eq(schema.syncedMeeting.meetingId, schema.meetingAttachment.meetingId),
           )).where(and(eq(schema.meetingAttachment.fileId, claim.fileId), isNull(schema.syncedMeeting.deletingAt)))),
       )).limit(1);
+    if (file) file.file = (await content.read(schema.syncedFile, [file.file]))[0]!;
     return file && imageContentTypes.has(file.file.contentType) && needsImageAnalysis(file.file.metadata)
       ? { ...claim, file: file.file } : null;
   }
@@ -2111,7 +2162,7 @@ function createIdentityStore(
           readableMeeting(vaultId), eq(meeting.active, true), isNull(meeting.deletingAt),
           afterId ? gt(meeting.meetingId, afterId) : undefined,
         )).orderBy(asc(meeting.meetingId)).limit(remaining + 1);
-        for (const row of rows) {
+        for (const row of await content.read(schema.syncedMeeting, rows, vaultId)) {
           if (!append({ entity, id: row.meetingId, revision: row.revision,
             record: { ...row, hasSummary: Boolean(row.hasSummary) } })) return { items: records, hasMore: true };
         }
@@ -2152,31 +2203,31 @@ function createIdentityStore(
     getSummaryVersion,
     async listSummaryVersions(vaultId, meetingId, limit, before) {
       const columns = schema.summary;
-      const rows = await db.select({ id: columns.id, meetingId: columns.meetingId, version: columns.version,
+      const rows = await content.read(schema.summary, await db.select({ encryptedPayload: columns.encryptedPayload, id: columns.id, meetingId: columns.meetingId, version: columns.version,
         title: columns.title, createdAt: columns.createdAt, savedAt: columns.savedAt, metadata: columns.metadata }).from(schema.summary).where(and(
         readableSummary(vaultId, meetingId), before === undefined ? undefined : lt(columns.version, before),
-      )).orderBy(desc(columns.version)).limit(limit);
+      )).orderBy(desc(columns.version)).limit(limit), vaultId);
       return rows.map((row) => ({ ...row, metadata: row.metadata ? summaryMetadataSchema.parse(row.metadata) : null }));
     },
     async getSummaryJob(vaultId, meetingId, id) {
-      const [row] = await db.select().from(schema.summaryJob).where(and(
+      const [row] = await content.read(schema.summaryJob, await db.select().from(schema.summaryJob).where(and(
         eq(schema.summaryJob.vaultId, vaultId), eq(schema.summaryJob.meetingId, meetingId),
         eq(schema.summaryJob.ownerUserId, identity.userId),
         id ? eq(schema.summaryJob.id, id) : undefined,
         ownerAccess(schema.summaryJob.vaultId),
-      )).orderBy(desc(schema.summaryJob.createdAt), desc(schema.summaryJob.id)).limit(1);
+      )).orderBy(desc(schema.summaryJob.createdAt), desc(schema.summaryJob.id)).limit(1));
       return row ? { ...row, settings: storedTranscriptSettingsSchema.parse(row.settings) } : null;
     },
     async insertSummaryJob(job) {
-      const inserted = await db.insert(schema.summaryJob).values(job).onConflictDoNothing({ target: schema.summaryJob.id }).returning({ id: schema.summaryJob.id });
+      const inserted = await db.insert(schema.summaryJob).values(await content.write(schema.summaryJob, { ...job })).onConflictDoNothing({ target: schema.summaryJob.id }).returning({ id: schema.summaryJob.id });
       if (!inserted.length) throw new SyncTransactionError(409, "summary_id_reused");
     },
     async cancelSummaryJob(vaultId, meetingId, id) {
       const jobs = schema.summaryJob;
-      const [row] = await db.update(jobs).set({ status: "cancelled", claimedAt: null, leaseExpiresAt: null })
+      const [row] = await content.read(jobs, await db.update(jobs).set({ status: "cancelled", claimedAt: null, leaseExpiresAt: null })
         .where(and(eq(jobs.id, id), eq(jobs.vaultId, vaultId), eq(jobs.meetingId, meetingId),
           eq(jobs.ownerUserId, identity.userId), ownerAccess(jobs.vaultId), inArray(jobs.status, ["pending", "processing"])))
-        .returning();
+        .returning(), vaultId);
       return row ? { ...row, settings: storedTranscriptSettingsSchema.parse(row.settings) } : null;
     },
     async completeSummaryTranscript(job, transaction, transcriptId) {
@@ -2184,13 +2235,13 @@ function createIdentityStore(
       const filter = and(eq(jobs.id, job.id), eq(jobs.ownerUserId, identity.userId),
         eq(jobs.status, "processing"), eq(jobs.claimedAt, job.claimedAt!), gt(jobs.leaseExpiresAt, new Date()));
       const query = db.select().from(jobs).where(filter);
-      const [current] = searchBackend === "sqlite" ? await query : await query.for("update");
+      const [current] = await content.read(jobs, searchBackend === "sqlite" ? await query : await query.for("update"), job.vaultId);
       if (!current) return null;
       if (current.transcriptResult) return getTranscript(job.vaultId, job.meetingId, Number(current.transcriptResult.version));
       await commitTransaction(transaction);
       const transcript = await getTranscript(job.vaultId, job.meetingId);
       if (!transcript || transcript.id !== transcriptId) throw new SyncTransactionError(409, "summary_transcript_conflict");
-      await db.update(jobs).set({ stage: "summarizing", transcriptResult: { transcriptId, version: String(transcript.version) } }).where(filter);
+      await db.update(jobs).set(await content.write(jobs, { stage: "summarizing", transcriptResult: { transcriptId, version: String(transcript.version) } }, { id: job.id, vaultId: job.vaultId })).where(filter);
       return transcript;
     },
     async completeSummaryJob(job, transaction) {
@@ -2198,7 +2249,7 @@ function createIdentityStore(
       const filter = and(eq(jobs.id, job.id), eq(jobs.ownerUserId, identity.userId),
         eq(jobs.status, "processing"), eq(jobs.claimedAt, job.claimedAt!), gt(jobs.leaseExpiresAt, new Date()));
       const query = db.select().from(jobs).where(filter);
-      const [current] = searchBackend === "sqlite" ? await query : await query.for("update");
+      const [current] = await content.read(jobs, searchBackend === "sqlite" ? await query : await query.for("update"), job.vaultId);
       if (!current) return false;
       await commitTransaction(transaction);
       await db.update(jobs).set({ status: "succeeded", claimedAt: null, leaseExpiresAt: null, lastErrorCode: null }).where(filter);
@@ -2222,22 +2273,22 @@ function createIdentityStore(
         lt(schema.transcriptPatchChunk.createdAt, new Date(Date.now() - TRANSCRIPT_PATCH_RETENTION_MS)),
       ));
       const payload = { segments, deletions };
-      await db.insert(schema.transcriptPatchChunk).values({
+      await db.insert(schema.transcriptPatchChunk).values(await content.write(schema.transcriptPatchChunk, {
         vaultId,
         meetingId,
         patchId,
         chunkIndex,
         contentHash,
         payload: searchBackend === "sqlite" ? JSON.stringify(payload) : payload,
-      }).onConflictDoNothing();
-      const [stored] = await db.select({ hash: schema.transcriptPatchChunk.contentHash })
+      })).onConflictDoNothing();
+      const [stored] = await content.read(schema.transcriptPatchChunk, await db.select({ vaultId: schema.transcriptPatchChunk.vaultId, meetingId: schema.transcriptPatchChunk.meetingId, patchId: schema.transcriptPatchChunk.patchId, chunkIndex: schema.transcriptPatchChunk.chunkIndex, encryptedPayload: schema.transcriptPatchChunk.encryptedPayload, contentHash: schema.transcriptPatchChunk.contentHash })
         .from(schema.transcriptPatchChunk).where(and(
           eq(schema.transcriptPatchChunk.vaultId, vaultId),
           eq(schema.transcriptPatchChunk.meetingId, meetingId),
           eq(schema.transcriptPatchChunk.patchId, patchId),
           eq(schema.transcriptPatchChunk.chunkIndex, chunkIndex),
-        )).limit(1);
-      return stored?.hash === contentHash;
+        )).limit(1));
+      return stored?.contentHash === contentHash;
     },
     async deleteTranscriptPatch(vaultId, meetingId, patchId) {
       await db.delete(schema.transcriptPatchChunk).where(and(
@@ -2247,20 +2298,20 @@ function createIdentityStore(
       ));
     },
     async getScreenshot(vaultId, meetingId, screenshotId, activeOnly = false) {
-      const [row] = await db.select().from(schema.syncedScreenshot).where(and(
+      const [row] = await readScreenshots(await db.select().from(schema.syncedScreenshot).where(and(
         readable(schema.syncedScreenshot.vaultId),
         eq(schema.syncedScreenshot.vaultId, vaultId),
         eq(schema.syncedScreenshot.meetingId, meetingId),
         eq(schema.syncedScreenshot.screenshotId, screenshotId),
         ...(activeOnly ? [eq(schema.syncedScreenshot.active, true)] : []),
-      )).limit(1);
+      )).limit(1));
       return (row as SyncScreenshotRecord | undefined) ?? null;
     },
     async getFile(fileId, activeOnly = false) {
-      const [file] = await db.select().from(schema.syncedFile).where(and(
+      const [file] = await content.read(schema.syncedFile, await db.select().from(schema.syncedFile).where(and(
         eq(schema.syncedFile.fileId, fileId), readable(schema.syncedFile.vaultId),
         activeOnly ? eq(schema.syncedFile.active, true) : ownerAccess(schema.syncedFile.vaultId),
-      )).limit(1);
+      )).limit(1));
       return file ?? null;
     },
     async reserveRecording(vaultId, meetingId, sessionId, source) {
@@ -2356,20 +2407,20 @@ function createIdentityStore(
       const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
         .where(ownedVault(input.vaultId)).limit(1);
       if (!vault) return null;
-      await db.insert(schema.syncedFile).values(input).onConflictDoNothing();
-      const [file] = await db.select().from(schema.syncedFile).where(and(
+      await db.insert(schema.syncedFile).values(await content.write(schema.syncedFile, { ...input })).onConflictDoNothing();
+      const [file] = await content.read(schema.syncedFile, await db.select().from(schema.syncedFile).where(and(
         eq(schema.syncedFile.fileId, input.fileId), eq(schema.syncedFile.vaultId, input.vaultId), ownerAccess(schema.syncedFile.vaultId),
-      )).limit(1);
+      )).limit(1));
       return file ?? null;
     },
     async markFileUploaded(pending, size, checksum) {
-      const [file] = await db.update(schema.syncedFile).set({ size, checksum, uploadedAt: new Date(), updatedAt: new Date() })
+      const [file] = await content.read(schema.syncedFile, await db.update(schema.syncedFile).set(await content.write(schema.syncedFile, { size, checksum, uploadedAt: new Date(), updatedAt: new Date() }, { fileId: pending.fileId, vaultId: pending.vaultId }))
         .where(and(eq(schema.syncedFile.fileId, pending.fileId), eq(schema.syncedFile.vaultId, pending.vaultId),
           eq(schema.syncedFile.createdAt, pending.createdAt), isNull(schema.syncedFile.uploadedAt),
           eq(schema.syncedFile.active, false), ownerAccess(schema.syncedFile.vaultId),
           notExists(db.select({ key: schema.storageDeleteJob.storageKey }).from(schema.storageDeleteJob)
             .where(eq(schema.storageDeleteJob.storageKey, fileStorageKey(pending.fileId))))))
-        .returning();
+        .returning(), pending.vaultId);
       return file ?? null;
     },
     async expireFileUploads(vaultId, before) {
@@ -2385,10 +2436,10 @@ function createIdentityStore(
       }
     },
     async listFiles(vaultId, after, limit) {
-      return db.select().from(schema.syncedFile).where(and(
+      return content.read(schema.syncedFile, await db.select().from(schema.syncedFile).where(and(
         eq(schema.syncedFile.vaultId, vaultId), readable(schema.syncedFile.vaultId), eq(schema.syncedFile.active, true),
         after ? gt(schema.syncedFile.fileId, after) : undefined,
-      )).orderBy(asc(schema.syncedFile.fileId)).limit(limit);
+      )).orderBy(asc(schema.syncedFile.fileId)).limit(limit));
     },
     async listMeetingAttachments(vaultId, meetingId, after, limit) {
       const rows = await db.select({ link: schema.meetingAttachment, file: schema.syncedFile }).from(schema.meetingAttachment)
@@ -2396,7 +2447,7 @@ function createIdentityStore(
           eq(schema.meetingAttachment.vaultId, vaultId), eq(schema.meetingAttachment.meetingId, meetingId), readable(schema.meetingAttachment.vaultId),
           eq(schema.syncedFile.active, true), after ? gt(schema.meetingAttachment.id, after) : undefined,
         )).orderBy(asc(schema.meetingAttachment.id)).limit(limit);
-      return rows.map(({ link, file }) => ({ ...link, file }));
+      return Promise.all(rows.map(async ({ link, file }) => ({ ...link, file: (await content.read(schema.syncedFile, [file]))[0]! })));
     },
     async listOrganizations() {
       return db.select({
@@ -2434,7 +2485,7 @@ function createIdentityStore(
             ),
           )))
         : owner ? ownerAccess(schema.syncedVault.vaultId, owner) : undefined;
-      const rows = await db.select({
+      const rows = await content.read(schema.syncedVault, await db.select({ encryption: schema.syncedVault.encryption, encryptedPayload: schema.syncedVault.encryptedPayload,
         vaultId: schema.syncedVault.vaultId,
         name: schema.syncedVault.name,
         icon: schema.syncedVault.icon, color: schema.syncedVault.color,
@@ -2447,11 +2498,11 @@ function createIdentityStore(
         scope,
         organizationId ? exists(db.select({ value: sql`1` }).from(schema.member).where(membership)) : undefined,
         isNull(schema.syncedVault.deletingAt),
-      )).orderBy(desc(schema.syncedVault.updatedAt));
+      )).orderBy(desc(schema.syncedVault.updatedAt)));
       return rows;
     },
     async getVault(vaultId) {
-      const [row] = await db.select({
+      const [row] = await content.read(schema.syncedVault, await db.select({ encryption: schema.syncedVault.encryption, encryptedPayload: schema.syncedVault.encryptedPayload,
         vaultId: schema.syncedVault.vaultId,
         name: schema.syncedVault.name,
         hasResources: vaultHasResources(schema.syncedVault.vaultId).mapWith(Boolean),
@@ -2464,7 +2515,7 @@ function createIdentityStore(
         readable(schema.syncedVault.vaultId),
         eq(schema.syncedVault.vaultId, vaultId),
         isNull(schema.syncedVault.deletingAt),
-      )).limit(1);
+      )).limit(1));
       return row ?? null;
     },
     async listProjects(vaultId) {
@@ -2511,33 +2562,33 @@ function createIdentityStore(
         isNull(schema.syncedMeeting.deletingAt),
       );
       if (!query) {
-        return db.select(meetingSelection(schema)).from(schema.syncedMeeting)
+        return await readMeetings(await db.select(meetingSelection(schema)).from(schema.syncedMeeting)
           .where(filter).orderBy(desc(schema.syncedMeeting.createdAt), desc(schema.syncedMeeting.meetingId))
-          .limit(limit);
+          .limit(limit));
       }
       const ids = await rankedDocumentIds(vaultId, undefined, "meeting", { ...query, filters });
       if (ids.length === 0) return [];
-      const rows = await db.select(meetingSelection(schema)).from(schema.syncedMeeting)
+      const rows = await readMeetings(await db.select(meetingSelection(schema)).from(schema.syncedMeeting)
         .where(and(filter, inArray(schema.syncedMeeting.meetingId, ids)))
-        .orderBy(desc(schema.syncedMeeting.createdAt), desc(schema.syncedMeeting.meetingId));
+        .orderBy(desc(schema.syncedMeeting.createdAt), desc(schema.syncedMeeting.meetingId)));
       const rank = new Map(ids.map((id, index) => [id, index]));
       return rows.sort((left, right) => rank.get(left.meetingId)! - rank.get(right.meetingId)!).slice(0, limit);
     },
     async getMeeting(vaultId, meetingId) {
-      const [row] = await db.select(meetingSelection(schema)).from(schema.syncedMeeting).where(and(
+      const [row] = await readMeetings(await db.select(meetingSelection(schema)).from(schema.syncedMeeting).where(and(
         readableMeeting(vaultId, meetingId),
         eq(schema.syncedMeeting.active, true),
         isNull(schema.syncedMeeting.deletingAt),
-      )).limit(1);
+      )).limit(1));
       return row ?? null;
     },
     getTranscript,
     async listTranscriptVersions(vaultId, meetingId, limit, before) {
-      const rows = await db.select(transcriptSelection).from(schema.transcript)
+      const rows = await content.read(schema.transcript, await db.select(transcriptSelection).from(schema.transcript)
         .innerJoin(schema.syncedMeeting, eq(schema.transcript.meetingId, schema.syncedMeeting.meetingId)).where(and(
           readable(schema.syncedMeeting.vaultId), eq(schema.syncedMeeting.vaultId, vaultId), eq(schema.transcript.meetingId, meetingId),
           before === undefined ? undefined : lt(schema.transcript.version, before),
-        )).orderBy(desc(schema.transcript.version)).limit(limit);
+        )).orderBy(desc(schema.transcript.version)).limit(limit));
       const now = new Date();
       return rows.map((row: Omit<TranscriptVersion, "status">) => ({ ...row, status: transcriptStatus(row.endedAt, row.latestSegmentCreatedAt, now) }));
     },
@@ -2556,7 +2607,7 @@ function createIdentityStore(
       const common = and(readable(schema.searchDocument.vaultId), eq(schema.searchDocument.vaultId, vaultId),
         eq(schema.searchDocument.kind, kind), search.filter);
       const selection = { id: schema.searchDocument.documentId, meetingId: schema.searchDocument.meetingId,
-        snippet: sql<string>`substr(coalesce(${schema.searchDocument.embeddingText}, ''), 1, 180)` };
+        snippet: sql<string>`substr(${schema.searchDocument.searchText}, 1, 180)` };
       // The cursor tracks this Vault's revisions; corpus-wide BM25 changes cannot define stable pages.
       const rows = kind === "meeting"
         ? await db.select(selection).from(schema.searchDocument).innerJoin(schema.syncedMeeting, and(
@@ -2584,6 +2635,8 @@ function createIdentityStore(
       const transcript = await getTranscript(vaultId, meetingId, version);
       if (!transcript) return [];
       const query = db.select({
+        encryptedPayload: schema.syncedTranscriptSegment.encryptedPayload,
+        transcriptId: schema.syncedTranscriptSegment.transcriptId,
         segmentId: schema.syncedTranscriptSegment.segmentId,
         startedAt: schema.syncedTranscriptSegment.startedAt,
         endedAt: schema.syncedTranscriptSegment.endedAt,
@@ -2601,7 +2654,8 @@ function createIdentityStore(
           ),
         )] : []),
       )).orderBy(asc(schema.syncedTranscriptSegment.startedAt), asc(schema.syncedTranscriptSegment.segmentId));
-      return limit === undefined ? query : query.limit(limit);
+      const rows = await content.read(schema.syncedTranscriptSegment, await (limit === undefined ? query : query.limit(limit)), vaultId);
+      return rows.map(({ segmentId, startedAt, endedAt, text, createdAt, audioSource, speakerLabel }) => ({ segmentId, startedAt, endedAt, text, createdAt, audioSource, speakerLabel }));
     },
     async listScreenshots(vaultId, meetingId, query, limit, cursor, filters) {
       if (query && query.tokens.length === 0) return [];
@@ -2627,15 +2681,15 @@ function createIdentityStore(
         )] : []),
       );
       if (!query) {
-        return db.select(screenshotSelection(schema)).from(schema.syncedScreenshot).where(filter)
+        return await readScreenshots(await db.select(screenshotSelection(schema)).from(schema.syncedScreenshot).where(filter)
           .orderBy(meetingId ? asc(schema.syncedScreenshot.capturedAt) : desc(schema.syncedScreenshot.capturedAt),
-            meetingId ? asc(schema.syncedScreenshot.screenshotId) : desc(schema.syncedScreenshot.screenshotId)).limit(limit);
+            meetingId ? asc(schema.syncedScreenshot.screenshotId) : desc(schema.syncedScreenshot.screenshotId)).limit(limit));
       }
       const ids = await rankedDocumentIds(vaultId, meetingId, "screenshot", { ...query, filters });
       if (ids.length === 0) return [];
-      const rows = await db.select(screenshotSelection(schema)).from(schema.syncedScreenshot)
+      const rows = await readScreenshots(await db.select(screenshotSelection(schema)).from(schema.syncedScreenshot)
         .where(and(filter, inArray(schema.syncedScreenshot.screenshotId, ids)))
-        .orderBy(asc(schema.syncedScreenshot.capturedAt), asc(schema.syncedScreenshot.screenshotId));
+        .orderBy(asc(schema.syncedScreenshot.capturedAt), asc(schema.syncedScreenshot.screenshotId)));
       const rank = new Map(ids.map((id, index) => [id, index]));
       return rows.sort((left, right) => rank.get(left.screenshotId)! - rank.get(right.screenshotId)!).slice(0, limit);
     },
@@ -2744,6 +2798,7 @@ function base64UrlDecode(value: string): string {
 
 function meetingSelection(schema: SyncSchema) {
   return {
+    encryptedPayload: schema.syncedMeeting.encryptedPayload,
     meetingId: schema.syncedMeeting.meetingId,
     vaultId: schema.syncedMeeting.vaultId,
     projectId: schema.syncedMeeting.projectId,

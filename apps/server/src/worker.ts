@@ -29,6 +29,8 @@ import { connectPostgresUrl } from "./db/postgres";
 import { createIntlSearchTokenizer } from "./search/tokenizer";
 
 export interface RuntimeSecrets {
+  [key: `DAHLIA_ENCRYPTION_MASTER_KEY_${string}`]: string | undefined;
+  DAHLIA_ENCRYPTION_ACTIVE_KEY_ID?: string;
   BETTER_AUTH_SECRET?: string;
   CODEX_AUTO_REVIEW_MODEL?: string;
   DAHLIA_AI_BACKEND?: string;
@@ -90,10 +92,10 @@ function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): Applic
   if (!url) throw new Error("Worker storage supports DAHLIA_DATABASE_TYPE=d1, hyperdrive, or postgres");
   const connection = connectPostgresUrl(url, 5);
   const permissions = syncedVaultPermission;
-  return { ...createPostgresApplicationStore(connection.db, "postgres", config.searchEmbedding), close: connection.close,
+  return { ...createPostgresApplicationStore(connection.db, "postgres", config.searchEmbedding, config.encryption), close: connection.close,
     jobs: {
-      summaryJobs: createSummaryJobStore(connection.db, true),
-      imageAnalysis: createImageAnalysisStore(connection.db, true),
+      summaryJobs: createSummaryJobStore(connection.db, true, config.encryption),
+      imageAnalysis: createImageAnalysisStore(connection.db, true, config.encryption),
       searchIndex: createPostgresSearchIndexStore(connection.db),
       async listJobOwners(after) {
         const rows = await connection.db.selectDistinct({ id: permissions.principalId }).from(permissions)
@@ -107,6 +109,8 @@ function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): Applic
 
 export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
   const config = loadConfig({
+    ...Object.fromEntries(Object.entries(env).filter(([name]) => name.startsWith("DAHLIA_ENCRYPTION_MASTER_KEY_"))) as Record<string, string | undefined>,
+    DAHLIA_ENCRYPTION_ACTIVE_KEY_ID: env.DAHLIA_ENCRYPTION_ACTIVE_KEY_ID,
     BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
     CODEX_AUTO_REVIEW_MODEL: env.CODEX_AUTO_REVIEW_MODEL,
     DAHLIA_AI_BACKEND: env.DAHLIA_AI_BACKEND,

@@ -95,13 +95,27 @@ function createSearchIndexStore(
     return groups;
   };
 
+  function liveDocumentParentFilters(transaction: SearchDatabase) {
+    return [
+      exists(transaction.select({ value: sql`1` }).from(schema.syncedMeeting).where(and(
+        eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
+        eq(schema.syncedMeeting.meetingId, schema.searchDocument.meetingId),
+        isNull(schema.syncedMeeting.deletingAt),
+      ))),
+      exists(transaction.select({ value: sql`1` }).from(schema.syncedVault).where(and(
+        eq(schema.syncedVault.vaultId, schema.searchDocument.vaultId),
+        isNull(schema.syncedVault.deletingAt),
+      ))),
+    ];
+  }
+
   async function loadMany(jobs: SearchIndexJobRecord[]): Promise<SearchIndexDocumentRecord[]> {
     const groups = groupByOwner(jobs);
     const results = await Promise.all([...groups].map(([userId, ownerJobs]) => withOwner(userId, async (transaction) => {
       const rows = await transaction.select({
         vaultId: schema.searchDocument.vaultId,
         documentId: schema.searchDocument.documentId,
-        embeddingText: schema.searchDocument.embeddingText,
+        embeddingText: schema.searchDocument.searchText,
         contentHash: schema.searchDocument.embeddingContentHash,
       }).from(schema.searchDocument).where(and(
         ownerFilter(userId, schema.searchDocument.vaultId),
@@ -109,23 +123,17 @@ function createSearchIndexStore(
           eq(schema.searchDocument.vaultId, job.vaultId),
           eq(schema.searchDocument.documentId, job.documentId),
         ))),
-        exists(transaction.select({ value: sql`1` }).from(schema.syncedMeeting).where(and(
-          eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
-          eq(schema.syncedMeeting.meetingId, schema.searchDocument.meetingId),
-          isNull(schema.syncedMeeting.deletingAt),
-        ))),
-        exists(transaction.select({ value: sql`1` }).from(schema.syncedVault).where(and(
-          eq(schema.syncedVault.vaultId, schema.searchDocument.vaultId),
-          isNull(schema.syncedVault.deletingAt),
-        ))),
+        ...liveDocumentParentFilters(transaction),
       ));
       const jobsByKey = new Map(ownerJobs.map((job) => [documentKey(job), job]));
-      return rows.flatMap((row) => {
+      const documents: SearchIndexDocumentRecord[] = [];
+      for (const row of rows) {
         const job = jobsByKey.get(documentKey(row));
-        return job && row.embeddingText && row.contentHash
-          ? [{ ...job, embeddingText: row.embeddingText, contentHash: row.contentHash }]
-          : [];
-      });
+        if (job && row.contentHash && row.embeddingText) {
+          documents.push({ ...job, embeddingText: row.embeddingText, contentHash: row.contentHash });
+        }
+      }
+      return documents;
     })));
     return results.flat();
   }
@@ -136,55 +144,44 @@ function createSearchIndexStore(
     dimensions: number,
     embeddings: number[][],
   ): Promise<Set<string>> {
+    if (!Number.isInteger(dimensions) || dimensions < 32 || dimensions > 1024
+      || embeddings.length !== documents.length
+      || embeddings.some((vector) => vector.length !== dimensions || vector.some((value) => !Number.isFinite(value)))) {
+      throw new Error("embedding_dimensions_invalid");
+    }
     const embeddingByKey = new Map(documents.map((document, index) => [documentKey(document), embeddings[index]!]));
     const savedGroups = await Promise.all([...groupByOwner(documents)].map(([userId, ownerDocuments]) =>
       withOwner(userId, async (transaction) => {
-        const current = await transaction.select({
-          vaultId: schema.searchDocument.vaultId,
-          documentId: schema.searchDocument.documentId,
-        }).from(schema.searchDocument).where(and(
-          ownerFilter(userId, schema.searchDocument.vaultId),
-          or(...ownerDocuments.map((document) => and(
+        const saved = new Set<string>();
+        for (const document of ownerDocuments) {
+          const embedding = embeddingByKey.get(documentKey(document))!;
+          if (isPostgres) {
+            // Serialize result writes before checking the job in a fresh statement snapshot.
+            await transaction.select({ documentId: schema.searchDocument.documentId }).from(schema.searchDocument)
+              .where(and(eq(schema.searchDocument.vaultId, document.vaultId),
+                eq(schema.searchDocument.documentId, document.documentId), ownerFilter(userId, schema.searchDocument.vaultId)))
+              .for("update");
+          }
+          const rows = await transaction.update(schema.searchDocument).set({
+            embedding: (isPostgres ? embedding : encodeFloat32(embedding)) as never,
+            embeddingModel: model,
+          }).where(and(
+            ownerFilter(userId, schema.searchDocument.vaultId),
             eq(schema.searchDocument.vaultId, document.vaultId),
             eq(schema.searchDocument.documentId, document.documentId),
             eq(schema.searchDocument.embeddingContentHash, document.contentHash),
-          ))),
-          exists(transaction.select({ value: sql`1` }).from(schema.syncedMeeting).where(and(
-            eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
-            eq(schema.syncedMeeting.meetingId, schema.searchDocument.meetingId),
-            isNull(schema.syncedMeeting.deletingAt),
-          ))),
-          exists(transaction.select({ value: sql`1` }).from(schema.syncedVault).where(and(
-            eq(schema.syncedVault.vaultId, schema.searchDocument.vaultId),
-            isNull(schema.syncedVault.deletingAt),
-          ))),
-        ));
-        const currentKeys = new Set(current.map(documentKey));
-        const valid = ownerDocuments.filter((document) => currentKeys.has(documentKey(document)));
-        if (valid.length === 0) return currentKeys;
-        const now = new Date();
-        await transaction.insert(schema.searchEmbedding).values(valid.map((document) => ({
-          vaultId: document.vaultId,
-          documentId: document.documentId,
-          model,
-          dimensions,
-          contentHash: document.contentHash,
-          embedding: (isPostgres
-            ? embeddingByKey.get(documentKey(document))!
-            : encodeFloat32(embeddingByKey.get(documentKey(document))!)) as never,
-          updatedAt: now,
-        }))).onConflictDoUpdate({
-          target: [schema.searchEmbedding.vaultId, schema.searchEmbedding.documentId],
-          set: {
-            model: sql`excluded.model`,
-            dimensions: sql`excluded.dimensions`,
-            contentHash: sql`excluded.content_hash`,
-            embedding: sql`excluded.embedding`,
-            updatedAt: now,
-          },
-        });
-        await transaction.delete(schema.searchIndexJob).where(or(...valid.map(jobKey)));
-        return currentKeys;
+            exists(transaction.select({ value: sql`1` }).from(schema.searchIndexJob).where(and(
+              jobKey(document), eq(schema.searchIndexJob.model, model), eq(schema.searchIndexJob.dimensions, dimensions),
+              eq(schema.searchIndexJob.status, "processing"),
+            ))),
+            ...liveDocumentParentFilters(transaction),
+          )).returning({ documentId: schema.searchDocument.documentId });
+          if (rows.length) {
+            saved.add(documentKey(document));
+            await transaction.delete(schema.searchIndexJob).where(jobKey(document));
+          }
+        }
+        return saved;
       })));
     return new Set(savedGroups.flatMap((keys) => [...keys]));
   }
@@ -200,22 +197,16 @@ function createSearchIndexStore(
         vaultId: schema.searchDocument.vaultId,
         documentId: schema.searchDocument.documentId,
       }).from(schema.searchDocument)
-        .leftJoin(schema.searchEmbedding, and(
-          eq(schema.searchEmbedding.vaultId, schema.searchDocument.vaultId),
-          eq(schema.searchEmbedding.documentId, schema.searchDocument.documentId),
-          eq(schema.searchEmbedding.model, model),
-          eq(schema.searchEmbedding.dimensions, dimensions),
-          eq(schema.searchEmbedding.contentHash, schema.searchDocument.embeddingContentHash),
-        ))
         .leftJoin(schema.searchIndexJob, and(
           eq(schema.searchIndexJob.vaultId, schema.searchDocument.vaultId),
           eq(schema.searchIndexJob.documentId, schema.searchDocument.documentId),
         ))
         .where(and(
           ownerFilter(userId, schema.searchDocument.vaultId),
-          isNotNull(schema.searchDocument.embeddingText),
           isNotNull(schema.searchDocument.embeddingContentHash),
-          isNull(schema.searchEmbedding.documentId),
+          or(isNull(schema.searchDocument.embedding), isNull(schema.searchDocument.embeddingModel),
+            ne(schema.searchDocument.embeddingModel, model),
+            sql`${isPostgres ? sql`cardinality(${schema.searchDocument.embedding})` : sql`length(${schema.searchDocument.embedding}) / 4`} <> ${dimensions}`),
           afterDocument(schema.searchDocument.documentId, schema.searchDocument.vaultId, after),
           or(
             isNull(schema.searchIndexJob.documentId),

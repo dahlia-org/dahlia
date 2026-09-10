@@ -1,13 +1,21 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "24b73303-2cab-4ccc-8361-66d70232bff4",
+  "id": "830f69a8-cf83-4e17-b0bd-48b8c3523ebd",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
   "ddl": [
     {
       "name": "app",
+      "entityType": "schemas"
+    },
+    {
+      "name": "crypto",
+      "entityType": "schemas"
+    },
+    {
+      "name": "search",
       "entityType": "schemas"
     },
     {
@@ -36,15 +44,9 @@
     },
     {
       "isRlsEnabled": true,
-      "name": "search_documents",
+      "name": "documents",
       "entityType": "tables",
-      "schema": "app"
-    },
-    {
-      "isRlsEnabled": true,
-      "name": "search_embeddings",
-      "entityType": "tables",
-      "schema": "app"
+      "schema": "search"
     },
     {
       "isRlsEnabled": false,
@@ -153,6 +155,12 @@
       "name": "transcript_patch_chunks",
       "entityType": "tables",
       "schema": "app"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "vault_keys",
+      "entityType": "tables",
+      "schema": "crypto"
     },
     {
       "isRlsEnabled": true,
@@ -638,8 +646,8 @@
       "identity": null,
       "name": "document_id",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "uuid",
@@ -651,8 +659,8 @@
       "identity": null,
       "name": "vault_id",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "uuid",
@@ -664,8 +672,8 @@
       "identity": null,
       "name": "meeting_id",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "text",
@@ -677,8 +685,8 @@
       "identity": null,
       "name": "kind",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "text",
@@ -690,8 +698,8 @@
       "identity": null,
       "name": "search_text",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "text",
@@ -703,8 +711,8 @@
       "identity": null,
       "name": "title_text",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "text",
@@ -716,8 +724,8 @@
       "identity": null,
       "name": "tags_text",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "text",
@@ -729,8 +737,8 @@
       "identity": null,
       "name": "description_text",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "text",
@@ -742,8 +750,8 @@
       "identity": null,
       "name": "summary_text",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "text",
@@ -755,8 +763,8 @@
       "identity": null,
       "name": "ocr_text",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "text",
@@ -768,8 +776,8 @@
       "identity": null,
       "name": "caption_text",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "tsvector",
@@ -784,8 +792,8 @@
       "identity": null,
       "name": "title_vector",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "tsvector",
@@ -800,8 +808,8 @@
       "identity": null,
       "name": "tags_vector",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "tsvector",
@@ -816,8 +824,8 @@
       "identity": null,
       "name": "description_vector",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "tsvector",
@@ -832,8 +840,8 @@
       "identity": null,
       "name": "summary_vector",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "tsvector",
@@ -848,8 +856,8 @@
       "identity": null,
       "name": "ocr_vector",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "tsvector",
@@ -864,8 +872,8 @@
       "identity": null,
       "name": "caption_vector",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "tsvector",
@@ -880,21 +888,8 @@
       "identity": null,
       "name": "search_vector",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "embedding_text",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "text",
@@ -906,99 +901,34 @@
       "identity": null,
       "name": "embedding_content_hash",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
-      "name": "updated_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_documents"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "vault_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_embeddings"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "document_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_embeddings"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "model",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_embeddings"
-    },
-    {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "dimensions",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_embeddings"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "content_hash",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_embeddings"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "real",
       "typeSchema": null,
-      "notNull": true,
+      "notNull": false,
       "dimensions": 1,
       "default": null,
       "generated": null,
       "identity": null,
       "name": "embedding",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_embeddings"
+      "schema": "search",
+      "table": "documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "embedding_model",
+      "entityType": "columns",
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "timestamp",
@@ -1010,8 +940,8 @@
       "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "app",
-      "table": "search_embeddings"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "type": "uuid",
@@ -1339,6 +1269,19 @@
       "table": "jobs_storage_delete"
     },
     {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "summaries"
+    },
+    {
       "type": "uuid",
       "typeSchema": null,
       "notNull": true,
@@ -1441,6 +1384,19 @@
       "entityType": "columns",
       "schema": "app",
       "table": "summaries"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
     },
     {
       "type": "uuid",
@@ -1833,6 +1789,19 @@
       "table": "sync_changes"
     },
     {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transaction_receipts"
+    },
+    {
       "type": "uuid",
       "typeSchema": null,
       "notNull": true,
@@ -1987,6 +1956,19 @@
       "entityType": "columns",
       "schema": "app",
       "table": "sync_vault_state"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "files"
     },
     {
       "type": "uuid",
@@ -2169,6 +2151,19 @@
       "entityType": "columns",
       "schema": "app",
       "table": "files"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "meetings"
     },
     {
       "type": "uuid",
@@ -2364,6 +2359,19 @@
       "entityType": "columns",
       "schema": "app",
       "table": "meetings"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "projects"
     },
     {
       "type": "uuid",
@@ -2626,6 +2634,19 @@
       "table": "recordings"
     },
     {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcript_segments"
+    },
+    {
       "type": "uuid",
       "typeSchema": null,
       "notNull": true,
@@ -2728,6 +2749,32 @@
       "entityType": "columns",
       "schema": "app",
       "table": "transcript_segments"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'none'",
+      "generated": null,
+      "identity": null,
+      "name": "encryption",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "vaults"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "vaults"
     },
     {
       "type": "uuid",
@@ -2912,6 +2959,19 @@
       "table": "vault_permissions"
     },
     {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcripts"
+    },
+    {
       "type": "uuid",
       "typeSchema": null,
       "notNull": true,
@@ -3016,6 +3076,19 @@
       "table": "transcripts"
     },
     {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcript_patch_chunks"
+    },
+    {
       "type": "uuid",
       "typeSchema": null,
       "notNull": true,
@@ -3105,6 +3178,58 @@
       "entityType": "columns",
       "schema": "app",
       "table": "transcript_patch_chunks"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "vault_id",
+      "entityType": "columns",
+      "schema": "crypto",
+      "table": "vault_keys"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "schema": "crypto",
+      "table": "vault_keys"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "wrapped_key",
+      "entityType": "columns",
+      "schema": "crypto",
+      "table": "vault_keys"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "crypto",
+      "table": "vault_keys"
     },
     {
       "type": "bigserial",
@@ -3389,8 +3514,8 @@
       "concurrently": false,
       "name": "search_document_vault_kind_meeting_document_idx",
       "entityType": "indexes",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "nameExplicit": true,
@@ -4038,27 +4163,8 @@
       "onDelete": "CASCADE",
       "name": "search_document_meeting_fk",
       "entityType": "fks",
-      "schema": "app",
-      "table": "search_documents"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        "vault_id",
-        "document_id"
-      ],
-      "schemaTo": "app",
-      "tableTo": "search_documents",
-      "columnsTo": [
-        "vault_id",
-        "document_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "search_embedding_document_fk",
-      "entityType": "fks",
-      "schema": "app",
-      "table": "search_embeddings"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "nameExplicit": true,
@@ -4414,19 +4520,8 @@
       "nameExplicit": true,
       "name": "search_document_pk",
       "entityType": "pks",
-      "schema": "app",
-      "table": "search_documents"
-    },
-    {
-      "columns": [
-        "vault_id",
-        "document_id"
-      ],
-      "nameExplicit": true,
-      "name": "search_embedding_pk",
-      "entityType": "pks",
-      "schema": "app",
-      "table": "search_embeddings"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "columns": [
@@ -4658,6 +4753,16 @@
     },
     {
       "columns": [
+        "vault_id"
+      ],
+      "nameExplicit": false,
+      "name": "vault_keys_pkey",
+      "schema": "crypto",
+      "table": "vault_keys",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
         "sequence"
       ],
       "nameExplicit": false,
@@ -4795,18 +4900,18 @@
       "table": "meeting_events"
     },
     {
+      "value": "\"embedding\" IS NULL OR cardinality(\"embedding\") BETWEEN 32 AND 1024",
+      "name": "search_document_embedding_dimensions_check",
+      "entityType": "checks",
+      "schema": "search",
+      "table": "documents"
+    },
+    {
       "value": "\"kind\" IN ('meeting', 'screenshot')",
       "name": "search_document_kind_check",
       "entityType": "checks",
-      "schema": "app",
-      "table": "search_documents"
-    },
-    {
-      "value": "\"dimensions\" BETWEEN 32 AND 1024",
-      "name": "search_embedding_dimensions_check",
-      "entityType": "checks",
-      "schema": "app",
-      "table": "search_embeddings"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "value": "\"status\" IN ('pending', 'processing', 'failed')",
@@ -4907,6 +5012,13 @@
       "table": "recordings"
     },
     {
+      "value": "\"encryption\" IN ('none', 'server')",
+      "name": "vault_encryption_check",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "vaults"
+    },
+    {
       "value": "\"principal_type\" IN ('user', 'organization', 'team')",
       "name": "vault_permission_principal_type_check",
       "entityType": "checks",
@@ -5005,12 +5117,12 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"search_documents\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_read_vault\"(\"search\".\"documents\".\"vault_id\")",
       "withCheck": null,
       "name": "search_document_select",
       "entityType": "policies",
-      "schema": "app",
-      "table": "search_documents"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "as": "PERMISSIVE",
@@ -5018,38 +5130,12 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"search_documents\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"app\".\"search_documents\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_owns_vault\"(\"search\".\"documents\".\"vault_id\")",
+      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"search\".\"documents\".\"vault_id\")",
       "name": "search_document_write",
       "entityType": "policies",
-      "schema": "app",
-      "table": "search_documents"
-    },
-    {
-      "as": "PERMISSIVE",
-      "for": "SELECT",
-      "roles": [
-        "public"
-      ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"search_embeddings\".\"vault_id\")",
-      "withCheck": null,
-      "name": "search_embedding_select",
-      "entityType": "policies",
-      "schema": "app",
-      "table": "search_embeddings"
-    },
-    {
-      "as": "PERMISSIVE",
-      "for": "ALL",
-      "roles": [
-        "public"
-      ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"search_embeddings\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"app\".\"search_embeddings\".\"vault_id\")",
-      "name": "search_embedding_write",
-      "entityType": "policies",
-      "schema": "app",
-      "table": "search_embeddings"
+      "schema": "search",
+      "table": "documents"
     },
     {
       "as": "PERMISSIVE",
@@ -5362,6 +5448,32 @@
       "entityType": "policies",
       "schema": "app",
       "table": "transcript_patch_chunks"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"crypto\".\"vault_keys\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid OR \"app\".\"current_identity_can_read_vault\"(\"crypto\".\"vault_keys\".\"vault_id\")",
+      "withCheck": null,
+      "name": "vault_key_read",
+      "entityType": "policies",
+      "schema": "crypto",
+      "table": "vault_keys"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"crypto\".\"vault_keys\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "\"crypto\".\"vault_keys\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
+      "name": "vault_key_write",
+      "entityType": "policies",
+      "schema": "crypto",
+      "table": "vault_keys"
     },
     {
       "as": "PERMISSIVE",

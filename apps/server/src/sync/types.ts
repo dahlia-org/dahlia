@@ -22,6 +22,7 @@ export interface SyncTranscriptCursor {
 }
 
 export interface SyncVaultRecord {
+  encryption?: "none" | "server";
   hasResources?: boolean;
   icon?: string | null;
   color?: string | null;

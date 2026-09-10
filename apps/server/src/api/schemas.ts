@@ -19,7 +19,7 @@ export const page = <T extends z.ZodType>(item: T) => z.object({ items: z.array(
 const appearance = { icon: z.string().nullable().optional(), color: z.string().nullable().optional() };
 const syncFields = { active: z.boolean().optional(), deletingAt: date.nullable().optional(), revision: integer };
 const contentFields = { contentOmitted: z.boolean().optional(), contentPresent: z.boolean().optional() };
-export const vault = z.object({ vaultId: id, name: z.string(), ...appearance, ...syncFields,
+export const vault = z.object({ encryption: z.enum(["none", "server"]).optional(), vaultId: id, name: z.string(), ...appearance, ...syncFields,
   createdAt: date, updatedAt: date, role: z.enum(["owner", "member"]).optional(), hasResources: z.boolean().optional(),
 }).openapi("Vault");
 export const project = z.object({ projectId: id, vaultId: id, parentProjectId: id.nullable(), name: z.string(), description: z.string(),
@@ -107,6 +107,7 @@ export const summaryJob = z.object({ id, method: z.enum(["transcript", "audio"])
   createdAt: date, error: z.string().nullable(),
 }).openapi("SummaryJob");
 export const capabilities = z.object({
+  vaultEncryption: z.object({ version: integer }).optional(),
   sync: z.object({ version: integer }).optional(), vaultTransfers: z.object({ version: integer }).optional(),
   recordingArchive: z.object({ version: integer }).optional(), meetingEvents: z.object({ version: integer }).optional(),
   search: z.object({ version: integer }).optional(), imageAnalysis: z.object({ version: integer }).optional(),

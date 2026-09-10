@@ -1,3 +1,5 @@
+import { createContentEncryption } from "../encryption/store";
+import type { EncryptionConfig } from "../encryption/crypto";
 import { and, asc, eq, lte, gt, or, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
@@ -16,7 +18,7 @@ export interface SummaryJobQueueStore extends SummaryJobStore {
   due(ownerUserId: string, after?: string): Promise<SummaryJobReference[]>;
 }
 
-export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabase, isPostgres: boolean): SummaryJobQueueStore {
+export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabase, isPostgres: boolean, encryption?: EncryptionConfig): SummaryJobQueueStore {
   const db = database as NodePgDatabase;
   const schema = (isPostgres ? postgresSchema : sqliteSchema) as typeof postgresSchema;
   const jobs = schema.summaryJob;
@@ -41,7 +43,9 @@ export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabas
           const eligible = and(eq(jobs.ownerUserId, owner.id), reference ? eq(jobs.id, reference.id) : undefined, lte(jobs.availableAt, now),
             or(eq(jobs.status, "pending"), and(eq(jobs.status, "processing"), lte(jobs.leaseExpiresAt, now))));
           const query = connection.select().from(jobs).where(eligible).orderBy(asc(jobs.availableAt)).limit(1);
-          const [row] = isPostgres ? await query.for("update", { skipLocked: true }) : await query;
+          const [stored] = isPostgres ? await query.for("update", { skipLocked: true }) : await query;
+          if (!stored) return null;
+          const [row] = await createContentEncryption(connection, schema, owner.id, encryption).read(jobs, [stored]);
           if (!row) return null;
           if (row.attempts >= 3) {
             await connection.update(jobs).set({ status: "failed", lastErrorCode: "summary_retry_exhausted", claimedAt: null, leaseExpiresAt: null })
@@ -49,7 +53,7 @@ export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabas
             return null;
           }
           const claimed = { ...row, settings: storedTranscriptSettingsSchema.parse(row.settings), status: "processing", attempts: row.attempts + 1, claimedAt: now, leaseExpiresAt: new Date(now.getTime() + 300_000) };
-          await connection.update(jobs).set(claimed).where(eq(jobs.id, row.id));
+          await connection.update(jobs).set({ status: claimed.status, attempts: claimed.attempts, claimedAt: claimed.claimedAt, leaseExpiresAt: claimed.leaseExpiresAt }).where(eq(jobs.id, row.id));
           return claimed;
         });
         if (job) return job;

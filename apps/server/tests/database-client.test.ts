@@ -122,12 +122,12 @@ describe("PostgreSQL migrations", () => {
     expect(sql).toContain('CREATE TABLE "app"."meetings"');
     expect(sql).toContain('CREATE TABLE "app"."transcript_segments"');
 
-    expect(sql).toContain('CREATE TABLE "app"."search_documents"');
-    expect(sql).toContain('CREATE TABLE "app"."search_embeddings"');
+    expect(sql).toContain('CREATE TABLE "search"."documents"');
+    expect(sql).not.toContain('CREATE TABLE "app"."search_embeddings"');
     expect(sql).toContain('CREATE TABLE "app"."jobs_search_index"');
     expect(sql).toContain('"search_text" text DEFAULT \'\' NOT NULL');
     expect(sql).toContain("tsvector GENERATED ALWAYS AS (to_tsvector('simple', search_text)) STORED");
-    expect(sql).toContain('"embedding" real[] NOT NULL');
+    expect(sql).toContain('"embedding" real[]');
     expect(sql).toContain('"vault_id" uuid');
     expect(sql).toContain('"meeting_id" uuid');
     expect(sql).toContain('"segment_id" uuid');
@@ -147,8 +147,7 @@ describe("PostgreSQL migrations", () => {
     expect(sql).toContain('CREATE UNIQUE INDEX "team_member_user_team_idx" ON "auth"."team_member" ("user_id","team_id")');
     expect(sql).toContain('"app"."current_identity_can_read_vault"("app"."vaults"."vault_id")');
     expect(sql).not.toContain('ALTER TABLE "app"."vault_permissions" ENABLE ROW LEVEL SECURITY');
-    expect(sql).toContain('ALTER TABLE "app"."search_documents" FORCE ROW LEVEL SECURITY');
-    expect(sql).toContain('ALTER TABLE "app"."search_embeddings" FORCE ROW LEVEL SECURITY');
+    expect(sql).toContain('ALTER TABLE "search"."documents" FORCE ROW LEVEL SECURITY');
     for (const policy of [
       "vault_select",
       "vault_insert",
@@ -167,8 +166,6 @@ describe("PostgreSQL migrations", () => {
       "transaction_receipt_owner",
       "search_document_select",
       "search_document_write",
-      "search_embedding_select",
-      "search_embedding_write",
     ]) {
       expect(snapshot).toContain(`"name": "${policy}"`);
     }

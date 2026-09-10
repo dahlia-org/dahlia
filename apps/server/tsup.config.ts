@@ -4,6 +4,7 @@ export default defineConfig({
   clean: true,
   dts: true,
   entry: {
+    "db/rotate-encryption-keys": "src/db/rotate-encryption-keys.ts",
     "db/migrate": "src/db/migrate.ts",
     "db/prune-sync-history": "src/db/prune-sync-history.ts",
     index: "src/index.ts",

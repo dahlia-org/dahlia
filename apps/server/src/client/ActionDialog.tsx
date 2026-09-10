@@ -14,6 +14,7 @@ export interface DialogField {
   required?: boolean;
   pattern?: string;
   type?: "email";
+  options?: Array<{ value: string; label: string }>;
 }
 
 export interface ActionDialogOptions {
@@ -126,6 +127,13 @@ export function ActionDialog({ title, description, confirmLabel, destructive, fi
               </div>}
             </div>;
           }
+          if (field.options) return <label className="dialog-field" key={field.name}>
+            <span>{field.label}</span>
+            <select name={field.name} value={values[field.name]} disabled={pending}
+              onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}>
+              {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>;
           const Control = field.multiline ? "textarea" : "input";
           return <label className="dialog-field" key={field.name}>
             {!field.hideLabel && <span>{field.label}{!field.required && <small>{uiText("Optional", "任意")}</small>}</span>}

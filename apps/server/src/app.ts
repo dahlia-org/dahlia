@@ -1,3 +1,4 @@
+import { EncryptionError } from "./encryption/crypto";
 import { personalWorkspaceId } from "./auth/workspace";
 import { installPublicIDs } from "./public-http";
 import { wireValue } from "./public-wire";
@@ -537,6 +538,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const sources = dependencies.summaryService?.methods.map((method) => method.id) ?? [];
     return context.json({
       sync: { version: 4 },
+      ...(config.encryption ? { vaultEncryption: { version: 1 } } : {}),
       vaultTransfers: { version: 1 },
       recordingArchive: { version: 1 },
       meetingEvents: { version: 1 },
@@ -1027,7 +1029,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
         ...(error.operationId ? { operationId: error.operationId } : {}),
       }, { status: error.status });
     }
-    if (error instanceof SyncStoreUnavailableError) {
+    if (error instanceof SyncStoreUnavailableError || error instanceof EncryptionError) {
       return context.json({ error: error.message }, 503);
     }
     console.error(JSON.stringify({ level: "error", event: "request_failed", route: requestRoute(context.req.path) }));
