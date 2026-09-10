@@ -1091,11 +1091,19 @@ export class MeetingSyncService {
         // HTTP pagination keeps its bounded query; MCP also verifies the previously delivered prefix.
         const records = await scoped.listTranscript(vaultId, meetingId,
           options ? undefined : TRANSCRIPT_READ_PAGE_SIZE + 1, options ? undefined : parsedCursor, transcript?.version);
-        const start = options && parsedCursor ? records.findIndex((row) => row.startedAt > parsedCursor.startedAt
-          || (row.startedAt.getTime() === parsedCursor.startedAt.getTime() && row.segmentId > parsedCursor.segmentId)) : 0;
-        const page = options ? await transcriptCheckpoint(vaultId, meetingId, transcript?.id ?? "none", records,
-          options.after, start < 0 ? records.length : start, TRANSCRIPT_READ_PAGE_SIZE)
-          : { items: records.slice(0, TRANSCRIPT_READ_PAGE_SIZE), hasMore: records.length > TRANSCRIPT_READ_PAGE_SIZE };
+        let page;
+        if (options) {
+          let start = 0;
+          if (parsedCursor) {
+            start = records.findIndex((row) => row.startedAt > parsedCursor.startedAt
+              || (row.startedAt.getTime() === parsedCursor.startedAt.getTime() && row.segmentId > parsedCursor.segmentId));
+            if (start < 0) start = records.length;
+          }
+          page = await transcriptCheckpoint(vaultId, meetingId, transcript?.id ?? "none", records,
+            options.after, start, TRANSCRIPT_READ_PAGE_SIZE);
+        } else {
+          page = { items: records.slice(0, TRANSCRIPT_READ_PAGE_SIZE), hasMore: records.length > TRANSCRIPT_READ_PAGE_SIZE };
+        }
         const last = page.items.at(-1);
         return { transcript, items: page.items, ...("next_after" in page ? { next_after: page.next_after } : {}),
           ...(page.hasMore && last ? { nextCursor: `${last.startedAt.toISOString()},${last.segmentId}` } : {}) };
