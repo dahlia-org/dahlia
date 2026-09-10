@@ -2,6 +2,7 @@ import type { ProviderConfig } from "../config";
 import { sendOpenAIResponses, type GatewayFetch } from "./adapters";
 import type { AIGatewayBackend, RequestBody, RequestContext } from "./backend";
 import { modelList } from "./models";
+import catalog from "./cloudflare-models.json";
 
 export function cloudflareHeaders(provider: { gatewayId?: string }): Record<string, string> {
   return { "cf-aig-gateway-id": provider.gatewayId ?? "default", "cf-aig-collect-log": "false",
@@ -15,22 +16,7 @@ export function cloudflareModel(model: string): string {
 }
 
 export function cloudflareModels() {
-  const catalog = modelList([{ id: "gpt-5.6-luna" }, { id: "gpt-4.1" }, { id: "gemini-3-flash" }]);
-  for (const [slug, displayName, efforts, audio] of [
-    ["gpt-4.1", "GPT-4.1", ["none"], false],
-    ["gemini-3-flash", "Gemini 3 Flash", ["minimal", "low", "medium", "high"], true],
-  ] as const) {
-    catalog.models = catalog.models.filter((entry) => entry.slug !== slug);
-    catalog.models.push({ slug, display_name: displayName, description: null, shell_type: "default",
-      visibility: "list", supported_in_api: true, priority: catalog.models.length,
-      default_reasoning_level: audio ? "medium" : "none",
-      supported_reasoning_levels: efforts.map((effort) => ({ effort, description: effort })),
-      input_modalities: ["text", "image", ...(audio ? ["audio"] : [])], supports_json_schema: true });
-  }
-  for (const model of catalog.models) {
-    model.summary_methods = model.slug === "gpt-4.1" ? ["transcript"] : model.slug === "gemini-3-flash" ? ["audio"] : [];
-  }
-  return catalog;
+  return modelList(catalog.models.map((model) => ({ id: model.slug })), catalog.models);
 }
 
 export class CloudflareBackend implements AIGatewayBackend {

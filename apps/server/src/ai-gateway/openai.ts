@@ -2,6 +2,7 @@ import type { ProviderConfig } from "../config";
 import { sendOpenAIResponses, type GatewayFetch } from "./adapters";
 import type { AIGatewayBackend, RequestBody, RequestContext } from "./backend";
 import { modelList } from "./models";
+import catalog from "./openai-models.json";
 
 export class OpenAIBackend implements AIGatewayBackend {
   constructor(
@@ -11,7 +12,7 @@ export class OpenAIBackend implements AIGatewayBackend {
 
   listModels() {
     // Mock discovery until this backend has a model catalog implementation.
-    return Promise.resolve(modelList([{ id: "gpt-5.6-luna" }]));
+    return Promise.resolve(modelList([{ id: "gpt-5.6-luna" }], catalog.models));
   }
 
   responses(body: RequestBody, context: RequestContext): Promise<Response> {

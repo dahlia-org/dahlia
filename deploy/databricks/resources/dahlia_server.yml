@@ -56,7 +56,7 @@ resources:
           - name: DAHLIA_DATABASE_TYPE
             value: lakebase
           - name: DAHLIA_EMBEDDING_MODEL
-            value: ${var.catalog}.${var.ai_schema}.embedding
+            value: ${var.catalog}.${var.ai_schema}.qwen3-embedding-0-6b
           - name: DAHLIA_CAPTIONING_MODEL
             value: ${var.catalog}.${var.ai_schema}.gpt-5-6-luna
           - name: DAHLIA_SEARCH_EMBEDDING_DIMENSIONS

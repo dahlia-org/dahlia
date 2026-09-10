@@ -47,6 +47,12 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 - Signing in does not implicitly migrate a Local Account Vault. Removing a local working copy or signing out does not delete Server records. Keep deletion of canonical data explicit and authorized.
 - Current sharing grants read-only member access to personally owned Vaults; Server MCP is read-only. SaaS deployment does not imply collaborative write access or weaker owner checks.
 
+## Model Catalog Maintenance
+
+- `src/ai-gateway/databricks-models.json` owns Databricks model eligibility, runtime metadata, and visibility. OpenAI and Cloudflare use their separate native-ID JSON catalogs. Keep model-family filters and inferred capability defaults out of TypeScript.
+- GPT definitions copy the approved upstream Codex `models.json`, limited to GPT-6, GPT-5.6, and GPT-5.5; only hyphenate slug versions and set `available_in_plans` to `[]`. Obtain user confirmation before changing GPT settings; moving existing values without changing their behavior is permitted. Compare proposed changes against the pinned Codex source before presenting them for confirmation.
+- OSS model metadata is maintained by Dahlia and may be updated within an authorized task without separate confirmation. Use official model documentation for known values; otherwise copy Luna for lightweight models and Sol for large models directly into JSON. Keep OSS and Gemini on use_responses_lite: false and expose discovered Gemini models with visibility: list. Do not add runtime ID normalization, alias expansion, or capability inference. The API may mechanically add hidden Codex built-in entries for picker suppression; keep these out of the model JSON and preserve visibility: hide and supported_in_api: false even when discovery omits them.
+
 ## Security and Data Contracts
 
 - Never put user content, tool input/output, bearer tokens, provider/storage credentials, or local paths in diagnostic logs. Logs may include bounded event names, status codes, and upstream request IDs.

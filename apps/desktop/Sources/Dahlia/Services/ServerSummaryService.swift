@@ -32,13 +32,11 @@ actor ServerSummaryService {
         let supportedReasoningLevels: [Effort]
         let defaultReasoningLevel: String?
         let inputModalities: [String]?
-        let supportsJSONSchema: Bool?
         let summaryMethods: [String]?
-        var supportsStructuredSummary: Bool { supportsJSONSchema == true }
-        var supportsAudioSummary: Bool { supportsStructuredSummary && slug.hasPrefix("gemini-") && inputModalities?.contains("audio") == true }
+        var supportsAudioSummary: Bool { slug.hasPrefix("gemini-") && inputModalities?.contains("audio") == true }
         func supportsSummary(method: String) -> Bool {
             let source = method == "audio" ? "audio" : "transcript"
-            return supportsStructuredSummary && (summaryMethods?.contains(source) ?? true)
+            return (summaryMethods?.contains(source) ?? true)
                 && (source != "audio" || supportsAudioSummary)
         }
 
@@ -49,7 +47,6 @@ actor ServerSummaryService {
             case supportedReasoningLevels = "supported_reasoning_levels"
             case defaultReasoningLevel = "default_reasoning_level"
             case inputModalities = "input_modalities"
-            case supportsJSONSchema = "supports_json_schema"
             case summaryMethods = "summary_methods"
         }
     }

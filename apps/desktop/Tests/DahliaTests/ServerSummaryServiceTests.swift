@@ -292,10 +292,10 @@ import DahliaRuntimeSupport
             ))
             let models = try await service.models(connectionID: .v7(), origin: origin)
             #expect(models.map(\.id) == ["available", "unsupported"])
-            #expect(models.filter(\.supportsStructuredSummary).map(\.id) == ["available"])
+            #expect(models.filter { $0.supportsSummary(method: "transcript") }.map(\.id) == ["available", "unsupported"])
             #expect(models.first?.supportedReasoningLevels.map(\.effort) == ["max"])
             #expect(models.first?.defaultReasoningLevel == "max")
-            #expect(models.first?.supportsStructuredSummary == true)
+            #expect(models.first?.supportsSummary(method: "transcript") == true)
             #expect(ServerSummaryService.Failure.generationFailed("summary_input_changed").errorDescription == L10n.serverSummaryInputChanged)
         }
 
@@ -368,13 +368,13 @@ import DahliaRuntimeSupport
         }
 
         @Test(arguments: [false, nil] as [Bool?])
-        func transcriptionModelRequiresStructuredOutput(support: Bool?) throws {
+        func listedAudioModelDoesNotRequireLegacySchemaFlag(support: Bool?) throws {
             var json: [String: Any] = [
                 "slug": "gemini-audio", "display_name": "Gemini", "supported_reasoning_levels": [], "input_modalities": ["audio"],
             ]
             if let support { json["supports_json_schema"] = support }
             let model = try JSONDecoder().decode(ServerSummaryService.Model.self, from: JSONSerialization.data(withJSONObject: json))
-            #expect(!model.supportsAudioSummary)
+            #expect(model.supportsAudioSummary)
         }
 
         @Test(arguments: [

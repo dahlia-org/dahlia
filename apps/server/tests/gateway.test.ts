@@ -53,7 +53,7 @@ describe("AI Gateway", () => {
       const list = await fallback.models();
       const isDatabricks = backendConfig.provider?.backend === "databricks";
       expect(list.data.some((m) => m.id === "codex-auto-review")).toBe(isDatabricks);
-      expect(list.models.find((m) => m.slug === "codex-auto-review")?.visibility).toBe(isDatabricks ? "list" : "hide");
+      expect(list.models.find((m) => m.slug === "codex-auto-review")?.visibility).toBe(isDatabricks ? "list" : undefined);
       await fallback.responses(request({ model: "codex-auto-review", input: [] }, {
         "x-forwarded-access-token": "user-token",
       }), identity);
@@ -86,9 +86,9 @@ describe("AI Gateway", () => {
       }),
     );
     expect(list.data.map((m) => m.id)).toEqual(["gpt-5-6-luna", "custom"]);
-    expect(list.data.map((m) => m.display_name)).toEqual(["GPT 5.6 Luna", "custom"]);
-    expect(list.models.find((m) => m.slug === "gpt-5-6-luna")).toMatchObject({ default_reasoning_level: "medium", visibility: "list", display_name: "GPT 5.6 Luna" });
-    expect(list.models.find((m) => m.slug === "gpt-5-6-luna")).not.toHaveProperty("use_responses_lite");
+    expect(list.data.map((m) => m.display_name)).toEqual(["GPT-5.6-Luna", "custom"]);
+    expect(list.models.find((m) => m.slug === "gpt-5-6-luna")).toMatchObject({ default_reasoning_level: "medium", visibility: "list", display_name: "GPT-5.6-Luna" });
+    expect(list.models.find((m) => m.slug === "gpt-5-6-luna")).toHaveProperty("use_responses_lite", true);
     expect(list.models.find((m) => m.slug === "custom")).toBeUndefined();
     expect(transport).toHaveBeenCalledTimes(2);
   });

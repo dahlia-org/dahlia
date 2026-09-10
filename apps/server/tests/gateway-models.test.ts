@@ -1,163 +1,107 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { modelList, type ModelInfo } from "../src/ai-gateway/models";
-import { LATEST_CODEX_CLIENT_VERSION } from "../src/ai-gateway/service";
+import { modelList } from "../src/ai-gateway/models";
+import { cloudflareModels } from "../src/ai-gateway/cloudflare";
 import catalog from "../src/ai-gateway/databricks-models.json";
 
-describe("model display names", () => {
-  it.each([
-    ["gpt-6-astra", "GPT 6 Astra"],
-    ["gpt-5-6-sol", "GPT 5.6 Sol"],
-    ["gpt-5.6-sol", "GPT 5.6 Sol"],
-    ["gpt-5-6-terra", "GPT 5.6 Terra"],
-    ["gpt-5.6-terra", "GPT 5.6 Terra"],
-    ["gpt-5-6-luna", "GPT 5.6 Luna"],
-    ["gpt-5.6-luna", "GPT 5.6 Luna"],
-    ["kimi-k3", "Kimi K3"],
-    ["deepseek-v4-pro-0813", "DeepSeek V4 Pro"],
-    ["glm-5-3-flash", "GLM 5.3 Flash"],
-    ["glm-5-3", "GLM 5.3"],
-    ["gemini-3-8-flash", "Gemini 3.8 Flash"],
-    ["gemini-3-7-flash", "Gemini 3.7 Flash"],
-  ])("uses the catalog display name for %s", (id, expected) => {
-    expectDisplayName({ id }, expected);
+// Codex main 713caa89f389acd9cbcd77016edbb607273826af, only hyphenating slugs and clearing available_in_plans.
+const upstreamHashes: [string, string][] = [["gpt-6-astra","0c583692f053474cbd5b39b6f570094e4a0d407ab65f2e7cf49b5e9c50881259"],["gpt-5-6-sol","cdb22ce782efd51d35e02b9df0d4e5fbf88e304a4feaef7b4b04c78d3375f93f"],["gpt-5-6-terra","25f6bda9a542fab0ed1d76d11487c9f8d9e5ac202b68a86e918173fa1e05c95f"],["gpt-5-6-luna","1fa2793ecd8581b715c8bcd436e034cb440bf2680bc6e7572ee91a727332b4f8"],["gpt-5-5","0118f80b60c256561c482cb8cba18d7a8ac261bb878ca059076e87c3ee13ae2a"]];
+
+const hiddenModels = modelList([]).models;
+
+describe("model catalog", () => {
+  it.each(upstreamHashes)("preserves upstream GPT metadata for %s", (slug, digest) => {
+    const model = catalog.models.find((model) => model.slug === slug);
+    expect(createHash("sha256").update(JSON.stringify(model)).digest("hex")).toBe(digest);
   });
 
-  it.each([
-    [{ id: "gpt-5.6-sol", displayName: "Provider Sol" }, "Provider Sol"],
-    [{ id: "gpt-5.6-sol", displayName: " \t\n " }, "GPT 5.6 Sol"],
-    [{ id: "gpt-5.5", displayName: "" }, "GPT-5.5"],
-    [{ id: "system.ai.gpt-5-6-terra", displayName: null }, "GPT 5.6 Terra"],
-    [{ id: "custom-v1-0813" }, "custom-v1-0813"],
-    [{ id: "deepseek-v4-pro-9999" }, "deepseek-v4-pro-9999"],
-    [{ id: "constructor" }, "constructor"],
-  ] satisfies [ModelInfo, string][])("resolves display-name precedence for %j", (entry, expected) => {
-    expectDisplayName(entry, expected);
-  });
-});
-
-describe("Codex model availability", () => {
-  it("keeps the Server catalog aligned with the bundled Desktop release", () => {
-    expect(LATEST_CODEX_CLIENT_VERSION).toBe("0.153.4");
-    const bundle = readFileSync(new URL("../../desktop/Sources/Dahlia/Services/CodexBundle.swift", import.meta.url), "utf8");
-    expect(bundle).toContain(`static let version = "${LATEST_CODEX_CLIENT_VERSION}"`);
-    expect(catalog.models.find(({ slug }) => slug === "gpt-6-astra")).toBeDefined();
+  it("contains only the requested GPT families and Databricks IDs", () => {
+    expect(catalog.models.filter(({ slug }) => slug.startsWith("gpt-")).map(({ slug }) => slug))
+      .toEqual(upstreamHashes.map(([slug]) => slug));
+    expect(catalog.models.every(({ slug }) => !slug.includes("."))).toBe(true);
+    expect(new Set(catalog.models.map(({ slug }) => slug)).size).toBe(catalog.models.length);
   });
 
-  it("exposes Astra's six reasoning levels and low default", () => {
-    const model = modelList([{ id: "gpt-6-astra" }]).models.find((model) => model.slug === "gpt-6-astra");
-    expect(model).toMatchObject({ display_name: "GPT 6 Astra", default_reasoning_level: "low", visibility: "list" });
-    expect(model).toMatchObject({ shell_type: "unified_exec", input_modalities: ["text", "image"], supports_reasoning_summary_parameter: true });
-    expect(model).not.toHaveProperty("use_responses_lite");
-    expect(model?.supported_reasoning_levels.map(({ effort }) => effort)).toEqual(["low", "medium", "high", "xhigh", "max", "ultra"]);
+  it("returns discovered definitions unchanged, including priority and visible Gemini", () => {
+    const entries = catalog.models.map(({ slug }) => ({ id: slug, displayName: "Provider name" })).reverse();
+    const list = modelList(entries);
+    expect(list.models).toEqual([...catalog.models, ...hiddenModels]);
+    expect(list.data.every(({ display_name }) => display_name === "Provider name")).toBe(true);
+    expect(modelList([]).models).toEqual(hiddenModels);
   });
 
-  it("preserves provider IDs while sharing Codex runtime metadata", () => {
-    const standard = modelList([{ id: "gpt-5.6-terra" }]);
-    const databricks = modelList([{ id: "gpt-5-6-terra" }]);
-    expect(standard.data.map(({ id }) => id)).toEqual(["gpt-5.6-terra"]);
-    expect(databricks.data.map(({ id }) => id)).toEqual(["gpt-5-6-terra"]);
-    const model = standard.models.find(({ slug }) => slug === "gpt-5.6-terra");
-    expect(databricks.models.find(({ slug }) => slug === "gpt-5-6-terra")).toEqual({ ...model, slug: "gpt-5-6-terra" });
-    expect(databricks.models.find(({ slug }) => slug === "gpt-5.6-terra")?.visibility).toBe("hide");
-    for (const entry of databricks.models) {
-      expect(entry).not.toHaveProperty("base_model");
-      expect(entry).not.toHaveProperty("aliases");
+  it("does not normalize IDs or create definitions for unknown models", () => {
+    const ids = ["gpt-5.6-sol", "system.ai.gpt-5-6-sol", "GPT-5-6-SOL", " gpt-5-6-sol ", "gpt-future", "glm-future", "custom"];
+    const list = modelList(ids.map((id) => ({ id })));
+    expect(list.models).toEqual(hiddenModels);
+    expect(list.data.map(({ id, display_name }) => [id, display_name])).toEqual(ids.map((id) => [id, id]));
+  });
+
+  it("generates hidden built-ins without publishing them as available", () => {
+    const list = modelList([{ id: "gpt-5-5" }]);
+    expect(hiddenModels.map(({ slug }) => slug)).toEqual([
+      "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-daybreak-blue-latest",
+      "gpt-daybreak-red-latest", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.2",
+    ]);
+    expect(list.data.map(({ id }) => id)).toEqual(["gpt-5-5"]);
+    for (const model of hiddenModels) {
+      expect(list.models.find(({ slug }) => slug === model.slug)).toMatchObject({ visibility: "hide", supported_in_api: false });
     }
+    expect(list.models.find(({ slug }) => slug === "gpt-5-5")?.visibility).toBe("list");
   });
 
-  it("validates the provider catalog and keeps unavailable models hidden", () => {
-    const slugs = catalog.models.map(({ slug }) => slug);
-    expect(slugs).not.toContain("deepseek-v4-pro");
-    expect(new Set(slugs).size).toBe(slugs.length);
-    const empty = modelList([]);
-    expect(empty.data).toEqual([]);
-    expect(empty.models.every(({ visibility }) => visibility === "hide")).toBe(true);
-  });
-
-  it("limits GPT definitions to Astra, 5.6, and 5.5 while suppressing omitted built-ins", () => {
-    expect(catalog.models.filter(({ slug }) => slug.startsWith("gpt-")).map(({ slug }) => slug).sort()).toEqual([
-      "gpt-6-astra", "gpt-5.6-sol", "gpt-5-6-sol", "gpt-5.6-terra", "gpt-5-6-terra",
-      "gpt-5.6-luna", "gpt-5-6-luna", "gpt-5.5", "gpt-5-5",
-    ].sort());
-    const list = modelList([]);
-    for (const slug of ["gpt-daybreak-blue-latest", "gpt-daybreak-red-latest", "gpt-5.4", "gpt-5.4-mini", "gpt-5.2"]) {
-      expect(list.models.find((model) => model.slug === slug)).toMatchObject({ visibility: "hide" });
-    }
+  it("uses the JSON display name when no provider name is supplied", () => {
+    const model = catalog.models[0]!;
+    expect(modelList([{ id: model.slug, displayName: " \t" }]).data[0]?.display_name).toBe(model.display_name);
   });
 
   it.each([
-    ["glm-5-3", "gpt-5.6-sol", ["text"]],
-    ["glm-5-3-flash", "gpt-5.6-luna", ["text", "image"]],
-    ["kimi-k3", "gpt-5.6-sol", ["text", "image"]],
-    ["deepseek-v4-pro-0813", "gpt-5.6-sol", ["text"]],
-    ["gemini-3-8-flash", "gpt-5.6-luna", ["text", "image", "audio"]],
-    ["gemini-3-7-flash", "gpt-5.6-luna", ["text", "image", "audio"]],
-  ] satisfies [string, string, string[]][])("expands runtime parameters and an independent description for %s", (slug, referenceSlug, inputModalities) => {
+    ["glm-5-3", "gpt-5-6-sol", ["text"], 1_000_000],
+    ["glm-5-3-flash", "gpt-5-6-luna", ["text", "image"], 1_000_000],
+    ["kimi-k3", "gpt-5-6-sol", ["text", "image"], 1_048_576],
+    ["deepseek-v4-pro-0813", "gpt-5-6-sol", ["text"], 1_000_000],
+    ["gemini-3-8-flash", "gpt-5-6-luna", ["text", "image", "audio"], 1_048_576],
+    ["gemini-3-7-flash", "gpt-5-6-luna", ["text", "image", "audio"], 1_048_576],
+  ] as const)("uses the documented capabilities and reference runtime for %s", (slug, referenceSlug, modalities, context) => {
+    const model = catalog.models.find((model) => model.slug === slug)!;
     const reference = catalog.models.find((model) => model.slug === referenceSlug)!;
-    const model = modelList([{ id: slug }]).models.find((model) => model.slug === slug)!;
-    expect(model).toMatchObject({
-      shell_type: reference.shell_type, multi_agent_version: reference.multi_agent_version,
-      apply_patch_tool_type: reference.apply_patch_tool_type, truncation_policy: reference.truncation_policy,
-      context_window: reference.context_window, max_context_window: reference.max_context_window,
-    });
-    expect(model.description).toBeTruthy();
-    expect(model.description).not.toBe(reference.description);
-    expect(model.model_messages?.instructions_template).toBe(reference.model_messages.instructions_template.replace("an agent based on GPT-5", "a coding agent"));
-    expect(model.input_modalities).toEqual(inputModalities);
+    expect(model).toMatchObject({ input_modalities: modalities, context_window: context, max_context_window: context });
+    expect(model.shell_type).toBe(reference.shell_type);
+    expect(model.truncation_policy).toEqual(reference.truncation_policy);
+    expect(model.model_messages.instructions_template).toBe(reference.model_messages.instructions_template.replace("an agent based on GPT-5", "a coding agent"));
   });
 
-  it.each(["gemini-3-8-flash", "gemini-3-7-flash"])("defines Gemini reasoning separately for %s", (slug) => {
-    const model = modelList([{ id: slug }]).models.find((model) => model.slug === slug);
-    expect(model?.visibility).toBe("list");
-    expect(model?.default_reasoning_level).toBe("medium");
-    expect(model?.supported_reasoning_levels?.map(({ effort }) => effort)).toEqual(["low", "medium", "high"]);
+  it.each(["glm-5-3", "glm-5-3-flash", "kimi-k3"])("keeps the documented thinking choices for %s", (slug) => {
+    const model = catalog.models.find((model) => model.slug === slug)!;
+    expect(model.default_reasoning_level).toBe("max");
+    expect(model.supported_reasoning_levels.map(({ effort }) => effort)).toEqual(["low", "high", "max"]);
   });
 
-  it.each([
-    ["gpt-5.6-sol", "GPT 5.6 Sol", "low"],
-    ["gpt-5.6-terra", "GPT 5.6 Terra", "medium"],
-    ["gpt-5.6-luna", "GPT 5.6 Luna", "medium"],
-    ["gpt-5.5", "GPT-5.5", "medium"],
-    ["gpt-future", "gpt-future", "max"],
-  ])("preserves metadata for visible and hidden %s", (slug, displayName, defaultLevel) => {
-    const alias = slug.replaceAll(".", "-");
-    const list = modelList([{ id: alias }]);
-    for (const id of new Set([slug, alias])) {
-      const model = list.models.find((model) => model.slug === id);
-      expect(model).toMatchObject({ display_name: displayName, default_reasoning_level: defaultLevel,
-        visibility: id === alias ? "list" : "hide" });
-      const efforts = model?.supported_reasoning_levels.map(({ effort }) => effort);
-      expect(efforts).toContain(defaultLevel);
-      if (id !== alias) expect(model?.model_messages?.instructions_template).toBe("");
+  it("keeps non-GPT requests on the standard Responses wire format", () => {
+    // Codex Lite puts tool definitions in input.additional_tools and requires an internal header.
+    // Dahlia's relay implements the standard Responses contract and does not forward that header.
+    for (const model of catalog.models.filter(({ slug }) => !slug.startsWith("gpt-"))) {
+      expect(model.use_responses_lite, model.slug).toBe(false);
     }
   });
 
-  it("exposes catalog entries, supported fallback families, and the review alias to Codex", () => {
-    const supported = ["gpt-5.6-luna", "gpt-future", "glm-5-3", "kimi-k3", "deepseek-v4-pro-0813", "gemini-3-8-flash", "gemini-3-7-flash", "codex-auto-review"];
-    const excluded = ["gemini-unknown", "claude-opus", "custom", "gpt", "not-gpt-5", "system.ai.gpt-5-4-mini"];
-    const list = modelList([...supported, ...excluded].map((id) => ({ id })));
-    expect(list.data.map((model) => model.id)).toEqual([...supported, ...excluded]);
-    expect(list.models.filter((model) => model.visibility === "list").map((model) => model.slug).sort()).toEqual([...supported].sort());
-    for (const id of excluded) expect(list.models.some((model) => model.slug === id)).toBe(false);
+  it("uses DeepSeek's documented high default and optional non-thinking mode", () => {
+    const model = catalog.models.find((model) => model.slug === "deepseek-v4-pro-0813")!;
+    expect(model.default_reasoning_level).toBe("high");
+    expect(model.supported_reasoning_levels.map(({ effort }) => effort)).toEqual(["none", "low", "high", "max"]);
   });
 
-  it.each(["glm-5-3", "kimi-k3", "deepseek-v4-pro-0813"])("omits none from OSS reasoning efforts for %s", (id) => {
-    const model = modelList([{ id }]).models.find((model) => model.slug === id);
-    expect(model?.supported_reasoning_levels.map((level) => level.effort)).toEqual(["low", "high", "max"]);
-    expect(model?.default_reasoning_level).toBe("max");
+  it.each(["gemini-3-8-flash", "gemini-3-7-flash"])("shows %s while retaining audio summary metadata", (id) => {
+    const list = modelList([{ id }]);
+    expect(list.data[0]?.id).toBe(id);
+    expect(list.models[0]).toMatchObject({ visibility: "list", default_reasoning_level: "medium", use_responses_lite: false });
+    expect(list.models[0]?.supported_reasoning_levels.map(({ effort }) => effort)).toEqual(["low", "medium", "high"]);
+  });
+
+  it("keeps Cloudflare native IDs and audio summary settings independent", () => {
+    const list = cloudflareModels();
+    expect(list.data.map(({ id }) => id)).toEqual(["gpt-5.6-luna", "gpt-4.1", "gemini-3-flash"]);
+    expect(list.models.find(({ slug }) => slug === "gemini-3-flash")).toMatchObject({ visibility: "list", summary_methods: ["audio"], use_responses_lite: false });
+    expect(list.models.find(({ slug }) => slug === "gpt-4.1")).toMatchObject({ visibility: "list", summary_methods: ["transcript"] });
   });
 });
-
-function expectDisplayName(entry: ModelInfo, expected: string) {
-  const list = modelList([entry]);
-  expect(list.data).toEqual([{
-    id: entry.id, object: "model", created: 0, owned_by: "dahlia", display_name: expected,
-  }]);
-  if (/^(gpt|glm|kimi|deepseek|gemini)-/.test(entry.id)) {
-    expect(list.models.filter((model) => model.visibility === "list")).toHaveLength(1);
-    expect(list.models.find((model) => model.slug === entry.id)).toMatchObject({
-      slug: entry.id, display_name: expected, visibility: "list",
-    });
-  }
-}
