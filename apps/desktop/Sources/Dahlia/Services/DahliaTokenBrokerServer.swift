@@ -5,6 +5,7 @@ import Synchronization
 
 final class DahliaTokenBrokerAuthorization: Sendable {
     static let shared = DahliaTokenBrokerAuthorization()
+    static let macInference = DahliaTokenBrokerAuthorization()
 
     struct Client: Sendable {
         let executableURL: URL
@@ -16,6 +17,7 @@ final class DahliaTokenBrokerAuthorization: Sendable {
     private struct Grant {
         let appServerPID: pid_t
         let connectionID: UUID
+        let provider: DahliaTokenBrokerProtocol.Provider
         let helperURL: URL
     }
 
@@ -30,11 +32,18 @@ final class DahliaTokenBrokerAuthorization: Sendable {
         self.clientResolver = clientResolver
     }
 
-    func register(profile: DahliaRuntimeProfile, connectionID: UUID, appServerPID: pid_t, helperURL: URL) {
+    func register(
+        profile: DahliaRuntimeProfile,
+        connectionID: UUID,
+        provider: DahliaTokenBrokerProtocol.Provider = .dahlia,
+        appServerPID: pid_t,
+        helperURL: URL
+    ) {
         grants.withLock {
             $0[profile.rawValue] = Grant(
                 appServerPID: appServerPID,
                 connectionID: connectionID,
+                provider: provider,
                 helperURL: helperURL.resolvingSymlinksInPath()
             )
         }
@@ -48,8 +57,8 @@ final class DahliaTokenBrokerAuthorization: Sendable {
             && client.executableURL.resolvingSymlinksInPath() == grant.helperURL
     }
 
-    func authorizesConnection(_ connectionID: UUID, profile: DahliaRuntimeProfile) -> Bool {
-        grants.withLock { $0[profile.rawValue]?.connectionID == connectionID }
+    func authorizesConnection(_ connectionID: UUID, provider: DahliaTokenBrokerProtocol.Provider = .dahlia, profile: DahliaRuntimeProfile) -> Bool {
+        grants.withLock { $0[profile.rawValue]?.connectionID == connectionID && $0[profile.rawValue]?.provider == provider }
     }
 
     func clear(profile: DahliaRuntimeProfile) {
@@ -83,9 +92,9 @@ final class DahliaTokenBrokerAuthorization: Sendable {
     }
 }
 
-/// POSIX accept/read/write are isolated to one private Thread. The lock protects its lifecycle state.
+/// POSIX I/O runs on private threads, with at most eight active clients. The lock protects lifecycle state.
 final class DahliaTokenBrokerServer: @unchecked Sendable {
-    typealias TokenResolver = @Sendable (UUID) async throws -> String
+    typealias TokenResolver = @Sendable (UUID, DahliaTokenBrokerProtocol.Provider) async throws -> String
 
     private struct State {
         var descriptor: Int32?
@@ -99,16 +108,20 @@ final class DahliaTokenBrokerServer: @unchecked Sendable {
     }
 
     private let state = Mutex(State())
-    private let authorization: DahliaTokenBrokerAuthorization
+    private let clientSlots = DispatchSemaphore(value: 8)
+    private let authorizations: [DahliaTokenBrokerAuthorization]
     private let tokenResolver: TokenResolver
 
     init(
-        authorization: DahliaTokenBrokerAuthorization = .shared,
-        tokenResolver: @escaping TokenResolver = { connectionID in
-            try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(connectionID: connectionID)
+        authorizations: [DahliaTokenBrokerAuthorization] = [.shared, .macInference],
+        tokenResolver: @escaping TokenResolver = { connectionID, provider in
+            switch provider {
+            case .dahlia: try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(connectionID: connectionID)
+            case .databricks: try await DatabricksOAuthService.shared.accessToken(connectionID: connectionID, forceRefresh: true)
+            }
         }
     ) {
-        self.authorization = authorization
+        self.authorizations = authorizations
         self.tokenResolver = tokenResolver
     }
 
@@ -162,7 +175,11 @@ final class DahliaTokenBrokerServer: @unchecked Sendable {
         }
         if let descriptor = stopped.descriptor { Darwin.close(descriptor) }
         if let socketURL = stopped.socketURL { try? FileManager.default.removeItem(at: socketURL) }
-        if let profile = stopped.profile { authorization.clear(profile: profile) }
+        if let profile = stopped.profile {
+            for authorization in authorizations {
+                authorization.clear(profile: profile)
+            }
+        }
     }
 
     private func acceptLoop(descriptor: Int32) {
@@ -195,8 +212,17 @@ final class DahliaTokenBrokerServer: @unchecked Sendable {
                 Darwin.close(client)
                 continue
             }
-            handle(client, profile: profile)
-            Darwin.close(client)
+            guard clientSlots.wait(timeout: .now()) == .success else {
+                Darwin.close(client)
+                continue
+            }
+            Thread {
+                defer {
+                    Darwin.close(client)
+                    self.clientSlots.signal()
+                }
+                self.handle(client, profile: profile)
+            }.start()
         }
     }
 
@@ -205,30 +231,41 @@ final class DahliaTokenBrokerServer: @unchecked Sendable {
         var peerGID: gid_t = 0
         guard getpeereid(descriptor, &peerUID, &peerGID) == 0,
               peerUID == getuid(),
-              authorization.authorizesClient(descriptor, profile: profile)
+              let authorization = authorizations.first(where: { $0.authorizesClient(descriptor, profile: profile) })
         else { return }
 
         let response: DahliaTokenBrokerProtocol.Response
         do {
             let data = try DahliaTokenBrokerProtocol.readLine(from: descriptor)
             let request = try JSONDecoder().decode(DahliaTokenBrokerProtocol.Request.self, from: data)
-            guard authorization.authorizesConnection(request.connectionID, profile: profile) else {
+            guard authorization.authorizesConnection(request.connectionID, provider: request.provider, profile: profile) else {
                 throw POSIXError(.EACCES)
             }
             let result = Mutex<Resolution?>(nil)
             let semaphore = DispatchSemaphore(value: 0)
-            Task {
+            let resolutionTask = Task {
                 do {
-                    let token = try await tokenResolver(request.connectionID)
+                    let token = try await tokenResolver(request.connectionID, request.provider)
                     result.withLock { $0 = .token(token) }
                 } catch {
                     result.withLock { $0 = .error(error.localizedDescription) }
                 }
                 semaphore.signal()
             }
-            guard semaphore.wait(timeout: .now() + .seconds(8)) == .success else {
-                throw POSIXError(.ETIMEDOUT)
+            defer { resolutionTask.cancel() }
+            let deadline = DispatchTime.now() + .seconds(360)
+            while semaphore.wait(timeout: .now() + .milliseconds(100)) != .success {
+                guard DispatchTime.now() < deadline else { throw POSIXError(.ETIMEDOUT) }
+                var byte: UInt8 = 0
+                guard state.withLock({ $0.profile == profile }),
+                      recv(descriptor, &byte, 1, MSG_PEEK | MSG_DONTWAIT) != 0,
+                      authorization.authorizesClient(descriptor, profile: profile),
+                      authorization.authorizesConnection(request.connectionID, provider: request.provider, profile: profile)
+                else { throw CancellationError() }
             }
+            guard authorization.authorizesClient(descriptor, profile: profile),
+                  authorization.authorizesConnection(request.connectionID, provider: request.provider, profile: profile)
+            else { throw POSIXError(.EACCES) }
             switch result.withLock({ $0 }) {
             case let .token(token): response = .init(token: token)
             case let .error(message): response = .init(error: message)

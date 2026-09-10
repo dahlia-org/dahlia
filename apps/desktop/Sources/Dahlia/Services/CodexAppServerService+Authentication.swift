@@ -82,15 +82,13 @@ extension CodexAppServerService {
 
     nonisolated static func prepareConfiguredDatabricksAuthentication(
         provider: CodexRuntimeProvider,
-        authenticationMayChange: @Sendable () async -> Void
+        authenticationMayChange _: @Sendable () async -> Void
     ) async throws -> Bool {
         guard case let .databricks(profileName) = provider else { return false }
 
-        let result = try await DatabricksCLIClient().ensureAuthenticated(
-            profileName: profileName,
-            onBrowserLoginRequired: authenticationMayChange
-        )
-        return result == .browserLoginCompleted
+        guard let id = UUID(uuidString: profileName) else { throw CodexConfigurationError.databricksProfileRequired }
+        _ = try await DatabricksOAuthService.shared.accessToken(connectionID: id)
+        return false
     }
 
     func markProviderAuthenticationReloadRequired() {

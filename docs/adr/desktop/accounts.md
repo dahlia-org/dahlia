@@ -16,19 +16,25 @@ Vault の nullable connection ID は nil を Local Account とし、削除時は
 
 Local Account は既存の `Application Support/Dahlia/Codex`、Dahlia account は接続 UUID ごとの private CODEX_HOME を使う。生成用の単一 app-server は context 切替時に新規操作を待たせ、進行中操作を drain して対象 home で再起動する。ローカルの認証管理だけは既存サービスの別インスタンスを使い、Local Account の home と OpenAI provider に固定する。設定画面を開いても生成用の context・設定ファイル・Server の token broker 認可を変更しない。認証変更後は ChatGPT を実行中の場合だけ生成用サービスを再読込する。
 
-model discovery と生成は同じ root provider を使い、別の provider 専用 model cache を持たない。Dahlia token は既存 service actor から private local broker / Codex auth command へ動的に渡し、config・環境変数・log に保存しない。provider と CLI profile はアプリ設定に保存する Local Account 共通設定とし、設定画面・セットアップ・生成・画像解析が同じ値を使う。Local処理のsummary model / effortもLocal Account共通設定とし、初回のみ最後に開いた Local Account の Vault から引き継ぐ。該当 Vault がなければ従来のアプリ設定を使う。旧 Vault のsummary列は互換性のため保持するが、新規summaryの設定や実行先判定には使わない。chat model / effort は引き続き Vault に保存する。同一 origin の複数 remote account 切替は対象外。
+model discovery と生成は同じ root provider を使い、別の provider 専用 model cache を持たない。Dahlia token は既存 service actor から private local broker / Codex auth command へ動的に渡し、config・環境変数・log に保存しない。provider と Databricks 接続 ID はアプリ設定に保存する Local Account 共通設定とし、設定画面・セットアップ・生成・画像解析が同じ値を使う。Local処理のsummary model / effortもLocal Account共通設定とし、初回のみ最後に開いた Local Account の Vault から引き継ぐ。該当 Vault がなければ従来のアプリ設定を使う。旧 Vault のsummary列は互換性のため保持するが、新規summaryの設定や実行先判定には使わない。chat model / effort は引き続き Vault に保存する。同一 origin の複数 remote account 切替は対象外。
 
 アカウント一覧は Local Account を常時含め、現在の Vault の所属アカウントにチェックを表示する。モデルプロバイダー設定は常に Local Account を対象とし、Dahlia Server / Cloud の hosted provider は設定項目として表示しない。
 
-## ChatGPT と Databricks CLI
+## ChatGPT と Databricks Workspace OAuth
+
+2026-09-10: 直接 Databricks provider は CLI への依存を廃止し、Desktop が U2M OAuth を実行する。既存 CLI 設定・token cache は参照しない。利用者は Workspace URL を入力し、ブラウザで再サインインする。
+
+public client は `databricks-cli`、redirect URI は `http://localhost:8020`、scope は `offline_access all-apis` に固定する。64 バイトの PKCE verifier と S256、state を使い、8020 が使用中なら別ポートへ変更せず失敗を表示する。Workspace discovery の authorization / token endpoint を検証し、取得不能・不正なら同一 Workspace の `/oidc/v1/authorize` と `/oidc/v1/token` を使う。Dahlia Server の resource / userinfo フローとは分離する。
+
+Databricks 接続は HTTPS Workspace origin と認証境界用 UUID をこの Mac に1件だけ保存する。表示名・接続一覧・選択は持たず、Codex 設定は常に `model_providers.databricks` を使う。同じ Workspace は再認証し、別 Workspace への変更はサインアウト後に行う。従来の `databricksProfile` 設定値は新しい接続の UUID を保持する互換フィールドとして使い、CLI profile 名には解決しない。旧 Vault 列と登録済み migration は保持する。credential は実行環境と接続 ID ごとの Keychain に保存し、refresh rotation の保存失敗では新 token を公開しない。サインアウトは選択接続と local credential を削除し、進行中更新の結果を拒否する。
+
+Databricks / Dahlia Server の認証コマンドは共通の `auth-helper token --provider <databricks|dahlia> --connection-id <UUID> --profile <production|development>` に移す。MCP executable は認証コマンドを持たない。helper は token broker のクライアントだけを担い、接続 URL・OAuth・Keychain は Desktop が所有する。broker は接続種別・ID、実行環境、helper 実行ファイル、親 Codex PID を検証し、認証完了後も認可を再検証する。token は認証コマンドの標準出力から Codex に渡し、config・環境変数・log には残さない。
+
+チャットとこの Mac の推論は独立した認可を broker に登録する。一方の再起動で他方の認可を消さず、接続の検証には要求元の親 PID に対応する認可だけを使う。broker は最大8接続を並行処理し、ブラウザ認証待ちで他の runtime を塞がない。認証保存直後に設定画面を閉じた場合も、再表示時に保存済み接続の UUID を設定へ復元する。
+
+Codex は Gateway に Bearer token を送る。401 による認証コマンド再実行では Databricks token を強制 refresh し、同一 HTTP request を1回だけ再試行する。固定版 Codex は stream retry ごとに認証回復を繰り返すため、直接 Databricks provider は `stream_max_retries = 0` とする。これによりストリーム切断時も自動再実行せずエラーを返す。refresh 失敗ではブラウザ認証へ進み、待受は300秒で終了する。ネットワーク時間を含め broker は360秒、helper クライアントは365秒、Codex auth command は20秒を上限にし、token の定期更新間隔は25分とする。ブラウザ認証が20秒以内に完了しなければ、その認証コマンドはタイムアウトする。Databricks を対象に会話 turn 全体を再実行する回復経路は追加しない。
 
 ChatGPT の `account/login/start` は `type: chatgpt` だけを指定し、hosted success page / appBrand を省略する。HTTPS auth URL を開き、login ID に対応する completed notification を待つ。固定 Codex 更新時は既定のローカル成功ページと request shape を認証回帰で確認する。
-
-直接 Databricks provider は外部 CLI の OAuth profile を使う。専用 CODEX_HOME と実ユーザー HOME の継承を両立し、`~/.codex` の状態は参照しない。HOME を専用領域へ差し替える方式は、設定画面で検証済みの CLI credential を子 process から使えなくしたため廃止した。
-
-CLI は同梱・自動取得せず、公式導入・license・privacy を案内する。利用者の導入操作で固定 Homebrew command を新しい Terminal session に渡し、Apple Events 拒否時は copy / open へ縮退する。Homebrew 自体は導入しない。
-
-profile 名と HTTPS workspace root を受け、引数配列で CLI login を実行する。同名・同 host の OAuth profile だけを再利用し、別 host / 認証方式を上書きしない。token、config、app-server reload、model 一覧まで成功して初めて設定を有効化し、失敗・dialog cancel では従来の有効設定を戻す。既存 profile 選択と導入後の再検出を維持する。
 
 ## 経緯と制約
 

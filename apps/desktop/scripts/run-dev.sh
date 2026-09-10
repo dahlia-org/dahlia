@@ -74,7 +74,7 @@ ICONSET_DIR="${CONTENTS}/Resources/AppIcon.iconset"
 SUPPORT_INPUTS=(
     "${SCRIPT_DIR}/run-dev.sh" "${SCRIPT_DIR}/common.sh" "${SCRIPT_DIR}/dev-build-fingerprint.py"
     "$ENTITLEMENTS_PATH" "$CODEX_ENTITLEMENTS_PATH" "$ICON_SRC" "Resources"
-    "${BUILD_DIR}/dahlia-mcp" "${BUILD_DIR}/Dahlia_Dahlia.bundle"
+    "${BUILD_DIR}/dahlia-mcp" "${BUILD_DIR}/auth-helper" "${BUILD_DIR}/Dahlia_Dahlia.bundle"
     "${BUILD_DIR}/Dahlia_DahliaRuntimeSupport.bundle" "${BUILD_DIR}/TelemetryDeck_TelemetryDeck.bundle"
     ".build/codex-helper" ".build/artifacts/sparkle/Sparkle"
     ".build/checkouts/argmax-oss-swift/LICENSE" ".build/checkouts/argmax-oss-swift/NOTICES"
@@ -158,6 +158,7 @@ mkdir -p "${CONTENTS}/Resources/Licenses/Codex"
 
 cp "${BUILD_DIR}/${APP_NAME}" "${MACOS}/${APP_NAME}"
 cp "${BUILD_DIR}/dahlia-mcp" "${HELPERS}/dahlia-mcp"
+cp "${BUILD_DIR}/auth-helper" "${HELPERS}/auth-helper"
 cp ".build/codex-helper/codex" "${HELPERS}/codex"
 cp ".build/codex-helper/codex-code-mode-host" "${HELPERS}/codex-code-mode-host"
 cp ".build/codex-helper/LICENSE" "${CONTENTS}/Resources/Licenses/Codex/LICENSE"
@@ -172,6 +173,10 @@ if [ "$(lipo -archs "${HELPERS}/codex-code-mode-host")" != "arm64" ]; then
 fi
 if [ "$(lipo -archs "${HELPERS}/dahlia-mcp")" != "arm64" ]; then
     echo "error: bundled dahlia-mcp must contain only arm64" >&2
+    exit 1
+fi
+if [ "$(lipo -archs "${HELPERS}/auth-helper")" != "arm64" ]; then
+    echo "error: bundled auth-helper must contain only arm64" >&2
     exit 1
 fi
 if [ "$("${HELPERS}/codex" --version)" != "codex-cli ${CODEX_VERSION}" ]; then
@@ -234,8 +239,11 @@ if ! has_boolean_entitlement "${HELPERS}/codex-code-mode-host" "com.apple.securi
     exit 1
 fi
 codesign --remove-signature "${HELPERS}/dahlia-mcp" 2>/dev/null || true
+codesign --remove-signature "${HELPERS}/auth-helper" 2>/dev/null || true
 codesign_path "${HELPERS}/dahlia-mcp"
+codesign_path "${HELPERS}/auth-helper"
 codesign --verify --strict --verbose=2 "${HELPERS}/dahlia-mcp"
+codesign --verify --strict --verbose=2 "${HELPERS}/auth-helper"
 
 if has_entitlements "$ENTITLEMENTS_PATH"; then
     codesign_path "${MACOS}/${APP_NAME}" --entitlements "$ENTITLEMENTS_PATH"

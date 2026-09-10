@@ -13,7 +13,7 @@ import Foundation
             let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
             let manager = CodexConfigurationManager(homeLocator: locator)
             let connectionID = UUID()
-            let helperURL = URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp")
+            let helperURL = URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/auth-helper")
 
             #expect(try await manager.configureDahlia(
                 connectionID: connectionID,
@@ -29,7 +29,7 @@ import Foundation
             #expect(localHome != accountHome)
             #expect(configuration.contains(#"model_provider = "dahlia""#))
             #expect(configuration.contains(#"base_url = "https://cloud.example.com/api/v1""#))
-            #expect(configuration.contains(#"command = "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp""#))
+            #expect(configuration.contains(#"command = "/Applications/Dahlia.app/Contents/Helpers/auth-helper""#))
             #expect(configuration.contains("--connection-id"))
             #expect(configuration.contains(connectionID.uuidString))
             #expect(configuration.contains(#"--profile", "development""#))
@@ -41,15 +41,14 @@ import Foundation
         }
 
         @Test
-        func databricksConfigurationUsesSelectedCLIProfile() async throws {
+        func databricksConfigurationUsesConnectionAndAuthHelper() async throws {
             let rootURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-codex-config-\(UUID().uuidString)", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
             let manager = CodexConfigurationManager(
                 homeLocator: ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
             )
-            let profile = try await databricksProfile(
-                name: "Team's Profile",
+            let profile = databricksProfile(
                 host: "https://dbc.example.com/"
             )
 
@@ -64,11 +63,14 @@ import Foundation
             #expect(!configuration.contains("[profiles."))
             #expect(configuration.contains(#"base_url = "https://dbc.example.com/ai-gateway/codex/v1""#))
             #expect(configuration.contains(#"wire_api = "responses""#))
-            #expect(configuration.contains(#"--profile 'Team'\"'\"'s Profile'"#))
-            #expect(configuration.contains("/usr/bin/plutil -extract access_token raw -o - -"))
-            #expect(!configuration.contains("jq"))
-            #expect(configuration.contains("timeout_ms = 5000"))
-            #expect(configuration.contains("refresh_interval_ms = 1800000"))
+            #expect(configuration.contains(profile.id.uuidString))
+            #expect(configuration.contains("auth-helper"))
+            #expect(configuration.contains(#""--provider", "databricks""#))
+            #expect(!configuration.contains("plutil"))
+            #expect(!configuration.contains("databricks auth"))
+            #expect(configuration.contains("timeout_ms = 20000"))
+            #expect(configuration.contains("refresh_interval_ms = 1500000"))
+            #expect(configuration.contains("stream_max_retries = 0"))
             #expect(configuration.contains(#"Databricks-Ai-Gateway-Request-Tags = "{\"source\": \"dahlia\"}""#))
             let attributes = try FileManager.default.attributesOfItem(atPath: configURL.path)
             #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
@@ -85,11 +87,11 @@ import Foundation
             _ = try await manager.configureDahlia(
                 connectionID: connectionID,
                 origin: "https://cloud.example.com",
-                helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
+                helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/auth-helper"),
                 runtimeProfile: .production
             )
             _ = try await manager.configureDatabricks(
-                profile: try await databricksProfile(name: "WORK", host: "https://dbc.example.com")
+                profile: databricksProfile(host: "https://dbc.example.com")
             )
 
             let accountConfigURL = try locator.homeURL(connectionID: connectionID).appending(path: "config.toml")
@@ -109,7 +111,7 @@ import Foundation
             defer { try? FileManager.default.removeItem(at: rootURL) }
             let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
             let manager = CodexConfigurationManager(homeLocator: locator)
-            let profile = try await databricksProfile(name: "DEFAULT", host: "https://dbc.example.com")
+            let profile = databricksProfile(host: "https://dbc.example.com")
             _ = try await manager.configureDatabricks(profile: profile)
             let configURL = try locator.homeURL().appending(path: "config.toml")
             var originalConfiguration = try String(contentsOf: configURL, encoding: .utf8)
@@ -200,27 +202,15 @@ import Foundation
             let manager = CodexConfigurationManager(
                 homeLocator: ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
             )
-            let profile = try await databricksProfile(name: "DEFAULT", host: "http://dbc.example.com")
+            let profile = databricksProfile(host: "http://dbc.example.com")
 
             await #expect(throws: CodexConfigurationError.self) {
                 try await manager.configureDatabricks(profile: profile)
             }
         }
 
-        private func databricksProfile(name: String, host: String) async throws -> DatabricksCLIClient.Profile {
-            let response = try JSONSerialization.data(withJSONObject: [
-                "profiles": [
-                    [
-                        "name": name,
-                        "host": host,
-                        "auth_type": "databricks-cli",
-                    ],
-                ],
-            ])
-            let client = DatabricksCLIClient { _ in
-                .init(standardOutput: response, standardError: Data(), terminationStatus: 0)
-            }
-            return try #require(await client.profiles().first)
+        private func databricksProfile(host: String) -> DatabricksConnection {
+            DatabricksConnection(id: UUID(), host: host)
         }
     }
 #endif

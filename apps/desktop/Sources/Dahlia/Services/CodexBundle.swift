@@ -51,3 +51,20 @@ enum DahliaMCPBundle {
         return url
     }
 }
+
+enum AuthHelperBundle {
+    nonisolated static func expectedExecutableURL(in bundle: Bundle = .main) -> URL {
+        bundle.bundleURL
+            .appending(path: "Contents", directoryHint: .isDirectory)
+            .appending(path: "Helpers", directoryHint: .isDirectory)
+            .appending(path: "auth-helper")
+    }
+
+    nonisolated static func executableURL(in bundle: Bundle = .main) throws -> URL {
+        let url = expectedExecutableURL(in: bundle)
+        guard FileManager.default.isExecutableFile(atPath: url.path) else {
+            throw CodexAppServerError.helperNotBundled
+        }
+        return url
+    }
+}

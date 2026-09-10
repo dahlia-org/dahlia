@@ -102,16 +102,9 @@ struct CodexRuntimeAccountIsolationTests {
         defer { try? FileManager.default.removeItem(at: rootURL) }
         let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
         let configurationManager = CodexConfigurationManager(homeLocator: locator)
-        let profilesResponse = try JSONSerialization.data(withJSONObject: [
-            "profiles": [[
-                "name": "WORK",
-                "host": "https://dbc.example.com",
-                "auth_type": "databricks-cli",
-            ]],
-        ])
-        let databricksClient = DatabricksCLIClient { _ in
-            .init(standardOutput: profilesResponse, standardError: Data(), terminationStatus: 0)
-        }
+        let connection = DatabricksConnection(id: UUID(), host: "https://dbc.example.com")
+        let memory = DatabricksTestStorage(connection: connection)
+        let databricksClient = DatabricksOAuthService(storage: memory.storage)
         let first = TestCodexAppServerTransport(mode: .generationBlocks)
         let second = TestCodexAppServerTransport(mode: .models)
         let transports = Mutex([first, second])
@@ -136,7 +129,7 @@ struct CodexRuntimeAccountIsolationTests {
         var databricksVault = localVault
         databricksVault.id = .v7()
         databricksVault.localProvider = .databricks
-        databricksVault.databricksProfile = "WORK"
+        databricksVault.databricksProfile = connection.id.uuidString
         let generation = Task {
             try await service.generate(.init(
                 model: nil,
@@ -149,7 +142,7 @@ struct CodexRuntimeAccountIsolationTests {
         let databricksActivation = Task {
             try await coordinator.activate(VaultAISettingsSnapshot(
                 vault: databricksVault,
-                localAccountSettings: .init(provider: .databricks, databricksProfile: "WORK")
+                localAccountSettings: .init(provider: .databricks, databricksProfile: connection.id.uuidString)
             ))
         }
         await service.waitUntilConfigurationReloadIsWaitingForTesting()
