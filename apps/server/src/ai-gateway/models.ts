@@ -15,12 +15,21 @@ export interface CodexModelWire {
   model_messages?: { instructions_template?: string | null; [key: string]: unknown };
 }
 
+// Suppress Codex 0.153.4 built-ins when its custom-provider catalog merges remote models.
+const databricksDefinitions: readonly CodexModelWire[] = [
+  ...catalog.models,
+  ...[
+    "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-daybreak-blue-latest",
+    "gpt-daybreak-red-latest", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.2",
+  ].map((slug) => ({ ...catalog.models[0]!, slug, display_name: slug, visibility: "hide", supported_in_api: false })),
+];
+
 export interface ModelInfo {
   id: string;
   displayName?: string | null;
 }
 
-export function modelList(entries: ModelInfo[], definitions: readonly CodexModelWire[] = catalog.models): GatewayModelList {
+export function modelList(entries: ModelInfo[], definitions: readonly CodexModelWire[] = databricksDefinitions): GatewayModelList {
   const models = new Map(definitions.map((model) => [model.slug, model]));
   const available = new Set(entries.map((entry) => entry.id));
   return {
