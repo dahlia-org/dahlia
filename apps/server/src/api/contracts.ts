@@ -106,7 +106,7 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   getSettings: route("get", "/api/v1/account/settings", "getSettings", "Read current account settings", { 200: json(settingsEnvelope) }),
   updateSettings: route("patch", "/api/v1/account/settings", "updateSettings", "Merge supplied fields, including nested summary settings; maximum 8 KiB", { 200: json(settingsEnvelope) }, body(accountSettingsPatchSchema, { outputLanguage: "ja" })),
   getCapabilities: route("get", "/api/v1/capabilities", "getCapabilities", "Discover feature versions; unsupported features are omitted", { 200: json(S.capabilities) }),
-  listVaults: route("get", "/api/v1/vaults", "listVaults", "Accessible Vaults", { 200: json(S.page(S.vault)) }, { query: z.object({ userId: S.principalId.optional(), organizationId: S.principalId.optional() }).strict() }),
+  listVaults: route("get", "/api/v1/vaults", "listVaults", "Accessible Vaults", { 200: json(S.page(S.vault)) }, { query: z.object({ userId: S.principalId.optional(), organizationId: S.principalId.optional(), scope: z.enum(["accessible"]).optional() }).strict() }),
   getVault: route("get", v, "getVault", "Get Vault", { 200: json(S.vault) }),
   listProjects: route("get", `${v}/projects`, "listProjects", "Vault project tree", { 200: json(S.page(S.project)) }),
   getProject: route("get", "/api/v1/projects/{projectId}", "getProject", "Resolve and get an accessible Project", { 200: json(S.project) }),

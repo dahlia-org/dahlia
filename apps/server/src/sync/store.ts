@@ -2389,7 +2389,7 @@ function createIdentityStore(
         )),
       )).orderBy(asc(schema.organization.name), asc(schema.organization.id));
     },
-    async listVaults(organizationId) {
+    async listVaults(organizationId, accessible = false) {
       const membership = organizationId ? and(
         eq(schema.member.userId, userPrincipalId),
         eq(schema.member.organizationId, organizationId),
@@ -2414,7 +2414,7 @@ function createIdentityStore(
                   )))),
             ),
           )))
-        : ownerAccess(schema.syncedVault.vaultId);
+        : accessible ? undefined : ownerAccess(schema.syncedVault.vaultId);
       const rows = await db.select({
         vaultId: schema.syncedVault.vaultId,
         name: schema.syncedVault.name,

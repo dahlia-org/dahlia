@@ -8974,6 +8974,17 @@
             "required": false,
             "name": "organizationId",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "accessible"
+              ]
+            },
+            "required": false,
+            "name": "scope",
+            "in": "query"
           }
         ],
         "responses": {

@@ -16,15 +16,10 @@
             let member = makeVault(connection: connection, role: "member")
             let shared = Mutex(false)
             let ownedPage = try page([owner])
-            let sharedPage = try page([member])
-            let emptyPage = try page([])
+            let sharedPage = try page([owner, member])
             let worker = SyncWorker(dbQueue: database.dbQueue, apiClient: client(connection: connection) { request in
-                if request.url?.path == "/api/v1/organizations" {
-                    return (200, [:], Data(#"{"items":[{"id":"org","name":"Org","slug":"org"}],"nextCursor":null}"#.utf8))
-                }
-                if request.url?.query == nil { return (200, [:], ownedPage) }
-                if shared.withLock({ $0 }) { return (200, [:], sharedPage) }
-                return (200, [:], emptyPage)
+                #expect(request.url?.query == "scope=accessible")
+                return (200, [:], shared.withLock { $0 } ? sharedPage : ownedPage)
             })
             defer { ImageURLProtocol.remove(origin: connection.origin) }
             try await worker.discoverCloudVaults()

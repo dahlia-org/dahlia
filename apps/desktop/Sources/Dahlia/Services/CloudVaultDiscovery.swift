@@ -33,18 +33,7 @@ enum CloudVaultDiscovery {
     }
 
     private static func fetch(connection: DahliaAccountConnectionRecord, client: DahliaServerAPI.Client) async throws -> [CloudVaultRecord] {
-        var items = try await client.listVaults().ok.body.json.items
-        let organizations = try await client.listOrganizations().ok.body.json.items
-        for organization in organizations {
-            try Task.checkCancellation()
-            do {
-                items += try await client.listVaults(query: .init(organizationId: organization.id)).ok.body.json.items
-            } catch {
-                let underlying = (error as? ClientError)?.underlyingError ?? error
-                if (underlying as? SyncHTTPError)?.status == 403 { continue }
-                throw underlying
-            }
-        }
+        let items = try await client.listVaults(query: .init(scope: .accessible)).ok.body.json.items
         var seen = Set<UUID>()
         return try items.compactMap { item -> CloudVaultRecord? in
             guard let vaultId = UUID(uuidString: item.vaultId) else { throw URLError(.cannotParseResponse) }

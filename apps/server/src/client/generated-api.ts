@@ -4118,6 +4118,7 @@ export interface operations {
             query?: {
                 userId?: string;
                 organizationId?: string;
+                scope?: "accessible";
             };
             header?: never;
             path?: never;

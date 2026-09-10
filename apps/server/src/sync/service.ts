@@ -981,10 +981,11 @@ export class MeetingSyncService {
     return this.store.withIdentity(identity, (scoped) => scoped.listOrganizations());
   }
 
-  listVaults(identity: Identity, userId?: string, organizationId?: string) {
+  listVaults(identity: Identity, userId?: string, organizationId?: string, scope?: string) {
     const valid = (value: string) => value.length > 0 && value.length <= 200
       && value === value.trim() && !/[\s]/u.test(value) && ![...value].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
-    if ((userId !== undefined && organizationId !== undefined)
+    if ((scope !== undefined && (scope !== "accessible" || userId !== undefined || organizationId !== undefined))
+      || (userId !== undefined && organizationId !== undefined)
       || (userId !== undefined && !valid(userId))
       || (organizationId !== undefined && !valid(organizationId))) {
       throw new RequestError(400, "invalid_vault_scope");
@@ -992,7 +993,7 @@ export class MeetingSyncService {
     if (userId !== undefined && userId !== identity.userId) {
       throw new RequestError(403, "user_forbidden");
     }
-    return this.store.withIdentity(identity, (scoped) => scoped.listVaults(organizationId));
+    return this.store.withIdentity(identity, (scoped) => scoped.listVaults(organizationId, scope === "accessible"));
   }
 
   getVault(identity: Identity, vaultId: string) {

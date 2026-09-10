@@ -1584,6 +1584,7 @@ describe("SQLite canonical sync", () => {
     await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
     expect(await service.listVaults(other, undefined, "external")).toHaveLength(1);
     expect(await service.listVaults(other)).toEqual([]);
+    expect(await service.listVaults(other, undefined, undefined, "accessible")).toMatchObject([{ vaultId, role: "member" }]);
     const database = new DatabaseSync(databasePath);
     database.exec(`
       INSERT INTO organization (id, name, slug, created_at) VALUES ('another', 'Another', 'another', 0);
@@ -1599,6 +1600,33 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it.each(["node", "worker"])("discovers direct-user shares through the accessible scope on %s", async (runtime) => {
+    const { store, databasePath } = await setup();
+    await createVault(store);
+    const database = new DatabaseSync(databasePath);
+    database.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id) VALUES (?, 'user', ?, 'member', ?)")
+      .run(vaultId, other.userId, owner.userId);
+    const app = createApp({ config: testConfig(databasePath), authStore: store });
+    const worker = createWorkerHandler(async () => app);
+    const fetchWorker = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+    const list = async (query: string, user = other.userId) => {
+      const request = new Request(`http://localhost:5173/api/v1/vaults${query}`, { headers: {
+        ...headers(), "x-forwarded-user": user, "x-forwarded-email": `${user}@example.com`,
+      } });
+      const response = await (runtime === "node" ? app.request(request) : fetchWorker(request, {} as Cloudflare.Env, {} as ExecutionContext));
+      expect(response.status).toBe(200);
+      return response.json();
+    };
+    expect(await list("")).toMatchObject({ items: [] });
+    expect(await list("?scope=accessible")).toMatchObject({ items: [{ vaultId, role: "member" }] });
+    expect(await list("?scope=accessible", owner.userId)).toMatchObject({ items: [{ vaultId, role: "owner" }] });
+    expect(await list("?scope=accessible", "unrelated")).toMatchObject({ items: [] });
+    database.prepare("DELETE FROM vault_permissions WHERE principal_id = ? AND role = 'member'").run(other.userId);
+    expect(await list("?scope=accessible")).toMatchObject({ items: [] });
+    database.close();
+    await store.close?.();
+  });
+
   it("validates the exclusive Vault query at the HTTP boundary", async () => {
     const { store, databasePath } = await setup();
     await createVault(store);
@@ -1608,7 +1636,7 @@ describe("SQLite canonical sync", () => {
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ items: [{ vaultId }] });
     }
-    for (const query of ["?userId=owner&organizationId=external", "?userId=", "?organizationId=", "?userId=%20owner", "?organizationId=%00"]) {
+    for (const query of ["?userId=owner&organizationId=external", "?userId=", "?organizationId=", "?userId=%20owner", "?organizationId=%00", "?scope=unknown", "?scope=accessible&userId=owner", "?scope=accessible&organizationId=external"]) {
       expect((await app.request("/api/v1/vaults" + query, { headers: headers() })).status).toBe(400);
     }
     for (const query of ["?userId=other", "?organizationId=unknown"]) {
