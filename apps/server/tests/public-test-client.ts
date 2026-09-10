@@ -32,19 +32,27 @@ export function createApp(...parameters: Parameters<typeof createPublicApp>): Re
       const value = headers.get(key);
       if (value !== null) { try { headers.set(key, String(wireValue(value, shape, "encode"))); } catch { /* Invalid input. */ } }
     }
+    let responseShape = route?.response;
     let body: BodyInit | null = request.body;
     if (body && route?.request) {
       body = await request.text();
-      try { body = JSON.stringify(wireValue(JSON.parse(body), route.request, "encode")); } catch { /* Invalid JSON/ID scenarios. */ }
+      try {
+        const value: unknown = JSON.parse(body);
+        body = JSON.stringify(wireValue(value, route.request, "encode"));
+        if (responseShape === "textSearch" && typeof value === "object" && value !== null && "kind" in value && value.kind === "screenshot") {
+          responseShape = "textScreenshotSearch";
+        }
+      } catch { /* Invalid JSON/ID scenarios. */ }
     }
     const response = await dispatch(new Request(url, { method: request.method, headers, body,
       ...(body instanceof ReadableStream ? { duplex: "half" } : {}) }), env, context);
     const responseHeaders = new Headers(response.headers);
     const location = responseHeaders.get("location");
     if (location) responseHeaders.set("location", wireURL(location, "decode"));
-    if (!route?.response || !response.headers.get("content-type")?.includes("json")) return new Response(response.body, { status: response.status, headers: responseHeaders });
+    const shape = response.ok ? responseShape : route ? "error" : undefined;
+    if (request.method === "HEAD" || !shape || !response.headers.get("content-type")?.includes("json")) return new Response(response.body, { status: response.status, headers: responseHeaders });
     const value: unknown = await response.json();
-    const output = wireValue(value, response.ok ? route.response : "error", "decode");
+    const output = wireValue(value, shape, "decode");
     return new Response(JSON.stringify(output), { status: response.status, headers: responseHeaders });
   };
   return app;

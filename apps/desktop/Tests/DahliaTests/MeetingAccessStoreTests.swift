@@ -34,6 +34,14 @@ import ImageIO
                 #expect(result["isError"] as? Bool == false)
                 return try #require(result["structuredContent"] as? [String: Any])
             }
+            let recordingID = UUID.v7()
+            let info = TranscriptInfo(
+                id: .v7(), startedAt: nil, endedAt: nil,
+                metadata: .init(provider: "apple", model: "apple-speech", runs: [
+                    .init(startedAt: nil, recordingSessionId: recordingID), .init(startedAt: nil),
+                ])
+            )
+            try fixture.manager.dbQueue.write { try TranscriptRecord(meetingId: fixture.firstMeetingID, info: info).save($0) }
             let meetingID = TypeID.encode(fixture.firstMeetingID, as: .meeting)
             for invalid in [fixture.firstMeetingID.uuidString, TypeID.encode(fixture.firstMeetingID, as: .project)] {
                 #expect(try (call("get_meeting", ["meeting_id": invalid])["error"] as? [String: Any])?["code"] as? Int == -32602)
@@ -43,6 +51,14 @@ import ImageIO
             #expect((detail["vault"] as? [String: Any])?["id"] as? String == TypeID.encode(fixture.primaryVaultID, as: .vault))
             let transcript = try body(call("get_meeting_transcript", ["meeting_id": meetingID, "limit": 1]))
             #expect(((transcript["segments"] as? [[String: Any]])?.first?["id"] as? String)?.hasPrefix("seg_") == true)
+            let descriptor = try #require(transcript["transcript"] as? [String: Any])
+            let metadata = try #require(descriptor["metadata"] as? [String: Any])
+            let runs = try #require(metadata["runs"] as? [[String: Any]])
+            #expect(runs.first?["recording_session_id"] as? String == TypeID.encode(recordingID, as: .recording))
+            #expect(runs.last?["recording_session_id"] == nil)
+            #expect(try fixture.manager.dbQueue.read {
+                try TranscriptRecord.current(fixture.firstMeetingID, in: $0)?.metadata?.runs.first?.recordingSessionId
+            } == recordingID)
             let cursor = try #require(transcript["next_cursor"] as? String)
             let next = try body(call("get_meeting_transcript", ["meeting_id": meetingID, "limit": 1, "cursor": cursor]))
             #expect((next["segments"] as? [[String: Any]])?.count == 1)
@@ -57,6 +73,96 @@ import ImageIO
             _ = try body(call("delete_contact", ["contact_id": contactID, "revision": 2]))
             #expect(try fixture.manager.dbQueue
                 .read { try Int.fetchOne($0, sql: "SELECT count(*) FROM contacts WHERE id = ?", arguments: [uuid]) } == 0)
+        }
+
+        @Test
+        func publicMCPOrganizationIDsRoundTrip() throws {
+            let fixture = try Fixture()
+            let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true))
+            _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            func call(_ name: String, _ arguments: [String: Any]) throws -> [String: Any] {
+                let bytes = try JSONSerialization.data(withJSONObject: [
+                    "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                    "params": ["name": name, "arguments": arguments],
+                ])
+                let response = try Self.json(server.handleLine(String(decoding: bytes, as: UTF8.self)))
+                let result = try #require(response["result"] as? [String: Any])
+                #expect(result["isError"] as? Bool == false)
+                return try #require(result["structuredContent"] as? [String: Any])
+            }
+            let created = try call("create_organization", ["name": "Public root", "node_kind": "organization"])
+            let root = try #require(created["resource_id"] as? String)
+            let rootUUID = try TypeID.decode(root, as: .organization)
+            let child = try call("create_organization", ["name": "Public unit", "node_kind": "unit", "parent_organization_id": root])
+            let childID = try #require(child["resource_id"] as? String)
+            let detail = try call("get_organization", ["organization_id": childID])
+            #expect((detail["organization"] as? [String: Any])?["parent_organization_id"] as? String == root)
+            let chart = try call("query_organization_chart", ["root_organization_id": root])
+            #expect(chart["root_organization_id"] as? String == root)
+            #expect(Set((chart["nodes"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }) == [root, childID])
+            let page = try call("query_organizations", ["limit": 1])
+            let cursor = try #require(page["next_cursor"] as? String)
+            let next = try call("query_organizations", ["limit": 1, "cursor": cursor])
+            #expect((next["organizations"] as? [[String: Any]])?.count == 1)
+            let contact = try call("create_contact", ["display_name": "Member"])
+            let contactID = try #require(contact["resource_id"] as? String)
+            let membership = try call("set_contact_organization_membership", [
+                "contact_id": contactID, "organization_id": childID, "organization_revision": 1,
+            ])
+            #expect(membership["target_id"] as? String == childID)
+            let member = try call("get_contact", ["contact_id": contactID])
+            #expect((member["memberships"] as? [[String: Any]])?.first?["organization_id"] as? String == childID)
+            let updated = try call("update_organization", ["organization_id": root, "revision": 1, "name": "Renamed"])
+            #expect(updated["resource_id"] as? String == root)
+            let storedName = try fixture.manager.dbQueue.read { db in
+                try String.fetchOne(db, sql: "SELECT name FROM organizations WHERE id = ?", arguments: [rootUUID])
+            }
+            #expect(storedName == "Renamed")
+            let domain = try call("set_organization_domain", [
+                "organization_id": root, "expected_organization_revision": 2, "domain_name": "example.com", "is_primary": true,
+            ])
+            #expect(domain["source_id"] as? String == root)
+            let reference = try call("set_project_resource_reference", [
+                "project_id": TypeID.encode(fixture.primaryProjectID, as: .project), "project_revision": 1,
+                "resource_type": "organization", "resource_id": root,
+            ])
+            #expect(reference["target_id"] as? String == root)
+            for value in [rootUUID.uuidString, TypeID.encode(rootUUID, as: .contact)] {
+                #expect(throws: TypeID.Failure.self) { try PublicMCPIDs.arguments(["organization_id": value], tool: "get_organization") }
+            }
+        }
+
+        @Test
+        func publicMCPOrganizationCursorScopesRoundTrip() throws {
+            let uuid = UUID.v7()
+            func decode(_ value: String) throws -> Any {
+                let data = try #require(Data(base64Encoded: value))
+                return try JSONSerialization.jsonObject(with: data)
+            }
+            let scenarios: [(String, [Any], Int)] = [
+                ("query_organizations", [NSNull(), NSNull(), uuid.uuidString, "false"], 2),
+                ("query_contacts", [NSNull(), uuid.uuidString], 1),
+                ("query_conversation_topics", [uuid.uuidString, "false", NSNull()], 0),
+                ("query_insights", [NSNull(), "organization", uuid.uuidString], 2),
+            ]
+            for (tool, values, index) in scenarios {
+                let scope = try "scope:" + (JSONSerialization.data(withJSONObject: values)).base64EncodedString()
+                let cursor = try JSONSerialization.data(withJSONObject: ["vaultID": uuid.uuidString, "id": uuid.uuidString, "scope": scope])
+                    .base64EncodedString()
+                let result = try PublicMCPIDs.result(["structuredContent": ["next_cursor": cursor]], tool: tool, arguments: [:])
+                let body = try #require(result["structuredContent"] as? [String: Any])
+                let encoded = try #require(body["next_cursor"] as? String)
+                let decoded = try #require(decode(encoded) as? [String: Any])
+                let publicScope = try #require(decoded["scope"] as? String).components(separatedBy: ":")
+                let publicValues = try #require(decode(publicScope[1]) as? [Any])
+                #expect(publicValues[index] as? String == TypeID.encode(uuid, as: .organization))
+                let arguments = try PublicMCPIDs.arguments(["cursor": encoded], tool: tool)
+                let restored = try #require(arguments["cursor"] as? String)
+                let original = try decode(cursor) as? NSDictionary
+                let actual = try decode(restored) as? NSDictionary
+                #expect(original == actual)
+            }
         }
 
         @Test
@@ -3062,14 +3168,15 @@ import ImageIO
             """#))
             #expect((invalidProjectID["error"] as? [String: Any])?["code"] as? Int == -32602)
 
-            let blankFilters = try Self.json(server.handleInternalTestLine(#"""
+            let blankFilters = try Self.json(server.handleLine(#"""
             {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"query_meetings","arguments":{
                 "created_before":"","created_from":" ","cursor":"","ical_uid":"   ",
                 "include_descendants":true,"limit":50,"organization_id":"","project":"","project_id":"",
                 "query":"","topic_id":""
             }}}
             """#))
-            #expect((blankFilters["error"] as? [String: Any])?["code"] as? Int == -32602)
+            #expect(blankFilters["error"] == nil)
+            #expect((blankFilters["result"] as? [String: Any])?["structuredContent"] != nil)
 
             for invalidTypedArguments in [#"{"limit":""}"#, #"{"include_descendants":" "}"#] {
                 let invalidTypedValue = try Self.json(server.handleInternalTestLine(#"""

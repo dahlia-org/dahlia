@@ -1,4 +1,4 @@
-import { schemaExample } from "./examples";
+import { projectPublicIDs } from "./public-schema";
 import { problemResponse } from "./problem";
 import { createRoute, OpenAPIHono, z, type RouteConfig } from "@hono/zod-openapi";
 import type { Handler } from "hono";
@@ -12,11 +12,11 @@ import * as S from "./schemas";
 
 const bearer: Record<string, string[]>[] = [{ bearerAuth: [] }, { browserSession: [] }, { trustedProxy: [] }];
 const browser: Record<string, string[]>[] = [{ browserSession: [] }, { trustedProxy: [] }];
-const problemResponses: RouteConfig["responses"] = Object.fromEntries([400, 401, 403, 404, 405, 409, 410, 411, 412, 413, 415, 416, 422, 426, 429, 500, 502, 503].map((status) => [status, {
-  description: status === 409 ? "Revision, state, or idempotency conflict. Reconcile before retrying." : `HTTP ${status}. See Problem.code.`,
+const problemResponses: RouteConfig["responses"] = { default: {
+  description: "Request failed. Use the HTTP status and Problem.code; 409 conflicts require reconciliation before retrying.",
   content: { "application/problem+json": { schema: S.problem } },
   headers: { "WWW-Authenticate": { schema: { type: "string" } }, Allow: { schema: { type: "string" } }, "Retry-After": { schema: { type: "string" } } },
-}]));
+} };
 const json = (schema: z.ZodType, description = "Successful response") => ({ description, content: { "application/json": { schema } } });
 const empty = { description: "Success; no response body." };
 const location = { Location: { description: "URI of the created representation or individual job.", schema: { type: "string" as const } } };
@@ -62,9 +62,8 @@ const params = (path: string) => z.object(Object.fromEntries(
   [...path.matchAll(/\{(\w+)\}/g)].map(([, name]) => [name!, pathParameterSchema(name!)]),
 ));
 function route(method: RouteConfig["method"], path: string, operationId: string, summary: string,
-  responses: RouteConfig["responses"], request: RouteConfig["request"] = {}, security: Record<string, string[]>[] = bearer) {
+  responses: RouteConfig["responses"], request: RouteConfig["request"] = {}, security?: Record<string, string[]>[]) {
   return createRoute({ method, path, operationId, summary, tags: [path.split("/")[3] ?? "system"], security,
-    description: "Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities.",
     request: { params: params(path), query: z.object({}).strict(), ...request }, responses: { ...problemResponses, ...responses },
   });
 }
@@ -122,7 +121,7 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   getLatestSummaryJob: route("get", `${j}/latest`, "getLatestSummaryJob", "Most recent owner-visible job, or null", { 200: json(z.object({ job: z.object(S.summaryJob.shape).nullable() })) }),
   getSummaryJob: route("get", `${j}/{jobId}`, "getSummaryJob", "Get an individual owner-visible job", { 200: json(jobEnvelope) }),
   cancelSummaryJob: route("post", `${j}/{jobId}/cancel`, "cancelSummaryJob", "Cancel a job; repeated cancellation is safe", { 200: json(jobEnvelope) }),
-  retrySummaryJob: route("post", `${j}/{jobId}/retry`, "retrySummaryJob", "Retry a failed or cancelled job using a new ID", { 202: accepted(jobEnvelope) }, body(z.object({ id: z.uuidv7() }).strict())),
+  retrySummaryJob: route("post", `${j}/{jobId}/retry`, "retrySummaryJob", "Retry a failed or cancelled job using a new ID", { 202: accepted(jobEnvelope) }, body(z.object({ id: z.uuidv7().meta({ format: "uuidv7" }) }).strict())),
   commitTransaction: route("post", "/api/v1/transactions", "commitTransaction", "Commit one atomic Vault transaction; maximum 8 MiB", { 200: json(S.receipt) }, body(S.transaction)),
   resolveTransaction: route("post", "/api/v1/transactions/resolve", "resolveTransaction", "Resolve the exact original request without mutating; never advance the pull cursor from receipts", { 200: json(S.resolution) }, body(S.transaction)),
   getChanges: route("get", `${v}/changes`, "getChanges", "Durable delta feed; retain highWaterCursor across a catch-up", { 200: json(S.changes) }, { query: S.pageQuery.extend({ highWaterCursor: S.cursor.optional() }).strict() }),
@@ -149,7 +148,7 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   getRecordingContent: route("get", `${m}/recordings/{recordingId}/audio/{source}`, "getRecordingContent", "Stream recording audio", { ...binaryResponses, 200: { ...binary, content: { "audio/mp4": { schema: z.string().openapi({ format: "binary" }) } } }, 206: { ...binary, content: { "audio/mp4": { schema: z.string().openapi({ format: "binary" }) } } } }, { headers: readHeaders }),
   headRecordingContent: route("head", `${m}/recordings/{recordingId}/audio/{source}`, "headRecordingContent", "Recording headers; Range ignored; no body", { 200: { description: "Full representation headers", headers: binaryHeaders }, 304: empty }, { headers: readHeaders }),
   getTransferAudience: route("get", `${v}/transfer-audience`, "getTransferAudience", "Preview readers gaining or losing access; owner only", { 200: json(z.object({ audienceHash: z.string(), removed: z.array(S.person), added: z.array(S.person) })) }, { query: z.object({ destinationVaultId: S.id }).strict() }),
-  transferVault: route("post", `${v}/transfer`, "transferVault", "Move all content after revision and audience checks; owner only", { 200: json(z.object({ id: S.id, status: z.literal("committed"), sourceVaultId: S.id, destinationVaultId: S.id })) }, { ...body(z.object({ destinationVaultId: S.id, sourceRevision: S.integer, destinationRevision: S.integer, audienceHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict()), headers: z.object({ "idempotency-key": z.uuidv7() }) }),
+  transferVault: route("post", `${v}/transfer`, "transferVault", "Move all content after revision and audience checks; owner only", { 200: json(z.object({ id: S.id, status: z.literal("committed"), sourceVaultId: S.id, destinationVaultId: S.id })) }, { ...body(z.object({ destinationVaultId: S.id, sourceRevision: S.integer, destinationRevision: S.integer, audienceHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict()), headers: z.object({ "idempotency-key": z.uuidv7().meta({ format: "uuidv7" }) }) }),
   getRelocations: route("get", `${v}/relocations`, "getRelocations", "Resolve moved resources to currently accessible Vaults", { 200: json(z.object({ vaults: z.array(S.vault), items: z.array(z.object({ entity: z.enum(["project", "meeting", "file"]), id: S.id, vaultId: S.id })) })) }),
   listPermissions: route("get", `${v}/permissions`, "listPermissions", "Read Vault sharing permissions", { 200: json(S.page(S.permission)) }, {}, browser),
   putOrganizationPermission: route("put", `${v}/permissions/organizations/{organizationId}`, "putOrganizationPermission", "Grant read-only organization access; owner only", { 204: empty }, {}, browser),
@@ -163,7 +162,7 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   createTeam: route("post", `${o}/teams`, "createTeam", "Create external team (header mode only)", { 201: created(S.team) }, body(z.object({ name: z.string().trim().min(1).max(100) }).strict()), browser),
   updateTeam: route("patch", `${o}/teams/{teamId}`, "updateTeam", "Rename external team (header mode only)", { 200: json(S.team) }, body(z.object({ name: z.string().trim().min(1).max(100) }).strict()), browser),
   deleteTeam: route("delete", `${o}/teams/{teamId}`, "deleteTeam", "Delete external team (header mode only)", { 204: empty }, {}, browser),
-  listTeamMembers: route("get", `${o}/teams/{teamId}/members`, "listTeamMembers", "External team members (header mode only)", { 200: json(S.page(S.person.extend({ userId: S.principalId, teamId: S.principalId }))) }, {}, browser),
+  listTeamMembers: route("get", `${o}/teams/{teamId}/members`, "listTeamMembers", "External team members (header mode only)", { 200: json(S.page(S.person.omit({ id: true }).extend({ id: S.principalId, userId: S.principalId, teamId: S.principalId }).openapi("TeamMember"))) }, {}, browser),
   putTeamMember: route("put", `${o}/teams/{teamId}/members/{userId}`, "putTeamMember", "Add an organization member to an external team", { 204: empty }, {}, browser),
   deleteTeamMember: route("delete", `${o}/teams/{teamId}/members/{userId}`, "deleteTeamMember", "Remove an external team member", { 204: empty }, {}, browser),
 };
@@ -191,31 +190,13 @@ export function openapiDocument(): ReturnType<OpenAPIHono["getOpenAPI31Document"
   app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", { type: "http", scheme: "bearer", description: "Dahlia OAuth access token with all-apis scope." });
   app.openAPIRegistry.registerComponent("securitySchemes", "browserSession", { type: "apiKey", in: "cookie", name: "__Secure-better-auth.session_token", description: "Better Auth session (development uses better-auth.session_token). Mutations require the configured Origin." });
   app.openAPIRegistry.registerComponent("securitySchemes", "trustedProxy", { type: "apiKey", in: "header", name: "X-Forwarded-Email", description: "Header auth mode only; configured identity header from a trusted proxy. Direct client-supplied identity is forbidden." });
-  const document = app.getOpenAPI31Document({ openapi: "3.1.0", info: { title: "Dahlia Server API", version: "1.0.0", description: "Dahlia-owned HTTP API. OAuth, OpenAI Responses, and MCP preserve their native protocols; see the API audit for delegated operations." }, servers: [{ url: "/" }] });
-  const sharedResponses: NonNullable<NonNullable<typeof document.components>["responses"]> = {};
-  for (const path of Object.values(document.paths ?? {})) for (const [method, value] of Object.entries(path ?? {})) {
-    if (!["get", "post", "put", "patch", "delete", "head"].includes(method) || typeof value !== "object" || value === null || !("operationId" in value)) continue;
-    const operation = value as NonNullable<typeof document.paths>[string]["get"];
-    if (!operation) continue;
-    const request = operation.requestBody;
-    if (request && !("$ref" in request)) for (const [type, media] of Object.entries(request.content)) {
-      if (type === "application/json" && media.example === undefined) media.example = schemaExample(media.schema, document.components?.schemas ?? {});
-    }
-    const responses: Record<string, { $ref?: string; content?: Record<string, { schema?: unknown; example?: unknown }> }> = operation.responses ?? {};
-    for (const [status, response] of Object.entries(responses)) {
-      if ("$ref" in response) continue;
-      for (const [type, media] of Object.entries(response.content ?? {})) {
-        if (type === "application/problem+json") media.example = { type: "about:blank", title: "Request failed", status: Number(status), code: Number(status) === 409 ? "revision_conflict" : "invalid_request" };
-        else if (type === "application/json" && media.example === undefined) media.example = schemaExample(media.schema, document.components?.schemas ?? {});
-        else if (type === "text/event-stream") media.example = 'event: invalidation\ndata: {"cursor":"opaque-cursor"}\n\n';
-      }
-      if (status in problemResponses && operation.responses) {
-        const name = `Problem${status}`;
-        sharedResponses[name] = operation.responses[status] as (typeof sharedResponses)[string];
-        operation.responses[status] = { $ref: `#/components/responses/${name}` };
-      }
-    }
+  const document = app.getOpenAPI31Document({ openapi: "3.1.0", security: bearer, info: { title: "Dahlia Server API", version: "1.0.0", description: "Dahlia-owned HTTP API. OAuth, OpenAI Responses, and MCP preserve their native protocols; see the API audit for delegated operations. Current resource access is checked on every request. Browser mutations require the configured same origin; trustedProxy is valid only behind a verified identity proxy. Unsupported deployment capabilities are reported by /api/v1/capabilities." }, servers: [{ url: "/" }] });
+  for (const contract of Object.values(contracts)) {
+    const operation = document.paths?.[contract.path]?.[contract.method as "get"];
+    if (!operation?.responses?.default) continue;
+    document.components = { ...document.components, responses: { Problem: operation.responses.default } };
+    operation.responses.default = { $ref: "#/components/responses/Problem" };
   }
-  document.components = { ...document.components, responses: sharedResponses };
+  projectPublicIDs(document);
   return document;
 }

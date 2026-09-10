@@ -89,10 +89,16 @@ struct SyncAPIMiddleware: ClientMiddleware {
         }
         request.headerFields[.authorization] = "Bearer \(token)"
         request.headerFields[.init("X-Dahlia-Vault-Transfers")!] = "1"
+        var responseShape = route?.response
         let internalBody = preservingJSONBody.map(HTTPBody.init) ?? body
         let publicBody: HTTPBody?
         if let shape = route?.request, let internalBody {
             let data = try await Data(collecting: internalBody, upTo: 64 * 1024 * 1024)
+            if responseShape == "textSearch",
+               let request = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               request["kind"] as? String == "screenshot" {
+                responseShape = "textScreenshotSearch"
+            }
             let converted = try PublicIDWire.data(data, shape: shape, direction: .encode)
             request.headerFields[.contentLength] = String(converted.count)
             publicBody = HTTPBody(converted)
@@ -110,7 +116,7 @@ struct SyncAPIMiddleware: ClientMiddleware {
             throw SyncHTTPError(status: response.status.code, body: decoded)
         }
         let isJSON = response.headerFields[.contentType].map { $0.contains("json") } ?? true
-        if let shape = route?.response, isJSON, let publicResponseBody = responseBody {
+        if let shape = responseShape, isJSON, let publicResponseBody = responseBody {
             let data = try await Data(collecting: publicResponseBody, upTo: maximumBytes ?? Int.max)
             let screenshotSearch = shape == "textSearch" && internalURL.query?.contains("kind=screenshot") == true
             let converted = try PublicIDWire.data(data, shape: screenshotSearch ? "textScreenshotSearch" : shape, direction: .decode)

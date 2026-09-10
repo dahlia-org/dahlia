@@ -8,6 +8,19 @@ import { wireDocument, wireValue, wireURL } from "../src/public-wire";
 
 const uuid = vectors[2]!.uuid;
 describe("public TypeIDs", () => {
+  it("converts nested MCP organization and recording IDs without touching opaque metadata", () => {
+    const value = { organization: { id: uuid, parent_organization_id: null }, nodes: [{ id: uuid }],
+      memberships: [{ organization_id: uuid }], references: [{ resource_type: "organization", resource_id: uuid }],
+      transcript: { metadata: { runs: [{ recording_session_id: uuid, response: { id: uuid } }] } } };
+    const encoded = wireValue(value, "mcpResult", "encode") as typeof value;
+    expect(encoded.organization.id).toBe(encodeId("organization", uuid));
+    expect(encoded.nodes[0]!.id).toBe(encodeId("organization", uuid));
+    expect(encoded.memberships[0]!.organization_id).toBe(encodeId("organization", uuid));
+    expect(encoded.references[0]!.resource_id).toBe(encodeId("organization", uuid));
+    expect(encoded.transcript.metadata.runs[0]!.recording_session_id).toBe(encodeId("recording", uuid));
+    expect(encoded.transcript.metadata.runs[0]!.response.id).toBe(uuid);
+    expect(wireValue(encoded, "mcpResult", "decode")).toEqual(value);
+  });
   it("matches shared UUID vectors for every prefix", () => {
     for (const kind of Object.keys(idPrefixes) as IDKind[]) for (const vector of vectors) {
       const expected = `${idPrefixes[kind]}_${vector.suffix}`;

@@ -671,15 +671,7 @@ public final class DahliaMCPServer {
         }
     }
 
-    private func queryMeetings(_ rawArguments: [String: Any]) throws -> MeetingQueryPage {
-        let optionalStringKeys: Set = [
-            "query", "project", "project_id", "organization_id", "topic_id", "ical_uid",
-            "created_from", "created_before", "cursor", "server_cursor",
-        ]
-        let arguments = rawArguments.filter { key, value in
-            guard optionalStringKeys.contains(key), let string = value as? String else { return true }
-            return !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
+    private func queryMeetings(_ arguments: [String: Any]) throws -> MeetingQueryPage {
         let limit = try integer(arguments, key: "limit") ?? 25
         return try store.queryMeetings(MeetingQuery(
             query: string(arguments, key: "query"),
@@ -1092,7 +1084,7 @@ private extension DahliaMCPServer {
             idSchema(.contact),
             idSchema(.topic),
             idSchema(.insight),
-            ["type": "string", "format": "uuid"],
+            idSchema(.organization),
         ]]
     }
 
@@ -1439,8 +1431,8 @@ private extension DahliaMCPServer {
     private static var organizationMetadataSchema: [String: Any] {
         objectSchema(
             properties: [
-                "id": ["type": "string", "format": "uuid"],
-                "parent_organization_id": ["type": "string", "format": "uuid"],
+                "id": idSchema(.organization),
+                "parent_organization_id": idSchema(.organization),
                 "node_kind": organizationNodeKindSchema,
                 "name": ["type": "string"],
                 "description": ["type": "string"],
@@ -1564,8 +1556,8 @@ private extension DahliaMCPServer {
     private static var organizationChartOutputSchema: [String: Any] {
         let node = objectSchema(
             properties: [
-                "id": ["type": "string", "format": "uuid"],
-                "parent_organization_id": ["type": "string", "format": "uuid"],
+                "id": idSchema(.organization),
+                "parent_organization_id": idSchema(.organization),
                 "node_kind": organizationNodeKindSchema,
                 "name": ["type": "string"],
                 "description": ["type": "string"],
@@ -1587,7 +1579,7 @@ private extension DahliaMCPServer {
         return objectSchema(
             properties: [
                 "vault": vaultSchema,
-                "root_organization_id": ["type": "string", "format": "uuid"],
+                "root_organization_id": idSchema(.organization),
                 "nodes": ["type": "array", "items": node],
                 "nodes_truncated": ["type": "boolean"],
             ],
@@ -1709,7 +1701,7 @@ private extension DahliaMCPServer {
     private static var contactDetailOutputSchema: [String: Any] {
         let membership = objectSchema(
             properties: [
-                "organization_id": ["type": "string", "format": "uuid"],
+                "organization_id": idSchema(.organization),
                 "organization_name": ["type": "string"],
                 "node_kind": organizationNodeKindSchema,
                 "role_label": ["type": "string"],
@@ -1914,7 +1906,7 @@ private extension DahliaMCPServer {
                     "properties": [
                         "query": ["type": "string"],
                         "node_kind": organizationNodeKindSchema,
-                        "parent_organization_id": ["type": "string", "format": "uuid"],
+                        "parent_organization_id": idSchema(.organization),
                         "roots_only": ["type": "boolean", "default": false],
                         "limit": ["type": "integer", "minimum": 1, "maximum": 100, "default": 25],
                         "cursor": ["type": "string"],
@@ -1932,7 +1924,7 @@ private extension DahliaMCPServer {
                     + "Use query_organizations with parent_organization_id to inspect children.",
                 "inputSchema": [
                     "type": "object",
-                    "properties": ["organization_id": ["type": "string", "format": "uuid"]],
+                    "properties": ["organization_id": idSchema(.organization)],
                     "required": ["organization_id"],
                     "additionalProperties": false,
                 ],
@@ -1948,7 +1940,7 @@ private extension DahliaMCPServer {
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "root_organization_id": ["type": "string", "format": "uuid"],
+                        "root_organization_id": idSchema(.organization),
                         "maximum_depth": ["type": "integer", "minimum": 0, "maximum": 32, "default": 8],
                         "children_per_node": ["type": "integer", "minimum": 1, "maximum": 100, "default": 50],
                     ],
@@ -1967,7 +1959,7 @@ private extension DahliaMCPServer {
                     "type": "object",
                     "properties": [
                         "query": ["type": "string"],
-                        "organization_id": ["type": "string", "format": "uuid"],
+                        "organization_id": idSchema(.organization),
                         "limit": ["type": "integer", "minimum": 1, "maximum": 100, "default": 25],
                         "cursor": ["type": "string"],
                     ],
@@ -1999,7 +1991,7 @@ private extension DahliaMCPServer {
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "organization_id": ["type": "string", "format": "uuid"],
+                        "organization_id": idSchema(.organization),
                         "include_descendants": ["type": "boolean", "default": false],
                         "project_id": idSchema(.project),
                         "limit": ["type": "integer", "minimum": 1, "maximum": 100, "default": 25],
@@ -2191,9 +2183,9 @@ private extension DahliaMCPServer {
     ] }
 
     private static var customerIntelligenceWriteToolDefinitions: [[String: Any]] {
-        let uuid: [String: Any] = ["type": "string", "format": "uuid"]
+        let organizationID = idSchema(.organization)
         let revision: [String: Any] = ["type": "integer", "minimum": 1]
-        let nullableUUID: [String: Any] = ["type": ["string", "null"], "format": "uuid"]
+        let nullableOrganizationID = idSchema(.organization, nullable: true)
         let shortText: [String: Any] = [
             "type": "string",
             "minLength": 1,
@@ -2227,7 +2219,7 @@ private extension DahliaMCPServer {
                 [
                     "name": shortText,
                     "node_kind": organizationNodeKindSchema,
-                    "parent_organization_id": uuid,
+                    "parent_organization_id": organizationID,
                     "description": ["type": "string", "maxLength": CustomerIntelligenceWriteLimits.description],
                 ],
                 required: ["name", "node_kind"]
@@ -2238,10 +2230,10 @@ private extension DahliaMCPServer {
                 "Update one Organization's name, description, or parent. Omitted fields stay unchanged; "
                     + "parent_organization_id:null moves it to the root.",
                 [
-                    "organization_id": uuid,
+                    "organization_id": organizationID,
                     "revision": revision,
                     "name": shortText,
-                    "parent_organization_id": nullableUUID,
+                    "parent_organization_id": nullableOrganizationID,
                     "description": ["type": "string", "maxLength": CustomerIntelligenceWriteLimits.description],
                 ],
                 required: ["organization_id", "revision"],
@@ -2397,7 +2389,7 @@ private extension DahliaMCPServer {
                     + "Organizations; this changes only this Organization's link. The first domain becomes primary even "
                     + "when is_primary is false.",
                 [
-                    "organization_id": uuid,
+                    "organization_id": organizationID,
                     "expected_organization_revision": revision,
                     "domain_name": domainName,
                     "is_primary": ["type": "boolean"],
@@ -2412,7 +2404,7 @@ private extension DahliaMCPServer {
                 "Remove organization domain",
                 "Remove one domain link from one root Organization without changing links from other Organizations.",
                 [
-                    "organization_id": uuid,
+                    "organization_id": organizationID,
                     "expected_organization_revision": revision,
                     "domain_name": domainName,
                 ],
@@ -2425,7 +2417,7 @@ private extension DahliaMCPServer {
                 "Create or update one Contact membership and role.",
                 [
                     "contact_id": idSchema(.contact),
-                    "organization_id": uuid,
+                    "organization_id": organizationID,
                     "organization_revision": revision,
                     "role_label": nullableText,
                 ],
@@ -2438,7 +2430,7 @@ private extension DahliaMCPServer {
                 "Remove one membership without deleting the Contact or Organization.",
                 [
                     "contact_id": idSchema(.contact),
-                    "organization_id": uuid,
+                    "organization_id": organizationID,
                     "organization_revision": revision,
                 ],
                 required: ["contact_id", "organization_id", "organization_revision"],
@@ -2592,7 +2584,7 @@ private extension DahliaMCPServer {
         _ description: String,
         idKey: String
     ) -> [String: Any] {
-        let schema: [String: Any] = idKey == "organization_id" ? ["type": "string", "format": "uuid"] : resourceIDSchema
+        let schema: [String: Any] = idKey == "organization_id" ? idSchema(.organization) : resourceIDSchema
         return writeTool(
             name,
             title,
@@ -2661,7 +2653,7 @@ private extension DahliaMCPServer {
                         "pattern": "^proj_[0-7][0-9a-hjkmnp-tv-z]{25}$",
                         "description": "Exact project TypeID for related meetings, including meetings with different calendar events.",
                     ],
-                    "organization_id": ["type": "string", "format": "uuid"],
+                    "organization_id": idSchema(.organization),
                     "include_descendants": ["type": "boolean", "default": false],
                     "topic_id": idSchema(.topic),
                     "ical_uid": [

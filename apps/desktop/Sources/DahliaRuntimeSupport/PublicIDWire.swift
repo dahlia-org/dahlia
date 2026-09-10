@@ -47,6 +47,7 @@ public enum PublicIDWire {
     ]
     private static let resourceKinds: [String: TypeID.Kind] = [
         "meeting": .meeting, "project": .project, "contact": .contact, "topic": .topic, "conversation_topic": .topic, "insight": .insight,
+        "organization": .organization,
     ]
 
     public static func data(_ data: Data, shape: String, direction: Direction) throws -> Data {
@@ -110,7 +111,6 @@ public enum PublicIDWire {
         }
         if shape == "resourceID" {
             let type = (parent["resource_type"] ?? parent["resourceType"]) as? String
-            if type == "organization" { return value }
             guard let type, let kind = resourceKinds[type] else { throw TypeID.Failure.invalidID }
             return try id(value, kind: kind, direction: direction)
         }
@@ -120,7 +120,7 @@ public enum PublicIDWire {
         if shape == "relationshipSource" || shape == "relationshipTarget" {
             let resource = resourceKinds[parent["resource_type"] as? String ?? ""]
             let mapping: [String: (TypeID.Kind?, TypeID.Kind?)] = [
-                "organization_domain": (nil, nil), "contact_organization_membership": (.contact, nil),
+                "organization_domain": (.organization, nil), "contact_organization_membership": (.contact, .organization),
                 "project_resource_reference": (.project, resource), "conversation_topic_resource_reference": (.topic, resource),
                 "insight_resource_reference": (.insight, resource), "meeting_project_assignment": (.meeting, .project),
             ]
@@ -326,8 +326,14 @@ public extension PublicIDWire {
 
     static func response(_ publicData: Data, request: URLRequest, status: Int = 200) throws -> Data {
         guard !publicData.isEmpty, let path = request.url?.path,
-              let shape = route(path: path, method: request.httpMethod ?? "GET")?.response else { return publicData }
+              let contract = route(path: path, method: request.httpMethod ?? "GET") else { return publicData }
         if status >= 400 { return try data(publicData, shape: "error", direction: .decode) }
+        guard let shape = contract.response else { return publicData }
+        if shape == "textSearch", request.httpMethod == "POST", let body = request.httpBody,
+           let arguments = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+           arguments["kind"] as? String == "screenshot" {
+            return try data(publicData, shape: "textScreenshotSearch", direction: .decode)
+        }
         let screenshotSearch = shape == "textSearch" && URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
             .contains { $0.name == "kind" && $0.value == "screenshot" } == true
         return try data(publicData, shape: screenshotSearch ? "textScreenshotSearch" : shape, direction: .decode)

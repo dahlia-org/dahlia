@@ -14,15 +14,15 @@ export interface PublicRoute {
   limit?: number;
 }
 const routes = contract.routes as PublicRoute[];
-const entityKinds: Record<string, IDKind> = {
+export const entityKinds: Record<string, IDKind> = {
   vault: "vault", project: "project", meeting: "meeting", summary: "meeting", transcript: "meeting",
   file: "file", meeting_attachment: "attachment", meeting_event: "event", recording: "recording",
 };
-const recordShapes: Record<string, string> = {
+export const recordShapes: Record<string, string> = {
   ...entityKinds, summary: "summary", transcript: "transcriptPatch",
 };
 const resourceKinds: Record<string, IDKind> = {
-  meeting: "meeting", project: "project", contact: "contact", topic: "topic", conversation_topic: "topic", insight: "insight",
+  meeting: "meeting", project: "project", contact: "contact", topic: "topic", conversation_topic: "topic", insight: "insight", organization: "organization",
 };
 const object = (value: unknown): value is ObjectValue => value !== null && typeof value === "object" && !Array.isArray(value);
 
@@ -59,13 +59,12 @@ export function wireValue(value: unknown, shape: string, direction: WireDirectio
     const resourceType = parent.resource_type ?? parent.resourceType;
     const kind = resourceKinds[String(resourceType)];
     if (kind) return wireID(value, kind, direction);
-    if (resourceType === "organization") return value;
     throw new Error("invalid_resource_type");
   }
   if (shape === "textEntityID") return wireID(value, parent.entity === "file" ? "file" : "meeting", direction);
   if (shape === "relationshipSource" || shape === "relationshipTarget") {
     const kinds: Record<string, [IDKind | null, IDKind | null]> = {
-      organization_domain: [null, null], contact_organization_membership: ["contact", null],
+      organization_domain: ["organization", null], contact_organization_membership: ["contact", "organization"],
       project_resource_reference: ["project", resourceKinds[String(parent.resource_type)] ?? null],
       conversation_topic_resource_reference: ["topic", resourceKinds[String(parent.resource_type)] ?? null],
       insight_resource_reference: ["insight", resourceKinds[String(parent.resource_type)] ?? null],

@@ -4,11 +4,19 @@ import Foundation
 /// MCP is a public boundary; the access store and its cursor models continue to use UUIDs.
 enum PublicMCPIDs {
     static func arguments(_ value: [String: Any], tool: String) throws -> [String: Any] {
-        guard var result = try PublicIDWire.transform(value, shape: "mcpInput", direction: .decode) as? [String: Any] else {
+        let optionalStringKeys: Set = [
+            "query", "project", "project_id", "organization_id", "topic_id", "ical_uid",
+            "created_from", "created_before", "cursor", "server_cursor",
+        ]
+        let arguments = value.filter { key, value in
+            guard tool == "query_meetings", optionalStringKeys.contains(key), let string = value as? String else { return true }
+            return !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard var result = try PublicIDWire.transform(arguments, shape: "mcpInput", direction: .decode) as? [String: Any] else {
             throw TypeID.Failure.invalidID
         }
         for key in ["cursor", "server_cursor"] {
-            if let cursor = value[key] as? String {
+            if let cursor = arguments[key] as? String {
                 result[key] = try convertCursor(cursor, tool: tool, direction: .decode)
             }
         }
@@ -51,6 +59,7 @@ enum PublicMCPIDs {
         }
         var fields: [String: TypeID.Kind] = ["vaultID": .vault, "meetingID": .meeting, "segmentID": .segment, "screenshotID": .attachment]
         let kind: TypeID.Kind? = switch tool {
+        case "query_organizations": .organization
         case "query_contacts": .contact
         case "query_conversation_topics": .topic
         case "query_insights": .insight
@@ -88,7 +97,7 @@ enum PublicMCPIDs {
             guard let data = Data(base64Encoded: scope), var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 throw TypeID.Failure.invalidID
             }
-            for (key, kind) in ["projectID": TypeID.Kind.project, "topicID": .topic] {
+            for (key, kind) in ["projectID": TypeID.Kind.project, "topicID": .topic, "organizationID": .organization] {
                 if let value = object[key] { object[key] = try cursorID(value, kind: kind, direction: direction) }
             }
             return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]).base64EncodedString()
@@ -96,7 +105,12 @@ enum PublicMCPIDs {
         let parts = scope.components(separatedBy: ":")
         guard parts.count == 2, let data = Data(base64Encoded: parts[1]),
               var values = try JSONSerialization.jsonObject(with: data) as? [Any] else { throw TypeID.Failure.invalidID }
-        if tool == "query_conversation_topics", values.count == 3 {
+        if tool == "query_organizations", values.count == 4 {
+            values[2] = try cursorID(values[2], kind: .organization, direction: direction)
+        } else if tool == "query_contacts", values.count == 2 {
+            values[1] = try cursorID(values[1], kind: .organization, direction: direction)
+        } else if tool == "query_conversation_topics", values.count == 3 {
+            values[0] = try cursorID(values[0], kind: .organization, direction: direction)
             values[2] = try cursorID(values[2], kind: .project, direction: direction)
         } else if tool == "query_insights", values.count == 3 {
             values[2] = try PublicIDWire.transform(values[2], shape: "resourceID", direction: direction, parent: ["resource_type": values[1]])

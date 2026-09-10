@@ -21,7 +21,7 @@ export function fileMetadataFromWire(value: Partial<z.infer<typeof fileWireMetad
   return { ...metadata, ...(ocrText !== undefined ? { ocr_text: ocrText } : {}) };
 }
 export const fileUploadSchema = z.object({
-  id: z.uuidv7().transform((id) => id.toLowerCase()), vaultId: z.uuid().transform((id) => id.toLowerCase()), name: z.string().min(1).max(255),
+  id: z.uuidv7().meta({ format: "uuidv7" }).transform((id) => id.toLowerCase()), vaultId: z.uuid().transform((id) => id.toLowerCase()), name: z.string().min(1).max(255),
   contentType: z.string().max(255).regex(/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/),
   metadata: fileWireMetadataSchema.pick({ source: true, width: true, height: true }),
 }).strict();

@@ -9,7 +9,7 @@ export function validate(request: Request, response: Response) {
   const route: RouteConfig | undefined = Object.values(contracts).sort((a, b) => (a.path.match(/\{/g)?.length ?? 0) - (b.path.match(/\{/g)?.length ?? 0)).find((route) => route.method.toUpperCase() === request.method
     && new RegExp(`^${route.path.replace(/\{[^}]+\}/g, "[^/]+")}$`).test(path));
   expect(route, `${request.method} ${path}`).toBeDefined();
-  const declared = route!.responses[response.status];
+  const declared = route!.responses[response.status] ?? (response.status >= 400 ? route!.responses.default : undefined);
   expect(declared, `${route!.operationId}: HTTP ${response.status}`).toBeDefined();
   const contentType = response.headers.get("content-type")?.split(";")[0];
   if (!contentType?.includes("json")) return Promise.resolve();

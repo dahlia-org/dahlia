@@ -561,7 +561,8 @@
       "transcript_id": "id:transcript",
       "screenshot_id": "id:attachment",
       "file_id": "id:file",
-      "id": "id:transcript"
+      "id": "id:transcript",
+      "metadata": "mcpTranscriptMetadata"
     },
     "mcpReference": {
       "resource_id": "resourceID",
@@ -579,9 +580,10 @@
       "file_id": "id:file"
     },
     "mcpOrganization": {
-      "parent_organization_id": "pass",
+      "parent_organization_id": "id:organization",
       "members": "array:mcpContact",
-      "children": "array:mcpOrganization"
+      "children": "array:mcpOrganization",
+      "id": "id:organization"
     },
     "mcpManifest": {
       "entity_id": "textEntityID"
@@ -635,7 +637,12 @@
       "effective_type_changed_project_ids": "array:id:project",
       "changed_meeting_ids": "array:id:meeting",
       "provisional_contact_id": "id:contact",
-      "identified_contact_id": "id:contact"
+      "identified_contact_id": "id:contact",
+      "organization_id": "id:organization",
+      "parent_organization_id": "id:organization",
+      "root_organization_id": "id:organization",
+      "nodes": "array:mcpOrganization",
+      "memberships": "array:mcpOrganizationMembership"
     },
     "mcpVault": {
       "id": "id:vault"
@@ -663,7 +670,10 @@
       "screenshot_ids": "array:id:attachment",
       "expected_project_id": "id:project",
       "provisional_contact_id": "id:contact",
-      "identified_contact_id": "id:contact"
+      "identified_contact_id": "id:contact",
+      "organization_id": "id:organization",
+      "parent_organization_id": "id:organization",
+      "root_organization_id": "id:organization"
     },
     "error": {
       "conflicts": "array:canonical",
@@ -709,6 +719,18 @@
     },
     "teamPage": {
       "items": "array:team"
+    },
+    "textSearchRequest": {
+      "cursor": "cursor:textSearch"
+    },
+    "mcpTranscriptMetadata": {
+      "runs": "array:mcpTranscriptRun"
+    },
+    "mcpTranscriptRun": {
+      "recording_session_id": "id:recording"
+    },
+    "mcpOrganizationMembership": {
+      "organization_id": "id:organization"
     }
   },
   "routes": [
@@ -1002,7 +1024,8 @@
       "methods": [
         "GET",
         "HEAD"
-      ]
+      ],
+      "response": "file"
     },
     {
       "path": "/api/v1/vaults/:vault/files",
@@ -1149,7 +1172,7 @@
     },
     {
       "path": "/api/v1/organizations/:organization/members",
-      "response": "orgMemberPage",
+      "response": "orgMembers",
       "methods": [
         "GET",
         "HEAD"
@@ -1527,7 +1550,7 @@
     },
     {
       "path": "/api/auth/organization/reject-invitation",
-      "response": "invitation",
+      "response": "authInviteResponse",
       "request": "authRequest",
       "limit": 131072,
       "query": {
@@ -1927,7 +1950,7 @@
     {
       "path": "/api/v1/vaults/:vault/text-search",
       "response": "textSearch",
-      "request": "searchRequest",
+      "request": "textSearchRequest",
       "limit": 16384,
       "methods": [
         "POST"

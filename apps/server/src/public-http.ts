@@ -18,6 +18,7 @@ export function installPublicIDs<E extends Env>(app: Hono<E>): void {
     if (!route) return dispatch(request, env, executionCtx);
     const failure = (status: number, code: string) => url.pathname.startsWith("/api/v1/")
       ? problemResponse(status, code) : Response.json({ error: code }, { status });
+    let responseShape = route.response === "textSearch" && url.searchParams.get("kind") === "screenshot" ? "textScreenshotSearch" : route.response;
     let internal: Request;
     try {
       const headers = new Headers(request.headers);
@@ -46,6 +47,9 @@ export function installPublicIDs<E extends Env>(app: Hono<E>): void {
         let offset = 0;
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
         const value = wireValue(JSON.parse(new TextDecoder().decode(bytes)), route.request, "decode");
+        if (route.response === "textSearch" && typeof value === "object" && value !== null && "kind" in value && value.kind === "screenshot") {
+          responseShape = "textScreenshotSearch";
+        }
         body = JSON.stringify(value);
         if (route.request === "chunk") {
           const claimed = headers.get("x-dahlia-content-sha256") ?? "";
@@ -72,14 +76,14 @@ export function installPublicIDs<E extends Env>(app: Hono<E>): void {
     const location = headers.get("location");
     if (location) headers.set("location", wireURL(location, "encode"));
     const init = { status: response.status, statusText: response.statusText, headers };
-    if (request.method === "HEAD" || !route.response || !headers.get("content-type")?.includes("json")) {
+    const shape = response.ok ? responseShape : "error";
+    if (request.method === "HEAD" || !shape || !headers.get("content-type")?.includes("json")) {
       return location ? new Response(response.body, init) : response;
     }
     try {
-      const shape = route.response === "textSearch" && url.searchParams.get("kind") === "screenshot" ? "textScreenshotSearch" : route.response;
       const body = await response.text();
       if (!body) return new Response(null, init);
-      const value = wireValue(JSON.parse(body), response.ok ? shape : "error", "encode");
+      const value = wireValue(JSON.parse(body), shape, "encode");
       headers.delete("content-length");
       return new Response(JSON.stringify(value), init);
     } catch {

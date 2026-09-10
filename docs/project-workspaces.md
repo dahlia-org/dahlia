@@ -103,6 +103,8 @@ Meeting–Project is an exclusive assignment: a Meeting has zero or one `project
 
 ## MCP contract
 
+Public MCP customer-organization IDs use `org_` TypeIDs in queries, trees, memberships, references, mutations, and cursor scopes. Transcript provenance uses `rec_` for recording-session IDs. Desktop storage retains UUIDs; provider metadata and domain names keep their original values.
+
 `dahlia-mcp --vault-id <vlt_TypeID>` is read-only. Adding the sole capability flag, `--write`, publishes update tools.
 Full-Vault in-app chat starts the helper with `--write`; summary-generation threads disable MCP tools.
 The in-app chat presets its skills in Dahlia's private `CODEX_HOME` and enables skill instructions for chat threads.

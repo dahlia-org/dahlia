@@ -54,6 +54,12 @@
             let body = try JSONSerialization.data(withJSONObject: ["error": "conflict", "operationId": TypeID.encode(uuid, as: .operation)])
             let decoded = try JSONSerialization.jsonObject(with: PublicIDWire.response(body, request: request, status: 409)) as? [String: Any]
             #expect(decoded?["operationId"] as? String == uuid.uuidString.lowercased())
+            var chunkRequest = try URLRequest(url: #require(URL(string:
+                "https://dahlia.example/api/v1/meetings/\(TypeID.encode(uuid, as: .meeting))/transcript-uploads/\(TypeID.encode(uuid, as: .patch))/chunks/0"
+            )))
+            chunkRequest.httpMethod = "PUT"
+            let chunkError = try JSONSerialization.jsonObject(with: PublicIDWire.response(body, request: chunkRequest, status: 409)) as? [String: Any]
+            #expect(chunkError?["operationId"] as? String == uuid.uuidString.lowercased())
             let filter = "https://dahlia.example/api/auth/admin/list-users?filterField=id&filterValue=\(TypeID.encode(uuid, as: .user))"
             #expect(try PublicIDWire.url(filter, direction: .decode).contains(uuid.uuidString.lowercased()))
         }
