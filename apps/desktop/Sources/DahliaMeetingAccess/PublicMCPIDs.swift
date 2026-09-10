@@ -27,8 +27,6 @@ enum PublicMCPIDs {
         guard let original = value["structuredContent"] as? [String: Any] else { return value }
         let shape = switch tool {
         case "list_vaults": "mcpVaultList"
-        case "list_live_meetings": "mcpLiveList"
-        case "get_live_transcript": "mcpLivePage"
         default: "mcpResult"
         }
         guard var body = try PublicIDWire.transform(original, shape: shape, direction: .encode) as? [String: Any] else { return value }
@@ -69,10 +67,6 @@ enum PublicMCPIDs {
     }
 
     private static func convertCursor(_ value: String, tool: String, direction: PublicIDWire.Direction) throws -> String {
-        if tool == "get_live_transcript" {
-            guard let cursor = try PublicIDWire.cursor(value, kind: "live", direction: direction) as? String else { throw TypeID.Failure.invalidID }
-            return cursor
-        }
         guard let data = Data(base64Encoded: value), var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw TypeID.Failure.invalidID
         }

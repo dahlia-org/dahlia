@@ -116,6 +116,7 @@ public struct MeetingMetadata: Codable, Sendable, Equatable {
     public let recurrenceID: String?
     public let calendarTitle: String?
     public let status: String
+    public var isRecording = false
     public let durationSeconds: Double?
     public let createdAt: Date
     public let hasSummary: Bool
@@ -161,6 +162,7 @@ public struct TranscriptPage: Codable, Sendable, Equatable {
     public let meetingID: UUID
     public let segments: [TranscriptEntry]
     public let nextCursor: String?
+    public var nextAfter: String?
     public var textContent: TextContentAvailability?
 }
 

@@ -39,7 +39,6 @@ while argumentIndex < arguments.count {
     }
 }
 
-guard !allowsWrites || vaultID != nil else { fail("--write requires --vault") }
 let configuredVaultID = vaultID
 let configuredAllowsWrites = allowsWrites
 let configuredTelemetryOrigin = telemetryOrigin
@@ -60,7 +59,7 @@ runMCPStandardIOWorker {
                 usageTelemetryReporter: { event in usageTelemetryClient?.record(event) }
             )
         } else {
-            server = try DahliaMCPServer()
+            server = try DahliaMCPServer(allowsWrites: configuredAllowsWrites)
         }
         while let line = readLine() {
             if let response = server.handleLine(line) {

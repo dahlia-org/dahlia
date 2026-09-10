@@ -1,4 +1,3 @@
-import type { LiveState } from "../live/model";
 import { EXTERNAL_ORGANIZATION_ID } from "../auth/ids";
 import { sha256 } from "../storage/sha256";
 import { storedTranscriptSettingsSchema } from "../summary/model";
@@ -2128,47 +2127,7 @@ function createIdentityStore(
     return { items: records, hasMore: false };
   }
 
-  async function liveStates(vaultId: string, meetingId?: string): Promise<LiveState[]> {
-    const sessions = schema.recordingSession;
-    const meetings = schema.syncedMeeting;
-    const query = db.select({ vaultId: sessions.vaultId, meetingId: sessions.meetingId, sessionId: sessions.sessionId,
-      startedAt: sessions.startedAt, endedAt: sessions.endedAt,
-    }).from(sessions).innerJoin(meetings, and(eq(meetings.meetingId, sessions.meetingId), eq(meetings.vaultId, sessions.vaultId)))
-      .where(and(eq(sessions.vaultId, vaultId), readable(sessions.vaultId), eq(meetings.active, true), isNull(meetings.deletingAt),
-        isNotNull(sessions.startedAt), meetingId ? eq(sessions.meetingId, meetingId) : and(isNull(sessions.endedAt), sql`NOT EXISTS (
-          SELECT 1 FROM ${sessions} newer WHERE newer.vault_id = ${sessions.vaultId} AND newer.meeting_id = ${sessions.meetingId}
-          AND (newer.started_at > ${sessions.startedAt} OR (newer.started_at = ${sessions.startedAt} AND newer.session_id > ${sessions.sessionId}))
-        )`)))
-      .orderBy(desc(sessions.startedAt), desc(sessions.sessionId));
-    const rows = await (meetingId ? query.limit(1) : query);
-    return rows.flatMap((row) => row.startedAt ? [{ ...row, startedAt: row.startedAt, status: row.endedAt ? "stopped" as const : "recording" as const }] : []);
-  }
-
   return {
-    async getLiveState(vaultId, meetingId) {
-      return (await liveStates(vaultId, meetingId))[0] ?? null;
-    },
-    listLiveStates: liveStates,
-    async liveSegments({ vaultId, meetingId, sessionId, startedAt, endedAt }) {
-      const transcript = await getTranscript(vaultId, meetingId);
-      if (!transcript) return { generation: "none", segments: [] };
-      const runs = transcript.metadata?.runs ?? [];
-      if (!runs.some((item) => item.recordingSessionId?.toLowerCase() === sessionId)) {
-        // Cloud generation identifies its inputs by the meeting's recording number.
-        const [recording] = await selectRecordings().where(and(eq(schema.syncedMeeting.vaultId, vaultId),
-          eq(schema.syncedRecording.meetingId, meetingId), eq(schema.syncedRecording.sessionId, sessionId))).limit(1);
-        if (!recording || !runs.some((run) => run.audioInputs?.some((input) => input.recordingNumber === recording.number))) {
-          return { generation: "none", segments: [] };
-        }
-      }
-      // Generation timestamps describe processing; filter by the synced recording timeline.
-      const table = schema.syncedTranscriptSegment;
-      const rows = await db.select().from(table).where(and(eq(table.transcriptId, transcript.id),
-        gte(table.startedAt, startedAt), endedAt ? lte(table.startedAt, endedAt) : undefined))
-        .orderBy(asc(table.createdAt), asc(table.segmentId));
-      return { generation: transcript.id, segments: rows.map((row) => ({ id: row.segmentId, startedAt: row.startedAt.toISOString(),
-        endedAt: row.endedAt?.toISOString() ?? null, text: row.text, audioSource: row.audioSource, speakerLabel: row.speakerLabel })) };
-    },
     vaultTransferAudience,
     transferVault,
     getVaultRelocations,
@@ -2606,7 +2565,7 @@ function createIdentityStore(
       if (!meeting) return [];
       const transcript = await getTranscript(vaultId, meetingId, version);
       if (!transcript) return [];
-      return db.select({
+      const query = db.select({
         segmentId: schema.syncedTranscriptSegment.segmentId,
         startedAt: schema.syncedTranscriptSegment.startedAt,
         endedAt: schema.syncedTranscriptSegment.endedAt,
@@ -2623,8 +2582,8 @@ function createIdentityStore(
             gt(schema.syncedTranscriptSegment.segmentId, cursor.segmentId),
           ),
         )] : []),
-      )).orderBy(asc(schema.syncedTranscriptSegment.startedAt), asc(schema.syncedTranscriptSegment.segmentId))
-        .limit(limit);
+      )).orderBy(asc(schema.syncedTranscriptSegment.startedAt), asc(schema.syncedTranscriptSegment.segmentId));
+      return limit === undefined ? query : query.limit(limit);
     },
     async listScreenshots(vaultId, meetingId, query, limit, cursor, filters) {
       if (query && query.tokens.length === 0) return [];

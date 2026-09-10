@@ -55,7 +55,7 @@ public enum DahliaImageBrokerProtocol {
             }
         }
         guard connected == 0 else {
-            if request.text != nil { throw LiveTranscriptError.appUnavailable }
+            if request.text != nil { throw TextContentError.unavailable }
             throw ScreenshotContentError.unavailable
         }
         var data = try JSONEncoder().encode(request)
@@ -63,7 +63,6 @@ public enum DahliaImageBrokerProtocol {
         try DahliaTokenBrokerProtocol.writeAll(data, to: descriptor)
         let response = try JSONDecoder().decode(Response.self, from: DahliaTokenBrokerProtocol.readLine(from: descriptor))
         if let error = response.error {
-            if let liveError = LiveTranscriptError(rawValue: error) { throw liveError }
             if let textError = TextContentError(rawValue: error) { throw textError }
             throw ScreenshotContentError.unavailable
         }

@@ -118,7 +118,7 @@ public final class MeetingAccessStore: Sendable {
                 items: [],
                 nextCursor: cursor,
                 complete: false,
-                error: (error as? LiveTranscriptError)?.rawValue ?? (error as? TextContentError)?.rawValue ?? "server_search_incomplete"
+                error: (error as? TextContentError)?.rawValue ?? "server_search_incomplete"
             )
         }
     }
@@ -501,6 +501,7 @@ public final class MeetingAccessStore: Sendable {
                 meetings.calendar_event_recurrence_id AS recurrenceId,
                 calendar_events.title AS calendarTitle,
                 meetings.status,
+                EXISTS(SELECT 1 FROM recording_sessions rs WHERE rs.meetingId = meetings.id AND rs.endedAt IS NULL) AS isRecording,
                 meetings.duration,
                 meetings.createdAt,
                 summaries.meetingId IS NOT NULL AS hasSummary,
@@ -581,7 +582,8 @@ public final class MeetingAccessStore: Sendable {
         fromElapsedSeconds: Double? = nil,
         toElapsedSeconds: Double? = nil,
         limit: Int = 200,
-        cursor: String? = nil
+        cursor: String? = nil,
+        after: String? = nil
     ) throws -> TranscriptPage {
         do {
             let result = try cachedTranscript(
@@ -589,13 +591,13 @@ public final class MeetingAccessStore: Sendable {
                 fromElapsedSeconds: fromElapsedSeconds,
                 toElapsedSeconds: toElapsedSeconds,
                 limit: limit,
-                cursor: cursor
+                cursor: cursor, after: after
             )
             touchText(entity: .transcript, meetingId: meetingID)
             return result
         } catch TextContentError.incomplete {
             guard let textResolver else { throw TextContentError.incomplete }
-            return try JSONDecoder().decode(
+            _ = try JSONDecoder().decode(
                 TranscriptPage.self,
                 from: textResolver(
                     vaultID,
@@ -609,6 +611,14 @@ public final class MeetingAccessStore: Sendable {
                     )
                 )
             )
+            return try cachedTranscript(
+                meetingID: meetingID,
+                fromElapsedSeconds: fromElapsedSeconds,
+                toElapsedSeconds: toElapsedSeconds,
+                limit: limit,
+                cursor: cursor,
+                after: after
+            )
         }
     }
 
@@ -617,8 +627,9 @@ public final class MeetingAccessStore: Sendable {
     }
 
     private func cachedTranscript(
-        meetingID: UUID, fromElapsedSeconds: Double?, toElapsedSeconds: Double?, limit: Int, cursor: String?
+        meetingID: UUID, fromElapsedSeconds: Double?, toElapsedSeconds: Double?, limit: Int, cursor: String?, after: String?
     ) throws -> TranscriptPage {
+        guard after == nil || cursor == nil else { throw TranscriptAfterError.invalid }
         guard (1 ... 500).contains(limit) else {
             throw MeetingAccessError.invalidLimit(maximum: 500)
         }
@@ -644,17 +655,35 @@ public final class MeetingAccessStore: Sendable {
             }
             let resident = try TextContentAccess.availability(entity: .transcript, id: meetingID, in: db).revision
             if let expected = decodedCursor?.contentRevision, expected != resident { throw TextContentError.changed }
-            let rows = try transcriptRows(
-                in: db,
-                meetingID: meetingID,
-                fromElapsedSeconds: fromElapsedSeconds,
-                toElapsedSeconds: toElapsedSeconds,
-                cursor: decodedCursor,
-                limit: limit
+            let rows = try TextContentAccess.transcriptRows(
+                meetingId: meetingID, order: fromElapsedSeconds == nil && toElapsedSeconds == nil ? .chronological : .elapsed,
+                fromElapsedSeconds: fromElapsedSeconds, toElapsedSeconds: toElapsedSeconds,
+                confirmedOnly: true, limit: nil, in: db
             )
             let entries = rows.map(Self.transcriptEntry(from:))
-            let hasMore = entries.count > limit
-            let segments = hasMore ? Array(entries.prefix(limit)) : entries
+            let transcriptJSON = try String.fetchOne(db, sql: "SELECT infoJSON FROM transcripts WHERE meetingId = ?", arguments: [meetingID])
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            var transcript = try transcriptJSON.map { try decoder.decode(TranscriptInfo.self, from: Data($0.utf8)) }
+            let generation = transcript?.id.uuidString ?? "none"
+            let start: Int
+            if let decodedCursor {
+                guard let index = entries.firstIndex(where: { $0.id == decodedCursor.segmentID }) else { throw TextContentError.changed }
+                start = index + 1
+            } else { start = 0 }
+            let page = try TranscriptAfter.page(
+                vaultID: vaultID,
+                meetingID: meetingID,
+                from: fromElapsedSeconds,
+                to: toElapsedSeconds,
+                generation: generation,
+                segments: entries,
+                after: after,
+                start: start,
+                limit: limit
+            )
+            let segments = page.segments
+            let hasMore = segments.last.map { $0.id != entries.last?.id } ?? false
             let nextCursor = hasMore ? segments.last.map {
                 TranscriptCursor(
                     vaultID: vaultID,
@@ -667,10 +696,6 @@ public final class MeetingAccessStore: Sendable {
                     contentRevision: resident
                 ).encoded()
             } : nil
-            let transcriptJSON = try String.fetchOne(db, sql: "SELECT infoJSON FROM transcripts WHERE meetingId = ?", arguments: [meetingID])
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            var transcript = try transcriptJSON.map { try decoder.decode(TranscriptInfo.self, from: Data($0.utf8)) }
             transcript?.latestSegmentCreatedAt = try Date.fetchOne(
                 db,
                 sql: "SELECT MAX(createdAt) FROM transcript_segments WHERE meetingId = ?",
@@ -682,26 +707,10 @@ public final class MeetingAccessStore: Sendable {
                 meetingID: meetingID,
                 segments: segments,
                 nextCursor: nextCursor,
+                nextAfter: page.next,
                 textContent: TextContentAccess.availability(entity: .transcript, id: meetingID, in: db)
             )
         }
-    }
-
-    private func transcriptRows(
-        in db: Database,
-        meetingID: UUID,
-        fromElapsedSeconds: Double?,
-        toElapsedSeconds: Double?,
-        cursor: TranscriptCursor?,
-        limit: Int
-    ) throws -> [Row] {
-        try TextContentAccess.transcriptRows(
-            meetingId: meetingID,
-            order: fromElapsedSeconds == nil && toElapsedSeconds == nil ? .chronological : .elapsed,
-            position: cursor.map { .init(id: $0.segmentID, startTime: $0.startedAt, elapsedSeconds: $0.elapsedSeconds) },
-            fromElapsedSeconds: fromElapsedSeconds, toElapsedSeconds: toElapsedSeconds,
-            confirmedOnly: true, limit: limit + 1, in: db
-        )
     }
 
     private static func transcriptEntry(from row: Row) -> TranscriptEntry {
@@ -1158,6 +1167,7 @@ extension MeetingAccessStore {
                 meetings.calendar_event_recurrence_id AS recurrenceId,
                 calendar_events.title AS calendarTitle,
                 meetings.status,
+                EXISTS(SELECT 1 FROM recording_sessions rs WHERE rs.meetingId = meetings.id AND rs.endedAt IS NULL) AS isRecording,
                 meetings.duration,
                 meetings.createdAt,
                 summaries.meetingId IS NOT NULL AS hasSummary,
@@ -1191,6 +1201,7 @@ extension MeetingAccessStore {
             recurrenceID: row["recurrenceId"],
             calendarTitle: row["calendarTitle"],
             status: row["status"],
+            isRecording: row["isRecording"] ?? false,
             durationSeconds: row["duration"],
             createdAt: row["createdAt"],
             hasSummary: row["hasSummary"],

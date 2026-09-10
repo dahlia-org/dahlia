@@ -69,9 +69,6 @@ struct MCPSettingsView: View {
         .onChange(of: vaults) {
             reconcileSelectedVault()
         }
-        .onChange(of: selectedVaultID) {
-            if selectedVaultID == nil { isWriteEnabled = false }
-        }
         .onChange(of: currentVault?.id) {
             reconcileSelectedVault()
         }
@@ -102,7 +99,6 @@ struct MCPSettingsView: View {
 
     private func reconcileSelectedVault() {
         if selectedVaultID != nil, selectedVault == nil { selectedVaultID = nil }
-        if selectedVaultID == nil { isWriteEnabled = false }
     }
 
     private func copy(_ command: String) {

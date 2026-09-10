@@ -142,14 +142,14 @@
                 throw TextContentError.incomplete
             }
             try broker.start(socketURL: socket)
-            let request = DahliaImageBrokerProtocol.Request(vaultId: .v7(), text: .init(operation: .liveMeetings))
+            let request = DahliaImageBrokerProtocol.Request(vaultId: .v7(), text: .init(operation: .transcript, meetingId: .v7()))
             let expected =
                 try #require(TextContentError(rawValue: ["noCredential", "expiredRefresh"].contains(code) ? "authorizationRequired" : code))
             await #expect(throws: expected) {
                 try await withBrokerClientThread { try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket) }
             }
             broker.stop()
-            await #expect(throws: LiveTranscriptError.appUnavailable) {
+            await #expect(throws: TextContentError.unavailable) {
                 try await withBrokerClientThread { try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket) }
             }
         }

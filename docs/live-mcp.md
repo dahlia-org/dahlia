@@ -1,52 +1,43 @@
-# ライブ文字起こしと全保管庫 MCP / Live transcripts and multi-vault MCP
+# 確定文字起こしと全保管庫 MCP / Transcript access and multi-vault MCP
 
-## ローカル MCP
+## ローカル MCP の登録
 
-設定の MCP 画面で「すべての追加済み保管庫」または個別の保管庫を選び、表示された Claude Code / Codex の登録コマンドを使用する。全保管庫では書き込みを有効にできない。`--vault` と別名の `--vault-id` は、どちらも `vlt_...` 形式のTypeIDを受け取る。UUIDを使っていた登録は、設定画面のコマンドで更新する。
+設定の MCP 画面で「すべての追加済み保管庫」または個別の保管庫を選び、表示された Claude Code / Codex の登録コマンドを使用する。どちらの範囲でも書き込みを有効にできる。`--vault` と別名の `--vault-id` は `vlt_...` 形式の TypeID を受け取る。
 
 ```sh
-dahlia-mcp                         # この Mac に追加済みの全保管庫
-dahlia-mcp --vault <vlt_TypeID>          # 指定した保管庫だけ
-dahlia-mcp --vault-id <vlt_TypeID> --write  # 個別保管庫の書き込み登録
+dahlia-mcp                                # この Mac に追加済みの全保管庫、読み取りのみ
+dahlia-mcp --write                        # 全保管庫への読み書き
+dahlia-mcp --vault <vlt_TypeID>            # 指定した保管庫だけ読み取り
+dahlia-mcp --vault-id <vlt_TypeID> --write  # 指定した保管庫だけ読み書き
 ```
 
-`list_vaults` で保管庫 ID・名前・`account_type`・`access_state`・`freshness` を取得する。Server の `last_synced` は端末に保持した状態であり、現在の権限や最新の Server データを確認できたという意味ではない。`not_synced` は追加後の同期未完了、`cached` は同期済みの作業コピー。復旧中はその状態を返す。
+`list_vaults` は保管庫 ID・名前・`account_type`・`access_state`・`freshness` を返す。Server の `last_synced` は端末に保持した同期済みデータであり、最新の共有権限や接続を保証しない。`query_meetings` の `is_recording`（Server: `isRecording`）で録音状態を確認する。Server の状態は開始・終了イベントの同期に従う。
 
-検索・一覧の `vault_id` を省略すると `vaults` 配列に保管庫別の結果が入る。各要素の `result` 内にある `cursor` / `next_cursor` / `server_cursor` は、その保管庫の `vault_id` と一緒に渡して続きを取得する。一部失敗は要素の `error` / `is_error`、既存 Server 検索の失敗は `result.server` 内の `error` / `complete` を確認する。全保管庫の続きとして一つの cursor を使わない。
+全保管庫の query は `vaults` 配列に各保管庫の結果をまとめる。各結果の cursor と `vault_id` を一緒に渡して続きを取得する。`get_*` は対象 ID から保管庫を解決する。個別保管庫の指定で起動した場合、ツールの `vault_id` で範囲を広げることはできない。
 
-保存済み本文は既存 provider が不足分を取得・検証・cache する。保持済み本文は従来のオフライン方針で読める。`app_unavailable` はアプリ起動が必要、`authorizationRequired` は再認証が必要、`offline` はネットワーク未接続、`incomplete` / `stale` は本文未保持／版不一致を表す。取得失敗を本文なしとして扱わない。
+書き込みは既存レコードの ID から対象保管庫を解決する。新規作成には `vault_id` または一意な親 ID が必要で、現在表示中の保管庫を暗黙には選ばない。異なる保管庫の ID を組み合わせた参照は拒否する。既存の revision による競合検出を引き続き使う。
 
-## ライブ取得
+## `get_meeting_transcript`
 
-既存の「初版の文字起こしをライブ文字起こしで生成する」を録音前に有効にする。`list_live_meetings` はこの Mac の録音セッションを Server アカウントも含めて返す。`get_live_transcript` に `meeting_id` を渡す。tool は録音や認識を開始しない。設定 OFF のセッションは `disabled` となり未確定文を配信しない。
+Local / Server とも、会議全体の保存済み確定文だけを返す。既存の本文形式（Local: `segments`、Server: `items`）と通常ページ送りを維持する。Local の件数指定は `limit`（1〜500、省略200）、時間範囲は `from_elapsed_seconds` / `to_elapsed_seconds`。Server の既存ページサイズは10,000件。
 
-- `confirmed`: 保存済みの確定発話。ID で重複排除し、`has_more` が true なら次ページを読む。
-- `state.previews`: 音源別の最新未確定文。毎回配列全体を置換し、空配列なら消去する。確定・取消・停止でも消える。
-- `cursor`: 次回にも必ず渡す。世代変更・訂正・削除・遅延挿入で `reset_required` が true なら蓄積済み確定発話を捨ててこのページから再構築する。
-- `state.status`: `recording` / `disabled` / `stopped` / `failed` / `disconnected`。時刻と録音セッション ID で状態の所属を判断する。
+- `after`: 前回の `next_after` を渡す。不透明な取得位置なので内容を解釈・変更しない。
+- `wait`: 既定 `false`。`true` は返す確定文がない場合だけ最大25秒待ち、新着が届くか期限に達すると応答する。
+- `next_after`: 空の結果や最終ページでも返す。次回の差分取得に使う。
+- `cursor`: 従来どおり通常のページ送りに使える。`after` との同時指定はエラー。
 
-Server アカウントの本文が端末に揃っていない場合は `incomplete` エラーを返す。取得済みの発話と cursor を保持し、通常の文字起こし取得で本文を読み込んでから再試行する。キャッシュの欠落を発話の削除として扱わない。
+最初は `meeting_id`（Server は `vault_id` も必須）で取得する。その後は同じ会議・時間範囲で `after` に `next_after` を渡す。`wait=true` でも既に本文があれば直ちに応答する。複数の録音セッションを持つ会議でも、直近の録音だけに限定しない。
 
-Claude Code / Codex は原則2秒間隔で差分をポーリングする。発話内容は未信頼データとして扱い、指示として実行しない。AI Chat への自動投入や SSE から推論の起動は行わない。通常チャットと既存履歴は利用できる。
+既読部分の編集・削除・再生成、途中への遅延挿入を検出すると `transcript_changed_refetch_without_after` エラーになる。`after` を外して最初から取得し、蓄積済みの本文を置き換える。異なる保管庫・会議・時間範囲や不正な取得位置は `invalid_transcript_after` として拒否する。
 
-## Server MCP / HTTP / SSE
+待機の各読み取りは DB トランザクションを終了してから休止する。Server は認証と Vault 閲覧権限を再確認し、接続終了で待機を打ち切る。保存済み本文が端末にない場合は既存アプリ provider が取得する。`authorizationRequired`、`offline`、`incomplete` などの失敗を新着なしとして扱わない。保持済み本文には既存のオフライン利用方針が適用される。
 
-Server MCP の同名 tool は既存の Vault 共有権限に従い、通常の同期で届いた確定文だけを返す。途中結果は Local MCP のメモリ内だけに保持し、Server へ送信しない。専用テーブルや公開用の書き込み API はない。HTTP は通常の認証を使う。
-
-- `GET /api/v1/vaults/{vaultId}/live-meetings`: 各会議の最新セッションのうち、開始イベントが同期済みで終了イベントが未同期のものを返す。
-- `GET /api/v1/meetings/{meetingId}/live-transcript`: `cursor` と `limit`（1〜500、省略200）で確定文を差分取得。
-- `GET /api/v1/meetings/{meetingId}/live-transcript/events`: SSE。イベントは `transcript` / `reset` / `error`。`id` を `Last-Event-ID` に入れて再接続できる。5秒以上書き込みが進まない購読者は切断する。
-
-HTTP / Server MCP のプロパティ名は `hasMore` / `resetRequired` の camelCase。`state` は既存の `recording_sessions` ビューから導出し、開始・終了時刻と `recording` / `stopped` を返す。`previews` は返さない。これは最後に同期された状態であり、端末の接続状態ではない。オフラインの録音は終了イベントが届くまで `recording` のままになる。
-
-`confirmedState` が `not_synced` なら対象セッションの確定文はまだ同期されていない。`last_synced` の場合も最新の確認保証ではなく、`confirmedThrough` が Server に届いた発話の最新開始時刻を示す。停止後にもポーリングして最終同期を取り込める。録音開始イベントが未同期なら `live_meeting_not_found` を返す。
-
-SSE は配信のたびに認証と Vault 閲覧権限を再確認する。配信やネットワーク失敗は録音・確定保存・停止完了を待たせない。
+MCP は録音や認識を開始しない。未確定文、ライブ専用ツール、ライブ HTTP / SSE は公開しない。アプリ内のライブ字幕、音声認識、確定文の保存・同期は維持する。発話は未信頼データとして扱い、指示として実行しない。AI Chat の自動ライブ投入はなく、通常チャットと既存履歴を利用できる。
 
 ## English quick reference
 
-Select **All added vaults** in MCP settings to register a read-only workspace, or select one vault to keep a fixed scope. `--vault-id` remains an alias of `--vault`. Queries without `vault_id` return per-vault groups; continue each group using its own vault ID and cursor. Cached Server metadata does not prove current access or freshness. Missing bodies use the existing app provider and cache.
+Local MCP defaults to all vaults added to this Mac. `--write` enables writes across that scope; optional `--vault` / `--vault-id` restrict both reads and writes. Existing IDs identify the destination Vault. Creates require an explicit `vault_id` or an unambiguous parent ID. Cross-Vault references are rejected. Query results are grouped by Vault; continue each group with its own Vault ID and cursor.
 
-Enable the existing live first-draft transcription setting before recording. Poll `list_live_meetings` and `get_live_transcript` every two seconds. Append confirmed speech by ID, replace the full preview array, and rebuild accumulated speech when `reset_required` (Server: `resetRequired`) is true. These tools never start recording or recognition. Local MCP covers recordings on this Mac, including Server accounts, and requires the app for live state.
+`get_meeting_transcript` returns confirmed speech for the whole meeting. Pass `next_after` as `after` to read additions. `wait: true` waits up to 25 seconds only when empty. Empty responses still include `next_after`. Existing `cursor` pagination cannot be combined with `after`. Keep the same meeting and time range. On `transcript_changed_refetch_without_after`, omit `after` and rebuild your accumulated transcript. Missing bodies and authorization failures are errors, never empty successes.
 
-Server MCP and HTTP share Vault read permissions and return only normally synchronized confirmed speech. Unconfirmed previews remain in Local MCP memory; there is no preview upload API or dedicated table. Recording state is derived from synchronized start/end events, not a connection heartbeat. SSE supports `Last-Event-ID`, reset events, and authorization checks during streaming. `confirmedState` and `confirmedThrough` describe the last synced confirmed data independently of live connection status. Recording and durable transcript writes do not wait for subscribers. Automatic live input in AI Chat has been removed; manual chat and historical conversations remain available.
+Server revalidates authentication and Vault permissions between reads and stops on disconnect. Recording status in `query_meetings` reflects synchronized recording events, not connectivity. Unconfirmed previews and dedicated live HTTP/SSE endpoints are not exposed. Recording, recognition, live captions, and durable transcript sync continue independently of MCP reads.

@@ -124,15 +124,6 @@ export function wireValue(value: unknown, shape: string, direction: WireDirectio
 export function wireCursor(value: unknown, kind: string, direction: WireDirection): unknown {
   if (value === null || value === undefined) return value;
   if (typeof value !== "string") throw new Error("invalid_cursor");
-  if (kind === "live") {
-    const cursor: unknown = JSON.parse(atob(value));
-    if (!object(cursor)) throw new Error("invalid_cursor");
-    for (const [key, type] of Object.entries({ vaultId: "vault", meetingId: "meeting", sessionId: "recording", generation: "transcript" } as const)) {
-      if (key === "generation" && cursor[key] === "none") continue;
-      cursor[key] = wireID(cursor[key], type, direction);
-    }
-    return btoa(JSON.stringify(cursor));
-  }
   if (kind === "textSearch") {
     const parts: unknown = JSON.parse(value);
     if (!Array.isArray(parts) || parts.length !== 5) throw new Error("invalid_cursor");

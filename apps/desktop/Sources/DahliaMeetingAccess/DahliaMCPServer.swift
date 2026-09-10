@@ -41,7 +41,6 @@ public final class DahliaMCPServer {
         allowsWrites: Bool = false,
         textResolver: (@Sendable (UUID, TextBrokerRequest) throws -> Data)? = nil
     ) throws {
-        guard !allowsWrites || vaultID != nil else { throw MeetingAccessError.vaultNotFound }
         store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vaultID ?? UUID(), allowsWrites: allowsWrites, textResolver: textResolver)
         vaultScope = vaultID
         telemetryOrigin = nil
@@ -94,7 +93,9 @@ public final class DahliaMCPServer {
 
     private var initializationResult: [String: Any] {
         let accessInstructions = store.allowsWrites
-            ? "Read and write access to one configured Dahlia vault. "
+            ?
+            (vaultScope == nil ? "Read and write access to all vaults added to this Mac. For new records specify vault_id or a parent ID. " :
+                "Read and write access to one configured Dahlia vault. ")
             :
             (vaultScope == nil ?
                 "Read-only access to all vaults added to this Mac. Use list_vaults to discover them. Query tools group results by vault; continue pages with vault_id and that vault’s cursor. " :
@@ -209,7 +210,7 @@ public final class DahliaMCPServer {
                 id: id,
                 result: toolError(code: error.reasonCode, message: error.localizedDescription)
             )
-        } catch let error as LiveTranscriptError {
+        } catch let error as TranscriptAfterError {
             return response(id: id, result: toolError(code: error.rawValue, message: error.rawValue))
         } catch let error as TextContentError {
             return response(id: id, result: toolError(code: error.rawValue, message: error.localizedDescription))
@@ -290,7 +291,7 @@ public final class DahliaMCPServer {
             return try toolResult(getMeeting(arguments))
         case "get_meeting_transcript":
             try validate(arguments, allowedKeys: [
-                "meeting_id", "from_elapsed_seconds", "to_elapsed_seconds", "limit", "cursor",
+                "meeting_id", "from_elapsed_seconds", "to_elapsed_seconds", "limit", "cursor", "after", "wait",
             ])
             return try toolResult(getMeetingTranscript(arguments))
         case "get_meeting_screenshots":
@@ -733,13 +734,25 @@ public final class DahliaMCPServer {
         let from = try nonnegativeDouble(arguments, key: "from_elapsed_seconds")
         let to = try nonnegativeDouble(arguments, key: "to_elapsed_seconds")
         try validateTimeRange(from: from, to: to)
-        return try store.transcript(
-            meetingID: meetingID,
-            fromElapsedSeconds: from,
-            toElapsedSeconds: to,
-            limit: integer(arguments, key: "limit") ?? 200,
-            cursor: string(arguments, key: "cursor")
-        )
+        let after = try string(arguments, key: "after")
+        let cursor = try string(arguments, key: "cursor")
+        guard after == nil || cursor == nil else { throw ParameterError("after and cursor cannot be combined") }
+        let limit = try integer(arguments, key: "limit") ?? 200
+        let wait = try boolean(arguments, key: "wait") ?? false
+        let deadline = ContinuousClock.now.advanced(by: .seconds(wait ? 25 : 0))
+        while true {
+            let page = try store.transcript(
+                meetingID: meetingID,
+                fromElapsedSeconds: from,
+                toElapsedSeconds: to,
+                limit: limit,
+                cursor: cursor,
+                after: after
+            )
+            if !page.segments.isEmpty || ContinuousClock.now >= deadline { return page }
+            // The stdio worker owns this bounded wait; no database transaction or UI executor is held.
+            Thread.sleep(forTimeInterval: 0.25)
+        }
     }
 
     private func getMeetingScreenshots(
@@ -1141,6 +1154,7 @@ extension DahliaMCPServer {
                 "recurrence_id": ["type": "string"],
                 "calendar_title": ["type": "string"],
                 "status": ["type": "string"],
+                "is_recording": ["type": "boolean"],
                 "duration_seconds": ["type": "number"],
                 "created_at": ["type": "string", "format": "date-time"],
                 "has_summary": ["type": "boolean"],
@@ -1414,6 +1428,7 @@ extension DahliaMCPServer {
                 "meeting_id": idSchema(.meeting),
                 "segments": ["type": "array", "items": transcriptEntrySchema],
                 "next_cursor": ["type": "string"],
+                "next_after": ["type": "string"],
             ],
             required: ["vault", "meeting_id", "segments"]
         )
@@ -1432,7 +1447,7 @@ extension DahliaMCPServer {
     }
 
     private var toolDefinitions: [[String: Any]] {
-        workspaceToolDefinitions + (store.allowsWrites ? Self.writeToolDefinitions : [])
+        workspaceToolDefinitions
     }
 
     private static var projectTypeSchema: [String: Any] {
@@ -2099,7 +2114,7 @@ extension DahliaMCPServer {
         ]
     }
 
-    private static var writeToolDefinitions: [[String: Any]] {
+    static var writeToolDefinitions: [[String: Any]] {
         meetingWriteToolDefinitions + projectWriteToolDefinitions + customerIntelligenceWriteToolDefinitions
     }
 
@@ -2746,6 +2761,11 @@ extension DahliaMCPServer {
                     "to_elapsed_seconds": ["type": "number", "minimum": 0],
                     "limit": ["type": "integer", "minimum": 1, "maximum": 500, "default": 200],
                     "cursor": ["type": "string"],
+                    "after": [
+                        "type": "string",
+                        "description": "Previous next_after. On transcript_changed_refetch_without_after omit after and refetch.",
+                    ],
+                    "wait": ["type": "boolean", "default": false, "description": "Wait up to 25 seconds when no confirmed speech is available."],
                 ],
                 "required": ["meeting_id"],
                 "additionalProperties": false,

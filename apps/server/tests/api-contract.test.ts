@@ -96,7 +96,7 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     expect(listed.status).toBe(200);
     const { result }: { result: { tools: Array<{ name: string; annotations: { readOnlyHint: boolean } }> } } = await listed.json();
     expect(result.tools.map((tool) => tool.name).sort()).toEqual([
-      "get_live_transcript", "get_meeting", "get_meeting_screenshots", "get_meeting_transcript", "get_project", "list_live_meetings",
+      "get_meeting", "get_meeting_screenshots", "get_meeting_transcript", "get_project",
       "query_meetings", "query_projects", "query_screenshots", "search",
     ]);
     expect(result.tools.every((tool) => tool.annotations.readOnlyHint)).toBe(true);

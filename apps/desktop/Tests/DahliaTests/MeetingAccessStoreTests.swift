@@ -13,60 +13,6 @@ import ImageIO
     // swiftlint:disable:next type_body_length
     struct MeetingAccessStoreTests {
         @Test
-        func publicLiveAndGroupedResultsRoundTrip() throws {
-            let vault = UUID(), meeting = UUID(), session = UUID(), transcript = UUID(), segment = UUID()
-            let state = LiveTranscriptState(vaultId: vault, meetingId: meeting, sessionId: session, startedAt: .now, enabled: true)
-            let speech = LiveSpeech(id: segment, startedAt: .now, endedAt: nil, text: "unchanged", audioSource: "mic", speakerLabel: nil)
-            let page = try LiveTranscriptPage.read(
-                state: state,
-                generation: transcript.uuidString.lowercased(),
-                segments: [speech],
-                cursor: nil,
-                limit: 200
-            )
-            let encoder = JSONEncoder()
-            encoder.keyEncodingStrategy = .convertToSnakeCase
-            let original = try #require(JSONSerialization.jsonObject(with: encoder.encode(page)) as? [String: Any])
-            let result = try PublicMCPIDs.result(["structuredContent": original], tool: "get_live_transcript", arguments: [:])
-            let body = try #require(result["structuredContent"] as? [String: Any])
-            let publicState = try #require(body["state"] as? [String: Any])
-            #expect(publicState["meeting_id"] as? String == TypeID.encode(meeting, as: .meeting))
-            #expect(publicState["session_id"] as? String == TypeID.encode(session, as: .recording))
-            let cursor = try #require(body["cursor"] as? String)
-            let decoded = try PublicMCPIDs.arguments(
-                ["meeting_id": TypeID.encode(meeting, as: .meeting), "cursor": cursor],
-                tool: "get_live_transcript"
-            )
-            let resumed = try LiveTranscriptPage.read(
-                state: state,
-                generation: transcript.uuidString.lowercased(),
-                segments: [speech],
-                cursor: decoded["cursor"] as? String,
-                limit: 200
-            )
-            #expect(resumed.confirmed.isEmpty)
-            #expect(!resumed.resetRequired)
-            let groups = try PublicMCPIDs.result(
-                ["structuredContent": ["vaults": [["vault_id": vault.uuidString, "result": ["meetings": [#require(original["state"])]]]]]],
-                tool: "list_live_meetings",
-                arguments: [:]
-            )
-            let groupBody = try #require(groups["structuredContent"] as? [String: Any])
-            let group = try #require((groupBody["vaults"] as? [[String: Any]])?.first)
-            #expect(group["vault_id"] as? String == TypeID.encode(vault, as: .vault))
-            let nested = try #require(group["result"] as? [String: Any])
-            let live = try #require((nested["meetings"] as? [[String: Any]])?.first)
-            #expect(live["meeting_id"] as? String == TypeID.encode(meeting, as: .meeting))
-            let vaults = try PublicMCPIDs.result(
-                ["structuredContent": ["vaults": [["id": vault.uuidString, "name": "Local"]]]],
-                tool: "list_vaults",
-                arguments: [:]
-            )
-            let vaultBody = try #require(vaults["structuredContent"] as? [String: Any])
-            #expect((vaultBody["vaults"] as? [[String: Any]])?.first?["id"] as? String == TypeID.encode(vault, as: .vault))
-        }
-
-        @Test
         func publicMCPUsesTypedIDsAndPreservesDatabaseUUIDs() throws {
             let fixture = try Fixture()
             let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true))
@@ -1429,10 +1375,10 @@ import ImageIO
                 "query_organizations", "get_organization", "query_organization_chart",
                 "query_contacts", "get_contact",
                 "query_conversation_topics", "get_conversation_topic",
-                "query_project_resources", "query_insights", "get_insight", "list_live_meetings", "get_live_transcript",
+                "query_project_resources", "query_insights", "get_insight",
             ])
             #expect((definitions.first?["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == true)
-            #expect(definitions.filter { !["list_vaults", "list_live_meetings", "get_live_transcript"].contains($0["name"] as? String ?? "") }
+            #expect(definitions.filter { !["list_vaults"].contains($0["name"] as? String ?? "") }
                 .allSatisfy { $0["outputSchema"] != nil })
             #expect(definitions.filter { $0["outputSchema"] != nil }.allSatisfy {
                 ($0["outputSchema"] as? [String: Any])?["additionalProperties"] as? Bool == false

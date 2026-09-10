@@ -78,9 +78,6 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | listTeamMembers | modified | GET `/api/v1/organizations/{organizationId}/teams/{teamId}/members` | `/api/v1/organizations/{organizationId}/teams/{teamId}/members` | External team members (header mode only) | apps/server/src/client/App.tsx |
 | putTeamMember | maintained | PUT `/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}` | `/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}` | Add an organization member to an external team | apps/server/src/client/App.tsx |
 | deleteTeamMember | maintained | DELETE `/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}` | `/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}` | Remove an external team member | apps/server/src/client/App.tsx |
-| getLiveTranscript | modified | GET `/api/v1/meetings/{meetingId}/live-transcript` | `none` | Add read-only access to synchronized confirmed transcripts. | Desktop<br>MCP<br>SSE clients |
-| getLiveTranscriptEvents | modified | GET `/api/v1/meetings/{meetingId}/live-transcript/events` | `none` | Add read-only access to synchronized confirmed transcripts. | Desktop<br>MCP<br>SSE clients |
-| listLiveMeetings | modified | GET `/api/v1/vaults/{vaultId}/live-meetings` | `none` | Add read-only access to synchronized confirmed transcripts. | Desktop<br>MCP<br>SSE clients |
 
 ## Delegated protocols
 
@@ -214,7 +211,7 @@ These concrete endpoints preserve Better Auth/OAuth/OIDC, OpenAI and MCP formats
 | mcpScreenshot | GET `/mcp/resources/vaults/{vaultId}/meetings/{meetingId}/screenshots/{screenshotId}/content` | MCP resource HTTP bytes | current Vault read permission and MCP read scope |
 | headMcpScreenshot | HEAD `/mcp/resources/vaults/{vaultId}/meetings/{meetingId}/screenshots/{screenshotId}/content` | MCP resource HTTP bytes | current Vault read permission and MCP read scope |
 
-MCP methods: tools/list, tools/call. Tools: search, query_meetings, query_projects, get_project, get_meeting, get_meeting_transcript, query_screenshots, get_meeting_screenshots, list_live_meetings, get_live_transcript. Read-only. Each call checks its capability scope and current Vault access.
+MCP methods: tools/list, tools/call. Tools: search, query_meetings, query_projects, get_project, get_meeting, get_meeting_transcript, query_screenshots, get_meeting_screenshots. Read-only. Each call checks its capability scope and current Vault access.
 
 ## Dispatch and fallbacks
 

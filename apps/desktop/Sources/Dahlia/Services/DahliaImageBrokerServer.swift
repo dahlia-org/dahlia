@@ -159,7 +159,6 @@ final class DahliaImageBrokerServer: Sendable {
             try DahliaTokenBrokerProtocol.writeAll(data, to: descriptor)
         } catch {
             let code: String = switch error {
-            case let error as LiveTranscriptError: error.rawValue
             case let error as TextContentError: error.rawValue
             case DahliaCloudError.noCredential, DahliaCloudError.authorizationDenied:
                 TextContentError.authorizationRequired.rawValue

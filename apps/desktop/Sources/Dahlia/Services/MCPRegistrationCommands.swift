@@ -18,7 +18,7 @@ struct MCPRegistrationCommands: Equatable {
     }
 
     func registrationCommand(for client: MCPClient, writeEnabled: Bool) -> String? {
-        guard let prefix = client.registrationCommandPrefix, !writeEnabled || vault != nil else { return nil }
+        guard let prefix = client.registrationCommandPrefix else { return nil }
         let writeArgument = writeEnabled ? " --write" : ""
         return "\(prefix) \(helper)\(vault.map { " --vault-id \($0)" } ?? "")\(writeArgument)"
     }
@@ -28,7 +28,6 @@ struct MCPRegistrationCommands: Equatable {
     }
 
     func mcpJSONSample(writeEnabled: Bool) -> String? {
-        guard !writeEnabled || vaultID != nil else { return nil }
         var args = vaultID.map { ["--vault-id", $0] } ?? []
         if writeEnabled {
             args.append("--write")

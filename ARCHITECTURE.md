@@ -544,4 +544,4 @@ New batch sessions enqueue a durable `recording_archives` job at session creatio
 
 ### ライブ MCP 配信
 
-ローカル stdio MCP は追加済み全 Vault または起動時指定の Vault を参照する。ライブ取得はこの Mac の録音状態と音源別の有界な未確定文を既存 broker で読み、確定発話は SQLite から読む。Server への状態送信は録音処理から独立した最新値の毎秒集約で、確定文の同期は既存経路を維持する。Server MCP と専用 HTTP SSE は同じ読取・Vault 共有認可を使う。AI Chat のライブ自動投入は廃止し、通常チャットと履歴は維持する。契約は [ライブ MCP](docs/live-mcp.md) にまとめる。
+ローカル stdio MCP は追加済み全 Vault を既定とし、任意の起動引数で読み書きの範囲を制限する。Local / Server の `get_meeting_transcript` は保存済みの確定文だけを読み、`after` で差分取得、`wait` で最大25秒の待機を行う。待機中に DB ロックを保持せず、Server は認証と Vault 共有権限を各読取で再確認する。未確定文の MCP 公開や専用ライブ HTTP / SSE は持たない。AI Chat のライブ自動投入は廃止し、通常チャットと履歴は維持する。契約は [MCP の差分取得と保管庫](docs/live-mcp.md) にまとめる。

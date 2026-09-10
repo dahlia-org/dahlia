@@ -1235,7 +1235,7 @@
 "A Project cannot be moved inside itself or one of its descendants." = "A Project cannot be moved inside itself or one of its descendants.";
 "Projects support one level of subprojects. Choose a root Project as the parent." = "Projects support one level of subprojects. Choose a root Project as the parent.";
 "Another Project operation is already running for this Vault." = "Another Project operation is already running for this Vault.";
-"mcp.scopeFooter" = "Agents can read meeting content, live transcripts, and customer intelligence, including names and email addresses, from the chosen vault scope. All added vaults includes local and Server vaults on this Mac. Write access requires one selected vault and allows edits to customer intelligence, Projects, meeting assignments, and stored summaries.";
+"mcp.scopeFooter" = "Agents can read meeting content, confirmed transcripts, and customer intelligence, including names and email addresses, from the chosen vault scope. All added vaults includes local and Server vaults on this Mac. Write access allows edits to customer intelligence, Projects, meeting assignments, and stored summaries.";
 "Copy Command" = "Copy Command";
 "Copy meeting_id" = "Copy meeting_id";
 "Copies meeting_id to the clipboard" = "Copies meeting_id to the clipboard";

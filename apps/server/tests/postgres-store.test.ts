@@ -294,8 +294,6 @@ integration("PostgreSQL application store", () => {
       await createVault(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: meetingData(null, now, "Meeting", "") }]);
       await commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting_event", action: "create", entityId: crypto.randomUUID(), baseRevision: null, data: { meetingId, kind: "recording_started", sessionId, occurredAt: now } }]);
       expect(await sync.getMeeting(vaultId, meetingId)).toMatchObject({ isRecording: true });
-      expect(await sync.listLiveStates(vaultId)).toMatchObject([{ meetingId, sessionId, status: "recording" }]);
-      expect(await sync.getLiveState(vaultId, meetingId)).toMatchObject({ sessionId, status: "recording", endedAt: null });
     });
     // Even the table owner sees no history without a transaction-local identity.
     expect((await connection!.db.select().from(schema.meetingEvent).where(eq(schema.meetingEvent.vaultId, vaultId)))).toEqual([]);
@@ -303,8 +301,6 @@ integration("PostgreSQL application store", () => {
     await store.sync.withIdentity(identity, async (sync) => {
       await commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting_event", action: "create", entityId: crypto.randomUUID(), baseRevision: null, data: { meetingId, kind: "recording_ended", sessionId, occurredAt: new Date(now.getTime() + 60000) } }]);
       expect(await sync.getMeeting(vaultId, meetingId)).toMatchObject({ isRecording: false });
-      expect(await sync.listLiveStates(vaultId)).toEqual([]);
-      expect(await sync.getLiveState(vaultId, meetingId)).toMatchObject({ sessionId, status: "stopped", endedAt: new Date(now.getTime() + 60000) });
       await resetVault(sync, vaultId);
     });
   });

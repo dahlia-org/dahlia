@@ -6,9 +6,9 @@
 
 署名済み stdio helper `dahlia-mcp` は `--vault <vlt_TypeID>`（互換名 `--vault-id`）指定時に参照範囲を固定する。未指定時はアプリに追加済みの全 Vault を対象にし、選択中のアカウントとは連動しない。`list_vaults` は名前・アカウント種別・保持状態を返す。query は任意の `vault_id` で絞り込み、省略時は Vault ごとの結果・cursor・取得失敗を返す。詳細 ID の実所属と cursor の Vault、meeting、ordering identity を検証し、明示 scope を広げない。
 
-既定は SQLite read-only、起動時の Vault 指定と明示 `--write` の両方だけが公開 write tool を有効にする。helper は migration や permission 変更をせず、初期化時の schema 検証でアプリ更新後の初回起動を必要とする。
+既定は SQLite read-only、明示 `--write` が公開 write tool を有効にする。helper は migration や permission 変更をせず、初期化時の schema 検証でアプリ更新後の初回起動を必要とする。
 
-発見は compact metadata と [summary 本文の検索](search.md)、詳細は保存済み summary、原文 transcript のページング、縮小 screenshot を返す。保存済み取得では音声、note、翻訳、未確定 transcript と transcript 全文検索は対象外。未確定文は以下の独立したライブ取得で扱う。summary schema v3 の description と meeting metadata の更新は [サマリー](summary.md) に従う。
+発見は compact metadata と [summary 本文の検索](search.md)、詳細は保存済み summary、原文 transcript のページング、縮小 screenshot を返す。保存済み取得では音声、note、翻訳、未確定 transcript と transcript 全文検索は対象外。未確定文を MCP へ公開しない。summary schema v3 の description と meeting metadata の更新は [サマリー](summary.md) に従う。
 
 chat の workspace / 履歴は Vault UUID で隔離する。Vault 切替は新しい floating session とし、別 Vault に紐づく detached session はその Vault が active になるまで送信不可。start / resume とも user MCP を無効にして Dahlia helper を使い、要約は全 MCP を無効にする。設定画面は登録 command の表示・copy だけで外部 client 設定を書き換えない。外部 client の同名登録を別 Vault へ変えるには明示的な再登録が必要。
 
@@ -41,8 +41,10 @@ helper は SQLite の完全性と保持 revision を検査し、不足する本�
 
 検索結果は従来のローカル `meetings` または `screenshots` / `next_cursor` と `search_scope` に、Server の `items` / `next_cursor` / `complete` / `error` を加える。Server の続きは独立した `server_cursor` で渡す。filter を適用してから Server ページを返し、取得失敗は未完了として表す。本文・要約を書き出す処理と同様、未保持の本文を空として成功させない。
 
-## ライブ取得（2026-09-10）
+## 確定文字起こしの差分取得（2026-09-10）
 
-`list_live_meetings` / `get_live_transcript` はこの Mac の録音をアカウント種別に関係なく既存の署名済み helper broker から読む。ローカル HTTP listener、認証、本文 cache は追加しない。既存のライブ初版設定を使い、tool から録音・認識を開始しない。確定文は SQLite、未確定文は音源別の最新 projection とする。cursor の世代・prefix 検証で遅延挿入や訂正・削除を検出し、`reset_required` を返す。
+Local / Server の `get_meeting_transcript` に `after` と `wait` を追加する。`after` は保管庫・会議・時間範囲に結び付いた不透明な取得位置で、空の結果でも `next_after` を返す。既読 prefix と世代の検証で編集・削除・再生成・途中への遅延挿入を検出し、利用側へ `after` を外した再取得を要求する。対象は会議全体で、既存の `cursor` と本文フィールドは維持する。`after` と `cursor` は同時指定しない。
 
-Server は通常の同期で届いた確定文だけを MCP/HTTP/SSE に配信する。録音状態は既存の recording_sessions ビューから読み、途中結果の送信・専用テーブルは持たない。Local MCP の途中結果はメモリに保持する。共有 Vault の閲覧権限を各読取で再確認し、遅い購読者は切断して cursor から再開する。確定文・録音の永続化は配信完了を待たない。操作例と状態の意味は [ライブ MCP](../../live-mcp.md) を参照。
+`wait=true` は確定文がない場合だけ最大25秒待つ。待機中に DB トランザクションやロックを保持せず、Server は各読み取りで認証・共有権限を再確認し、切断で待機を終了する。本文未保持や認証失敗を新着なしとして扱わない。未確定文の MCP 公開、専用ライブツール、ライブ HTTP / SSE、プレビューストアは持たない。アプリのライブ字幕・音声認識・確定文同期は既存経路を維持する。
+
+Local MCP は全保管庫を既定とし、`--write` 単独も許可する。任意の `--vault` / `--vault-id` は読み書きの範囲を制限する。更新・削除先は対象ID、新規作成先は明示的な `vault_id` または一意の親IDで解決する。保管庫をまたぐ参照と曖昧な作成先は拒否する。操作例は [MCP の差分取得と保管庫](../../live-mcp.md) を参照。

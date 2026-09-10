@@ -3297,16 +3297,7 @@ final class CaptionViewModel: ObservableObject {
                 persistencePolicy: request.persistencePolicy
             )
             persistenceService = service
-            LiveTranscriptStore.shared.begin(
-                LiveTranscriptState(
-                    vaultId: request.vaultId,
-                    meetingId: service.meetingId,
-                    sessionId: service.recordingSessionId,
-                    startedAt: request.recordingStartTime,
-                    enabled: activeTranscriptionPlan?.liveTranscriptDraftEnabled == true
-                ),
-                database: request.dbQueue
-            )
+
             installTranscriptionEventPipeline(persistenceService: service)
             currentMeetingId = existingMeetingId
             store.attachPagingContext(
@@ -3331,16 +3322,7 @@ final class CaptionViewModel: ObservableObject {
             persistencePolicy: request.persistencePolicy
         )
         persistenceService = service
-        LiveTranscriptStore.shared.begin(
-            LiveTranscriptState(
-                vaultId: request.vaultId,
-                meetingId: service.meetingId,
-                sessionId: service.recordingSessionId,
-                startedAt: request.recordingStartTime,
-                enabled: activeTranscriptionPlan?.liveTranscriptDraftEnabled == true
-            ),
-            database: request.dbQueue
-        )
+
         installTranscriptionEventPipeline(persistenceService: service)
         currentMeetingId = service.meetingId
         screenshotStore.replace(meetingID: service.meetingId, records: [])
@@ -3362,8 +3344,6 @@ final class CaptionViewModel: ObservableObject {
 
     private func installTranscriptionEventPipeline(persistenceService: MeetingPersistenceService) {
         let recordingTranscriptStore = store
-        let liveDatabase = currentDbQueue
-        let liveMeetingID = persistenceService.meetingId
         let liveCaptionEventRelay = LiveCaptionEventRelay { [weak self] events in
             for event in events {
                 self?.handleObservedTranscriptionEvent(event)
@@ -3378,7 +3358,6 @@ final class CaptionViewModel: ObservableObject {
                 }
             },
             eventObserver: { event in
-                if let liveDatabase { LiveTranscriptStore.shared.observe(event, meetingID: liveMeetingID, database: liveDatabase) }
                 await liveCaptionEventRelay.enqueue(event)
             },
             uiReloadSink: { [weak recordingTranscriptStore] in
@@ -3462,9 +3441,6 @@ final class CaptionViewModel: ObservableObject {
         transcriptionEventPipeline = nil
         liveCaptionEventRelay = nil
         stopAutomaticScreenshotCapture()
-        if let meetingID = persistenceService?.meetingId, let database = currentDbQueue {
-            LiveTranscriptStore.shared.finish(meetingID: meetingID, database: database, failed: true)
-        }
         await persistenceService?.cancel()
         persistenceService = nil
         activeTranscriptionMode = nil
@@ -3864,9 +3840,6 @@ final class CaptionViewModel: ObservableObject {
         firstFailureMessage = firstFailureMessage ?? persistenceResult.failureMessage
         if let firstFailureMessage {
             errorMessage = firstFailureMessage
-        }
-        if let meetingID = context.meetingId, let database = context.dbQueue {
-            LiveTranscriptStore.shared.finish(meetingID: meetingID, database: database, failed: firstFailureMessage != nil)
         }
         await recordingSessionController.completeStop()
         activeTranscriptionMode = nil

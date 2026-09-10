@@ -9,8 +9,8 @@ import Foundation
         func unscopedRegistrationIsReadOnlyAndHasNoVaultArgument() throws {
             let commands = MCPRegistrationCommands(helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"), vaultID: nil)
             #expect(commands.registrationCommand(for: .codex, writeEnabled: false)?.contains("--vault") == false)
-            #expect(commands.registrationCommand(for: .codex, writeEnabled: true) == nil)
-            #expect(commands.mcpJSONSample(writeEnabled: true) == nil)
+            #expect(commands.registrationCommand(for: .codex, writeEnabled: true)?.hasSuffix(" --write") == true)
+            #expect(commands.mcpJSONSample(writeEnabled: true)?.contains("--write") == true)
             let sample = try JSONDecoder().decode(MCPJSONSample.self, from: Data(#require(commands.mcpJSONSample(writeEnabled: false)).utf8))
             #expect(sample.mcpServers["dahlia"]?.args.isEmpty == true)
         }

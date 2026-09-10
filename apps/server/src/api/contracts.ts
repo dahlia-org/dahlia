@@ -81,7 +81,6 @@ export type OperationId =
   | "getSummary" | "getLatestSummary" | "listTranscripts" | "getTranscript" | "getLatestTranscript"
   | "startSummaryJob" | "getLatestSummaryJob" | "getSummaryJob" | "cancelSummaryJob" | "retrySummaryJob"
   | "commitTransaction" | "resolveTransaction" | "getChanges" | "getSnapshot" | "search"
-  | "getLiveTranscript" | "listLiveMeetings" | "getLiveTranscriptEvents"
   | "textSearch" | "getEvents" | "putTranscriptChunk" | "reserveFileUpload" | "putFileContent"
   | "getFile" | "updateFile" | "listFiles" | "listMeetingFiles" | "getFileContent"
   | "headFileContent" | "getFileVariant" | "headFileVariant" | "putRecordingContent" | "listRecordings"
@@ -129,9 +128,6 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   getSnapshot: route("get", `${v}/snapshot`, "getSnapshot", "Bounded snapshot; retain startCursor and catch up before reconciliation", { 200: json(S.snapshot) }, { query: S.pageQuery.extend({ startCursor: S.cursor.optional() }).strict() }),
   search: route("post", `${v}/search`, "search", "Ranked search with explicit truncation indicators; maximum 16 KiB", { 200: json(S.searchResults) }, body(vaultSearchRequestSchema)),
   textSearch: route("post", `${v}/text-search`, "textSearch", "Exhaustive full-text search pages; cursor invalidates when the ledger changes", { 200: json(S.textSearchResults) }, body(S.textSearchRequest)),
-  getLiveTranscript: route("get", `${m}/live-transcript`, "getLiveTranscript", "Read synchronized confirmed speech", { 200: json(S.liveTranscriptPage) }, { query: S.liveReadQuery }),
-  listLiveMeetings: route("get", "/api/v1/vaults/{vaultId}/live-meetings", "listLiveMeetings", "List latest synchronized recording sessions without an end event", { 200: json(z.object({ meetings: z.array(S.liveState) })) }),
-  getLiveTranscriptEvents: route("get", `${m}/live-transcript/events`, "getLiveTranscriptEvents", "SSE live speech; resume by cursor or Last-Event-ID; reset means replace accumulated confirmed speech", { 200: { description: "Live transcript pages as transcript or reset events. Comment heartbeats. Errors terminate the stream.", content: { "text/event-stream": { schema: z.string() } } } }, { query: S.liveReadQuery, headers: z.object({ "last-event-id": z.string().max(2048).optional() }) }),
   getEvents: route("get", "/api/v1/events", "getEvents", "SSE invalidation and account_settings events; recover through canonical reads", { 200: { description: "text/event-stream: invalidation has {cursor}; account_settings has {}. No user content.", content: { "text/event-stream": { schema: z.string() } } } }, { query: z.object({ cursor: S.cursor.optional() }).strict(), headers: z.object({ "last-event-id": z.string().optional() }) }),
   putTranscriptChunk: route("put", `${m}/transcript-uploads/{patchId}/chunks/{chunkIndex}`, "putTranscriptChunk", "Stage an owner-only transcript patch chunk; SHA-256 of exact request bytes", { 204: empty }, { ...body(transcriptChunkSchema), headers: z.object({ "x-dahlia-content-sha256": z.string().regex(/^[a-fA-F0-9]{64}$/) }) }, [{ bearerAuth: [] }, { trustedProxy: [] }]),
   reserveFileUpload: route("post", "/api/v1/file-uploads", "reserveFileUpload", "Reserve private file staging with a client-generated UUIDv7; maximum 8 KiB", { 201: created(S.file), 200: json(S.file) }, body(fileUploadSchema)),

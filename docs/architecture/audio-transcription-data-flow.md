@@ -90,7 +90,6 @@ flowchart LR
     Meter -.-> LevelUI["録音パネル<br/>音源別レベルメーター"]
 
     Events --> Caption["session history + bounded rendering<br/>LiveCaptionStore / TranscriptStore"]
-    Events --> Live["bounded live preview store / MCP"]
     Events -->|"realtime policy"| StreamWriter["TranscriptPersistenceWriter"]
     StreamWriter --> TranscriptDB[("SQLite<br/>transcript_segments")]
 
@@ -183,7 +182,6 @@ sequenceDiagram
     participant Persist as TranscriptPersistenceWriter
     participant DB as SQLite
     participant UI as LiveCaptionStore / TranscriptStore
-    participant Chat as Live transcript relay
 
     Speech->>Pipeline: preview
     Pipeline-->>UI: bounded relay / incremental projection
@@ -191,7 +189,6 @@ sequenceDiagram
     Speech->>Pipeline: finalized / translation
     Pipeline->>Persist: persistence ingress before suspension
     Pipeline-->>UI: reloadable projection
-    Pipeline-->>Chat: optional confirmed finalized segment
     Persist->>DB: ordered batch transaction
     DB-->>Persist: commit
 ```

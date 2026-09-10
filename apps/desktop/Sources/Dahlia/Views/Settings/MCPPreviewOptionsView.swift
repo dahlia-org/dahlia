@@ -49,7 +49,6 @@ struct MCPPreviewOptionsView: View {
                 Toggle(L10n.mcpAllowWriteAccess, isOn: $isWriteEnabled)
                     .labelsHidden()
                     .toggleStyle(.switch)
-                    .disabled(selectedVaultID == nil)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
