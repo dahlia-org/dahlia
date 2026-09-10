@@ -57,17 +57,19 @@ if (command === "list-model-services") {
     assert.match(partial.stdout, /test_catalog.ai.gpt-6-astra/);
     assert.equal(JSON.parse(readFileSync(state, "utf8")).length, 1);
 
+    const legacyEmbedding = "model-services/test_catalog.ai.embedding";
+    writeFileSync(state, JSON.stringify([...JSON.parse(readFileSync(state, "utf8")), legacyEmbedding]));
     const resumed = run();
     assert.equal(resumed.status, 0, resumed.stderr);
     assert.match(resumed.stdout, /Keeping existing model service: model-services\/test_catalog.ai.gpt-5-6-luna/);
-    assert.equal(JSON.parse(readFileSync(state, "utf8")).length, 12);
+    assert.equal(JSON.parse(readFileSync(state, "utf8")).length, 13);
     for (const [name, source] of [
       ["deepseek-v4-pro-0813", "deepseek-v4-pro-0813"],
       ["glm-5-3-flash", "glm-5-3-flash"],
       ["glm-5-3", "glm-5-3"],
       ["gemini-3-8-flash", "gemini-3-8-flash"],
       ["gemini-3-7-flash", "gemini-3-7-flash"],
-      ["embedding", "qwen3-embedding-0-6b"],
+      ["qwen3-embedding-0-6b", "qwen3-embedding-0-6b"],
       ["codex-auto-review", "gpt-5-6-luna"],
     ]) {
       const call = readCalls().find(args => args[1] === "create-model-service" && args[3] === name);
@@ -75,6 +77,10 @@ if (command === "list-model-services") {
       assert.equal(config.config.routing.destinations[0].pay_per_token_config.model, `models/system.ai.${source}`);
     }
     assert.equal(readCalls().some(args => args[1] === "create-model-service" && args[3] === "deepseek-v4-pro"), false);
+    assert.ok(JSON.parse(readFileSync(state, "utf8")).includes(legacyEmbedding));
+    assert.equal(readCalls().some(args => args[1] === "create-model-service" && args[3] === "embedding"), false);
+    const resource = readFileSync(new URL("../resources/dahlia_server.yml", import.meta.url), "utf8");
+    assert.match(resource, /name: DAHLIA_EMBEDDING_MODEL\s+value: \$\{var.catalog\}\.\$\{var.ai_schema\}\.qwen3-embedding-0-6b/);
     assert.ok(readCalls().every(args => args[args.indexOf("--profile") + 1] === "test-profile"));
 
     writeFileSync(calls, "");
