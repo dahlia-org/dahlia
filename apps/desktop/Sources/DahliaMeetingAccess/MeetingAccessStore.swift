@@ -583,7 +583,8 @@ public final class MeetingAccessStore: Sendable {
         toElapsedSeconds: Double? = nil,
         limit: Int = 200,
         cursor: String? = nil,
-        after: String? = nil
+        after: String? = nil,
+        recordAccess: Bool = true
     ) throws -> TranscriptPage {
         do {
             let result = try cachedTranscript(
@@ -593,7 +594,7 @@ public final class MeetingAccessStore: Sendable {
                 limit: limit,
                 cursor: cursor, after: after
             )
-            touchText(entity: .transcript, meetingId: meetingID)
+            if recordAccess { touchText(entity: .transcript, meetingId: meetingID) }
             return result
         } catch TextContentError.incomplete {
             guard let textResolver else { throw TextContentError.incomplete }

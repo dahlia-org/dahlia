@@ -740,6 +740,7 @@ public final class DahliaMCPServer {
         let limit = try integer(arguments, key: "limit") ?? 200
         let wait = try boolean(arguments, key: "wait") ?? false
         let deadline = ContinuousClock.now.advanced(by: .seconds(wait ? 25 : 0))
+        var recordAccess = true
         while true {
             let page = try store.transcript(
                 meetingID: meetingID,
@@ -747,8 +748,11 @@ public final class DahliaMCPServer {
                 toElapsedSeconds: to,
                 limit: limit,
                 cursor: cursor,
-                after: after
+                after: after,
+                recordAccess: recordAccess
             )
+            // Polls in this request must not repeat the broker's access-time write.
+            recordAccess = false
             if !page.segments.isEmpty || ContinuousClock.now >= deadline { return page }
             // The stdio worker owns this bounded wait; no database transaction or UI executor is held.
             Thread.sleep(forTimeInterval: 0.25)

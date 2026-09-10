@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import Synchronization
 @testable import Dahlia
 @testable import DahliaMeetingAccess
 @testable import DahliaRuntimeSupport
@@ -157,10 +158,12 @@ import GRDB
             let databaseURL = fixture.databaseURL, vaultID = fixture.primaryVaultID, meetingID = fixture.firstMeetingID
             let token = try #require(fixture.store(vaultID: vaultID).transcript(meetingID: meetingID).nextAfter)
             let ready = AsyncStream<Void>.makeStream()
+            let touches = Mutex(0)
             let task = Task.detached {
                 defer { ready.continuation.finish() }
                 let server = try DahliaMCPServer(databaseURL: databaseURL, vaultID: vaultID, textResolver: { _, request in
                     guard request.operation == .touch else { throw TextContentError.unavailable }
+                    touches.withLock { $0 += 1 }
                     ready.continuation.yield(())
                     ready.continuation.finish()
                     return Data("{}".utf8)
@@ -189,6 +192,7 @@ import GRDB
             let content = try #require(result["structuredContent"] as? [String: Any])
             #expect((content["segments"] as? [[String: Any]])?.map { $0["text"] as? String } == ["new confirmed speech"])
             #expect(content["next_after"] is String)
+            #expect(touches.withLock { $0 } == 1)
         }
 
         @Test
@@ -196,8 +200,13 @@ import GRDB
             let fixture = try Fixture()
             let databaseURL = fixture.databaseURL, vaultID = fixture.primaryVaultID, meetingID = fixture.firstMeetingID
             let token = try #require(fixture.store(vaultID: vaultID).transcript(meetingID: meetingID).nextAfter)
+            let touches = Mutex(0)
             let result = try await Task.detached {
-                let server = try DahliaMCPServer(databaseURL: databaseURL, vaultID: vaultID)
+                let server = try DahliaMCPServer(databaseURL: databaseURL, vaultID: vaultID, textResolver: { _, request in
+                    guard request.operation == .touch else { throw TextContentError.unavailable }
+                    touches.withLock { $0 += 1 }
+                    return Data("{}".utf8)
+                })
                 let result = try server.executeTool(named: "get_meeting_transcript", arguments: [
                     "meeting_id": meetingID.uuidString, "after": token, "wait": true,
                 ])
@@ -205,6 +214,7 @@ import GRDB
                 return (content?["segments"] as? [Any])?.isEmpty == true && content?["next_after"] as? String == token
             }.value
             #expect(result)
+            #expect(touches.withLock { $0 } == 1)
         }
 
         private func entry(_ text: String) -> TranscriptEntry {
