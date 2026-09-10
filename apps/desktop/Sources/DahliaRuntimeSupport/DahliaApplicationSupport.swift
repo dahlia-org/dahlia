@@ -25,8 +25,15 @@ public enum DahliaApplicationSupport {
         applicationSupportDirectory: URL = .applicationSupportDirectory,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> URL {
+        directoryURL(profile: profile(environment: environment), applicationSupportDirectory: applicationSupportDirectory)
+    }
+
+    public static func directoryURL(
+        profile: DahliaRuntimeProfile,
+        applicationSupportDirectory: URL = .applicationSupportDirectory
+    ) -> URL {
         applicationSupportDirectory.appending(
-            path: directoryName(for: profile(environment: environment)),
+            path: directoryName(for: profile),
             directoryHint: .isDirectory
         )
     }

@@ -2,11 +2,14 @@ import Darwin
 import Foundation
 
 public enum DahliaTokenBrokerProtocol {
+    public enum Provider: String, Codable, Sendable { case databricks, dahlia }
     public struct Request: Codable, Sendable {
         public let connectionID: UUID
+        public let provider: Provider
 
-        public init(connectionID: UUID) {
+        public init(connectionID: UUID, provider: Provider = .dahlia) {
             self.connectionID = connectionID
+            self.provider = provider
         }
     }
 
@@ -24,21 +27,19 @@ public enum DahliaTokenBrokerProtocol {
         profile: DahliaRuntimeProfile,
         applicationSupportDirectory: URL = .applicationSupportDirectory
     ) -> URL {
-        let environment = [DahliaApplicationSupport.profileEnvironmentKey: profile.rawValue]
-        return DahliaApplicationSupport.directoryURL(
-            applicationSupportDirectory: applicationSupportDirectory,
-            environment: environment
-        )
-        .appending(path: "TokenBroker", directoryHint: .isDirectory)
-        .appending(path: "broker.sock")
+        DahliaApplicationSupport.directoryURL(profile: profile, applicationSupportDirectory: applicationSupportDirectory)
+            .appending(path: "TokenBroker", directoryHint: .isDirectory)
+            .appending(path: "broker.sock")
     }
 
     public static func requestToken(
         connectionID: UUID,
+        provider: Provider = .dahlia,
         profile: DahliaRuntimeProfile
     ) throws -> String {
         try requestToken(
             connectionID: connectionID,
+            provider: provider,
             profile: profile,
             applicationSupportDirectory: .applicationSupportDirectory
         )
@@ -46,12 +47,17 @@ public enum DahliaTokenBrokerProtocol {
 
     public static func requestToken(
         connectionID: UUID,
+        provider: Provider = .dahlia,
         profile: DahliaRuntimeProfile,
         applicationSupportDirectory: URL
     ) throws -> String {
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
         defer { Darwin.close(descriptor) }
+        var timeout = timeval(tv_sec: 365, tv_usec: 0)
+        guard setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout.size(ofValue: timeout))) == 0 else {
+            throw POSIXError(.ETIMEDOUT)
+        }
         var noSignal: Int32 = 1
         guard setsockopt(
             descriptor,
@@ -70,7 +76,7 @@ public enum DahliaTokenBrokerProtocol {
         }
         guard result == 0 else { throw POSIXError(.init(rawValue: errno) ?? .ECONNREFUSED) }
 
-        var payload = try JSONEncoder().encode(Request(connectionID: connectionID))
+        var payload = try JSONEncoder().encode(Request(connectionID: connectionID, provider: provider))
         payload.append(0x0A)
         try writeAll(payload, to: descriptor)
         let response = try JSONDecoder().decode(Response.self, from: readLine(from: descriptor))

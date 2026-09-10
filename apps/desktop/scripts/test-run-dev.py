@@ -84,6 +84,7 @@ esac
     executable = root / ".build/debug/Dahlia"
     write(executable, "#!/bin/bash\nexit 0\n", True)
     write(root / ".build/debug/dahlia-mcp", "#!/bin/bash\nexit 0\n", True)
+    write(root / ".build/debug/auth-helper", "#!/bin/bash\nexit 0\n", True)
     for name in ("Dahlia_Dahlia.bundle", "Dahlia_DahliaRuntimeSupport.bundle", "TelemetryDeck_TelemetryDeck.bundle"):
         write(root / ".build/debug" / name / "resource", "resource")
     for name in ("codex", "codex-code-mode-host"):
@@ -146,6 +147,10 @@ esac
     run("Reusing signed", GOOGLE_CLIENT_ID="changed-client")
     run("Assembling", GOOGLE_CLIENT_ID="")
     assert "GOOGLE_CLIENT_ID" not in (root / "Dahlia.app/Contents/Info.plist").read_text()
+
+    auth_helper = root / "Dahlia.app/Contents/Helpers/auth-helper"
+    assert auth_helper.exists(), "auth-helper must be bundled"
+    assert "# signature" in auth_helper.read_text(), "auth-helper must be signed"
 
     write(root / "Dahlia.app/Contents/Helpers/codex", "damaged")
     run("Assembling")

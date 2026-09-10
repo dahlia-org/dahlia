@@ -831,7 +831,7 @@ enum OAuthLoopbackRequestParser {
 }
 
 final class OAuthLoopbackRedirectServer: @unchecked Sendable {
-    private static let callbackTimeout: TimeInterval = 300
+    private let callbackTimeout: TimeInterval
     private static let maximumRequestLength = 16384
     private static let headerTerminator = Data("\r\n\r\n".utf8)
 
@@ -846,7 +846,8 @@ final class OAuthLoopbackRedirectServer: @unchecked Sendable {
     private var readinessContinuation: CheckedContinuation<Void, Error>?
     private let callbackPath: String
 
-    init(port: NWEndpoint.Port = .any, callbackPath: String = "/oauth2redirect") async throws {
+    init(port: NWEndpoint.Port = .any, callbackPath: String = "/oauth2redirect", callbackTimeout: TimeInterval = 300) async throws {
+        self.callbackTimeout = callbackTimeout
         self.callbackPath = callbackPath
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: port)
@@ -917,7 +918,7 @@ final class OAuthLoopbackRedirectServer: @unchecked Sendable {
                             self?.completeCallback(with: .failure(GoogleSignInError.authorizationTimedOut))
                         }
                         callbackTimeoutWorkItem = timeoutWorkItem
-                        queue.asyncAfter(deadline: .now() + Self.callbackTimeout, execute: timeoutWorkItem)
+                        queue.asyncAfter(deadline: .now() + callbackTimeout, execute: timeoutWorkItem)
                     }
                 }
             }

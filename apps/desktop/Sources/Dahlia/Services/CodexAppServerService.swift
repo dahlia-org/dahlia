@@ -39,7 +39,7 @@ actor CodexAppServerService {
     /// Mac inference is independent of the selected Vault's chat/Gateway context.
     static let macInference = CodexAppServerService(
         launcher: BundledCodexAppServerLauncher(
-            tokenBrokerAuthorization: DahliaTokenBrokerAuthorization(),
+            tokenBrokerAuthorization: .macInference,
             runtimeProviderResolver: { LocalAccountAISettings(defaults: .standard).runtimeProvider }
         ),
         configurationReadiness: {

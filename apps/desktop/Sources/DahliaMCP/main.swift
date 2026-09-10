@@ -8,26 +8,6 @@ private func fail(_ message: String) -> Never {
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
-if arguments.first == "auth" {
-    guard arguments.count == 6,
-          arguments[1] == "token",
-          arguments[2] == "--connection-id",
-          let connectionID = UUID(uuidString: arguments[3]),
-          arguments[4] == "--profile",
-          let profile = DahliaRuntimeProfile(rawValue: arguments[5])
-    else {
-        fail("Usage: dahlia-mcp auth token --connection-id <UUID> --profile <production|development>")
-    }
-    do {
-        try print(DahliaTokenBrokerProtocol.requestToken(
-            connectionID: connectionID,
-            profile: profile
-        ))
-        exit(EXIT_SUCCESS)
-    } catch {
-        fail(error.localizedDescription)
-    }
-}
 
 var vaultID: UUID?
 var allowsWrites = false
