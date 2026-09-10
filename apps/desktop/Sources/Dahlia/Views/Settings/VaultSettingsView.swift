@@ -132,18 +132,6 @@ struct VaultSettingsView: View {
                         vaultActions(for: vault)
                     }
                 }
-                if !model.cloudVaults.isEmpty {
-                    Divider()
-                    ForEach(model.cloudVaults) { vault in
-                        HStack {
-                            Label(vault.name, systemImage: "icloud")
-                            Spacer()
-                            Button(L10n.addVault) {
-                                Task { _ = await model.registerCloudVault(vault) }
-                            }
-                        }
-                    }
-                }
             }
         } header: {
             HStack {
@@ -208,7 +196,7 @@ struct VaultSettingsView: View {
                 }
             }
 
-            if vault.id != currentVault?.id, !vault.requiresServerDeletionBeforeRemoval {
+            if vault.id != currentVault?.id, vault.accountConnectionId == nil {
                 Button(L10n.removeVault, systemImage: "minus", role: .destructive) {
                     pendingRemoval = vault
                 }

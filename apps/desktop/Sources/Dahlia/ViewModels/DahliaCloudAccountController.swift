@@ -58,6 +58,7 @@ final class DahliaCloudAccountController {
     private let serviceFactory: ServiceFactory
     private let codexHomeLocator: ApplicationSupportCodexHomeLocator
     private var services: [UUID: DahliaCloudService] = [:]
+    @ObservationIgnored weak var syncWorker: SyncWorker?
     private var repository: MeetingRepository?
     private weak var appDatabase: AppDatabaseManager?
     @ObservationIgnored private var accountTask: Task<Void, Never>?
@@ -392,7 +393,10 @@ final class DahliaCloudAccountController {
         defer { finishOperation(generation) }
         do {
             guard let connection = connections.first(where: { $0.id == connectionID }) else { return }
-            if connection.vaultCount > 0 {
+            await syncWorker?.suspendCloudVaultDiscovery(connectionID: connectionID)
+            defer { Task { await syncWorker?.resumeCloudVaultDiscovery(connectionID: connectionID) } }
+            let vaults = try await repository?.fetchAllVaultsAsync() ?? []
+            if vaults.contains(where: { $0.accountConnectionId == connectionID }) {
                 guard let vaultDisposition, let repository else {
                     throw DahliaAccountConnectionError.vaultDispositionRequired
                 }

@@ -20,7 +20,6 @@ final class VaultManagementModel {
         .appending(path: "Dahlia", directoryHint: .isDirectory)
 
     private(set) var vaults: [VaultRecord] = []
-    private(set) var cloudVaults: [CloudVaultRecord] = []
     private(set) var blockedSyncVaultIDs: Set<UUID> = []
     private(set) var conflictedSyncVaultIDs: Set<UUID> = []
     private(set) var validationBlockedSyncVaultIDs: Set<UUID> = []
@@ -75,7 +74,6 @@ final class VaultManagementModel {
     func loadVaults() async {
         guard let repository else {
             vaults = []
-            cloudVaults = []
             blockedSyncVaultIDs = []
             conflictedSyncVaultIDs = []
             validationBlockedSyncVaultIDs = []
@@ -87,9 +85,6 @@ final class VaultManagementModel {
         defer { isLoading = false }
         do {
             vaults = try await repository.fetchAllVaultsAsync()
-            let localVaultIDs = Set(vaults.map(\.id))
-            cloudVaults = try await fetchCloudVaults(repository: repository)
-                .filter { !localVaultIDs.contains($0.vaultId) }
             blockedSyncVaultIDs = try await repository.blockedSyncVaultIDs()
             conflictedSyncVaultIDs = try await repository.conflictedSyncVaultIDs()
             validationBlockedSyncVaultIDs = try await repository.validationBlockedSyncVaultIDs()
@@ -101,48 +96,12 @@ final class VaultManagementModel {
         }
     }
 
-    private func fetchCloudVaults(repository: MeetingRepository) async throws -> [CloudVaultRecord] {
-        var result: [CloudVaultRecord] = []
-        for connection in try await repository.fetchDahliaAccountConnections() {
-            do {
-                result += try await fetchCloudVaults(from: connection)
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                continue
-            }
-        }
-        return result.sorted { ($0.name, $0.vaultId.uuidString) < ($1.name, $1.vaultId.uuidString) }
-    }
-
     private func fetchCloudVaults(from connection: DahliaAccountConnectionRecord) async throws -> [CloudVaultRecord] {
         if let cloudVaultFetcher {
             return try await cloudVaultFetcher(connection)
         }
         let token = try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(connectionID: connection.id)
         return try await CloudVaultDiscovery.fetch(connection: connection, token: token)
-    }
-
-    func registerCloudVault(_ cloudVault: CloudVaultRecord) async -> VaultRecord? {
-        guard let repository else { return nil }
-        var vault = VaultRecord(
-            id: cloudVault.vaultId,
-            path: nil,
-            name: cloudVault.name,
-            createdAt: cloudVault.createdAt,
-            lastOpenedAt: .distantPast
-        )
-        vault.accountConnectionId = cloudVault.connectionId
-        vault.syncConfirmedConnectionId = cloudVault.connectionId
-        vault.syncRole = cloudVault.role
-        do {
-            try await repository.insertCloudVaultAsync(vault, revision: cloudVault.revision)
-            await loadVaults()
-            return vault
-        } catch {
-            presentError(L10n.vaultAddFailed, error: error, source: "registerCloudVault")
-            return nil
-        }
     }
 
     func resolveExistingStartupVault(appDatabase: AppDatabaseManager) async -> VaultRecord? {
@@ -271,7 +230,7 @@ final class VaultManagementModel {
 
     func removeVault(_ vault: VaultRecord, currentVaultId: UUID?) async -> Bool {
         guard vault.id != currentVaultId else { return false }
-        guard !vault.requiresServerDeletionBeforeRemoval else { return false }
+        guard vault.accountConnectionId == nil else { return false }
         guard !isRemovingVault else { return false }
         guard let repository else {
             presentError(L10n.vaultRemoveFailed, source: "removeVault")
@@ -368,7 +327,6 @@ final class VaultManagementModel {
                 serverVault: currentServerVault
             ) else { return nil }
             if let index = vaults.firstIndex(where: { $0.id == updated.id }) { vaults[index] = updated }
-            cloudVaults.removeAll(where: { $0.vaultId == updated.id })
             return updated
         } catch {
             presentError(L10n.vaultOperationFailed, error: error, source: "confirmServerAdoption")

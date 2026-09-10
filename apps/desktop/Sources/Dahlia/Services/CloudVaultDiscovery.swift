@@ -22,6 +22,17 @@ enum CloudVaultDiscovery {
                 capture: nil
             )]
         )
+        return try await fetch(connection: connection, client: client)
+    }
+
+    static func fetch(connection: DahliaAccountConnectionRecord, apiClient: SyncAPIClient) async throws -> [CloudVaultRecord] {
+        guard let origin = URL(string: connection.origin) else { throw URLError(.badURL) }
+        return try await apiClient.perform(origin: origin, connectionId: connection.id, maximumBytes: 1024 * 1024) {
+            try await fetch(connection: connection, client: $0)
+        }
+    }
+
+    private static func fetch(connection: DahliaAccountConnectionRecord, client: DahliaServerAPI.Client) async throws -> [CloudVaultRecord] {
         var items = try await client.listVaults().ok.body.json.items
         let organizations = try await client.listOrganizations().ok.body.json.items
         for organization in organizations {

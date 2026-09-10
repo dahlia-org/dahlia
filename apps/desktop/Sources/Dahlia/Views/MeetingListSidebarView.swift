@@ -168,6 +168,13 @@ struct MeetingListSidebarView: View {
             .overlay {
                 if !hasExpandedContent {
                     EmptyView()
+                } else if sidebarViewModel.displayedMeetingItems.isEmpty, sidebarViewModel.projectMeetingGroups.isEmpty,
+                          sidebarViewModel.allVaults.first(where: { $0.id == sidebarViewModel.currentVault?.id })?.isAwaitingInitialSync == true {
+                    ContentUnavailableView {
+                        Label(L10n.vaultInitialSyncPending, systemImage: "arrow.triangle.2.circlepath")
+                    } description: {
+                        Text(L10n.vaultInitialSyncPendingDescription)
+                    }
                 } else if mainWindowNavigation.meetingSidebarDisplayMode == .chronological {
                     MeetingListStatusOverlay(
                         isLoaded: sidebarViewModel.isDisplayedMeetingListLoaded,

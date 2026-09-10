@@ -79,6 +79,19 @@ struct VaultSetupStepView: View {
                 }
             } else {
                 VStack(spacing: 0) {
+                    ForEach(vaultManagementModel.vaults.filter { $0.accountConnectionId == model.selectedAccountConnectionID }) { vault in
+                        HStack {
+                            Label(vault.name, systemImage: "archivebox")
+                            Spacer()
+                            Button(model.selectedExistingVaultID == vault.id ? L10n.selected : L10n.select) {
+                                model.selectExistingVault(vault)
+                            }
+                            .buttonStyle(.dahlia())
+                            .disabled(model.selectedExistingVaultID == vault.id)
+                        }
+                        .padding(22)
+                        Divider()
+                    }
                     HStack(spacing: 24) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(L10n.createNewVault)

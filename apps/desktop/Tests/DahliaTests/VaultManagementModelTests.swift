@@ -221,51 +221,15 @@
         }
 
         @Test
-        func cloudVaultDiscoveryContinuesAfterOneConnectionFails() async throws {
+        func loadingVaultsDoesNotRequireNetworkDiscovery() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let failing = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://failing.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            let healthy = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://healthy.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            try await repository.insertDahliaAccountConnection(failing)
-            try await repository.insertDahliaAccountConnection(healthy)
-            let cloudVault = CloudVaultRecord(
-                vaultId: .v7(), connectionId: healthy.id, name: "Shared", createdAt: .now, revision: 1, role: "member"
-            )
-            let model = VaultManagementModel { connection in
-                if connection.id == failing.id { throw URLError(.cannotConnectToHost) }
-                return [cloudVault]
+            let model = VaultManagementModel { _ in
+                Issue.record("Listing local working copies must not fetch from the network")
+                throw URLError(.notConnectedToInternet)
             }
-
             await model.configure(appDatabase: database)
-
             #expect(model.hasLoadedVaults)
-            #expect(model.cloudVaults == [cloudVault])
-        }
-
-        @Test
-        func registersCloudVaultWithoutChoosingALocalFolder() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            try await repository.insertDahliaAccountConnection(connection)
-            let cloudVault = CloudVaultRecord(
-                vaultId: .v7(), connectionId: connection.id, name: "Cloud",
-                createdAt: .now, revision: 1, role: "member"
-            )
-            let model = VaultManagementModel()
-            await model.configure(appDatabase: database)
-
-            let vault = try #require(await model.registerCloudVault(cloudVault))
-
-            #expect(vault.path == nil)
-            #expect(vault.syncConfirmedConnectionId == connection.id)
-            #expect(vault.syncRole == "member")
+            #expect(model.vaults.isEmpty)
         }
 
         @Test
@@ -341,7 +305,7 @@
         }
 
         @Test
-        func removesAnImportedMemberVaultWithoutDeletingTheServerCopy() async throws {
+        func preservesAnAutomaticallyAvailableMemberVault() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
             let model = VaultManagementModel()
@@ -362,13 +326,11 @@
 
             let didRemove = await model.removeVault(vault, currentVaultId: nil)
 
-            #expect(didRemove)
-            #expect(try repository.fetchAllVaults().isEmpty)
+            #expect(!didRemove)
+            #expect(try repository.fetchAllVaults().map(\.id) == [vaultID])
             #expect(try await database.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultID])
-            } == 0)
-            try await repository.insertCloudVaultAsync(vault, revision: 1)
-            #expect(try repository.fetchAllVaults().map(\.id) == [vaultID])
+            } == 1)
         }
 
         @Test
@@ -502,7 +464,7 @@
                 revision: 7,
                 role: "member"
             )
-            var responses = [[remote], [remote], []]
+            var responses = [[remote], []]
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertVault(vault)
             let model = VaultManagementModel(cloudVaultFetcher: { _ in responses.removeFirst() })
@@ -539,7 +501,7 @@
                 revision: 7,
                 role: "member"
             )
-            var responses: [[CloudVaultRecord]] = [[], [], [remote]]
+            var responses: [[CloudVaultRecord]] = [[], [remote]]
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertVault(vault)
             let model = VaultManagementModel(cloudVaultFetcher: { _ in responses.removeFirst() })

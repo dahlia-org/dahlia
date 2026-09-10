@@ -2008,6 +2008,11 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var vaultSyncConflict: String { String(localized: "Sync conflict", bundle: bundle) }
     static var vaultSyncRecovering: String { String(localized: "Retrieving latest data…", bundle: bundle) }
     static var vaultSyncRecoveryPending: String { String(localized: "Waiting to retrieve latest data", bundle: bundle) }
+    static var vaultInitialSyncPending: String { String(localized: "Waiting for initial sync", bundle: bundle) }
+    static var vaultInitialSyncPendingDescription: String { String(
+        localized: "Server meetings will appear after sync. An internet connection and sign-in are required.",
+        bundle: bundle
+    ) }
     static var vaultSyncUpdateRequired: String { String(localized: "Update Dahlia and the Server to resume sync", bundle: bundle) }
     static var retrySync: String { String(localized: "Retry Sync", bundle: bundle) }
     static var useServerVersion: String { String(localized: "Use Server Version", bundle: bundle) }

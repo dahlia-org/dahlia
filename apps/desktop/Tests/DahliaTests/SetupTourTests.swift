@@ -7,6 +7,31 @@
     @MainActor
     struct SetupTourTests {
         @Test
+        func selectsDiscoveredVaultWithoutCreatingALocalVault() throws {
+            let suiteName = "SetupDiscoveredVault-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let connectionID = UUID.v7()
+            let model = SetupTourModel(mode: .initial, currentVault: nil, progressDefaults: defaults)
+            model.selectAccountConnection(connectionID)
+            model.advance()
+            var vault = VaultRecord(id: .v7(), name: "Shared", createdAt: .now, lastOpenedAt: .distantPast)
+            vault.accountConnectionId = connectionID
+            model.selectExistingVault(vault)
+            #expect(model.selectedExistingVaultID == vault.id)
+            #expect(model.canContinue)
+            #expect(model.selectedVaultName == nil)
+            #expect(!model.keepsOriginalVault)
+            model.advance()
+            let restored = SetupTourModel(mode: .initial, currentVault: nil, signedInAccountConnectionIDs: [connectionID], progressDefaults: defaults)
+            #expect(restored.currentStep == .vault)
+            #expect(!restored.isVaultLocationConfirmed)
+            model.selectAccountConnection(nil)
+            #expect(model.selectedExistingVaultID == nil)
+            #expect(!model.isVaultLocationConfirmed)
+        }
+
+        @Test
         func automaticPresentationIsLimitedToNewUsers() {
             #expect(SetupTourPresentationPolicy.shouldPresentAutomatically(
                 storedVersion: 0,

@@ -53,6 +53,10 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
 }
 
 extension VaultRecord {
+    var isAwaitingInitialSync: Bool {
+        accountConnectionId != nil && syncConfirmedConnectionId == accountConnectionId && syncPullCursor == nil
+    }
+
     var allowsCanonicalEdits: Bool {
         syncRole != "member"
     }
