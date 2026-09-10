@@ -224,6 +224,7 @@ export interface VaultTransferRecord {
 }
 
 export interface IdentitySyncStore {
+
   vaultTransferAudience(sourceVaultId: string, destinationVaultId: string): Promise<{ audienceHash: string; removed: { id: string; name: string; email: string }[]; added: { id: string; name: string; email: string }[] }>;
   transferVault(request: VaultTransferRequest): Promise<VaultTransferRecord>;
   getVaultRelocations(vaultId: string): Promise<VaultRelocations>;
@@ -298,7 +299,7 @@ export interface IdentitySyncStore {
   listTranscript(
     vaultId: string,
     meetingId: string,
-    limit: number,
+    limit: number | undefined,
     cursor?: SyncTranscriptCursor,
     version?: number,
   ): Promise<SyncTranscriptSegment[]>;

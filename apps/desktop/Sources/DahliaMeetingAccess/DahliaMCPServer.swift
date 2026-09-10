@@ -18,7 +18,8 @@ public final class DahliaMCPServer {
         }
     }
 
-    private let store: MeetingAccessStore
+    let store: MeetingAccessStore
+    let vaultScope: UUID?
     private let telemetryOrigin: MCPUsageTelemetryEvent.Origin?
     private let usageTelemetryReporter: (MCPUsageTelemetryEvent) -> Void
     private var initialized = false
@@ -29,8 +30,21 @@ public final class DahliaMCPServer {
         usageTelemetryReporter: @escaping (MCPUsageTelemetryEvent) -> Void = { _ in }
     ) {
         self.store = store
+        vaultScope = store.vaultID
         self.telemetryOrigin = telemetryOrigin
         self.usageTelemetryReporter = usageTelemetryReporter
+    }
+
+    public init(
+        databaseURL: URL = MeetingAccessStore.defaultDatabaseURL,
+        vaultID: UUID? = nil,
+        allowsWrites: Bool = false,
+        textResolver: (@Sendable (UUID, TextBrokerRequest) throws -> Data)? = nil
+    ) throws {
+        store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vaultID ?? UUID(), allowsWrites: allowsWrites, textResolver: textResolver)
+        vaultScope = vaultID
+        telemetryOrigin = nil
+        usageTelemetryReporter = { _ in }
     }
 
     public func handleLine(_ line: String) -> String? {
@@ -61,7 +75,7 @@ public final class DahliaMCPServer {
     private func handleRequest(method: String, id: Any, params: Any?) throws -> String {
         switch method {
         case "initialize":
-            _ = try store.scopedVault()
+            if vaultScope != nil { _ = try store.scopedVault() } else { try store.database.read(store.validateSchema(in:)) }
             return response(id: id, result: initializationResult)
         case "ping":
             return response(id: id, result: [:])
@@ -79,8 +93,13 @@ public final class DahliaMCPServer {
 
     private var initializationResult: [String: Any] {
         let accessInstructions = store.allowsWrites
-            ? "Read and write access to one configured Dahlia vault. "
-            : "Read-only access to one configured Dahlia vault. "
+            ?
+            (vaultScope == nil ? "Read and write access to all vaults added to this Mac. For new records specify vault_id or a parent ID. " :
+                "Read and write access to one configured Dahlia vault. ")
+            :
+            (vaultScope == nil ?
+                "Read-only access to all vaults added to this Mac. Use list_vaults to discover them. Query tools group results by vault; continue pages with vault_id and that vault’s cursor. " :
+                "Read-only access to one configured Dahlia vault. ")
         let writeInstructions = store.allowsWrites
             ? "Query or get each record before updating or deleting it. Customer-intelligence create, update, delete, set, "
             + "and remove tools "
@@ -191,6 +210,10 @@ public final class DahliaMCPServer {
                 id: id,
                 result: toolError(code: error.reasonCode, message: error.localizedDescription)
             )
+        } catch let error as TranscriptAfterError {
+            return response(id: id, result: toolError(code: error.rawValue, message: error.rawValue))
+        } catch let error as TextContentError {
+            return response(id: id, result: toolError(code: error.rawValue, message: error.localizedDescription))
         } catch let error as DatabaseError
             where error.resultCode == .SQLITE_BUSY || error.resultCode == .SQLITE_LOCKED {
             return response(
@@ -221,7 +244,7 @@ public final class DahliaMCPServer {
     ) -> (category: MCPUsageTelemetryEvent.Category, operation: MCPUsageTelemetryEvent.Operation) {
         guard let name else { return (.unknown, .read) }
         let operation: MCPUsageTelemetryEvent.Operation = if name.hasPrefix("query_")
-            || name.hasPrefix("get_") {
+            || name.hasPrefix("get_") || name.hasPrefix("list_") {
             .read
         } else {
             .write
@@ -250,7 +273,7 @@ public final class DahliaMCPServer {
     }
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length
-    private func executeTool(named name: String, arguments: [String: Any]) throws -> [String: Any] {
+    func executeScopedTool(named name: String, arguments: [String: Any]) throws -> [String: Any] {
         switch name {
         case "query_meetings":
             try validate(arguments, allowedKeys: [
@@ -268,7 +291,7 @@ public final class DahliaMCPServer {
             return try toolResult(getMeeting(arguments))
         case "get_meeting_transcript":
             try validate(arguments, allowedKeys: [
-                "meeting_id", "from_elapsed_seconds", "to_elapsed_seconds", "limit", "cursor",
+                "meeting_id", "from_elapsed_seconds", "to_elapsed_seconds", "limit", "cursor", "after", "wait",
             ])
             return try toolResult(getMeetingTranscript(arguments))
         case "get_meeting_screenshots":
@@ -711,13 +734,29 @@ public final class DahliaMCPServer {
         let from = try nonnegativeDouble(arguments, key: "from_elapsed_seconds")
         let to = try nonnegativeDouble(arguments, key: "to_elapsed_seconds")
         try validateTimeRange(from: from, to: to)
-        return try store.transcript(
-            meetingID: meetingID,
-            fromElapsedSeconds: from,
-            toElapsedSeconds: to,
-            limit: integer(arguments, key: "limit") ?? 200,
-            cursor: string(arguments, key: "cursor")
-        )
+        let after = try string(arguments, key: "after")
+        let cursor = try string(arguments, key: "cursor")
+        guard after == nil || cursor == nil else { throw ParameterError("after and cursor cannot be combined") }
+        let limit = try integer(arguments, key: "limit") ?? 200
+        let wait = try boolean(arguments, key: "wait") ?? false
+        let deadline = ContinuousClock.now.advanced(by: .seconds(wait ? 25 : 0))
+        var recordAccess = true
+        while true {
+            let page = try store.transcript(
+                meetingID: meetingID,
+                fromElapsedSeconds: from,
+                toElapsedSeconds: to,
+                limit: limit,
+                cursor: cursor,
+                after: after,
+                recordAccess: recordAccess
+            )
+            // Polls in this request must not repeat the broker's access-time write.
+            recordAccess = false
+            if !page.segments.isEmpty || ContinuousClock.now >= deadline { return page }
+            // The stdio worker owns this bounded wait; no database transaction or UI executor is held.
+            Thread.sleep(forTimeInterval: 0.25)
+        }
     }
 
     private func getMeetingScreenshots(
@@ -784,14 +823,14 @@ public final class DahliaMCPServer {
         }
     }
 
-    private func requiredUUID(_ arguments: [String: Any], key: String) throws -> UUID {
+    func requiredUUID(_ arguments: [String: Any], key: String) throws -> UUID {
         guard let value = try string(arguments, key: key), let uuid = UUID(uuidString: value) else {
             throw ParameterError("\(key) must be a UUID string")
         }
         return uuid
     }
 
-    private func optionalUUID(_ arguments: [String: Any], key: String) throws -> UUID? {
+    func optionalUUID(_ arguments: [String: Any], key: String) throws -> UUID? {
         guard arguments[key] != nil else { return nil }
         return try requiredUUID(arguments, key: key)
     }
@@ -909,20 +948,20 @@ public final class DahliaMCPServer {
         return ids
     }
 
-    private func validate(_ arguments: [String: Any], allowedKeys: Set<String>) throws {
+    func validate(_ arguments: [String: Any], allowedKeys: Set<String>) throws {
         let unexpected = Set(arguments.keys).subtracting(allowedKeys)
         guard unexpected.isEmpty else {
             throw ParameterError("Unexpected parameters: \(unexpected.sorted().joined(separator: ", "))")
         }
     }
 
-    private func string(_ arguments: [String: Any], key: String) throws -> String? {
+    func string(_ arguments: [String: Any], key: String) throws -> String? {
         guard let value = arguments[key] else { return nil }
         guard let string = value as? String else { throw ParameterError("\(key) must be a string") }
         return string
     }
 
-    private func integer(_ arguments: [String: Any], key: String) throws -> Int? {
+    func integer(_ arguments: [String: Any], key: String) throws -> Int? {
         guard let value = arguments[key] else { return nil }
         guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else {
             throw ParameterError("\(key) must be an integer")
@@ -991,7 +1030,7 @@ public final class DahliaMCPServer {
         return date
     }
 
-    private func toolResult(_ value: some Encodable) throws -> [String: Any] {
+    func toolResult(_ value: some Encodable) throws -> [String: Any] {
         let data = try encoded(value)
         let object = try JSONSerialization.jsonObject(with: data)
         guard let text = String(data: data, encoding: .utf8) else {
@@ -1065,15 +1104,15 @@ public final class DahliaMCPServer {
             ?? #"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Internal error"}}"#
     }
 
-    private struct ParameterError: LocalizedError {
+    struct ParameterError: LocalizedError {
         let message: String
         init(_ message: String) { self.message = message }
         var errorDescription: String? { message }
     }
 }
 
-private extension DahliaMCPServer {
-    private static func idSchema(_ kind: TypeID.Kind, nullable: Bool = false) -> [String: Any] {
+extension DahliaMCPServer {
+    static func idSchema(_ kind: TypeID.Kind, nullable: Bool = false) -> [String: Any] {
         ["type": nullable ? ["string", "null"] : ["string"], "pattern": "^\(kind.rawValue)_[0-7][0-9a-hjkmnp-tv-z]{25}$"]
     }
 
@@ -1119,6 +1158,7 @@ private extension DahliaMCPServer {
                 "recurrence_id": ["type": "string"],
                 "calendar_title": ["type": "string"],
                 "status": ["type": "string"],
+                "is_recording": ["type": "boolean"],
                 "duration_seconds": ["type": "number"],
                 "created_at": ["type": "string", "format": "date-time"],
                 "has_summary": ["type": "boolean"],
@@ -1392,6 +1432,7 @@ private extension DahliaMCPServer {
                 "meeting_id": idSchema(.meeting),
                 "segments": ["type": "array", "items": transcriptEntrySchema],
                 "next_cursor": ["type": "string"],
+                "next_after": ["type": "string"],
             ],
             required: ["vault", "meeting_id", "segments"]
         )
@@ -1410,10 +1451,7 @@ private extension DahliaMCPServer {
     }
 
     private var toolDefinitions: [[String: Any]] {
-        if store.allowsWrites {
-            return Self.readOnlyToolDefinitions + Self.writeToolDefinitions
-        }
-        return Self.readOnlyToolDefinitions
+        workspaceToolDefinitions
     }
 
     private static var projectTypeSchema: [String: Any] {
@@ -1860,7 +1898,7 @@ private extension DahliaMCPServer {
         )
     }
 
-    private static var readOnlyToolDefinitions: [[String: Any]] {
+    static var readOnlyToolDefinitions: [[String: Any]] {
         allMeetingToolDefinitions + [
             [
                 "name": "query_projects",
@@ -2080,7 +2118,7 @@ private extension DahliaMCPServer {
         ]
     }
 
-    private static var writeToolDefinitions: [[String: Any]] {
+    static var writeToolDefinitions: [[String: Any]] {
         meetingWriteToolDefinitions + projectWriteToolDefinitions + customerIntelligenceWriteToolDefinitions
     }
 
@@ -2727,6 +2765,11 @@ private extension DahliaMCPServer {
                     "to_elapsed_seconds": ["type": "number", "minimum": 0],
                     "limit": ["type": "integer", "minimum": 1, "maximum": 500, "default": 200],
                     "cursor": ["type": "string"],
+                    "after": [
+                        "type": "string",
+                        "description": "Previous next_after. On transcript_changed_refetch_without_after omit after and refetch.",
+                    ],
+                    "wait": ["type": "boolean", "default": false, "description": "Wait up to 25 seconds when no confirmed speech is available."],
                 ],
                 "required": ["meeting_id"],
                 "additionalProperties": false,

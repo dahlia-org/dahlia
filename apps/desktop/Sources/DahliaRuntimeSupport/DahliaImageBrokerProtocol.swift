@@ -54,12 +54,19 @@ public enum DahliaImageBrokerProtocol {
                 Darwin.connect(descriptor, $0, DahliaTokenBrokerProtocol.unixAddressLength(path: socketURL.path))
             }
         }
-        guard connected == 0 else { throw ScreenshotContentError.unavailable }
+        guard connected == 0 else {
+            if request.text != nil { throw TextContentError.unavailable }
+            throw ScreenshotContentError.unavailable
+        }
         var data = try JSONEncoder().encode(request)
         data.append(0x0A)
         try DahliaTokenBrokerProtocol.writeAll(data, to: descriptor)
         let response = try JSONDecoder().decode(Response.self, from: DahliaTokenBrokerProtocol.readLine(from: descriptor))
-        guard response.error == nil, (1 ... 64 * 1024 * 1024).contains(response.byteCount) else {
+        if let error = response.error {
+            if let textError = TextContentError(rawValue: error) { throw textError }
+            throw ScreenshotContentError.unavailable
+        }
+        guard (1 ... 64 * 1024 * 1024).contains(response.byteCount) else {
             throw ScreenshotContentError.unavailable
         }
         var bytes = Data(count: response.byteCount)

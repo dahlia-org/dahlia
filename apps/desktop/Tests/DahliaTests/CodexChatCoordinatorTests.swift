@@ -55,7 +55,7 @@ import Foundation
         }
 
         @Test
-        func replacingDockedChatKeepsGeneratingSessionAndReusesItFromHistory() async throws {
+        func replacingDockedChatKeepsGeneratingSessionAndReusesItFromHistory() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
             settings.currentVault = Self.vault(name: "Background")
@@ -84,7 +84,7 @@ import Foundation
         }
 
         @Test
-        func closingDetachedWindowKeepsGeneratingSessionUntilCompletion() async throws {
+        func closingDetachedWindowKeepsGeneratingSessionUntilCompletion() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
             settings.currentVault = Self.vault(name: "Detached Background")
@@ -111,7 +111,7 @@ import Foundation
         }
 
         @Test
-        func hiddenSessionKeepsFollowUpWhenOriginalTurnFinishesDuringSteer() async throws {
+        func hiddenSessionKeepsFollowUpWhenOriginalTurnFinishesDuringSteer() async {
             let service = CoordinatorTestCodexChatService(blocksTurn: true, delaysSteer: true)
             let settings = AppSettings()
             settings.currentVault = Self.vault(name: "Background Follow-up")
@@ -144,7 +144,7 @@ import Foundation
         }
 
         @Test
-        func hiddenStoppedSessionIsRemovedAfterStopCleanupCompletes() async throws {
+        func hiddenStoppedSessionIsRemovedAfterStopCleanupCompletes() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
             settings.currentVault = Self.vault(name: "Stopped Background")
@@ -168,7 +168,7 @@ import Foundation
         }
 
         @Test
-        func failedPreThreadHiddenSessionIsRemovedWhenQueuedInputCannotResume() async throws {
+        func failedPreThreadHiddenSessionIsRemovedWhenQueuedInputCannotResume() async {
             let service = CoordinatorTestCodexChatService(delaysAndFailsThreadStart: true)
             let settings = AppSettings()
             settings.currentVault = Self.vault(name: "Failed Background")
@@ -204,7 +204,7 @@ import Foundation
             backgroundSession.sendDraft()
             await waitUntil {
                 await MainActor.run {
-                    backgroundSession.isGenerating && backgroundSession.backendThreadID == "thread-1"
+                    backgroundSession.isGenerating && backgroundSession.activeTurnID != nil
                 }
             }
 
@@ -213,6 +213,7 @@ import Foundation
             coordinator.activateVault(newVault.id)
 
             await waitUntil { await MainActor.run { !backgroundSession.isGenerating } }
+            await waitUntil { await service.interruptCount == 1 }
             #expect(coordinator.session(for: backgroundSession.id) == nil)
             #expect(await service.interruptCount == 1)
         }
@@ -525,27 +526,6 @@ import Foundation
             #expect(!coordinator.isDockedVisible)
         }
 
-        @Test
-        func liveModeStatusRemainsEnabledUntilTheLastSessionTurnsItOff() throws {
-            let settings = AppSettings()
-            settings.currentVault = Self.vault(name: "Live")
-            let coordinator = CodexChatCoordinator(
-                service: CoordinatorTestCodexChatService(),
-                settings: settings
-            )
-            let detachedID = coordinator.newDetachedChat()
-            let detachedSession = try #require(coordinator.session(for: detachedID))
-            var statuses: [Bool] = []
-            coordinator.liveModeStatusDidChange = { statuses.append($0) }
-
-            coordinator.dockedSession.toggleLiveMode()
-            detachedSession.toggleLiveMode()
-            coordinator.dockedSession.toggleLiveMode()
-            detachedSession.toggleLiveMode()
-
-            #expect(statuses == [true, true, true, false])
-        }
-
         private static func threadSummary(id: String) -> CodexChatThreadSummary {
             CodexChatThreadSummary(id: id, title: "History", updatedAt: .now)
         }
@@ -747,6 +727,7 @@ import Foundation
                 await withCheckedContinuation { delayedSteerContinuation = $0 }
             }
         }
+
         func interrupt(threadID _: String, turnID _: String) async {}
 
         func completeBlockedTurn() {

@@ -158,7 +158,19 @@ final class DahliaImageBrokerServer: Sendable {
             try sendHeader(.init(byteCount: data.count), to: descriptor)
             try DahliaTokenBrokerProtocol.writeAll(data, to: descriptor)
         } catch {
-            try? sendHeader(.init(byteCount: 0, error: "image_unavailable"), to: descriptor)
+            let code: String = switch error {
+            case let error as TextContentError: error.rawValue
+            case DahliaCloudError.noCredential, DahliaCloudError.authorizationDenied:
+                TextContentError.authorizationRequired.rawValue
+            case let DahliaCloudError.tokenRequestFailed(status) where [400, 401, 403].contains(status):
+                TextContentError.authorizationRequired.rawValue
+            case let error as SyncHTTPError where [401, 403].contains(error.status):
+                TextContentError.authorizationRequired.rawValue
+            case let error as URLError where error.code == .notConnectedToInternet:
+                TextContentError.offline.rawValue
+            default: "image_unavailable"
+            }
+            try? sendHeader(.init(byteCount: 0, error: code), to: descriptor)
         }
     }
 

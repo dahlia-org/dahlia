@@ -28,7 +28,7 @@ Dahlia が追加できるイベントとパラメータは以下だけとする�
 | `Dahlia.Transcription.started`, `.completed`, `.failed` | `transcriptionMode`: `realtime` / `batch`; 失敗時のみ `stage`: `start` / `persistence` / `transcription` |
 | `Dahlia.Summary.started`, `.completed`, `.failed` | `trigger`: `manual` / `automaticAfterBatch`; 失敗時のみ `stage`: `generation` |
 | `Dahlia.Export.started`, `.completed`, `.failed` | `destination`: `vault` / `googleDocs` / `localFiles`; `trigger`: `manual` / `summaryGeneration`; 失敗時のみ `stage`: `export` |
-| `Dahlia.AIChat.promptSubmitted`, `.liveModeEnabled` | なし。新規の手動 prompt と Live Mode の false→true 遷移だけを数え、retry と live transcript segment は数えない |
+| `Dahlia.AIChat.promptSubmitted` | なし。新規の手動 prompt だけを数え、retry と live transcript segment は数えない |
 | `Dahlia.MCP.ToolCall.completed`, `.failed` | `origin`: `codexChat`; `category`: `meeting` / `project` / `customerIntelligence` / `unknown`; `operation`: `read` / `write` |
 
 アプリ ID は `TELEMETRYDECK_APP_ID` からビルド時に `Info.plist` へ注入する。未設定なら TelemetryDeck を初期化せず、イベントを破棄する。Debug ビルドは必ず TelemetryDeck Test Mode とする。custom user ID は使用しない。固定 default parameter `runtime` は本体の `app` と内蔵 MCP helper の `mcpHelper` だけを許可する。
@@ -44,7 +44,7 @@ Dahlia が追加できるイベントとパラメータは以下だけとする�
 - 予約録音による録音 meeting 数: `Dahlia.Recording.started` のうち `meetingScope=new` かつ `trigger=scheduled` の event count。
 - 録音 session 数: `Dahlia.Recording.started` の全 event count。meeting 数とは呼ばない。
 - 完了録音の平均時間: `Dahlia.Recording.completed.floatValue` の mean。failed recording は含めない。
-- AI Chat DAU: `Dahlia.AIChat.promptSubmitted` または `.liveModeEnabled` の unique user 数。
+- AI Chat DAU: `Dahlia.AIChat.promptSubmitted` の unique user 数。
 - 内蔵 MCP 利用: terminal tool call の event/user count と、`failed / (completed + failed)`。外部 MCP adoption とは呼ばない。
 - workflow 成功率: best-effort の started/terminal 欠測を避けるため、原則 `completed / (completed + failed)` とする。
 

@@ -12,13 +12,6 @@ extension CodexChatSessionModel {
             && hasComposerContent
     }
 
-    var canSendLiveModeShortcut: Bool {
-        isLiveModeEnabled
-            && isBoundToCurrentVault
-            && activeSteeringManualSubmission == nil
-            && pendingManualInputs.isEmpty
-    }
-
     var hasComposerContent: Bool {
         draft.nilIfBlank != nil || !selectedMeetingReferenceIDs.isEmpty || !attachedImages.isEmpty
     }
@@ -40,7 +33,7 @@ extension CodexChatSessionModel {
     }
 
     var hasRetryableSubmission: Bool {
-        hasApprovalMethodUpdateFailure || failedLiveTranscript != nil || lastSubmittedText != nil
+        hasApprovalMethodUpdateFailure || lastSubmittedText != nil
     }
 
     var effortOptions: [CodexReasoningEffortOption] {

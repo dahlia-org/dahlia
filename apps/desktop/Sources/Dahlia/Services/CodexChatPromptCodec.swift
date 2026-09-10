@@ -19,50 +19,13 @@ enum CodexChatPromptCodec {
     }
 
     static func encodeTextBlocks(text: String, context: CodexChatContext?) -> [String] {
-        guard let context else { return [text] }
-        return [encodeContext(context), text]
-    }
-
-    static func encodeTextBlocks(
-        text: String?,
-        context: CodexChatContext?,
-        includesLiveModeContext: Bool,
-        liveTranscript: String? = nil
-    ) -> [String] {
-        let liveTranscript = liveTranscript?.nilIfBlank
-        var blocks: [String] = []
-        if context != nil || includesLiveModeContext {
-            blocks.append(encodeContext(
-                context,
-                isLiveMode: includesLiveModeContext,
-                containsLiveTranscript: liveTranscript != nil
-            ))
-        }
-        if let liveTranscript {
-            blocks.append(liveTranscriptBlock(liveTranscript))
-        }
-        if let text = text?.nilIfBlank {
-            blocks.append(text)
-        }
-        return blocks
+        let blocks = text.nilIfBlank.map { [$0] } ?? []
+        guard let context else { return blocks }
+        return [encodeContext(context)] + blocks
     }
 
     private static func encodeContext(_ context: CodexChatContext) -> String {
-        encodeContext(context, isLiveMode: false)
-    }
-
-    private static func encodeContext(
-        _ context: CodexChatContext?,
-        isLiveMode: Bool,
-        containsLiveTranscript: Bool = false
-    ) -> String {
         var lines = ["<context>"]
-        if isLiveMode {
-            lines.append(liveModeDescription)
-        }
-        if containsLiveTranscript {
-            lines.append(hiddenLiveTranscriptDescription)
-        }
         switch context {
         case let .project(id, name, description):
             lines.append("  You are viewing a project in the Dahlia App.")
@@ -82,8 +45,6 @@ enum CodexChatPromptCodec {
             lines.append("  Type: MeetingDraft")
             lines.append(element(name: "meeting_name", value: name, indentation: 2))
             append(calendarEvent, to: &lines)
-        case nil:
-            break
         }
         lines.append("</context>")
         return lines.joined(separator: "\n")
@@ -143,10 +104,6 @@ enum CodexChatPromptCodec {
         }
         visibleBlocks.removeAll(where: isDahliaLiveTranscriptBlock)
         return (visibleBlocks.joined(separator: "\n"), context)
-    }
-
-    private static func liveTranscriptBlock(_ text: String) -> String {
-        dahliaLiveTranscriptStart + escape(text) + liveTranscriptEnd
     }
 
     private static func isCanonicalLiveTranscriptBlock(_ block: String) -> Bool {

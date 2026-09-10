@@ -64,16 +64,6 @@ struct DahliaApp: App {
             liveSubtitleOverlayService: liveSubtitleOverlayService
         )
         let chatCoordinator = CodexChatCoordinator()
-        chatCoordinator.liveModeStatusDidChange = { [weak viewModel] isEnabled in
-            viewModel?.setChatLiveModeEnabled(isEnabled)
-        }
-        viewModel.finalizedLiveTranscriptHandler = { [weak chatCoordinator] text, wasTruncated in
-            chatCoordinator?.receiveFinalizedLiveTranscript(text, wasTruncated: wasTruncated)
-        }
-        viewModel.chatLiveModeFailureHandler = { [weak chatCoordinator] in
-            chatCoordinator?.disableLiveMode()
-        }
-
         _viewModel = StateObject(wrappedValue: viewModel)
         _updateController = State(initialValue: updateController)
         _sidebarViewModel = State(initialValue: sidebarViewModel)

@@ -92,7 +92,6 @@ enum UsageTelemetryEvent: Equatable, Sendable {
     case summary(Lifecycle<SummaryFailureStage>, trigger: SummaryTrigger)
     case export(Lifecycle<ExportFailureStage>, destination: ExportDestination, trigger: ExportTrigger)
     case aiChatPromptSubmitted
-    case aiChatLiveModeEnabled
 
     var signalName: String {
         switch self {
@@ -106,8 +105,6 @@ enum UsageTelemetryEvent: Equatable, Sendable {
             "Dahlia.Export.\(lifecycle.signalSuffix)"
         case .aiChatPromptSubmitted:
             "Dahlia.AIChat.promptSubmitted"
-        case .aiChatLiveModeEnabled:
-            "Dahlia.AIChat.liveModeEnabled"
         }
     }
 
@@ -132,7 +129,7 @@ enum UsageTelemetryEvent: Equatable, Sendable {
                 ["destination": destination.rawValue, "trigger": trigger.rawValue],
                 failureStage: lifecycle.failureStage
             )
-        case .aiChatPromptSubmitted, .aiChatLiveModeEnabled:
+        case .aiChatPromptSubmitted:
             [:]
         }
     }

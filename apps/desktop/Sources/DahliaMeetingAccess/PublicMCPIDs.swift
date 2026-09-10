@@ -24,9 +24,22 @@ enum PublicMCPIDs {
     }
 
     static func result(_ value: [String: Any], tool: String, arguments: [String: Any]) throws -> [String: Any] {
-        guard let original = value["structuredContent"] as? [String: Any],
-              var body = try PublicIDWire.transform(original, shape: "mcpResult", direction: .encode) as? [String: Any]
-        else { return value }
+        guard let original = value["structuredContent"] as? [String: Any] else { return value }
+        let shape = switch tool {
+        case "list_vaults": "mcpVaultList"
+        default: "mcpResult"
+        }
+        guard var body = try PublicIDWire.transform(original, shape: shape, direction: .encode) as? [String: Any] else { return value }
+        if tool != "list_vaults", let groups = original["vaults"] as? [[String: Any]] {
+            body["vaults"] = try groups.map { group in
+                var converted = group
+                if let id = group["vault_id"] { converted["vault_id"] = try PublicIDWire.id(id, kind: .vault, direction: .encode) }
+                if let nested = group["result"] as? [String: Any] {
+                    converted["result"] = try Self.result(["structuredContent": nested], tool: tool, arguments: arguments)["structuredContent"]
+                }
+                return converted
+            }
+        }
         if let relationship = original["relationship"] as? String, relationship.hasSuffix("_resource_reference"),
            let target = original["target_id"] {
             body["target_id"] = try PublicIDWire.transform(target, shape: "resourceID", direction: .encode, parent: arguments)

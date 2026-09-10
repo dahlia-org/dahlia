@@ -1896,6 +1896,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var codexCLI: String { String(localized: "Codex CLI", bundle: bundle) }
     static var claudeCode: String { String(localized: "Claude Code", bundle: bundle) }
     static var mcpPreview: String { String(localized: "Command Preview", bundle: bundle) }
+    static var mcpAllVaults: String { String(localized: "mcp.allVaults", bundle: bundle) }
     static var mcpClient: String { String(localized: "Client", bundle: bundle) }
     static var mcpAllowWriteAccess: String { String(localized: "Allow Write Access", bundle: bundle) }
     static var mcpConfigurationOutput: String { String(localized: "Configuration", bundle: bundle) }
@@ -1910,12 +1911,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "The MCP helper is not available in this app build.",
         bundle: bundle
     ) }
-    static var selectVaultForMCP: String { String(localized: "Select a vault before configuring MCP.", bundle: bundle) }
-    static var mcpFooter: String { String(
-        // swiftlint:disable:next line_length
-        localized: "The agent can read Meeting content and customer intelligence, including names and email addresses, from the selected Vault. Write access also allows creating, updating, and deleting customer intelligence, reorganizing Projects and meeting assignments, and replacing stored meeting summaries.",
-        bundle: bundle
-    ) }
+    static var mcpFooter: String { String(localized: "mcp.scopeFooter", bundle: bundle) }
     static func registrationCommand(_ name: String) -> String {
         String(format: String(localized: "%@ registration command", bundle: bundle), name)
     }
@@ -3167,37 +3163,6 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static func chatImagesUnavailable(_ count: Int) -> String {
         String(localized: "Could not attach \(count) image(s).", bundle: bundle)
-    }
-
-    static var chatLiveMode: String { String(localized: "Live mode", bundle: bundle) }
-    static var enableChatLiveMode: String { String(localized: "Turn on live mode", bundle: bundle) }
-    static var disableChatLiveMode: String { String(localized: "Turn off live mode", bundle: bundle) }
-    static var chatLiveModeOn: String { String(localized: "Live mode on", bundle: bundle) }
-    static var chatLiveModeInitialPrompt: String {
-        String(
-            localized: """
-            I'll send you the live transcript of this meeting. \
-            You don't need to respond to every transcript update. \
-            Support me when needed.
-            """,
-            bundle: bundle
-        )
-    }
-
-    static var chatLiveModeSummarizeShortcut: String {
-        String(localized: "Summarize the discussion so far.", bundle: bundle)
-    }
-
-    static var chatLiveModeExplainShortcut: String {
-        String(localized: "Explain what I just missed.", bundle: bundle)
-    }
-
-    static var chatLiveModeHistoryShortcut: String {
-        String(localized: "Review our past conversations.", bundle: bundle)
-    }
-
-    static var chatLiveTranscriptBacklogTruncated: String {
-        String(localized: "Some older live transcript was skipped because the chat backlog was too large.", bundle: bundle)
     }
 
     static var chatApprovalCommandTitle: String {

@@ -9,19 +9,19 @@ private func fail(_ message: String) -> Never {
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 
-guard arguments.count >= 2, arguments[0] == "--vault-id" else {
-    fail("Usage: dahlia-mcp --vault-id <vlt_TypeID> [--write]")
-}
-
-guard let vaultID = try? TypeID.decode(arguments[1], as: .vault) else {
-    fail("--vault-id must be a valid vlt_ TypeID")
-}
-
+var vaultID: UUID?
 var allowsWrites = false
 var telemetryOrigin: MCPUsageTelemetryEvent.Origin?
-var argumentIndex = 2
+var argumentIndex = 0
 while argumentIndex < arguments.count {
     switch arguments[argumentIndex] {
+    case "--vault", "--vault-id":
+        guard vaultID == nil, argumentIndex + 1 < arguments.count,
+              let id = try? TypeID.decode(arguments[argumentIndex + 1], as: .vault) else {
+            fail("--vault must specify one valid vlt_ TypeID")
+        }
+        vaultID = id
+        argumentIndex += 2
     case "--write":
         guard !allowsWrites else { fail("--write may only be specified once") }
         allowsWrites = true
@@ -35,10 +35,11 @@ while argumentIndex < arguments.count {
         telemetryOrigin = origin
         argumentIndex += 2
     default:
-        fail("Usage: dahlia-mcp --vault-id <vlt_TypeID> [--write]")
+        fail("Usage: dahlia-mcp [--vault <vlt_TypeID>] [--write]")
     }
 }
 
+let configuredVaultID = vaultID
 let configuredAllowsWrites = allowsWrites
 let configuredTelemetryOrigin = telemetryOrigin
 let usageTelemetryClient: MCPUsageTelemetryClient? = if configuredTelemetryOrigin != nil {
@@ -49,12 +50,17 @@ let usageTelemetryClient: MCPUsageTelemetryClient? = if configuredTelemetryOrigi
 
 runMCPStandardIOWorker {
     do {
-        let store = try MeetingAccessStore(vaultID: vaultID, allowsWrites: configuredAllowsWrites)
-        let server = DahliaMCPServer(
-            store: store,
-            telemetryOrigin: configuredTelemetryOrigin,
-            usageTelemetryReporter: { event in usageTelemetryClient?.record(event) }
-        )
+        let server: DahliaMCPServer
+        if let vaultID = configuredVaultID {
+            let store = try MeetingAccessStore(vaultID: vaultID, allowsWrites: configuredAllowsWrites)
+            server = DahliaMCPServer(
+                store: store,
+                telemetryOrigin: configuredTelemetryOrigin,
+                usageTelemetryReporter: { event in usageTelemetryClient?.record(event) }
+            )
+        } else {
+            server = try DahliaMCPServer(allowsWrites: configuredAllowsWrites)
+        }
         while let line = readLine() {
             if let response = server.handleLine(line) {
                 print(response)

@@ -1370,7 +1370,7 @@ import ImageIO
             let tools = try Self.json(server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#))
             let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             #expect(definitions.map { $0["name"] as? String } == [
-                "query_meetings", "query_screenshots", "get_meeting", "get_meeting_transcript", "get_meeting_screenshots",
+                "list_vaults", "query_meetings", "query_screenshots", "get_meeting", "get_meeting_transcript", "get_meeting_screenshots",
                 "query_projects", "get_project",
                 "query_organizations", "get_organization", "query_organization_chart",
                 "query_contacts", "get_contact",
@@ -1378,8 +1378,9 @@ import ImageIO
                 "query_project_resources", "query_insights", "get_insight",
             ])
             #expect((definitions.first?["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == true)
-            #expect(definitions.allSatisfy { $0["outputSchema"] != nil })
-            #expect(definitions.allSatisfy {
+            #expect(definitions.filter { !["list_vaults"].contains($0["name"] as? String ?? "") }
+                .allSatisfy { $0["outputSchema"] != nil })
+            #expect(definitions.filter { $0["outputSchema"] != nil }.allSatisfy {
                 ($0["outputSchema"] as? [String: Any])?["additionalProperties"] as? Bool == false
             })
             let screenshotDefinition = try #require(

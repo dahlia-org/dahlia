@@ -178,7 +178,10 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     dependencies.screenshotTransformer,
     config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined,
   );
-  const mcp = createServerMcpHandler(config, sync);
+  const mcp = createServerMcpHandler(config, sync, async (request) => {
+    if (auth) await identities.verifyMcpAccessToken(request);
+    else await identities.fromMcpHeader(request);
+  });
   const jobOwners = new WeakMap<Request, string>();
   const mcpMetadataUrl = `${config.baseUrl}/.well-known/oauth-protected-resource/mcp`;
   const mcpRequestAuth = auth

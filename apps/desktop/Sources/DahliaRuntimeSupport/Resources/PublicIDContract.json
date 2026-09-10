@@ -731,6 +731,9 @@
     },
     "mcpOrganizationMembership": {
       "organization_id": "id:organization"
+    },
+    "mcpVaultList": {
+      "vaults": "array:vault"
     }
   },
   "routes": [

@@ -541,3 +541,7 @@ lane を分離した。R5 は instrumentation のみ完了しており、backpre
 ## Recording audio archives
 
 New batch sessions enqueue a durable `recording_archives` job at session creation. The idle sync lane handles Server archives; batch post-processing and maintenance handle Local archives. Native streaming AAC encoding preserves source-specific time/language ranges. Capture and canonical transcript persistence never wait for archiving. `recording` sync metadata restores source audio for existing batch recognition. See [the archive ADR](docs/adr/shared/recording-audio-archive.md) for retention, protocol version, and the still-disabled source-deletion quality gate.
+
+### ライブ MCP 配信
+
+ローカル stdio MCP は追加済み全 Vault を既定とし、任意の起動引数で読み書きの範囲を制限する。Local / Server の `get_meeting_transcript` は保存済みの確定文だけを読み、`after` で差分取得、`wait` で最大25秒の待機を行う。待機中に DB ロックを保持せず、Server は認証と Vault 共有権限を各読取で再確認する。未確定文の MCP 公開や専用ライブ HTTP / SSE は持たない。AI Chat のライブ自動投入は廃止し、通常チャットと履歴は維持する。契約は [MCP の差分取得と保管庫](docs/live-mcp.md) にまとめる。

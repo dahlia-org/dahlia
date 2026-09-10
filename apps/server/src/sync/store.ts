@@ -2565,7 +2565,7 @@ function createIdentityStore(
       if (!meeting) return [];
       const transcript = await getTranscript(vaultId, meetingId, version);
       if (!transcript) return [];
-      return db.select({
+      const query = db.select({
         segmentId: schema.syncedTranscriptSegment.segmentId,
         startedAt: schema.syncedTranscriptSegment.startedAt,
         endedAt: schema.syncedTranscriptSegment.endedAt,
@@ -2582,8 +2582,8 @@ function createIdentityStore(
             gt(schema.syncedTranscriptSegment.segmentId, cursor.segmentId),
           ),
         )] : []),
-      )).orderBy(asc(schema.syncedTranscriptSegment.startedAt), asc(schema.syncedTranscriptSegment.segmentId))
-        .limit(limit);
+      )).orderBy(asc(schema.syncedTranscriptSegment.startedAt), asc(schema.syncedTranscriptSegment.segmentId));
+      return limit === undefined ? query : query.limit(limit);
     },
     async listScreenshots(vaultId, meetingId, query, limit, cursor, filters) {
       if (query && query.tokens.length === 0) return [];

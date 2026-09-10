@@ -5,7 +5,7 @@
     struct TranscriptionSessionPlanTests {
         @Test(arguments: [false, true], [false, true])
         func liveDraftIsIndependentOfSubtitlesAndSharesRecognition(draft: Bool, subtitles: Bool) {
-            var plan = TranscriptionSessionPlan(
+            let plan = TranscriptionSessionPlan(
                 finalMode: .batch,
                 liveSubtitlesEnabled: subtitles,
                 liveTranscriptDraftEnabled: draft
@@ -13,9 +13,6 @@
             #expect(plan.recordsBatchAudio)
             #expect(plan.persistsRealtimeTranscript == draft)
             #expect(plan.liveRecognizerCountPerSource == (draft || subtitles ? 1 : 0))
-            plan.liveChatEnabled = true
-            #expect(plan.liveRecognizerCountPerSource == 1)
-            #expect(plan.persistsRealtimeTranscript == draft)
         }
 
         @Test
@@ -81,18 +78,5 @@
             #expect(plan.recordsBatchAudio)
         }
 
-        @Test
-        func liveChatRequiresRecognitionWithoutPersistingRealtimeTranscript() {
-            let plan = TranscriptionSessionPlan(
-                finalMode: .batch,
-                liveSubtitlesEnabled: false,
-                liveChatEnabled: true
-            )
-
-            #expect(plan.requiresLiveRecognition)
-            #expect(plan.liveRecognizerCountPerSource == 1)
-            #expect(plan.recordsBatchAudio)
-            #expect(!plan.persistsRealtimeTranscript)
-        }
     }
 #endif

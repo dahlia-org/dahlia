@@ -25,13 +25,11 @@ import Foundation
         }
 
         @Test
-        func liveModeWrapsTranscriptAndKeepsItOutOfVisibleUserText() {
-            let blocks = CodexChatPromptCodec.encodeTextBlocks(
-                text: nil,
-                context: nil,
-                includesLiveModeContext: true,
-                liveTranscript: "Speaker & <guest>\nNext line"
-            )
+        func historicalLiveTranscriptStaysOutOfVisibleUserText() {
+            let blocks = [
+                TestCodexChatFixtures.liveTranscriptContext,
+                "<live_transcript source=\"dahlia\">Speaker &amp; &lt;guest&gt;&#10;Next line</live_transcript>",
+            ]
 
             #expect(blocks == [
                 TestCodexChatFixtures.liveTranscriptContext,
@@ -44,12 +42,7 @@ import Foundation
 
         @Test
         func standaloneLiveTranscriptBlockIsHidden() {
-            let blocks = CodexChatPromptCodec.encodeTextBlocks(
-                text: nil,
-                context: nil,
-                includesLiveModeContext: false,
-                liveTranscript: "keep this hidden"
-            )
+            let blocks = ["<live_transcript source=\"dahlia\">keep this hidden</live_transcript>"]
 
             let decoded = CodexChatPromptCodec.decodeTextBlocks(blocks)
 
@@ -68,12 +61,8 @@ import Foundation
 
         @Test
         func flattenedLiveModeContextAndTranscriptAreHidden() {
-            let flattened = CodexChatPromptCodec.encodeTextBlocks(
-                text: nil,
-                context: nil,
-                includesLiveModeContext: true,
-                liveTranscript: "Hidden speech"
-            ).joined()
+            let flattened = [TestCodexChatFixtures.liveTranscriptContext, "<live_transcript source=\"dahlia\">Hidden speech</live_transcript>"]
+                .joined()
 
             #expect(CodexChatPromptCodec.decodeTextBlocks([flattened]).text.isEmpty)
             #expect(CodexChatPromptCodec.visibleUserText(from: flattened).isEmpty)
@@ -81,11 +70,10 @@ import Foundation
 
         @Test
         func manualMessageRemainsVisibleWhileLiveModeIsEnabled() {
-            let blocks = CodexChatPromptCodec.encodeTextBlocks(
-                text: "Please summarize that",
-                context: nil,
-                includesLiveModeContext: true
-            )
+            let blocks = [
+                "<context>\n  Live mode is enabled. You are receiving finalized live transcription from Dahlia.\n</context>",
+                "Please summarize that",
+            ]
 
             let decoded = CodexChatPromptCodec.decodeTextBlocks(blocks)
             #expect(decoded.text == "Please summarize that")

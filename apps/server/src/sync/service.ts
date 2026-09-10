@@ -1,3 +1,4 @@
+import { transcriptCheckpoint, waitForTranscript } from "./transcript-checkpoint";
 import { uuidSchema, transcriptChunkSchema, SCREENSHOT_DELETE_BATCH_SIZE, STORAGE_OPERATION_CONCURRENCY, QUERY_EMBEDDING_DEADLINE_MS, QUERY_EMBEDDING_CONCURRENCY, permissionPrincipalSchema, SYNC_READ_PAGE_SIZE, TRANSCRIPT_READ_PAGE_SIZE, meetingCursorSchema, screenshotCursorSchema, transcriptCursorSchema, uuidV7Schema, transactionSchema, transactionDataSchemas, SYNC_CHANGE_PAGE_SIZE } from "./schemas";
 import type { GeneratedTranscript } from "../summary/transcription";
 import { conditionalRead } from "../storage/http-read";
@@ -1075,24 +1076,42 @@ export class MeetingSyncService {
     return this.store.withIdentity(identity, (scoped) => scoped.getMeeting(vaultId, meetingId));
   }
 
-  async listTranscript(identity: Identity, vaultId: string, meetingId: string, cursor?: string) {
+  async listTranscript(identity: Identity, vaultId: string, meetingId: string, cursor?: string,
+    options?: { after?: string; wait?: boolean; signal?: AbortSignal; authorize?: () => void | Promise<void> }) {
+    if (cursor !== undefined && options?.after !== undefined) throw new RequestError(400, "after_and_cursor_are_exclusive");
     const parsedCursor = this.parseTranscriptCursor(cursor);
-    const { records, transcript } = await this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockVault(vaultId);
-      const transcript = await scoped.getTranscript(vaultId, meetingId);
-      const records = await scoped.listTranscript(vaultId, meetingId, TRANSCRIPT_READ_PAGE_SIZE + 1,
-        parsedCursor, transcript?.version);
-      return { records, transcript };
-    });
-    const items = records.slice(0, TRANSCRIPT_READ_PAGE_SIZE);
-    const last = items.at(-1);
-    return {
-      transcript,
-      items,
-      ...(records.length > TRANSCRIPT_READ_PAGE_SIZE && last
-        ? { nextCursor: `${last.startedAt.toISOString()},${last.segmentId}` }
-        : {}),
-    };
+    const deadline = Date.now() + (options?.wait ? 25_000 : 0);
+    while (true) {
+      options?.signal?.throwIfAborted();
+      await options?.authorize?.();
+      const result = await this.store.withIdentity(identity, async (scoped) => {
+        await scoped.lockVault(vaultId);
+        if (!await scoped.getMeeting(vaultId, meetingId)) throw new RequestError(404, "meeting_not_found");
+        const transcript = await scoped.getTranscript(vaultId, meetingId);
+        // HTTP pagination keeps its bounded query; MCP also verifies the previously delivered prefix.
+        const records = await scoped.listTranscript(vaultId, meetingId,
+          options ? undefined : TRANSCRIPT_READ_PAGE_SIZE + 1, options ? undefined : parsedCursor, transcript?.version);
+        let page;
+        if (options) {
+          let start = 0;
+          if (parsedCursor) {
+            start = records.findIndex((row) => row.startedAt > parsedCursor.startedAt
+              || (row.startedAt.getTime() === parsedCursor.startedAt.getTime() && row.segmentId > parsedCursor.segmentId));
+            if (start < 0) start = records.length;
+          }
+          page = await transcriptCheckpoint(vaultId, meetingId, transcript?.id ?? "none", records,
+            options.after, start, TRANSCRIPT_READ_PAGE_SIZE);
+        } else {
+          page = { items: records.slice(0, TRANSCRIPT_READ_PAGE_SIZE), hasMore: records.length > TRANSCRIPT_READ_PAGE_SIZE };
+        }
+        const last = page.items.at(-1);
+        return { transcript, items: page.items, ...("next_after" in page ? { next_after: page.next_after } : {}),
+          ...(page.hasMore && last ? { nextCursor: `${last.startedAt.toISOString()},${last.segmentId}` } : {}) };
+      });
+      options?.signal?.throwIfAborted();
+      if (result.items.length || Date.now() >= deadline) return result;
+      await waitForTranscript(options?.signal);
+    }
   }
 
   private parseTranscriptCursor(cursor?: string) {

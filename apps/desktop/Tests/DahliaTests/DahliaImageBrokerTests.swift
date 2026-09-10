@@ -129,6 +129,31 @@
             await #expect(throws: (any Error).self) { try await client.value }
         }
 
+        @Test(arguments: ["offline", "authorizationRequired", "incomplete", "noCredential", "expiredRefresh"])
+        func textErrorsPreserveTheirMeaningAcrossBroker(code: String) async throws {
+            let root = URL(filePath: "/tmp/dahlia-text-errors-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let socket = root.appending(path: "text.sock")
+            let broker = DahliaImageBrokerServer(helperURL: executableURL()) { _ in
+                if code == "offline" { throw URLError(.notConnectedToInternet) }
+                if code == "noCredential" { throw DahliaCloudError.noCredential }
+                if code == "expiredRefresh" { throw DahliaCloudError.tokenRequestFailed(400) }
+                if code == "authorizationRequired" { throw SyncHTTPError(status: 401, body: Data()) }
+                throw TextContentError.incomplete
+            }
+            try broker.start(socketURL: socket)
+            let request = DahliaImageBrokerProtocol.Request(vaultId: .v7(), text: .init(operation: .transcript, meetingId: .v7()))
+            let expected =
+                try #require(TextContentError(rawValue: ["noCredential", "expiredRefresh"].contains(code) ? "authorizationRequired" : code))
+            await #expect(throws: expected) {
+                try await withBrokerClientThread { try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket) }
+            }
+            broker.stop()
+            await #expect(throws: TextContentError.unavailable) {
+                try await withBrokerClientThread { try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket) }
+            }
+        }
+
         private func executableURL() -> URL {
             var path = [CChar](repeating: 0, count: Int(PATH_MAX))
             let count = proc_pidpath(getpid(), &path, UInt32(path.count))
