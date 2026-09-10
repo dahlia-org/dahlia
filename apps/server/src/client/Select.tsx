@@ -40,8 +40,8 @@ export function Select({ value, onValueChange, children, disabled, placeholder, 
     const below = window.innerHeight - rect.bottom - 12;
     const above = rect.top - 12;
     const upwards = below < 200 && above > below;
-    const right = Math.max(12, Math.min(window.innerWidth - rect.right, window.innerWidth - Math.max(rect.width, 160) - 12));
-    setPosition({ right, maxWidth: window.innerWidth - right - 12,
+    const left = Math.max(12, Math.min(rect.left, window.innerWidth - Math.max(rect.width, 160) - 12));
+    setPosition({ left, maxWidth: window.innerWidth - left - 12,
       minWidth: rect.width, ...(upwards ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 }),
       maxHeight: Math.min(400, upwards ? above : below) });
     menu.current?.showPopover();

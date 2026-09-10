@@ -21,7 +21,7 @@ async function run() {
   assert(document.querySelector('fieldset button')?.matches(":disabled"), "fieldset disabled state lost");
   trigger.click(); await frame(); await frame();
   const menuRect = document.querySelector('[role="listbox"]')!.getBoundingClientRect();
-  assert(Math.abs(menuRect.right - trigger.getBoundingClientRect().right) < 1, "menu is not right-aligned with trigger");
+  assert(Math.abs(menuRect.left - trigger.getBoundingClientRect().left) < 1, "menu is not left-aligned with trigger");
   assert(menuRect.left >= 12 && menuRect.right <= innerWidth - 12, "menu overflowed viewport");
   assert(document.activeElement?.textContent?.startsWith("Alpha"), "selected option not focused");
   assert(dialog.contains(document.querySelector('[role="listbox"]')), "menu escaped modal dialog");
