@@ -16,11 +16,11 @@ it("preserves structured output support for available fallback models including 
   expect(isStructuredSummaryModel("gpt-5.4", modelList([]))).toBe(false);
 });
 
-it("does not require structured output from the transcription-only audio model", () => {
+it.each([false, undefined])("requires structured output from the transcription-only audio model (%s)", (support) => {
   const catalog = modelList([{ id: "gemini-3-8-flash" }]);
   const model = catalog.models.find(({ slug }) => slug === "gemini-3-8-flash")!;
-  model.supports_json_schema = false;
-  expect(isAudioSummaryModel(model.slug, catalog)).toBe(true);
+  model.supports_json_schema = support;
+  expect(isAudioSummaryModel(model.slug, catalog)).toBe(false);
   expect(isSummaryModel(model.slug, catalog, "audio")).toBe(false);
 });
 

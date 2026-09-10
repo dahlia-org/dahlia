@@ -35,7 +35,7 @@ actor ServerSummaryService {
         let supportsJSONSchema: Bool?
         let summaryMethods: [String]?
         var supportsStructuredSummary: Bool { supportsJSONSchema == true }
-        var supportsAudioSummary: Bool { slug.hasPrefix("gemini-") && inputModalities?.contains("audio") == true }
+        var supportsAudioSummary: Bool { supportsStructuredSummary && slug.hasPrefix("gemini-") && inputModalities?.contains("audio") == true }
         func supportsSummary(method: String) -> Bool {
             let source = method == "audio" ? "audio" : "transcript"
             return supportsStructuredSummary && (summaryMethods?.contains(source) ?? true)

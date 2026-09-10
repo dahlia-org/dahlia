@@ -361,10 +361,20 @@ import DahliaRuntimeSupport
         ])
         func audioModelChoicesRequireGeminiAndAudioInput(id: String, inputs: [String], expected: Bool) throws {
             let data = try JSONSerialization.data(withJSONObject: [
-                "slug": id, "display_name": id, "supported_reasoning_levels": [], "input_modalities": inputs,
+                "slug": id, "display_name": id, "supported_reasoning_levels": [], "input_modalities": inputs, "supports_json_schema": true,
             ])
             let model = try JSONDecoder().decode(ServerSummaryService.Model.self, from: data)
             #expect(model.supportsAudioSummary == expected)
+        }
+
+        @Test(arguments: [false, nil] as [Bool?])
+        func transcriptionModelRequiresStructuredOutput(support: Bool?) throws {
+            var json: [String: Any] = [
+                "slug": "gemini-audio", "display_name": "Gemini", "supported_reasoning_levels": [], "input_modalities": ["audio"],
+            ]
+            if let support { json["supports_json_schema"] = support }
+            let model = try JSONDecoder().decode(ServerSummaryService.Model.self, from: JSONSerialization.data(withJSONObject: json))
+            #expect(!model.supportsAudioSummary)
         }
 
         @Test(arguments: [

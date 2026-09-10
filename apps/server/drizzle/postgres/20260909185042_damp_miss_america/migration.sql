@@ -17,7 +17,8 @@ SET "summary" = jsonb_build_object(
       WHEN 'audio' THEN coalesce("summary"#>>'{methodSettings,audio,reasoningEffort}', 'medium')
       ELSE 'medium' END,
     'transcriptionModel', CASE WHEN "summary"->>'method' = 'cloudTranscription'
-      THEN coalesce("summary"#>>'{methodSettings,audio,model}', 'gemini-3-8-flash') END
+      THEN coalesce("summary"#>>'{methodSettings,audio,model}', 'gemini-3-8-flash')
+      WHEN "summary"->>'method' = 'transcript' THEN 'gemini-3-8-flash' END
   ))
 )
 WHERE "summary" ? 'method';--> statement-breakpoint
