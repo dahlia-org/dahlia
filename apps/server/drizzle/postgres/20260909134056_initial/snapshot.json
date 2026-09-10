@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "830f69a8-cf83-4e17-b0bd-48b8c3523ebd",
+  "id": "4f8ac973-40a9-422e-8f25-8b0e190f6d5d",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -2274,6 +2274,45 @@
       "table": "meetings"
     },
     {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "ical_uid",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "meetings"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "recurrence_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "meetings"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "calendar_event",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "meetings"
+    },
+    {
       "type": "timestamp",
       "typeSchema": null,
       "notNull": true,
@@ -3758,6 +3797,34 @@
       "entityType": "indexes",
       "schema": "app",
       "table": "files"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "ical_uid",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "recurrence_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "meetings_calendar_event_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "meetings"
     },
     {
       "nameExplicit": true,

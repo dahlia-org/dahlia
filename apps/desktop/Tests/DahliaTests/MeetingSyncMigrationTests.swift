@@ -824,21 +824,21 @@
 
         @Test
         func transcriptSchemaSeparatesAudioSourceFromSpeakerLabel() throws {
-            let queue = try DatabaseQueue(path: ":memory:")
-            let source = UUID.v7()
-            let result = try queue.write { db in
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
+            let source = UUID.v7(), vault = UUID.v7(), meeting = UUID.v7()
+            let date = Date.now
+            try queue.write { db in
                 try db.execute(sql: """
-                CREATE TABLE vaults(id BLOB PRIMARY KEY);
-                CREATE TABLE meetings(id BLOB PRIMARY KEY);
-                CREATE TABLE screenshots(id BLOB PRIMARY KEY, imageData BLOB NOT NULL, mimeType TEXT NOT NULL);
-                CREATE TABLE dahlia_account_connections(id BLOB PRIMARY KEY);
-                CREATE TABLE transcript_segments(
-                    id BLOB PRIMARY KEY, meetingId BLOB NOT NULL, speakerLabel TEXT
-                );
-                INSERT INTO transcript_segments(id, meetingId, speakerLabel) VALUES (?, ?, 'mic');
-                """, arguments: [source, UUID.v7()])
-                try MeetingSyncMigration.migrate(in: db)
-                return try (
+                INSERT INTO vaults(id, path, name, createdAt, lastOpenedAt) VALUES (?, '/tmp/audio-source', 'Vault', ?, ?);
+                INSERT INTO meetings(id, vaultId, name, status, createdAt, updatedAt) VALUES (?, ?, 'Meeting', 'READY', ?, ?);
+                INSERT INTO transcript_segments(id, meetingId, startTime, text, isConfirmed, speakerLabel)
+                VALUES (?, ?, ?, 'Speech', 1, 'mic');
+                """, arguments: [vault, date, date, meeting, vault, date, date, source, meeting, date])
+            }
+            try AppDatabaseManager.migrator.migrate(queue)
+            let result = try queue.read { db in
+                try (
                     Row.fetchOne(db, sql: "SELECT audioSource, speakerLabel FROM transcript_segments WHERE id = ?", arguments: [source]),
                     Row.fetchOne(db, sql: "SELECT \"notnull\" AS isNotNull FROM pragma_table_info('transcript_segments') WHERE name = 'speakerLabel'")
                 )
@@ -1674,7 +1674,7 @@
                 let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meeting.id)
                 try SyncTransactionRecorder.record(
                     vaultId: vault.id,
-                    operations: [patch, SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update)],
+                    operations: [patch, SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update, in: db)],
                     transcriptSegments: [patch.id: records.map(SyncTranscriptPatchSegment.init)],
                     in: db
                 )

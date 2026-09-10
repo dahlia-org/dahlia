@@ -22,10 +22,14 @@ enum ScreenshotContentMigration {
                 contentType: mimeType,
                 checksum: "SHA-256:" + ScreenshotRemoteReference.digest(bytes),
                 name: "capture",
-                metadata: FileMetadata(source: .screenshot, ocrText: row["ocrText"], caption: row["caption"]),
+                metadata: FileMetadata(source: .screenshot),
                 createdAt: capturedAt,
                 updatedAt: capturedAt
             ).insert(db)
+            try db.execute(
+                sql: "INSERT INTO file_text_bodies(fileId, ocrText, caption) VALUES (?, ?, ?)",
+                arguments: [id, row["ocrText"] as String?, row["caption"] as String?]
+            )
             try MeetingAttachmentRecord(
                 id: id,
                 meetingId: row["meetingId"],
@@ -49,6 +53,11 @@ enum ScreenshotContentMigration {
         createdAt DATETIME NOT NULL, updatedAt DATETIME NOT NULL, localReference TEXT, remoteReference TEXT
     );
     CREATE INDEX files_vault_id ON files(vaultId, id);
+    CREATE TABLE file_text_bodies (
+        fileId BLOB PRIMARY KEY NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+        ocrText TEXT,
+        caption TEXT
+    );
     CREATE TABLE meeting_attachments (
         id BLOB PRIMARY KEY, meetingId BLOB NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
         fileId BLOB NOT NULL REFERENCES files(id), capturedAt DATETIME, sessionId BLOB,
@@ -70,11 +79,12 @@ enum ScreenshotContentMigration {
     private static let imageViewSQL = """
     CREATE VIEW meeting_images AS
     SELECT a.id, a.fileId, a.meetingId, a.sessionId, coalesce(a.capturedAt, a.createdAt) AS capturedAt,
-        b.imageData, f.content_type AS mimeType, json_extract(f.metadata, '$.ocr_text') AS ocrText,
-        json_extract(f.metadata, '$.caption') AS caption, substr(f.checksum, 9) AS contentHash, f.size AS contentLength,
+        b.imageData, f.content_type AS mimeType, text.ocrText AS ocrText,
+        text.caption AS caption, substr(f.checksum, 9) AS contentHash, f.size AS contentLength,
         json_extract(f.metadata, '$.width') AS pixelWidth, json_extract(f.metadata, '$.height') AS pixelHeight,
         f.localReference, f.remoteReference
     FROM meeting_attachments a JOIN files f ON f.id = a.fileId
+    LEFT JOIN file_text_bodies text ON text.fileId = f.id
     LEFT JOIN file_migration_content b ON b.fileId = f.id
     WHERE json_extract(f.metadata, '$.source') = 'screenshot';
     """
@@ -84,7 +94,7 @@ enum ScreenshotContentMigration {
     WHEN (SELECT json_extract(metadata, '$.source') FROM files WHERE id = new.fileId) = 'screenshot'
     BEGIN
         INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, priority, availableAt, updatedAt)
-        SELECT 'fts', CASE WHEN json_extract(metadata, '$.ocr_text') IS NULL THEN 'screenshotAnalysis' ELSE 'screenshot' END,
+        SELECT 'fts', CASE WHEN (SELECT ocrText FROM file_text_bodies WHERE fileId = files.id) IS NULL THEN 'screenshotAnalysis' ELSE 'screenshot' END,
             new.id, -10, unixepoch('subsec'), unixepoch('subsec') FROM files WHERE id = new.fileId
         ON CONFLICT(indexKind, targetKind, targetKey) DO UPDATE SET generation = generation + 1, status = 'pending', attempts = 0;
     END;

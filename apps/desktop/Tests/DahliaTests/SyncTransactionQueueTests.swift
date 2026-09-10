@@ -8,6 +8,43 @@
 
     @MainActor
     struct SyncTransactionQueueTests {
+        @Test(arguments: ["", "20260903T000000Z"])
+        func uploadsCalendarOccurrenceIdentity(recurrenceId: String) async throws {
+            let (database, vault) = try await syncedDatabase()
+            let start = try Date("2026-09-03T09:00:00+09:00", strategy: .iso8601)
+            let end = start.addingTimeInterval(3600)
+            try await database.dbQueue.write { db in
+                try db.execute(sql: """
+                INSERT INTO calendar_events(ical_uid, recurrence_id, created_at, updated_at, title, start, "end", is_all_day)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, arguments: ["shared@example.com", recurrenceId, start, start, "Calendar", start, end, recurrenceId.isEmpty])
+                var meeting = MeetingRecord(
+                    id: .v7(), vaultId: vault.id, name: "Meeting", createdAt: start, updatedAt: start,
+                    calendarEventIcalUid: "shared@example.com", calendarEventRecurrenceId: recurrenceId
+                )
+                for action in [SyncAction.create, .update] {
+                    let operation = try SyncInitialSnapshotBuilder.meetingOperation(meeting, action: action, in: db)
+                    let data = try #require(operation.payloadJSON)
+                    let body = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+                    #expect(body["icalUid"] as? String == "shared@example.com")
+                    #expect(body["recurrenceId"] as? String == recurrenceId)
+                    let event = try #require(body["calendarEvent"] as? [String: Any])
+                    #expect(Set(event.keys) == ["start", "end", "is_all_day"])
+                    #expect(event["start"] as? String == start.ISO8601Format())
+                    #expect(event["end"] as? String == end.ISO8601Format())
+                    #expect(event["is_all_day"] as? Bool == recurrenceId.isEmpty)
+                }
+                meeting.calendarEventIcalUid = nil
+                meeting.calendarEventRecurrenceId = nil
+                let operation = try SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update, in: db)
+                let data = try #require(operation.payloadJSON)
+                let body = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+                #expect(body["icalUid"] == nil)
+                #expect(body["recurrenceId"] == nil)
+                #expect(body["calendarEvent"] == nil)
+            }
+        }
+
         @Test
         func collectionAppearanceRoundTripsThroughCanonicalStorageAndUpload() async throws {
             let (database, vault) = try await syncedDatabase()

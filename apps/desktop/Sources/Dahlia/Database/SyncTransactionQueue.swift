@@ -1131,7 +1131,7 @@ enum SyncTransactionQueue {
             let meetingOperations = try missingMeetings.compactMap { missing -> SyncOperationDraft? in
                 guard let meeting = try MeetingRecord.fetchOne(db, key: missing.id) else { return nil }
                 restoredMeetings.insert(missing.id)
-                return try SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .create)
+                return try SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .create, in: db)
             }
             if !meetingOperations.isEmpty {
                 queued.append(.init(operations: meetingOperations, segments: [:], deletions: [:], attachments: [:]))

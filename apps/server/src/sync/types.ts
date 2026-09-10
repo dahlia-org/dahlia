@@ -1,3 +1,4 @@
+import type { CalendarEventSnapshot } from "./schemas";
 import type { TranscriptVersion } from "./transcript";
 import type { SummaryVersion } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
@@ -145,6 +146,9 @@ export interface SyncMeetingRecord {
   status: string;
   duration: number | null;
   recordingStartedAt: Date | null;
+  icalUid?: string | null;
+  recurrenceId?: string | null;
+  calendarEvent?: CalendarEventSnapshot | null;
   isRecording?: boolean;
   createdAt: Date;
   updatedAt: Date;

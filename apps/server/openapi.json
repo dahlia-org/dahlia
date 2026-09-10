@@ -267,6 +267,43 @@
           "isRecording": {
             "type": "boolean"
           },
+          "icalUid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recurrenceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "calendarEvent": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "start": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "is_all_day": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "start",
+              "end",
+              "is_all_day"
+            ],
+            "additionalProperties": false
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -319,6 +356,9 @@
           "status",
           "duration",
           "recordingStartedAt",
+          "icalUid",
+          "recurrenceId",
+          "calendarEvent",
           "createdAt",
           "updatedAt",
           "revision"
@@ -1745,6 +1785,43 @@
           "isRecording": {
             "type": "boolean"
           },
+          "icalUid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recurrenceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "calendarEvent": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "start": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "is_all_day": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "start",
+              "end",
+              "is_all_day"
+            ],
+            "additionalProperties": false
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -1797,6 +1874,9 @@
           "status",
           "duration",
           "recordingStartedAt",
+          "icalUid",
+          "recurrenceId",
+          "calendarEvent",
           "createdAt",
           "updatedAt",
           "revision"
@@ -4199,6 +4279,46 @@
                     "data": {
                       "type": "object",
                       "properties": {
+                        "calendarEvent": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "start": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "end": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "is_all_day": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "start",
+                            "end",
+                            "is_all_day"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "icalUid": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1,
+                          "maxLength": 2048
+                        },
+                        "recurrenceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "pattern": "^(?:|[0-9]{8}|[0-9]{8}T[0-9]{6}Z)$"
+                        },
                         "projectId": {
                           "type": [
                             "string",
@@ -4300,6 +4420,46 @@
                     "data": {
                       "type": "object",
                       "properties": {
+                        "calendarEvent": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "start": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "end": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "is_all_day": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "start",
+                            "end",
+                            "is_all_day"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "icalUid": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1,
+                          "maxLength": 2048
+                        },
+                        "recurrenceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "pattern": "^(?:|[0-9]{8}|[0-9]{8}T[0-9]{6}Z)$"
+                        },
                         "projectId": {
                           "type": [
                             "string",

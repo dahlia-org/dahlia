@@ -488,6 +488,9 @@ CREATE TABLE `meetings` (
 	`status` text NOT NULL,
 	`duration` real,
 	`recording_started_at` integer,
+	`ical_uid` text,
+	`recurrence_id` text,
+	`calendar_event` text,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
 	`revision` integer DEFAULT 1 NOT NULL,
@@ -669,6 +672,7 @@ CREATE INDEX `sync_change_owner_vault_sequence_idx` ON `sync_changes` (`owner_us
 CREATE INDEX `sync_change_owner_sequence_idx` ON `sync_changes` (`owner_user_id`,`sequence`);--> statement-breakpoint
 CREATE INDEX `transaction_receipt_owner_created_idx` ON `transaction_receipts` (`owner_user_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `files_vault_file_idx` ON `files` (`vault_id`,`file_id`);--> statement-breakpoint
+CREATE INDEX `meetings_calendar_event_idx` ON `meetings` (`ical_uid`,`recurrence_id`);--> statement-breakpoint
 CREATE INDEX `synced_meeting_vault_created_id_idx` ON `meetings` (`vault_id`,`created_at`,`meeting_id`);--> statement-breakpoint
 CREATE INDEX `project_vault_parent_name_idx` ON `projects` (`vault_id`,`parent_project_id`,`name`);--> statement-breakpoint
 CREATE INDEX `recordings_meeting_session_idx` ON `recordings` (`meeting_id`,`session_id`);--> statement-breakpoint

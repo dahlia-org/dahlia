@@ -578,7 +578,7 @@ final class MeetingRepository {
                 try record.update(db)
                 try SyncTransactionRecorder.record(
                     vaultId: record.vaultId,
-                    operations: [SyncInitialSnapshotBuilder.meetingOperation(record, action: .update)],
+                    operations: [SyncInitialSnapshotBuilder.meetingOperation(record, action: .update, in: db)],
                     in: db
                 )
             }
@@ -744,7 +744,7 @@ final class MeetingRepository {
             try SyncTransactionRecorder.recordBatches(
                 vaultId: vaultId,
                 operations: changedMeetings.map {
-                    try SyncInitialSnapshotBuilder.meetingOperation($0, action: .update)
+                    try SyncInitialSnapshotBuilder.meetingOperation($0, action: .update, in: db)
                 },
                 in: db
             )
@@ -791,7 +791,7 @@ final class MeetingRepository {
             try SyncTransactionRecorder.record(
                 vaultId: meeting.vaultId,
                 operations: [
-                    SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update),
+                    SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update, in: db),
                     SyncInitialSnapshotBuilder.summaryOperation(record, action: .upsert),
                 ],
                 in: db

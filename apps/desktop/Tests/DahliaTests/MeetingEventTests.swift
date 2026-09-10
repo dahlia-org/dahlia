@@ -76,7 +76,7 @@
                     db,
                     sql: "SELECT transactionId FROM sync_operations WHERE entity = 'meeting_event'"
                 ))
-                let operation = try SyncInitialSnapshotBuilder.meetingOperation(fixture.meeting, action: .update)
+                let operation = try SyncInitialSnapshotBuilder.meetingOperation(fixture.meeting, action: .update, in: db)
                 let transactionId = try #require(try SyncTransactionRecorder.record(
                     vaultId: fixture.meeting.vaultId,
                     operations: [operation],

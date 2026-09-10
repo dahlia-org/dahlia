@@ -7,6 +7,23 @@ import { fileWireMetadataSchema, fileMetadataFromWire } from "../files/model";
 
 export const uuidSchema = z.uuid().transform((value) => value.toLowerCase());
 export const dateSchema = z.iso.datetime().transform((value) => new Date(value));
+export const calendarEventSchema = z.object({
+  start: z.iso.datetime({ offset: true }),
+  end: z.iso.datetime({ offset: true }),
+  is_all_day: z.boolean(),
+}).strict();
+export type CalendarEventSnapshot = z.infer<typeof calendarEventSchema>;
+
+const calendarIdentityFields = {
+  calendarEvent: calendarEventSchema.nullable().optional(),
+  icalUid: z.string().min(1).max(2048).nullable().optional(),
+  recurrenceId: z.string().regex(/^(?:|[0-9]{8}|[0-9]{8}T[0-9]{6}Z)$/).nullable().optional(),
+};
+const pairedCalendarIdentity = (value: { icalUid?: string | null; recurrenceId?: string | null }) =>
+  (value.icalUid === undefined && value.recurrenceId === undefined)
+  || (value.icalUid === null && value.recurrenceId === null)
+  || (typeof value.icalUid === "string" && typeof value.recurrenceId === "string");
+
 export const nullableDateSchema = dateSchema.nullable();
 export const projectNameSchema = z.string().trim().min(1).refine((value) =>
   ![".", ".."].includes(value)
@@ -92,8 +109,8 @@ export const transactionDataSchemas = {
   "project:create": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),
   "project:update": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),
   "project:delete": z.object({}).strict(),
-  "meeting:create": z.object({ projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, createdAt: dateSchema, updatedAt: dateSchema }).strict(),
-  "meeting:update": z.object({ projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, updatedAt: dateSchema }).strict(),
+  "meeting:create": z.object({ ...calendarIdentityFields, projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, createdAt: dateSchema, updatedAt: dateSchema }).strict().refine(pairedCalendarIdentity, "Calendar UID and recurrence ID must be supplied together"),
+  "meeting:update": z.object({ ...calendarIdentityFields, projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, updatedAt: dateSchema }).strict().refine(pairedCalendarIdentity, "Calendar UID and recurrence ID must be supplied together"),
   "meeting:delete": z.object({}).strict(),
   "summary:upsert": z.object({ title: z.string(), document: summaryDocumentSchema, createdAt: dateSchema }).strict(),
   "summary:delete": z.object({}).strict(),

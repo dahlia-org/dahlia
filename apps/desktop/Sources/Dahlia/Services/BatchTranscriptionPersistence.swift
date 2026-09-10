@@ -124,7 +124,7 @@ enum BatchTranscriptionPersistence {
             guard let updated = try MeetingRecord.fetchOne(db, key: meetingId) else { throw CocoaError(.fileNoSuchFile) }
             try SyncTransactionRecorder.record(
                 vaultId: meeting.vaultId,
-                operations: [SyncInitialSnapshotBuilder.meetingOperation(updated, action: .update)],
+                operations: [SyncInitialSnapshotBuilder.meetingOperation(updated, action: .update, in: db)],
                 in: db
             )
         }

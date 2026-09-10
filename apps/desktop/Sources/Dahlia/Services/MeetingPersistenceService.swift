@@ -268,7 +268,7 @@ final class MeetingPersistenceService {
                     in: db
                 )
                 if resetsRecordingStartOnCancel {
-                    try operations.append(SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update))
+                    try operations.append(SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update, in: db))
                 }
                 try SyncTransactionRecorder.record(
                     vaultId: meeting.vaultId,
@@ -349,7 +349,7 @@ private enum MeetingPersistenceStarter {
             try meeting.insert(db)
             try SyncTransactionRecorder.record(
                 vaultId: request.vaultId,
-                operations: [SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .create)],
+                operations: [SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .create, in: db)],
                 in: db
             )
             let recordingSession = makeRecordingSession(
@@ -412,7 +412,7 @@ private enum MeetingPersistenceStarter {
                 try meetingToUpdate.update(db)
                 try SyncTransactionRecorder.record(
                     vaultId: meetingToUpdate.vaultId,
-                    operations: [SyncInitialSnapshotBuilder.meetingOperation(meetingToUpdate, action: .update)],
+                    operations: [SyncInitialSnapshotBuilder.meetingOperation(meetingToUpdate, action: .update, in: db)],
                     in: db
                 )
             }

@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "60d8a8e6-6861-48d3-9659-91c8f2536ce8",
+  "id": "d0efc892-6640-4990-b6af-e20ad36b9840",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -3505,6 +3505,36 @@
       "table": "meetings"
     },
     {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "ical_uid",
+      "entityType": "columns",
+      "table": "meetings"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "recurrence_id",
+      "entityType": "columns",
+      "table": "meetings"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "calendar_event",
+      "entityType": "columns",
+      "table": "meetings"
+    },
+    {
       "type": "integer",
       "notNull": true,
       "autoincrement": false,
@@ -6124,6 +6154,24 @@
       "name": "files_vault_file_idx",
       "entityType": "indexes",
       "table": "files"
+    },
+    {
+      "columns": [
+        {
+          "value": "ical_uid",
+          "isExpression": false
+        },
+        {
+          "value": "recurrence_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "meetings_calendar_event_idx",
+      "entityType": "indexes",
+      "table": "meetings"
     },
     {
       "columns": [

@@ -1141,6 +1141,15 @@ export interface components {
             /** Format: date-time */
             recordingStartedAt: string | null;
             isRecording?: boolean;
+            icalUid: string | null;
+            recurrenceId: string | null;
+            calendarEvent: {
+                /** Format: date-time */
+                start: string;
+                /** Format: date-time */
+                end: string;
+                is_all_day: boolean;
+            } | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1454,6 +1463,15 @@ export interface components {
             /** Format: date-time */
             recordingStartedAt: string | null;
             isRecording?: boolean;
+            icalUid: string | null;
+            recurrenceId: string | null;
+            calendarEvent: {
+                /** Format: date-time */
+                start: string;
+                /** Format: date-time */
+                end: string;
+                is_all_day: boolean;
+            } | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1950,6 +1968,15 @@ export interface components {
                 entityId: string;
                 baseRevision: number | null;
                 data: {
+                    calendarEvent?: {
+                        /** Format: date-time */
+                        start: string;
+                        /** Format: date-time */
+                        end: string;
+                        is_all_day: boolean;
+                    } | null;
+                    icalUid?: string | null;
+                    recurrenceId?: string | null;
                     projectId: string | null;
                     name: string;
                     /** @default  */
@@ -1973,6 +2000,15 @@ export interface components {
                 entityId: string;
                 baseRevision: number | null;
                 data: {
+                    calendarEvent?: {
+                        /** Format: date-time */
+                        start: string;
+                        /** Format: date-time */
+                        end: string;
+                        is_all_day: boolean;
+                    } | null;
+                    icalUid?: string | null;
+                    recurrenceId?: string | null;
                     projectId: string | null;
                     name: string;
                     /** @default  */
