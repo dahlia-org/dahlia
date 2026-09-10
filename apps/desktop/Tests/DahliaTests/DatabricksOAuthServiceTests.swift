@@ -327,6 +327,25 @@
             #expect(logins.withLock { $0 } == 1)
         }
 
+        @Test func loopbackErrorsUseDatabricksMessagesAndPreserveCancellation() async throws {
+            let expiring = try await OAuthLoopbackRedirectServer(callbackPath: "/", callbackTimeout: 0.01)
+            await #expect(throws: DatabricksOAuthError.authorizationTimedOut) {
+                try await DatabricksOAuthService.callbackURL(from: expiring)
+            }
+            #expect(DatabricksOAuthError.authorizationTimedOut.localizedDescription == L10n.databricksAuthorizationTimedOut)
+            #expect(DatabricksOAuthError.authorizationTimedOut.localizedDescription.contains("Databricks"))
+            // A completed server rejects a second waiter as an invalid authorization response.
+            await #expect(throws: DatabricksOAuthError.invalidAuthorizationResponse) {
+                try await DatabricksOAuthService.callbackURL(from: expiring)
+            }
+            #expect(DatabricksOAuthError.invalidAuthorizationResponse.localizedDescription == L10n.databricksInvalidAuthorizationResponse)
+            #expect(DatabricksOAuthError.invalidAuthorizationResponse.localizedDescription.contains("Databricks"))
+            let server = try await OAuthLoopbackRedirectServer(callbackPath: "/")
+            let task = Task { try await DatabricksOAuthService.callbackURL(from: server) }
+            task.cancel()
+            await #expect(throws: CancellationError.self) { try await task.value }
+        }
+
         private func credential() -> DatabricksOAuthCredential {
             .init(
                 accessToken: "old-access",

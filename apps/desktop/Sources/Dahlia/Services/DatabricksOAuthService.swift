@@ -248,13 +248,32 @@ actor DatabricksOAuthService {
         try Task.checkCancellation()
         let opened = await MainActor.run { NSWorkspace.shared.open(url) }
         guard opened else { throw DahliaCloudError.browserCouldNotOpen }
-        return try await server.waitForCallback()
+        return try await callbackURL(from: server)
+    }
+
+    static func callbackURL(from server: OAuthLoopbackRedirectServer) async throws -> URL {
+        do {
+            return try await server.waitForCallback()
+        } catch GoogleSignInError.authorizationTimedOut {
+            throw DatabricksOAuthError.authorizationTimedOut
+        } catch GoogleSignInError.invalidAuthorizationResponse {
+            throw DatabricksOAuthError.invalidAuthorizationResponse
+        }
     }
 }
 
 enum DatabricksOAuthError: LocalizedError, Equatable {
     case callbackUnavailable
-    var errorDescription: String? { L10n.databricksCallbackUnavailable }
+    case authorizationTimedOut
+    case invalidAuthorizationResponse
+
+    var errorDescription: String? {
+        switch self {
+        case .callbackUnavailable: L10n.databricksCallbackUnavailable
+        case .authorizationTimedOut: L10n.databricksAuthorizationTimedOut
+        case .invalidAuthorizationResponse: L10n.databricksInvalidAuthorizationResponse
+        }
+    }
 }
 
 private final class OAuthNoRedirectDelegate: NSObject, URLSessionTaskDelegate {

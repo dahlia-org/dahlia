@@ -1805,3 +1805,7 @@
 "Cannot listen on localhost:8020. Close the other sign-in and retry." = "Cannot listen on localhost:8020. Close the other sign-in and retry.";
 
 "Enter your workspace URL and sign in again to replace the old CLI connection." = "Enter your workspace URL and sign in again to replace the old CLI connection.";
+
+"Databricks sign-in timed out. Please sign in again." = "Databricks sign-in timed out. Please sign in again.";
+
+"Databricks sign-in returned an invalid response. Please sign in again." = "Databricks sign-in returned an invalid response. Please sign in again.";

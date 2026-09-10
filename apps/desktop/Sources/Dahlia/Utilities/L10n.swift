@@ -3559,6 +3559,14 @@ enum L10n { // swiftlint:disable:this type_body_length
 }
 
 extension L10n {
+    static var databricksAuthorizationTimedOut: String { String(
+        localized: "Databricks sign-in timed out. Please sign in again.",
+        bundle: bundle
+    ) }
+    static var databricksInvalidAuthorizationResponse: String { String(
+        localized: "Databricks sign-in returned an invalid response. Please sign in again.",
+        bundle: bundle
+    ) }
     static var databricksCallbackUnavailable: String { String(
         localized: "Cannot listen on localhost:8020. Close the other sign-in and retry.",
         bundle: bundle
