@@ -77,7 +77,7 @@ const j = `${m}/summary-jobs`;
 export type OperationId =
   "getHealth" | "getOpenAPI" | "getSession" | "listSessions" | "revokeSession"
   | "listAdministrators" | "addAdministrator" | "removeAdministrator" | "listServerUsers" | "listServerOrganizations"
-  | "getSearchSettings" | "updateSearchSettings"
+  | "getServerOrganization" | "getSearchSettings" | "updateSearchSettings"
   | "getSettings" | "updateSettings" | "getCapabilities" | "listVaults" | "getVault"
   | "listProjects" | "getProject" | "listMeetings" | "getMeeting" | "listSummaries"
   | "getSummary" | "getLatestSummary" | "listTranscripts" | "getTranscript" | "getLatestTranscript"
@@ -87,7 +87,7 @@ export type OperationId =
   | "getFile" | "updateFile" | "listFiles" | "listMeetingFiles" | "getFileContent"
   | "headFileContent" | "getFileVariant" | "headFileVariant" | "putRecordingContent" | "listRecordings"
   | "getRecordingContent" | "headRecordingContent" | "getTransferAudience" | "transferVault" | "getRelocations"
-  | "listPermissions" | "putOrganizationPermission" | "deleteOrganizationPermission" | "putTeamPermission" | "deleteTeamPermission"
+  | "searchPermissionTargets" | "putUserPermission" | "deleteUserPermission" | "listPermissions" | "putOrganizationPermission" | "deleteOrganizationPermission" | "putTeamPermission" | "deleteTeamPermission"
   | "listOrganizations" | "getOrganization" | "listOrganizationMembers" | "listTeams" | "createTeam"
   | "updateTeam" | "deleteTeam" | "listTeamMembers" | "putTeamMember" | "deleteTeamMember";
 export const contracts: Record<OperationId, RouteConfig & { operationId: string }> = {
@@ -106,6 +106,10 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   removeAdministrator: route("delete", "/api/v1/admin/members/{userId}", "removeAdministrator", "Revoke administrator access; retain the last administrator", { 204: empty }, {}, browser),
   listServerUsers: route("get", "/api/v1/admin/users", "listServerUsers", "Administrator directory; ordered by name and ID", { 200: json(z.object({ items: z.array(S.person.extend({ createdAt: S.date, role: z.string().nullable() })), hasMore: z.boolean() })) }, { query: z.object({ offset: z.string().regex(/^\d+$/).optional().openapi({ description: "0–1000000. Fixed page size 100." }) }).strict() }, browser),
   listServerOrganizations: route("get", "/api/v1/admin/organizations", "listServerOrganizations", "Administrator organization directory", { 200: json(z.object({ items: z.array(S.organization.extend({ memberCount: S.integer, teamCount: S.integer })), hasMore: z.boolean() })) }, { query: z.object({ offset: z.string().regex(/^\d+$/).optional() }).strict() }, browser),
+  getServerOrganization: route("get", "/api/v1/admin/organizations/{organizationId}", "getServerOrganization", "Organization directory details; administrator only, independent of membership", { 200: json(S.organization.extend({
+    members: z.array(z.object({ id: S.principalId, userId: S.principalId, role: z.string(), name: z.string(), email: z.string() })),
+    teams: z.array(z.object({ id: S.principalId, name: z.string() })), hasMoreMembers: z.boolean(), hasMoreTeams: z.boolean(),
+  })) }, { query: z.object({ membersOffset: z.string().regex(/^\d+$/).optional(), teamsOffset: z.string().regex(/^\d+$/).optional() }).strict() }, browser),
   getSettings: route("get", "/api/v1/account/settings", "getSettings", "Read current account settings", { 200: json(settingsEnvelope) }),
   updateSettings: route("patch", "/api/v1/account/settings", "updateSettings", "Merge supplied fields, including nested summary settings; maximum 8 KiB", { 200: json(settingsEnvelope) }, body(accountSettingsPatchSchema, { outputLanguage: "ja" })),
   getCapabilities: route("get", "/api/v1/capabilities", "getCapabilities", "Discover feature versions; unsupported features are omitted", { 200: json(S.capabilities) }),
@@ -154,6 +158,9 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   getTransferAudience: route("get", `${v}/transfer-audience`, "getTransferAudience", "Preview readers gaining or losing access; owner only", { 200: json(z.object({ audienceHash: z.string(), removed: z.array(S.person), added: z.array(S.person) })) }, { query: z.object({ destinationVaultId: S.id }).strict() }),
   transferVault: route("post", `${v}/transfer`, "transferVault", "Move all content after revision and audience checks; owner only", { 200: json(z.object({ id: S.id, status: z.literal("committed"), sourceVaultId: S.id, destinationVaultId: S.id })) }, { ...body(z.object({ destinationVaultId: S.id, sourceRevision: S.integer, destinationRevision: S.integer, audienceHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict()), headers: z.object({ "idempotency-key": z.uuidv7().meta({ format: "uuidv7" }) }) }),
   getRelocations: route("get", `${v}/relocations`, "getRelocations", "Resolve moved resources to currently accessible Vaults", { 200: json(z.object({ vaults: z.array(S.vault), items: z.array(z.object({ entity: z.enum(["project", "meeting", "file"]), id: S.id, vaultId: S.id })) })) }),
+  searchPermissionTargets: route("get", `${v}/permission-targets`, "searchPermissionTargets", "Search own organizations, their teams and co-members; owner only; 50 per type per page", { 200: json(S.page(S.permission.pick({ principalType: true, principalId: true }).extend({ name: z.string(), detail: z.string() }))) }, { query: z.object({ q: z.string().trim().max(200).optional(), cursor: S.cursor.optional() }).strict() }, browser),
+  putUserPermission: route("put", `${v}/permissions/users/{userId}`, "putUserPermission", "Grant read-only access to a fellow organization member; owner only", { 204: empty }, {}, browser),
+  deleteUserPermission: route("delete", `${v}/permissions/users/{userId}`, "deleteUserPermission", "Revoke direct user access; owner only", { 204: empty }, {}, browser),
   listPermissions: route("get", `${v}/permissions`, "listPermissions", "Read Vault sharing permissions", { 200: json(S.page(S.permission)) }, {}, browser),
   putOrganizationPermission: route("put", `${v}/permissions/organizations/{organizationId}`, "putOrganizationPermission", "Grant read-only organization access; owner only", { 204: empty }, {}, browser),
   deleteOrganizationPermission: route("delete", `${v}/permissions/organizations/{organizationId}`, "deleteOrganizationPermission", "Revoke organization access; owner only", { 204: empty }, {}, browser),

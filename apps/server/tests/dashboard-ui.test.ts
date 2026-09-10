@@ -1,3 +1,5 @@
+import * as sidebar from "../src/client/Sidebar";
+import { MeetingHoverDetails } from "../src/client/MeetingHoverCard";
 import { encodeId } from "../src/typeid";
 import { apiUrls } from "../src/client/generated-operations";
 import { SummaryHistory } from "../src/client/SummaryHistory";
@@ -13,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ScreenshotFigure,
   SyncedMeeting,
+  Vaults,
   MeetingList,
   resolveDashboardExtensionRoute,
   type DashboardExtension,
@@ -45,6 +48,7 @@ describe("desktop-style meeting layout", () => {
           meetingId: "m", latest: { formatVersion: 1, entity: "summary", entityId: "m", count: 1, byteCount: 0, sha256: "", version: 7, revision: 2, present: true, record: { title: "New", document: latest, createdAt: null } },
           selected, onSelect: vi.fn(),
         }));
+        expect(render(null)).toContain('class="summary-history"');
         expect(render(null)).toContain("Current result");
         expect(render(null)).toContain("v7");
         expect(render(null)).not.toContain("Previous result");
@@ -66,7 +70,7 @@ describe("desktop-style meeting layout", () => {
     const query = vi.spyOn(liveData, "useLiveJSON");
     const page = vi.spyOn(liveData, "useLivePage");
     const empty = { data: undefined, error: undefined, loading: true, reload: vi.fn(), replace: vi.fn() };
-    const meeting = { meetingId: "m1", name: "Planning", createdAt: "2026-09-07T00:00:00Z" };
+    const meeting = { meetingId: "m1", name: "Planning", description: "Description available to read-only members", createdAt: "2026-09-07T00:00:00Z" };
     const render = () => renderToStaticMarkup(createElement(SyncedMeeting, { vaultId: "v1", meetingId: "m1" }));
     page.mockReturnValue({ ...empty, loadingMore: false, loadMore: vi.fn() });
     try {
@@ -83,6 +87,8 @@ describe("desktop-style meeting layout", () => {
         const html = render();
         expect(query).toHaveBeenCalledWith(expect.objectContaining({ key: "[\"getMeeting\",{\"params\":{\"path\":{\"meetingId\":\"m1\"}}}]" }));
         expect(query).toHaveBeenCalledWith(expect.objectContaining({ key: "[\"getLatestSummary\",{\"params\":{\"path\":{\"meetingId\":\"m1\"}}}]" }));
+        expect(html.includes("Description available to read-only members")).toBe(ready === "both");
+        if (ready === "both") expect(html).toContain('<details class="meeting-description"><summary>説明</summary><p>Description available to read-only members</p></details>');
         expect(html.includes("<h1>")).toBe(ready === "both");
         expect(html.includes("Planning")).toBe(ready === "both");
         expect(html).not.toContain("<h1>ミーティング</h1>");
@@ -354,11 +360,12 @@ describe("dashboard navigation", () => {
   });
 
   it("renders localized collection rows without internal metadata", () => {
-    const meeting = { meetingId: "m1", name: "Planning", createdAt: "2026-09-07T00:00:00Z", status: "TRANSCRIPT_NOT_FOUND" } as SyncedMeetingInfo;
+    const meeting = { meetingId: "m1", name: "Planning", description: "Preview omitted from compact rows", createdAt: "2026-09-07T00:00:00Z", status: "TRANSCRIPT_NOT_FOUND" } as SyncedMeetingInfo;
     const html = renderToStaticMarkup(createElement(MeetingList, { meetings: [meeting], loading: false }));
     expect(html).toContain('href="/meetings/m1"');
     expect(html).toContain("Planning");
     expect(html).not.toContain("TRANSCRIPT_NOT_FOUND");
+    expect(html).not.toContain("Preview omitted from compact rows");
     vi.stubGlobal("navigator", { language: "ja-JP" });
     expect(renderToStaticMarkup(createElement(MeetingList, { meetings: [], loading: false }))).toContain("ミーティングはまだありません");
   });
@@ -472,4 +479,40 @@ describe("dashboard navigation", () => {
     expect(source).not.toContain("/admin/models");
     expect(source).not.toContain("AdminModels");
   });
+});
+
+
+describe("meeting hover details", () => {
+  it("shows existing metadata, localized recording status and missing-value fallbacks", () => {
+    const meeting = { name: "Planning", description: "Discuss the next release", duration: 3360,
+      createdAt: "2026-09-10T06:00:00Z", recordingStartedAt: "2026-09-10T07:00:00Z" } as SyncedMeetingInfo;
+    for (const [language, duration, recording] of [["ja-JP", "56分", "録音中"], ["en-US", "56 min", "Recording"]]) {
+      vi.stubGlobal("navigator", { language });
+      const html = renderToStaticMarkup(createElement(MeetingHoverDetails, { meeting, projectName: "GMO/Nikko" }));
+      for (const text of ["Planning", "Discuss the next release", "GMO/Nikko", duration, 'dateTime="2026-09-10T07:00:00Z"']) expect(html).toContain(text);
+      expect(renderToStaticMarkup(createElement(MeetingHoverDetails, { meeting: { ...meeting, isRecording: true } }))).toContain(recording);
+    }
+    const empty = renderToStaticMarkup(createElement(MeetingHoverDetails, { meeting: { ...meeting, name: "", description: " ", duration: null, recordingStartedAt: null } }));
+    expect(empty).toContain("Untitled meeting");
+    expect(empty).toContain('dateTime="2026-09-10T06:00:00Z"');
+    expect(empty).toContain("—");
+    expect(empty).not.toContain("meeting-preview-project");
+  });
+});
+
+
+it("routes administrator organization details independently of sharing membership", () => {
+  const id = encodeId("organization", "019d4a01-2000-7000-8000-000000000001");
+  expect(resolveDashboardRoute(`/admin/organizations/${id}`, { admin: true, sessions: false, sharing: false })).toEqual({ page: "admin-organization", organizationId: id });
+  expect(resolveDashboardRoute(`/admin/organizations/${id}`, { admin: false, sessions: true, sharing: true })).toEqual({ redirect: "/dashboard" });
+});
+
+
+it.each(["", "selected-organization"])("keeps Vault creation available in scope %s", (organizationId) => {
+  vi.stubGlobal("navigator", { language: "en-US" });
+  const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", organizationId, vaults: [], select: vi.fn(), reload: vi.fn() });
+  const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue({ data: undefined, loading: false, error: undefined, reload: vi.fn(), replace: vi.fn() });
+  try {
+    expect(renderToStaticMarkup(createElement(Vaults))).toContain("New Vault</button>");
+  } finally { scope.mockRestore(); query.mockRestore(); }
 });

@@ -136,6 +136,9 @@ integration("PostgreSQL application store", () => {
       await connection!.db.insert(schema.member).values({ id, organizationId: id, userId: id, role: "member", createdAt: now });
       await connection!.db.insert(schema.team).values({ id, organizationId: id, name: "Directory team", createdAt: now });
       expect(await store.listServerOrganizations(1000, 0)).toContainEqual({ id, name: "Directory organization", slug: id, memberCount: 1, teamCount: 1 });
+      expect(await store.getServerOrganization(id, 100, 0, 0)).toMatchObject({ id, name: "Directory organization", members: [{ userId: id, email: `${id}@example.com` }], teams: [{ id, name: "Directory team" }] });
+      expect(await store.getServerOrganization(id, 100, 1, 1)).toMatchObject({ members: [], teams: [] });
+      expect(await store.getServerOrganization(crypto.randomUUID(), 100, 0, 0)).toBeNull();
       expect(await store.listServerUsers(1000, 0)).toEqual(expect.arrayContaining([expect.objectContaining({ id, email: `${id}@example.com` })]));
     } finally {
       await connection!.db.delete(schema.organization).where(eq(schema.organization.id, id));

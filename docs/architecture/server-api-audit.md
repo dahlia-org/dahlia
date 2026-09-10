@@ -80,6 +80,10 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | listTeamMembers | modified | GET `/api/v1/organizations/{organizationId}/teams/{teamId}/members` | `/api/v1/organizations/{organizationId}/teams/{teamId}/members` | External team members (header mode only) | apps/server/src/client/App.tsx |
 | putTeamMember | maintained | PUT `/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}` | `/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}` | Add an organization member to an external team | apps/server/src/client/App.tsx |
 | deleteTeamMember | maintained | DELETE `/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}` | `/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}` | Remove an external team member | apps/server/src/client/App.tsx |
+| getServerOrganization | modified | GET `/api/v1/admin/organizations/{organizationId}` | `none` | Open organization directory details for server administrators regardless of membership. | apps/server/src/client/App.tsx |
+| searchPermissionTargets | modified | GET `/api/v1/vaults/{vaultId}/permission-targets` | `new public contract` | Owner-managed read-only sharing with searchable organization-scoped targets | apps/server/src/client/App.tsx |
+| putUserPermission | modified | PUT `/api/v1/vaults/{vaultId}/permissions/users/{userId}` | `new public contract` | Owner-managed read-only sharing with searchable organization-scoped targets | apps/server/src/client/App.tsx |
+| deleteUserPermission | modified | DELETE `/api/v1/vaults/{vaultId}/permissions/users/{userId}` | `new public contract` | Owner-managed read-only sharing with searchable organization-scoped targets | apps/server/src/client/App.tsx |
 
 ## Delegated protocols
 

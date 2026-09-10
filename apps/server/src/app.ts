@@ -327,6 +327,16 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       return context.json({ items: items.slice(0, limit), hasMore: items.length > limit });
     });
   }
+  registerApi(app, "getServerOrganization", async (context) => {
+    const page = z.object({ membersOffset: z.coerce.number().int().min(0).max(1_000_000).default(0),
+      teamsOffset: z.coerce.number().int().min(0).max(1_000_000).default(0) }).safeParse(context.req.query());
+    if (!page.success) return context.json({ error: "invalid_page" }, 400);
+    const limit = 100;
+    const organization = await store.getServerOrganization(context.req.param("organizationId")!, limit + 1, page.data.membersOffset, page.data.teamsOffset);
+    return organization ? context.json({ ...organization, members: organization.members.slice(0, limit), teams: organization.teams.slice(0, limit),
+      hasMoreMembers: organization.members.length > limit, hasMoreTeams: organization.teams.length > limit })
+      : context.json({ error: "not_found" }, 404);
+  });
   registerApi(app, "listAdministrators", async (context) => {
     const admins = await store.listAdminUsers();
     return context.json({ items: admins.map((admin) => ({ ...admin, role: "admin", removable: admins.length > 1 })), nextCursor: null });
@@ -731,6 +741,10 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     return context.json(await sync.listFiles(identity, await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!)),
       context.req.query("cursor"), sync.parseId(context.req.param("meetingId")!)));
   });
+  registerApi(app, "searchPermissionTargets", async (context) => {
+    const identity = await identities.fromBrowser(context.req.raw);
+    return context.json(await sync.searchPermissionTargets(identity, sync.parseId(context.req.param("vaultId")!), context.req.query("q")?.trim() ?? "", context.req.query("cursor")));
+  });
   registerApi(app, "listPermissions", async (context) => {
     const identity = await identities.fromBrowser(context.req.raw);
     return context.json({ items: await sync.listPermissions(identity, sync.parseId(context.req.param("vaultId")!)), nextCursor: null });
@@ -776,6 +790,28 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       sync.parseId(context.req.param("vaultId")!),
       "team",
       sync.parsePermissionPrincipal(context.req.param("teamId")!),
+    );
+    return context.body(null, 204);
+  });
+  registerApi(app, "putUserPermission", async (context) => {
+    if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
+    const identity = await identities.fromBrowser(context.req.raw);
+    await sync.putMemberPermission(
+      identity,
+      sync.parseId(context.req.param("vaultId")!),
+      "user",
+      sync.parsePermissionPrincipal(context.req.param("userId")!),
+    );
+    return context.body(null, 204);
+  });
+  registerApi(app, "deleteUserPermission", async (context) => {
+    if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
+    const identity = await identities.fromBrowser(context.req.raw);
+    await sync.deleteMemberPermission(
+      identity,
+      sync.parseId(context.req.param("vaultId")!),
+      "user",
+      sync.parsePermissionPrincipal(context.req.param("userId")!),
     );
     return context.body(null, 204);
   });

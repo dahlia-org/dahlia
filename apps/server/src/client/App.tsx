@@ -1,3 +1,4 @@
+import { VaultSharing } from "./VaultSharing";
 import { apiUrls } from "./generated-operations";
 import { DEFAULT_SEARCH_SETTINGS, SEARCH_FIELDS, searchSettingsSchema, type SearchSettings } from "../search/settings-model";
 import { encodeId } from "../typeid";
@@ -15,7 +16,7 @@ import { TranscriptHistory } from "./TranscriptHistory";
 import { SummaryHistory, type LatestSummary } from "./SummaryHistory";
 import { ServerSummaryGeneration, ServerSummarySettings } from "./SummaryGeneration";
 import { RecordingIndicator } from "./RecordingIndicator";
-import { liveDataEvent, refreshData, subscribeLiveUpdates, useLiveJSON, useLivePage, useLiveQuery } from "./live-data";
+import { liveDataEvent, refreshData, subscribeLiveUpdates, useLiveJSON, useLivePage } from "./live-data";
 import { createAuthClient } from "better-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
 
@@ -26,7 +27,6 @@ import {
   type DashboardCapabilities,
 } from "./routes";
 import { dashboardNavigationEvent, dashboardNavigationPath, navigateDashboard } from "./navigation";
-import { summaryEditor } from "./summary-editor";
 import { clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedProjectInfo } from "./api";
 import { DetailTabs, MeetingTabs, parseSummary, SummaryTags } from "./MeetingContent";
 import { FileLink, FileViewer } from "./FileViewer";
@@ -130,14 +130,6 @@ interface TeamMember {
   userId: string;
   teamId: string;
 }
-
-interface VaultPermissionInfo {
-  principalType: "user" | "organization" | "team";
-  principalId: string;
-  role: "owner" | "member";
-}
-
-
 
 type SyncedScreenshotInfo = operations["listMeetingFiles"]["responses"][200]["content"]["application/json"]["items"][number];
 
@@ -473,9 +465,9 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
   );
 }
 
-function Vaults({ home = false }: { home?: boolean }) {
+export function Vaults({ home = false }: { home?: boolean }) {
   const { dialog, openDialog } = useActionDialog();
-  const { vaults, error: loadError, reload, organizationId } = useSidebar();
+  const { vaults, error: loadError, reload, organizationId, select } = useSidebar();
   const [recentVaultId, setRecentVaultId] = useState("");
   const recentVault = vaults?.find((vault) => vault.vaultId === recentVaultId) ?? vaults?.[0];
   useEffect(() => {
@@ -487,9 +479,9 @@ function Vaults({ home = false }: { home?: boolean }) {
   const { data: encryptionCapabilities } = useLiveJSON<{ vaultEncryption?: { version: number } }>(apiQuery("getCapabilities", {}));
   const createVault = () => openDialog({
     title: uiText("New Vault", "保管庫を作成"),
-    description: encryptionCapabilities?.vaultEncryption
+    description: (organizationId ? uiText("The new Vault is personally owned. You can share it with your organization from its details after creation.", "新しい保管庫は個人所有で作成します。作成後に詳細画面から組織へ共有できます。") + " " : "") + (encryptionCapabilities?.vaultEncryption
       ? uiText("Server encryption protects database content except search data. All search text, vectors and indexes remain unencrypted, including titles, summaries and image text. File content and local copies are not encrypted by this setting.", "Server 暗号化は検索データを除く DB 内の内容を保護します。会議名・要約・画像の文字情報を含む検索用テキスト、ベクトル、索引はすべて暗号化対象外です。ファイル本体と端末内データは対象外です。")
-      : uiText("Keep related meetings together. Only you can access a new Vault until you share it.", "関連するミーティングをまとめる場所です。共有するまでは、あなたのみが閲覧できます。"),
+      : uiText("Keep related meetings together. Only you can access a new Vault until you share it.", "関連するミーティングをまとめる場所です。共有するまでは、あなたのみが閲覧できます。")),
     confirmLabel: uiText("Create Vault", "保管庫を作成"),
     fields: [{ name: "name", label: uiText("Vault name", "保管庫名"), required: true },
       ...(encryptionCapabilities?.vaultEncryption ? [{ name: "encryption", label: uiText("Database encryption", "DB 内データの暗号化"), value: "none", options: [
@@ -499,6 +491,7 @@ function Vaults({ home = false }: { home?: boolean }) {
       const id = encodeId("vault", uuidV7());
       await commitSyncTransaction(id, [{ entity: "vault", action: "create", entityId: id, baseRevision: null,
         data: { name: name!.trim(), ...(encryption === "server" ? { encryption: "server" as const } : {}), createdAt: new Date().toISOString() } }], setRecovering);
+      if (organizationId) select("");
       navigateDashboard(`/vaults/${id}`);
     },
   });
@@ -506,7 +499,7 @@ function Vaults({ home = false }: { home?: boolean }) {
     {dialog}
     <PageHeader title={home ? uiText("Home", "ホーム") : uiText("Vaults", "保管庫")}
       description={home ? uiText("Pick up where your last conversation left off.", "前回の会話の続きから、始めましょう。") : uiText("Your meetings, organized in one place.", "ミーティングとその記録を、保管庫ごとに整理します。")}
-      actions={!organizationId && <button className="primary" onClick={createVault}><MenuIcon name="plus" />{uiText("New Vault", "保管庫を作成")}</button>} />
+      actions={<button className="primary" onClick={createVault}><MenuIcon name="plus" />{uiText("New Vault", "保管庫を作成")}</button>} />
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
     <section className="section-block">
       <div className="collection-heading"><h2>{uiText("Your Vaults", "保管庫一覧")}</h2>{vaults && <span className="muted">{vaults.length}</span>}</div>
@@ -536,109 +529,6 @@ function Vaults({ home = false }: { home?: boolean }) {
   </>;
 }
 
-function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedVaultInfo }) {
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
-  const sharingQuery = useLiveQuery(`sharing:${vault.vaultId}:${session.capabilities.sessions}`, async (signal) => {
-    const [{ items }, organizationItems] = await Promise.all([
-      api.listPermissions({ params: { path: { vaultId: vault.vaultId } }, signal }),
-      session.capabilities.sessions
-        ? json<OrganizationInfo[]>("/api/auth/organization/list", { signal })
-        : api.listOrganizations({ signal }).then(({ items }) => items),
-    ]);
-    const teamItems = (await Promise.all(organizationItems.map((organization) =>
-      session.capabilities.sessions
-        ? json<TeamInfo[]>(`/api/auth/organization/list-teams?organizationId=${encodeURIComponent(organization.id)}`, { signal })
-        : api.listTeams({ params: { path: { organizationId: organization.id } }, signal }).then(({ items }) => items)
-    ))).flat();
-    return { permissions: items, organizations: organizationItems, teams: teamItems };
-  });
-  const permissions = sharingQuery.data?.permissions;
-  const organizations = sharingQuery.data?.organizations ?? [];
-  const teams = sharingQuery.data?.teams ?? [];
-
-  async function toggle(principalType: "organization" | "team", principalId: string, enabled: boolean) {
-    if (saving) return;
-    setSaving(true);
-    setError(undefined);
-    try {
-      if (principalType === "organization") {
-        const params = { path: { vaultId: vault.vaultId, organizationId: principalId } };
-        await (enabled ? api.putOrganizationPermission({ params }) : api.deleteOrganizationPermission({ params }));
-      } else {
-        const params = { path: { vaultId: vault.vaultId, teamId: principalId } };
-        await (enabled ? api.putTeamPermission({ params }) : api.deleteTeamPermission({ params }));
-      }
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : uiText("Could not update sharing", "共有設定を更新できませんでした"));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const shared = (principalType: VaultPermissionInfo["principalType"], principalId: string) =>
-    permissions?.some((permission) => permission.role === "member"
-      && permission.principalType === principalType
-      && permission.principalId === principalId) === true;
-  const permissionLabel = (permission: VaultPermissionInfo) => {
-    if (permission.principalType === "organization") {
-      return organizations.find(({ id }) => id === permission.principalId)?.name ?? uiText("Organization", "組織");
-    }
-    if (permission.principalType === "team") {
-      return teams.find(({ id }) => id === permission.principalId)?.name ?? uiText("Team", "チーム");
-    }
-    return uiText("Shared directly with you", "あなたに直接共有");
-  };
-  return (
-    <section className="section-block">
-      <h2 className="section-label">{uiText("Sharing", "共有")}</h2>
-      <div className="panel share-list">
-        {!permissions && !error && !sharingQuery.error && <p className="muted">{uiText("Loading sharing settings…", "共有設定を読み込み中…")}</p>}
-        {vault.role === "member" && permissions && (
-          <>
-            <p className="muted">{uiText("This Vault was shared with you. Only its owner can change access.", "共有された保管庫です。アクセス権は所有者のみ変更できます。")}</p>
-            {permissions.map((permission) => (
-              <div className="share-row" key={`${permission.principalType}-${permission.principalId}`}>
-                <span>
-                  <strong>{permissionLabel(permission)}</strong>
-                  <small>{uiText("Read-only access", "閲覧のみ")}</small>
-                </span>
-              </div>
-            ))}
-          </>
-        )}
-        {vault.role === "owner" && organizations.length === 0 && permissions && (
-          <div className="empty-state"><strong>{uiText("No organizations", "組織がありません")}</strong><span>{uiText("Create one from Organizations first.", "アカウントメニューから組織を作成してください。")}</span></div>
-        )}
-        {vault.role === "owner" && organizations.map((organization) => (
-          <label className="share-row" key={organization.id}>
-            <span><strong>{organization.name}</strong><small>{organization.slug}</small></span>
-            <input
-              type="checkbox"
-              disabled={saving || sharingQuery.loading || !permissions}
-              checked={shared("organization", organization.id)}
-              onChange={(event) => void toggle("organization", organization.id, event.target.checked)}
-            />
-          </label>
-        ))}
-        {vault.role === "owner" && teams.map((team) => (
-          <label className="share-row" key={team.id}>
-            <span><strong>{team.name}</strong><small>{uiText("Team · read-only access", "チーム・閲覧のみ")}</small></span>
-            <input
-              type="checkbox"
-              disabled={saving || sharingQuery.loading || !permissions}
-              checked={shared("team", team.id)}
-              onChange={(event) => void toggle("team", team.id, event.target.checked)}
-            />
-          </label>
-        ))}
-      </div>
-      {saving && <p className="muted" role="status">{uiText("Updating access…", "アクセス権を更新中…")}</p>}
-      <DataError error={sharingQuery.error} retry={sharingQuery.reload} />
-      {error && <p className="error resource-error">{error}</p>}
-    </section>
-  );
-}
 
 function VaultTransfer({ vault }: { vault: SyncedVaultInfo }) {
   const { dialog, openDialog } = useActionDialog();
@@ -709,7 +599,6 @@ export function MeetingList({ meetings, loading, filtered = false, onClear }: { 
       return <a className="collection-row meeting-list-row" href={`/meetings/${meeting.meetingId}`} key={meeting.meetingId}>
         <span className="collection-icon"><MenuIcon name="document" /></span>
         <span className="collection-copy"><strong>{meeting.name || uiText("Untitled meeting", "無題のミーティング")} <RecordingIndicator isRecording={meeting.isRecording} /></strong>
-          {meeting.description && <small>{meeting.description}</small>}
           <span className="collection-date"><time dateTime={date}>{new Date(date).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time>
           {meeting.duration != null && <span> · {Math.floor(meeting.duration / 60)}:{String(Math.floor(meeting.duration % 60)).padStart(2, "0")}</span>}</span>
         </span>
@@ -809,11 +698,11 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
         <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
         {projectsQuery.loading && !projectsQuery.data && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
         {projectsQuery.data && projects.length === 0 && <p className="content-empty">{uiText("No projects yet", "プロジェクトはまだありません")}</p>}
-        <div className="collection-list">{projects.map((project) => <a className="collection-row" href={`/projects/${project.projectId}`} key={project.projectId}>
-          <span className="collection-project-name"><AppearanceIcon appearance={projectAppearance(project, projects.find((parent) => parent.projectId === project.parentProjectId))} /><span><strong>{project.path}</strong>{project.description && <small>{project.description}</small>}</span></span><span className="muted">{meetingCount(project.subtreeMeetingCount ?? 0)}</span>
+        <div className="collection-list">{projects.map((project) => <a className="collection-row project-list-row" href={`/projects/${project.projectId}`} key={project.projectId}>
+          <span className="collection-project-name"><AppearanceIcon appearance={projectAppearance(project, projects.find((parent) => parent.projectId === project.parentProjectId))} /><strong>{project.path}</strong></span><span className="muted">{meetingCount(project.subtreeMeetingCount ?? 0)}</span>
         </a>)}</div>
       </> },
-      ...(session.capabilities.sharing && vault ? [{ id: "permissions", label: uiText("Permissions", "権限"), content: <VaultSharing session={session} vault={vault} /> }] : []),
+      ...(session.capabilities.sharing && vault ? [{ id: "permissions", label: uiText("Permissions", "権限"), content: <VaultSharing vault={vault} accounts={session.capabilities.sessions} /> }] : []),
       { id: "settings", label: uiText("Settings", "設定"), content: <>
         <section className="vault-settings"><h2>{uiText("Vault details", "保管庫の詳細")}</h2><div className="collection-heading"><span>{vault?.name}</span>{vault?.role === "owner" && <button className="secondary" onClick={renameVault}>{uiText("Edit Vault", "保管庫を編集")}</button>}</div></section>
         {vault?.role === "owner" && <VaultTransfer vault={vault} />}
@@ -940,32 +829,6 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
       },
     });
   };
-  const editSummary = () => {
-    if (!meeting || !latestSummary.data || selectedSummary !== null) return;
-    const editor = summaryEditor(currentSummary?.document, currentSummary?.title ?? meeting.name);
-    openDialog({
-      title: currentSummary?.document ? uiText("Edit Summary", "要約を編集") : uiText("New Summary", "要約を追加"),
-      description: uiText("Your changes are saved as a new version. Previous versions remain available.", "変更は新しいバージョンとして保存され、過去のバージョンも引き続き閲覧できます。"),
-      confirmLabel: uiText("Save summary", "要約を保存"), fields: editor.fields,
-      onSubmit: async (values) => {
-        await commitSyncTransaction(vaultId, [{ entity: "summary", action: "upsert", entityId: meetingId,
-          baseRevision: latestSummary.data!.revision,
-          data: { title: values.title!.trim(), document: editor.document(values), createdAt: new Date().toISOString() } }], setRecovering);
-      },
-    });
-  };
-  const deleteSummary = () => {
-    if (!meeting || !currentSummary?.document) return;
-    openDialog({
-      title: uiText("Delete summary and history?", "要約と履歴を削除しますか？"),
-      description: uiText(`The summary for “${meeting.name}” and all its versions will be permanently deleted. The meeting, transcript and screenshots will remain.`, `「${meeting.name}」の要約とすべての過去バージョンを完全に削除します。ミーティング、文字起こし、スクリーンショットは残ります。`),
-      confirmLabel: uiText("Delete summary", "要約を削除"), destructive: true,
-      onSubmit: async () => {
-        await commitSyncTransaction(vaultId, [{ entity: "summary", action: "delete", entityId: meetingId,
-          baseRevision: latestSummary.data!.revision, data: {} }], setRecovering);
-      },
-    });
-  };
   const visibleScreenshots = screenshots?.filter((screenshot) => screenshot.file.metadata.source === "screenshot");
   return (
     <article className="meeting-detail" aria-busy={!meeting && (meetingQuery.loading || vaultQuery.loading)}>
@@ -975,7 +838,6 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
           {project && <><span aria-hidden="true">/</span><a href={`/projects/${project.projectId}`}>{project.path}</a></>}
         </nav>
         <h1>{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</h1>
-        {meeting.description && <p className="project-description">{meeting.description}</p>}
         <div className="meeting-metadata">
           <RecordingIndicator isRecording={meeting.isRecording} />
           <span className="metadata-chip"><time dateTime={meeting.recordingStartedAt ?? meeting.createdAt}>
@@ -986,6 +848,7 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
           </a> : <span className="metadata-chip">{uiText("Unassigned", "未分類")}</span>}
           <SummaryTags document={document} />
         </div>
+        {meeting.description?.trim() && <details className="meeting-description"><summary>{uiText("Description", "説明")}</summary><p>{meeting.description}</p></details>}
       </header>}
       {dialog}
       {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
@@ -998,8 +861,6 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
           <button className="action-trigger" aria-label={uiText("Meeting actions", "ミーティングの操作")} popoverTarget="meeting-actions"><span aria-hidden="true">⋯</span>{" "}<span className="action-label">{uiText("Actions", "操作")}</span></button>
           <div id="meeting-actions" popover="auto" className="action-menu">
             <button onClick={editMeeting}>{uiText("Edit Meeting", "ミーティングを編集")}</button>
-            <button disabled={selectedSummary !== null || !latestSummary.data || Boolean(currentSummary?.document && !Array.isArray(document.sections))} onClick={editSummary}>{currentSummary?.document ? uiText("Edit Summary", "要約を編集") : uiText("New Summary", "要約を追加")}</button>
-            {currentSummary?.document && <button className="danger-button" onClick={deleteSummary}>{uiText("Delete Summary", "要約を削除")}</button>}
           </div>
         </div>}
         summary={<>
@@ -1519,7 +1380,7 @@ function AdminDirectory({ kind }: { kind: "users" | "organizations" }) {
       {query.data && <><div className="admin-directory-scroll"><table className={`admin-directory${organizations ? " org-directory" : ""}`}>
         <thead><tr><th>{uiText("Name", "名前")}</th><th>{organizations ? "slug" : uiText("Email address", "メールアドレス")}</th><th>{organizations ? uiText("Members", "メンバー") : uiText("Role", "権限")}</th>{organizations && <th>{uiText("Teams", "チーム")}</th>}</tr></thead>
         <tbody>{query.data.items.map((item) => <tr key={item.id}>
-          <td>{organizations ? <span className="org-directory-identity"><MenuIcon name="organization" /><strong>{item.name}</strong></span> : item.name}</td>{"email" in item ? <><td>{item.email}</td><td>{item.role?.split(",").includes("admin") ? uiText("Administrator", "管理者") : uiText("User", "ユーザー")}</td></>
+          <td>{organizations ? <a className="org-directory-identity text-link" href={`/admin/organizations/${encodeURIComponent(item.id)}`}><MenuIcon name="organization" /><strong>{item.name}</strong></a> : item.name}</td>{"email" in item ? <><td>{item.email}</td><td>{item.role?.split(",").includes("admin") ? uiText("Administrator", "管理者") : uiText("User", "ユーザー")}</td></>
             : <><td><code>{item.slug}</code></td><td>{item.memberCount}</td><td>{item.teamCount}</td></>}
         </tr>)}</tbody>
       </table></div>
@@ -1529,6 +1390,45 @@ function AdminDirectory({ kind }: { kind: "users" | "organizations" }) {
         <button className="secondary" disabled={query.loading || !query.data.hasMore} onClick={() => setOffset(offset + 100)}>{uiText("Next", "次へ")}</button>
       </div>}</>}
     </section>
+  </>;
+}
+
+export function AdminOrganization({ organizationId, session }: { organizationId: string; session: SessionInfo }) {
+  const [membersOffset, setMembersOffset] = useState(0);
+  const [teamsOffset, setTeamsOffset] = useState(0);
+  const query = useLiveJSON<operations["getServerOrganization"]["responses"][200]["content"]["application/json"]>(apiQuery("getServerOrganization", {
+    params: { path: { organizationId }, query: { membersOffset: String(membersOffset), teamsOffset: String(teamsOffset) } },
+  }));
+  const memberships = useLiveJSON<OrganizationInfo[]>(session.capabilities.sessions ? "/api/auth/organization/list"
+    : mapQuery(apiQuery("listOrganizations", {}), ({ items }) => items));
+  const organization = query.data;
+  const joined = memberships.data?.find((item) => item.id === organizationId);
+  const pagination = (offset: number, hasMore: boolean, select: (offset: number) => void) => (offset > 0 || hasMore) && <div className="admin-pagination">
+    <button className="secondary" disabled={query.loading || offset === 0} onClick={() => select(offset - 100)}>{uiText("Previous", "前へ")}</button>
+    <button className="secondary" disabled={query.loading || !hasMore} onClick={() => select(offset + 100)}>{uiText("Next", "次へ")}</button>
+  </div>;
+  return <>
+    <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}><a href="/admin/organizations">{uiText("Organization management", "組織管理")}</a></nav>
+    <PageHeader title={organization?.name ?? uiText("Organization", "組織")} description={organization?.slug}
+      actions={joined && <a className="secondary" href={`/organizations/${encodeURIComponent(joined.slug)}`}>{uiText("Manage organization", "組織を管理")}</a>} />
+    <DataError error={query.error} retry={query.reload} />
+    {query.loading && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
+    {organization && <DetailTabs label={uiText("Organization content", "組織の内容")} tabs={[
+      { id: "members", label: uiText("Members", "メンバー"), content: <>
+        <div className="admin-directory-scroll"><table className="admin-directory"><thead><tr><th>{uiText("Name", "名前")}</th><th>{uiText("Email address", "メールアドレス")}</th><th>{uiText("Role", "権限")}</th></tr></thead>
+          <tbody>{organization.members.map((member) => <tr key={member.id}><td>{member.name}</td><td>{member.email}</td><td>{member.role}</td></tr>)}</tbody>
+        </table></div>
+        {!organization.members.length && <p className="content-empty">{uiText("No members", "メンバーはいません")}</p>}
+        {pagination(membersOffset, organization.hasMoreMembers, setMembersOffset)}
+      </> },
+      { id: "teams", label: uiText("Teams", "チーム"), content: <>
+        <div className="admin-directory-scroll"><table className="admin-directory"><thead><tr><th>{uiText("Name", "名前")}</th></tr></thead>
+          <tbody>{organization.teams.map((team) => <tr key={team.id}><td>{team.name}</td></tr>)}</tbody>
+        </table></div>
+        {!organization.teams.length && <p className="content-empty">{uiText("No teams yet", "チームはまだありません")}</p>}
+        {pagination(teamsOffset, organization.hasMoreTeams, setTeamsOffset)}
+      </> },
+    ]} />}
   </>;
 }
 
@@ -1561,8 +1461,8 @@ export function AdminSearchSettings() {
       <p className="muted">{uiText("Adjust each field's influence on search ranking from 1 to 10. Saved changes apply to subsequent searches across this server.", "各項目が検索順位に与える影響を1〜10で調整します。保存後の検索からサーバー全体に反映されます。")}</p>
       {!weights && !error && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
       {weights && <form className="panel admin-form search-settings-form" onSubmit={(event) => void save(event)}>
-        {SEARCH_FIELDS.map((field) => <label key={field}>{labels[field]}<input type="number" min={1} max={10} step={1} required disabled={pending}
-          value={Number.isNaN(weights[field]) ? "" : weights[field]} onChange={(event) => { setWeights({ ...weights, [field]: event.target.valueAsNumber }); setSaved(false); }} /></label>)}
+        {SEARCH_FIELDS.map((field) => <label key={field}>{labels[field]}<span className="search-weight-slider"><input type="range" min={1} max={10} step={1} disabled={pending}
+          value={weights[field]} onChange={(event) => { setWeights({ ...weights, [field]: event.target.valueAsNumber }); setSaved(false); }} /><span aria-hidden="true">{weights[field]}</span></span></label>)}
         <button className="primary" disabled={pending}>{pending ? uiText("Saving…", "保存中…") : uiText("Save", "保存")}</button>
         <button type="button" className="secondary" disabled={pending} onClick={() => { setWeights({ ...DEFAULT_SEARCH_SETTINGS }); setSaved(false); setError(""); }}>{uiText("Reset to defaults", "初期値に戻す")}</button>
       </form>}
@@ -1730,6 +1630,7 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
     page = <ExtensionPage session={session} />;
   }
   else if (route.page === "admin-users") page = <><AdminDirectory kind="users" /><AdminMembers /></>;
+  else if (route.page === "admin-organization") page = <AdminOrganization key={route.organizationId} organizationId={route.organizationId!} session={session} />;
   else if (route.page === "admin-organizations") page = <AdminDirectory kind="organizations" />;
   else if (route.page === "admin-settings") page = <AdminSearchSettings />;
   else if (route.page === "vaults") page = <Vaults />;

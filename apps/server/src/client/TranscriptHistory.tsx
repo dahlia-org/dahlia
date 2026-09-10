@@ -1,21 +1,10 @@
 import { apiQuery, type ApiQuery } from "./live-data";
 import type { components } from "./generated-api";
 import { Select } from "./Select";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { uiText } from "./api";
 import { useLivePage, useLiveQuery } from "./live-data";
 import { TranscriptTime } from "./MeetingContent";
-import { transcriptStatus, TRANSCRIPT_ACTIVITY_WINDOW_MS } from "../sync/transcript";
-
-function transcriptStatusLabel(status: ReturnType<typeof transcriptStatus>): string {
-  switch (status) {
-    case "ended": return uiText("Generation ended", "生成終了確認済み");
-    case "active": return uiText("Recent generation activity", "直近の生成活動あり");
-    case "inactive": return uiText("No recent generation activity", "直近の生成活動なし");
-    case "unknown": return uiText("Activity unknown", "活動状態不明");
-  }
-}
-
 type Version = components["schemas"]["Transcript"];
 type Body = components["schemas"]["TranscriptContent"];
 
@@ -34,24 +23,6 @@ export async function readTranscriptPages(query: ApiQuery<Body>, minimum: number
   return result;
 }
 
-export function useTranscriptStatus(version: Version | null | undefined) {
-  const [now, setNow] = useState(() => Date.now());
-  const latest = version?.latestSegmentCreatedAt ? Date.parse(version.latestSegmentCreatedAt) : null;
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const refresh = () => {
-      const current = Date.now();
-      setNow(current);
-      if (version?.endedAt || latest === null) return;
-      const delay = latest + TRANSCRIPT_ACTIVITY_WINDOW_MS + 1 - current;
-      if (delay > 0) timer = setTimeout(refresh, Math.min(delay, 2_147_483_647));
-    };
-    refresh();
-    return () => clearTimeout(timer);
-  }, [version?.endedAt, latest]);
-  return transcriptStatus(version?.endedAt ? new Date(version.endedAt) : null, latest === null ? null : new Date(latest), new Date(now));
-}
-
 export function TranscriptHistory({ meetingId, timeBase }: { meetingId: string; timeBase: string }) {
   const [selected, setSelected] = useState<number | null>(null);
   const demand = useRef(1);
@@ -61,7 +32,6 @@ export function TranscriptHistory({ meetingId, timeBase }: { meetingId: string; 
   const body = useLiveQuery<Body>(contentQuery.key, (signal, previous) =>
     readTranscriptPages(contentQuery, Math.max(demand.current, previous?.items?.length ?? 1), signal));
   const metadata = body.data?.transcript?.metadata;
-  const status = useTranscriptStatus(body.data?.transcript);
   const error = versions.error ?? body.error;
   return <div className="transcript-document">
     <div className="history-toolbar">
@@ -75,9 +45,6 @@ export function TranscriptHistory({ meetingId, timeBase }: { meetingId: string; 
         </option>)}
       </Select></label>
       {versions.data?.nextCursor && <button className="secondary" disabled={versions.loadingMore} onClick={versions.loadMore}>{uiText("Load older versions", "以前の版を読み込む")}</button>}
-      {body.data?.transcript && <span role="status" title={uiText("Activity is estimated from segment creation times; it does not indicate connection or recording state.", "セグメントの作成日時から推定した活動状態です。接続や録音継続を示すものではありません。")}>{
-        transcriptStatusLabel(status)
-      }</span>}
       {selected !== null && <span>{uiText("Read-only version", "過去版（閲覧のみ）")}</span>}
     </div>
     {error && <p role="alert" className="error">{error.message} <button className="secondary" onClick={() => { versions.reload(); body.reload(); }}>{uiText("Retry", "再試行")}</button></p>}
@@ -99,7 +66,7 @@ export function TranscriptHistory({ meetingId, timeBase }: { meetingId: string; 
     {body.data?.items?.length === 0 && <p className="content-empty">{uiText("No transcript", "文字起こしはありません")}</p>}
     {body.data?.items?.map((segment) => <div className="transcript-segment" key={segment.segmentId}>
       <TranscriptTime startTime={segment.startedAt} timeBase={timeBase} />
-      <p>{segment.speakerLabel && <strong>{segment.speakerLabel}: </strong>}{segment.text}</p>
+      <p>{segment.speakerLabel && <span className="transcript-speaker">{segment.speakerLabel}</span>}{segment.text}</p>
     </div>)}
     {body.data?.nextCursor && <button className="secondary" disabled={body.loading} onClick={() => {
       demand.current = (body.data?.items?.length ?? 0) + 1;

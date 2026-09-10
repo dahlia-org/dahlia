@@ -312,6 +312,7 @@ export interface IdentitySyncStore {
     cursor?: SyncScreenshotCursor,
     filters?: SyncSearchFilters,
   ): Promise<SyncScreenshotRecord[]>;
+  searchPermissionTargets(vaultId: string, query: string, offset: number): Promise<{ items: Array<{ principalType: VaultPrincipalType; principalId: string; name: string; detail: string }>; nextCursor: string | null } | null>;
   listPermissions(vaultId: string): Promise<VaultPermissionRecord[] | null>;
   putMemberPermission(vaultId: string, principalType: VaultPrincipalType, principalId: string): Promise<boolean>;
   deleteMemberPermission(vaultId: string, principalType: VaultPrincipalType, principalId: string): Promise<boolean>;

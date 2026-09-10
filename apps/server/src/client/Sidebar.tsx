@@ -1,5 +1,6 @@
 import { apiQuery, mapQuery } from "./live-data";
 import { collectionAppearance, AppearanceIcon, projectAppearance, type Appearance } from "./AppearancePicker";
+import { MeetingHoverCard, HoverPreview } from "./MeetingHoverCard";
 import { Tooltip } from "./Tooltip";
 import { Search } from "./Search";
 import { RecordingIndicator } from "./RecordingIndicator";
@@ -226,7 +227,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeVaultId: r
   </aside>;
 }
 
-function TreeNode({ id, name, href, initialOpen, children, appearance }: { id: string; name: string; href?: string; initialOpen: boolean; children: ReactNode; appearance?: Appearance | null }) {
+function TreeNode({ id, name, href, initialOpen, children, appearance, project }: { project?: SyncedProjectInfo; id: string; name: string; href?: string; initialOpen: boolean; children: ReactNode; appearance?: Appearance | null }) {
   const { userId, organizationId } = useSidebar();
   const key = `dahlia:sidebar:${userId}:${organizationId || "personal"}:${id}`;
   const [open, setOpen] = useState(() => initialOpen || readSelection(key) === "true");
@@ -239,13 +240,18 @@ function TreeNode({ id, name, href, initialOpen, children, appearance }: { id: s
     setOpen(!open);
     save(key, String(!open));
   };
-  return <li>
-    <div className={`tree-row${active ? " active" : ""}`}>
+  const row = (describedBy?: string) => <div className={`tree-row${active ? " active" : ""}`}>
       <button className="tree-toggle" aria-label={`${open ? uiText("Collapse", "閉じる") : uiText("Expand", "展開")} ${name}`} aria-expanded={open} onClick={toggle}><Chevron expanded={open} /></button>
       <AppearanceIcon appearance={appearance ?? { icon: "folder", color: "neutral" }} />
-      {href ? <a href={href} title={name} aria-current={active ? "page" : undefined}>{name}</a>
+      {href ? <a href={href} aria-describedby={describedBy} aria-current={active ? "page" : undefined}>{name}</a>
         : <button className="tree-group" aria-expanded={open} onClick={toggle}>{name}</button>}
-    </div>
+    </div>;
+  return <li>
+    {project ? <HoverPreview details={<>
+      <div className="meeting-preview-project"><AppearanceIcon appearance={appearance ?? { icon: "folder", color: "neutral" }} /><strong>{project.name}</strong></div>
+      <p>{uiText(`${project.subtreeMeetingCount ?? project.directMeetingCount ?? 0} meetings`, `${project.subtreeMeetingCount ?? project.directMeetingCount ?? 0}件のミーティング`)}</p>
+      {project.description && <p>{project.description}</p>}
+    </>}>{row}</HoverPreview> : row()}
     {open && children}
   </li>;
 }
@@ -269,13 +275,15 @@ function VaultChildren({ vaultId }: { vaultId: string }) {
     siblings.push(project);
     childrenByParent.set(parent, siblings);
   }
-  const projectsUnder = (parentId?: string): ReactNode => (childrenByParent.get(parentId) ?? []).map((project) =>
-    <TreeNode key={project.projectId} id={`${vaultId}:${project.projectId}`} name={project.name} appearance={projectAppearance(project, projects.find((parent) => parent.projectId === project.parentProjectId))} href={`/projects/${project.projectId}`} initialOpen={ancestors.has(project.projectId)}>
+  const projectsUnder = (parentId?: string): ReactNode => (childrenByParent.get(parentId) ?? []).map((project) => {
+    const appearance = projectAppearance(project, projects.find((parent) => parent.projectId === project.parentProjectId));
+    return <TreeNode project={project} key={project.projectId} id={`${vaultId}:${project.projectId}`} name={project.name} appearance={appearance} href={`/projects/${project.projectId}`} initialOpen={ancestors.has(project.projectId)}>
       <ul className="sidebar-tree">
         {projectsUnder(project.projectId)}
-        <Meetings vaultId={vaultId} projectId={project.projectId} selectedMeeting={selectedMeeting} />
+        <Meetings vaultId={vaultId} projectId={project.projectId} projectName={project.name} appearance={appearance} selectedMeeting={selectedMeeting} />
       </ul>
-    </TreeNode>);
+    </TreeNode>;
+  });
   return <>
     {projectsQuery.error && <Failure message={projectsQuery.error.message} retry={projectsQuery.reload} />}
     {meetingQuery.error && <Failure message={meetingQuery.error.message} retry={meetingQuery.reload} />}
@@ -289,7 +297,7 @@ function VaultChildren({ vaultId }: { vaultId: string }) {
   </>;
 }
 
-function Meetings({ vaultId, projectId, selectedMeeting }: { vaultId: string; projectId?: string; selectedMeeting?: SyncedMeetingInfo }) {
+function Meetings({ vaultId, projectId, projectName, appearance, selectedMeeting }: { vaultId: string; projectId?: string; projectName?: string; appearance?: Appearance; selectedMeeting?: SyncedMeetingInfo }) {
   const filters = projectId ? { projectId, projectScope: "direct" as const } : { projectScope: "unassigned" as const };
   const query = useLivePage<SyncedMeetingInfo>(apiQuery("listMeetings", { params: { path: { vaultId }, query: filters } }));
   const items = query.data?.items ?? [];
@@ -307,13 +315,11 @@ function Meetings({ vaultId, projectId, selectedMeeting }: { vaultId: string; pr
       const href = `/meetings/${meeting.meetingId}`;
       const active = window.location.pathname === href;
       const meetingDate = meeting.recordingStartedAt ?? meeting.createdAt;
-      return <li key={meeting.meetingId} className={`tree-row meeting-row${active ? " active" : ""}`}>
-        <a href={href} title={meeting.name} aria-current={active ? "page" : undefined}>
+      return <MeetingHoverCard key={meeting.meetingId} meeting={meeting} projectName={projectName} appearance={appearance} active={active}>
           <span>{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</span>
           <RecordingIndicator isRecording={meeting.isRecording} />
           <time dateTime={meetingDate}>{new Date(meetingDate).toLocaleString(undefined, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</time>
-        </a>
-      </li>;
+      </MeetingHoverCard>;
     })}
     {loading && !query.data && <li className="sidebar-status">{uiText("Loading meetings…", "ミーティングを読み込み中…")}</li>}
     {error && <li><Failure message={error} retry={query.reload} /></li>}

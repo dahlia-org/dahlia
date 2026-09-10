@@ -6971,6 +6971,147 @@
         }
       }
     },
+    "/api/v1/admin/organizations/{organizationId}": {
+      "get": {
+        "operationId": "getServerOrganization",
+        "summary": "Organization directory details; administrator only, independent of membership",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "organizationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "required": false,
+            "name": "membersOffset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "required": false,
+            "name": "teamsOffset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Organization"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "members": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200,
+                                "pattern": "^omem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                              },
+                              "userId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200,
+                                "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                              },
+                              "role": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "email": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "userId",
+                              "role",
+                              "name",
+                              "email"
+                            ]
+                          }
+                        },
+                        "teams": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200,
+                                "pattern": "^team_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ]
+                          }
+                        },
+                        "hasMoreMembers": {
+                          "type": "boolean"
+                        },
+                        "hasMoreTeams": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "members",
+                        "teams",
+                        "hasMoreMembers",
+                        "hasMoreTeams"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
     "/api/v1/account/settings": {
       "get": {
         "operationId": "getSettings",
@@ -11240,6 +11381,209 @@
                 }
               }
             }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/{vaultId}/permission-targets": {
+      "get": {
+        "operationId": "searchPermissionTargets",
+        "summary": "Search own organizations, their teams and co-members; owner only; 50 per type per page",
+        "tags": [
+          "vaults"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "vaultId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Opaque cursor. Pass back unchanged with the original filters."
+            },
+            "required": false,
+            "description": "Opaque cursor. Pass back unchanged with the original filters.",
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "principalType": {
+                            "type": "string",
+                            "enum": [
+                              "user",
+                              "organization",
+                              "team"
+                            ]
+                          },
+                          "principalId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "pattern": "^(org|team|user)_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "detail": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "principalType",
+                          "principalId",
+                          "name",
+                          "detail"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "description": "Opaque cursor. Pass back unchanged with the original filters."
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/{vaultId}/permissions/users/{userId}": {
+      "put": {
+        "operationId": "putUserPermission",
+        "summary": "Grant read-only access to a fellow organization member; owner only",
+        "tags": [
+          "vaults"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "vaultId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success; no response body."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteUserPermission",
+        "summary": "Revoke direct user access; owner only",
+        "tags": [
+          "vaults"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "vaultId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success; no response body."
           },
           "default": {
             "$ref": "#/components/responses/Problem"

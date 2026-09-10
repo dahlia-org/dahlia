@@ -141,14 +141,14 @@ export async function readVisiblePages<T>(input: string | ApiQuery<Page<T>>, min
   return { items, nextCursor: cursor };
 }
 
-export function useLivePage<T>(input: string | ApiQuery<Page<T>>) {
-  const url = typeof input === "string" ? input : input.key;
+export function useLivePage<T>(input: string | ApiQuery<Page<T>> | undefined) {
+  const url = typeof input === "string" ? input : input?.key;
   const demand = useRef({ url, count: 1 });
   useEffect(() => { demand.current = { url, count: 1 }; }, [url]);
   const query = useLiveQuery<Page<T>>(url, (signal, previous) => {
     const requestedCount = demand.current.url === url ? demand.current.count : 1;
     const visibleCount = Math.max(previous?.items.length ?? 1, requestedCount);
-    return readVisiblePages<T>(input, visibleCount, signal);
+    return readVisiblePages<T>(input!, visibleCount, signal);
   });
   const loadingMore = query.loading && demand.current.url === url && demand.current.count > (query.data?.items.length ?? 0);
   const loadMore = () => {

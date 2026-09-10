@@ -7,7 +7,9 @@
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Read server-wide search weights; administrator only",
-      "consumers": ["apps/server/src/client/App.tsx"]
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
     },
     {
       "operationId": "updateSearchSettings",
@@ -16,7 +18,9 @@
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Replace all six search weights with integers from 1 to 10",
-      "consumers": ["apps/server/src/client/App.tsx"]
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
     },
     {
       "operationId": "getHealth",
@@ -863,6 +867,50 @@
       "classification": "maintained",
       "previous": "/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}",
       "reason": "Remove an external team member",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "getServerOrganization",
+      "method": "GET",
+      "path": "/api/v1/admin/organizations/{organizationId}",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Open organization directory details for server administrators regardless of membership.",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "searchPermissionTargets",
+      "method": "GET",
+      "path": "/api/v1/vaults/{vaultId}/permission-targets",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Owner-managed read-only sharing with searchable organization-scoped targets",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "putUserPermission",
+      "method": "PUT",
+      "path": "/api/v1/vaults/{vaultId}/permissions/users/{userId}",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Owner-managed read-only sharing with searchable organization-scoped targets",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "deleteUserPermission",
+      "method": "DELETE",
+      "path": "/api/v1/vaults/{vaultId}/permissions/users/{userId}",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Owner-managed read-only sharing with searchable organization-scoped targets",
       "consumers": [
         "apps/server/src/client/App.tsx"
       ]
