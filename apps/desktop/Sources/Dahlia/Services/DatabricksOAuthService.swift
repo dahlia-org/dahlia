@@ -2,6 +2,7 @@ import AppKit
 import CryptoKit
 import Foundation
 import Network
+import Synchronization
 
 actor DatabricksOAuthService {
     static let shared = DatabricksOAuthService()
@@ -12,10 +13,38 @@ actor DatabricksOAuthService {
     private let session: URLSession
     private let storage: DatabricksOAuthStorage
     private let authorize: @Sendable (URL) async throws -> URL
-    private struct Pending {
+    private final class Pending: Sendable {
         let task: Task<String, Error>
         let loginOnly: Bool
         let generation: UUID
+        // nil closes registration before the last waiter cancels the task outside the lock.
+        private let waiters: Mutex<Set<UUID>?>
+
+        init(task: Task<String, Error>, loginOnly: Bool, generation: UUID, waiter: UUID) {
+            self.task = task
+            self.loginOnly = loginOnly
+            self.generation = generation
+            waiters = Mutex([waiter])
+        }
+
+        var isFinished: Bool { waiters.withLock { $0 == nil } }
+
+        func addWaiter(_ id: UUID) -> Bool {
+            waiters.withLock {
+                guard $0 != nil else { return false }
+                $0?.insert(id)
+                return true
+            }
+        }
+
+        func removeWaiter(_ id: UUID) {
+            let shouldCancel = waiters.withLock {
+                guard $0?.remove(id) != nil, $0?.isEmpty == true else { return false }
+                $0 = nil
+                return true
+            }
+            if shouldCancel { task.cancel() }
+        }
     }
 
     private var pending: Pending?
@@ -72,15 +101,16 @@ actor DatabricksOAuthService {
     func accessToken(connectionID: UUID, forceRefresh: Bool = false, loginOnly: Bool = false) async throws -> String {
         let connection = try connection(id: connectionID)
         try Task.checkCancellation()
-        if let operation = pending {
+        let waiter = UUID()
+        if let operation = pending, operation.addWaiter(waiter) {
             if loginOnly, !operation.loginOnly {
                 // An explicit sign-in must still open the browser after a pending refresh.
-                _ = try? await waitForToken(operation.task)
+                _ = try? await waitForToken(operation, waiter: waiter)
                 try Task.checkCancellation()
                 if pending?.generation == operation.generation { pending = nil }
                 return try await accessToken(connectionID: connectionID, forceRefresh: forceRefresh, loginOnly: true)
             }
-            let token = try await waitForToken(operation.task)
+            let token = try await waitForToken(operation, waiter: waiter)
             try Task.checkCancellation()
             _ = try self.connection(id: connectionID)
             return token
@@ -111,27 +141,33 @@ actor DatabricksOAuthService {
             try self.storage.saveCredential(connectionID, updated)
             return updated.accessToken
         }
-        pending = Pending(task: task, loginOnly: loginOnly, generation: generation)
-        defer { if self.generation == generation { pending = nil } }
-        return try await withTaskCancellationHandler {
-            let token = try await task.value
-            try Task.checkCancellation()
-            _ = try self.connection(id: connectionID)
-            return token
-        } onCancel: { task.cancel() }
+        let operation = Pending(task: task, loginOnly: loginOnly, generation: generation, waiter: waiter)
+        pending = operation
+        let token = try await waitForToken(operation, waiter: waiter)
+        try Task.checkCancellation()
+        _ = try self.connection(id: connectionID)
+        return token
     }
 
-    private func waitForToken(_ task: Task<String, Error>) async throws -> String {
-        let (results, continuation) = AsyncStream<Result<String, Error>>.makeStream()
-        Task {
-            await continuation.yield(task.result)
-            continuation.finish()
+    private func waitForToken(_ operation: Pending, waiter: UUID) async throws -> String {
+        defer {
+            operation.removeWaiter(waiter)
+            if pending?.generation == operation.generation, operation.isFinished {
+                pending = nil
+            }
         }
-        for await result in results {
-            try Task.checkCancellation()
-            return try result.get()
-        }
-        throw CancellationError()
+        return try await withTaskCancellationHandler {
+            let (results, continuation) = AsyncStream<Result<String, Error>>.makeStream()
+            Task {
+                await continuation.yield(operation.task.result)
+                continuation.finish()
+            }
+            for await result in results {
+                try Task.checkCancellation()
+                return try result.get()
+            }
+            throw CancellationError()
+        } onCancel: { operation.removeWaiter(waiter) }
     }
 
     private func login(_ connection: DatabricksConnection) async throws -> DatabricksOAuthCredential {

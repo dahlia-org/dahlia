@@ -276,6 +276,56 @@
             _ = try await service.signIn(workspaceURL: Self.host)
         }
 
+        @Test(arguments: [false, true])
+        func cancellingRefreshInitiatorPreservesRemainingWaiter(cancelAll: Bool) async throws {
+            let connection = DatabricksConnection(id: UUID(), host: Self.host)
+            let memory = DatabricksTestStorage(connection: connection)
+            memory.state.withLock { $0.credentials[connection.id] = credential() }
+            let (reads, continuation) = AsyncStream<Void>.makeStream()
+            let (requests, requestContinuation) = AsyncStream<Void>.makeStream()
+            defer { continuation.finish()
+                requestContinuation.finish()
+            }
+            var storage = memory.storage
+            storage.loadConnection = {
+                continuation.yield(())
+                return memory.state.withLock { $0.connection }
+            }
+            let releaseRefresh = DispatchSemaphore(value: 0)
+            let refreshCount = Mutex(0)
+            let session = makeSession { request in
+                #expect(form(request)["grant_type"] == "refresh_token")
+                refreshCount.withLock { $0 += 1 }
+                requestContinuation.yield(())
+                #expect(releaseRefresh.wait(timeout: .now() + 5) == .success)
+                return (200, Self.token)
+            }
+            defer { session.invalidateAndCancel() }
+            let service = DatabricksOAuthService(session: session, storage: storage) { _ in
+                Issue.record("Cancelling a waiter must not start browser authentication")
+                throw CancellationError()
+            }
+            let original = Task { try await service.accessToken(connectionID: connection.id, forceRefresh: true) }
+            var requestIterator = requests.makeAsyncIterator()
+            _ = await requestIterator.next()
+            var readIterator = reads.makeAsyncIterator()
+            _ = await readIterator.next()
+            let joined = Task { try await service.accessToken(connectionID: connection.id, forceRefresh: true) }
+            _ = await readIterator.next()
+            original.cancel()
+            if cancelAll { joined.cancel() }
+            releaseRefresh.signal()
+            await #expect(throws: CancellationError.self) { try await original.value }
+            if cancelAll {
+                await #expect(throws: CancellationError.self) { try await joined.value }
+                #expect(memory.state.withLock { $0.credentials[connection.id]?.accessToken } == "old-access")
+            } else {
+                #expect(try await joined.value == "access")
+                #expect(memory.state.withLock { $0.credentials[connection.id]?.refreshToken } == "refresh")
+            }
+            #expect(refreshCount.withLock { $0 } == 1)
+        }
+
         @Test func cancellingJoinedWaitLeavesOriginalLoginRunning() async throws {
             let connection = DatabricksConnection(id: UUID(), host: Self.host)
             let memory = DatabricksTestStorage(connection: connection)
