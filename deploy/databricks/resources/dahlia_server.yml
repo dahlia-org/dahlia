@@ -36,6 +36,7 @@ resources:
     dahlia_server:
       name: ${var.app_name}
       description: Dahlia Server backed by Lakebase.
+      compute_size: LARGE
       source_code_path: ../../../apps/server
       user_api_scopes:
         - ai-gateway

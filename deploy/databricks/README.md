@@ -1,6 +1,6 @@
 # Deploy Dahlia Server on Databricks Apps
 
-This bundle creates a Databricks App and a dedicated Lakebase Autoscaling project for each target. The Apps proxy authenticates requests before they reach Dahlia Server, so the deployment uses header identity without creating Better Auth sessions.
+This bundle creates a Databricks App with `LARGE` compute and a dedicated Lakebase Autoscaling project for each target. The Apps proxy authenticates requests before they reach Dahlia Server, so the deployment uses header identity without creating Better Auth sessions.
 
 ```text
 browser / Dahlia Codex with U2M token
