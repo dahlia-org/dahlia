@@ -91,6 +91,19 @@ describe("model catalog", () => {
     expect(model.supported_reasoning_levels.map(({ effort }) => effort)).toEqual(["none", "low", "high", "max"]);
   });
 
+  it("uses Luna metadata for DeepSeek V4.1 Flash", () => {
+    const model = catalog.models.find((model) => model.slug === "deepseek-v4-1-flash")!;
+    const luna = catalog.models.find((model) => model.slug === "gpt-5-6-luna")!;
+    expect(model).toMatchObject({
+      input_modalities: luna.input_modalities,
+      context_window: luna.context_window,
+      max_context_window: luna.max_context_window,
+      default_reasoning_level: luna.default_reasoning_level,
+      supported_reasoning_levels: luna.supported_reasoning_levels,
+    });
+    expect(model.model_messages.instructions_template).toBe(luna.model_messages.instructions_template.replace("an agent based on GPT-5", "a coding agent"));
+  });
+
   it.each(["gemini-3-8-flash", "gemini-3-7-flash"])("hides %s while retaining audio summary metadata", (id) => {
     const list = modelList([{ id }]);
     expect(list.data[0]?.id).toBe(id);
