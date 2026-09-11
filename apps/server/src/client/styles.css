@@ -360,6 +360,7 @@ a.metadata-chip:hover { background: #e8e8e8; }
 .file-navigation.next { right: 24px; }
 .file-navigation:hover { background: #eee; }
 .file-navigation:disabled { opacity: .35; cursor: default; }
+@media (min-width: 641px) { .file-viewer.has-info .file-navigation.next { right: calc(24px + 320px + 12px); } }
 .file-stage { position: relative; grid-row: 2; grid-column: 1; min-width: 0; min-height: 0; overflow: auto; display: flex; }
 .file-stage > .file-load-error { position: absolute; z-index: 1; top: 0; left: 0; right: 0; background: #333; }
 .file-image-size { flex-shrink: 0; margin: auto; }
