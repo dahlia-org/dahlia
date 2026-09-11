@@ -235,7 +235,6 @@ describe("deployment routing", () => {
     expect(resource).toContain("name: mcp-dahlia-server-${bundle.target}");
     expect(resource).toContain(`user_api_scopes:
         - ai-gateway
-        - catalog.connections
         - files`);
     expect(resource).not.toContain("catalog.catalogs:read");
     expect(resource).not.toContain("catalog.schemas:read");

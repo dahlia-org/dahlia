@@ -40,7 +40,6 @@ resources:
       source_code_path: ../../../apps/server
       user_api_scopes:
         - ai-gateway
-        - catalog.connections
         - files
       config:
         command: ["corepack", "pnpm", "start:databricks"]
