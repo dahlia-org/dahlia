@@ -47,6 +47,29 @@ import GRDB
         }
 
         @Test
+        func keepsEligibilityFailureRetryable() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let target = Self.target(meetingID: .v7())
+            let eligibility = ThrowingEligibilitySequence([
+                .failure(TestError.unavailable),
+                .success(.available(target)),
+            ])
+            let store = MeetingConversationMetricsStore(
+                eligibilityLoader: { _, _ in try await eligibility.next().get() },
+                metricsLoader: { _ in .recordingAudioMissing }
+            )
+
+            await store.prepare(meetingID: target.meetingID, dbQueue: database.dbQueue)
+            #expect(store.isTabAvailable)
+            #expect(store.status == .failed(TestError.unavailable.localizedDescription))
+
+            await store.prepare(meetingID: target.meetingID, dbQueue: database.dbQueue)
+            #expect(store.isTabAvailable)
+            #expect(store.status == .loading)
+            #expect(store.target == target)
+        }
+
+        @Test
         func invalidationPreservesTabUntilReplacementEligibilityPublishes() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let first = Self.target(meetingID: .v7(), transcriptVersion: 1)
@@ -148,6 +171,24 @@ import GRDB
         func next() -> ServerConversationAnalyticsService.Eligibility {
             values.removeFirst()
         }
+    }
+
+    private actor ThrowingEligibilitySequence {
+        private var values: [Result<ServerConversationAnalyticsService.Eligibility, TestError>]
+
+        init(_ values: [Result<ServerConversationAnalyticsService.Eligibility, TestError>]) {
+            self.values = values
+        }
+
+        func next() -> Result<ServerConversationAnalyticsService.Eligibility, TestError> {
+            values.removeFirst()
+        }
+    }
+
+    private enum TestError: LocalizedError {
+        case unavailable
+
+        var errorDescription: String? { "Temporarily unavailable" }
     }
 
     private actor ControlledMetricsLoader {

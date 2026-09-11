@@ -2277,7 +2277,11 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func loadCurrentMeetingConversationMetrics() async {
-        await conversationMetricsStore.load()
+        if conversationMetricsStore.target == nil {
+            await prepareCurrentMeetingConversationMetrics()
+        } else {
+            await conversationMetricsStore.load()
+        }
     }
 
     func prepareCurrentMeetingConversationMetrics() async {

@@ -34,6 +34,8 @@ struct ConversationAnalyticsDashboardView: View {
                     Label(L10n.conversationAnalyticsAudioUnavailable, systemImage: "waveform.slash")
                 } description: {
                     Text(L10n.conversationAnalyticsAudioUnavailableDescription)
+                } actions: {
+                    Button(L10n.retry, action: retryLoad)
                 }
             case let .failed(errorMessage):
                 ContentUnavailableView {

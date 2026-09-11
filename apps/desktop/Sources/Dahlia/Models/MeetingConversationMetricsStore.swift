@@ -97,8 +97,8 @@ final class MeetingConversationMetricsStore: ObservableObject {
             return
         } catch {
             guard self.meetingID == meetingID, generation == currentGeneration else { return }
-            isTabAvailable = false
-            status = .hidden
+            isTabAvailable = true
+            status = .failed(error.localizedDescription)
         }
     }
 
