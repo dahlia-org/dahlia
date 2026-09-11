@@ -152,7 +152,9 @@ describe("sync history retention", () => {
       (transaction_id, owner_user_id, vault_id, request_hash, response_json, results_json, cursor, created_at)
       SELECT ?, owner_user_id, vault_id, request_hash, response_json, results_json, cursor, created_at
       FROM transaction_receipts WHERE transaction_id = ?`);
+    raw.exec("BEGIN");
     for (let i = 1; i < 1_000; i++) copy.run(id(), create.id);
+    raw.exec("COMMIT");
     expire(raw);
     const prepare = vi.spyOn(DatabaseSync.prototype, "prepare");
     expect(await store.sync.pruneHistoryBatch({ ownerUserId: owner.userId, vaultId })).toMatchObject({ receiptsCompacted: 1_000 });

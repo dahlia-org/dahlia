@@ -22,7 +22,7 @@ describe("model catalog", () => {
     expect(new Set(catalog.models.map(({ slug }) => slug)).size).toBe(catalog.models.length);
   });
 
-  it("returns discovered definitions unchanged, including priority and visible Gemini", () => {
+  it("returns discovered definitions unchanged, including priority and hidden Gemini", () => {
     const entries = catalog.models.map(({ slug }) => ({ id: slug, displayName: "Provider name" })).reverse();
     const list = modelList(entries);
     expect(list.models).toEqual([...catalog.models, ...hiddenModels]);
@@ -91,10 +91,10 @@ describe("model catalog", () => {
     expect(model.supported_reasoning_levels.map(({ effort }) => effort)).toEqual(["none", "low", "high", "max"]);
   });
 
-  it.each(["gemini-3-8-flash", "gemini-3-7-flash"])("shows %s while retaining audio summary metadata", (id) => {
+  it.each(["gemini-3-8-flash", "gemini-3-7-flash"])("hides %s while retaining audio summary metadata", (id) => {
     const list = modelList([{ id }]);
     expect(list.data[0]?.id).toBe(id);
-    expect(list.models[0]).toMatchObject({ visibility: "list", default_reasoning_level: "medium", use_responses_lite: false });
+    expect(list.models[0]).toMatchObject({ visibility: "hide", supported_in_api: true, default_reasoning_level: "medium", use_responses_lite: false });
     expect(list.models[0]?.supported_reasoning_levels.map(({ effort }) => effort)).toEqual(["low", "medium", "high"]);
   });
 
