@@ -51,8 +51,10 @@ extension MeetingRepository {
             let remaining = Dictionary(uniqueKeysWithValues: counts.map { ($0["category"] as String, $0["count"] as Int) })
             let head = try Row.fetchOne(db, sql: """
             SELECT t.leaseExpiresAt, t.serverResponseJSON,
-                CASE WHEN json_valid(t.serverResponseJSON)
-                    THEN json_extract(t.serverResponseJSON, '$.code') END AS errorCode,
+                CASE WHEN json_valid(t.serverResponseJSON) THEN
+                    CASE WHEN json_type(t.serverResponseJSON, '$.code') = 'text'
+                        THEN json_extract(t.serverResponseJSON, '$.code') END
+                END AS errorCode,
                 EXISTS(SELECT 1 FROM sync_operations o WHERE o.transactionId = t.id
                     AND o.entity IN ('file', 'meeting_attachment', 'recording')) AS attachment,
                 EXISTS(SELECT 1 FROM sync_operations o WHERE o.transactionId = t.id
