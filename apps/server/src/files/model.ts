@@ -8,7 +8,13 @@ export const fileMetadataLimits = {
 } as const;
 
 export function codePointLimitedString(schema: z.ZodString, maxLength: number) {
-  return schema.refine((value) => [...value].length <= maxLength).meta({ maxLength });
+  return schema.refine((value) => {
+    const iterator = value[Symbol.iterator]();
+    for (let count = 0; count <= maxLength; count += 1) {
+      if (iterator.next().done) return true;
+    }
+    return false;
+  }).meta({ maxLength });
 }
 
 function metadataSchema(ocrTextLimit: number, captionLimit: number) {
