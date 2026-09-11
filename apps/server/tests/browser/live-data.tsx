@@ -2,12 +2,14 @@
 // All API responses and mutations are local fixtures; no backend is contacted.
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "../../src/client/App";
+import { App, SyncedMeeting } from "../../src/client/App";
 import { DetailTabs } from "../../src/client/MeetingContent";
+import { refreshData } from "../../src/client/live-data";
 import "../../src/client/styles.css";
 
 const previewMode = new URLSearchParams(location.search).has("preview");
 const previewPage = new URLSearchParams(location.search).get("page") ?? "meeting";
+const navigationTest = new URLSearchParams(location.search).has("navigation-test");
 Object.defineProperty(navigator, "language", { value: previewMode && new URLSearchParams(location.search).get("lang") === "ja" ? "ja-JP" : "en-US", configurable: true });
 const ja = navigator.language.startsWith("ja");
 sessionStorage.removeItem("dahlia:sidebar:browser-fixture:organization");
@@ -21,7 +23,9 @@ const failures = new Map<string, number>();
 let caption = "Initial caption";
 let summary = "Initial summary";
 let transcript = "Initial transcript";
-let fileCount = 3;
+let fileCount = navigationTest ? 5 : 3;
+let omittedFile: number | undefined;
+const filePageSize = navigationTest ? 2 : 12;
 let sharingEnabled = false;
 let meetingName = previewMode ? (ja ? "新しいオンボーディング体験のデザインレビュー" : "Design review: a better first-run experience") : "Recording meeting";
 const vault = { vaultId: "v1", name: previewMode ? (ja ? "プロダクト開発" : "Product & design") : "Test Vault", role: "owner", hasResources: true, revision: 1, createdAt: "2026-09-07T00:00:00Z" };
@@ -45,7 +49,7 @@ const previewSummary = {
 };
 const meeting = (id: string) => ({ meetingId: id, vaultId: "v1", projectId: "p0", name: id === "m1" ? meetingName : previewMode ? (ja ? "9月のリリース計画と優先順位" : "September release planning & priorities") : "Other meeting", description: previewMode ? (ja ? "プロダクト・デザインチームの週次レビュー" : "Weekly product and design team review") : "", duration: previewMode ? 2540 : undefined, status: "recording", revision: 1, summaryRevision: 1, createdAt: vault.createdAt, summaryDocument: JSON.stringify(previewMode ? previewSummary : { sections: [{ heading: summary, blocks: [] }] }) });
 const image = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#aaa"/></svg>');
-const file = (index: number) => ({ id: `f${index}`, capturedAt: vault.createdAt, file: { id: `f${index}`, vaultId: "v1", name: `Screenshot ${index}.png`, contentType: "image/png", variants: { thumb_480: image, thumb_1568: image }, metadata: { source: "screenshot", caption: index === 0 ? caption : `Screenshot ${index}` } } });
+const file = (index: number) => ({ id: `f${index}`, capturedAt: vault.createdAt, file: { id: `f${index}`, vaultId: "v1", name: `Screenshot ${index}.png`, contentType: "image/png", variants: { thumb_480: image, thumb_1568: image }, metadata: { source: navigationTest && (index === 2 || index === 3) ? "upload" : "screenshot", caption: index === 0 ? caption : `Screenshot ${index}` } } });
 window.EventSource = class extends EventTarget {
   constructor() { super(); sources.push(this); queueMicrotask(() => this.dispatchEvent(new Event("open"))); }
   close() { sources.splice(sources.indexOf(this), 1); }
@@ -93,8 +97,9 @@ window.fetch = async (input, init) => {
   if (url.pathname.endsWith("/summaries")) return Response.json({ items: [] });
   if (url.pathname.endsWith("/files")) {
     const offset = Number(url.searchParams.get("cursor") ?? 0);
-    const end = Math.min(offset + 12, fileCount);
-    return Response.json({ items: Array.from({ length: end - offset }, (_, index) => file(offset + index)), nextCursor: end < fileCount ? String(end) : null });
+    const files = Array.from({ length: fileCount }, (_, index) => index).filter((index) => index !== omittedFile);
+    const end = Math.min(offset + filePageSize, files.length);
+    return Response.json({ items: files.slice(offset, end).map(file), nextCursor: end < files.length ? String(end) : null });
   }
   if (url.pathname.startsWith(`${base}/meetings/`)) return Response.json(meeting(url.pathname.split("/").at(-1)!));
   if (url.pathname === "/api/v1/transactions") {
@@ -154,6 +159,32 @@ function choose(control: HTMLButtonElement, value: string) {
 }
 function selectedTab() { return document.querySelector('[role="tab"][aria-selected="true"]')?.textContent; }
 
+async function verifyMeetingImageNavigation(route: string) {
+  const fileLink = document.querySelector<HTMLAnchorElement>('a[href="/files/f1"]')!;
+  fileLink.click();
+  await until(() => document.querySelector<HTMLDialogElement>(".file-dialog")?.matches(":modal") && document.querySelector<HTMLImageElement>(".file-preview-image")?.complete);
+  const dialog = document.querySelector<HTMLDialogElement>(".file-dialog")!;
+  assert(location.pathname === route, "Opening modal changed the page URL");
+  dialog.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click();
+  const nextCaption = navigationTest ? "Screenshot 4" : "Screenshot 2";
+  await until(() => dialog.querySelector("img")?.getAttribute("alt") === nextCaption);
+  const loadedCount = document.querySelectorAll(".screenshot-grid figure").length;
+  omittedFile = 1; refreshData();
+  await until(() => document.querySelectorAll(".screenshot-grid figure").length === loadedCount - 1 && dialog.querySelector("img")?.getAttribute("alt") === nextCaption);
+  omittedFile = undefined; refreshData();
+  await until(() => document.querySelectorAll(".screenshot-grid figure").length === loadedCount && dialog.querySelector("img")?.getAttribute("alt") === nextCaption);
+  dialog.querySelector<HTMLButtonElement>('[aria-label="Previous image"]')!.click();
+  await until(() => dialog.querySelector("img")?.getAttribute("alt") === "Screenshot 1");
+  omittedFile = 0; refreshData();
+  await until(() => document.querySelectorAll(".screenshot-grid figure").length === loadedCount - 1 && dialog.querySelector("img")?.getAttribute("alt") === "Screenshot 1"
+    && dialog.querySelector<HTMLButtonElement>('[aria-label="Previous image"]')?.disabled);
+  omittedFile = undefined; refreshData();
+  await until(() => document.querySelectorAll(".screenshot-grid figure").length === loadedCount && !dialog.querySelector<HTMLButtonElement>('[aria-label="Previous image"]')?.disabled);
+  dialog.querySelector<HTMLButtonElement>('[aria-label="Previous image"]')!.click();
+  await until(() => dialog.querySelector("img")?.getAttribute("alt") === caption);
+  return { dialog, fileLink: document.querySelector<HTMLAnchorElement>('a[href="/files/f1"]')!, preview: dialog.querySelector("img") };
+}
+
 async function verifyTabSelection() {
   const root = createRoot(document.getElementById("root")!);
   const tabs = ["Meetings", "Permissions", "Settings"].map((label) => ({ id: label, label, content: label }));
@@ -178,7 +209,21 @@ async function verifyTabSelection() {
 }
 
 async function run() {
-  if (!previewMode) await verifyTabSelection();
+  if (!previewMode && !navigationTest) await verifyTabSelection();
+  if (navigationTest) {
+    history.replaceState(null, "", route);
+    createRoot(document.getElementById("root")!).render(<StrictMode><SyncedMeeting vaultId="v1" meetingId="m1" /></StrictMode>);
+    await until(() => document.querySelector('[role="tab"]'));
+    button("Screenshots").click();
+    await until(() => document.querySelectorAll(".screenshot-grid figure").length === filePageSize);
+    const { dialog, fileLink } = await verifyMeetingImageNavigation(location.pathname);
+    dialog.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click();
+    await until(() => !document.querySelector(".file-dialog"));
+    assert(document.activeElement === fileLink, "Closing a navigated modal did not restore focus");
+    document.body.dataset.testResult = "passed";
+    console.log("PASS: meeting image navigation survives live list updates");
+    return;
+  }
   history.replaceState(null, "", "/vaults/v1/meetings/m1");
   createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
   await until(() => document.querySelector('[role="tab"]') && document.querySelector('.meeting-row a[href="/meetings/m2"]') && ![...document.querySelectorAll(".sidebar-status")].some((node) => node.textContent?.includes("Loading")));
@@ -276,12 +321,7 @@ async function run() {
   assert(documentNode === document.documentElement && main === document.querySelector(".workspace"), "Document/main replaced");
   assert(requests.filter((url) => url === "/api/v1/session").length === sessionReads, "Sync notification refreshed session");
   assert(location.pathname === route, "Legacy URL did not resolve to canonical meeting URL");
-  const fileLink = document.querySelector<HTMLAnchorElement>('a[href="/files/f0"]')!;
-  fileLink.click();
-  await until(() => document.querySelector<HTMLDialogElement>(".file-dialog")?.matches(":modal") && document.querySelector<HTMLImageElement>(".file-preview-image")?.complete);
-  const dialog = document.querySelector<HTMLDialogElement>(".file-dialog")!;
-  const preview = dialog.querySelector("img");
-  assert(location.pathname === route, "Opening modal changed the page URL");
+  const { dialog, fileLink, preview } = await verifyMeetingImageNavigation(route);
   caption = "Modal updated caption";
   notify();
   await until(() => preview?.getAttribute("alt") === caption);

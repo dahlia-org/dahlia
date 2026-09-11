@@ -78,6 +78,8 @@ function SearchDialog({ vaultId, onClose }: { vaultId: string; onClose: () => vo
     { title: query ? uiText("Projects", "プロジェクト") : uiText("Recently active projects", "最近動いたプロジェクト"), items: results.data?.projects ?? [] },
   ];
   const hits = groups.flatMap((group) => group.items.slice(0, visible));
+  const screenshotHits = (results.data?.screenshots ?? []).slice(0, visible).filter((hit) => hit.fileId);
+  const previewIndex = preview ? screenshotHits.findIndex((hit) => hit.id === preview.id) : -1;
   const active = Math.min(selected, Math.max(0, hits.length - 1));
   function activate(hit?: SearchHit) {
     if (!hit) return;
@@ -97,13 +99,16 @@ function SearchDialog({ vaultId, onClose }: { vaultId: string; onClose: () => vo
   }
   useEffect(() => { dialog.current?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: "nearest" }); }, [active]);
   let index = 0;
-  return <dialog ref={dialog} className={`search-dialog${preview ? " search-preview" : ""}`} aria-label={uiText("Search", "検索")}
+  return <dialog ref={dialog} className={preview ? "file-dialog" : "search-dialog"} aria-label={uiText("Search", "検索")}
     onKeyDown={keyDown} onCancel={(event) => { event.preventDefault(); if (preview) setPreview(undefined); else onClose(); }}
     onClick={(event) => {
       const rect = event.currentTarget.getBoundingClientRect();
       if (event.target === event.currentTarget && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) onClose();
     }}>
-    {preview?.fileId ? <FileViewer fileId={preview.fileId} capturedAt={preview.date} onClose={() => setPreview(undefined)} /> : <>
+    {preview?.fileId ? <div className="file-dialog-content"><FileViewer fileId={preview.fileId} capturedAt={preview.date} separateTab
+      onClose={() => setPreview(undefined)}
+      onPrevious={previewIndex > 0 ? () => setPreview(screenshotHits[previewIndex - 1]) : undefined}
+      onNext={previewIndex >= 0 && previewIndex < screenshotHits.length - 1 ? () => setPreview(screenshotHits[previewIndex + 1]) : undefined} /></div> : <>
       <div className="search-toolbar">
         <input autoFocus type="search" value={text} maxLength={500} role="combobox" aria-autocomplete="list" aria-expanded="true"
           aria-controls={`${id}-results`} aria-activedescendant={hits.length ? `${id}-result-${active}` : undefined}
