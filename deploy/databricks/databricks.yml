@@ -16,8 +16,6 @@ experimental:
     postdeploy: "bash scripts/postdeploy.sh '${workspace.profile}' '${var.catalog}' '${var.ai_schema}' '${var.database_project_id}'"
 
 variables:
-  app_name:
-    description: Databricks App name.
   database_project_id:
     description: Lakebase project ID.
   search_embedding_dimensions:
@@ -43,7 +41,6 @@ targets:
     default: true
     mode: development
     variables:
-      app_name: dahlia-dev
       database_project_id: dahlia-db-dev
     resources:
       postgres_projects:
@@ -52,7 +49,6 @@ targets:
   prod:
     mode: production
     variables:
-      app_name: dahlia-prod
       database_project_id: dahlia-db
     resources:
       postgres_projects:
