@@ -10,7 +10,7 @@
 "settings.organization.settingsApplyNextGeneration" = "Changes save automatically and apply to the next generation.";
 "settings.organization.settingsSummaryOutput" = "Results";
 "settings.organization.settingsOutputLanguageDescription" = "Output language is shared by summaries and image descriptions. It does not change speech recognition languages.";
-"settings.organization.settingsServerProcessingDescription" = "Sends recordings to the server for transcription and summarization using its connected AI.";
+"settings.organization.settingsServerProcessingDescription" = "New recordings are sent to the server and use the selected automatic processing. Manual generation uses the source selected on the meeting screen.";
 "settings.organization.settingsLocalAnalysisLanguages" = "Image analysis uses the languages selected in General settings on this Mac.";
 "settings.organization.settingsAnalysisLanguagesDescription" = "Choose which languages to recognize in images. This does not change recording or subtitle languages.";
 "settings.organization.settingsDuringRecording" = "During recording";
@@ -33,14 +33,14 @@
 "settings.preferences.localModelPreferences" = "Summary model on this Mac";
 "settings.preferences.localModelPreferencesDescription" = "Shared by accounts processing on this Mac. Model preferences are not synchronized to the server.";
 "settings.preferences.serverProcessingAdvanced" = "Advanced server settings";
-"settings.preferences.processingWorkflow" = "Workflow";
+"settings.preferences.processingWorkflow" = "New recording automatic processing";
 "settings.preferences.transcribeThenSummarize" = "Transcribe, then summarize";
 "settings.preferences.combinedTranscriptionSummary" = "Generate transcription and summary together";
 "settings.preferences.summaryModel" = "Summary model";
 "settings.preferences.automaticModelPreference" = "Automatic";
 "settings.preferences.unavailableModelPreference" = "Unavailable for this workflow";
 "settings.preferences.checkModelPreference" = "Check model compatibility";
-"settings.preferences.automaticModelPreferenceDescription" = "Automatic uses supported product defaults and the model's default reasoning effort. Explicit choices survive workflow changes. Unavailable choices produce an error instead of being silently replaced.";
+"settings.preferences.automaticModelPreferenceDescription" = "These choices apply automatically after new recordings. Manual generation uses the source selected on the meeting screen. Explicit model choices are retained; when one does not support the selected source, only that run uses Automatic for its model and reasoning effort.";
 /* Common */
 "Delete" = "Delete";
 "Remove from Project" = "Remove from Project";
@@ -989,6 +989,20 @@
 "Project" = "Project";
 "Generate this summary?" = "Generate this summary?";
 "Review the context and export options before generating the summary." = "Review the context and export options before generating the summary.";
+"summary.source.title" = "Source for this generation";
+"summary.source.transcript" = "Transcript";
+"summary.source.transcript.description" = "Regenerate only the summary from the latest transcript.";
+"summary.source.audio" = "Recording audio";
+"summary.source.audio.description" = "Regenerate both the transcript and summary from all recordings.";
+"summary.source.checking" = "Checking available sources…";
+"summary.source.checkFailed" = "Available sources could not be checked. Check sync and your connection, then try again.";
+"summary.source.unsupported" = "This server does not support this source.";
+"summary.source.transcript.unavailable" = "The latest transcript is empty or has not been saved to the server.";
+"summary.source.audio.unavailable" = "No committed recording audio is available. Try again after uploads finish.";
+"summary.source.audio.requiresServer" = "Generating from recording audio is available with server processing.";
+"summary.source.noneAvailable" = "No source is available for every selected meeting.";
+"%lld selected meetings do not have an available transcript." = "%lld selected meetings do not have an available transcript.";
+"%lld selected meetings do not have completed recording audio." = "%lld selected meetings do not have completed recording audio.";
 "Regenerate Summaries" = "Regenerate Summaries";
 "Regenerate selected summaries?" = "Regenerate selected summaries?";
 "Each selected meeting is regenerated independently. Existing summaries are replaced only after generation succeeds." = "Each selected meeting is regenerated independently. Existing summaries are replaced only after generation succeeds.";

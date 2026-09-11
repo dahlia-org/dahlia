@@ -131,7 +131,7 @@
                 requests.withLock { $0.append(path) }
                 let body: String = switch path {
                 case "/api/v1/capabilities":
-                    #"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"]}}"#
+                    #"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],"completeRecordings":true}}"#
                 case "/api/v1/models":
                     #"{"data":[],"models":[]}"#
                 default:

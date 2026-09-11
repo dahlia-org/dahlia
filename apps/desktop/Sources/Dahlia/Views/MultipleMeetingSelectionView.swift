@@ -3,7 +3,7 @@ import SwiftUI
 struct MultipleMeetingSelectionView: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
-    @State private var isSummaryConfirmationPresented = false
+    let onPresentSummaryGeneration: () -> Void
     @State private var pendingMeetingDeletion: MeetingDeletionRequest?
 
     var body: some View {
@@ -19,7 +19,7 @@ struct MultipleMeetingSelectionView: View {
                 Button(
                     L10n.regenerateSummaries,
                     systemImage: "sparkles",
-                    action: presentSummaryConfirmation
+                    action: onPresentSummaryGeneration
                 )
                 .buttonStyle(.borderedProminent)
                 .disabled(
@@ -65,30 +65,8 @@ struct MultipleMeetingSelectionView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
-        .sheet(isPresented: $isSummaryConfirmationPresented) {
-            SummaryGenerationConfirmationView(
-                title: L10n.regenerateSelectedSummariesConfirmationTitle,
-                description: L10n.regenerateSelectedSummariesConfirmationDescription,
-                actionTitle: L10n.regenerateSummaries,
-                initialDetailLevel: AppSettings.shared.summaryDetailLevel,
-                onGenerate: regenerateSummaries
-            )
-        }
         .meetingDeletionConfirmation(request: $pendingMeetingDeletion) { meetingIds in
             sidebarViewModel.deleteMeetings(ids: meetingIds)
         }
-    }
-
-    private func presentSummaryConfirmation() {
-        isSummaryConfirmationPresented = true
-    }
-
-    private func regenerateSummaries(options: SummaryGenerationOptions) {
-        viewModel.triggerManualSummaries(
-            meetingIds: sidebarViewModel.selectedMeetingIds,
-            dbQueue: sidebarViewModel.dbQueue,
-            vaultURL: sidebarViewModel.currentVault?.url,
-            options: options
-        )
     }
 }

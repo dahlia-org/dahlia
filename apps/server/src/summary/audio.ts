@@ -24,8 +24,10 @@ interface AudioInput {
   size: number; checksum: string; manifest: RecordingManifest;
 }
 const MAX_AUDIO_SECONDS = 9.5 * 60 * 60;
-async function collectAudio(store: IdentitySyncStore, vaultId: string, meetingId: string, reference?: SummaryInput | null) {
+async function collectAudio(store: IdentitySyncStore, vaultId: string, meetingId: string, reference?: SummaryInput | null,
+  requireCompleteMeeting = false) {
   const context = await collectSummaryInput(store, vaultId, meetingId, false);
+  if (requireCompleteMeeting && await store.hasPendingRecordings(meetingId)) throw new SummaryError("summary_audio_pair_incomplete");
   const records: RecordingRecord[] = [];
   let after = 0;
   while (true) {
@@ -116,7 +118,9 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
     async resolvePreferences(preferences, input) {
       return resolveSummaryPreferences(preferences, input, await backend.listModels({ signal: AbortSignal.timeout(30_000) }), normalizeModel);
     },
-    async version(scoped, vaultId, meetingId, input) { return audioFingerprint(await collectAudio(scoped, vaultId, meetingId, input)); },
+    async version(scoped, vaultId, meetingId, input, options) {
+      return audioFingerprint(await collectAudio(scoped, vaultId, meetingId, input, options?.requireCompleteMeeting));
+    },
     async validateSettings(settings, input) {
       if (!input && !cloudflare) return;
       const catalog = await backend.listModels({ signal: AbortSignal.timeout(30_000) });

@@ -84,6 +84,30 @@
         }
 
         @Test
+        func manualAudioNeverFallsBackToLocalTranscriptGeneration() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            _ = try attachServerAccount(to: fixture)
+            var generationCalls = 0
+            let viewModel = CaptionViewModel(
+                summaryGenerationRunner: { _ in
+                    generationCalls += 1
+                    throw CancellationError()
+                },
+                summaryAccountSettingsLoader: { _ in accountSettings() }
+            )
+            await fixture.select(fixture.first, in: viewModel, note: "note")
+
+            let options = SummaryGenerationOptions(exportOptions: .manual, source: .audio)
+            #expect(viewModel.triggerManualSummary(options: options))
+            let job = try #require(viewModel.summaryGenerationJobs.first)
+            await job.task?.value
+
+            #expect(generationCalls == 0)
+            #expect(job.hasFailure)
+        }
+
+        @Test
         func cancellationDuringAccountLoadingNeverStartsInference() async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }

@@ -2391,6 +2391,24 @@ function createIdentityStore(
         .where(eq(schema.syncedRecording.sessionId, sessionId));
       return updated;
     },
+    async hasPendingRecordings(meetingId) {
+      const sessions = await db.select({ sessionId: schema.recordingSession.sessionId,
+        startedAt: schema.recordingSession.startedAt, endedAt: schema.recordingSession.endedAt })
+        .from(schema.recordingSession).innerJoin(schema.syncedMeeting, and(
+          eq(schema.syncedMeeting.vaultId, schema.recordingSession.vaultId),
+          eq(schema.syncedMeeting.meetingId, schema.recordingSession.meetingId),
+        )).where(and(eq(schema.recordingSession.meetingId, meetingId), readable(schema.syncedMeeting.vaultId)));
+      const records = await selectRecordings().where(and(
+        eq(schema.syncedRecording.meetingId, meetingId), readable(schema.syncedMeeting.vaultId),
+      ));
+      const bySession = new Map(records.map((record) => [record.sessionId, record]));
+      return sessions.some((session) => {
+        const record = bySession.get(session.sessionId);
+        return !session.startedAt || !session.endedAt || !record || record.revision < 1
+          || Object.keys(record.audio).length === 0
+          || Object.values(record.audio).some((audio) => !audio.active || !audio.uploadedAt || !audio.manifest || !audio.checksum);
+      });
+    },
     async listRecordings(meetingId, after, limit) {
       return selectRecordings().where(and(
         eq(schema.syncedRecording.meetingId, meetingId), gt(schema.syncedRecording.number, after),
@@ -2412,9 +2430,10 @@ function createIdentityStore(
           const value = audio[source];
           if (!value || value.active || new Date(value.createdAt) >= before) continue;
           await db.insert(schema.storageDeleteJob).values({ storageKey: recordingStorageKey(record, source) }).onConflictDoNothing();
-          delete audio[source];
+          audio[source] = { generation: crypto.randomUUID(), createdAt: new Date().toISOString(), uploadedAt: null,
+            active: false, content_type: "audio/mp4", size: 0, checksum: null };
         }
-        if (Object.keys(audio).length !== Object.keys(record.audio).length) {
+        if (JSON.stringify(audio) !== JSON.stringify(record.audio)) {
           await db.update(schema.syncedRecording).set({ audio }).where(eq(schema.syncedRecording.sessionId, record.sessionId));
         }
       }

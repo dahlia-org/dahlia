@@ -2716,6 +2716,9 @@
                     "audio"
                   ]
                 }
+              },
+              "completeRecordings": {
+                "type": "boolean"
               }
             },
             "required": [

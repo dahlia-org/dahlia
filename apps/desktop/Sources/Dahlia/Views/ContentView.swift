@@ -24,6 +24,7 @@ struct ContentView: View {
     @State private var projectEditorRequest: ProjectEditorRequest?
     @State private var projectPendingDeletion: ProjectOverviewItem?
     @State private var expandedScreenshot: ExpandedScreenshotPresentation?
+    @State private var isSummaryGenerationConfirmationPresented = false
 
     var body: some View {
         let isShowingSettings = mainWindowNavigation.isShowingSettings
@@ -243,6 +244,11 @@ struct ContentView: View {
             onSave: saveProjectEditor,
             onCancelDeletion: dismissProjectDeletion,
             onConfirmDeletion: deleteProject
+        )
+        .summaryGenerationConfirmationPresentation(
+            isPresented: $isSummaryGenerationConfirmationPresented,
+            viewModel: viewModel,
+            sidebarViewModel: sidebarViewModel
         )
         .task(id: sidebarViewModel.currentVault?.id) {
             await sidebarViewModel.refreshUnprocessedRecordings()
@@ -502,7 +508,8 @@ private extension ContentView {
         } else if sidebarViewModel.selectedMeetingIds.count > 1 {
             MultipleMeetingSelectionView(
                 viewModel: viewModel,
-                sidebarViewModel: sidebarViewModel
+                sidebarViewModel: sidebarViewModel,
+                onPresentSummaryGeneration: presentSummaryGeneration
             )
         } else if Self.isMeetingSelectionPending(
             selectedMeetingID: sidebarViewModel.selectedMeetingId,
@@ -514,6 +521,7 @@ private extension ContentView {
                 viewModel: viewModel,
                 sidebarViewModel: sidebarViewModel,
                 recordingCoordinator: recordingCoordinator,
+                onPresentSummaryGeneration: presentSummaryGeneration,
                 selectedTab: $selectedDetailTab,
                 expandedScreenshot: $expandedScreenshot
             )
@@ -523,6 +531,10 @@ private extension ContentView {
                 onJoinEvent: recordingCoordinator.openMeetingLink
             )
         }
+    }
+
+    private func presentSummaryGeneration() {
+        isSummaryGenerationConfirmationPresented = true
     }
 
     @ViewBuilder

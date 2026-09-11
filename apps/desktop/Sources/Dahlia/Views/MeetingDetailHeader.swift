@@ -127,6 +127,7 @@ struct MeetingDetailHeader: View {
     let onCommit: () -> Void
     let onCancel: () -> Void
     let onEditorTap: () -> Void
+    let onPresentSummaryGeneration: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -149,7 +150,8 @@ struct MeetingDetailHeader: View {
                     HStack(spacing: 0) {
                         GenerateSummaryHeaderButton(
                             viewModel: viewModel,
-                            sidebarViewModel: sidebarViewModel
+                            sidebarViewModel: sidebarViewModel,
+                            onPresentConfirmation: onPresentSummaryGeneration
                         )
                         ShareSummaryHeaderButton(viewModel: viewModel)
                     }

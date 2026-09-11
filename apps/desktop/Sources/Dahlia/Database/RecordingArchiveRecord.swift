@@ -27,7 +27,18 @@ struct RecordingArchiveRecord: Codable, FetchableRecord, PersistableRecord, Send
               vault.accountConnectionId == archive.connectionId, vault.allowsCanonicalEdits,
               vault.syncRecoveryState == nil else { return false }
         if archive.connectionId == nil { return archive.state == "saved" && archive.preparedJSON != "{}" }
-        return vault.syncConfirmedConnectionId == archive.connectionId && archive.number != nil && archive.audioJSON != "{}"
+        guard vault.syncConfirmedConnectionId == archive.connectionId, archive.number != nil else { return false }
+        let prepared = try SyncJSON.decoder.decode(
+            [String: RecordingArchiveEncoder.Prepared].self,
+            from: Data(archive.preparedJSON.utf8)
+        )
+        let audio = try archive.audio
+        guard !audio.isEmpty, prepared.keys.allSatisfy(audio.keys.contains) else { return false }
+        return try !(Bool.fetchOne(
+            db,
+            sql: "SELECT EXISTS (SELECT 1 FROM sync_operations WHERE entity = 'recording' AND entityId = ?)",
+            arguments: [sessionId]
+        ) ?? false)
     }
 
     static func enqueue(_ session: RecordingSessionRecord, in db: Database) throws {

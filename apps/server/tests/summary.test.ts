@@ -187,7 +187,7 @@ describe("server summary jobs", () => {
       expect(await (await send(true)).json()).toEqual({
         sync: { version: 4 }, vaultTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 },
         search: { version: 1 }, imageAnalysis: { version: 1 }, conversationAnalytics: { version: 1 },
-        meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"] },
+        meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"], completeRecordings: true },
       });
       methods.length = 0;
       expect(await (await send(true)).json()).not.toHaveProperty("meetingSummaryGeneration");
@@ -498,7 +498,9 @@ describe("server summary jobs", () => {
       const portable = createApp({ config, authStore: store });
       expect(await (await portable.request("/api/v1/capabilities", { headers })).json()).not.toHaveProperty("meetingSummaryGeneration");
       expect((await app.request("/api/v1/summaries/methods", { headers })).status).toBe(404);
-      expect(await (await app.request("/api/v1/capabilities", { headers })).json()).toMatchObject({ meetingSummaryGeneration: { version: 2, sources: ["transcript"] } });
+      expect(await (await app.request("/api/v1/capabilities", { headers })).json()).toMatchObject({
+        meetingSummaryGeneration: { version: 2, sources: ["transcript"], completeRecordings: true },
+      });
       expect((await portable.request(path, { method: "POST", headers, body: JSON.stringify({ id: uuidV7() }) })).status).toBe(503);
     } finally { await store.close?.(); }
   });
@@ -714,6 +716,10 @@ describe("audio summary jobs", () => {
       await expect(service.start(owner, vaultId, meetingId, { ...request, preferences: { ...preferences, outputLanguage: "ja" } }))
         .rejects.toMatchObject({ status: 409 });
       await service.cancel(owner, vaultId, meetingId, job.id);
+      const sessionId = uuidV7(); const occurredAt = new Date().toISOString();
+      await value.sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: occurredAt,
+        operations: ["recording_started", "recording_ended"].map((kind) => ({ id: uuidV7(), entity: "meeting_event", action: "create",
+          entityId: uuidV7(), baseRevision: null, data: { meetingId, sessionId, kind, occurredAt } })) });
       expect(await service.retry(owner, vaultId, meetingId, job.id, { id: uuidV7() }))
         .toMatchObject({ settings: job.settings, input: job.input, outputLanguage: job.outputLanguage });
     } finally { await store.close?.(); }
@@ -874,6 +880,40 @@ describe("audio summary jobs", () => {
       await expect(service.start(other, vaultId, meetingId, await audioRequest(value))).rejects.toMatchObject({ status: 404 });
       await expect(store.sync.withIdentity({ ...owner, userId: testUserID("other") }, (scoped) => method.version(scoped, vaultId, meetingId))).rejects.toThrow("summary_meeting_unavailable");
       expect(transport).toHaveBeenCalledTimes(callsBeforeUnauthorizedStart);
+    } finally { await store.close?.(); }
+  });
+
+  it("rejects a partial request while another finalized recording session is awaiting upload", async () => {
+    const value = await setup(); const { store, sync, vaultId, meetingId } = value;
+    try {
+      await addRecording(value, ["mic"]);
+      const request = await recordingInput(value);
+      const sessionId = uuidV7(); const createdAt = new Date().toISOString();
+      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt,
+        operations: ["recording_started", "recording_ended"].map((kind) => ({ id: uuidV7(), entity: "meeting_event", action: "create",
+          entityId: uuidV7(), baseRevision: null, data: { meetingId, sessionId, kind, occurredAt: createdAt } })) });
+      const { method } = audioMethod(value);
+      await expect(store.sync.withIdentity(owner, (scoped) => method.version(
+        scoped, vaultId, meetingId, request, { requireCompleteMeeting: true },
+      )))
+        .rejects.toThrow("summary_audio_pair_incomplete");
+    } finally { await store.close?.(); }
+  });
+
+  it("keeps an accepted recording snapshot valid when a later session is pending", async () => {
+    const value = await setup(); const { store, sync, vaultId, meetingId } = value;
+    try {
+      await addRecording(value, ["mic"]);
+      const { method, calls } = audioMethod(value);
+      const service = new SummaryService(store.sync, store.accountSettings, [method]);
+      const job = await service.start(owner, vaultId, meetingId, await audioRequest(value));
+      const sessionId = uuidV7(); const occurredAt = new Date().toISOString();
+      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: occurredAt,
+        operations: ["recording_started", "recording_ended"].map((kind) => ({ id: uuidV7(), entity: "meeting_event", action: "create",
+          entityId: uuidV7(), baseRevision: null, data: { meetingId, sessionId, kind, occurredAt } })) });
+      await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+      expect(await service.status(owner, vaultId, meetingId, job.id)).toMatchObject({ status: "succeeded" });
+      expect(calls).toHaveLength(1);
     } finally { await store.close?.(); }
   });
 

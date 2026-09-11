@@ -72,6 +72,7 @@
                     viewModel: viewModel,
                     sidebarViewModel: sidebarViewModel,
                     recordingCoordinator: recordingCoordinator,
+                    onPresentSummaryGeneration: {},
                     selectedTab: $state.selectedTab,
                     expandedScreenshot: $state.expandedScreenshot
                 )
