@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "d0efc892-6640-4990-b6af-e20ad36b9840",
+  "id": "d21cc908-bc49-4c9e-bcf3-96df0fae5238",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -3905,6 +3905,16 @@
       "table": "transcript_segments"
     },
     {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "normalized_character_count",
+      "entityType": "columns",
+      "table": "transcript_segments"
+    },
+    {
       "type": "text",
       "notNull": true,
       "autoincrement": false,
@@ -6598,6 +6608,12 @@
       "name": "recordings_number_check",
       "entityType": "checks",
       "table": "recordings"
+    },
+    {
+      "value": "\"normalized_character_count\" IS NULL OR \"normalized_character_count\" >= 0",
+      "name": "transcript_segment_normalized_character_count_check",
+      "entityType": "checks",
+      "table": "transcript_segments"
     },
     {
       "value": "\"principal_type\" IN ('user', 'organization', 'team')",

@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "4f8ac973-40a9-422e-8f25-8b0e190f6d5d",
+  "id": "9514b82c-3e2e-43fe-ae29-626f3f8f7374",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -758,7 +758,7 @@
       "table": "documents"
     },
     {
-      "type": "text",
+      "type": "varchar(65536)",
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
@@ -771,7 +771,7 @@
       "table": "documents"
     },
     {
-      "type": "text",
+      "type": "varchar(2048)",
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
@@ -2789,6 +2789,19 @@
       "generated": null,
       "identity": null,
       "name": "speaker_label",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcript_segments"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "normalized_character_count",
       "entityType": "columns",
       "schema": "app",
       "table": "transcript_segments"
@@ -5055,6 +5068,20 @@
       "table": "files"
     },
     {
+      "value": "char_length(\"metadata\"->>'ocr_text') <= 65536",
+      "name": "files_metadata_ocr_text_length_check",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "files"
+    },
+    {
+      "value": "char_length(\"metadata\"->>'caption') <= 2048",
+      "name": "files_metadata_caption_length_check",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "files"
+    },
+    {
       "value": "(\n    (\"parent_project_id\" IS NULL AND \"project_type\" IN ('customer', 'internal', 'personal', 'undefined'))\n    OR (\"parent_project_id\" IS NOT NULL AND \"project_type\" IS NULL)\n  )",
       "name": "project_type_check",
       "entityType": "checks",
@@ -5081,6 +5108,13 @@
       "entityType": "checks",
       "schema": "app",
       "table": "recordings"
+    },
+    {
+      "value": "\"normalized_character_count\" IS NULL OR \"normalized_character_count\" >= 0",
+      "name": "transcript_segment_normalized_character_count_check",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "transcript_segments"
     },
     {
       "value": "\"encryption\" IN ('none', 'server')",

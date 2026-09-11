@@ -552,8 +552,10 @@ CREATE TABLE `transcript_segments` (
 	`created_at` integer,
 	`audio_source` text,
 	`speaker_label` text,
+	`normalized_character_count` integer,
 	CONSTRAINT `transcript_segments_pk` PRIMARY KEY(`transcript_id`, `segment_id`),
-	CONSTRAINT `fk_transcript_segments_transcript_id_transcripts_id_fk` FOREIGN KEY (`transcript_id`) REFERENCES `transcripts`(`id`) ON DELETE CASCADE
+	CONSTRAINT `fk_transcript_segments_transcript_id_transcripts_id_fk` FOREIGN KEY (`transcript_id`) REFERENCES `transcripts`(`id`) ON DELETE CASCADE,
+	CONSTRAINT "transcript_segment_normalized_character_count_check" CHECK("normalized_character_count" IS NULL OR "normalized_character_count" >= 0)
 );
 --> statement-breakpoint
 CREATE TABLE `vaults` (

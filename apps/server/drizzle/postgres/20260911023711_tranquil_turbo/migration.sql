@@ -1,2 +1,0 @@
-ALTER TABLE "app"."transcript_segments" ADD COLUMN "normalized_character_count" integer;--> statement-breakpoint
-ALTER TABLE "app"."transcript_segments" ADD CONSTRAINT "transcript_segment_normalized_character_count_check" CHECK ("normalized_character_count" IS NULL OR "normalized_character_count" >= 0);

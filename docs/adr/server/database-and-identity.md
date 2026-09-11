@@ -16,7 +16,7 @@
 
 2026-09-06: Server canonical model では Vault / Project と meeting が同じ正本を構成するため、未リリースの `core` / `content` を `app` に統合した。SQLite / D1 は prefix を除去する。baseline を直接更新し、旧開発 DB からの自動移行は提供しない。認可、保持期間、再生成可否はスキーマではなく各テーブルの責務で区別する。
 
-## リリース前 baseline 統合（2026-09-09、2026-09-11更新）
+## リリース前 baseline 統合（2026-09-09、2026-09-12更新）
 
 ユーザー承認により未リリース Server の開発履歴を現行 Drizzle schema から再生成した初期 migration に統合する。既存開発 DB の自動変換は提供せず、新しい空 DB への明示的な切り替えを必要とする。Desktop と既にリリースしたユーザー DB の migration は変更しない。
 
@@ -25,6 +25,8 @@ PostgreSQL は既存の生成 Auth baseline → application initial → runtime_
 2026-09-10: 初期リリース前のため、組織初期化記録、現行アカウント設定、検索のフィールド別重みも initial に統合した。旧設定の変換、既存組織の backfill、旧検索列からの再構築は提供せず、空 DB に現行スキーマと FTS を直接作成する。
 
 2026-09-11: 未公開の `meetings.ical_uid`、`recurrence_id`、`calendar_event` と複合 index を Drizzle から再生成した initial に統合した。Auth initial と runtime_support の認可・FTS・移管制約は維持する。旧開発 DB の列追加履歴は配布せず、空 DB に最終 schema を直接作成する。
+
+2026-09-12: 未公開の `transcript_segments.normalized_character_count` と PostgreSQL の OCR / caption 長制約を initial に統合した。空 DB には旧データの切り詰めが不要なため、全 owner を走査して一時テーブルへ補正値を準備する migration runner 専用処理も削除した。
 
 以下の forward migration の説明は統合前の経緯であり、旧開発 DB からの移行保証ではない。リリース後は従来どおり forward-only とする。
 
