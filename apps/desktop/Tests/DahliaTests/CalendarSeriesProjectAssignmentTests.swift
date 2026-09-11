@@ -200,7 +200,7 @@ import GRDB
             )
 
             let meetingId = try #require(
-                viewModel.materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence)
+                viewModel.materializeDraftMeeting()
             )
             let meeting = try fetchMeeting(id: meetingId, from: database.dbQueue)
 
@@ -244,7 +244,7 @@ import GRDB
             viewModel.setExplicitProjectContext(projectURL: nil, projectId: nil, projectName: nil)
 
             let meetingId = try #require(
-                viewModel.materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence)
+                viewModel.materializeDraftMeeting()
             )
             let meeting = try fetchMeeting(id: meetingId, from: database.dbQueue)
 

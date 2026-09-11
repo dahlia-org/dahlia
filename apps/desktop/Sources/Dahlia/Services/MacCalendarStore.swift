@@ -446,23 +446,17 @@ actor EventKitMacCalendarEventStore: MacCalendarEventStoreProviding {
     private static func calendarParticipants(from event: EKEvent) -> [CalendarParticipant] {
         var participants = (event.attendees ?? []).map { calendarParticipant($0) }
         if let organizer = event.organizer {
-            participants.insert(calendarParticipant(organizer, role: .organizer), at: 0)
+            participants.insert(calendarParticipant(organizer), at: 0)
         }
         return participants
     }
 
-    private static func calendarParticipant(
-        _ participant: EKParticipant,
-        role: MeetingParticipantRole? = nil
-    ) -> CalendarParticipant {
+    private static func calendarParticipant(_ participant: EKParticipant) -> CalendarParticipant {
         CalendarParticipant(
             email: participantEmail(participant),
             displayName: participant.name,
-            role: role ?? participantRole(participant),
-            responseStatus: participantResponseStatus(participant),
             kind: participantKind(participant),
-            isCurrentUser: participant.isCurrentUser,
-            source: CalendarEventPlatform.macOSCalendar
+            isCurrentUser: participant.isCurrentUser
         )
     }
 
@@ -475,42 +469,6 @@ actor EventKitMacCalendarEventStore: MacCalendarEventStoreProviding {
             .map(String.init)?
             .removingPercentEncoding
         return value?.nilIfBlank
-    }
-
-    private static func participantRole(_ participant: EKParticipant) -> MeetingParticipantRole {
-        switch participant.participantRole {
-        case .chair:
-            .organizer
-        case .required:
-            .required
-        case .optional:
-            .optional
-        case .nonParticipant:
-            .attendee
-        case .unknown:
-            .unknown
-        @unknown default:
-            .unknown
-        }
-    }
-
-    private static func participantResponseStatus(
-        _ participant: EKParticipant
-    ) -> MeetingParticipantResponseStatus {
-        switch participant.participantStatus {
-        case .accepted:
-            .accepted
-        case .declined:
-            .declined
-        case .tentative:
-            .tentative
-        case .pending:
-            .needsAction
-        case .unknown, .delegated, .completed, .inProcess:
-            .unknown
-        @unknown default:
-            .unknown
-        }
     }
 
     private static func participantKind(_ participant: EKParticipant) -> CalendarParticipantKind {

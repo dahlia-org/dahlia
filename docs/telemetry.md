@@ -29,7 +29,7 @@ Dahlia が追加できるイベントとパラメータは以下だけとする�
 | `Dahlia.Summary.started`, `.completed`, `.failed` | `trigger`: `manual` / `automaticAfterBatch`; 失敗時のみ `stage`: `generation` |
 | `Dahlia.Export.started`, `.completed`, `.failed` | `destination`: `vault` / `googleDocs` / `localFiles`; `trigger`: `manual` / `summaryGeneration`; 失敗時のみ `stage`: `export` |
 | `Dahlia.AIChat.promptSubmitted` | なし。新規の手動 prompt だけを数え、retry と live transcript segment は数えない |
-| `Dahlia.MCP.ToolCall.completed`, `.failed` | `origin`: `codexChat`; `category`: `meeting` / `project` / `customerIntelligence` / `unknown`; `operation`: `read` / `write` |
+| `Dahlia.MCP.ToolCall.completed`, `.failed` | `origin`: `codexChat`; `category`: `meeting` / `project` / `unknown`; `operation`: `read` / `write` |
 
 アプリ ID は `TELEMETRYDECK_APP_ID` からビルド時に `Info.plist` へ注入する。未設定なら TelemetryDeck を初期化せず、イベントを破棄する。Debug ビルドは必ず TelemetryDeck Test Mode とする。custom user ID は使用しない。固定 default parameter `runtime` は本体の `app` と内蔵 MCP helper の `mcpHelper` だけを許可する。
 

@@ -7,12 +7,6 @@ struct BetaFeaturesSettingsView: View {
         Form {
             Section {
                 Toggle(
-                    L10n.customerIntelligence,
-                    isOn: $settings.isCustomerIntelligenceBetaEnabled
-                )
-                .toggleStyle(.switch)
-
-                Toggle(
                     L10n.conversationAnalytics,
                     isOn: $settings.isConversationAnalyticsBetaEnabled
                 )

@@ -47,7 +47,8 @@ describe("SQLite canonical sync", () => {
     await createVault(store);
     const service = new MeetingSyncService(store.sync);
     const identity = { icalUid: "shared@example.com", recurrenceId: "20260903T000000Z",
-      calendarEvent: { start: "2026-09-03T09:00:00+09:00", end: "2026-09-03T10:00:00+09:00", is_all_day: false } };
+      calendarEvent: { start: "2026-09-03T09:00:00+09:00", end: "2026-09-03T10:00:00+09:00", is_all_day: false,
+        attendees: [{ email: "alice@example.com", display_name: "Alice" }] } };
     const data = { ...meetingData(), projectId: null, createdAt: now.toISOString(), updatedAt: now.toISOString(), recordingStartedAt: now.toISOString() };
     try {
       const receipt = await service.commitTransaction(owner, wire([{ entity: "meeting", action: "create", entityId: meetingId,
@@ -75,12 +76,20 @@ describe("SQLite canonical sync", () => {
         { start: "invalid", end: identity.calendarEvent.end, is_all_day: false },
         { ...identity.calendarEvent, is_all_day: "false" },
         { ...identity.calendarEvent, title: "not part of the snapshot" },
+        { ...identity.calendarEvent, attendees: [{ email: "invalid", display_name: null }] },
       ]) {
         await expect(service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId,
           baseRevision: 2, data: { ...update, calendarEvent } }]))).rejects.toThrow();
       }
+      const legacyCalendarEvent = { start: identity.calendarEvent.start, end: identity.calendarEvent.end, is_all_day: false };
       await service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId,
-        baseRevision: 2, data: { ...update, icalUid: null, recurrenceId: null, calendarEvent: null } }]));
+        baseRevision: 2, data: { ...update, calendarEvent: legacyCalendarEvent } }]));
+      expect(await read()).toMatchObject({ calendarEvent: identity.calendarEvent });
+      await service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId,
+        baseRevision: 3, data: { ...update, calendarEvent: { ...legacyCalendarEvent, attendees: [] } } }]));
+      expect(await read()).toMatchObject({ calendarEvent: { ...legacyCalendarEvent, attendees: [] } });
+      await service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId,
+        baseRevision: 4, data: { ...update, icalUid: null, recurrenceId: null, calendarEvent: null } }]));
       expect(await read()).toMatchObject({ icalUid: null, recurrenceId: null, calendarEvent: null });
     } finally { await store.close?.(); }
   });

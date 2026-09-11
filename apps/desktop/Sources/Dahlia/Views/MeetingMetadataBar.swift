@@ -167,9 +167,7 @@ struct MeetingMetadataBar: View {
         if let meetingId = viewModel.currentMeetingId {
             return meetingId
         }
-        return viewModel.materializeDraftMeeting(
-            customerIntelligenceIngestion: .afterMeetingPersistence
-        )
+        return viewModel.materializeDraftMeeting()
     }
 }
 

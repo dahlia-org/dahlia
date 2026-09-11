@@ -423,6 +423,9 @@ enum SyncInitialSnapshotBuilder {
                     "start": event.start.ISO8601Format(),
                     "end": event.end.ISO8601Format(),
                     "is_all_day": event.isAllDay,
+                    "attendees": event.attendees.map {
+                        ["email": $0.email, "display_name": $0.displayName as Any? ?? NSNull()]
+                    },
                 ]
             }
         }

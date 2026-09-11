@@ -65,7 +65,6 @@ import Foundation
             #expect(SettingsGroup.app.label == L10n.thisMac)
             #expect(SettingsGroup.data.categories == [.accountsAndVaults, .backups])
             #expect(SettingsGroup.advanced.categories == [.search, .betaFeatures, .developer, .audioDiagnostics])
-            #expect(!AppSettings.defaultCustomerIntelligenceBetaEnabled)
             #expect(!AppSettings.defaultConversationAnalyticsBetaEnabled)
             #expect(DetailTab.allCases == [.summary, .notes, .screenshots, .transcript, .conversationAnalytics])
         }

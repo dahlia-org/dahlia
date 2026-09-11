@@ -13,7 +13,7 @@
 tenet は個別の機能仕様ではなく、仕様を決めるときの判断基準である。実装や仕様が tenet と矛盾する場合は、
 仕様側を変更するか、tenet を変更する ADR を先に追加する。既成事実として tenet を書き換えない。
 
-最終確認日: 2026-08-12
+最終確認日: 2026-09-11
 
 ## Positioning
 
@@ -46,11 +46,9 @@ Dahlia でないもの:
 
 - 初期リリースで人が手作業する UI を提供してよい。ただしその機能は、同じ操作を AI が実行できる粒度の
   Repository API と MCP tool を前提に設計する。人だけが到達できる整理操作を作らない。
-- AI が逐次書き込む前提のため、操作は単数、冪等、検証可能な単位に分割する ([MCP と UI](docs/adr/desktop/customer-intelligence.md#mcp-と-ui))。
-  暗黙の一括変換に依存しない。
-- AI の主張 (Insight) と正準レコードを分離し、AI 出力の形や信頼度を durable schema に固定しない
-  ([正準モデルと AI の主張](docs/adr/desktop/customer-intelligence.md#正準モデルと-ai-の主張))。Insight の確認は正準レコードを書き換えない。
-- 人が確定した値を自動処理が黙って上書きしない。ユーザーが編集した Organization 名などは、後続の自動観測より優先する。
+- AI が逐次書き込む操作は単数、冪等、検証可能な単位に分割し、暗黙の一括変換に依存しない。
+- AI 出力の形や信頼度を durable schema に固定しない。
+- 人が確定した値を自動処理が黙って上書きしない。ユーザーが編集した Project 名や description は、後続の自動処理より優先する。
 
 **許容する例外**: 統合、削除、誤りの訂正など、影響が不可逆または本人しか判断できない操作は人が確定する。
 
@@ -58,10 +56,10 @@ Dahlia でないもの:
 変更を後から確認・取り消しできることは両立させる。T1 は T3 に優先しない。自動化のために録音と文字起こしの
 保全を緩めない。
 
-### T2. 顧客データの正本は所属企業の CRM であり、Dahlia は自分の整理のために Organization と Contact を持つ
+### T2. 顧客データの正本は所属企業の CRM であり、Dahlia は顧客マスタを持たない
 
-**主張**: Salesforce などの企業 CRM を事業上の正本とし、Dahlia はそれと直接連携しない。Dahlia の Organization と
-Contact は、自分の会議記録を辿るためのローカルな整理軸である。
+**主張**: Salesforce などの企業 CRM を事業上の正本とし、Dahlia はそれと直接連携せず、Organization、Contact、
+人物 identity を管理しない。Calendar参加者は会議予定のスナップショットとしてだけ保持する。
 
 **根拠**: CRM と同期した瞬間、Dahlia は企業のデータ品質、権限、監査、スキーマ変更に従属する。個人が単独で
 使える範囲を保つには、事業データの正本を持たないことが条件になる。
@@ -69,21 +67,19 @@ Contact は、自分の会議記録を辿るためのローカルな整理軸で
 **設計上の判断**:
 
 - CRM や SFA への同期、書き戻し、ID マッピングを実装しない。
-- Contact の identity は `UUID + (vaultId, email)` のローカル identity であり、Vault 横断や全社の人物 identity では
-  ない ([正準モデルと AI の主張](docs/adr/desktop/customer-intelligence.md#正準モデルと-ai-の主張))。
-- 組織と人物は、会議参加者という観測から必要な範囲だけを作る。企業の組織図を完全に再現しない。
-- Dahlia 内部では SQLite が Organization と Contact の技術的な source of truth である。これは「Dahlia が顧客マスタの
-  正本である」ことを意味しない。この二つの意味を混同しない。
+- Calendar参加者はemailと表示名だけをCalendar Eventに保存し、Vaultや人物レコードへ関連付けない。
+- 参加者からOrganizationや人物関係を推定せず、企業の組織図を再現しない。
+- 会議の整理軸にはProjectを使うが、ProjectをCRMの顧客レコードとして扱わない。
 
 **許容する例外**: ユーザーが自分で CRM へ転記するための書き出しは許容する。Dahlia が CRM の API を呼ぶことは
 許容しない。
 
-**誤読しやすい点**: 「正本ではない」は「不正確でよい」ではない。ローカルの整理軸としての一貫性、すなわち Vault
-境界、参照の整合、削除時の後始末は保証対象である。
+**誤読しやすい点**: Calendar参加者の保持は人物名寄せではない。同じemailの過去・将来の参加者を一つのidentityへ
+統合せず、イベントごとの観測として扱う。この変更は[参加者スナップショットADR](docs/adr/shared/calendar-attendee-snapshots.md)に従う。
 
 ### T3. 録音と文字起こしはすべての源泉であり、何としても死守する
 
-**主張**: 音声と確定文字起こしは再取得できない唯一の一次データである。要約、Insight、分析、UI 表示はすべて
+**主張**: 音声と確定文字起こしは再取得できない唯一の一次データである。要約、分析、UI 表示はすべて
 そこから再生成できる派生物として扱う。
 
 **根拠**: 会議は再現できない。整理や要約は後からやり直せるが、その場の発言は失われたら戻らない。
@@ -98,8 +94,7 @@ Contact は、自分の会議記録を辿るためのローカルな整理軸で
   ([Failure and Overload Policy](ARCHITECTURE.md#failure-and-overload-policy))。
 - 録音音声は検証済みの immutable segment として保存し ([確定手順](docs/adr/desktop/recording-storage.md#確定手順))、
   データベースは schema generation 付きで backup と restore ができる ([Import と復元](docs/adr/desktop/database-backup.md#import-と復元))。
-- 新機能は録音クリティカルパスに同期依存を追加しない。顧客インテリジェンスの取り込みのような補助処理は、
-  録音開始が成功した後の best effort とし、失敗しても録音を巻き戻さない。
+- 新機能は録音クリティカルパスに同期依存を追加しない。
 
 **保証範囲**: 防ぐ対象は、アプリのハング、UI 停止、負荷による欠落である。プロセス全体の crash、強制終了、OOM、
 OS やストレージ自体の障害は現時点の保証対象外であり、範囲の拡張は ADR で決める。
@@ -179,7 +174,7 @@ Drive への書き出し、Codex による要約生成、Sparkle の更新確認
 
 適用例:
 
-- 録音中の Insight 自動生成 (T1) が capture の安定性を損なうなら、T3 を優先して録音停止後の処理に回す。
+- 録音中の補助分析 (T1) が capture の安定性を損なうなら、T3 を優先して録音停止後の処理に回す。
 - CRM を直接呼ぶ tool は、MCP 経由でも採用しない。T4 を満たしても上位の T2 に反する。
 - 要約品質のために外部サービスを必須化する提案は、T5 を優先して付加機能に留める。
 
@@ -211,5 +206,4 @@ Drive への書き出し、Codex による要約生成、Sparkle の更新確認
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md): 信頼性の保証範囲、workload class、負荷時の縮退順序
 - [ADR index](docs/adr/README.md): 各 tenet を具体化した決定と、その置換関係
-- [Customer intelligence workspace](docs/customer-intelligence-workspace.md): T1 と T2 を反映した現在の画面仕様
 - [Project workspaces](docs/project-workspaces.md): T4 の read/write 境界を含む Project 運用

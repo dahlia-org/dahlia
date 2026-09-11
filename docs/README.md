@@ -12,7 +12,7 @@ Dahlia は Desktop、Server / Private Web、公開サイトを持つモノレポ
 | Desktop | [音声・文字起こし](architecture/audio-transcription-data-flow.md) | capture、保存、開始・停止・異常時の data flow |
 | Desktop | [Project workspaces](project-workspaces.md) | ローカル Project、Vault、MCP の操作契約 |
 | Desktop / Server | [MCP transcript access](live-mcp.md) | 全保管庫の読み書き、確定文字起こしの差分取得と待機（日英） |
-| Desktop | [Customer intelligence](customer-intelligence-workspace.md) / [Conversation analytics](conversation-analytics.md) | 顧客情報、Insight、Topic のモデルと操作 |
+| Desktop | [Conversation analytics](conversation-analytics.md) | 会話分析のモデルと操作 |
 | Desktop | [Calendar schema](calendar-event-schema.md) | 予定のキーと Meeting との関係 |
 | Desktop | [Telemetry](telemetry.md) / [Release versioning](desktop-release-versioning.md) | 匿名収集規則、desktop release の版管理 |
 | Server / Private Web | [Server README](../apps/server/README.md) | API、認証・認可、Vault 共有、検索、設定、開発 |
@@ -28,7 +28,7 @@ Dahlia は Desktop、Server / Private Web、公開サイトを持つモノレポ
 | [Plans](plans/README.md) | 旧計画の整理先と履歴。完了した手順を実装指示として再利用しない |
 | [録音自動停止の調査（2026-07-13）](research/2026-07-13-automatic-recording-stop-investigation.md) | Desktop の過去の障害調査。現在の再現・解消を示すものではない |
 | [他アプリの録音停止観測（2026-08-08）](research/2026-08-08-reference-app-recording-stop-observation.md) | 観測日の参考情報。Dahlia の保証ではない |
-| [顧客情報モデルの調査（2026-07-26）](research/2026-07-26-customer-intelligence-ontology-and-insights.md) | 採否の根拠。現行モデルは機能文書と関連 ADR を参照 |
+| [顧客情報モデルの調査（2026-07-26）](research/2026-07-26-customer-intelligence-ontology-and-insights.md) | 廃止前の検討記録。現在の判断は関連 ADR を参照 |
 | [検索ランキング調査（2026-08-25）](research/2026-08-25-meeting-search-ranking-benchmark.md) | 当時のデータ・実験条件に限定した結果。一般的な品質保証ではない |
 
 ## 開発時の指示

@@ -1491,7 +1491,6 @@
             let secondRoot = UUID.v7()
             let retiredChild = UUID.v7()
             let meetingId = UUID.v7()
-            let insightId = UUID.v7()
             let recordingId = UUID.v7()
             try await database.dbQueue.write { db in
                 try ProjectRecord(
@@ -1525,24 +1524,6 @@
                     name: "Meeting",
                     createdAt: .now,
                     updatedAt: .now
-                ).insert(db)
-                let now = Date.now
-                try InsightRecord(
-                    id: insightId,
-                    vaultId: vault.id,
-                    content: "Keep this reference",
-                    isAccepted: true,
-                    metadataJSON: "{}",
-                    revision: 1,
-                    createdAt: now,
-                    updatedAt: now
-                ).insert(db)
-                try InsightReferenceRecord(
-                    insightId: insightId,
-                    resourceType: .project,
-                    resourceId: firstRoot,
-                    referenceRole: .context,
-                    createdAt: now
                 ).insert(db)
                 try RecordingSessionRecord(
                     id: recordingId,
@@ -1610,13 +1591,6 @@
             #expect(try await database.dbQueue.read { db in
                 try MeetingRecord.fetchOne(db, key: meetingId)?.projectId
             } == firstRoot)
-            #expect(try await database.dbQueue.read { db in
-                try Int.fetchOne(
-                    db,
-                    sql: "SELECT count(*) FROM insight_references WHERE insightId = ? AND resourceId = ?",
-                    arguments: [insightId, firstRoot]
-                )
-            } == 1)
         }
 
         @Test

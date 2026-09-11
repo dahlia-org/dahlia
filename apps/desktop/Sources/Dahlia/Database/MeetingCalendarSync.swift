@@ -7,16 +7,19 @@ struct MeetingCalendarSync: Codable, Equatable, Sendable {
         var start: String
         var end: String
         var isAllDay: Bool
+        var attendees: [CalendarAttendeeSnapshot]?
 
         enum CodingKeys: String, CodingKey {
             case start, end
             case isAllDay = "is_all_day"
+            case attendees
         }
 
         init(_ event: CalendarEventRecord) {
             start = event.start.ISO8601Format()
             end = event.end.ISO8601Format()
             isAllDay = event.isAllDay
+            attendees = event.attendees
         }
     }
 
@@ -29,7 +32,17 @@ struct MeetingCalendarSync: Codable, Equatable, Sendable {
             "icalUid": icalUid as Any? ?? NSNull(),
             "recurrenceId": recurrenceId as Any? ?? NSNull(),
             "calendarEvent": calendarEvent.map {
-                ["start": $0.start, "end": $0.end, "is_all_day": $0.isAllDay] as [String: Any]
+                var event: [String: Any] = [
+                    "start": $0.start,
+                    "end": $0.end,
+                    "is_all_day": $0.isAllDay,
+                ]
+                if let attendees = $0.attendees {
+                    event["attendees"] = attendees.map {
+                        ["email": $0.email, "display_name": $0.displayName as Any? ?? NSNull()]
+                    }
+                }
+                return event
             } as Any? ?? NSNull(),
         ]
     }

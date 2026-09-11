@@ -19,9 +19,9 @@ Desktop は `GET /api/v1/vaults` で直接ユーザー共有・組織・チー�
 
 Vault 名・アイコン・色、2段階 Project 階層と名前・説明・アイコン・色、meeting metadata、summary document、transcript 原文、screenshot bytes / MIME / OCR / AI caption を同期する。翻訳文、SQLite ファイル、端末の export path は対象外。2026-09-07: 新規バッチ録音の結合音声は [専用の音声保管契約](recording-audio-archive.md) で追加した。note、tag、音声特徴量をこの同期契約へ追加しない。
 
-2026-09-11: meeting のカレンダー情報に限り、`icalUid` / `recurrenceId` と `calendarEvent`（`start` / `end` / `is_all_day`）を同期対象に追加する。UID と recurrence ID はペアで扱い、単発予定の recurrence ID は空文字。更新での省略は Server の既存値を保持し、明示的な null は消去する。予定名・説明・参加者・URL と端末固有のカレンダー参照は対象外。Server のスナップショットは要約の XML context と入力変更検知に使用し、暗号化 Vault でも queryable metadata として保存する。
+2026-09-11: meeting のカレンダー情報に限り、`icalUid` / `recurrenceId` と `calendarEvent`（`start` / `end` / `is_all_day` / `attendees`）を同期対象に追加する。UID と recurrence ID はペアで扱い、単発予定の recurrence ID は空文字。`attendees` の省略は既存値維持、空配列は参加者の消去、`calendarEvent: null` はスナップショット全体の消去とする。予定名・説明・URL と端末固有のカレンダー参照は対象外。暗号化 Vault では `calendarEvent` 全体を暗号化しDB列をマスクする。Server の開始・終了・終日フラグは要約の XML context と入力変更検知に使用する。
 
-Desktop は受信した値（null を含む）を端末固有参照と別の working copy に保存し、通常更新・初期同期・復旧時の送信にはその値を使う。未受信の会議だけはローカル予定から初期化する。ローカル予定の開始・終了日時・終日フラグが変化した場合は、書き込み可能な Server Vault の同一予定に紐づく会議について、working copy の更新と送信キューへの記録を同じ SQLite transaction で確定する。Server で消去・別予定へ変更された識別子はローカル予定の再観測で戻さない。受信処理は送信キューを作らず、新しい未送信変更がある間は既存の receipt／delta 適用ガードを維持する。
+Desktop は受信した値（null を含む）を端末固有参照と別の working copy に保存し、通常更新・初期同期・復旧時の送信にはその値を使う。未受信の会議だけはローカル予定から初期化する。ローカル予定の開始・終了日時・終日フラグ・参加者が変化した場合は、書き込み可能な Server Vault の同一予定に紐づく会議について、working copy の更新と送信キューへの記録を同じ SQLite transaction で確定する。Server で消去・別予定へ変更された識別子はローカル予定の再観測で戻さない。受信処理は送信キューを作らず、新しい未送信変更がある間は既存の receipt／delta 適用ガードを維持する。
 
 Project は `app.projects` に置き Vault 権限を継承する。空 Vault と Project 単独変更も扱い、同じ Vault の meeting だけが参照できる。Project 削除前に依存 meeting を明示的に移動・解除し、依存が残る削除を Server が拒否する。Project は階層閲覧・明示 filter に使い、検索本文や vector へ混ぜない。
 
@@ -217,6 +217,6 @@ Desktop の旧 `projectAppearances` UserDefaults は Vault を開いたときに
 
 共有設定は移管先の設定を継承する。確認時には実際の閲覧者を組織・チーム所属から求め、閲覧できなくなる人と新しく閲覧できる人を表示する。確認時の閲覧者ハッシュを移管要求に含め、実行時に一致しなければ409で再確認を求める。PostgreSQLでは確認からcommitまで権限・組織所属・チーム所属の変更をテーブルロックで止める。
 
-Desktopは移管を削除として適用しない。差分・snapshotの適用前に `GET /api/v1/vaults/{vault_id}/relocations` で既存IDの現在の所属と権限を確認し、必要な所属変更・参照・同期状態をローカルの一つのtransactionで更新する。録音の実体は変更しない。権限がない間、ローカル送信待ちのtransaction・録音アーカイブがある間、または移管する項目にローカル限定の組織・連絡先・参加者・インサイト・トピックとの参照がある間は、データと所属を保持して同期を停止する。権限復旧後は次の同期で再確認する。専用のバックアップ・破棄画面や、クライアントごとの移管履歴の適用位置・ACKは設けない。 送信の再試行では移管の送信待ち検査より先に既存のtransactionレシートを解決し、確定済みの処理を受領する。移管の確認・復旧に失敗しても、他の保管庫の受信と送信は継続する。
+Desktopは移管を削除として適用しない。差分・snapshotの適用前に `GET /api/v1/vaults/{vault_id}/relocations` で既存IDの現在の所属と権限を確認し、必要な所属変更・参照・同期状態をローカルの一つのtransactionで更新する。録音の実体は変更しない。権限がない間、またはローカル送信待ちのtransaction・録音アーカイブがある間は、データと所属を保持して同期を停止する。権限復旧後は次の同期で再確認する。専用のバックアップ・破棄画面や、クライアントごとの移管履歴の適用位置・ACKは設けない。 送信の再試行では移管の送信待ち検査より先に既存のtransactionレシートを解決し、確定済みの処理を受領する。移管の確認・復旧に失敗しても、他の保管庫の受信と送信は継続する。
 
 移管レシートに対象IDを保持し、通常差分の期限切れ・元保管庫の削除後も現在の所属を解決する。移管に関係した保管庫では、`X-Dahlia-Vault-Transfers: 1` を送らない旧クライアントの差分・snapshotと書き込みを426で停止する。このヘッダーは対応能力の宣言であり、適用済み位置を表さない。

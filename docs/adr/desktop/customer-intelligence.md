@@ -1,6 +1,6 @@
 # 顧客情報の正準モデルと更新
 
-対象: Desktop・local MCP。採択: 2026-07。現在の schema / tool 詳細は [Customer intelligence workspace](../../customer-intelligence-workspace.md)。
+対象: Desktop・local MCP。採択: 2026-07。2026-09 に機能を廃止し、Calendar参加者はイベントのスナップショットへ移行した。
 
 ## 正準モデルと AI の主張
 

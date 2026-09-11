@@ -75,64 +75,7 @@ extension MeetingRepository {
         }
     }
 
-    nonisolated func createCustomerIntelligenceProject(
-        vaultId: UUID,
-        parentProjectId: UUID?,
-        name: String,
-        description: String,
-        projectType: ProjectType?,
-        organizationId: UUID,
-        now: Date = .now
-    ) throws -> ProjectRecord {
-        try dbQueue.write { db in
-            guard DahliaProjectName.normalizedName(name) == name else {
-                throw ProjectWorkspaceError.invalidName
-            }
-            guard let organization = try OrganizationRecord.fetchOne(db, key: organizationId),
-                  organization.vaultId == vaultId else {
-                throw CustomerIntelligenceError.invalidReference
-            }
-            if let parentProjectId {
-                guard let parent = try ProjectRecord.fetchOne(db, key: parentProjectId),
-                      parent.vaultId == vaultId else {
-                    throw ProjectWorkspaceError.projectNotFound
-                }
-                guard parent.parentProjectId == nil else {
-                    throw ProjectWorkspaceError.hierarchyTooDeep
-                }
-                guard projectType == nil else {
-                    throw ProjectWorkspaceError.typeOwnedByRoot
-                }
-            }
-            let project = ProjectRecord(
-                id: .v7(),
-                vaultId: vaultId,
-                parentProjectId: parentProjectId,
-                name: name,
-                createdAt: now,
-                description: description,
-                projectType: parentProjectId == nil ? (projectType ?? .undefined) : nil
-            )
-            try project.insert(db)
-            try ProjectResourceReferenceRecord(
-                id: .v7(),
-                projectId: project.id,
-                resourceType: .organization,
-                resourceId: organizationId,
-                relationLabel: "",
-                createdAt: now,
-                updatedAt: now
-            ).insert(db)
-            try SyncTransactionRecorder.record(
-                vaultId: vaultId,
-                operations: [SyncInitialSnapshotBuilder.projectOperation(project, action: .create)],
-                in: db
-            )
-            return try ProjectRecord.fetchResolved(id: project.id, in: db) ?? project
-        }
-    }
-
-    nonisolated func updateCustomerIntelligenceProject(
+    nonisolated func updateProject(
         id: UUID,
         vaultId: UUID,
         parentProjectId: UUID?,

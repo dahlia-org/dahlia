@@ -357,57 +357,6 @@ public final class MeetingAccessStore: Sendable {
             components.predicates.append("projects.id = ?")
             components.arguments += [projectID]
         }
-        if let organizationID = query.organizationID {
-            if query.includeOrganizationDescendants {
-                components.predicates.append("""
-                EXISTS (
-                    SELECT 1
-                    FROM meeting_participants AS organization_participants
-                    JOIN organization_memberships AS organization_memberships
-                      ON organization_memberships.contactId = organization_participants.contactId
-                    WHERE organization_participants.meetingId = meetings.id
-                      AND organization_memberships.organizationId IN (
-                          WITH RECURSIVE subtree(id, depth) AS (
-                              SELECT id, 0 FROM organizations WHERE id = ? AND vaultId = ?
-                              UNION ALL
-                              SELECT child.id, subtree.depth + 1
-                              FROM organizations AS child
-                              JOIN subtree ON child.parentOrganizationId = subtree.id
-                              WHERE child.vaultId = ? AND subtree.depth < 32
-                          )
-                          SELECT id FROM subtree
-                      )
-                )
-                """)
-                components.arguments += [organizationID, vaultID, vaultID]
-            } else {
-                components.predicates.append("""
-                EXISTS (
-                    SELECT 1
-                    FROM meeting_participants AS organization_participants
-                    JOIN organization_memberships AS organization_memberships
-                      ON organization_memberships.contactId = organization_participants.contactId
-                    WHERE organization_participants.meetingId = meetings.id
-                      AND organization_memberships.organizationId = ?
-                )
-                """)
-                components.arguments += [organizationID]
-            }
-        }
-        if let topicID = query.topicID {
-            components.predicates.append("""
-            EXISTS (
-                SELECT 1 FROM conversation_topic_references
-                JOIN conversation_topics
-                  ON conversation_topics.id = conversation_topic_references.topicId
-                WHERE conversation_topic_references.resourceType = 'meeting'
-                  AND conversation_topic_references.resourceId = meetings.id
-                  AND conversation_topics.id = ?
-                  AND conversation_topics.vaultId = meetings.vaultId
-            )
-            """)
-            components.arguments += [topicID]
-        }
         let trimmedIcalUID = query.icalUID?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let trimmedIcalUID, !trimmedIcalUID.isEmpty {
             components.predicates.append("meetings.calendar_event_ical_uid = ?")
@@ -434,9 +383,6 @@ public final class MeetingAccessStore: Sendable {
             simple: query.simple,
             project: query.project?.trimmingCharacters(in: .whitespacesAndNewlines),
             projectID: query.projectID,
-            organizationID: query.organizationID,
-            includesOrganizationDescendants: query.includeOrganizationDescendants,
-            topicID: query.topicID,
             icalUID: query.icalUID?.trimmingCharacters(in: .whitespacesAndNewlines),
             createdFrom: query.createdFrom,
             createdBefore: query.createdBefore
@@ -788,9 +734,6 @@ private struct MeetingCursorFilterScope: Codable {
     let simple: Bool
     let project: String?
     let projectID: UUID?
-    let organizationID: UUID?
-    let includesOrganizationDescendants: Bool
-    let topicID: UUID?
     let icalUID: String?
     let createdFrom: Date?
     let createdBefore: Date?

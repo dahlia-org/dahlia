@@ -156,8 +156,7 @@ final class RecordingCoordinator {
         do {
             if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(
                 event,
-                vaultId: vault.id,
-                customerIntelligenceIngestion: .afterMeetingPersistence
+                vaultId: vault.id
             ) {
                 sidebarViewModel.selectMeeting(existingMeetingId)
                 return
@@ -199,13 +198,9 @@ final class RecordingCoordinator {
     }
 
     @discardableResult
-    func startRecording(
-        appendingTo meetingId: UUID,
-        customerIntelligenceEvent: CalendarEvent? = nil
-    ) -> Bool {
+    func startRecording(appendingTo meetingId: UUID) -> Bool {
         startRecording(
             appendingTo: meetingId,
-            customerIntelligenceEvent: customerIntelligenceEvent,
             opensMainWindowOnFailure: true
         )
     }
@@ -213,7 +208,6 @@ final class RecordingCoordinator {
     @discardableResult
     private func startRecording(
         appendingTo meetingId: UUID,
-        customerIntelligenceEvent: CalendarEvent? = nil,
         opensMainWindowOnFailure: Bool,
         recordingTrigger: UsageTelemetryEvent.RecordingTrigger? = nil
     ) -> Bool {
@@ -260,17 +254,6 @@ final class RecordingCoordinator {
                 reservation: reservation
             )
             recordingDidStart()
-            if let customerIntelligenceEvent,
-               viewModel.isListening,
-               viewModel.recordingMeetingId == meetingId {
-                CustomerIntelligenceIngestionService.schedule(
-                    calendarEvent: customerIntelligenceEvent,
-                    meetingId: meetingId,
-                    vaultId: vault.id,
-                    observedAt: .now,
-                    dbQueue: dbQueue
-                )
-            }
             sidebarViewModel.selectMeeting(meetingId)
         }
         return true
@@ -304,13 +287,11 @@ final class RecordingCoordinator {
         do {
             if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(
                 event,
-                vaultId: vault.id,
-                customerIntelligenceIngestion: .afterCaptureStarts
+                vaultId: vault.id
             ) {
                 sidebarViewModel.selectMeeting(existingMeetingId)
                 return startRecording(
                     appendingTo: existingMeetingId,
-                    customerIntelligenceEvent: event,
                     opensMainWindowOnFailure: opensMainWindowOnFailure,
                     recordingTrigger: recordingTrigger
                 )

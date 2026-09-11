@@ -12,8 +12,6 @@ struct ProjectManagementView: View {
     let onShowUpcomingSchedule: () -> Void
     let onShowChat: () -> Void
     let onShowUnprocessedRecordings: () -> Void
-    let showsCustomerIntelligence: Bool
-    let onOpenCustomerIntelligence: () -> Void
     let onCreateProject: () -> Void
     let onOpenProject: (UUID) -> Void
     let onOpenMeeting: (UUID) -> Void
@@ -51,8 +49,6 @@ struct ProjectManagementView: View {
                     onShowProjects: onShowProjectCatalog,
                     isShowingUnprocessedRecordings: false,
                     onShowUnprocessedRecordings: onShowUnprocessedRecordings,
-                    showsCustomerIntelligence: showsCustomerIntelligence,
-                    onOpenCustomerIntelligence: onOpenCustomerIntelligence,
                     onCreateProject: onCreateProject,
                     onOpenProject: onOpenSidebarProject,
                     onSelectVault: onSelectVault

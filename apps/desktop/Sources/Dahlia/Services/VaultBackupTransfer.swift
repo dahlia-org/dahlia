@@ -6,29 +6,21 @@ import GRDB
 /// Copies only portable vault content into a trusted current-schema database.
 /// Keep this list explicit: adding a table must not silently export accounts or runtime state.
 enum VaultBackupTransfer {
-    static let vaultTables = [
-        "files", "projects", "organizations", "contacts", "instructions", "insights", "conversation_topics",
-    ]
+    static let vaultTables = ["files", "projects", "instructions"]
     static let meetingTables = [
         "recording_sessions", "transcript_segments", "notes", "meeting_attachments", "summaries", "action_items",
         "summary_exports", "meeting_conversation_metrics", "meeting_conversation_source_metrics", "meeting_tags",
-        "meeting_participants", "summary_bodies",
+        "summary_bodies",
     ]
     static let referenceTables = [
         "transcript_segment_bodies": ("segmentId", "transcript_segments"),
         "file_text_bodies": ("fileId", "files"),
-        "organization_domains": ("organizationId", "organizations"),
-        "organization_memberships": ("organizationId", "organizations"),
-        "project_resource_references": ("projectId", "projects"),
-        "insight_references": ("insightId", "insights"),
-        "conversation_topic_references": ("topicId", "conversation_topics"),
     ]
     private static let references = [
         "segmentId": "transcript_segments",
         "fileId": "files", "vaultId": "vaults", "projectId": "projects", "parentProjectId": "projects",
         "meetingId": "meetings", "sessionId": "recording_sessions", "recordingSessionId": "recording_sessions",
-        "organizationId": "organizations", "parentOrganizationId": "organizations", "contactId": "contacts",
-        "insightId": "insights", "topicId": "conversation_topics", "tagId": "tags",
+        "tagId": "tags",
     ]
 
     static func copy(
@@ -56,21 +48,17 @@ enum VaultBackupTransfer {
         try copyTags(vaultId: vaultId, in: db, mappings: &mappings)
         try copyCalendar(vaultId: vaultId, in: db)
         for table in tables {
-            let sql: String
-            if table == "projects" || table == "organizations" {
-                let parent = table == "projects" ? "parentProjectId" : "parentOrganizationId"
-                sql = """
+            let sql = if table == "projects" {
+                """
                 WITH RECURSIVE hierarchy(id, depth) AS (
-                    SELECT id, 0 FROM backup_source.\(table) WHERE vaultId = ? AND \(parent) IS NULL
+                    SELECT id, 0 FROM backup_source.\(table) WHERE vaultId = ? AND parentProjectId IS NULL
                     UNION ALL
                     SELECT child.id, hierarchy.depth + 1 FROM backup_source.\(table) child
-                    JOIN hierarchy ON child.\(parent) = hierarchy.id
+                    JOIN hierarchy ON child.parentProjectId = hierarchy.id
                 ) SELECT content.* FROM backup_source.\(table) content JOIN hierarchy ON content.id = hierarchy.id ORDER BY depth
                 """
             } else {
-                // Insert the primary domain first so the default-primary trigger cannot promote another domain.
-                let order = table == "organization_domains" ? " ORDER BY isPrimary DESC" : ""
-                sql = "SELECT * FROM backup_source.\(table) WHERE \(predicate(table))\(order)"
+                "SELECT * FROM backup_source.\(table) WHERE \(predicate(table))"
             }
             let rows = try Row.fetchCursor(db, sql: sql, arguments: [vaultId])
             var copiedCount = 0
@@ -94,13 +82,6 @@ enum VaultBackupTransfer {
                     }
                     let referencedTable: String? = if column == "id" {
                         table
-                    } else if column == "resourceId" {
-                        [
-                            "organization": "organizations",
-                            "contact": "contacts",
-                            "project": "projects",
-                            "meeting": "meetings",
-                        ][row["resourceType"] as String]
                     } else {
                         references[column]
                     }
@@ -113,32 +94,24 @@ enum VaultBackupTransfer {
                 try insert(columns: columns, values: values, table: table, into: db)
                 copiedCount += 1
             }
-            if table == "projects" || table == "organizations" {
+            if table == "projects" {
                 let expected = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM backup_source.\(table) WHERE vaultId = ?", arguments: [vaultId])
                 guard expected == copiedCount else { throw BackupServiceError.invalidBackup }
             }
         }
         try validateBodies(vaultId: destinationVault.id, in: db)
-        // Relationship triggers update revisions; a restored snapshot retains the saved values.
-        for table in ["projects", "organizations", "contacts", "insights", "conversation_topics"] {
-            let timestampColumn = table == "projects" ? "" : ", updatedAt"
-            let rows = try Row.fetchCursor(
-                db,
-                sql: "SELECT id, revision\(timestampColumn) FROM backup_source.\(table) WHERE vaultId = ?",
-                arguments: [vaultId]
+        let projects = try Row.fetchCursor(
+            db,
+            sql: "SELECT id, revision FROM backup_source.projects WHERE vaultId = ?",
+            arguments: [vaultId]
+        )
+        while let project = try projects.next() {
+            let original: DatabaseValue = project["id"]
+            let id = mappings["projects"]?[original] ?? original
+            try db.execute(
+                sql: "UPDATE projects SET revision = ? WHERE id = ?",
+                arguments: [project["revision"] as DatabaseValue, id]
             )
-            while let row = try rows.next() {
-                let original: DatabaseValue = row["id"]
-                let id = mappings[table]?[original] ?? original
-                var arguments: StatementArguments = [row["revision"] as DatabaseValue]
-                var assignment = "revision = ?"
-                if table != "projects" {
-                    assignment += ", updatedAt = ?"
-                    arguments += [row["updatedAt"] as DatabaseValue]
-                }
-                arguments += [id]
-                try db.execute(sql: "UPDATE \(table) SET \(assignment) WHERE id = ?", arguments: arguments)
-            }
         }
     }
 
@@ -230,7 +203,6 @@ enum VaultBackupTransfer {
         for project in projects {
             _ = try ProjectRecord.deleteOne(db, key: project.id)
         }
-        // Organization parents use a deferred FK; all rows are removed in the same transaction.
         try db.execute(sql: "PRAGMA defer_foreign_keys = ON")
         _ = try VaultRecord.deleteOne(db, key: id)
         try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [id])
