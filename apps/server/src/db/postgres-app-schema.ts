@@ -24,9 +24,10 @@ import {
   unique,
   uniqueIndex,
   uuid,
+  varchar,
 } from "drizzle-orm/pg-core";
 
-import type { FileMetadata } from "../files/model";
+import { fileMetadataLimits, type FileMetadata } from "../files/model";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../account-settings-model";
 import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from "../search/settings-model";
 
@@ -361,6 +362,8 @@ export const syncedFile = appSchema.table("files", {
   index("files_vault_file_idx").on(table.vaultId, table.fileId),
   check("files_offset_check", sql`${table.offset} = 0`),
   check("files_size_check", sql`${table.size} >= 0`),
+  check("files_metadata_ocr_text_length_check", sql`char_length(${table.metadata}->>'ocr_text') <= ${fileMetadataLimits.postgres.ocrText}`),
+  check("files_metadata_caption_length_check", sql`char_length(${table.metadata}->>'caption') <= ${fileMetadataLimits.postgres.caption}`),
   pgPolicy("file_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})` }),
   pgPolicy("file_write", { for: "all", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` })
 ]).enableRLS();
@@ -440,8 +443,8 @@ export const searchDocument = searchSchema.table("documents", {
   tagsText: text("tags_text").default("").notNull(),
   descriptionText: text("description_text").default("").notNull(),
   summaryText: text("summary_text").default("").notNull(),
-  ocrText: text("ocr_text").default("").notNull(),
-  captionText: text("caption_text").default("").notNull(),
+  ocrText: varchar("ocr_text", { length: fileMetadataLimits.postgres.ocrText }).default("").notNull(),
+  captionText: varchar("caption_text", { length: fileMetadataLimits.postgres.caption }).default("").notNull(),
   titleVector: tsvector("title_vector").generatedAlwaysAs(sql`to_tsvector('simple', title_text)`),
   tagsVector: tsvector("tags_vector").generatedAlwaysAs(sql`to_tsvector('simple', tags_text)`),
   descriptionVector: tsvector("description_vector").generatedAlwaysAs(sql`to_tsvector('simple', description_text)`),

@@ -5,7 +5,7 @@ import type { Handler } from "hono";
 import type { AppVariables } from "../app";
 import { accountSettingsSchema, accountSettingsPatchSchema } from "../account-settings-model";
 import { searchSettingsSchema } from "../search/settings-model";
-import { fileUploadSchema, filePatchSchema } from "../files/model";
+import { fileUploadSchema, filePatchSchema, fileWireMetadataSchema } from "../files/model";
 import { summaryStartSchema } from "../summary/service";
 import { vaultSearchRequestSchema } from "../search/model";
 import { transcriptChunkSchema } from "../sync/schemas";
@@ -197,6 +197,7 @@ export function registerApi(app: OpenAPIHono<{ Variables: AppVariables }>, opera
 export function openapiDocument(): ReturnType<OpenAPIHono["getOpenAPI31Document"]> {
   const app = new OpenAPIHono();
   for (const [name, schema] of Object.entries({ Vault: S.vault, Project: S.project, Meeting: S.meeting, File: S.file, Transcript: S.transcript, Summary: S.summary, Recording: S.recording })) app.openAPIRegistry.register(name, schema);
+  app.openAPIRegistry.register("FileWriteMetadata", fileWireMetadataSchema);
   for (const contract of Object.values(contracts)) app.openAPIRegistry.registerPath(contract);
   app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", { type: "http", scheme: "bearer", description: "Dahlia OAuth access token with all-apis scope." });
   app.openAPIRegistry.registerComponent("securitySchemes", "browserSession", { type: "apiKey", in: "cookie", name: "__Secure-better-auth.session_token", description: "Better Auth session (development uses better-auth.session_token). Mutations require the configured Origin." });

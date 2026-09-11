@@ -18,7 +18,7 @@ import { createWorkerHandler } from "../src/worker";
 import type { AppConfig } from "../src/config";
 import { MeetingSyncService } from "../src/sync/service";
 import { transformScreenshot } from "../src/sync/node-screenshot-transformer";
-import { fileStorageKey, fileVariantKey } from "../src/files/model";
+import { fileMetadataLimits, fileStorageKey, fileVariantKey } from "../src/files/model";
 import sharp from "sharp";
 import { SCREENSHOT_VARIANTS } from "../src/sync/screenshot-variants";
 import type { SyncTransaction } from "../src/sync/types";
@@ -973,6 +973,25 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it("backfills only missing metadata when a legacy sibling exceeds the API limit", async () => {
+    const { store, service, publish, attach, file, databasePath } = await fileSetup("model");
+    await publish();
+    await attach();
+    const legacyOCR = "x".repeat(fileMetadataLimits.api.ocrText + 1);
+    const database = new DatabaseSync(databasePath);
+    database.prepare("UPDATE files SET metadata = json_set(metadata, '$.ocr_text', ?) WHERE file_id = ?")
+      .run(legacyOCR, file.id);
+    database.close();
+    await store.imageAnalysis!.reconcile("model");
+    const claim = (await store.imageAnalysis!.claim("model"))!;
+    const input = (await store.sync.withIdentity(owner, (scoped) => scoped.loadImageAnalysis(claim)))!;
+    expect(await service.completeImageAnalysis(owner, input, { ocr_text: "Replacement", caption: "Generated caption" })).toBe(true);
+    expect(await service.getFile(owner, file.id)).toMatchObject({
+      metadata: { ocrText: legacyOCR, caption: "Generated caption" },
+    });
+    await store.close?.();
+  });
+
   it.each(["edit", "detach", "delete", "lease", "permission"])("rejects an image result after concurrent %s", async (change) => {
     const { store, service, publish, attach, file, databasePath } = await fileSetup("model");
     await publish();
@@ -1608,7 +1627,13 @@ describe("SQLite canonical sync", () => {
     const cleared = await patch({ baseRevision: 2, metadata: { caption: null } });
     expect(cleared.status).toBe(200);
     expect(await cleared.json()).toMatchObject({ revision: 3, metadata: { caption: null, ocrText: "QuarterlyRevenue", width: 1800 } });
-    for (const metadata of [{ source: "upload" }, { width: 0 }, { caption: "x".repeat(501) }, { ocrText: "x".repeat(20001) }, { unexpected: "value" }]) {
+    for (const metadata of [
+      { source: "upload" },
+      { width: 0 },
+      { caption: "x".repeat(fileMetadataLimits.api.caption + 1) },
+      { ocrText: "x".repeat(fileMetadataLimits.api.ocrText + 1) },
+      { unexpected: "value" },
+    ]) {
       expect((await patch({ baseRevision: 3, metadata })).status).toBe(400);
     }
     expect((await patch({ metadata: { caption: "missing revision" } })).status).toBe(400);

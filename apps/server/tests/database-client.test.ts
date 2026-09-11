@@ -6,11 +6,17 @@ import { Pool } from "pg";
 
 import type { AppConfig } from "../src/config";
 import { createD1ApplicationStore } from "../src/auth/store";
-import { connectApplicationDatabase, ensureSearchIndexes, migrateApplicationDatabase, postgresMigrationConfigs, readPostgresMigrations } from "../src/db/client";
+import { connectApplicationDatabase, ensureSearchIndexes, migrateApplicationDatabase, postgresMigrationConfigs, readPostgresMigrations, stageFileMetadataLimitMigration } from "../src/db/client";
 import { createPostgresPool } from "../src/db/postgres";
 import { postgresMigrations, serverMigrationManifest } from "../src/migrations";
 
 describe("PostgreSQL migrations", () => {
+  it("skips legacy metadata scans after the limit migration is applied", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{ value: true }] });
+    await stageFileMetadataLimitMigration({ query } as never);
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["postgres", "lakebase"] as const)("handles %s idle disconnects without logging connection details", async (databaseType) => {
     const connection = connectApplicationDatabase({
       databaseType,

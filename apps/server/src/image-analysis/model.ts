@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { FileRecord } from "../files/model";
+import { codePointLimitedString, fileMetadataLimits, type FileRecord } from "../files/model";
 
 export interface ImageAnalysisClaim {
   fileId: string;
@@ -15,8 +15,8 @@ export interface ImageAnalysisInput extends ImageAnalysisClaim {
 }
 
 export const imageAnalysisSchema = z.object({
-  ocr_text: z.string().max(20_000),
-  caption: z.string().trim().min(1).max(500),
+  ocr_text: codePointLimitedString(z.string(), fileMetadataLimits.api.ocrText),
+  caption: codePointLimitedString(z.string().trim().min(1), fileMetadataLimits.api.caption),
 }).strict();
 export type ImageAnalysis = z.infer<typeof imageAnalysisSchema>;
 

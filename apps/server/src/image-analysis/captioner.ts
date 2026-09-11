@@ -4,6 +4,7 @@ import type { AccountSettings } from "../account-settings";
 import type { AppConfig } from "../config";
 import { createJobProvider } from "../ai-gateway/job-provider";
 import { DatabricksTokenError } from "../databricks/token";
+import { fileMetadataLimits } from "../files/model";
 import { ImageAnalysisError, imageAnalysisSchema, type ImageAnalysis } from "./model";
 
 export interface ImageCaptioner {
@@ -52,7 +53,10 @@ Do not use Markdown or infer facts not visible in the image. Return empty ocr_te
               type: "json_schema", name: "image_analysis", strict: true,
               schema: {
                 type: "object", additionalProperties: false,
-                properties: { ocr_text: { type: "string", maxLength: 20_000 }, caption: { type: "string", minLength: 1, maxLength: 500 } },
+                properties: {
+                  ocr_text: { type: "string", maxLength: fileMetadataLimits.api.ocrText },
+                  caption: { type: "string", minLength: 1, maxLength: fileMetadataLimits.api.caption },
+                },
                 required: ["ocr_text", "caption"],
               },
             } },

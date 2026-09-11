@@ -9,6 +9,27 @@
 
     @MainActor
     struct SyncTransferTests {
+        @Test
+        func generatedLimitPrefixCountsCodePointsAndPreservesGraphemes() {
+            let family = "👨‍👩‍👧‍👦"
+            let combined = "e\u{301}"
+            let cases = [
+                ("abc", 4, "abc"),
+                ("日本語", 3, "日本語"),
+                ("😀😀", 1, "😀"),
+                (family + "x", 7, family),
+                (family, 6, ""),
+                (combined + "x", 2, combined),
+                (combined, 1, ""),
+            ]
+            for (value, limit, expected) in cases {
+                let result = SyncValidationLimits.prefix(value, maxCodePointCount: limit)
+                #expect(result == expected)
+                #expect(result.unicodeScalars.count <= limit)
+                #expect(String(decoding: result.utf8, as: UTF8.self) == result)
+            }
+        }
+
         @Test(.timeLimit(.minutes(1)))
         func initialSnapshotPublishesAllMeetingContentsBeforeUploadingFiles() async throws {
             let fixture = try SyncTransferFixture()
@@ -349,6 +370,54 @@
             #expect(candidates.filter { $0.operation.entityId == file.id }.count == 1)
             #expect(candidates.count == (boundary == "sameFile" ? 2 : 1))
         }
+
+        @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+        func fileMetadataIsTrimmedToServerLimitsWhenSent(resolveReceipt: Bool) async throws {
+            let fixture = try SyncTransferFixture()
+            defer { fixture.close() }
+            let file = try await fixture.addFile(enqueue: false)
+            let expectedOCRText = String(repeating: "a", count: SyncValidationLimits.fileOCRText - 5)
+            let expectedCaption = String(repeating: "b", count: SyncValidationLimits.fileCaption - 1)
+            let ocrText = expectedOCRText + "👨‍👩‍👧‍👦tail"
+            let caption = expectedCaption + "e\u{301}tail"
+            try await fixture.queue.write { db in
+                try db.execute(
+                    sql: "UPDATE file_text_bodies SET ocrText = ?, caption = ? WHERE fileId = ?",
+                    arguments: [ocrText, caption, file.id]
+                )
+            }
+            try await fixture.enqueue(file)
+            _ = try await fixture.addFile()
+            await fixture.server.useCanonicalFileReceipts()
+            if resolveReceipt { await fixture.server.failNextCommit(afterSaving: true) }
+
+            let worker = fixture.worker()
+            if resolveReceipt {
+                let first = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue))
+                await #expect(throws: SyncHTTPError.self) { _ = try await worker.push(first) }
+                try await SyncTransactionQueue.retry(first, code: "http_503", dbQueue: fixture.queue)
+                try await fixture.makeRetryAvailable()
+                let retry = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue))
+                let response = try #require(try await worker.push(retry))
+                try await SyncTransactionQueue.complete(retry, response: response, dbQueue: fixture.queue)
+                try await fixture.drain(worker)
+            } else {
+                try await fixture.drain(worker)
+            }
+            await worker.stop()
+
+            let body = try #require(await fixture.server.transactionBodies.first)
+            let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            let operations = try #require(json["operations"] as? [[String: Any]])
+            let data = try #require(operations.first?["data"] as? [String: Any])
+            let metadata = try #require(data["metadata"] as? [String: Any])
+            #expect(metadata["ocrText"] as? String == expectedOCRText)
+            #expect(metadata["caption"] as? String == expectedCaption)
+            let stored = try #require(try await fixture.queue.read { try FileTextBodyRecord.fetchOne($0, key: file.id) })
+            #expect(stored.ocrText == ocrText)
+            #expect(stored.caption == caption)
+            #expect(await fixture.server.commitIds.count == 2)
+        }
     }
 
     @MainActor
@@ -476,6 +545,7 @@
         private var commitFailure: Bool?
         private var expiredPullCursor = false
         private var compactReceipts = false
+        private var canonicalFileReceipts = false
         private var files: [String: FileRecord] = [:]
         private var uploadFailures: [String: Int] = [:]
         private var receipts: [String: Data] = [:]
@@ -494,6 +564,7 @@
         func failUpload(_ id: UUID, status: Int) { uploadFailures[id.uuidString.lowercased()] = status }
         func expirePullCursor() { expiredPullCursor = true }
         func useCompactReceipts() { compactReceipts = true }
+        func useCanonicalFileReceipts() { canonicalFileReceipts = true }
         func gateNextResolve() { gateResolve = true }
         func releaseResolve() {
             resolveRelease?.resume()
@@ -548,8 +619,15 @@
                     return (503, Data())
                 }
                 let operations = try #require(body["operations"] as? [[String: Any]])
-                let records: [[String: Any]] = operations.map { operation in
-                    ["entity": operation["entity"]!, "id": operation["entityId"]!, "revision": 1, "record": NSNull()]
+                let records: [[String: Any]] = try operations.map { operation in
+                    let entity = try #require(operation["entity"] as? String)
+                    let entityId = try #require(operation["entityId"] as? String)
+                    let canonical: Any = if canonicalFileReceipts, entity == "file" {
+                        try canonicalFileRecord(id: entityId, operation: operation)
+                    } else {
+                        NSNull()
+                    }
+                    return ["entity": entity, "id": entityId, "revision": 1, "record": canonical]
                 }
                 var response: [String: Any] = [
                     "id": id, "status": "committed", "cursor": "after", "records": records,
@@ -576,6 +654,17 @@
                 "metadata": ["source": "screenshot"], "revision": 1,
                 "createdAt": "2026-09-11T00:00:00Z", "updatedAt": "2026-09-11T00:00:00Z",
             ])
+        }
+
+        private func canonicalFileRecord(id: String, operation: [String: Any]) throws -> [String: Any] {
+            let file = try #require(files[id])
+            let data = try #require(operation["data"] as? [String: Any])
+            return [
+                "id": id, "vaultId": file.vaultId.uuidString.lowercased(), "revision": 1,
+                "size": file.size, "contentType": file.contentType, "checksum": file.checksum, "name": file.name,
+                "metadata": try #require(data["metadata"]),
+                "createdAt": "2026-09-11T00:00:00Z", "updatedAt": "2026-09-11T00:00:00Z",
+            ]
         }
     }
 

@@ -63,6 +63,18 @@ it.each(["sqlite", "d1"])("creates canonical tables, defaults, and cascading rel
   } finally { db.close(); }
 });
 
+it("keeps OCR and caption database limits out of SQLite and D1", () => {
+  const sqlite = serverMigrationManifest.sqlite.files
+    .map((file) => readFileSync(new URL(`../${file}`, import.meta.url), "utf8")).join("\n");
+  const d1 = serverMigrationManifest.sqlite.files
+    .map((file) => readFileSync(new URL(`../${file.replace("drizzle/sqlite/", "drizzle/d1/").replace("/migration.sql", ".sql")}`, import.meta.url), "utf8")).join("\n");
+  for (const sql of [sqlite, d1]) {
+    expect(sql).not.toContain("files_metadata_ocr_text_length_check");
+    expect(sql).not.toContain("files_metadata_caption_length_check");
+    expect(sql).not.toMatch(/(?:ocr_text|caption_text)[^\n]*varchar/i);
+  }
+});
+
 it.each([
   ["summaryJob", "summary"], ["imageAnalysisJob", "image_analysis"],
   ["searchIndexJob", "search_index"], ["storageDeleteJob", "storage_delete"],

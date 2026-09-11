@@ -183,7 +183,7 @@ struct SyncCanonicalPayload: Codable, Sendable {
     var size: Int64?
     var contentType: String?
     var checksum: String?
-    var metadata: Components.Schemas.File.MetadataPayload?
+    var metadata: Components.Schemas.FileMetadata?
     var recordingNumber: Int?
     var startedAt: Date?
     var endedAt: Date?
@@ -660,7 +660,14 @@ enum SyncTransactionQueue {
                     )
                     """, arguments: [transaction.vaultId, transaction.sequence, parentMeetingId]) ?? false
                     if !parentDeletedLater {
-                        try applyCanonical(record.entity, id: record.id, vaultId: transaction.vaultId, value: canonical, in: db)
+                        try applyCanonical(
+                            record.entity,
+                            id: record.id,
+                            vaultId: transaction.vaultId,
+                            value: canonical,
+                            preserveLocalFileText: true,
+                            in: db
+                        )
                     }
                 }
                 try db.execute(
@@ -738,6 +745,7 @@ enum SyncTransactionQueue {
         vaultId: UUID,
         value: SyncCanonicalPayload,
         remoteRevision: Int? = nil,
+        preserveLocalFileText: Bool = false,
         in db: Database
     ) throws {
         // Header-only remote updates must invalidate exports before the new body is fetched.
@@ -811,7 +819,13 @@ enum SyncTransactionQueue {
         case .recording:
             try RecordingArchiveRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
         case .file:
-            try FileRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
+            try FileRecord.applyCanonical(
+                id: id,
+                vaultId: vaultId,
+                value: value,
+                preserveTextBody: preserveLocalFileText,
+                in: db
+            )
         case .meetingAttachment:
             try MeetingAttachmentRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
         case .transcript:

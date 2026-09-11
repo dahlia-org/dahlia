@@ -29,7 +29,11 @@ const postgresAuthPath = join(packageDirectory, "drizzle/postgres-auth");
 const postgresPath = join(packageDirectory, "drizzle/postgres");
 const sqlitePath = join(packageDirectory, "drizzle/sqlite");
 const postgresAuthBaseline = "20260903034253_melodic_scalphunter/migration.sql";
-const postgresFiles = ["20260909134056_initial/migration.sql", "20260909134100_runtime_support/migration.sql"];
+const postgresFiles = [
+  "20260909134056_initial/migration.sql",
+  "20260909134100_runtime_support/migration.sql",
+  "20260911023727_file-metadata-limits/migration.sql",
+];
 const sqliteFiles = ["20260909134058_initial/migration.sql", "20260909134100_runtime_support/migration.sql"];
 
 export const serverMigrationManifest: MigrationManifest = {

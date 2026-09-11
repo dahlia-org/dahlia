@@ -188,6 +188,10 @@ export class MeetingSyncService {
 
   async completeImageAnalysis(identity: Identity, input: ImageAnalysisInput, output: ImageAnalysis): Promise<boolean> {
     const analysis = imageAnalysisSchema.parse(output);
+    const generatedMetadata = {
+      ...(input.file.metadata.ocr_text == null ? { ocrText: analysis.ocr_text } : {}),
+      ...(!input.file.metadata.caption?.trim() ? { caption: analysis.caption } : {}),
+    };
     const metadata = {
       ...input.file.metadata,
       ocr_text: input.file.metadata.ocr_text ?? analysis.ocr_text,
@@ -197,7 +201,7 @@ export class MeetingSyncService {
       schemaVersion: 2, id: uuidV7(), vaultId: input.vaultId, createdAt: new Date().toISOString(),
       operations: [{
         id: uuidV7(), entity: "file", action: "upsert", entityId: input.fileId,
-        baseRevision: input.file.revision, data: { checksum: input.file.checksum, metadata: { ocrText: metadata.ocr_text, caption: metadata.caption } },
+        baseRevision: input.file.revision, data: { checksum: input.file.checksum, metadata: generatedMetadata },
       }],
     });
     Object.assign(transaction.operations[0]!.data!, await this.fileSearchData(metadata));
