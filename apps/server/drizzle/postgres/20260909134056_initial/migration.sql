@@ -241,6 +241,9 @@ CREATE TABLE "app"."meetings" (
 	"status" text NOT NULL,
 	"duration" double precision,
 	"recording_started_at" timestamp,
+	"ical_uid" text,
+	"recurrence_id" text,
+	"calendar_event" jsonb,
 	"created_at" timestamp NOT NULL,
 	"updated_at" timestamp NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
@@ -394,6 +397,7 @@ CREATE INDEX "sync_change_owner_vault_sequence_idx" ON "app"."sync_changes" ("ow
 CREATE INDEX "sync_change_owner_sequence_idx" ON "app"."sync_changes" ("owner_user_id","sequence");--> statement-breakpoint
 CREATE INDEX "transaction_receipt_owner_created_idx" ON "app"."transaction_receipts" ("owner_user_id","created_at");--> statement-breakpoint
 CREATE INDEX "files_vault_file_idx" ON "app"."files" ("vault_id","file_id");--> statement-breakpoint
+CREATE INDEX "meetings_calendar_event_idx" ON "app"."meetings" ("ical_uid","recurrence_id");--> statement-breakpoint
 CREATE INDEX "synced_meeting_vault_created_id_idx" ON "app"."meetings" ("vault_id","created_at","meeting_id");--> statement-breakpoint
 CREATE INDEX "project_vault_parent_name_idx" ON "app"."projects" ("vault_id","parent_project_id","name");--> statement-breakpoint
 CREATE INDEX "recordings_meeting_session_idx" ON "app"."recordings" ("meeting_id","session_id");--> statement-breakpoint

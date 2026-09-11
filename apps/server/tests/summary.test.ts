@@ -111,7 +111,8 @@ describe("server summary jobs", () => {
   it("escapes meeting and project XML without serializing internal input fields", async () => {
     const date = new Date(0);
     const { content } = await summaryImageContent({
-      meeting: { name: '<Meeting & "team">', description: "</context>'", createdAt: date, recordingStartedAt: null },
+      meeting: { name: '<Meeting & "team">', description: "</context>'", createdAt: date, recordingStartedAt: null,
+        icalUid: null, recurrenceId: null, calendarEvent: null },
       project: { name: "<Project>", description: "A&B", path: "parent/<child>", revision: 42 }, images: [],
     }, {} as MeetingSyncService, owner, new AbortController().signal);
     expect(content).toEqual([{ type: "input_text", text: `<context>
@@ -126,6 +127,45 @@ describe("server summary jobs", () => {
     <path>parent/&lt;child&gt;</path>
   </project>
 </context>` }]);
+  });
+
+  it.each([true, false])("includes calendar context and fingerprints its changes (transcript: %s)", async (includeTranscript) => {
+    const { store, sync, vaultId, meetingId } = await setup();
+    try {
+      const collect = () => store.sync.withIdentity(owner, (scoped) => collectSummaryInput(scoped, vaultId, meetingId, includeTranscript));
+      const before = await collect();
+      const metadata = { name: "Meeting", description: "", status: "READY", projectId: null, duration: 60, recordingStartedAt: before.meeting.recordingStartedAt?.toISOString() ?? null };
+      expect((await summaryImageContent(before, sync, owner, new AbortController().signal)).content[0]!.text).not.toContain("<calendar_event>");
+      const calendarEvent = { start: "2026-09-11T00:00:00+09:00", end: "2026-09-12T00:00:00+09:00", is_all_day: true };
+      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
+        id: uuidV7(), entity: "meeting", action: "update", entityId: meetingId, baseRevision: 1,
+        data: { ...metadata, icalUid: "event<&", recurrenceId: "20260911", calendarEvent, updatedAt: new Date().toISOString() },
+      }] });
+      const input = await collect();
+      expect(input.meeting.calendarEvent).toEqual(calendarEvent);
+      const { content } = await summaryImageContent(input, sync, owner, new AbortController().signal);
+      expect(content[0]!.text).toContain(`<calendar_event>
+    <ical_uid>event&lt;&amp;</ical_uid>
+    <recurrence_id>20260911</recurrence_id>
+    <start>2026-09-11T00:00:00+09:00</start>
+    <end>2026-09-12T00:00:00+09:00</end>
+    <is_all_day>true</is_all_day>
+  </calendar_event>`);
+      let revision = 2;
+      let previous = input;
+      for (const change of [{ icalUid: "other", recurrenceId: "20260911" }, { icalUid: "other", recurrenceId: "" },
+        { calendarEvent: { ...calendarEvent, is_all_day: false } }, { calendarEvent: null }]) {
+        await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
+          id: uuidV7(), entity: "meeting", action: "update", entityId: meetingId, baseRevision: revision++,
+          data: { ...metadata, ...change, updatedAt: new Date().toISOString() },
+        }] });
+        const current = await collect();
+        // Ignore the general meeting revision so each calendar field must affect the fingerprint itself.
+        expect(await fingerprint({ ...current, meeting: { ...current.meeting, revision: undefined } }))
+          .not.toBe(await fingerprint({ ...previous, meeting: { ...previous.meeting, revision: undefined } }));
+        previous = current;
+      }
+    } finally { await store.close?.(); }
   });
 
   it.each(["node", "worker"])("advertises only registered capabilities through %s", async (runtime) => {

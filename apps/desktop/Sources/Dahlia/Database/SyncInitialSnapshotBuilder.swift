@@ -243,7 +243,7 @@ enum SyncInitialSnapshotBuilder {
                 guard let meeting else { return nil }
                 try TextContentAccess.requireComplete(entity: .summary, id: meeting.id, in: db)
                 try TextContentAccess.requireComplete(entity: .transcript, id: meeting.id, in: db)
-                var metadata = try [meetingOperation(meeting, action: .create)]
+                var metadata = try [meetingOperation(meeting, action: .create, in: db)]
                 if let summary = try SummaryContent.fetchOne(db, key: meeting.id) {
                     try metadata.append(summaryOperation(summary, action: .upsert))
                 }
@@ -401,7 +401,7 @@ enum SyncInitialSnapshotBuilder {
         )
     }
 
-    static func meetingOperation(_ meeting: MeetingRecord, action: SyncAction) throws -> SyncOperationDraft {
+    static func meetingOperation(_ meeting: MeetingRecord, action: SyncAction, in db: Database) throws -> SyncOperationDraft {
         var payload: [String: Any] = [
             "projectId": json(meeting.projectId),
             "name": meeting.name,
@@ -411,6 +411,21 @@ enum SyncInitialSnapshotBuilder {
             "recordingStartedAt": json(meeting.recordingStartedAt),
             "updatedAt": meeting.updatedAt.ISO8601Format(),
         ]
+        if let calendar = try MeetingCalendarSync.fetch(meetingId: meeting.id, in: db) {
+            payload.merge(calendar.payload) { _, canonical in canonical }
+        } else if let uid = meeting.calendarEventIcalUid, let recurrenceId = meeting.calendarEventRecurrenceId {
+            payload["icalUid"] = uid
+            payload["recurrenceId"] = recurrenceId
+            if let event = try CalendarEventRecord.fetch(
+                key: CalendarEventKey(icalUid: uid, recurrenceId: recurrenceId), in: db
+            ) {
+                payload["calendarEvent"] = [
+                    "start": event.start.ISO8601Format(),
+                    "end": event.end.ISO8601Format(),
+                    "is_all_day": event.isAllDay,
+                ]
+            }
+        }
         if action == .create { payload["createdAt"] = meeting.createdAt.ISO8601Format() }
         return try operation(entity: .meeting, action: action, id: meeting.id, payload: payload)
     }

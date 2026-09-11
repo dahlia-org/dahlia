@@ -2368,7 +2368,7 @@ final class CaptionViewModel: ObservableObject {
                 try record.insert(db)
                 try SyncTransactionRecorder.record(
                     vaultId: vaultId,
-                    operations: [SyncInitialSnapshotBuilder.meetingOperation(record, action: .create)],
+                    operations: [SyncInitialSnapshotBuilder.meetingOperation(record, action: .create, in: db)],
                     in: db
                 )
             }
@@ -2494,7 +2494,7 @@ final class CaptionViewModel: ObservableObject {
                 try record.insert(db)
                 try SyncTransactionRecorder.record(
                     vaultId: vault.id,
-                    operations: [SyncInitialSnapshotBuilder.meetingOperation(record, action: .create)],
+                    operations: [SyncInitialSnapshotBuilder.meetingOperation(record, action: .create, in: db)],
                     in: db
                 )
                 return assignedProjectId

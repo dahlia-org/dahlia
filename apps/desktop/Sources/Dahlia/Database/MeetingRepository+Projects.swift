@@ -449,7 +449,7 @@ extension MeetingRepository {
                         syncOperations += try MeetingRecord
                             .filter(meetingIds.contains(Column("id")))
                             .fetchAll(db)
-                            .map { try SyncInitialSnapshotBuilder.meetingOperation($0, action: .update) }
+                            .map { try SyncInitialSnapshotBuilder.meetingOperation($0, action: .update, in: db) }
                     }
                 case .deleteMeetings:
                     if !meetingIds.isEmpty {

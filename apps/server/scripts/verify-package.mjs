@@ -145,6 +145,10 @@ try {
     const database = new DatabaseSync(databasePath);
     const applied = database.prepare('SELECT "name" FROM "__drizzle_migrations"').all();
     if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'artifact'").get()) throw new Error("Retired Artifact table remains");
+    const meetingColumns = database.prepare("PRAGMA table_info(meetings)").all().map((column) => column.name);
+    if (!["ical_uid", "recurrence_id", "calendar_event"].every((column) => meetingColumns.includes(column))) {
+      throw new Error("Calendar identity migration is missing");
+    }
     database.close();
     await store.close?.();
     if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== serverMigrationManifest.sqlite.files.at(-1).split("/").at(-2)) {

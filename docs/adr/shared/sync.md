@@ -17,7 +17,11 @@ Desktop は `GET /api/v1/vaults` で直接ユーザー共有・組織・チー�
 
 ## 同期対象とモデル
 
-Vault 名・アイコン・色、2段階 Project 階層と名前・説明・アイコン・色、meeting metadata、summary document、transcript 原文、screenshot bytes / MIME / OCR / AI caption を同期する。翻訳文、SQLite ファイル、端末の export path は対象外。2026-09-07: 新規バッチ録音の結合音声は [専用の音声保管契約](recording-audio-archive.md) で追加した。note、tag、calendar metadata、音声特徴量をこの同期契約へ追加しない。
+Vault 名・アイコン・色、2段階 Project 階層と名前・説明・アイコン・色、meeting metadata、summary document、transcript 原文、screenshot bytes / MIME / OCR / AI caption を同期する。翻訳文、SQLite ファイル、端末の export path は対象外。2026-09-07: 新規バッチ録音の結合音声は [専用の音声保管契約](recording-audio-archive.md) で追加した。note、tag、音声特徴量をこの同期契約へ追加しない。
+
+2026-09-11: meeting のカレンダー情報に限り、`icalUid` / `recurrenceId` と `calendarEvent`（`start` / `end` / `is_all_day`）を同期対象に追加する。UID と recurrence ID はペアで扱い、単発予定の recurrence ID は空文字。更新での省略は Server の既存値を保持し、明示的な null は消去する。予定名・説明・参加者・URL と端末固有のカレンダー参照は対象外。Server のスナップショットは要約の XML context と入力変更検知に使用し、暗号化 Vault でも queryable metadata として保存する。
+
+Desktop は受信した値（null を含む）を端末固有参照と別の working copy に保存し、通常更新・初期同期・復旧時の送信にはその値を使う。未受信の会議だけはローカル予定から初期化する。ローカル予定の開始・終了日時・終日フラグが変化した場合は、書き込み可能な Server Vault の同一予定に紐づく会議について、working copy の更新と送信キューへの記録を同じ SQLite transaction で確定する。Server で消去・別予定へ変更された識別子はローカル予定の再観測で戻さない。受信処理は送信キューを作らず、新しい未送信変更がある間は既存の receipt／delta 適用ガードを維持する。
 
 Project は `app.projects` に置き Vault 権限を継承する。空 Vault と Project 単独変更も扱い、同じ Vault の meeting だけが参照できる。Project 削除前に依存 meeting を明示的に移動・解除し、依存が残る削除を Server が拒否する。Project は階層閲覧・明示 filter に使い、検索本文や vector へ混ぜない。
 

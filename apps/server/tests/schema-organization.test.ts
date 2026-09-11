@@ -70,3 +70,21 @@ it.each([
   expect(getTableConfig(postgres[key])).toMatchObject({ schema: "jobs", name });
   expect(getTableName(sqlite[key])).toBe(`jobs_${name}`);
 });
+
+it.each(["sqlite", "d1"])("creates calendar metadata in the initial schema and preserves it through runtime setup (%s)", (dialect) => {
+  const db = new DatabaseSync(":memory:");
+  const files = serverMigrationManifest.sqlite.files;
+  const migrate = (file: string) => db.exec(readFileSync(new URL(`../${dialect === "d1"
+    ? file.replace("drizzle/sqlite/", "drizzle/d1/").replace("/migration.sql", ".sql") : file}`, import.meta.url), "utf8"));
+  try {
+    for (const file of files.slice(0, -1)) migrate(file);
+    db.exec("INSERT INTO vaults(vault_id, name) VALUES ('vault', 'Vault')");
+    db.exec("INSERT INTO meetings(meeting_id, vault_id, name, status, created_at, updated_at) VALUES ('meeting', 'vault', 'Preserved', 'READY', 1, 2)");
+    db.exec("UPDATE meetings SET ical_uid = 'shared@example.com', recurrence_id = '20260903T000000Z'");
+    migrate(files.at(-1)!);
+    expect(db.prepare("SELECT name, created_at, updated_at, ical_uid, recurrence_id, calendar_event FROM meetings").get())
+      .toEqual({ name: "Preserved", created_at: 1, updated_at: 2, ical_uid: "shared@example.com", recurrence_id: "20260903T000000Z", calendar_event: null });
+    db.exec("UPDATE meetings SET ical_uid = 'shared@example.com', recurrence_id = ''");
+    expect(db.prepare("SELECT recurrence_id FROM meetings").get()).toEqual({ recurrence_id: "" });
+  } finally { db.close(); }
+});

@@ -33,7 +33,7 @@ export function fileTextMetadata(record: Record<string, unknown>): Record<string
 export function meetingMetadata(record: Record<string, unknown>): Record<string, unknown> {
   // Only meeting metadata crosses the sync feed.
   const keys = ["meetingId", "vaultId", "projectId", "name", "description", "status", "duration",
-    "recordingStartedAt", "isRecording", "createdAt", "updatedAt", "revision", "summaryRevision", "transcriptRevision", "active", "deletingAt"];
+    "icalUid", "recurrenceId", "calendarEvent", "recordingStartedAt", "isRecording", "createdAt", "updatedAt", "revision", "summaryRevision", "transcriptRevision", "active", "deletingAt"];
   const hasSummary = record.hasSummary ?? (record.summaryDocument !== null && record.summaryDocument !== undefined);
   return { ...Object.fromEntries(keys.filter((key) => key in record).map((key) => [key, record[key]])), contentOmitted: true, hasSummary };
 }

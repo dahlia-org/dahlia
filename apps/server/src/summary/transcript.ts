@@ -52,6 +52,7 @@ export async function collectSummaryInput(store: IdentitySyncStore, vaultId: str
     if (page.length < 200) break;
   }
   const input = { meeting: { name: meeting.name, description: meeting.description, createdAt: meeting.createdAt,
+    icalUid: meeting.icalUid ?? null, recurrenceId: meeting.recurrenceId ?? null, calendarEvent: meeting.calendarEvent ?? null,
     recordingStartedAt: meeting.recordingStartedAt, ...(includeTranscript && !reference ? { revision: meeting.revision, transcriptRevision: meeting.transcriptRevision } : {}) },
   project: project ? { name: project.name, description: project.description, path: project.path, revision: project.revision } : null, ...(includeTranscript ? { transcript } : {}), images };
   if (JSON.stringify(input).length > 2_000_000) throw new SummaryError("summary_input_too_large");
@@ -171,7 +172,14 @@ export async function summaryImageContent(input: Awaited<ReturnType<typeof colle
     <name>${summaryXMLText(meeting.name)}</name>
     <description>${summaryXMLText(meeting.description)}</description>
     <recorded_at>${(meeting.recordingStartedAt ?? meeting.createdAt).toISOString()}</recorded_at>
-  </meeting>${project ? `
+  </meeting>${meeting.calendarEvent ? `
+  <calendar_event>
+    <ical_uid>${summaryXMLText(meeting.icalUid)}</ical_uid>
+    <recurrence_id>${summaryXMLText(meeting.recurrenceId)}</recurrence_id>
+    <start>${summaryXMLText(meeting.calendarEvent.start)}</start>
+    <end>${summaryXMLText(meeting.calendarEvent.end)}</end>
+    <is_all_day>${meeting.calendarEvent.is_all_day}</is_all_day>
+  </calendar_event>` : ""}${project ? `
   <project>
     <name>${summaryXMLText(project.name)}</name>
     <description>${summaryXMLText(project.description)}</description>

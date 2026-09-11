@@ -6,13 +6,7 @@ enum MeetingSyncMigration {
         guard try ["vaults", "meetings", "screenshots", "transcript_segments", "dahlia_account_connections"]
             .allSatisfy({ try db.tableExists($0) }) else { return }
 
-        try makeVaultPathOptional(in: db)
-        try db.alter(table: VaultRecord.databaseTableName) { table in
-            table.add(column: "syncRole", .text).check { $0 == nil || ["owner", "member"].contains($0) }
-            table.add(column: "syncConfirmedConnectionId", .blob)
-            table.add(column: "syncPullCursor", .text)
-            table.add(column: "syncLastCommittedCursor", .text)
-        }
+        try migrateVault(in: db)
         try db.alter(table: TranscriptSegmentRecord.databaseTableName) { table in
             table.add(column: "audioSource", .text)
         }
@@ -22,11 +16,7 @@ enum MeetingSyncMigration {
         try db.execute(sql: schemaSQL)
     }
 
-    private static func makeVaultPathOptional(in db: Database) throws {
-        guard try Int.fetchOne(
-            db,
-            sql: "SELECT \"notnull\" FROM pragma_table_info('vaults') WHERE name = 'path'"
-        ) == 1 else { return }
+    private static func migrateVault(in db: Database) throws {
         try db.execute(sql: """
         CREATE TABLE vaults_v42 (
             id BLOB PRIMARY KEY,
@@ -41,7 +31,16 @@ enum MeetingSyncMigration {
             summaryReasoningEffort TEXT NOT NULL DEFAULT 'high',
             chatModelID TEXT NOT NULL DEFAULT '',
             chatReasoningEffort TEXT NOT NULL DEFAULT 'medium',
-            aiSettingsBackfilled INTEGER NOT NULL DEFAULT 0
+            aiSettingsBackfilled INTEGER NOT NULL DEFAULT 0,
+            syncRole TEXT CHECK(syncRole IS NULL OR syncRole IN ('owner', 'member')),
+            syncConfirmedConnectionId BLOB,
+            syncPullCursor TEXT,
+            syncLastCommittedCursor TEXT,
+            syncRecoveryState TEXT,
+            syncMutationGeneration INTEGER NOT NULL DEFAULT 0,
+            syncMeetingEventsVersion INTEGER NOT NULL DEFAULT 0,
+            icon TEXT,
+            color TEXT
         );
         INSERT INTO vaults_v42 (
             id, path, name, createdAt, lastOpenedAt, accountConnectionId,
@@ -77,6 +76,27 @@ enum MeetingSyncMigration {
         ON sync_transactions(blockedReason, availableAt, leaseExpiresAt, sequence);
     CREATE INDEX sync_transactions_vault_sequence_idx
         ON sync_transactions(vaultId, sequence);
+
+    CREATE TRIGGER sync_mutation_generation
+    AFTER INSERT ON sync_transactions BEGIN
+        UPDATE vaults SET syncMutationGeneration = syncMutationGeneration + 1
+        WHERE id = NEW.vaultId;
+    END;
+    CREATE TRIGGER sync_association_generation
+    AFTER UPDATE OF accountConnectionId, syncConfirmedConnectionId ON vaults
+    WHEN NEW.accountConnectionId IS NOT OLD.accountConnectionId
+        OR NEW.syncConfirmedConnectionId IS NOT OLD.syncConfirmedConnectionId
+    BEGIN
+        UPDATE vaults SET syncMutationGeneration = syncMutationGeneration + 1,
+            syncRecoveryState = NULL WHERE id = NEW.id;
+    END;
+    CREATE TRIGGER sync_meeting_events_connection_change
+    AFTER UPDATE OF accountConnectionId, syncConfirmedConnectionId ON vaults
+    WHEN NEW.accountConnectionId IS NOT OLD.accountConnectionId
+        OR NEW.syncConfirmedConnectionId IS NOT OLD.syncConfirmedConnectionId
+    BEGIN
+        UPDATE vaults SET syncMeetingEventsVersion = 0 WHERE id = NEW.id;
+    END;
 
     CREATE TABLE sync_operations (
         transactionId BLOB NOT NULL REFERENCES sync_transactions(id) ON DELETE CASCADE,

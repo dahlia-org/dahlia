@@ -4,7 +4,7 @@ import { recordingManifestSchema } from "../recordings/model";
 import { transcriptMetadataSchema } from "../sync/transcript";
 import { summaryMetadataSchema } from "../summary/metadata";
 import { summaryInputSchema, transcriptSettingsSchema } from "../summary/model";
-import { transactionDataSchemas, transactionOperationSchema, transactionSchema } from "../sync/schemas";
+import { calendarEventSchema, transactionDataSchemas, transactionOperationSchema, transactionSchema } from "../sync/schemas";
 
 export const id = z.string().uuid();
 export const principalId = z.string().min(1).max(200);
@@ -29,6 +29,7 @@ export const project = z.object({ projectId: id, vaultId: id, parentProjectId: i
 }).openapi("Project");
 export const meeting = z.object({ meetingId: id, vaultId: id, projectId: id.nullable(), name: z.string(), description: z.string(),
   status: z.enum(["PROCESSING_TRANSCRIPT", "TRANSCRIPT_NOT_FOUND", "READY", "RECORDING"]), duration: z.number().nonnegative().nullable(), recordingStartedAt: date.nullable(), isRecording: z.boolean().optional(),
+  icalUid: z.string().nullable(), recurrenceId: z.string().nullable(), calendarEvent: calendarEventSchema.nullable(),
   createdAt: date, updatedAt: date, ...syncFields, ...contentFields, hasSummary: z.boolean().optional(),
   summaryRevision: integer.optional(), transcriptRevision: integer.optional(),
 }).openapi("Meeting");

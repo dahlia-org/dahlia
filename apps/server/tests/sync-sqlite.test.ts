@@ -42,6 +42,49 @@ afterEach(() => {
 });
 
 describe("SQLite canonical sync", () => {
+  it("round trips calendar occurrence identity and preserves it when an editor omits it", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    const service = new MeetingSyncService(store.sync);
+    const identity = { icalUid: "shared@example.com", recurrenceId: "20260903T000000Z",
+      calendarEvent: { start: "2026-09-03T09:00:00+09:00", end: "2026-09-03T10:00:00+09:00", is_all_day: false } };
+    const data = { ...meetingData(), projectId: null, createdAt: now.toISOString(), updatedAt: now.toISOString(), recordingStartedAt: now.toISOString() };
+    try {
+      const receipt = await service.commitTransaction(owner, wire([{ entity: "meeting", action: "create", entityId: meetingId,
+        baseRevision: null, data: { ...data, ...identity } }]));
+      expect(receipt.records.find((record) => record.entity === "meeting")?.record).toMatchObject(identity);
+      const read = () => store.sync.withIdentity(owner, (scoped) => scoped.getMeeting(vaultId, meetingId));
+      expect(await read()).toMatchObject(identity);
+      expect((await service.listSnapshot(owner, vaultId)).items.find((record) => record.entity === "meeting")?.record).toMatchObject(identity);
+      expect((await service.listChanges(owner, vaultId)).items.find((record) => record.entity === "meeting")?.record).toMatchObject(identity);
+      const update: Partial<typeof data> = { ...data };
+      delete update.createdAt;
+      await service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId,
+        baseRevision: 1, data: { ...update, name: "Renamed" } }]));
+      expect(await read()).toMatchObject(identity);
+      for (const recurrence of [identity.recurrenceId, "20260910T000000Z", "20260910", ""]) {
+        const id = freshId();
+        await service.commitTransaction(owner, wire([{ entity: "meeting", action: "create", entityId: id,
+          baseRevision: null, data: { ...data, ...identity, recurrenceId: recurrence } }]));
+        expect(await store.sync.withIdentity(owner, (scoped) => scoped.getMeeting(vaultId, id)))
+          .toMatchObject({ ...identity, recurrenceId: recurrence });
+      }
+      await expect(service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId,
+        baseRevision: 2, data: { ...update, icalUid: "incomplete" } }]))).rejects.toThrow();
+      for (const calendarEvent of [
+        { start: "invalid", end: identity.calendarEvent.end, is_all_day: false },
+        { ...identity.calendarEvent, is_all_day: "false" },
+        { ...identity.calendarEvent, title: "not part of the snapshot" },
+      ]) {
+        await expect(service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId,
+          baseRevision: 2, data: { ...update, calendarEvent } }]))).rejects.toThrow();
+      }
+      await service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId,
+        baseRevision: 2, data: { ...update, icalUid: null, recurrenceId: null, calendarEvent: null } }]));
+      expect(await read()).toMatchObject({ icalUid: null, recurrenceId: null, calendarEvent: null });
+    } finally { await store.close?.(); }
+  });
+
   it("invalidates embeddings by current search input and rejects stale models and deleted results", async () => {
     const { store, databasePath } = await setup({ model: "model", dimensions: 32 });
     await createVault(store);

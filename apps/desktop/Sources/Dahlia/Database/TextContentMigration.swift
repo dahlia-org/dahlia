@@ -21,39 +21,19 @@ enum TextContentMigration {
             meetingId BLOB PRIMARY KEY NOT NULL REFERENCES summaries(meetingId) ON DELETE CASCADE,
             document TEXT NOT NULL
         );
-        CREATE TABLE file_text_bodies (
-            fileId BLOB PRIMARY KEY NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-            ocrText TEXT,
-            caption TEXT
-        );
         INSERT INTO transcript_segment_bodies SELECT id, text FROM transcript_segments WHERE isConfirmed = 1;
         INSERT INTO summary_bodies SELECT meetingId, document FROM summaries;
-        INSERT INTO file_text_bodies
-            SELECT id, json_extract(metadata, '$.ocr_text'), json_extract(metadata, '$.caption') FROM files;
         ALTER TABLE transcript_segments DROP COLUMN text;
         ALTER TABLE summaries DROP COLUMN document;
-        UPDATE files SET metadata = json_remove(metadata, '$.ocr_text', '$.caption');
         """)
         for object in objects {
             let name: String = object["name"]
             var sql: String = object["sql"]
-            if name == "meeting_images" {
-                sql = sql.replacingOccurrences(of: "json_extract(f.metadata, '$.ocr_text')", with: "text.ocrText")
-                    .replacingOccurrences(of: "json_extract(f.metadata, '$.caption')", with: "text.caption")
-                    .replacingOccurrences(
-                        of: "LEFT JOIN file_migration_content",
-                        with: "LEFT JOIN file_text_bodies text ON text.fileId = f.id LEFT JOIN file_migration_content"
-                    )
-            } else if name.hasPrefix("search_queue_summaries_") {
+            if name.hasPrefix("search_queue_summaries_") {
                 // Header changes and body changes both invalidate the derived search document.
                 try db.execute(sql: sql.replacingOccurrences(of: "UPDATE OF document", with: "UPDATE"))
                 sql = sql.replacingOccurrences(of: name, with: name + "_body")
                     .replacingOccurrences(of: "ON summaries", with: "ON summary_bodies")
-            } else if name == "search_queue_meeting_attachments_insert" {
-                sql = sql.replacingOccurrences(
-                    of: "json_extract(metadata, '$.ocr_text')",
-                    with: "(SELECT ocrText FROM file_text_bodies WHERE fileId = files.id)"
-                )
             }
             try db.execute(sql: sql)
         }

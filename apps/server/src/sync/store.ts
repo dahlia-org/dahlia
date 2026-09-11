@@ -1,3 +1,4 @@
+import type { CalendarEventSnapshot } from "./schemas";
 import { createContentEncryption } from "../encryption/store";
 import { EXTERNAL_ORGANIZATION_ID } from "../auth/ids";
 import { sha256 } from "../storage/sha256";
@@ -1600,6 +1601,9 @@ function createIdentityStore(
             status: String(data.status),
             duration: data.duration as number | null,
             recordingStartedAt: data.recordingStartedAt as Date | null,
+            icalUid: data.icalUid as string | null | undefined,
+            recurrenceId: data.recurrenceId as string | null | undefined,
+            calendarEvent: data.calendarEvent as CalendarEventSnapshot | null | undefined,
             createdAt: data.createdAt as Date,
             updatedAt: data.updatedAt as Date,
             revision: 1,
@@ -1622,6 +1626,9 @@ function createIdentityStore(
             status: String(data.status),
             duration: data.duration as number | null,
             recordingStartedAt: data.recordingStartedAt as Date | null,
+            icalUid: data.icalUid as string | null | undefined,
+            recurrenceId: data.recurrenceId as string | null | undefined,
+            calendarEvent: data.calendarEvent as CalendarEventSnapshot | null | undefined,
             updatedAt: data.updatedAt as Date,
             revision: sql`${schema.syncedMeeting.revision} + 1`,
           }, { meetingId: operation.entityId, vaultId: transaction.vaultId })).where(ownedMeeting(transaction.vaultId, operation.entityId));
@@ -1646,7 +1653,8 @@ function createIdentityStore(
           continue;
         }
         const changedFields = operation.action === "update"
-          ? ["projectId", "name", "description", "status", "duration", "recordingStartedAt"].filter((field) =>
+          ? ["projectId", "name", "description", "status", "duration", "recordingStartedAt", "icalUid", "recurrenceId", "calendarEvent"].filter((field) =>
+            data[field] !== undefined &&
             JSON.stringify(previous?.record?.[field] ?? null) !== JSON.stringify(data[field] ?? null))
           : [];
         if (operation.action === "create" || changedFields.length) {
@@ -2845,6 +2853,9 @@ function meetingSelection(schema: SyncSchema) {
     status: schema.syncedMeeting.status,
     duration: schema.syncedMeeting.duration,
     recordingStartedAt: schema.syncedMeeting.recordingStartedAt,
+    icalUid: schema.syncedMeeting.icalUid,
+    recurrenceId: schema.syncedMeeting.recurrenceId,
+    calendarEvent: schema.syncedMeeting.calendarEvent,
     isRecording: sql<boolean>`exists (
       select 1 from ${schema.meetingEvent} as started
       where started.vault_id = "meetings"."vault_id"

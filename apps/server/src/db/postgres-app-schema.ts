@@ -1,3 +1,4 @@
+import type { CalendarEventSnapshot } from "../sync/schemas";
 import type { TranscriptMetadata } from "../sync/transcript";
 import type { SummaryMetadata } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
@@ -184,6 +185,9 @@ export const syncedMeeting = appSchema.table("meetings", {
   status: text("status").notNull(),
   duration: doublePrecision("duration"),
   recordingStartedAt: timestamp("recording_started_at"),
+  icalUid: text("ical_uid"),
+  recurrenceId: text("recurrence_id"),
+  calendarEvent: jsonb("calendar_event").$type<CalendarEventSnapshot>(),
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
   revision: integer("revision").default(1).notNull(),
@@ -192,6 +196,7 @@ export const syncedMeeting = appSchema.table("meetings", {
   active: boolean("active").default(false).notNull(),
   deletingAt: timestamp("deleting_at"),
 }, (table) => [
+  index("meetings_calendar_event_idx").on(table.icalUid, table.recurrenceId),
   unique("synced_meeting_vault_meeting_unique").on(table.vaultId, table.meetingId),
   foreignKey({
     name: "synced_meeting_vault_fk",

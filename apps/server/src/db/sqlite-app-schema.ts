@@ -1,3 +1,4 @@
+import type { CalendarEventSnapshot } from "../sync/schemas";
 import type { TranscriptMetadata } from "../sync/transcript";
 import type { SummaryMetadata } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
@@ -109,6 +110,9 @@ export const syncedMeeting = sqliteTable("meetings", {
   status: text("status").notNull(),
   duration: real("duration"),
   recordingStartedAt: sqliteTimestamp("recording_started_at"),
+  icalUid: text("ical_uid"),
+  recurrenceId: text("recurrence_id"),
+  calendarEvent: text("calendar_event", { mode: "json" }).$type<CalendarEventSnapshot>(),
   createdAt: sqliteTimestamp("created_at").notNull(),
   updatedAt: sqliteTimestamp("updated_at").notNull(),
   revision: integer("revision").default(1).notNull(),
@@ -117,6 +121,7 @@ export const syncedMeeting = sqliteTable("meetings", {
   active: integer("active", { mode: "boolean" }).default(false).notNull(),
   deletingAt: sqliteTimestamp("deleting_at"),
 }, (table) => [
+  index("meetings_calendar_event_idx").on(table.icalUid, table.recurrenceId),
   unique("synced_meeting_vault_meeting_unique").on(table.vaultId, table.meetingId),
   foreignKey({
     columns: [table.vaultId],

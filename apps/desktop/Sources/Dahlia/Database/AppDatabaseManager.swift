@@ -283,11 +283,9 @@ final class AppDatabaseManager: Sendable {
         // v0.21.0 shipped through v41. The following changes have never been distributed.
         migrator.registerMigration("v42_localFirstSchema", foreignKeyChecks: .deferred) { db in
             try MeetingSyncMigration.migrate(in: db)
-            try syncRecovery(in: db)
             try RetireVectorSearchMigration.migrate(in: db)
             try ScreenshotContentMigration.migrate(in: db)
             try TextContentMigration.migrate(in: db)
-            try MeetingEventMigration.migrate(in: db)
             try recordingArchives(in: db)
             try TranscriptVersionMigration.migrate(in: db)
             try TranscriptActivityMigration.migrate(in: db)
@@ -296,36 +294,12 @@ final class AppDatabaseManager: Sendable {
             try addColumnIfNeeded(in: db, table: "recording_sessions", column: "processingJSON", type: .text)
         }
 
+        migrator.registerMigration("v43_meetingCalendarSync") { db in
+            try addColumnIfNeeded(in: db, table: "meetings", column: "calendarSyncMetadata", type: .blob)
+        }
+
         return migrator
     }()
-
-    private static func syncRecovery(in db: Database) throws {
-        guard try db.tableExists("vaults"), try db.tableExists("sync_transactions") else { return }
-        let columns = try db.columns(in: "vaults").map(\.name)
-        if !columns.contains("syncRecoveryState") {
-            try db.alter(table: "vaults") { $0.add(column: "syncRecoveryState", .text) }
-        }
-        if !columns.contains("syncMutationGeneration") {
-            try db.alter(table: "vaults") {
-                $0.add(column: "syncMutationGeneration", .integer).notNull().defaults(to: 0)
-            }
-        }
-        try db.execute(sql: """
-        CREATE TRIGGER IF NOT EXISTS sync_mutation_generation
-        AFTER INSERT ON sync_transactions BEGIN
-            UPDATE vaults SET syncMutationGeneration = syncMutationGeneration + 1
-            WHERE id = NEW.vaultId;
-        END;
-        CREATE TRIGGER IF NOT EXISTS sync_association_generation
-        AFTER UPDATE OF accountConnectionId, syncConfirmedConnectionId ON vaults
-        WHEN NEW.accountConnectionId IS NOT OLD.accountConnectionId
-            OR NEW.syncConfirmedConnectionId IS NOT OLD.syncConfirmedConnectionId
-        BEGIN
-            UPDATE vaults SET syncMutationGeneration = syncMutationGeneration + 1,
-                syncRecoveryState = NULL WHERE id = NEW.id;
-        END;
-        """)
-    }
 
     private static func recordingArchives(in db: Database) throws {
         try db.execute(sql: """
