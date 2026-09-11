@@ -74,6 +74,8 @@ describe("SQLite canonical sync", () => {
         baseRevision: 2, data: { ...update, icalUid: "incomplete" } }]))).rejects.toThrow();
       for (const calendarEvent of [
         { start: "invalid", end: identity.calendarEvent.end, is_all_day: false },
+        { start: identity.calendarEvent.end, end: identity.calendarEvent.start, is_all_day: false },
+        { start: "2026-09-03T00:00:00.0009Z", end: "2026-09-03T00:00:00.0001Z", is_all_day: false },
         { ...identity.calendarEvent, is_all_day: "false" },
         { ...identity.calendarEvent, title: "not part of the snapshot" },
         { ...identity.calendarEvent, attendees: [{ email: "invalid", display_name: null }] },
@@ -81,10 +83,10 @@ describe("SQLite canonical sync", () => {
         await expect(service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId,
           baseRevision: 2, data: { ...update, calendarEvent } }]))).rejects.toThrow();
       }
-      const legacyCalendarEvent = { start: identity.calendarEvent.start, end: identity.calendarEvent.end, is_all_day: false };
+      const legacyCalendarEvent = { start: "2026-09-03T00:00:00.123456Z", end: "2026-09-03T09:00:00.123456+09:00", is_all_day: false };
       await service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId,
         baseRevision: 2, data: { ...update, calendarEvent: legacyCalendarEvent } }]));
-      expect(await read()).toMatchObject({ calendarEvent: identity.calendarEvent });
+      expect(await read()).toMatchObject({ calendarEvent: { ...legacyCalendarEvent, attendees: identity.calendarEvent.attendees } });
       await service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId,
         baseRevision: 3, data: { ...update, calendarEvent: { ...legacyCalendarEvent, attendees: [] } } }]));
       expect(await read()).toMatchObject({ calendarEvent: { ...legacyCalendarEvent, attendees: [] } });

@@ -7,6 +7,21 @@ import { fileWireMetadataSchema, fileMetadataFromWire } from "../files/model";
 
 export const uuidSchema = z.uuid().transform((value) => value.toLowerCase());
 export const dateSchema = z.iso.datetime().transform((value) => new Date(value));
+const instantParts = (value: string) => {
+  const zoneIndex = value.endsWith("Z") ? value.length - 1 : value.length - 6;
+  const fractionIndex = value.indexOf(".");
+  return {
+    second: Date.parse(fractionIndex < 0 ? value : value.slice(0, fractionIndex) + value.slice(zoneIndex)),
+    fraction: fractionIndex < 0 ? "" : value.slice(fractionIndex + 1, zoneIndex),
+  };
+};
+const orderedInstants = (start: string, end: string) => {
+  const startParts = instantParts(start);
+  const endParts = instantParts(end);
+  if (startParts.second !== endParts.second) return startParts.second < endParts.second;
+  const precision = Math.max(startParts.fraction.length, endParts.fraction.length);
+  return startParts.fraction.padEnd(precision, "0") <= endParts.fraction.padEnd(precision, "0");
+};
 export const calendarEventSchema = z.object({
   start: z.iso.datetime({ offset: true }),
   end: z.iso.datetime({ offset: true }),
@@ -15,7 +30,10 @@ export const calendarEventSchema = z.object({
     email: z.email().max(254),
     display_name: z.string().max(500).nullable(),
   }).strict()).max(1_000).optional(),
-}).strict();
+}).strict().refine(
+  (value) => orderedInstants(value.start, value.end),
+  "Calendar event end must be on or after start",
+);
 export type CalendarEventSnapshot = z.infer<typeof calendarEventSchema>;
 
 const calendarIdentityFields = {
