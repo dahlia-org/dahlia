@@ -71,8 +71,8 @@ CREATE TABLE "search"."documents" (
 	"tags_text" text DEFAULT '' NOT NULL,
 	"description_text" text DEFAULT '' NOT NULL,
 	"summary_text" text DEFAULT '' NOT NULL,
-	"ocr_text" text DEFAULT '' NOT NULL,
-	"caption_text" text DEFAULT '' NOT NULL,
+	"ocr_text" varchar(65536) DEFAULT '' NOT NULL,
+	"caption_text" varchar(2048) DEFAULT '' NOT NULL,
 	"title_vector" tsvector GENERATED ALWAYS AS (to_tsvector('simple', title_text)) STORED,
 	"tags_vector" tsvector GENERATED ALWAYS AS (to_tsvector('simple', tags_text)) STORED,
 	"description_vector" tsvector GENERATED ALWAYS AS (to_tsvector('simple', description_text)) STORED,
@@ -227,7 +227,9 @@ CREATE TABLE "app"."files" (
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "files_vault_file_unique" UNIQUE("vault_id","file_id"),
 	CONSTRAINT "files_offset_check" CHECK ("offset" = 0),
-	CONSTRAINT "files_size_check" CHECK ("size" >= 0)
+	CONSTRAINT "files_size_check" CHECK ("size" >= 0),
+	CONSTRAINT "files_metadata_ocr_text_length_check" CHECK (char_length("metadata"->>'ocr_text') <= 65536),
+	CONSTRAINT "files_metadata_caption_length_check" CHECK (char_length("metadata"->>'caption') <= 2048)
 );
 --> statement-breakpoint
 ALTER TABLE "app"."files" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
@@ -303,7 +305,9 @@ CREATE TABLE "app"."transcript_segments" (
 	"created_at" timestamp,
 	"audio_source" text,
 	"speaker_label" text,
-	CONSTRAINT "synced_transcript_segment_pk" PRIMARY KEY("transcript_id","segment_id")
+	"normalized_character_count" integer,
+	CONSTRAINT "synced_transcript_segment_pk" PRIMARY KEY("transcript_id","segment_id"),
+	CONSTRAINT "transcript_segment_normalized_character_count_check" CHECK ("normalized_character_count" IS NULL OR "normalized_character_count" >= 0)
 );
 --> statement-breakpoint
 ALTER TABLE "app"."transcript_segments" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
@@ -453,4 +457,4 @@ CREATE VIEW "app"."meeting_images" WITH (security_invoker = true) AS (
     m.revision
   FROM app.meeting_attachments m JOIN app.files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id
   WHERE f.metadata ->> 'source' = 'screenshot'
-);
+);--> statement-breakpoint

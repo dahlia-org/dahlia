@@ -115,10 +115,6 @@ try {
       new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres/20260909134100_runtime_support/migration.sql")),
       "utf8",
     );
-    const conversationAnalyticsMigration = await readFile(
-      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres/20260911023711_tranquil_turbo/migration.sql")),
-      "utf8",
-    );
     if (
       !style.includes(".app-shell")
       || !codexLicense.includes("Apache License")
@@ -132,7 +128,7 @@ try {
       || !applicationMigration.includes('CREATE TABLE "app"."vaults"')
       || !fileRlsMigration.includes('ALTER TABLE "app"."files" FORCE ROW LEVEL SECURITY')
       || !fileRlsMigration.includes('ALTER TABLE "app"."meeting_attachments" FORCE ROW LEVEL SECURITY')
-      || !conversationAnalyticsMigration.includes('ADD COLUMN "normalized_character_count" integer')
+      || !applicationMigration.includes('"normalized_character_count" integer')
     ) {
       throw new Error("Package assets are incomplete");
     }
