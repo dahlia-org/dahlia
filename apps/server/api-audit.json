@@ -328,6 +328,17 @@
       ]
     },
     {
+      "operationId": "getConversationAnalytics",
+      "method": "GET",
+      "path": "/api/v1/meetings/{meetingId}/transcripts/{version}/conversation-analytics",
+      "classification": "modified",
+      "previous": "Desktop-local conversation analytics",
+      "reason": "Calculate owner-only analytics for one immutable transcript version backed by committed recording audio",
+      "consumers": [
+        "apps/desktop/Sources/Dahlia/Services/ServerConversationAnalyticsService.swift"
+      ]
+    },
+    {
       "operationId": "startSummaryJob",
       "method": "POST",
       "path": "/api/v1/meetings/{meetingId}/summary-jobs",

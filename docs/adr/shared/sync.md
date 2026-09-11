@@ -159,7 +159,7 @@ GET /files/{fileId} は原本、HEAD は同じ認可で原本の存在・HTTP he
 
 manifest hash は各 nullable UTF-8 field の `byteLength:bytes`、NULL は `-:` を SHA-256 に入力する。文字起こしは startTime / UUID 順の lowercase segment UUID と原文、summary は document、file は OCR の後に caption。UUID は本文 byte 数へ含めない。Swift / Server は共通 fixture で一致を検証する。既存本文の hash が同じなら本文 download を省くが、文字起こしの保持 revision が変わる場合は時刻・話者・音声ソースも取得してから revision を進める。同じ revision で内容が違えば元データを残して自動解放しない。
 
-会話分析も共通 provider の lease で全文を確保し、Repository は未保持本文から空の分析を生成しない。本文の取得・revision 更新は表示中の分析を無効化し、計算結果の保存時にも完全性と保持 revision を確認する。録音後の分析は既存のバックグラウンド処理のまま実行する。
+会話分析はDesktopの本文保持・Repository・バックグラウンド処理から分離し、Serverが指定された文字起こし版と確定録音から同期計算する。Desktopは版付き結果を表示するだけとする。詳細は [会話分析の Server ownership](conversation-analytics.md) を参照する。
 
 Local Account と未同期画像は端末解析 job の待機・処理・失敗表示を維持する。Server Account は capabilities API で `imageAnalysis: { version: 1 }` を確認した場合だけ端末解析を省略する。未対応・未設定の Server では端末解析を使い、同期済み画像の OCR / caption は端末 job の有無によらず共通 provider で取得する。
 

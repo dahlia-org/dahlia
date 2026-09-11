@@ -50,6 +50,14 @@ struct ControlPanelView: View {
     @FocusState private var isMeetingNameFieldFocused: Bool
     @FocusState private var isNotesFieldFocused: Bool
 
+    private var conversationAnalyticsPreparationIdentity: String {
+        [
+            viewModel.currentMeetingId?.uuidString ?? "none",
+            String(appSettings.isConversationAnalyticsBetaEnabled),
+            String(viewModel.conversationMetricsStore.reloadToken),
+        ].joined(separator: ":")
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 12) {
@@ -111,9 +119,6 @@ struct ControlPanelView: View {
                 case .conversationAnalytics:
                     ConversationAnalyticsDashboardView(
                         store: viewModel.conversationMetricsStore,
-                        meetingId: viewModel.currentMeetingId,
-                        isAnalysisPending: viewModel.isCurrentMeetingConversationAnalysisPending,
-                        hasTranscript: viewModel.currentMeetingHasTranscriptSegments,
                         load: viewModel.loadCurrentMeetingConversationMetrics
                     )
                 }
@@ -198,6 +203,18 @@ struct ControlPanelView: View {
             if !isEnabled, selectedTab == .conversationAnalytics {
                 selectedTab = .transcript
             }
+        }
+        .onChange(of: viewModel.conversationMetricsStore.isTabAvailable) { _, isAvailable in
+            if !isAvailable, selectedTab == .conversationAnalytics {
+                selectedTab = .transcript
+            }
+        }
+        .task(id: conversationAnalyticsPreparationIdentity) {
+            guard appSettings.isConversationAnalyticsBetaEnabled else {
+                viewModel.conversationMetricsStore.disable()
+                return
+            }
+            await viewModel.prepareCurrentMeetingConversationMetrics()
         }
         .confirmationDialog(
             L10n.deleteCount(selectedScreenshotIds.count),

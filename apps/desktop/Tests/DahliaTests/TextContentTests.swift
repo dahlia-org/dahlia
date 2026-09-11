@@ -664,53 +664,6 @@
             }
         }
 
-        @Test(arguments: [false, true])
-        func conversationMetricsRejectUnretainedOriginals(hasRetainedRows: Bool) async throws {
-            let fixture = try textFixture()
-            try await fixture.queue.write { db in
-                if hasRetainedRows {
-                    try db.execute(sql: "UPDATE transcript_segments SET audioSource = 'mic'")
-                } else {
-                    try db.execute(sql: "DELETE FROM transcript_segments")
-                }
-            }
-            #expect(throws: TextContentError.incomplete) {
-                try MeetingRepository(dbQueue: fixture.queue).loadOrRebuildConversationMetrics(meetingId: fixture.meetingId)
-            }
-            #expect(try await fixture.queue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM meeting_conversation_metrics") } == 0)
-            let provider = provider(fixture) { _ in (503, [:], Data()) }
-            defer { ImageURLProtocol.remove(origin: fixture.origin) }
-            let store = MeetingConversationMetricsStore { meetingId, queue in
-                try await MeetingConversationMetricsRefreshService.load(meetingId: meetingId, dbQueue: queue, contentProvider: provider)
-            }
-            await store.load(meetingId: fixture.meetingId, dbQueue: fixture.queue)
-            #expect(store.metrics == nil)
-            #expect(store.errorMessage != nil)
-            #expect(try await fixture.queue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM meeting_conversation_metrics") } == 0)
-            let pages = try [fixture.firstPage, fixture.secondPage].map { data in
-                var page = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-                var items = try #require(page["items"] as? [[String: Any]])
-                items[0]["audioSource"] = "mic"
-                page["items"] = items
-                return try JSONSerialization.data(withJSONObject: page)
-            }
-            ImageURLProtocol.register(origin: fixture.origin) { request in
-                let query = request.url!.query ?? ""
-                return (200, [:], query.contains("manifest") ? fixture.manifest : pages[query.contains("cursor") ? 1 : 0])
-            }
-            await store.load(meetingId: fixture.meetingId, dbQueue: fixture.queue)
-            let metrics = try #require(store.metrics)
-            #expect(store.errorMessage == nil)
-            #expect(metrics.source(.microphone).segmentCount == 2)
-            #expect(metrics.source(.microphone).normalizedCharacterCount > 0)
-            try await provider.trim(dbQueue: fixture.queue, capacity: 1)
-            let reloaded = try await MeetingConversationMetricsRefreshService.load(
-                meetingId: fixture.meetingId, dbQueue: fixture.queue, contentProvider: provider
-            )
-            #expect(reloaded.inputFingerprint == metrics.inputFingerprint)
-            #expect(reloaded.source(.microphone).segmentCount == 2)
-        }
-
         @Test
         func legacyMismatchIsKeptAndCannotBeEvicted() async throws {
             let fixture = try textFixture()

@@ -1292,6 +1292,9 @@
 "Conversation Analytics" = "会話分析";
 "BETA" = "BETA";
 "Analysis is waiting for transcription" = "文字起こしの完了を待っています";
+"Conversation analytics will be available after the transcript is synced." = "文字起こしの同期後に会話分析を利用できます。";
+"Recording Audio Unavailable" = "録音音声が不足しています";
+"The Server does not have all recording audio required for this transcript version." = "この文字起こし版の分析に必要な録音音声が Server に揃っていません。";
 "Conversation analytics will be available after recording and transcription finish." = "録音と文字起こしが完了すると会話分析を確認できます。";
 "A confirmed microphone or system-audio transcript is required." = "確定済みのマイクまたはシステムオーディオの文字起こしが必要です。";
 "Could Not Load Conversation Analytics" = "会話分析を読み込めませんでした";

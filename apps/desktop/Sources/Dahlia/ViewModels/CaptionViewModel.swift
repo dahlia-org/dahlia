@@ -2277,11 +2277,15 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func loadCurrentMeetingConversationMetrics() async {
-        guard let meetingId = currentMeetingId,
-              let dbQueue = currentDbQueue,
-              !isCurrentMeetingConversationAnalysisPending,
-              currentMeetingHasTranscriptSegments else { return }
-        await conversationMetricsStore.load(meetingId: meetingId, dbQueue: dbQueue)
+        await conversationMetricsStore.load()
+    }
+
+    func prepareCurrentMeetingConversationMetrics() async {
+        guard let meetingID = currentMeetingId, let dbQueue = currentDbQueue else {
+            conversationMetricsStore.disable()
+            return
+        }
+        await conversationMetricsStore.prepare(meetingID: meetingID, dbQueue: dbQueue)
     }
 
     private func startMeetingLoad(

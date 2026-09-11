@@ -2871,11 +2871,20 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Conversation analytics will be available after recording and transcription finish.",
         bundle: bundle
     ) }
+    static var conversationAnalyticsAvailableAfterSync: String { String(
+        localized: "Conversation analytics will be available after the transcript is synced.",
+        bundle: bundle
+    ) }
     static var conversationAnalyticsEmpty: String { String(
         localized: "A confirmed microphone or system-audio transcript is required.",
         bundle: bundle
     ) }
     static var conversationAnalyticsLoadFailed: String { String(localized: "Could Not Load Conversation Analytics", bundle: bundle) }
+    static var conversationAnalyticsAudioUnavailable: String { String(localized: "Recording Audio Unavailable", bundle: bundle) }
+    static var conversationAnalyticsAudioUnavailableDescription: String { String(
+        localized: "The Server does not have all recording audio required for this transcript version.",
+        bundle: bundle
+    ) }
     static var conversationAnalyticsYou: String { String(localized: "You", bundle: bundle) }
     static var conversationAnalyticsOtherSide: String { String(localized: "Other Side", bundle: bundle) }
     static var conversationAnalyticsOverlap: String { String(localized: "Overlap", bundle: bundle) }

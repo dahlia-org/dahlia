@@ -69,6 +69,63 @@ async function setup() {
 }
 
 describe("transcript versions", () => {
+  it("stores, updates, copies, and backfills normalized character counts without a metrics version", async () => {
+    const { store, sync, vaultId, meetingId, body, databasePath } = await setup();
+    const transcriptId = uuidV7();
+    const segmentIds = [uuidV7(), uuidV7()];
+    const write = async (segmentId: string, text: string, baseRevision: number) => {
+      const patchId = uuidV7();
+      const chunk = { segments: [{ segmentId, startedAt: new Date(0).toISOString(), endedAt: null,
+        text, createdAt: new Date().toISOString(), audioSource: "mic", speakerLabel: null }], deletions: [] };
+      const sha256 = createHash("sha256").update(JSON.stringify(chunk)).digest("hex");
+      await sync.putTranscriptChunk(owner, meetingId, patchId, 0, sha256, chunk);
+      await sync.commitTransaction(owner, body([{ id: patchId, entity: "transcript", action: "patch", entityId: meetingId, baseRevision,
+        data: { patchId, mode: "append", transcript: { id: transcriptId, startedAt: null, endedAt: null, metadata: metadata() },
+          segmentCount: 1, deletionCount: 0, chunks: [{ index: 0, sha256, segmentCount: 1, deletionCount: 0 }] } }]));
+    };
+    try {
+      await write(segmentIds[0]!, "A 👨‍👩‍👧‍👦 e\u0301", 0);
+      await write(segmentIds[0]!, " 日 本 ", 1);
+      await write(segmentIds[1]!, "three", 2);
+      const copiedId = uuidV7();
+      const copyPatchId = uuidV7();
+      await sync.commitTransaction(owner, body([{ id: copyPatchId, entity: "transcript", action: "patch", entityId: meetingId, baseRevision: 3,
+        data: { patchId: copyPatchId, mode: "append", transcript: { id: copiedId, startedAt: null, endedAt: null, metadata: metadata() },
+          segmentCount: 0, deletionCount: 0, chunks: [] } }]));
+      const db = new DatabaseSync(databasePath);
+      const storedCounts = (id: string) => db.prepare("SELECT normalized_character_count FROM transcript_segments WHERE transcript_id = ?")
+        .all(id).map((row) => row.normalized_character_count).sort();
+      expect(storedCounts(transcriptId)).toEqual([2, 5]);
+      expect(storedCounts(copiedId)).toEqual([2, 5]);
+      db.prepare("UPDATE transcript_segments SET normalized_character_count = NULL WHERE transcript_id = ?").run(copiedId);
+      expect((await store.sync.withIdentity(owner, (scoped) => scoped.listTranscriptAnalytics(vaultId, meetingId, 2)))
+        .map((row) => row.normalizedCharacterCount).sort()).toEqual([2, 5]);
+      expect(storedCounts(copiedId)).toEqual([2, 5]);
+      const columns = db.prepare("PRAGMA table_info(transcript_segments)").all().map((row) => row.name);
+      expect(columns).not.toContain("text_metrics_version");
+      db.close();
+    } finally { await store.close?.(); }
+  });
+
+  it("backfills normalized character counts across bounded update batches", async () => {
+    const { store, vaultId, meetingId, databasePath, write } = await setup();
+    const transcriptId = uuidV7();
+    try {
+      const texts = Array.from({ length: 201 }, (_, index) => index % 2 ? "一" : "two");
+      await write(transcriptId, 0, "completed", "replace", texts);
+      const db = new DatabaseSync(databasePath);
+      db.prepare("UPDATE transcript_segments SET normalized_character_count = NULL WHERE transcript_id = ?").run(transcriptId);
+      const counts = (await store.sync.withIdentity(owner, (scoped) => scoped.listTranscriptAnalytics(vaultId, meetingId, 1)))
+        .map((row) => row.normalizedCharacterCount);
+      expect(counts).toHaveLength(201);
+      expect(counts.filter((count) => count === 1)).toHaveLength(100);
+      expect(counts.filter((count) => count === 3)).toHaveLength(101);
+      expect(db.prepare("SELECT count(*) AS count FROM transcript_segments WHERE normalized_character_count IS NULL").get())
+        .toMatchObject({ count: 0 });
+      db.close();
+    } finally { await store.close?.(); }
+  });
+
   it("counts only the latest authorized transcript and preserves its snapshot header", async () => {
     const { store, sync, vaultId, meetingId, write } = await setup();
     try {

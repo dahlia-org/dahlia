@@ -1476,6 +1476,7 @@ struct ServerCapabilities: Decodable {
     let meetingEvents: Feature?
     let search: Feature?
     let imageAnalysis: Feature?
+    let conversationAnalytics: Feature?
     let meetingSummaryGeneration: MeetingSummaryGeneration?
 }
 

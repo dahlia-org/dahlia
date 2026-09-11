@@ -1292,6 +1292,9 @@
 "Conversation Analytics" = "Conversation Analytics";
 "BETA" = "BETA";
 "Analysis is waiting for transcription" = "Analysis is waiting for transcription";
+"Conversation analytics will be available after the transcript is synced." = "Conversation analytics will be available after the transcript is synced.";
+"Recording Audio Unavailable" = "Recording Audio Unavailable";
+"The Server does not have all recording audio required for this transcript version." = "The Server does not have all recording audio required for this transcript version.";
 "Conversation analytics will be available after recording and transcription finish." = "Conversation analytics will be available after recording and transcription finish.";
 "A confirmed microphone or system-audio transcript is required." = "A confirmed microphone or system-audio transcript is required.";
 "Could Not Load Conversation Analytics" = "Could Not Load Conversation Analytics";

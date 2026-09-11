@@ -12,6 +12,7 @@ import { summaryMetadata, summaryMetadataSchema } from "../summary/metadata";
 import { fileResponse, fileStorageKey, imageContentTypes, type FileMetadata } from "../files/model";
 import { needsImageAnalysis, type ImageAnalysisClaim, type ImageAnalysisInput } from "../image-analysis/model";
 import { recordingCanonical, recordingStorageKey, type RecordingRecord, type RecordingSource, type RecordingManifest } from "../recordings/model";
+import { normalizedCharacterCount } from "../conversation-analytics";
 import {
   and,
   asc,
@@ -1786,6 +1787,7 @@ function createIdentityStore(
           for (const batch of batches(payload.segments, 250)) {
             await db.insert(schema.syncedTranscriptSegment).values(await content.writeMany(schema.syncedTranscriptSegment, batch.map((segment) => ({
               ...segment, transcriptId: incoming.id,
+              normalizedCharacterCount: normalizedCharacterCount(segment.text),
               startedAt: new Date(segment.startedAt),
               endedAt: segment.endedAt ? new Date(segment.endedAt) : null,
               createdAt: segment.createdAt ? new Date(segment.createdAt) : null,
@@ -1794,6 +1796,7 @@ function createIdentityStore(
               set: {
                 startedAt: sql`excluded.started_at`, endedAt: sql`excluded.ended_at`, text: sql`excluded.text`,
                 audioSource: sql`excluded.audio_source`, speakerLabel: sql`excluded.speaker_label`,
+                normalizedCharacterCount: sql`excluded.normalized_character_count`,
                 encryptedPayload: sql`excluded.encrypted_payload`,
               },
             });
@@ -2670,6 +2673,49 @@ function createIdentityStore(
       )).orderBy(asc(schema.syncedTranscriptSegment.startedAt), asc(schema.syncedTranscriptSegment.segmentId));
       const rows = await content.read(schema.syncedTranscriptSegment, await (limit === undefined ? query : query.limit(limit)), vaultId);
       return rows.map(({ segmentId, startedAt, endedAt, text, createdAt, audioSource, speakerLabel }) => ({ segmentId, startedAt, endedAt, text, createdAt, audioSource, speakerLabel }));
+    },
+    async listTranscriptAnalytics(vaultId, meetingId, version) {
+      const transcript = await getTranscript(vaultId, meetingId, version);
+      if (!transcript) return [];
+      const rows = await db.select({
+        transcriptId: schema.syncedTranscriptSegment.transcriptId,
+        segmentId: schema.syncedTranscriptSegment.segmentId,
+        startedAt: schema.syncedTranscriptSegment.startedAt,
+        endedAt: schema.syncedTranscriptSegment.endedAt,
+        audioSource: schema.syncedTranscriptSegment.audioSource,
+        normalizedCharacterCount: schema.syncedTranscriptSegment.normalizedCharacterCount,
+      }).from(schema.syncedTranscriptSegment)
+        .where(eq(schema.syncedTranscriptSegment.transcriptId, transcript.id))
+        .orderBy(asc(schema.syncedTranscriptSegment.startedAt), asc(schema.syncedTranscriptSegment.segmentId));
+      const backfilledCounts = new Map<string, number>();
+      if (rows.some((row) => row.normalizedCharacterCount === null)) {
+        const legacy = await db.select({
+          encryptedPayload: schema.syncedTranscriptSegment.encryptedPayload,
+          transcriptId: schema.syncedTranscriptSegment.transcriptId,
+          segmentId: schema.syncedTranscriptSegment.segmentId,
+          text: schema.syncedTranscriptSegment.text,
+        }).from(schema.syncedTranscriptSegment).where(and(
+          eq(schema.syncedTranscriptSegment.transcriptId, transcript.id),
+          isNull(schema.syncedTranscriptSegment.normalizedCharacterCount),
+        ));
+        const plaintext = await content.read(schema.syncedTranscriptSegment, legacy, vaultId);
+        const counts = plaintext.map((row) => ({ ...row, count: normalizedCharacterCount(row.text) }));
+        for (const batch of batches(counts, 200)) {
+          await db.update(schema.syncedTranscriptSegment).set({
+            normalizedCharacterCount: sql<number>`case ${schema.syncedTranscriptSegment.segmentId} ${sql.join(
+              batch.map((row) => sql`when ${row.segmentId} then ${row.count}`), sql.raw(" "),
+            )} else ${schema.syncedTranscriptSegment.normalizedCharacterCount} end`,
+          }).where(and(
+            eq(schema.syncedTranscriptSegment.transcriptId, transcript.id),
+            inArray(schema.syncedTranscriptSegment.segmentId, batch.map((row) => row.segmentId)),
+          ));
+        }
+        for (const row of counts) backfilledCounts.set(row.segmentId, row.count);
+      }
+      return rows.map((row) => ({
+        segmentId: row.segmentId, startedAt: row.startedAt, endedAt: row.endedAt, audioSource: row.audioSource,
+        normalizedCharacterCount: backfilledCounts.get(row.segmentId) ?? row.normalizedCharacterCount!,
+      }));
     },
     async listScreenshots(vaultId, meetingId, query, limit, cursor, filters) {
       if (query && query.tokens.length === 0) return [];

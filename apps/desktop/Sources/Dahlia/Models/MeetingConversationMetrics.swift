@@ -56,23 +56,20 @@ struct MeetingConversationMetrics: Equatable, Sendable {
         let normalizedCharacterCount: Int
         let segmentCount: Int
         let unmeasurableSegmentCount: Int
+        let charactersPerMinute: Double?
+        let speechShare: Double?
 
         var id: RecordingAudioSource { source }
-
-        var charactersPerMinute: Double? {
-            guard speechDuration > 0 else { return nil }
-            return Double(normalizedCharacterCount) / speechDuration * 60
-        }
     }
 
-    nonisolated static let calculationVersion = 3
-
-    let inputFingerprint: String
+    let transcriptID: UUID
+    let transcriptVersion: Int
+    let calculationVersion: Int
     let recordingDuration: TimeInterval
     let unionSpeechDuration: TimeInterval
     let overlapDuration: TimeInterval
-    let usesLegacyTimelineFallback: Bool
-    let computedAt: Date
+    let conversationOccupancyRatio: Double?
+    let overlapRatio: Double?
     let sources: [SourceMetrics]
     let speechMergeGap: TimeInterval
     let monologueMergeGap: TimeInterval
@@ -83,19 +80,6 @@ struct MeetingConversationMetrics: Equatable, Sendable {
     let overlapIntervals: [OverlapInterval]
     let overlapCount: Int
     let isTimelineCondensed: Bool
-    let voiceAnalytics: MeetingVoiceAnalytics
-
-    var totalSourceSpeechDuration: TimeInterval {
-        sources.reduce(0) { $0 + $1.speechDuration }
-    }
-
-    var conversationOccupancyRatio: Double? {
-        ratio(unionSpeechDuration, to: recordingDuration)
-    }
-
-    var overlapRatio: Double? {
-        ratio(overlapDuration, to: unionSpeechDuration)
-    }
 
     var timelineDuration: TimeInterval {
         max(recordingDuration, timelineIntervals.map(\.end).max() ?? 0)
@@ -116,16 +100,13 @@ struct MeetingConversationMetrics: Equatable, Sendable {
                 speechDuration: 0,
                 normalizedCharacterCount: 0,
                 segmentCount: 0,
-                unmeasurableSegmentCount: 0
+                unmeasurableSegmentCount: 0,
+                charactersPerMinute: nil,
+                speechShare: nil
             )
     }
 
     func speechShare(for source: RecordingAudioSource) -> Double? {
-        ratio(self.source(source).speechDuration, to: totalSourceSpeechDuration)
-    }
-
-    private func ratio(_ numerator: Double, to denominator: Double) -> Double? {
-        guard denominator > 0 else { return nil }
-        return numerator / denominator
+        self.source(source).speechShare
     }
 }
