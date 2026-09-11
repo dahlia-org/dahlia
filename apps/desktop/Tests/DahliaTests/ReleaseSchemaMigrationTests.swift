@@ -99,7 +99,11 @@
                 let image = try #require(try MeetingScreenshotRecord.fetchOne(db, key: screenshotID))
                 #expect(image.imageData == bytes && image.ocrText == "OCR 原文" && image.caption == "caption")
                 #expect(try String.fetchOne(db, sql: "SELECT ocrText FROM file_text_bodies WHERE fileId = ?", arguments: [screenshotID]) == "OCR 原文")
-                #expect(try String.fetchOne(db, sql: "SELECT json_extract(metadata, '$.ocr_text') FROM files WHERE id = ?", arguments: [screenshotID]) == nil)
+                #expect(try String.fetchOne(
+                    db,
+                    sql: "SELECT json_extract(metadata, '$.ocr_text') FROM files WHERE id = ?",
+                    arguments: [screenshotID]
+                ) == nil)
                 #expect(try TranscriptRecord.current(meetingID, in: db)?.id == transcriptID)
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations") == 0)
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
@@ -109,11 +113,11 @@
         }
 
         @Test
-        func freshDatabaseRegistersOnlyOnePostReleaseMigration() throws {
+        func freshDatabaseRegistersConsolidatedAndForwardMigrations() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let identifiers = AppDatabaseManager.migrationIdentifiers
             let releaseIndex = try #require(identifiers.firstIndex(of: "v41_vaultAISettingsBackfill"))
-            #expect(Array(identifiers.dropFirst(releaseIndex + 1)) == ["v42_localFirstSchema"])
+            #expect(Array(identifiers.dropFirst(releaseIndex + 1)) == ["v42_localFirstSchema", "v43_meetingCalendarSync"])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
                 #expect(try !db.columns(in: "vaults").contains { $0.name == "appearance" })

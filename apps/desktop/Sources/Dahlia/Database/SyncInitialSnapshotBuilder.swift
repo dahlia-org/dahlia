@@ -407,7 +407,9 @@ enum SyncInitialSnapshotBuilder {
             "recordingStartedAt": json(meeting.recordingStartedAt),
             "updatedAt": meeting.updatedAt.ISO8601Format(),
         ]
-        if let uid = meeting.calendarEventIcalUid, let recurrenceId = meeting.calendarEventRecurrenceId {
+        if let calendar = try MeetingCalendarSync.fetch(meetingId: meeting.id, in: db) {
+            payload.merge(calendar.payload) { _, canonical in canonical }
+        } else if let uid = meeting.calendarEventIcalUid, let recurrenceId = meeting.calendarEventRecurrenceId {
             payload["icalUid"] = uid
             payload["recurrenceId"] = recurrenceId
             if let event = try CalendarEventRecord.fetch(

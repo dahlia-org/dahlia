@@ -48,7 +48,8 @@ struct CalendarEventRecord: Codable, FetchableRecord, PersistableRecord, Equatab
         guard let key = event.key else { return }
 
         var record = Self(now: now, event: event, key: key)
-        if let existing = try fetch(key: key, in: db) {
+        let existing = try fetch(key: key, in: db)
+        if let existing {
             record.createdAt = existing.createdAt
             record.title = record.title.nilIfBlank ?? existing.title
             record.description = record.description.nilIfBlank ?? existing.description
@@ -57,6 +58,7 @@ struct CalendarEventRecord: Codable, FetchableRecord, PersistableRecord, Equatab
         }
         try record.save(db)
         try CalendarEventSourceRecord.upsert(event: event, key: key, now: now, in: db)
+        try MeetingCalendarSync.recordChange(from: existing, to: record, in: db)
     }
 
     static func fetch(key: CalendarEventKey, in db: Database) throws -> Self? {

@@ -294,6 +294,10 @@ final class AppDatabaseManager: Sendable {
             try addColumnIfNeeded(in: db, table: "recording_sessions", column: "processingJSON", type: .text)
         }
 
+        migrator.registerMigration("v43_meetingCalendarSync") { db in
+            try addColumnIfNeeded(in: db, table: "meetings", column: "calendarSyncMetadata", type: .blob)
+        }
+
         return migrator
     }()
 

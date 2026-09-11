@@ -151,6 +151,9 @@ struct SyncTransactionResponse: Decodable, Sendable {
 }
 
 struct SyncCanonicalPayload: Codable, Sendable {
+    var icalUid: String?
+    var recurrenceId: String?
+    var calendarEvent: MeetingCalendarSync.Event?
     var icon: String?
     var color: String?
     var contentOmitted: Bool?
@@ -187,6 +190,7 @@ struct SyncCanonicalPayload: Codable, Sendable {
     var audio: [String: Components.Schemas.RecordingAudio]?
 
     enum CodingKeys: String, CodingKey {
+        case icalUid, recurrenceId, calendarEvent
         case icon, color
         case contentOmitted, contentPresent, contentCount, hasSummary, transcriptRevision, transcript
         case parentProjectId, projectId, meetingId, name, description, projectType, status, duration, recordingStartedAt
@@ -780,6 +784,9 @@ enum SyncTransactionQueue {
                 id, vaultId, value.projectId, name, value.description ?? "", status,
                 value.duration, createdAt, updatedAt, value.recordingStartedAt,
             ])
+            try MeetingCalendarSync(
+                icalUid: value.icalUid, recurrenceId: value.recurrenceId, calendarEvent: value.calendarEvent
+            ).save(meetingId: id, in: db)
             if value.contentOmitted == true {
                 for (entity, present, complete) in [
                     ("summary", value.hasSummary ?? false, value.hasSummary == false),
