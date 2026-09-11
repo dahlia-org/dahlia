@@ -13,6 +13,7 @@ import { LocalObjectStorage } from "../src/storage/local";
 import type { paths } from "../src/client/generated-api";
 import { testStore } from "./test-store";
 import { encodeId, type IDKind } from "../src/typeid";
+import { fileMetadataLimits } from "../src/files/model";
 
 const config = { authProvider: "header" as const, authHeader: "X-Forwarded-Email", databaseType: "sqlite" as const,
   baseUrl: "http://localhost:5173", storageBackend: "databricks" as const, storageDatabricksVolumePath: "/Volumes/test/app/files", oauthRedirectUris: [], maxRequestBytes: 8 * 1024 * 1024 };
@@ -41,6 +42,18 @@ it("covers every Dahlia route exactly once and publishes the generated contract"
   const meetingScope = spec.paths!["/api/v1/vaults/{vaultId}/meetings"]!.get!.parameters!
     .find((parameter) => !("$ref" in parameter) && parameter.name === "projectScope");
   expect(meetingScope).toMatchObject({ schema: { enum: ["direct", "unassigned"] } });
+});
+
+it("publishes file metadata API limits below the PostgreSQL safety limits", () => {
+  const schemas = openapiDocument().components!.schemas! as Record<string, {
+    properties: { ocrText: { maxLength: number }; caption: { maxLength: number } };
+  }>;
+  expect(schemas.FileWriteMetadata!.properties.ocrText.maxLength).toBe(fileMetadataLimits.api.ocrText);
+  expect(schemas.FileWriteMetadata!.properties.caption.maxLength).toBe(fileMetadataLimits.api.caption);
+  expect(schemas.FileMetadata!.properties.ocrText.maxLength).toBe(fileMetadataLimits.postgres.ocrText);
+  expect(schemas.FileMetadata!.properties.caption.maxLength).toBe(fileMetadataLimits.postgres.caption);
+  expect(schemas.FileWriteMetadata!.properties.ocrText.maxLength).toBeLessThanOrEqual(schemas.FileMetadata!.properties.ocrText.maxLength);
+  expect(schemas.FileWriteMetadata!.properties.caption.maxLength).toBeLessThanOrEqual(schemas.FileMetadata!.properties.caption.maxLength);
 });
 
 describe("generated Web client against the real SQLite Server", () => {

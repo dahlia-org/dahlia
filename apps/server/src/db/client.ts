@@ -11,12 +11,85 @@ import type { SQLiteAsyncDatabase } from "drizzle-orm/sqlite-core/async";
 import type { Pool } from "pg";
 
 import type { AppConfig } from "../config";
-import type { PostgresMigrationDirectory } from "../migrations";
+import { fileMetadataLimits } from "../files/model";
+import { postgresMigrations, serverMigrationManifest, type PostgresMigrationDirectory } from "../migrations";
 import { SEARCH_FIELDS } from "../search/settings-model";
 import { createPostgresPool, POSTGRES_MIGRATION_SCHEMA } from "./postgres";
 
 export type PostgresDatabase = NodePgDatabase & { $client: Pool };
 export type SQLiteDatabase = SQLiteAsyncDatabase<"sync" | "async", unknown>;
+
+const fileMetadataLimitMigration = "20260911023727_file-metadata-limits/migration.sql";
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+function graphemePrefix(value: string, maximum: number): string {
+  let codePoints = 0;
+  for (const { index, segment } of graphemeSegmenter.segment(value)) {
+    codePoints += Array.from(segment).length;
+    if (codePoints > maximum) return value.slice(0, index);
+  }
+  return value;
+}
+
+interface OversizedFileText {
+  field: "caption" | "caption_text" | "ocr_text";
+  owner_id: string;
+  record_id: string;
+  target: "files" | "search_documents";
+  value: string;
+}
+
+export async function stageFileMetadataLimitMigration(client: Pick<Pool, "query">): Promise<void> {
+  const applied = await client.query<{ value: boolean }>(`SELECT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = to_regclass('app.files') AND conname = 'files_metadata_ocr_text_length_check'
+  ) AS value`);
+  if (applied.rows[0]?.value) return;
+  await client.query(`CREATE TEMP TABLE IF NOT EXISTS dahlia_file_metadata_limit_values (
+    target text NOT NULL, record_id uuid NOT NULL, field_name text NOT NULL, owner_id uuid NOT NULL,
+    original text NOT NULL, replacement text NOT NULL,
+    PRIMARY KEY (target, record_id, field_name)
+  )`);
+  const tables = await client.query<{ files: string | null; documents: string | null }>(
+    "SELECT to_regclass('app.files')::text AS files, to_regclass('search.documents')::text AS documents",
+  );
+  if (!tables.rows[0]?.files || !tables.rows[0]?.documents) return;
+
+  const previousUser = await client.query<{ value: string | null }>(
+    "SELECT current_setting('app.user_id', true) AS value",
+  );
+  try {
+    const owners = await client.query<{ owner_id: string }>(
+      "SELECT DISTINCT principal_id AS owner_id FROM app.vault_permissions WHERE principal_type = 'user' AND role = 'owner'",
+    );
+    for (const { owner_id } of owners.rows) {
+      await client.query("SELECT set_config('app.user_id', $1, false)", [owner_id]);
+      const oversized = await client.query<OversizedFileText>(`SELECT 'files' AS target, file_id AS record_id,
+          'ocr_text' AS field, $1::uuid AS owner_id, metadata->>'ocr_text' AS value
+        FROM app.files WHERE char_length(metadata->>'ocr_text') > $2
+        UNION ALL SELECT 'files', file_id, 'caption', $1::uuid, metadata->>'caption'
+        FROM app.files WHERE char_length(metadata->>'caption') > $3
+        UNION ALL SELECT 'search_documents', document_id, 'ocr_text', $1::uuid, ocr_text
+        FROM search.documents WHERE char_length(ocr_text) > $2
+        UNION ALL SELECT 'search_documents', document_id, 'caption_text', $1::uuid, caption_text
+        FROM search.documents WHERE char_length(caption_text) > $3`, [
+        owner_id, fileMetadataLimits.postgres.ocrText, fileMetadataLimits.postgres.caption,
+      ]);
+      for (const row of oversized.rows) {
+        const maximum = row.field === "caption" || row.field === "caption_text"
+          ? fileMetadataLimits.postgres.caption : fileMetadataLimits.postgres.ocrText;
+        await client.query(`INSERT INTO dahlia_file_metadata_limit_values
+          (target, record_id, field_name, owner_id, original, replacement) VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (target, record_id, field_name) DO UPDATE
+          SET owner_id = excluded.owner_id, original = excluded.original, replacement = excluded.replacement`, [
+          row.target, row.record_id, row.field, row.owner_id, row.value, graphemePrefix(row.value, maximum),
+        ]);
+      }
+    }
+  } finally {
+    await client.query("SELECT set_config('app.user_id', $1, false)", [previousUser.rows[0]?.value ?? ""]);
+  }
+}
 
 const noOpSpan = {
   end() {},
@@ -99,7 +172,7 @@ export function readPostgresMigrations(config: MigrationConfig): MigrationMeta[]
 
 export async function migrateApplicationDatabase(
   config: AppConfig,
-  migrationDirectories: readonly PostgresMigrationDirectory[] = [{ id: "server", path: "./drizzle" }],
+  migrationDirectories: readonly PostgresMigrationDirectory[] = postgresMigrations(serverMigrationManifest),
 ): Promise<void> {
   const pool = createDatabasePool(config, 1);
   try {
@@ -120,6 +193,7 @@ export async function migrateApplicationDatabase(
         const allowedNames = files && new Set(files.map((file) => file.split("/")[0]));
         const migrations = readPostgresMigrations(migrationConfig)
           .filter((migration) => !allowedNames || allowedNames.has(migration.name));
+        if (files?.includes(fileMetadataLimitMigration)) await stageFileMetadataLimitMigration(client);
         await migrate(migrations, database, migrationConfig);
       }
       await ensureSearchIndexes(client, config);

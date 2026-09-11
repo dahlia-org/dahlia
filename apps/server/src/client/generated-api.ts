@@ -1171,14 +1171,7 @@ export interface components {
             contentType: string;
             size: number;
             checksum: string;
-            metadata: {
-                /** @enum {string} */
-                source: "upload" | "screenshot";
-                width?: number;
-                height?: number;
-                caption?: string | null;
-                ocrText?: string | null;
-            };
+            metadata: components["schemas"]["FileMetadata"];
             revision: number;
             /** Format: date-time */
             createdAt: string;
@@ -1191,6 +1184,14 @@ export interface components {
             };
             contentOmitted?: boolean;
             contentPresent?: boolean;
+        };
+        FileMetadata: {
+            /** @enum {string} */
+            source: "upload" | "screenshot";
+            width?: number;
+            height?: number;
+            caption?: string | null;
+            ocrText?: string | null;
         };
         Transcript: {
             id: string;
@@ -1314,6 +1315,14 @@ export interface components {
                     localeIdentifier: string;
                 }[];
             };
+        };
+        FileWriteMetadata: {
+            /** @enum {string} */
+            source: "upload" | "screenshot";
+            width?: number;
+            height?: number;
+            caption?: string | null;
+            ocrText?: string | null;
         };
         CurrentSession: {
             capabilities: {
@@ -1528,14 +1537,7 @@ export interface components {
             contentType: string;
             size: number;
             checksum: string;
-            metadata: {
-                /** @enum {string} */
-                source: "upload" | "screenshot";
-                width?: number;
-                height?: number;
-                caption?: string | null;
-                ocrText?: string | null;
-            };
+            metadata: components["schemas"]["FileMetadata"];
             revision: number;
             /** Format: date-time */
             createdAt: string;

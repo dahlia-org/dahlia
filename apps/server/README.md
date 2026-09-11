@@ -540,7 +540,7 @@ This runs lint, TypeScript checks, unit and adapter contract tests, Node/SPA bui
 
 The tag workflow requires an `NPM_TOKEN` repository secret with publish access to the `@dahlia-ai/server` package.
 
-The Worker-safe package root exports the backend extension contract from `@dahlia-ai/server`; Node-only APIs such as `createNodeAuthStore` are exported from `@dahlia-ai/server/node`. Dashboard components come from `@dahlia-ai/server/client`, shared styles from `@dahlia-ai/server/client/styles.css`, and the migration manifest from `@dahlia-ai/server/migrations`. Server migrations must run before consumer migrations. Give every SQLite and PostgreSQL Drizzle migration directory a stable lowercase ledger ID; never derive it from manifest position.
+The Worker-safe package root exports the backend extension contract from `@dahlia-ai/server`; Node-only APIs such as `createNodeAuthStore` are exported from `@dahlia-ai/server/node`. Dashboard components come from `@dahlia-ai/server/client`, shared styles from `@dahlia-ai/server/client/styles.css`, and the migration manifest from `@dahlia-ai/server/migrations`. Apply PostgreSQL manifests through `createNodeApplicationStore(...).migrate()` or `migrateApplicationDatabase`; data migrations may require Node's Unicode segmentation and are not raw-SQL entrypoints. Server migrations must run before consumer migrations. Give every SQLite and PostgreSQL Drizzle migration directory a stable lowercase ledger ID; never derive it from manifest position.
 
 ### Browser regression check for live updates
 

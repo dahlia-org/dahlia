@@ -41,7 +41,27 @@ MCP methods: ${audit.mcp.methods.join(", ")}. Tools: ${audit.mcp.tools.join(", "
 ${audit.fallbacks.map((entry) => `- ${entry}`).join("\n")}
 `;
 
-const document = JSON.stringify(openapiDocument(), null, 2) + "\n";
+const openapi = openapiDocument();
+const document = JSON.stringify(openapi, null, 2) + "\n";
+const fileMetadataProperties = (openapi.components!.schemas!.FileWriteMetadata as {
+  properties: { ocrText: { maxLength: number }; caption: { maxLength: number } };
+}).properties;
+const swiftLimits = `/// Generated from the Server validation contract. Run pnpm openapi:generate.
+enum SyncValidationLimits {
+    static let fileOCRText = ${fileMetadataProperties.ocrText.maxLength}
+    static let fileCaption = ${fileMetadataProperties.caption.maxLength}
+
+    static func prefix(_ value: String, maxCodePointCount: Int) -> String {
+        guard value.unicodeScalars.count > maxCodePointCount else { return value }
+        var codePointCount = 0
+        let boundary = value.firstIndex { character in
+            codePointCount += character.unicodeScalars.count
+            return codePointCount > maxCodePointCount
+        }
+        return String(value[..<(boundary ?? value.endIndex)])
+    }
+}
+`;
 const types = astToString(await openapiTS(document));
 const calls = `// Generated from OpenAPI. Run pnpm openapi:generate.
 import { createFinalURL, createQuerySerializer, defaultPathSerializer, type FetchOptions } from "openapi-fetch";
@@ -61,6 +81,7 @@ const outputs = new Map([
   [new URL("../openapi.json", import.meta.url), document],
   [new URL("../src/client/generated-api.ts", import.meta.url), types],
   [new URL("../src/client/generated-operations.ts", import.meta.url), calls],
+  [new URL("../../desktop/Sources/Dahlia/Models/SyncValidationLimits.generated.swift", import.meta.url), swiftLimits],
 ]);
 for (const [url, content] of outputs) {
   if (process.argv.includes("--check")) {

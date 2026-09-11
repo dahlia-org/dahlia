@@ -1,21 +1,37 @@
-import { z } from "zod";
+import { z } from "@hono/zod-openapi";
 import { screenshotVariantKey, type ScreenshotVariant } from "../sync/screenshot-variants";
 
 const fileDimensionSchema = z.number().int().positive().max(33_554_432);
+export const fileMetadataLimits = {
+  api: { ocrText: 32_768, caption: 1_024 },
+  postgres: { ocrText: 65_536, caption: 2_048 },
+} as const;
 
-export const fileMetadataSchema = z.object({
-  source: z.enum(["upload", "screenshot"]),
-  width: fileDimensionSchema.optional(),
-  height: fileDimensionSchema.optional(),
-  ocr_text: z.string().max(20_000).nullable().optional(),
-  caption: z.string().max(500).nullable().optional(),
-}).strict();
-export type FileMetadata = z.infer<typeof fileMetadataSchema>;
+export function codePointLimitedString(schema: z.ZodString, maxLength: number) {
+  return schema.refine((value) => [...value].length <= maxLength).meta({ maxLength });
+}
+
+function metadataSchema(ocrTextLimit: number, captionLimit: number) {
+  return z.object({
+    source: z.enum(["upload", "screenshot"]),
+    width: fileDimensionSchema.optional(),
+    height: fileDimensionSchema.optional(),
+    ocr_text: codePointLimitedString(z.string(), ocrTextLimit).nullable().optional(),
+    caption: codePointLimitedString(z.string(), captionLimit).nullable().optional(),
+  }).strict();
+}
+
+export const fileMetadataSchema = metadataSchema(fileMetadataLimits.api.ocrText, fileMetadataLimits.api.caption);
+const persistedFileMetadataSchema = metadataSchema(fileMetadataLimits.postgres.ocrText, fileMetadataLimits.postgres.caption);
+export type FileMetadata = z.infer<typeof persistedFileMetadataSchema>;
 
 // The database metadata stays unchanged; the HTTP contract uses camelCase.
 export const fileWireMetadataSchema = fileMetadataSchema.omit({ ocr_text: true }).extend({
   ocrText: fileMetadataSchema.shape.ocr_text,
-}).strict();
+}).strict().openapi("FileWriteMetadata");
+export const fileWireResponseMetadataSchema = persistedFileMetadataSchema.omit({ ocr_text: true }).extend({
+  ocrText: persistedFileMetadataSchema.shape.ocr_text,
+}).strict().openapi("FileMetadata");
 export function fileMetadataFromWire(value: Partial<z.infer<typeof fileWireMetadataSchema>>): Partial<FileMetadata> {
   const { ocrText, ...metadata } = value;
   return { ...metadata, ...(ocrText !== undefined ? { ocr_text: ocrText } : {}) };

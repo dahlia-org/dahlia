@@ -66,7 +66,7 @@ try {
       createNodeAuthStore,
       SummaryService, SummaryWorker, createTranscriptSummaryMethod, createAudioSummaryMethod,
       createPostgresApplicationStore,
-      createPostgresAuthStore,
+      createPostgresAuthStore, migrateApplicationDatabase,
     } from "@dahlia-ai/server/node";
     import { App } from "@dahlia-ai/server/client";
     import { serverMigrationManifest } from "@dahlia-ai/server/migrations";
@@ -85,6 +85,7 @@ try {
     if (typeof createPostgresApplicationStore !== "function" || typeof createPostgresAuthStore !== "function") {
       throw new Error("PostgreSQL store factories are missing from the Node package export");
     }
+    if (typeof migrateApplicationDatabase !== "function") throw new Error("PostgreSQL migration runner is missing from the Node package export");
     const specification = JSON.parse(await readFile(new URL(import.meta.resolve("@dahlia-ai/server/openapi.json")), "utf8"));
     if (specification.openapi !== "3.1.0" || !specification.paths["/api/v1/transactions"]) throw new Error("Missing OpenAPI contract");
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
@@ -161,6 +162,7 @@ try {
       createNodeAuthStore,
       createPostgresApplicationStore,
       createPostgresAuthStore,
+      migrateApplicationDatabase,
     } from "@dahlia-ai/server/node";
     import type { App } from "@dahlia-ai/server/client";
 
@@ -173,6 +175,7 @@ try {
     const store = createD1AuthStore(database);
     const client: typeof App | undefined = undefined;
     void store;
+    void migrateApplicationDatabase;
     void client;
     void createNodeAuthStore;
     void createPostgresApplicationStore;

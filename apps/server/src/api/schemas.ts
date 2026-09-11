@@ -1,5 +1,5 @@
 import { z } from "@hono/zod-openapi";
-import { fileWireMetadataSchema } from "../files/model";
+import { fileWireResponseMetadataSchema } from "../files/model";
 import { recordingManifestSchema } from "../recordings/model";
 import { transcriptMetadataSchema } from "../sync/transcript";
 import { summaryMetadataSchema } from "../summary/metadata";
@@ -34,7 +34,7 @@ export const meeting = z.object({ meetingId: id, vaultId: id, projectId: id.null
   summaryRevision: integer.optional(), transcriptRevision: integer.optional(),
 }).openapi("Meeting");
 export const file = z.object({ id, vaultId: id, name: z.string(), contentType: z.string(), size: integer, checksum: z.string(),
-  metadata: fileWireMetadataSchema, revision: integer, createdAt: date, updatedAt: date, active: z.boolean().optional(),
+  metadata: fileWireResponseMetadataSchema, revision: integer, createdAt: date, updatedAt: date, active: z.boolean().optional(),
   contentUrl: z.string().optional(), variants: z.record(z.string(), z.string()).optional(), ...contentFields,
 }).openapi("File");
 export const meetingFile = z.object({ id, vaultId: id, meetingId: id, fileId: id, capturedAt: date.nullable(), sessionId: id.nullable(),

@@ -82,13 +82,16 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
         let results = decoded.screenshots.map {
             ScreenshotAnalysis(
                 screenshotID: $0.screenshotID,
-                ocrText: String($0.ocrText.prefix(20000)).trimmingCharacters(in: .whitespacesAndNewlines),
-                caption: String(
+                ocrText: SyncValidationLimits.prefix(
+                    $0.ocrText.trimmingCharacters(in: .whitespacesAndNewlines),
+                    maxCodePointCount: SyncValidationLimits.fileOCRText
+                ),
+                caption: SyncValidationLimits.prefix(
                     $0.caption
                         .split(whereSeparator: \.isNewline)
                         .joined(separator: " ")
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                        .prefix(500)
+                        .trimmingCharacters(in: .whitespacesAndNewlines),
+                    maxCodePointCount: SyncValidationLimits.fileCaption
                 )
             )
         }
@@ -164,8 +167,8 @@ private struct ScreenshotAnalysisResponse: Decodable {
                         "type": "object",
                         "properties": [
                             "screenshot_id": ["type": "string"],
-                            "ocr_text": ["type": "string", "maxLength": 20000],
-                            "caption": ["type": "string", "minLength": 1, "maxLength": 500],
+                            "ocr_text": ["type": "string", "maxLength": SyncValidationLimits.fileOCRText],
+                            "caption": ["type": "string", "minLength": 1, "maxLength": SyncValidationLimits.fileCaption],
                         ],
                         "required": ["screenshot_id", "ocr_text", "caption"],
                         "additionalProperties": false,

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../src/config";
 import { DEFAULT_ACCOUNT_SETTINGS } from "../src/account-settings";
 import { createImageCaptioner } from "../src/image-analysis/captioner";
+import { fileMetadataLimits } from "../src/files/model";
 
 const environment = {
   DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "databricks",
@@ -15,10 +16,18 @@ describe("server image captioning", () => {
       if (String(url).endsWith("/token")) return Response.json({ access_token: "app-token", expires_in: 3600 });
       expect(String(url)).toBe("https://workspace.example/ai-gateway/mlflow/v1/responses");
       expect(init?.headers).toMatchObject({ authorization: "Bearer app-token" });
-      const body = JSON.parse(String(init?.body)) as { instructions: string; input: { content: { image_url: string }[] }[] };
+      const body = JSON.parse(String(init?.body)) as {
+        instructions: string;
+        input: { content: { image_url: string }[] }[];
+        text: { format: { schema: { properties: { ocr_text: { maxLength: number }; caption: { maxLength: number } } } } };
+      };
       expect(body).toMatchObject({ model: "catalog.ai.gpt-5-6-luna", store: false, stream: false });
       expect(body.instructions).toContain("language en");
       expect(body.input[0]?.content[0]?.image_url).toBe("data:image/webp;base64,AQID");
+      expect(body.text.format.schema.properties).toMatchObject({
+        ocr_text: { maxLength: fileMetadataLimits.api.ocrText },
+        caption: { maxLength: fileMetadataLimits.api.caption },
+      });
       return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ ocr_text: "", caption: "A diagram" }) }] }] });
     });
     const captioner = createImageCaptioner(loadConfig(environment), transport)!;

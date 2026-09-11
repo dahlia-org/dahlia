@@ -487,7 +487,19 @@ actor SyncWorker {
             operations: operations.map { operation in
                 var data = try operation.payloadJSON.map { try SyncJSON.decoder.decode(JSONValue.self, from: $0) } ?? .object([:])
                 if operation.entity == .file, var fields = data.objectValue, var metadata = fields["metadata"]?.objectValue {
-                    metadata["ocrText"] = metadata.removeValue(forKey: "ocr_text")
+                    metadata["ocrText"] = metadata.removeValue(forKey: "ocr_text") ?? metadata["ocrText"]
+                    if let ocrText = metadata["ocrText"]?.stringValue {
+                        metadata["ocrText"] = .string(SyncValidationLimits.prefix(
+                            ocrText,
+                            maxCodePointCount: SyncValidationLimits.fileOCRText
+                        ))
+                    }
+                    if let caption = metadata["caption"]?.stringValue {
+                        metadata["caption"] = .string(SyncValidationLimits.prefix(
+                            caption,
+                            maxCodePointCount: SyncValidationLimits.fileCaption
+                        ))
+                    }
                     fields["metadata"] = .object(metadata)
                     data = .object(fields)
                 }

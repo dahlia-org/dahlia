@@ -390,44 +390,7 @@
             "type": "string"
           },
           "metadata": {
-            "type": "object",
-            "properties": {
-              "source": {
-                "type": "string",
-                "enum": [
-                  "upload",
-                  "screenshot"
-                ]
-              },
-              "width": {
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 33554432
-              },
-              "height": {
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 33554432
-              },
-              "caption": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "maxLength": 500
-              },
-              "ocrText": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "maxLength": 20000
-              }
-            },
-            "required": [
-              "source"
-            ],
-            "additionalProperties": false
+            "$ref": "#/components/schemas/FileMetadata"
           },
           "revision": {
             "type": "integer",
@@ -473,6 +436,46 @@
           "createdAt",
           "updatedAt"
         ]
+      },
+      "FileMetadata": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "upload",
+              "screenshot"
+            ]
+          },
+          "width": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 33554432
+          },
+          "height": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 33554432
+          },
+          "caption": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048
+          },
+          "ocrText": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 65536
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "additionalProperties": false
       },
       "Transcript": {
         "type": "object",
@@ -1065,6 +1068,46 @@
           "checksum",
           "contentUrl"
         ]
+      },
+      "FileWriteMetadata": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "upload",
+              "screenshot"
+            ]
+          },
+          "width": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 33554432
+          },
+          "height": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 33554432
+          },
+          "caption": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          },
+          "ocrText": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 32768
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "additionalProperties": false
       },
       "CurrentSession": {
         "type": "object",
@@ -2075,44 +2118,7 @@
             "type": "string"
           },
           "metadata": {
-            "type": "object",
-            "properties": {
-              "source": {
-                "type": "string",
-                "enum": [
-                  "upload",
-                  "screenshot"
-                ]
-              },
-              "width": {
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 33554432
-              },
-              "height": {
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 33554432
-              },
-              "caption": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "maxLength": 500
-              },
-              "ocrText": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "maxLength": 20000
-              }
-            },
-            "required": [
-              "source"
-            ],
-            "additionalProperties": false
+            "$ref": "#/components/schemas/FileMetadata"
           },
           "revision": {
             "type": "integer",
@@ -5151,14 +5157,14 @@
                                 "string",
                                 "null"
                               ],
-                              "maxLength": 500
+                              "maxLength": 1024
                             },
                             "ocrText": {
                               "type": [
                                 "string",
                                 "null"
                               ],
-                              "maxLength": 20000
+                              "maxLength": 32768
                             }
                           },
                           "additionalProperties": false
@@ -9835,14 +9841,14 @@
                           "string",
                           "null"
                         ],
-                        "maxLength": 500
+                        "maxLength": 1024
                       },
                       "ocrText": {
                         "type": [
                           "string",
                           "null"
                         ],
-                        "maxLength": 20000
+                        "maxLength": 32768
                       }
                     },
                     "additionalProperties": false

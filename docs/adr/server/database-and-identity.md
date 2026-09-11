@@ -65,6 +65,8 @@ forward migration は既存 receipt 本文を保持したまま結果 ID / revis
 
 `app.image_analysis_jobs` は file ID / Vault ID / owner user ID / model / lease / retry 状態だけの運用 metadata。既存の search job と同様に RLS の対象外とし、Node worker だけが利用する。画像・OCR・caption は queue に複製せず、identity-scoped store の認可と RLS を通して読取り・保存する。追加は forward migration で行い、既存の user / Vault / meeting / file を書き換えない。
 
+OCR / caption の API 上限は OpenAPI `maxLength` の Unicode code point 数としてそれぞれ 32,768 / 1,024 とする。PostgreSQL は最終安全網として `app.files.metadata` と `search.documents` に 65,536 / 2,048 文字の制約を持ち、API validation を制約違反処理の代用にしない。SQLite / D1 には同じ DB 制約を追加しない。
+
 ## アカウント設定の機能別集約（2026-09-08）
 
 個人ごとに1行を維持し、共通の `output_language`、画像解析の `analysis_languages`、要約の `summary` に分ける。

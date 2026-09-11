@@ -56,7 +56,13 @@ struct FileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
 
     var contentHash: String { String(checksum.dropFirst(8)) }
 
-    static func applyCanonical(id: UUID, vaultId: UUID, value: SyncCanonicalPayload, in db: Database) throws {
+    static func applyCanonical(
+        id: UUID,
+        vaultId: UUID,
+        value: SyncCanonicalPayload,
+        preserveTextBody: Bool = false,
+        in db: Database
+    ) throws {
         guard let size = value.size, size >= 0,
               let type = value.contentType, let checksum = value.checksum,
               checksum.hasPrefix("SHA-256:"), checksum.count == 72,
@@ -88,7 +94,7 @@ struct FileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
             localReference: existing?.checksum == checksum ? existing?.localReference : nil,
             remoteReference: source.jsonString()
         ).save(db)
-        if value.contentOmitted != true {
+        if !preserveTextBody, value.contentOmitted != true {
             try FileTextBodyRecord(fileId: id, ocrText: metadata.ocrText, caption: metadata.caption).save(db)
         }
     }
