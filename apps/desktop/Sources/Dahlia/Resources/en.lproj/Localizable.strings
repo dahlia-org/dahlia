@@ -1634,6 +1634,7 @@
 "sync.fetching" = "Fetching changes";
 "sync.retrying" = "Waiting to retry";
 "sync.attention" = "Needs attention";
+"sync.serverError" = "Server error";
 "sync.meetingContents" = "Meeting contents remaining";
 "sync.files" = "Files remaining";
 "sync.attachments" = "Attachment links remaining";

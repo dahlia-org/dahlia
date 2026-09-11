@@ -164,6 +164,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var syncFetching: String { String(localized: "sync.fetching", bundle: bundle) }
     static var syncRetrying: String { String(localized: "sync.retrying", bundle: bundle) }
     static var syncAttention: String { String(localized: "sync.attention", bundle: bundle) }
+    static var syncServerError: String { String(localized: "sync.serverError", bundle: bundle) }
     static var syncMeetingContents: String { String(localized: "sync.meetingContents", bundle: bundle) }
     static var syncFiles: String { String(localized: "sync.files", bundle: bundle) }
     static var syncAttachments: String { String(localized: "sync.attachments", bundle: bundle) }
