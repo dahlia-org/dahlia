@@ -400,6 +400,7 @@ actor SyncWorker {
                 try await $0.getCapabilities().ok.body.json
             }
             let capabilities = try decode(ServerCapabilities.self, from: data)
+            updateTransferSupport(capabilities, connectionId: transaction.connectionId)
             if capabilities.meetingEvents?.version != 1 {
                 // A downgraded Server must not block unrelated durable content behind unsupported diagnostics.
                 try await dbQueue.write { db in
@@ -744,6 +745,17 @@ actor SyncWorker {
                         try? await setRecoveryState("transferBlocked", target: target)
                         continue
                     }
+                    let isTransferBlocked = try await dbQueue.read { db in
+                        try String.fetchOne(
+                            db,
+                            sql: """
+                            SELECT syncRecoveryState FROM vaults
+                            WHERE id = ? AND accountConnectionId = ? AND syncConfirmedConnectionId = ?
+                            """,
+                            arguments: [target.vaultId, target.connectionId, target.connectionId]
+                        ) == "transferBlocked"
+                    }
+                    if isTransferBlocked { continue }
                     if try await RemoteChangeApplier.reconcileMissingVault(
                         vaultId: target.vaultId,
                         expectedConnectionId: target.connectionId,
@@ -791,6 +803,14 @@ actor SyncWorker {
         }
     }
 
+    private func updateTransferSupport(_ capabilities: ServerCapabilities, connectionId: UUID) {
+        if capabilities.vaultTransfers?.version == 1 {
+            transferConnections.insert(connectionId)
+        } else {
+            transferConnections.remove(connectionId)
+        }
+    }
+
     private func pullRemoteChanges(for target: SyncTarget) async throws -> Bool {
         let key = PullKey(database: ObjectIdentifier(dbQueue), vaultId: target.vaultId)
         guard Self.pullingVaults.withLock({ $0.insert(key).inserted }) else { throw TextContentError.changed }
@@ -800,10 +820,10 @@ actor SyncWorker {
                 try await $0.getCapabilities().ok.body.json
             }
             let capabilities = try decode(ServerCapabilities.self, from: data)
+            updateTransferSupport(capabilities, connectionId: target.connectionId)
             guard capabilities.sync?.version == 4 else {
                 throw SyncHTTPError(status: 426, body: Data())
             }
-            if capabilities.vaultTransfers?.version == 1 { transferConnections.insert(target.connectionId) }
             let meetingEventsVersion = capabilities.meetingEvents?.version == 1 ? 1 : 0
             try await dbQueue.write { db in
                 guard try SyncTransactionQueue.matchesExpectedConnection(
@@ -818,15 +838,23 @@ actor SyncWorker {
             try await setRecoveryState("updateRequired", target: target)
             throw error
         }
-        if try await dbQueue
-            .read({ try String.fetchOne($0, sql: "SELECT syncRecoveryState FROM vaults WHERE id = ?", arguments: [target.vaultId]) }) ==
-            "updateRequired" {
+        let recoveryState = try await dbQueue
+            .read { try String.fetchOne($0, sql: "SELECT syncRecoveryState FROM vaults WHERE id = ?", arguments: [target.vaultId]) }
+        if recoveryState == "updateRequired" {
             try await dbQueue.write { db in
                 try db.execute(
                     sql: "UPDATE vaults SET syncRecoveryState = NULL WHERE id = ? AND accountConnectionId = ?",
                     arguments: [target.vaultId, target.connectionId]
                 )
             }
+        }
+        if recoveryState == "transferBlocked" {
+            guard transferConnections.contains(target.connectionId) else { return false }
+            if try await reconcileRelocations(
+                vaultId: target.vaultId,
+                connectionId: target.connectionId,
+                origin: target.origin
+            ) { return false }
         }
         if target.cursor == nil {
             try await recoverSnapshot(target)
@@ -1317,6 +1345,7 @@ actor SyncWorker {
                 WHERE vaults.accountConnectionId = vaults.syncConfirmedConnectionId
                   AND (
                     (vaults.syncPullCursor IS NOT NULL AND vaults.syncRecoveryState IS NULL)
+                    OR vaults.syncRecoveryState = 'transferBlocked'
                     OR NOT EXISTS (SELECT 1 FROM sync_transactions WHERE vaultId = vaults.id)
                     OR EXISTS (
                       SELECT 1 FROM sync_entity_state s

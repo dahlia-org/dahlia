@@ -502,6 +502,7 @@ enum SyncTransactionQueue {
                 JOIN vaults v ON v.id = t.vaultId
                 WHERE v.accountConnectionId = t.connectionId
                   AND v.syncConfirmedConnectionId = t.connectionId
+                  AND (v.syncRecoveryState IS NULL OR v.syncRecoveryState IN ('pending', 'recovering'))
                   AND NOT EXISTS (
                     SELECT 1 FROM sync_entity_state s
                     WHERE s.vaultId = t.vaultId AND s.entity = 'vault' AND s.entityId = t.vaultId
