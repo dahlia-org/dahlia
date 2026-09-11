@@ -253,12 +253,14 @@ describe("dashboard navigation", () => {
     try {
       for (const contentType of ["image/png", "image/tiff", "text/html", "image/svg+xml"]) {
         query.mockReturnValue({ data: { id: "f1", revision: 2, name: "Example", contentType, metadata: { ocrText: "Detected text", caption: "Image caption" }, variants: { thumb_1568: "/preview" } }, error: undefined, loading: false, reload: vi.fn(), replace: vi.fn() });
-        const html = renderToStaticMarkup(createElement(FileViewer, { fileId: "f1", separateTab: true }));
+        const html = renderToStaticMarkup(createElement(FileViewer, { fileId: "f1", separateTab: true, onPrevious: vi.fn(), onNext: vi.fn() }));
         expect(query).toHaveBeenCalledWith(expect.objectContaining({ key: "[\"getFile\",{\"params\":{\"path\":{\"fileId\":\"f1\"}}}]" }));
         expect(html).toContain('aria-label="Image information" aria-expanded="false"');
         expect(html).toContain('aria-label="Copy image"');
         expect(html).toContain('aria-label="Zoom out"');
         expect(html).toContain('aria-label="Zoom in"');
+        expect(html).toContain('aria-label="Previous image"');
+        expect(html).toContain('aria-label="Next image"');
         expect(html).toContain('100%');
         expect(html).not.toContain('<aside');
         expect(html).toContain('download="Example"');

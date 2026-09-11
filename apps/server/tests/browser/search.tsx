@@ -14,7 +14,10 @@ window.fetch = async (input, init) => {
   const request = input instanceof Request ? input : new Request(new URL(input, location.origin), init);
   const path = new URL(request.url).pathname;
   if (path.endsWith("/projects")) return Response.json({ items: [{ projectId: "p1", path: "Parent / Child" }] });
-  if (path === "/api/v1/files/f1") return Response.json({ id: "f1", name: "Image", contentType: "image/png", variants: { thumb_1568: image }, metadata: { caption: "Image preview" } });
+  if (/^\/api\/v1\/files\/f[12]$/.test(path)) {
+    const id = path.split("/").at(-1)!;
+    return Response.json({ id, name: "Image", contentType: "image/png", variants: { thumb_1568: image }, metadata: { caption: `Image preview ${id}` } });
+  }
   if (!/^\/api\/v1\/vaults\/[^/]+\/search$/.test(path)) throw new Error(`Unexpected URL: ${path}`);
   const inputBody: { query: string } = await request.json();
   const body = { ...inputBody, vaultId: path.split("/")[4]! };
@@ -24,7 +27,7 @@ window.fetch = async (input, init) => {
   }
   return Response.json({ vaultId: body.vaultId,
     meetings: Array.from({ length: 30 }, (_, i) => ({ id: `m${i}`, meetingId: `m${i}`, kind: "meeting", title: `${body.query || "Recent"} ${i}`, date: "2026-09-03T00:00:00Z", snippet: "Summary", projectPath: "Parent / Child" })),
-    screenshots: [{ id: "s1", kind: "screenshot", meetingId: "m0", fileId: "f1", title: "Screenshot result", date: "2026-09-03T00:00:00Z", snippet: "OCR" }],
+    screenshots: [1, 2].map((i) => ({ id: `s${i}`, kind: "screenshot", meetingId: "m0", fileId: `f${i}`, title: `Screenshot result ${i}`, date: "2026-09-03T00:00:00Z", snippet: "OCR" })),
     projects: [{ id: "p1", projectId: "p1", kind: "project", title: "Child", projectPath: "Parent / Child", date: "2026-09-03T00:00:00Z", snippet: "" }],
     limited: { meeting: false, screenshot: false, project: false } });
 };
@@ -54,7 +57,7 @@ async function run() {
   const opener = document.querySelector<HTMLButtonElement>(".sidebar-search")!;
   assert(opener.getAttribute("aria-label") === "Search" && opener.querySelector("svg") && !opener.textContent, "Search icon is missing its accessible label");
   opener.focus(); opener.click();
-  await until(() => document.querySelectorAll(".search-result").length === 8);
+  await until(() => document.querySelectorAll(".search-result").length === 9);
   assert(document.activeElement === input(), "Initial focus missing");
   const thumbnail = document.querySelector<HTMLImageElement>(".search-result img")!;
   assert(thumbnail.getAttribute("src") === "/api/v1/files/f1/variants/thumb_480", "Thumbnail route must select bounded variant");
@@ -83,9 +86,13 @@ async function run() {
   await until(() => !document.querySelector("dialog"));
   assert(location.pathname === "/meetings/m1", "Arrow/Enter rank navigation failed");
   assert(document.activeElement === opener, "Focus not restored");
-  key("k", window, { ctrlKey: true }); await until(() => document.querySelectorAll(".search-result").length === 8);
+  key("k", window, { ctrlKey: true }); await until(() => document.querySelectorAll(".search-result").length === 9);
   key("7", input(), { metaKey: true });
-  await until(() => document.querySelector<HTMLImageElement>(".file-preview-image")?.naturalWidth);
+  await until(() => document.querySelector<HTMLImageElement>(".file-dialog .file-preview-image")?.getAttribute("alt") === "Image preview f1");
+  key("ArrowRight", window);
+  await until(() => document.querySelector<HTMLImageElement>(".file-preview-image")?.getAttribute("alt") === "Image preview f2");
+  key("ArrowLeft", window);
+  await until(() => document.querySelector<HTMLImageElement>(".file-preview-image")?.getAttribute("alt") === "Image preview f1");
   document.querySelector("dialog")!.dispatchEvent(new Event("cancel", { cancelable: true }));
   await until(() => input());
   document.querySelector("dialog")!.dispatchEvent(new Event("cancel", { cancelable: true }));

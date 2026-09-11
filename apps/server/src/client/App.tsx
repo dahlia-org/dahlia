@@ -29,7 +29,7 @@ import {
 import { dashboardNavigationEvent, dashboardNavigationPath, navigateDashboard } from "./navigation";
 import { clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedProjectInfo } from "./api";
 import { DetailTabs, MeetingTabs, parseSummary, SummaryTags } from "./MeetingContent";
-import { FileLink, FileViewer } from "./FileViewer";
+import { FileDialog, FileLink, FileViewer } from "./FileViewer";
 import { MenuIcon, Sidebar, SidebarProvider, useSidebar } from "./Sidebar";
 
 export interface SessionInfo {
@@ -810,7 +810,10 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
   const [recovering, setRecovering] = useState(false);
   const latestSummary = useLiveJSON<LatestSummary>(apiQuery("getLatestSummary", { params: { path: { meetingId } } }));
   const [selectedSummary, setSelectedSummary] = useState<number | null>(null);
-  useEffect(() => { setSelectedSummary(null); }, [meetingId]);
+  const [screenshotPreview, setScreenshotPreview] = useState<{ fileId: string; capturedAt?: string | null }>();
+  const [loadAfterFileId, setLoadAfterFileId] = useState<string>();
+  const screenshotReturnFocus = useRef<{ fileId: string; element: HTMLAnchorElement } | undefined>(undefined);
+  useEffect(() => { setSelectedSummary(null); setScreenshotPreview(undefined); setLoadAfterFileId(undefined); screenshotReturnFocus.current = undefined; }, [meetingId]);
   const currentSummary = latestSummary.data?.record;
   const document = useMemo(() => parseSummary(currentSummary?.document ?? undefined), [currentSummary?.document]);
   const project = projectsQuery.data?.items.find((item) => item.projectId === meeting?.projectId);
@@ -829,7 +832,35 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
       },
     });
   };
-  const visibleScreenshots = screenshots?.filter((screenshot) => screenshot.file.metadata.source === "screenshot");
+  const visibleScreenshots = useMemo(() => screenshots?.filter((screenshot) => screenshot.file.metadata.source === "screenshot"), [screenshots]);
+  const previewIndex = screenshotPreview ? visibleScreenshots?.findIndex((screenshot) => screenshot.file.id === screenshotPreview.fileId) ?? -1 : -1;
+  const previousScreenshot = previewIndex > 0 ? visibleScreenshots?.[previewIndex - 1] : undefined;
+  const nextScreenshot = previewIndex >= 0 ? visibleScreenshots?.[previewIndex + 1] : undefined;
+  useEffect(() => {
+    if (!loadAfterFileId) return;
+    const loadedIndex = visibleScreenshots?.findIndex((screenshot) => screenshot.file.id === loadAfterFileId) ?? -1;
+    const loadedNext = loadedIndex >= 0 ? visibleScreenshots?.[loadedIndex + 1] : undefined;
+    if (loadedNext) {
+      setScreenshotPreview({ fileId: loadedNext.file.id, capturedAt: loadedNext.capturedAt });
+      setLoadAfterFileId(undefined);
+    } else if (loadedIndex < 0 || screenshotsQuery.error || (!loadingScreenshots && !screenshotCursor)) {
+      setLoadAfterFileId(undefined);
+    } else if (!loadingScreenshots) {
+      screenshotsQuery.loadMore();
+    }
+  }, [loadAfterFileId, loadingScreenshots, screenshotCursor, screenshotsQuery.error, visibleScreenshots]);
+  const openScreenshot = (screenshot: SyncedScreenshotInfo, link?: HTMLAnchorElement) => {
+    if (link) screenshotReturnFocus.current = { fileId: screenshot.file.id, element: link };
+    setScreenshotPreview({ fileId: screenshot.file.id, capturedAt: screenshot.capturedAt });
+  };
+  const closeScreenshot = () => {
+    const opener = screenshotReturnFocus.current;
+    const returnFocus = opener?.element.isConnected ? opener.element : [...globalThis.document.querySelectorAll<HTMLAnchorElement>(".screenshot-grid a")]
+      .find((link) => link.getAttribute("href") === `/files/${opener?.fileId}`);
+    setScreenshotPreview(undefined);
+    setLoadAfterFileId(undefined);
+    returnFocus?.focus({ preventScroll: true });
+  };
   return (
     <article className="meeting-detail" aria-busy={!meeting && (meetingQuery.loading || vaultQuery.loading)}>
       {meeting && <header className="meeting-header">
@@ -851,6 +882,12 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
         {meeting.description?.trim() && <details className="meeting-description"><summary>{uiText("Description", "説明")}</summary><p>{meeting.description}</p></details>}
       </header>}
       {dialog}
+      {screenshotPreview && <FileDialog fileId={screenshotPreview.fileId} capturedAt={screenshotPreview.capturedAt}
+        onClose={closeScreenshot}
+        onPrevious={previousScreenshot ? () => openScreenshot(previousScreenshot) : undefined}
+        onNext={nextScreenshot ? () => openScreenshot(nextScreenshot) : screenshotCursor && !loadingScreenshots && !loadAfterFileId ? () => {
+          setLoadAfterFileId(screenshotPreview.fileId);
+        } : undefined} />}
       {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
       <DataError error={meetingQuery.error} retry={meetingQuery.reload} />
       <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
@@ -872,7 +909,7 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
           {visibleScreenshots?.length === 0 && <p className="content-empty">{uiText("No screenshots", "スクリーンショットはありません")}</p>}
           <div className="screenshot-grid">
             {visibleScreenshots?.map((screenshot) => (
-              <ScreenshotFigure key={screenshot.id} file={screenshot.file} capturedAt={screenshot.capturedAt} />
+              <ScreenshotFigure key={screenshot.id} file={screenshot.file} capturedAt={screenshot.capturedAt} onOpen={(link) => openScreenshot(screenshot, link)} />
             ))}
           </div>
           {screenshotCursor && <button className="secondary load-more" disabled={loadingScreenshots} onClick={screenshotsQuery.loadMore}>
@@ -885,7 +922,10 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
   );
 }
 
-export function ScreenshotFigure({ file, capturedAt }: { file: SyncedScreenshotInfo["file"]; capturedAt?: string | null }) {
+export function ScreenshotFigure({ file, capturedAt, onOpen }: {
+  file: SyncedScreenshotInfo["file"]; capturedAt?: string | null;
+  onOpen?: (link: HTMLAnchorElement) => void;
+}) {
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     const retry = () => setFailed(false);
@@ -895,7 +935,7 @@ export function ScreenshotFigure({ file, capturedAt }: { file: SyncedScreenshotI
   }, []);
   const original = apiUrls.getFileContent({ params: { path: { fileId: file.id } } });
   return <figure className="panel">
-    <FileLink fileId={file.id} capturedAt={capturedAt} label={uiText("Open screenshot", "スクリーンショットを開く")}>
+    <FileLink fileId={file.id} capturedAt={capturedAt} onOpen={onOpen} label={uiText("Open screenshot", "スクリーンショットを開く")}>
       {failed ? <span role="alert">{uiText("Unable to load screenshot.", "スクリーンショットを読み込めませんでした。")}</span> : <img
         src={file.variants?.thumb_480 ?? original}
         alt={file.metadata.caption || uiText("Screenshot", "スクリーンショット")}

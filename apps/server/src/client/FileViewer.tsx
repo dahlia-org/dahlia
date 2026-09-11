@@ -10,7 +10,14 @@ function ViewerIcon({ path }: { path: string }) {
   return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={path} /></svg>;
 }
 
-export function FileViewer({ fileId, separateTab = false, capturedAt, onClose }: { fileId: string; separateTab?: boolean; capturedAt?: string | null; onClose?: () => void }) {
+export function FileViewer({ fileId, separateTab = false, capturedAt, onClose, onPrevious, onNext }: {
+  fileId: string;
+  separateTab?: boolean;
+  capturedAt?: string | null;
+  onClose?: () => void;
+  onPrevious?: () => void;
+  onNext?: () => void;
+}) {
   const query = useLiveJSON<FileInfo>(apiQuery("getFile", { params: { path: { fileId: fileId } } }));
   const file = query.data;
   const [failed, setFailed] = useState(false);
@@ -21,6 +28,20 @@ export function FileViewer({ fileId, separateTab = false, capturedAt, onClose }:
   const content = apiUrls.getFileContent({ params: { path: { fileId } } });
   useEffect(() => setFailed(false), [file]);
   useEffect(() => { setZoom(100); setInfoOpen(false); setCopyStatus(""); }, [fileId]);
+  useEffect(() => {
+    if (!onPrevious && !onNext) return;
+    const navigate = (event: globalThis.KeyboardEvent) => {
+      let action: (() => void) | undefined;
+      if (event.key === "ArrowLeft") action = onPrevious;
+      else if (event.key === "ArrowRight") action = onNext;
+      else return;
+      if (!action) return;
+      event.preventDefault();
+      action();
+    };
+    window.addEventListener("keydown", navigate);
+    return () => window.removeEventListener("keydown", navigate);
+  }, [onPrevious, onNext]);
 
   function closeOnBackdropClick(event: MouseEvent<HTMLElement>) {
     if (event.target !== event.currentTarget) return;
@@ -91,6 +112,10 @@ export function FileViewer({ fileId, separateTab = false, capturedAt, onClose }:
       {!file && !query.error && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
       {file && <div className="file-image-size" style={{ width: `${zoom}%`, height: `${zoom}%` }}>{preview}</div>}
     </div>
+    {(onPrevious || onNext) && <>
+      <button className="file-navigation previous" aria-label={uiText("Previous image", "前の画像")} disabled={!onPrevious} onClick={onPrevious}>‹</button>
+      <button className="file-navigation next" aria-label={uiText("Next image", "次の画像")} disabled={!onNext} onClick={onNext}>›</button>
+    </>}
     {infoOpen && file && <aside className="file-info" aria-label={infoLabel}>
       <h2>{infoLabel}</h2>
       <dl>
@@ -113,30 +138,48 @@ export function FileViewer({ fileId, separateTab = false, capturedAt, onClose }:
   </section>;
 }
 
-export function FileLink({ fileId, label, children, capturedAt }: { fileId: string; label: string; children: ReactNode; capturedAt?: string | null }) {
+export function FileDialog({ fileId, capturedAt, onClose, onPrevious, onNext, returnFocus }: {
+  fileId: string;
+  capturedAt?: string | null;
+  onClose: () => void;
+  onPrevious?: () => void;
+  onNext?: () => void;
+  returnFocus?: HTMLElement | null;
+}) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const link = useRef<HTMLAnchorElement>(null);
-  const [open, setOpen] = useState(false);
   useEffect(() => {
-    if (!open) return;
     const element = dialog.current!;
     element.showModal();
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { element.close(); document.body.style.overflow = overflow; };
-  }, [open]);
+    return () => { document.body.style.overflow = overflow; };
+  }, []);
+  return <dialog ref={dialog} className="file-dialog" aria-label={uiText("File preview", "ファイルプレビュー")}
+    onClose={() => { onClose(); returnFocus?.focus({ preventScroll: true }); }}
+    onClick={(event) => { if (event.target === event.currentTarget) dialog.current?.close(); }}>
+    <div className="file-dialog-content">
+      <FileViewer fileId={fileId} capturedAt={capturedAt} separateTab onClose={() => dialog.current?.close()}
+        onPrevious={onPrevious} onNext={onNext} />
+    </div>
+  </dialog>;
+}
+
+export function FileLink({ fileId, label, children, capturedAt, onOpen }: {
+  fileId: string;
+  label: string;
+  children: ReactNode;
+  capturedAt?: string | null;
+  onOpen?: (link: HTMLAnchorElement) => void;
+}) {
+  const link = useRef<HTMLAnchorElement>(null);
+  const [open, setOpen] = useState(false);
   return <>
     <a ref={link} href={`/files/${fileId}`} aria-label={label} onClick={(event) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       event.preventDefault();
-      setOpen(true);
+      if (onOpen) onOpen(event.currentTarget);
+      else setOpen(true);
     }}>{children}</a>
-    {open && <dialog ref={dialog} className="file-dialog" aria-label={uiText("File preview", "ファイルプレビュー")}
-      onClose={() => { setOpen(false); link.current?.focus({ preventScroll: true }); }}
-      onClick={(event) => { if (event.target === event.currentTarget) dialog.current?.close(); }}>
-      <div className="file-dialog-content">
-        <FileViewer key={fileId} fileId={fileId} capturedAt={capturedAt} separateTab onClose={() => dialog.current?.close()} />
-      </div>
-    </dialog>}
+    {open && <FileDialog fileId={fileId} capturedAt={capturedAt} returnFocus={link.current} onClose={() => setOpen(false)} />}
   </>;
 }
