@@ -73,14 +73,20 @@ describe("SQLite canonical sync", () => {
         baseRevision: 2, data: { ...update, icalUid: "incomplete" } }]))).rejects.toThrow();
       for (const calendarEvent of [
         { start: "invalid", end: identity.calendarEvent.end, is_all_day: false },
+        { start: identity.calendarEvent.end, end: identity.calendarEvent.start, is_all_day: false },
+        { start: "2026-09-03T00:00:00.0009Z", end: "2026-09-03T00:00:00.0001Z", is_all_day: false },
         { ...identity.calendarEvent, is_all_day: "false" },
         { ...identity.calendarEvent, title: "not part of the snapshot" },
       ]) {
         await expect(service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId,
           baseRevision: 2, data: { ...update, calendarEvent } }]))).rejects.toThrow();
       }
+      const equalEvent = { start: "2026-09-03T00:00:00.123456Z", end: "2026-09-03T09:00:00.123456+09:00", is_all_day: false };
       await service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId,
-        baseRevision: 2, data: { ...update, icalUid: null, recurrenceId: null, calendarEvent: null } }]));
+        baseRevision: 2, data: { ...update, calendarEvent: equalEvent } }]));
+      expect(await read()).toMatchObject({ calendarEvent: equalEvent });
+      await service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId,
+        baseRevision: 3, data: { ...update, icalUid: null, recurrenceId: null, calendarEvent: null } }]));
       expect(await read()).toMatchObject({ icalUid: null, recurrenceId: null, calendarEvent: null });
     } finally { await store.close?.(); }
   });
