@@ -14,7 +14,7 @@ macOS、ローカル SQLite、録音、UI、内蔵 Codex / local MCP。
 - [実行コンテキストと UI projection](desktop/concurrency-and-projection.md)
 - [SQLite backup / restore](desktop/database-backup.md)
 - [Local MCP と Project 階層](desktop/local-mcp-and-projects.md)
-- [顧客情報の正準モデルと更新](desktop/customer-intelligence.md)
+- [顧客情報の正準モデルと更新（廃止済み）](desktop/customer-intelligence.md)
 - [内蔵 AI skill と context](desktop/ai-skills-and-context.md)
 - [Codex runtime と stdio](desktop/codex-runtime.md)
 - [Desktop の認証と account 分離](desktop/accounts.md)
@@ -44,6 +44,7 @@ Desktop / Server / 外部 client 間の契約。
 - [Desktop / Server / MCP の OAuth 契約](shared/oauth.md)
 - [文字起こし・要約の処理場所](shared/transcription-summary-processing.md)
 - [Desktop / Server の canonical sync](shared/sync.md)
+- [顧客インテリジェンス廃止とCalendar参加者スナップショット](shared/calendar-attendee-snapshots.md)
 - [Desktop / Gateway の AI timeout](shared/ai-timeouts.md)
 
 ## Monorepo

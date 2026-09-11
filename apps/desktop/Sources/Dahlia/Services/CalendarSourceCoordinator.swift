@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import GRDB
 
 @MainActor
 protocol CalendarEventSourceStore: AnyObject, Sendable {
@@ -21,11 +22,15 @@ final class CalendarSourceCoordinator: ObservableObject {
 
     private let storesBySource: [CalendarSource: any CalendarEventSourceStore]
     private var cancellables: Set<AnyCancellable> = []
+    private var dbQueue: DatabaseQueue?
+    private var persistedSources: Set<CalendarSource> = []
+    private var persistenceTask: Task<Void, Never>?
 
-    init(stores: [any CalendarEventSourceStore]) {
+    init(stores: [any CalendarEventSourceStore], dbQueue: DatabaseQueue? = nil) {
         storesBySource = Dictionary(uniqueKeysWithValues: stores.map { ($0.source, $0) })
         eventsBySource = Dictionary(uniqueKeysWithValues: stores.map { ($0.source, $0.upcomingEvents) })
         loadedSources = Set(stores.filter(\.isLoaded).map(\.source))
+        self.dbQueue = dbQueue
 
         for store in stores {
             store.upcomingEventsPublisher
@@ -42,7 +47,12 @@ final class CalendarSourceCoordinator: ObservableObject {
         }
     }
 
+    func configure(dbQueue: DatabaseQueue) {
+        self.dbQueue = dbQueue
+    }
+
     func refreshEnabledSources(_ enabledSources: Set<CalendarSource>, force: Bool = false) async {
+        persistedSources = enabledSources
         await withTaskGroup(of: Void.self) { group in
             for source in CalendarSource.allCases where enabledSources.contains(source) {
                 guard let store = storesBySource[source] else { continue }
@@ -51,6 +61,7 @@ final class CalendarSourceCoordinator: ObservableObject {
                 }
             }
         }
+        schedulePersistence()
     }
 
     func events(for enabledSources: Set<CalendarSource>, requiringLoadedSources: Bool = false) -> [CalendarEvent] {
@@ -70,6 +81,31 @@ final class CalendarSourceCoordinator: ObservableObject {
     private func updateEvents(_ events: [CalendarEvent], for source: CalendarSource) {
         guard eventsBySource[source] != events else { return }
         eventsBySource[source] = events
+        guard persistedSources.contains(source) else { return }
+        schedulePersistence()
+    }
+
+    private func schedulePersistence() {
+        guard let dbQueue, !persistedSources.isEmpty else { return }
+        let snapshot = CalendarSource.allCases
+            .filter { persistedSources.contains($0) }
+            .flatMap { eventsBySource[$0] ?? [] }
+            .deduplicatedAcrossSources(mergingMissingMetadata: false)
+        let previousTask = persistenceTask
+        persistenceTask = Task {
+            await previousTask?.value
+            do {
+                try await dbQueue.write { db in
+                    try CalendarEventRecord.refreshLinked(events: snapshot, now: .now, in: db)
+                }
+            } catch {
+                ErrorReportingService.capture(error, context: ["source": "calendarEventRefreshPersistence"])
+            }
+        }
+    }
+
+    func waitForPersistence() async {
+        await persistenceTask?.value
     }
 
     private func updateLoadedState(_ isLoaded: Bool, for source: CalendarSource) {

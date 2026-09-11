@@ -304,6 +304,216 @@
             }
         }
 
+        @Test
+        func capabilityRemovalStopsRelocationPollingAndAppliesChanges() async throws {
+            let fixture = try Fixture()
+            let initialPage = try page(vaultId: fixture.vaultId, [], cursor: "middle")
+            let changedPage = try page(vaultId: fixture.vaultId, [fixture.fileChange(revision: 2)], cursor: "after")
+            let capabilityRequestCount = Mutex(0)
+            let changeRequestCount = Mutex(0)
+            let relocationRequestCount = Mutex(0)
+            let client = fixture.client { request in
+                let path = request.url!.path
+                if path.hasSuffix("capabilities") {
+                    let requestNumber = capabilityRequestCount.withLock { count in
+                        count += 1
+                        return count
+                    }
+                    if requestNumber == 1 {
+                        return (200, [:], Data(#"{"sync":{"version":4},"vaultTransfers":{"version":1}}"#.utf8))
+                    }
+                    return (200, [:], Data(#"{"sync":{"version":4}}"#.utf8))
+                }
+                if path.hasSuffix("/changes") {
+                    let requestNumber = changeRequestCount.withLock { count in
+                        count += 1
+                        return count
+                    }
+                    return (200, [:], requestNumber == 1 ? initialPage : changedPage)
+                }
+                if path.hasSuffix("/relocations") {
+                    relocationRequestCount.withLock { count in
+                        count += 1
+                    }
+                    return (200, [:], Data(#"{"vaults":[],"items":[]}"#.utf8))
+                }
+                return (503, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            try await worker.synchronizeForTransfer(vaultId: fixture.vaultId, connectionId: fixture.connectionId)
+            try await worker.synchronizeForTransfer(vaultId: fixture.vaultId, connectionId: fixture.connectionId)
+            #expect(capabilityRequestCount.withLock { $0 } == 2)
+            #expect(relocationRequestCount.withLock { $0 } == 1)
+            try await fixture.queue.read { db throws in
+                #expect(try Int.fetchOne(
+                    db,
+                    sql: "SELECT confirmedRevision FROM sync_entity_state WHERE entity = 'file' AND entityId = ?",
+                    arguments: [fixture.fileId]
+                ) == 2)
+                #expect(try String.fetchOne(
+                    db,
+                    sql: "SELECT syncPullCursor FROM vaults WHERE id = ?",
+                    arguments: [fixture.vaultId]
+                ) == "after")
+            }
+        }
+
+        @Test
+        func eventCapabilityRefreshStopsStaleRelocationPolling() async throws {
+            let fixture = try Fixture()
+            let initialPage = try page(vaultId: fixture.vaultId, [], cursor: "middle")
+            let capabilityRequestCount = Mutex(0)
+            let relocationRequestCount = Mutex(0)
+            let receipt = Mutex<Data?>(nil)
+            let client = fixture.client { request in
+                let path = request.url!.path
+                if path.hasSuffix("capabilities") {
+                    let requestNumber = capabilityRequestCount.withLock { count in
+                        count += 1
+                        return count
+                    }
+                    return requestNumber == 1
+                        ? (200, [:], Data(#"{"sync":{"version":4},"meetingEvents":{"version":1},"vaultTransfers":{"version":1}}"#.utf8))
+                        : (200, [:], Data(#"{"sync":{"version":4},"meetingEvents":{"version":1}}"#.utf8))
+                }
+                if path.hasSuffix("/changes") { return (200, [:], initialPage) }
+                if path.hasSuffix("/relocations") {
+                    let requestNumber = relocationRequestCount.withLock { count in
+                        count += 1
+                        return count
+                    }
+                    return requestNumber == 1
+                        ? (200, [:], Data(#"{"vaults":[],"items":[]}"#.utf8))
+                        : (503, [:], Data())
+                }
+                if path == "/api/v1/transactions", let receipt = receipt.withLock({ $0 }) { return (200, [:], receipt) }
+                return (503, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            try await worker.synchronizeForTransfer(vaultId: fixture.vaultId, connectionId: fixture.connectionId)
+            try await fixture.queue.write { db in
+                try MeetingEventRecorder.record(.tagAdded, meetingId: fixture.meetingId, relatedId: "tag", in: db)
+            }
+            let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue))
+            let operation = try #require(transaction.operations.first)
+            receipt.withLock { value in
+                value = Data(#"{"id":"\#(transaction.id)","status":"committed","cursor":"event","records":[{"entity":"meeting_event","id":"\#(operation.entityId)","revision":null,"record":null}]}"#.utf8)
+            }
+            let response = try await worker.push(transaction)
+            #expect(response?.id == transaction.id)
+            #expect(capabilityRequestCount.withLock { $0 } == 2)
+            #expect(relocationRequestCount.withLock { $0 } == 1)
+        }
+
+        @Test(arguments: [false, true])
+        func transferBlockSurvivesCapabilityRemoval(pendingEvent: Bool) async throws {
+            let fixture = try Fixture()
+            let queued = try await fixture.queue.write { db -> (transaction: UUID, operation: UUID)? in
+                try db.execute(sql: "UPDATE vaults SET syncMeetingEventsVersion = 1 WHERE id = ?", arguments: [fixture.vaultId])
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state VALUES (?, 'vault', ?, 1)",
+                    arguments: [fixture.vaultId, fixture.vaultId]
+                )
+                let result: (UUID, UUID)?
+                if pendingEvent {
+                    try MeetingEventRecorder.record(.tagAdded, meetingId: fixture.meetingId, relatedId: "tag", in: db)
+                    result = try Row.fetchOne(db, sql: """
+                    SELECT t.id, o.entityId FROM sync_transactions t
+                    JOIN sync_operations o ON o.transactionId = t.id WHERE o.entity = 'meeting_event'
+                    """).map { ($0["id"], $0["entityId"]) }
+                } else {
+                    result = nil
+                }
+                try db.execute(sql: "UPDATE vaults SET syncRecoveryState = 'transferBlocked' WHERE id = ?", arguments: [fixture.vaultId])
+                return result
+            }
+            let capabilityRequests = Mutex(0)
+            let changeRequests = Mutex(0)
+            let relocationRequests = Mutex(0)
+            let commits = Mutex(0)
+            let client = fixture.client { request in
+                let path = request.url!.path
+                if path.hasSuffix("capabilities") {
+                    capabilityRequests.withLock { $0 += 1 }
+                    return (200, [:], Data(#"{"sync":{"version":4},"meetingEvents":{"version":1}}"#.utf8))
+                }
+                if path.hasSuffix("/changes") {
+                    changeRequests.withLock { $0 += 1 }
+                    return (404, [:], Data(#"{"code":"vault_not_found"}"#.utf8))
+                }
+                if path.hasSuffix("/relocations") {
+                    relocationRequests.withLock { $0 += 1 }
+                    return (503, [:], Data())
+                }
+                if path == "/api/v1/transactions", let queued {
+                    commits.withLock { $0 += 1 }
+                    return (200, [:], Data(#"{"id":"\#(queued.transaction)","status":"committed","cursor":"event","records":[{"entity":"meeting_event","id":"\#(queued.operation)","revision":null,"record":null}]}"#.utf8))
+                }
+                return (503, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            await worker.drain()
+            let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+            while ContinuousClock.now < deadline, changeRequests.withLock({ $0 }) == 0, commits.withLock({ $0 }) == 0 {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            await worker.stop()
+            #expect(capabilityRequests.withLock { $0 } > 0)
+            #expect(changeRequests.withLock { $0 } == 0)
+            #expect(relocationRequests.withLock { $0 } == 0)
+            #expect(commits.withLock { $0 } == 0)
+            try await fixture.queue.read { db throws in
+                let vault = try #require(try VaultRecord.fetchOne(db, key: fixture.vaultId))
+                #expect(vault.syncConfirmedConnectionId == fixture.connectionId)
+                #expect(vault.syncPullCursor == "before")
+                #expect(vault.syncRecoveryState == "transferBlocked")
+                #expect(try SyncTransactionQueue.hasPending(vaultId: fixture.vaultId, in: db) == pendingEvent)
+                #expect(try MeetingRecord.fetchOne(db, key: fixture.meetingId) != nil)
+                #expect(try FileRecord.fetchOne(db, key: fixture.fileId) != nil)
+            }
+        }
+
+        @Test
+        func cursorlessTransferBlockReconcilesBeforeResumingQueuedWrites() async throws {
+            let fixture = try Fixture()
+            try await fixture.queue.write { db in
+                try db.execute(
+                    sql: """
+                    UPDATE vaults SET syncMeetingEventsVersion = 1, syncPullCursor = NULL,
+                        syncRecoveryState = 'transferBlocked' WHERE id = ?
+                    """,
+                    arguments: [fixture.vaultId]
+                )
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state VALUES (?, 'vault', ?, 1)",
+                    arguments: [fixture.vaultId, fixture.vaultId]
+                )
+                try MeetingEventRecorder.record(.tagAdded, meetingId: fixture.meetingId, relatedId: "tag", in: db)
+            }
+            let relocationRequests = Mutex(0)
+            let client = fixture.client { request in
+                let path = request.url!.path
+                if path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"sync":{"version":4},"meetingEvents":{"version":1},"vaultTransfers":{"version":1}}"#.utf8))
+                }
+                if path.hasSuffix("/relocations") {
+                    relocationRequests.withLock { $0 += 1 }
+                    return (200, [:], Data(#"{"vaults":[],"items":[]}"#.utf8))
+                }
+                return (503, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            #expect(try await worker.pullRemoteChanges(vaultId: fixture.vaultId, connectionId: fixture.connectionId))
+            #expect(relocationRequests.withLock { $0 } == 1)
+            let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue))
+            #expect(transaction.operations.allSatisfy { $0.entity == .meetingEvent })
+            #expect(try await fixture.queue.read { try String.fetchOne($0, sql: "SELECT syncRecoveryState FROM vaults") } == "pending")
+        }
+
         private nonisolated static func requestBody(_ request: URLRequest) -> Data {
             if let body = request.httpBody { return body }
             guard let stream = request.httpBodyStream else { return Data() }

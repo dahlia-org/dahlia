@@ -114,13 +114,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let batchAudioRetentionPeriodUserDefaultsKey = "batchAudioRetentionPeriodDays"
     private nonisolated static let legacyRetainAudioAfterBatchTranscriptionUserDefaultsKey =
         "retainAudioAfterBatchTranscription"
-    nonisolated static let customerIntelligenceBetaEnabledUserDefaultsKey = "customerIntelligenceBetaEnabled"
     nonisolated static let conversationAnalyticsBetaEnabledUserDefaultsKey = "conversationAnalyticsBetaEnabled"
-    nonisolated static let automaticOrganizationMembershipEnabledUserDefaultsKey = "automaticOrganizationMembershipEnabled"
     nonisolated static let automaticMeetingEndRecordingStopUserDefaultsKey = "automaticMeetingEndRecordingStopEnabled"
-    nonisolated static let customerIntelligenceSectionUserDefaultsKey = "customerIntelligenceSection"
-    nonisolated static let customerIntelligenceScopeUserDefaultsKey = "customerIntelligenceScope"
-    nonisolated static let customerIntelligenceTableDensityUserDefaultsKey = "customerIntelligenceTableDensity"
     nonisolated static let meetingSearchRankingWeightsUserDefaultsKey = "meetingSearchRankingWeights"
     nonisolated static let meetingSearchJudgmentsUserDefaultsKey = "meetingSearchBenchmarkJudgmentsV2"
     nonisolated static let meetingSidebarRowStyleUserDefaultsKey = "meetingSidebarRowStyle"
@@ -129,7 +124,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let zoomMeetingLinkOpenTargetUserDefaultsKey = "zoomMeetingLinkOpenTarget"
     nonisolated static let teamsMeetingLinkOpenTargetUserDefaultsKey = "teamsMeetingLinkOpenTarget"
     nonisolated static let slackMeetingLinkOpenTargetUserDefaultsKey = "slackMeetingLinkOpenTarget"
-    nonisolated static let defaultCustomerIntelligenceBetaEnabled = false
     nonisolated static let defaultConversationAnalyticsBetaEnabled = false
     nonisolated static let defaultGoogleDriveExportFolderName = "Dahlia"
     private nonisolated static let legacyGoogleDriveExportFolderName = "Meeting Notes"
@@ -155,20 +149,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     // MARK: - ベータ機能
 
-    @AppStorage(AppSettings.customerIntelligenceBetaEnabledUserDefaultsKey)
-    var isCustomerIntelligenceBetaEnabled = AppSettings.defaultCustomerIntelligenceBetaEnabled
-
     @AppStorage(AppSettings.conversationAnalyticsBetaEnabledUserDefaultsKey)
     var isConversationAnalyticsBetaEnabled = AppSettings.defaultConversationAnalyticsBetaEnabled
-
-    @AppStorage(AppSettings.customerIntelligenceSectionUserDefaultsKey)
-    var customerIntelligenceSectionRawValue = CustomerIntelligenceSection.overview.rawValue
-
-    @AppStorage(AppSettings.customerIntelligenceScopeUserDefaultsKey)
-    var customerIntelligenceScopeRawValue = ""
-
-    @AppStorage(AppSettings.customerIntelligenceTableDensityUserDefaultsKey)
-    var customerIntelligenceTableDensityRawValue = CustomerIntelligenceTableDensity.standard.rawValue
 
     // MARK: - 表示言語
 
@@ -576,8 +558,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     var teamsMeetingLinkOpenTargetRawValue = MeetingLinkOpenTarget.inheritGlobal.rawValue
     @AppStorage(AppSettings.slackMeetingLinkOpenTargetUserDefaultsKey)
     var slackMeetingLinkOpenTargetRawValue = MeetingLinkOpenTarget.inheritGlobal.rawValue
-    @AppStorage(AppSettings.automaticOrganizationMembershipEnabledUserDefaultsKey)
-    var isAutomaticOrganizationMembershipEnabled = true
     nonisolated static let googleOAuthClientIDOverrideUserDefaultsKey = "googleOAuthClientIDOverride"
     nonisolated static let googleOAuthClientSecretOverrideKey = "googleOAuthClientSecretOverride"
     @AppStorage(AppSettings.googleOAuthClientIDOverrideUserDefaultsKey) var googleOAuthClientIDOverride = ""

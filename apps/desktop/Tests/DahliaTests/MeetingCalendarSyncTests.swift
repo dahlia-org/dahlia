@@ -75,13 +75,26 @@
                         ).save(meetingId: localID, in: db)
                     }
                 }
-                try CalendarEventRecord.upsert(event: event(start: 3600, end: 10800, allDay: true), now: .now, in: db)
+                let attendee = CalendarParticipant(
+                    email: "person@example.com",
+                    displayName: "Person",
+                    kind: .person,
+                    isCurrentUser: false
+                )
+                try CalendarEventRecord.upsert(event: event(participants: [attendee]), now: .now, in: db)
                 // Re-observation with no snapshot change must not add another transaction.
-                try CalendarEventRecord.upsert(event: event(start: 3600, end: 10800, allDay: true), now: .now, in: db)
+                try CalendarEventRecord.upsert(event: event(participants: [attendee]), now: .now, in: db)
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == 1)
             }
             let first = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
             #expect(Set(first.operations.map(\.entityId)) == [meeting.id, secondID])
+            for operation in first.operations {
+                let data = try #require(operation.payloadJSON)
+                let body = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+                let calendar = try #require(body["calendarEvent"] as? [String: Any])
+                let attendees = try #require(calendar["attendees"] as? [[String: Any]])
+                #expect(attendees.first?["email"] as? String == "person@example.com")
+            }
             try await database.dbQueue.write { db in
                 try CalendarEventRecord.upsert(event: event(start: 7200, end: 14400, allDay: false), now: .now, in: db)
             }
@@ -140,12 +153,17 @@
             return try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         }
 
-        private nonisolated func event(start: TimeInterval = 0, end: TimeInterval = 3600, allDay: Bool = false) -> CalendarEvent {
+        private nonisolated func event(
+            start: TimeInterval = 0,
+            end: TimeInterval = 3600,
+            allDay: Bool = false,
+            participants: [CalendarParticipant] = []
+        ) -> CalendarEvent {
             CalendarEvent(
                 id: "event", calendarID: "calendar", calendarName: "Calendar", calendarColorHex: nil,
                 platformId: "event", title: "Event", description: "", icalUid: "event@example.com",
                 startDate: Date(timeIntervalSince1970: start), endDate: Date(timeIntervalSince1970: end),
-                isAllDay: allDay, conferenceURI: nil
+                isAllDay: allDay, participants: participants, conferenceURI: nil
             )
         }
 

@@ -298,6 +298,13 @@ final class AppDatabaseManager: Sendable {
             try addColumnIfNeeded(in: db, table: "meetings", column: "calendarSyncMetadata", type: .blob)
         }
 
+        migrator.registerMigration(
+            "v44_removeCustomerIntelligence",
+            foreignKeyChecks: .deferred
+        ) { db in
+            try CustomerIntelligenceRemovalMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

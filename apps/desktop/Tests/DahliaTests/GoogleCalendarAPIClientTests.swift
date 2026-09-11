@@ -172,8 +172,6 @@ import Foundation
             #expect(event.participants.first?.isCurrentUser == true)
             let colleague = try #require(event.participants.first { $0.email == "colleague@example.com" })
             #expect(colleague.displayName == "Colleague")
-            #expect(colleague.role == .optional)
-            #expect(colleague.responseStatus == .accepted)
             #expect(colleague.kind == .person)
         }
 

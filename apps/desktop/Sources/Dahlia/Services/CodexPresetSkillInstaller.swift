@@ -3,12 +3,14 @@ import Foundation
 struct BundledCodexPresetSkillInstaller {
     nonisolated static let skillNames = [
         "projects-optimizer",
+        "meeting-reviewer",
+    ]
+    nonisolated static let obsoleteSkillNames = [
+        "organize-projects-meetings",
         "contacts-organizations-curator",
         "conversation-topics-curator",
         "insights-curator",
-        "meeting-reviewer",
     ]
-    nonisolated static let obsoleteSkillNames = ["organize-projects-meetings"]
 
     private static let bundledResourceDirectory = "CodexSkills"
 

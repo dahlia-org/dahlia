@@ -6,9 +6,6 @@ public struct MeetingQuery: Sendable, Equatable {
     public var simple: Bool
     public var project: String?
     public var projectID: UUID?
-    public var organizationID: UUID?
-    public var includeOrganizationDescendants: Bool
-    public var topicID: UUID?
     public var icalUID: String?
     public var createdFrom: Date?
     public var createdBefore: Date?
@@ -21,9 +18,6 @@ public struct MeetingQuery: Sendable, Equatable {
         simple: Bool = false,
         project: String? = nil,
         projectID: UUID? = nil,
-        organizationID: UUID? = nil,
-        includeOrganizationDescendants: Bool = false,
-        topicID: UUID? = nil,
         icalUID: String? = nil,
         createdFrom: Date? = nil,
         createdBefore: Date? = nil,
@@ -35,9 +29,6 @@ public struct MeetingQuery: Sendable, Equatable {
         self.simple = simple
         self.project = project
         self.projectID = projectID
-        self.organizationID = organizationID
-        self.includeOrganizationDescendants = includeOrganizationDescendants
-        self.topicID = topicID
         self.icalUID = icalUID
         self.createdFrom = createdFrom
         self.createdBefore = createdBefore
@@ -307,6 +298,12 @@ public struct MeetingProjectMembershipResult: Codable, Sendable, Equatable {
     public let changed: Bool
     public let changedMeetingIDs: [UUID]
     public let projectID: UUID?
+
+    private enum CodingKeys: String, CodingKey {
+        case changed
+        case changedMeetingIDs = "changedMeetingIds"
+        case projectID
+    }
 }
 
 public typealias JSONValue = DahliaRuntimeSupport.JSONValue
@@ -335,19 +332,8 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
     case projectFileConflict(String)
     case projectTypeOwnedByRoot
     case meetingMembershipConflict
-    case organizationNotFound
-    case contactNotFound
-    case conversationTopicNotFound
-    case insightNotFound
-    case invalidResourceFilter
-    case invalidCustomerIntelligenceData
     case workspaceBusy
     case workspaceRollbackFailed
-    case invalidCustomerIntelligenceMutation
-    case invalidCustomerIntelligenceReference
-    case customerIntelligenceRevisionConflict
-    case customerIntelligenceResourceInUse(String)
-    case duplicateContactEmail
     case summaryNotFound
     case summaryVersionConflict
     case summaryScreenshotNotFound
@@ -401,32 +387,10 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
             "Only a root project can have an explicit project type."
         case .meetingMembershipConflict:
             "At least one meeting no longer has the expected project membership; no meetings were changed."
-        case .organizationNotFound:
-            "The organization was not found in the configured vault."
-        case .contactNotFound:
-            "The contact was not found in the configured vault."
-        case .conversationTopicNotFound:
-            "The conversation topic was not found in the configured vault."
-        case .insightNotFound:
-            "The insight was not found in the configured vault."
-        case .invalidResourceFilter:
-            "resource_type and resource_id must be supplied together, using a supported resource type."
-        case .invalidCustomerIntelligenceData:
-            "Stored customer intelligence data is invalid. Open Dahlia and repair or remove the affected record."
         case .workspaceBusy:
             "Another Dahlia process is updating this vault. Refresh the project state and try again."
         case .workspaceRollbackFailed:
             "The workspace update failed and its filesystem rollback also failed."
-        case .invalidCustomerIntelligenceMutation:
-            "The customer intelligence change is invalid."
-        case .invalidCustomerIntelligenceReference:
-            "The related resource does not exist in the configured vault or is not supported."
-        case .customerIntelligenceRevisionConflict:
-            "The record changed after it was read. Query it again before retrying."
-        case let .customerIntelligenceResourceInUse(message):
-            message
-        case .duplicateContactEmail:
-            "Another Contact already uses this email. Use resolve_contact when merging a provisional Contact."
         case .summaryNotFound:
             "The meeting has no summary yet. Generate the summary in Dahlia before updating it."
         case .summaryVersionConflict:
@@ -440,18 +404,11 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
 
     public var reasonCode: String {
         switch self {
-        case .vaultNotFound, .meetingNotFound, .projectNotFound, .organizationNotFound,
-             .contactNotFound, .conversationTopicNotFound, .insightNotFound,
-             .screenshotNotFound, .summaryNotFound:
+        case .vaultNotFound, .meetingNotFound, .projectNotFound, .screenshotNotFound, .summaryNotFound:
             "not_found"
-        case .projectConflict, .meetingMembershipConflict, .customerIntelligenceRevisionConflict,
-             .summaryVersionConflict:
+        case .projectConflict, .meetingMembershipConflict, .summaryVersionConflict:
             "revision_conflict"
-        case .customerIntelligenceResourceInUse:
-            "resource_in_use"
-        case .duplicateContactEmail:
-            "duplicate_email"
-        case .invalidResourceFilter, .invalidCustomerIntelligenceReference, .summaryScreenshotNotFound:
+        case .summaryScreenshotNotFound:
             "invalid_reference"
         case .workspaceBusy:
             "database_busy"

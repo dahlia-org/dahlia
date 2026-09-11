@@ -34,7 +34,7 @@ resources:
 
   apps:
     dahlia_server:
-      name: ${var.app_name}
+      name: mcp-dahlia-server-${bundle.target}
       description: Dahlia Server backed by Lakebase.
       compute_size: LARGE
       source_code_path: ../../../apps/server

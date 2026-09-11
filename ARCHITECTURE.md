@@ -112,35 +112,22 @@ workflow 境界で型付き `UsageTelemetryEvent` を生成し、`UsageTelemetry
 SDK 初期化時の cache I/O は background で行い、準備完了前のイベントは欠測を許容する。送信完了を待たず、独自の再送・永続キューを持たない。許可データと SDK 境界は
 [`匿名テレメトリ収集ポリシー`](docs/telemetry.md) を正本とする。
 
-顧客インテリジェンスは録音クリティカルパス外の、再試行可能な補助永続化である。
+Calendar参加者は、ContactやOrganizationへ名寄せせず、Calendar Eventのスナップショットとして保持する。
 
 ```text
 Google Calendar / EventKit
     ↓ CalendarEvent.participants
-Meeting creation / recording-start coordinator
-    ├─ core Meeting transaction
-    └─ post-commit CustomerIntelligenceIngestionService (best effort)
-       └─ recordings: only after capture starts successfully
-            ├─ Vault-scoped Contact
-            ├─ Meeting participant
-            ├─ domain → one or more root Organizations
-            └─ unambiguous, setting-enabled Organization membership
-
-SQLite typed records
-    ├─ Organization / unit / domain / membership
-    ├─ Contact / Meeting participation
-    ├─ Project resource reference
-    ├─ Glossary term
-    └─ Insight + typed evidence/context reference
-            ↓ bounded, Vault-scoped queries (read-only by default; writes only with --write)
-        Dahlia MCP
+CalendarAttendeeNormalizer
+    ↓ person・有効なemail・現在ユーザー除外・正規化emailで重複排除
+calendar_events.attendees_json
+    ↓ writable Server VaultのMeeting更新
+meetings.calendar_event.attendees
+    └─ encrypted Vaultではcalendar_event全体をencrypted_payloadへ格納
 ```
 
-Contactのローカルidentityは `UUID + (vaultId, email)` であり、Vault横断またはクラウド全体の人物identityではない。
-Organization/Contactなどの正準レコードと、AIまたは人によるInsightを分離する。Insightのreview状態は正準レコードへの
-write-backを発生させない。汎用参照は書き込み時にtarget存在とVault一致を検証し、target削除時はtriggerで除去する。
-詳細な判断と将来のContact統合条件は
-[正準モデルと AI の主張](docs/adr/desktop/customer-intelligence.md#正準モデルと-ai-の主張)を正本とする。
+Desktopはemailと表示名だけを保存し、Serverは旧Desktopがattendeesを省略した更新では既存値を維持する。
+空配列は参加者だけを消去し、`calendarEvent: null`はCalendar Eventスナップショット全体を消去する。
+廃止した顧客インテリジェンスの判断は[履歴ADR](docs/adr/desktop/customer-intelligence.md)に残す。
 
 任意の Dahlia Server runtime は内蔵 Codex の provider transport を所有し、macOS の録音・文字起こし critical path には入らない。
 macOS の Dahlia アカウントは Vault の所有者ではなく、アプリ共有の接続として SQLite に登録する。OAuth credential と remote identity は

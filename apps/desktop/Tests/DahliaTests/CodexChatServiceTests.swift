@@ -775,6 +775,7 @@ import Foundation
             #expect(instructions?.contains("cite the sources") == true)
             #expect(instructions?.contains("<live_transcript source=\"dahlia\">") == true)
             #expect(instructions?.contains("Select Dahlia preset skills automatically") == true)
+            #expect(instructions?.contains("customer intelligence") == false)
             #expect(instructions?.contains("solely to read that preset's SKILL.md") == true)
             #expect(instructions?.contains("unless the user's request cannot be completed without them") == true)
             #expect(instructions?.contains("asked of the user as an approval prompt") == true)

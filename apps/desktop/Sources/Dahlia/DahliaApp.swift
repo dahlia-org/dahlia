@@ -3,7 +3,6 @@ import SwiftUI
 
 enum WindowID {
     static let main = "main"
-    static let organizationWorkspace = "organization-workspace"
     static let audioRecognitionTest = "audio-recognition-test"
     static let applicationLogs = "application-logs"
     static let codexChat = "codex-chat"
@@ -271,7 +270,6 @@ struct DahliaApp: App {
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updater: updateController.updater)
             }
-            OrganizationWorkspaceCommands()
         }
 
         WindowGroup(L10n.chat, id: WindowID.codexChat, for: CodexChatSessionID.self) { $sessionID in
@@ -301,21 +299,6 @@ struct DahliaApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 620, height: 720)
-        .windowResizability(.contentMinSize)
-        .restorationBehavior(.disabled)
-        .dahliaSettingsCommands(mainWindowNavigation)
-
-        Window(L10n.customerIntelligence, id: WindowID.organizationWorkspace) {
-            OrganizationWorkspaceView(
-                sidebarViewModel: sidebarViewModel,
-                chatCoordinator: chatCoordinator,
-                mainWindowNavigation: mainWindowNavigation
-            )
-            .dahliaAppearance()
-            .dahliaSimpleWindowStyle()
-        }
-        .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 1380, height: 820)
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
         .dahliaSettingsCommands(mainWindowNavigation)
@@ -383,6 +366,7 @@ struct DahliaApp: App {
         }
         AppDelegate.backupRestoreOutcome = restoreOutcome
         startup.show(.loadingVaults)
+        CalendarSourceCoordinator.shared.configure(dbQueue: db.dbQueue)
         try? await ScreenshotStorageMaintenance.compactAtStartup(dbQueue: db.dbQueue)
         appDatabase = db
         let vaultAISettings = VaultAISettingsModel.shared
@@ -612,18 +596,14 @@ struct DahliaApp: App {
             do {
                 if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(
                     event,
-                    vaultId: vault.id,
-                    customerIntelligenceIngestion: startTranscription
-                        ? .afterCaptureStarts
-                        : .afterMeetingPersistence
+                    vaultId: vault.id
                 ) {
                     sidebarViewModel.selectMeeting(existingMeetingId)
                     if startTranscription, vault.allowsCanonicalEdits {
                         startTranscriptionForMeeting(
                             existingMeetingId,
                             in: db,
-                            vault: vault,
-                            customerIntelligenceEvent: event
+                            vault: vault
                         )
                     }
                     return
@@ -641,18 +621,13 @@ struct DahliaApp: App {
                 dbQueue: db.dbQueue,
                 vaultURL: vault.url
             )
-            guard let meetingId = viewModel.materializeDraftMeeting(
-                customerIntelligenceIngestion: startTranscription
-                    ? .afterCaptureStarts
-                    : .afterMeetingPersistence
-            ) else { return }
+            guard let meetingId = viewModel.materializeDraftMeeting() else { return }
             sidebarViewModel.selectMeeting(meetingId)
             if startTranscription {
                 startTranscriptionForMeeting(
                     meetingId,
                     in: db,
-                    vault: vault,
-                    customerIntelligenceEvent: event
+                    vault: vault
                 )
             }
             return
@@ -677,8 +652,7 @@ struct DahliaApp: App {
     private func startTranscriptionForMeeting(
         _ meetingId: UUID,
         in db: AppDatabaseManager,
-        vault: VaultRecord,
-        customerIntelligenceEvent: CalendarEvent? = nil
+        vault: VaultRecord
     ) {
         let ctx: (projectURL: URL?, projectId: UUID?, projectName: String?)
         do {
@@ -701,17 +675,6 @@ struct DahliaApp: App {
                 reservation: reservation
             )
             recordingCoordinator.recordingDidStart()
-            if let customerIntelligenceEvent,
-               viewModel.isListening,
-               viewModel.recordingMeetingId == meetingId {
-                CustomerIntelligenceIngestionService.schedule(
-                    calendarEvent: customerIntelligenceEvent,
-                    meetingId: meetingId,
-                    vaultId: vault.id,
-                    observedAt: .now,
-                    dbQueue: db.dbQueue
-                )
-            }
         }
     }
 

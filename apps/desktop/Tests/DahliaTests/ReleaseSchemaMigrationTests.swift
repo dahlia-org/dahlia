@@ -117,12 +117,68 @@
             let database = try AppDatabaseManager(path: ":memory:")
             let identifiers = AppDatabaseManager.migrationIdentifiers
             let releaseIndex = try #require(identifiers.firstIndex(of: "v41_vaultAISettingsBackfill"))
-            #expect(Array(identifiers.dropFirst(releaseIndex + 1)) == ["v42_localFirstSchema", "v43_meetingCalendarSync"])
+            #expect(Array(identifiers.dropFirst(releaseIndex + 1)) == [
+                "v42_localFirstSchema", "v43_meetingCalendarSync", "v44_removeCustomerIntelligence",
+            ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
                 #expect(try !db.columns(in: "vaults").contains { $0.name == "appearance" })
                 #expect(try !db.columns(in: "projects").contains { $0.name == "appearance" })
                 #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+            }
+        }
+
+        @Test
+        func customerIntelligenceRemovalKeepsMeetingsAndCalendarEvents() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v43_meetingCalendarSync")
+            let vaultID = UUID.v7()
+            let meetingID = UUID.v7()
+            let now = Date(timeIntervalSince1970: 1_789_000_000)
+            try queue.write { db in
+                try VaultRecord(
+                    id: vaultID,
+                    path: nil,
+                    name: "Migration",
+                    createdAt: now,
+                    lastOpenedAt: now
+                ).insert(db)
+                try db.execute(sql: """
+                INSERT INTO calendar_events (
+                    ical_uid, recurrence_id, created_at, updated_at, title, description,
+                    start, "end", is_all_day
+                ) VALUES ('migration@example.invalid', '', ?, ?, 'Event', '', ?, ?, 0)
+                """, arguments: [now, now, now, now.addingTimeInterval(3600)])
+                try MeetingRecord(
+                    id: meetingID,
+                    vaultId: vaultID,
+                    projectId: nil,
+                    name: "Meeting",
+                    createdAt: now,
+                    updatedAt: now,
+                    calendarEventIcalUid: "migration@example.invalid",
+                    calendarEventRecurrenceId: ""
+                ).insert(db)
+                try db.execute(sql: """
+                INSERT INTO contacts (id, vaultId, displayName, revision, createdAt, updatedAt)
+                VALUES (?, ?, 'Removed', 1, ?, ?)
+                """, arguments: [UUID.v7(), vaultID, now, now])
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            try queue.read { db in
+                for table in CustomerIntelligenceRemovalMigration.removedTables {
+                    #expect(try !db.tableExists(table))
+                }
+                #expect(try !db.tableExists("glossary_terms"))
+                #expect(try !db.tableExists("glossary_term_references"))
+                #expect(try MeetingRecord.fetchOne(db, key: meetingID)?.name == "Meeting")
+                let event = try #require(try CalendarEventRecord.fetchOne(
+                    db,
+                    key: ["ical_uid": "migration@example.invalid", "recurrence_id": ""]
+                ))
+                #expect(event.attendees.isEmpty)
             }
         }
     }

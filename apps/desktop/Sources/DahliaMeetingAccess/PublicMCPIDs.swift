@@ -5,7 +5,7 @@ import Foundation
 enum PublicMCPIDs {
     static func arguments(_ value: [String: Any], tool: String) throws -> [String: Any] {
         let optionalStringKeys: Set = [
-            "query", "project", "project_id", "organization_id", "topic_id", "ical_uid",
+            "query", "project", "project_id", "ical_uid",
             "created_from", "created_before", "cursor", "server_cursor",
         ]
         let arguments = value.filter { key, value in
@@ -40,10 +40,6 @@ enum PublicMCPIDs {
                 return converted
             }
         }
-        if let relationship = original["relationship"] as? String, relationship.hasSuffix("_resource_reference"),
-           let target = original["target_id"] {
-            body["target_id"] = try PublicIDWire.transform(target, shape: "resourceID", direction: .encode, parent: arguments)
-        }
         if let cursor = original["next_cursor"] as? String {
             body["next_cursor"] = try convertCursor(cursor, tool: tool, direction: .encode)
         }
@@ -70,16 +66,7 @@ enum PublicMCPIDs {
         guard let data = Data(base64Encoded: value), var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw TypeID.Failure.invalidID
         }
-        var fields: [String: TypeID.Kind] = ["vaultID": .vault, "meetingID": .meeting, "segmentID": .segment, "screenshotID": .attachment]
-        let kind: TypeID.Kind? = switch tool {
-        case "query_organizations": .organization
-        case "query_contacts": .contact
-        case "query_conversation_topics": .topic
-        case "query_insights": .insight
-        case "query_project_resources": .projectReference
-        default: nil
-        }
-        fields["id"] = kind
+        let fields: [String: TypeID.Kind] = ["vaultID": .vault, "meetingID": .meeting, "segmentID": .segment, "screenshotID": .attachment]
         for (key, kind) in fields {
             if let value = object[key] { object[key] = try cursorID(value, kind: kind, direction: direction) }
         }
@@ -100,35 +87,15 @@ enum PublicMCPIDs {
     }
 
     private static func convertScope(_ scope: String, tool: String, direction: PublicIDWire.Direction) throws -> String {
-        if tool == "query_project_resources" {
-            var parts = scope.components(separatedBy: ":")
-            guard parts.count == 3 else { throw TypeID.Failure.invalidID }
-            parts[1] = try cursorID(parts[1], kind: .project, direction: direction) as? String ?? ""
-            return parts.joined(separator: ":")
-        }
         if tool == "query_meetings" || tool == "query_screenshots" {
             guard let data = Data(base64Encoded: scope), var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 throw TypeID.Failure.invalidID
             }
-            for (key, kind) in ["projectID": TypeID.Kind.project, "topicID": .topic, "organizationID": .organization] {
-                if let value = object[key] { object[key] = try cursorID(value, kind: kind, direction: direction) }
+            if let value = object["projectID"] {
+                object["projectID"] = try cursorID(value, kind: .project, direction: direction)
             }
             return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]).base64EncodedString()
         }
-        let parts = scope.components(separatedBy: ":")
-        guard parts.count == 2, let data = Data(base64Encoded: parts[1]),
-              var values = try JSONSerialization.jsonObject(with: data) as? [Any] else { throw TypeID.Failure.invalidID }
-        if tool == "query_organizations", values.count == 4 {
-            values[2] = try cursorID(values[2], kind: .organization, direction: direction)
-        } else if tool == "query_contacts", values.count == 2 {
-            values[1] = try cursorID(values[1], kind: .organization, direction: direction)
-        } else if tool == "query_conversation_topics", values.count == 3 {
-            values[0] = try cursorID(values[0], kind: .organization, direction: direction)
-            values[2] = try cursorID(values[2], kind: .project, direction: direction)
-        } else if tool == "query_insights", values.count == 3 {
-            values[2] = try PublicIDWire.transform(values[2], shape: "resourceID", direction: direction, parent: ["resource_type": values[1]])
-            if direction == .decode, let string = values[2] as? String { values[2] = string.uppercased() }
-        }
-        return try parts[0] + ":" + JSONSerialization.data(withJSONObject: values, options: [.sortedKeys]).base64EncodedString()
+        return scope
     }
 }

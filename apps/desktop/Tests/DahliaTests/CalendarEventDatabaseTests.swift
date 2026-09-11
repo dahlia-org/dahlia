@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -118,6 +119,41 @@ import GRDB
         }
 
         @Test
+        func persistsNormalizedPersonAttendeesOnly() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let event = calendarEvent(
+                recurrenceId: "",
+                participants: [
+                    .init(email: " Alice@Example.COM ", displayName: " Alice ", kind: .person, isCurrentUser: false),
+                    .init(email: "alice@example.com", displayName: nil, kind: .person, isCurrentUser: false),
+                    .init(email: "me@example.com", displayName: "Me", kind: .person, isCurrentUser: true),
+                    .init(email: "room@example.com", displayName: "Room", kind: .room, isCurrentUser: false),
+                    .init(email: "invalid", displayName: "Invalid", kind: .person, isCurrentUser: false),
+                ]
+            )
+            let key = try #require(event.key)
+
+            let record = try database.dbQueue.write { db in
+                try CalendarEventRecord.upsert(event: event, now: .now, in: db)
+                let record = try CalendarEventRecord.fetch(key: key, in: db)
+                return try #require(record)
+            }
+
+            #expect(record.attendees == [
+                CalendarAttendeeSnapshot(email: "alice@example.com", displayName: "Alice"),
+            ])
+        }
+
+        @Test
+        func attendeeDisplayNameFitsServerUTF16Limit() throws {
+            let displayName = String(repeating: "😀", count: 250) + "A"
+            let normalized = try #require(CalendarAttendeeNormalizer.displayName(displayName))
+
+            #expect(normalized == String(repeating: "😀", count: 250))
+            #expect(normalized.utf16.count == 500)
+        }
+
+        @Test
         func meetingLookupIsScopedToTheActiveVault() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let activeVault = VaultRecord(
@@ -175,16 +211,14 @@ import GRDB
             #expect(
                 try repository.resolveMeetingIdForCalendarEvent(
                     event,
-                    vaultId: activeVault.id,
-                    customerIntelligenceIngestion: .afterMeetingPersistence
+                    vaultId: activeVault.id
                 )
                     == tiedActiveMeetingId
             )
             #expect(
                 try repository.resolveMeetingIdForCalendarEvent(
                     event,
-                    vaultId: otherVault.id,
-                    customerIntelligenceIngestion: .afterMeetingPersistence
+                    vaultId: otherVault.id
                 )
                     == otherMeetingId
             )
@@ -289,7 +323,8 @@ import GRDB
 
     private func calendarEvent(
         recurrenceId: String,
-        url: URL? = nil
+        url: URL? = nil,
+        participants: [CalendarParticipant] = []
     ) -> CalendarEvent {
         let start = Date(timeIntervalSince1970: 1_776_384_000)
         return CalendarEvent(
@@ -306,6 +341,7 @@ import GRDB
             startDate: start,
             endDate: start.addingTimeInterval(3600),
             isAllDay: false,
+            participants: participants,
             conferenceURI: nil,
             url: url
         )

@@ -2447,8 +2447,7 @@ final class CaptionViewModel: ObservableObject {
     func materializeDraftMeeting(
         projectURL: URL? = nil,
         projectId: UUID? = nil,
-        projectName: String? = nil,
-        customerIntelligenceIngestion: CustomerIntelligenceIngestionPolicy
+        projectName: String? = nil
     ) -> UUID? {
         guard !isRecordingStartPending else { return nil }
         if let currentMeetingId {
@@ -2522,16 +2521,6 @@ final class CaptionViewModel: ObservableObject {
             projectName: resolvedProject?.name ?? requestedProjectName,
             vaultURL: vaultURL
         )
-        if customerIntelligenceIngestion == .afterMeetingPersistence,
-           let event = draftMeeting.linkedCalendarEvent {
-            CustomerIntelligenceIngestionService.schedule(
-                calendarEvent: event,
-                meetingId: meetingId,
-                vaultId: vault.id,
-                observedAt: now,
-                dbQueue: dbQueue
-            )
-        }
         if !noteText.isEmpty {
             saveNoteImmediately()
         }
@@ -3686,17 +3675,6 @@ final class CaptionViewModel: ObservableObject {
                 if transcriptionMode == .realtime {
                     usageTelemetryReporter(.transcription(.started, mode: mode))
                 }
-            }
-            if existingMeetingId == nil,
-               let event = activeDraftMeeting?.linkedCalendarEvent,
-               let meetingId = currentMeetingId {
-                CustomerIntelligenceIngestionService.schedule(
-                    calendarEvent: event,
-                    meetingId: meetingId,
-                    vaultId: vaultId,
-                    observedAt: recordingStartTime,
-                    dbQueue: dbQueue
-                )
             }
             pendingRealtimeRecognitionFailure = nil
             await MeetingEventRecorder.recordStarted(sessionId: recordingSessionId, dbQueue: dbQueue)
@@ -5382,7 +5360,7 @@ final class CaptionViewModel: ObservableObject {
 
     private func saveNote(text: String) {
         if currentMeetingId == nil, hasDraftMeeting, !text.isEmpty {
-            _ = materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence)
+            _ = materializeDraftMeeting()
             return
         }
         guard let meetingId = currentMeetingId,

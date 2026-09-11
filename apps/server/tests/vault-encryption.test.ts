@@ -87,7 +87,9 @@ it("encrypts canonical content, patches and receipts while preserving plaintext 
   const now = new Date();
   await f.commit(f.transaction([{ id: uuidV7(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
     data: { name: "PRIVATE_MEETING_MARKER", description: "PRIVATE_DESCRIPTION_MARKER", projectId: null, status: "READY", duration: null,
-      recordingStartedAt: null, createdAt: now, updatedAt: now, searchText: "allowed search", embeddingContentHash: "public-search-hash" } }]));
+      recordingStartedAt: null, createdAt: now, updatedAt: now, searchText: "allowed search", embeddingContentHash: "public-search-hash",
+      calendarEvent: { start: now.toISOString(), end: now.toISOString(), is_all_day: false,
+        attendees: [{ email: "private-attendee@example.com", display_name: "PRIVATE_ATTENDEE_MARKER" }] } } }]));
   const summaryTx = f.transaction([{ id: uuidV7(), entity: "summary", action: "update", entityId: meetingId, baseRevision: 0,
     data: { title: "PRIVATE_SUMMARY_MARKER", document: JSON.stringify({ description: "PRIVATE_SUMMARY_BODY_MARKER", sections: [] }), createdAt: now } }]);
   await f.commit(summaryTx);
@@ -103,7 +105,10 @@ it("encrypts canonical content, patches and receipts while preserving plaintext 
       segmentCount: 1, deletionCount: 0, chunks: [{ index: 0, sha256: hash, segmentCount: 1, deletionCount: 0 }] } }]));
   const read = () => f.store.sync.withIdentity(owner, (sync) => sync.listTranscript(f.vaultId, meetingId, 10));
   expect(await read()).toMatchObject([{ text: "PRIVATE_TRANSCRIPT_MARKER", speakerLabel: "PRIVATE_SPEAKER_MARKER" }]);
-  expect(await f.store.sync.withIdentity(owner, (sync) => sync.getMeeting(f.vaultId, meetingId))).toMatchObject({ name: "PRIVATE_MEETING_MARKER", summaryTitle: "PRIVATE_SUMMARY_MARKER" });
+  expect(await f.store.sync.withIdentity(owner, (sync) => sync.getMeeting(f.vaultId, meetingId))).toMatchObject({
+    name: "PRIVATE_MEETING_MARKER", summaryTitle: "PRIVATE_SUMMARY_MARKER",
+    calendarEvent: { attendees: [{ email: "private-attendee@example.com", display_name: "PRIVATE_ATTENDEE_MARKER" }] },
+  });
   expect(await f.store.sync.withIdentity(outsider, (sync) => sync.getMeeting(f.vaultId, meetingId))).toBeNull();
   f.db.exec("UPDATE jobs_search_index SET available_at = 0");
   const [job] = await f.store.searchIndex!.claim("test", 32, 1);
@@ -119,6 +124,11 @@ it("encrypts canonical content, patches and receipts while preserving plaintext 
   for (const table of ["vaults", "meetings", "summaries", "transcripts", "transcript_segments", "transaction_receipts"]) {
     expect(JSON.stringify(f.db.prepare(`SELECT * FROM ${table}`).all()), table).not.toContain("PRIVATE_");
   }
+  const encryptedMeeting = f.db.prepare(
+    "SELECT calendar_event, encrypted_payload FROM meetings WHERE meeting_id = ?",
+  ).get(meetingId) as { calendar_event: null; encrypted_payload: string };
+  expect(encryptedMeeting.calendar_event).toBeNull();
+  expect(typeof encryptedMeeting.encrypted_payload).toBe("string");
   const nextPatch = uuidV7();
   await f.commit(f.transaction([{ id: nextPatch, entity: "transcript", action: "patch", entityId: meetingId, baseRevision: 1,
     data: { transcript: { id: nextPatch, startedAt: now, endedAt: null, metadata }, mode: "append", patchId: nextPatch,

@@ -224,6 +224,39 @@
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func transferBlockWhilePushIsSuspendedStopsCommit() async throws {
+            let fixture = try SyncTransferFixture()
+            defer { fixture.close() }
+            _ = try await fixture.queue.write { db in
+                try SyncTransactionRecorder.record(
+                    vaultId: fixture.vaultId,
+                    operations: [.init(entity: .meeting, action: .delete, entityId: .v7())],
+                    in: db
+                )
+            }
+            let first = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue))
+            try await SyncTransactionQueue.retry(first, code: "network", dbQueue: fixture.queue)
+            try await fixture.makeRetryAvailable()
+            let retry = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue))
+            await fixture.server.gateNextResolve()
+            let worker = fixture.worker()
+            let push = Task { try await worker.push(retry) }
+            for await count in fixture.server.resolveStarts where count == 1 {
+                break
+            }
+            try await fixture.queue.write { db in
+                try db.execute(sql: "UPDATE vaults SET syncRecoveryState = 'transferBlocked'")
+            }
+            await fixture.server.releaseResolve()
+            await #expect(throws: CancellationError.self) {
+                _ = try await push.value
+            }
+            await worker.stop()
+            #expect(await fixture.server.commitIds.isEmpty)
+            #expect(try await fixture.queue.read { try SyncTransactionQueue.hasPending(vaultId: fixture.vaultId, in: $0) })
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func boundedStagingReducesFixedLatencyTransferTime() async throws {
             let serial = try SyncTransferFixture(), parallel = try SyncTransferFixture()
             defer { serial.close()
@@ -496,8 +529,10 @@
     private actor SyncTransferServer {
         nonisolated let uploadStarts: AsyncStream<Int>
         nonisolated let uploadCancellations: AsyncStream<Int>
+        nonisolated let resolveStarts: AsyncStream<Int>
         private let started: AsyncStream<Int>.Continuation
         private let cancelled: AsyncStream<Int>.Continuation
+        private let resolveStarted: AsyncStream<Int>.Continuation
         var events: [String] = []
         var commitIds: [UUID] = []
         var transactionBodies: [Data] = []
@@ -514,10 +549,13 @@
         private var files: [String: FileRecord] = [:]
         private var uploadFailures: [String: Int] = [:]
         private var receipts: [String: Data] = [:]
+        private var gateResolve = false
+        private var resolveRelease: CheckedContinuation<Void, Never>?
 
         init() {
             (uploadStarts, started) = AsyncStream.makeStream(of: Int.self)
             (uploadCancellations, cancelled) = AsyncStream.makeStream(of: Int.self)
+            (resolveStarts, resolveStarted) = AsyncStream.makeStream(of: Int.self)
         }
 
         func register(_ file: FileRecord) { files[file.id.uuidString.lowercased()] = file }
@@ -527,6 +565,11 @@
         func expirePullCursor() { expiredPullCursor = true }
         func useCompactReceipts() { compactReceipts = true }
         func useCanonicalFileReceipts() { canonicalFileReceipts = true }
+        func gateNextResolve() { gateResolve = true }
+        func releaseResolve() {
+            resolveRelease?.resume()
+            resolveRelease = nil
+        }
 
         func handle(_ request: URLRequest) async throws -> (Int, Data) {
             let path = request.url!.path
@@ -564,6 +607,11 @@
                 try transactionBodies.append(JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]))
                 if path.hasSuffix("/resolve") {
                     resolveCount += 1
+                    resolveStarted.yield(resolveCount)
+                    if gateResolve {
+                        await withCheckedContinuation { resolveRelease = $0 }
+                        gateResolve = false
+                    }
                     return try (200, receipts[id] ?? JSONSerialization.data(withJSONObject: ["id": id, "status": "unknown"]))
                 }
                 if commitFailure == false {

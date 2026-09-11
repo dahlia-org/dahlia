@@ -10,7 +10,7 @@ type ContentTable = ContentSchema["syncedVault" | "syncedProject" | "syncedMeeti
 const policies: Record<string, { ids: string[]; fields: Row; hashes?: string[] }> = {
   vaults: { ids: ["vaultId"], fields: { name: "" } },
   projects: { ids: ["projectId"], fields: { name: "", description: "" } },
-  meetings: { ids: ["meetingId"], fields: { name: "", description: "" } },
+  meetings: { ids: ["meetingId"], fields: { name: "", description: "", calendarEvent: null } },
   transcripts: { ids: ["id"], fields: { metadata: null } },
   transcript_segments: { ids: ["transcriptId", "segmentId"], fields: { text: "", speakerLabel: null } },
   transcript_patch_chunks: { ids: ["vaultId", "meetingId", "patchId", "chunkIndex"], fields: { payload: {}, contentHash: "" }, hashes: ["contentHash"] },

@@ -12,7 +12,7 @@ Vault ごとにランダムな 256-bit DEK を生成し、環境変数の master
 
 ## 保護範囲
 
-Vault / Project / Meeting の名前と説明、全世代の summary・transcript 本文と metadata、話者名、file 名・URI・checksum・OCR 等の metadata、staged transcript chunks、Transaction receipt の内容、summary job の設定・入力・中間結果を暗号化する。比較が必要な private hash は DEK 由来の鍵で HMAC 化する。ID、関係、revision、日時、状態、file の source discriminator 等の処理用情報は平文に残る。
+Vault / Project / Meeting の名前と説明、Meeting の Calendar Event スナップショット、全世代の summary・transcript 本文と metadata、話者名、file 名・URI・checksum・OCR 等の metadata、staged transcript chunks、Transaction receipt の内容、summary job の設定・入力・中間結果を暗号化する。比較が必要な private hash は DEK 由来の鍵で HMAC 化する。ID、関係、revision、日時、状態、file の source discriminator 等の処理用情報は平文に残る。
 
 **検索の例外は明示的に承認されたもの:** PostgreSQL / Lakebase の `search.documents`、SQLite / D1 の `search_documents` とその全文・vector 索引は暗号化対象外とする。検索テキスト、会議名、要約、OCR、caption、入力 hash、model、vector は DB 直接参照で読める。検索対象の内容を DB 全体から秘匿する保証はしない。ベクトルを文書へ統合し、独立した `search_embeddings` と暗号化用の復号 scan は削除する。DB 側の検索と既存 RRF を再利用し、Vault 認可・RLS / FORCE RLS は維持する。
 

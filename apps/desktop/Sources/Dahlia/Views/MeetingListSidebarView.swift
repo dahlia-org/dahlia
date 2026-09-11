@@ -14,8 +14,6 @@ struct MeetingListSidebarView: View {
     let onShowProjects: () -> Void
     let isShowingUnprocessedRecordings: Bool
     let onShowUnprocessedRecordings: () -> Void
-    let showsCustomerIntelligence: Bool
-    let onOpenCustomerIntelligence: () -> Void
     let onCreateProject: () -> Void
     let onOpenProject: (UUID, ProjectNavigationIntent) -> Void
     let onSelectVault: (VaultRecord) -> Void
@@ -63,9 +61,7 @@ struct MeetingListSidebarView: View {
                 onCreateProject: onCreateProject,
                 isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
                 unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
-                onShowUnprocessedRecordings: onShowUnprocessedRecordings,
-                showsCustomerIntelligence: showsCustomerIntelligence,
-                onOpenCustomerIntelligence: onOpenCustomerIntelligence
+                onShowUnprocessedRecordings: onShowUnprocessedRecordings
             )
             List(selection: meetingSelection) {
                 if !pinnedProjectGroups.isEmpty {

@@ -5,7 +5,7 @@ public enum TypeID {
     public enum Kind: String, CaseIterable, Sendable {
         case vault = "vlt", project = "proj", meeting = "mtg", file, attachment = "att"
         case summary = "sum", transcript, segment = "seg", recording = "rec", event = "evt"
-        case summaryJob = "sjob", contact, topic, insight = "inst", projectReference = "prr"
+        case summaryJob = "sjob"
         case user, organization = "org", team, organizationMember = "omem", teamMember = "tmem"
         case invitation = "inv", session = "sess", transaction = "txn", operation = "op", patch
     }

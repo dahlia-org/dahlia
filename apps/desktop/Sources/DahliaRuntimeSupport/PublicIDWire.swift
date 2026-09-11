@@ -32,8 +32,7 @@ public enum PublicIDWire {
     private static let kinds: [String: TypeID.Kind] = [
         "vault": .vault, "project": .project, "meeting": .meeting, "file": .file, "attachment": .attachment,
         "summary": .summary, "transcript": .transcript, "segment": .segment, "recording": .recording,
-        "event": .event, "summaryJob": .summaryJob, "contact": .contact, "topic": .topic, "insight": .insight,
-        "projectReference": .projectReference, "user": .user, "organization": .organization, "team": .team,
+        "event": .event, "summaryJob": .summaryJob, "user": .user, "organization": .organization, "team": .team,
         "organizationMember": .organizationMember, "teamMember": .teamMember, "invitation": .invitation,
         "session": .session, "transaction": .transaction, "operation": .operation, "patch": .patch,
     ]
@@ -45,11 +44,6 @@ public enum PublicIDWire {
         "vault": "vault", "project": "project", "meeting": "meeting", "summary": "summary", "transcript": "transcriptPatch",
         "file": "file", "meeting_attachment": "attachment", "meeting_event": "event", "recording": "recording",
     ]
-    private static let resourceKinds: [String: TypeID.Kind] = [
-        "meeting": .meeting, "project": .project, "contact": .contact, "topic": .topic, "conversation_topic": .topic, "insight": .insight,
-        "organization": .organization,
-    ]
-
     public static func data(_ data: Data, shape: String, direction: Direction) throws -> Data {
         let value = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
         let converted = try transform(value, shape: shape, direction: direction)
@@ -109,24 +103,8 @@ public enum PublicIDWire {
             if let string = value as? String, string.contains("@") { return string }
             return try id(value, kind: .organizationMember, direction: direction)
         }
-        if shape == "resourceID" {
-            let type = (parent["resource_type"] ?? parent["resourceType"]) as? String
-            guard let type, let kind = resourceKinds[type] else { throw TypeID.Failure.invalidID }
-            return try id(value, kind: kind, direction: direction)
-        }
         if shape == "textEntityID" {
             return try id(value, kind: parent["entity"] as? String == "file" ? .file : .meeting, direction: direction)
-        }
-        if shape == "relationshipSource" || shape == "relationshipTarget" {
-            let resource = resourceKinds[parent["resource_type"] as? String ?? ""]
-            let mapping: [String: (TypeID.Kind?, TypeID.Kind?)] = [
-                "organization_domain": (.organization, nil), "contact_organization_membership": (.contact, .organization),
-                "project_resource_reference": (.project, resource), "conversation_topic_resource_reference": (.topic, resource),
-                "insight_resource_reference": (.insight, resource), "meeting_project_assignment": (.meeting, .project),
-            ]
-            let pair = mapping[parent["relationship"] as? String ?? ""]
-            let kind = shape == "relationshipSource" ? pair?.0 : pair?.1
-            return try kind.map { try id(value, kind: $0, direction: direction) } ?? value
         }
         return try objectValue(value, shape: shape, direction: direction)
     }

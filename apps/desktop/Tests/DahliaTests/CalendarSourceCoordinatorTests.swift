@@ -1,5 +1,7 @@
 import Combine
+import DahliaMeetingAccess
 import Foundation
+import GRDB
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -70,7 +72,121 @@ import Foundation
             withExtendedLifetime(cancellable) {}
         }
 
-        private func event(id: String, platform: String, icalUid: String? = nil) -> CalendarEvent {
+        @Test
+        func publishedRefreshUsesAuthoritativeSourceAndQueuesOnlyLinkedOwners() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop", createdAt: .now
+            )
+            var ownerRecord = VaultRecord(id: .v7(), path: nil, name: "Owner", createdAt: .now, lastOpenedAt: .now)
+            ownerRecord.accountConnectionId = connection.id
+            ownerRecord.syncConfirmedConnectionId = connection.id
+            let owner = ownerRecord
+            let local = VaultRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
+            var memberRecord = VaultRecord(id: .v7(), path: nil, name: "Member", createdAt: .now, lastOpenedAt: .now)
+            memberRecord.accountConnectionId = connection.id
+            memberRecord.syncConfirmedConnectionId = connection.id
+            memberRecord.syncRole = "member"
+            let member = memberRecord
+            let ownerMeeting = UUID.v7(), localMeeting = UUID.v7(), memberMeeting = UUID.v7()
+            let attendee = CalendarParticipant(
+                email: "person@example.com", displayName: "Person", kind: .person, isCurrentUser: false
+            )
+            let updatedAttendee = CalendarParticipant(
+                email: "updated@example.com", displayName: "Updated", kind: .person, isCurrentUser: false
+            )
+            let original = event(
+                id: "linked", platform: CalendarEventPlatform.googleCalendar, icalUid: "linked", participants: [attendee]
+            )
+            try await database.dbQueue.write { db in
+                try connection.insert(db)
+                try owner.insert(db)
+                try local.insert(db)
+                try member.insert(db)
+                try CalendarEventRecord.upsert(event: original, now: .now, in: db)
+                for (id, vault) in [(ownerMeeting, owner), (localMeeting, local), (memberMeeting, member)] {
+                    try MeetingRecord(
+                        id: id,
+                        vaultId: vault.id,
+                        name: vault.name,
+                        createdAt: .now,
+                        updatedAt: .now,
+                        calendarEventIcalUid: "linked",
+                        calendarEventRecurrenceId: ""
+                    ).insert(db)
+                }
+            }
+            let googleStore = FakeCalendarEventSourceStore(source: .google, events: [original])
+            let macStore = FakeCalendarEventSourceStore(
+                source: .macOS,
+                events: [event(
+                    id: "mac-linked",
+                    platform: CalendarEventPlatform.macOSCalendar,
+                    icalUid: "linked",
+                    participants: [attendee]
+                )]
+            )
+            let coordinator = CalendarSourceCoordinator(stores: [googleStore, macStore], dbQueue: database.dbQueue)
+            await coordinator.refreshEnabledSources([.google, .macOS])
+
+            googleStore.replaceEvents([
+                event(
+                    id: "linked",
+                    platform: CalendarEventPlatform.googleCalendar,
+                    icalUid: "linked"
+                ),
+                event(
+                    id: "linked-copy",
+                    platform: CalendarEventPlatform.googleCalendar,
+                    icalUid: "linked",
+                    participants: [updatedAttendee]
+                ),
+                event(id: "unlinked", platform: CalendarEventPlatform.googleCalendar, icalUid: "unlinked"),
+            ])
+            await coordinator.waitForPersistence()
+
+            try await database.dbQueue.read { db in
+                let linked = try #require(try CalendarEventRecord.fetch(
+                    key: CalendarEventKey(icalUid: "linked", recurrenceId: ""), in: db
+                ))
+                #expect(linked.attendees == [
+                    CalendarAttendeeSnapshot(email: "updated@example.com", displayName: "Updated"),
+                ])
+                #expect(try CalendarEventRecord.fetch(
+                    key: CalendarEventKey(icalUid: "unlinked", recurrenceId: ""), in: db
+                ) == nil)
+                #expect(try MeetingCalendarSync.fetch(meetingId: localMeeting, in: db)?.calendarEvent?.attendees == linked.attendees)
+                #expect(try MeetingCalendarSync.fetch(meetingId: memberMeeting, in: db) == nil)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == 1)
+            }
+            googleStore.replaceEvents([
+                event(
+                    id: "linked-copy",
+                    platform: CalendarEventPlatform.googleCalendar,
+                    icalUid: "linked",
+                    participants: [updatedAttendee]
+                ),
+                event(id: "linked", platform: CalendarEventPlatform.googleCalendar, icalUid: "linked"),
+            ])
+            await coordinator.waitForPersistence()
+            try await database.dbQueue.read { db in
+                let linked = try #require(try CalendarEventRecord.fetch(
+                    key: CalendarEventKey(icalUid: "linked", recurrenceId: ""), in: db
+                ))
+                #expect(linked.attendees.map(\.email) == ["updated@example.com"])
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == 1)
+            }
+            let queued = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            #expect(queued.vaultId == owner.id)
+            #expect(queued.operations.map(\.entityId) == [ownerMeeting])
+        }
+
+        private func event(
+            id: String,
+            platform: String,
+            icalUid: String? = nil,
+            participants: [CalendarParticipant] = []
+        ) -> CalendarEvent {
             CalendarEvent(
                 id: id,
                 calendarID: "calendar",
@@ -84,6 +200,7 @@ import Foundation
                 startDate: Date(timeIntervalSince1970: 1_776_387_600),
                 endDate: Date(timeIntervalSince1970: 1_776_391_200),
                 isAllDay: false,
+                participants: participants,
                 conferenceURI: nil
             )
         }
