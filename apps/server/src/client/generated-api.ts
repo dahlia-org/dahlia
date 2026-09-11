@@ -427,6 +427,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/meetings/{meetingId}/transcripts/{version}/conversation-analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Calculate owner-only conversation analytics for one immutable transcript version */
+        get: operations["getConversationAnalytics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/meetings/{meetingId}/summary-jobs": {
         parameters: {
             query?: never;
@@ -1666,6 +1683,9 @@ export interface components {
             imageAnalysis?: {
                 version: number;
             };
+            conversationAnalytics?: {
+                version: number;
+            };
             meetingSummaryGeneration?: {
                 version: number;
                 sources: ("transcript" | "audio")[];
@@ -1726,6 +1746,66 @@ export interface components {
             createdAt: string | null;
             audioSource: string | null;
             speakerLabel: string | null;
+        };
+        ConversationAnalytics: {
+            /** @enum {string} */
+            status: "ready";
+            transcriptId: string;
+            transcriptVersion: number;
+            /** @enum {number} */
+            calculationVersion: 1;
+            recordingDuration: number;
+            unionSpeechDuration: number;
+            overlapDuration: number;
+            conversationOccupancyRatio: number | null;
+            overlapRatio: number | null;
+            speechMergeGap: number;
+            monologueMergeGap: number;
+            sources: {
+                /** @enum {string} */
+                source: "mic" | "system";
+                speechDuration: number;
+                normalizedCharacterCount: number;
+                segmentCount: number;
+                unmeasurableSegmentCount: number;
+                charactersPerMinute: number | null;
+                speechShare: number | null;
+            }[];
+            longestMonologue: {
+                /** @enum {string} */
+                source: "mic" | "system";
+                start: number;
+                end: number;
+            } | null;
+            paceBucketDuration: number;
+            paceSamples: {
+                /** @enum {string} */
+                source: "mic" | "system";
+                start: number;
+                end: number;
+                charactersPerMinute: number;
+                seriesIndex: number;
+            }[];
+            timelineIntervals: {
+                /** @enum {string} */
+                source: "mic" | "system";
+                start: number;
+                end: number;
+            }[];
+            overlapIntervals: {
+                start: number;
+                end: number;
+            }[];
+            overlapCount: number;
+            isTimelineCondensed: boolean;
+        };
+        ConversationAnalyticsUnavailable: {
+            /** @enum {string} */
+            status: "unavailable";
+            transcriptId: string;
+            transcriptVersion: number;
+            /** @enum {string} */
+            reason: "recording_audio_missing";
         };
         SummaryJob: {
             id: string;
@@ -3246,6 +3326,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TranscriptContent"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getConversationAnalytics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                meetingId: string;
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAnalytics"] | components["schemas"]["ConversationAnalyticsUnavailable"];
                 };
             };
             default: components["responses"]["Problem"];

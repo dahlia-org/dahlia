@@ -112,6 +112,7 @@ export const capabilities = z.object({
   sync: z.object({ version: integer }).optional(), vaultTransfers: z.object({ version: integer }).optional(),
   recordingArchive: z.object({ version: integer }).optional(), meetingEvents: z.object({ version: integer }).optional(),
   search: z.object({ version: integer }).optional(), imageAnalysis: z.object({ version: integer }).optional(),
+  conversationAnalytics: z.object({ version: integer }).optional(),
   meetingSummaryGeneration: z.object({ version: integer, sources: z.array(z.enum(["transcript", "audio"])) }).optional(),
 }).openapi("Capabilities");
 export const person = z.object({ id: principalId, name: z.string(), email: z.string() }).openapi("Person");

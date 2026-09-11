@@ -196,6 +196,7 @@ export const syncedTranscriptSegment = sqliteTable("transcript_segments", {
   createdAt: sqliteTimestamp("created_at"),
   audioSource: text("audio_source"),
   speakerLabel: text("speaker_label"),
+  normalizedCharacterCount: integer("normalized_character_count"),
 }, (table) => [
   primaryKey({
     columns: [table.transcriptId, table.segmentId],
@@ -207,6 +208,7 @@ export const syncedTranscriptSegment = sqliteTable("transcript_segments", {
   index("transcript_segment_created_idx").on(table.transcriptId, table.createdAt),
   index("transcript_segment_start_id_idx")
     .on(table.transcriptId, table.startedAt, table.segmentId),
+  check("transcript_segment_normalized_character_count_check", sql`${table.normalizedCharacterCount} IS NULL OR ${table.normalizedCharacterCount} >= 0`),
 ]);
 
 export const transcriptPatchChunk = sqliteTable("transcript_patch_chunks", {

@@ -1,5 +1,8 @@
 {
   "shapes": {
+    "conversationAnalytics": {
+      "transcriptId": "id:transcript"
+    },
     "vault": {
       "vaultId": "id:vault",
       "meetingId": "id:meeting",
@@ -1887,6 +1890,14 @@
       "query": {
         "cursor": "cursor:segment"
       },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
+      "path": "/api/v1/meetings/:meeting/transcripts/:version/conversation-analytics",
+      "response": "conversationAnalytics",
       "methods": [
         "GET",
         "HEAD"

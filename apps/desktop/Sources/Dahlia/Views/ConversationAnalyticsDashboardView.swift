@@ -2,37 +2,25 @@ import SwiftUI
 
 struct ConversationAnalyticsDashboardView: View {
     @ObservedObject var store: MeetingConversationMetricsStore
-    let meetingId: UUID?
-    let isAnalysisPending: Bool
-    let hasTranscript: Bool
     let load: () async -> Void
-
-    private var loadIdentity: String {
-        [
-            meetingId?.uuidString ?? "none",
-            String(store.reloadToken),
-            String(hasTranscript),
-            String(isAnalysisPending),
-        ]
-        .joined(separator: ":")
-    }
 
     var body: some View {
         Group {
-            if isAnalysisPending {
+            switch store.status {
+            case .syncPending:
                 ContentUnavailableView {
                     Label(L10n.conversationAnalyticsPending, systemImage: "chart.bar.xaxis")
                 } description: {
-                    Text(L10n.conversationAnalyticsAvailableAfterTranscription)
+                    Text(L10n.conversationAnalyticsAvailableAfterSync)
                 }
-            } else if !hasTranscript {
+            case .noTranscript:
                 ContentUnavailableView {
                     Label(L10n.conversationAnalytics, systemImage: "chart.bar.xaxis")
                 } description: {
                     Text(L10n.conversationAnalyticsEmpty)
                 }
-            } else if let metrics = store.metrics {
-                if metrics.hasSegments {
+            case .ready:
+                if let metrics = store.metrics, metrics.hasSegments {
                     ConversationAnalyticsDashboardContent(metrics: metrics)
                 } else {
                     ContentUnavailableView {
@@ -41,7 +29,15 @@ struct ConversationAnalyticsDashboardView: View {
                         Text(L10n.conversationAnalyticsEmpty)
                     }
                 }
-            } else if let errorMessage = store.errorMessage {
+            case .recordingAudioMissing:
+                ContentUnavailableView {
+                    Label(L10n.conversationAnalyticsAudioUnavailable, systemImage: "waveform.slash")
+                } description: {
+                    Text(L10n.conversationAnalyticsAudioUnavailableDescription)
+                } actions: {
+                    Button(L10n.retry, action: retryLoad)
+                }
+            case let .failed(errorMessage):
                 ContentUnavailableView {
                     Label(L10n.conversationAnalyticsLoadFailed, systemImage: "exclamationmark.triangle")
                 } description: {
@@ -49,13 +45,14 @@ struct ConversationAnalyticsDashboardView: View {
                 } actions: {
                     Button(L10n.retry, action: retryLoad)
                 }
-            } else {
+            case .loading:
                 ProgressView()
+            case .hidden:
+                EmptyView()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: loadIdentity) {
-            guard hasTranscript, !isAnalysisPending else { return }
+        .task(id: store.target) {
             await load()
         }
     }

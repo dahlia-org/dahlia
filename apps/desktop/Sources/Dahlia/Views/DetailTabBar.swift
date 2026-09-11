@@ -16,6 +16,7 @@ private extension DetailTab {
 struct DetailTabBar: View {
     @Binding var selection: DetailTab
     @ObservedObject var viewModel: CaptionViewModel
+    @ObservedObject var analyticsStore: MeetingConversationMetricsStore
     @ObservedObject private var settings = AppSettings.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var selectionIndicator
@@ -27,7 +28,8 @@ struct DetailTabBar: View {
 
     private var availableTabs: [DetailTab] {
         DetailTab.allCases.filter {
-            $0 != .conversationAnalytics || settings.isConversationAnalyticsBetaEnabled
+            $0 != .conversationAnalytics
+                || (settings.isConversationAnalyticsBetaEnabled && analyticsStore.isTabAvailable)
         }
     }
 

@@ -18,16 +18,11 @@ struct ConversationAnalyticsNotesView: View {
             if metrics.isTimelineCondensed {
                 Label(L10n.conversationAnalyticsCondensedTimelineNote, systemImage: "rectangle.compress.vertical")
             }
-            if metrics.usesLegacyTimelineFallback {
-                Label(L10n.conversationAnalyticsLegacyTimelineNote, systemImage: "clock.badge.questionmark")
-            }
             if metrics.hasUnmeasurableSegments {
                 Label(L10n.conversationAnalyticsEstimatedPaceNote, systemImage: "approximately")
             }
             Text(L10n.conversationAnalyticsSourceCaveat)
             Text(L10n.conversationAnalyticsLanguageCaveat)
-            Text(L10n.conversationAnalyticsVoiceCaveat)
-            Text(L10n.conversationAnalyticsBatchFeatureCaveat)
         }
         .font(.footnote)
         .foregroundStyle(DahliaDesign.secondaryTextColor)

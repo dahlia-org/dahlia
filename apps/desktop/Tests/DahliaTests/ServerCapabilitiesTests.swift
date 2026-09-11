@@ -14,6 +14,7 @@ import Foundation
               "meetingEvents": { "version": 1 },
               "search": { "version": 1 },
               "imageAnalysis": { "version": 1 },
+              "conversationAnalytics": { "version": 1 },
               "meetingSummaryGeneration": { "version": 1, "sources": ["transcript", "audio"] },
               "futureFeature": { "enabled": true }
             }
@@ -24,6 +25,7 @@ import Foundation
             #expect(capabilities.meetingEvents?.version == 1)
             #expect(capabilities.search?.version == 1)
             #expect(capabilities.imageAnalysis?.version == 1)
+            #expect(capabilities.conversationAnalytics?.version == 1)
             #expect(capabilities.meetingSummaryGeneration?.version == 1)
             #expect(capabilities.meetingSummaryGeneration?.sources == ["transcript", "audio"])
         }
@@ -60,6 +62,7 @@ import Foundation
             #expect(capabilities.meetingEvents == nil)
             #expect(capabilities.search == nil)
             #expect(capabilities.imageAnalysis == nil)
+            #expect(capabilities.conversationAnalytics == nil)
             #expect(capabilities.meetingSummaryGeneration == nil)
         }
     }

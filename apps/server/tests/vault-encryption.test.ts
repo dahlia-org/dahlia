@@ -103,6 +103,8 @@ it("encrypts canonical content, patches and receipts while preserving plaintext 
   await f.commit(f.transaction([{ id: patchId, entity: "transcript", action: "patch", entityId: meetingId, baseRevision: 0,
     data: { transcript: { id: patchId, startedAt: now, endedAt: null, metadata }, mode: "replace", patchId,
       segmentCount: 1, deletionCount: 0, chunks: [{ index: 0, sha256: hash, segmentCount: 1, deletionCount: 0 }] } }]));
+  expect(f.db.prepare("SELECT normalized_character_count FROM transcript_segments WHERE transcript_id = ?").get(patchId))
+    .toMatchObject({ normalized_character_count: "PRIVATE_TRANSCRIPT_MARKER".length });
   const read = () => f.store.sync.withIdentity(owner, (sync) => sync.listTranscript(f.vaultId, meetingId, 10));
   expect(await read()).toMatchObject([{ text: "PRIVATE_TRANSCRIPT_MARKER", speakerLabel: "PRIVATE_SPEAKER_MARKER" }]);
   expect(await f.store.sync.withIdentity(owner, (sync) => sync.getMeeting(f.vaultId, meetingId))).toMatchObject({
@@ -136,6 +138,11 @@ it("encrypts canonical content, patches and receipts while preserving plaintext 
   expect(await read()).toMatchObject([{ text: "PRIVATE_TRANSCRIPT_MARKER", speakerLabel: "PRIVATE_SPEAKER_MARKER" }]);
   expect(await f.store.sync.withIdentity(owner, (sync) => sync.listTranscript(f.vaultId, meetingId, 10, undefined, 1)))
     .toMatchObject([{ text: "PRIVATE_TRANSCRIPT_MARKER" }]);
+  f.db.prepare("UPDATE transcript_segments SET normalized_character_count = NULL WHERE transcript_id = ?").run(nextPatch);
+  expect(await f.store.sync.withIdentity(owner, (sync) => sync.listTranscriptAnalytics(f.vaultId, meetingId, 2)))
+    .toMatchObject([{ normalizedCharacterCount: "PRIVATE_TRANSCRIPT_MARKER".length }]);
+  expect(f.db.prepare("SELECT normalized_character_count FROM transcript_segments WHERE transcript_id = ?").get(nextPatch))
+    .toMatchObject({ normalized_character_count: "PRIVATE_TRANSCRIPT_MARKER".length });
   const original = f.db.prepare("SELECT encrypted_payload FROM transcript_segments WHERE transcript_id = ?").get(nextPatch)!.encrypted_payload;
   f.db.prepare("UPDATE transcript_segments SET encrypted_payload = ? WHERE transcript_id = ?").run("{}", nextPatch);
   await expect(read()).rejects.toThrow("vault_encryption_unavailable");

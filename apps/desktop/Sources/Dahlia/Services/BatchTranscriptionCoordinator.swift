@@ -51,7 +51,6 @@ actor BatchTranscriptionCoordinator {
     private let recordingAudioStore: RecordingAudioStore?
     private let languageDetector: any BatchLanguageDetecting
     private let speechRecognizer: any BatchSpeechRecognizing
-    private let audioFeatureAnalyzer: any BatchTranscriptAudioFeatureAnalyzing
     private let supportedLocalesProvider: @Sendable () async -> [Locale]
     let languageFallbackReporter: LanguageFallbackReporter
     let onStateChange: StateHandler
@@ -75,7 +74,6 @@ actor BatchTranscriptionCoordinator {
         managedRootURL: URL = BatchAudioStorage.managedRootURL,
         languageDetector: any BatchLanguageDetecting = WhisperKitBatchLanguageDetector(),
         speechRecognizer: any BatchSpeechRecognizing = AppleBatchSpeechRecognizer(),
-        audioFeatureAnalyzer: any BatchTranscriptAudioFeatureAnalyzing = BatchTranscriptAudioFeatureAnalyzer(),
         audioRetentionPeriod: BatchAudioRetentionPeriod = .defaultValue,
         supportedLocalesProvider: @escaping @Sendable () async -> [Locale] = {
             await SpeechSupportedLocales.load()
@@ -91,7 +89,6 @@ actor BatchTranscriptionCoordinator {
         )
         self.languageDetector = SerializedBatchLanguageDetector(detector: languageDetector)
         self.speechRecognizer = AdaptiveBatchSpeechRecognizer(recognizer: speechRecognizer)
-        self.audioFeatureAnalyzer = audioFeatureAnalyzer
         self.audioRetentionPeriod = audioRetentionPeriod
         self.supportedLocalesProvider = supportedLocalesProvider
         self.languageFallbackReporter = languageFallbackReporter ?? { fallbacks, candidates in
@@ -376,11 +373,6 @@ actor BatchTranscriptionCoordinator {
         for session in input.sessions where session.id != job.session.id {
             await notify(meetingId: job.meeting.id, state: .completed(sessionId: session.id))
         }
-        MeetingConversationMetricsRefreshService.schedule(
-            meetingId: job.meeting.id,
-            dbQueue: dbQueue
-        )
-
         await performPostProcessing(for: job)
     }
 
@@ -578,7 +570,6 @@ actor BatchTranscriptionCoordinator {
             result = try await BatchTranscriptionRunService.transcribe(
                 run,
                 speechRecognizer: speechRecognizer,
-                audioFeatureAnalyzer: audioFeatureAnalyzer,
                 onFileConsumed: onFileConsumed
             )
         case let .noAudio(localeIdentifier):

@@ -124,8 +124,6 @@ import GRDB
             defer { viewModel.clearCurrentMeeting() }
             viewModel.loadMeeting(context.meetingID, dbQueue: context.manager.dbQueue, projectURL: nil, projectId: nil, vaultURL: nil)
             #expect(await pollUntil { viewModel.currentMeetingHasTranscriptSegments && !viewModel.store.isLoadingInitialPage })
-            await viewModel.loadCurrentMeetingConversationMetrics()
-            #expect(viewModel.conversationMetricsStore.metrics?.source(.microphone).segmentCount == 1)
             let reloadToken = viewModel.conversationMetricsStore.reloadToken
             try await context.manager.dbQueue.write { db in
                 try db

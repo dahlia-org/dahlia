@@ -45,6 +45,7 @@ Desktop / Server / 外部 client 間の契約。
 - [文字起こし・要約の処理場所](shared/transcription-summary-processing.md)
 - [Desktop / Server の canonical sync](shared/sync.md)
 - [顧客インテリジェンス廃止とCalendar参加者スナップショット](shared/calendar-attendee-snapshots.md)
+- [会話分析の Server ownership](shared/conversation-analytics.md)
 - [Desktop / Gateway の AI timeout](shared/ai-timeouts.md)
 
 ## Monorepo

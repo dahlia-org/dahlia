@@ -287,6 +287,7 @@ export const syncedTranscriptSegment = appSchema.table("transcript_segments", {
   createdAt: timestamp("created_at"),
   audioSource: text("audio_source"),
   speakerLabel: text("speaker_label"),
+  normalizedCharacterCount: integer("normalized_character_count"),
 }, (table) => [
   primaryKey({
     name: "synced_transcript_segment_pk",
@@ -300,6 +301,7 @@ export const syncedTranscriptSegment = appSchema.table("transcript_segments", {
   index("transcript_segment_created_idx").on(table.transcriptId, table.createdAt),
   index("transcript_segment_start_id_idx")
     .on(table.transcriptId, table.startedAt, table.segmentId),
+  check("transcript_segment_normalized_character_count_check", sql`${table.normalizedCharacterCount} IS NULL OR ${table.normalizedCharacterCount} >= 0`),
   pgPolicy("transcript_select", {
     for: "select",
     using: sql`exists (select 1 from "app"."transcripts" t join "app"."meetings" m on m.meeting_id = t.meeting_id where t.id = ${table.transcriptId} and "app"."current_identity_can_read_vault"(m.vault_id))`,

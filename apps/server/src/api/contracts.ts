@@ -9,6 +9,7 @@ import { fileUploadSchema, filePatchSchema, fileWireMetadataSchema } from "../fi
 import { summaryStartSchema } from "../summary/service";
 import { vaultSearchRequestSchema } from "../search/model";
 import { transcriptChunkSchema } from "../sync/schemas";
+import { conversationAnalyticsSchema, conversationAnalyticsUnavailableSchema } from "../conversation-analytics";
 import * as S from "./schemas";
 
 const bearer: Record<string, string[]>[] = [{ bearerAuth: [] }, { browserSession: [] }, { trustedProxy: [] }];
@@ -81,6 +82,7 @@ export type OperationId =
   | "getSettings" | "updateSettings" | "getCapabilities" | "listVaults" | "getVault"
   | "listProjects" | "getProject" | "listMeetings" | "getMeeting" | "listSummaries"
   | "getSummary" | "getLatestSummary" | "listTranscripts" | "getTranscript" | "getLatestTranscript"
+  | "getConversationAnalytics"
   | "startSummaryJob" | "getLatestSummaryJob" | "getSummaryJob" | "cancelSummaryJob" | "retrySummaryJob"
   | "commitTransaction" | "resolveTransaction" | "getChanges" | "getSnapshot" | "search"
   | "textSearch" | "getEvents" | "putTranscriptChunk" | "reserveFileUpload" | "putFileContent"
@@ -125,6 +127,9 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   listTranscripts: route("get", `${m}/transcripts`, "listTranscripts", "Transcript versions, newest first", { 200: json(S.page(S.transcript)) }, { query: S.historyQuery }),
   getTranscript: route("get", `${m}/transcripts/{version}`, "getTranscript", "Read a transcript version in bounded pages", { 200: json(S.transcriptContent) }, { query: S.contentQuery }),
   getLatestTranscript: route("get", `${m}/transcripts/latest`, "getLatestTranscript", "Read current transcript; match version and syncRevision across pages", { 200: json(S.transcriptContent) }, { query: S.contentQuery }),
+  getConversationAnalytics: route("get", `${m}/transcripts/{version}/conversation-analytics`, "getConversationAnalytics", "Calculate owner-only conversation analytics for one immutable transcript version", {
+    200: json(z.union([conversationAnalyticsSchema, conversationAnalyticsUnavailableSchema])),
+  }),
   startSummaryJob: route("post", j, "startSummaryJob", "Queue an owner-only summary job; ID is the replay key; maximum 8 KiB", { 202: accepted(jobEnvelope) }, body(summaryStartSchema)),
   getLatestSummaryJob: route("get", `${j}/latest`, "getLatestSummaryJob", "Most recent owner-visible job, or null", { 200: json(z.object({ job: z.object(S.summaryJob.shape).nullable() })) }),
   getSummaryJob: route("get", `${j}/{jobId}`, "getSummaryJob", "Get an individual owner-visible job", { 200: json(jobEnvelope) }),

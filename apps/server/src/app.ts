@@ -22,6 +22,7 @@ import {
 import { z } from "zod";
 import { accountSettingsPatchSchema } from "./account-settings";
 import { searchSettingsSchema } from "./search/settings-model";
+import { ConversationAnalyticsService } from "./conversation-analytics";
 
 import {
   AuthenticationError,
@@ -180,6 +181,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     dependencies.screenshotTransformer,
     config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined,
   );
+  const conversationAnalytics = new ConversationAnalyticsService(store.sync);
   const mcp = createServerMcpHandler(config, sync, async (request) => {
     if (auth) await identities.verifyMcpAccessToken(request);
     else await identities.fromMcpHeader(request);
@@ -553,9 +555,19 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       recordingArchive: { version: 1 },
       meetingEvents: { version: 1 },
       search: { version: 1 },
+      conversationAnalytics: { version: 1 },
       ...(dependencies.imageAnalysisEnabled === true ? { imageAnalysis: { version: 1 } } : {}),
       ...(sources.length ? { meetingSummaryGeneration: { version: 2, sources } } : {}),
     });
+  });
+  registerApi(app, "getConversationAnalytics", async (context) => {
+    const identity = await syncIdentity(context.req.raw);
+    const meetingId = sync.parseId(context.req.param("meetingId")!);
+    const version = Number(context.req.param("version"));
+    if (!Number.isSafeInteger(version) || version > 2147483647) {
+      throw new RequestError(400, "invalid_transcript_version");
+    }
+    return context.json(await conversationAnalytics.get(identity, await sync.meetingVault(identity, meetingId), meetingId, version));
   });
   registerApi(app, "search", bodyLimit({ maxSize: 16 * 1024,
     onError: (context) => context.json({ error: "search_request_too_large" }, 413) }), async (context) => {

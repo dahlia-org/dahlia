@@ -63,7 +63,11 @@ struct MeetingDetailNavigationBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            DetailTabBar(selection: $selection, viewModel: viewModel)
+            DetailTabBar(
+                selection: $selection,
+                viewModel: viewModel,
+                analyticsStore: viewModel.conversationMetricsStore
+            )
 
             Spacer(minLength: 0)
 

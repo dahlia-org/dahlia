@@ -17,6 +17,14 @@ export interface SyncTranscriptSegment {
   speakerLabel: string | null;
 }
 
+export interface TranscriptAnalyticsSegment {
+  segmentId: string;
+  startedAt: Date;
+  endedAt: Date | null;
+  audioSource: string | null;
+  normalizedCharacterCount: number;
+}
+
 export interface SyncTranscriptCursor {
   startedAt: Date;
   segmentId: string;
@@ -250,6 +258,7 @@ export interface IdentitySyncStore {
 
   getTranscript(vaultId: string, meetingId: string, revision?: number): Promise<TranscriptVersion | null>;
   listTranscriptVersions(vaultId: string, meetingId: string, limit: number, before?: number): Promise<TranscriptVersion[]>;
+  listTranscriptAnalytics(vaultId: string, meetingId: string, version: number): Promise<TranscriptAnalyticsSegment[]>;
   countTranscript(vaultId: string, meetingId: string): Promise<number>;
   searchTextPage(vaultId: string, query: SyncSearchQuery, kind: "meeting" | "screenshot", offset: number, limit: number): Promise<{
     id: string; meetingId: string; snippet: string;
