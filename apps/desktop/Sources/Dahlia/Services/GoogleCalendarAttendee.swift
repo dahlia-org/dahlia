@@ -30,37 +30,12 @@ struct GoogleCalendarAttendee: Decodable {
         responseStatus = try container.decodeIfPresent(String.self, forKey: .responseStatus)
     }
 
-    func calendarParticipant(role overrideRole: MeetingParticipantRole? = nil) -> CalendarParticipant {
+    func calendarParticipant() -> CalendarParticipant {
         CalendarParticipant(
             email: email,
             displayName: displayName,
-            role: overrideRole ?? resolvedRole,
-            responseStatus: resolvedResponseStatus,
             kind: isResource ? .resource : .person,
-            isCurrentUser: isCurrentUser,
-            source: CalendarEventPlatform.googleCalendar
+            isCurrentUser: isCurrentUser
         )
-    }
-
-    private var resolvedRole: MeetingParticipantRole {
-        if isOrganizer {
-            return .organizer
-        }
-        return isOptional ? .optional : .required
-    }
-
-    private var resolvedResponseStatus: MeetingParticipantResponseStatus {
-        switch responseStatus {
-        case "accepted":
-            .accepted
-        case "declined":
-            .declined
-        case "tentative":
-            .tentative
-        case "needsAction":
-            .needsAction
-        default:
-            .unknown
-        }
     }
 }

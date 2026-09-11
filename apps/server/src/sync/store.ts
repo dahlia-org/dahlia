@@ -1587,6 +1587,12 @@ function createIdentityStore(
         }
       } else if (operation.entity === "meeting") {
         const previous = operation.action === "update" ? await canonicalRecord("meeting", transaction.vaultId, operation.entityId) : null;
+        if (data.calendarEvent && typeof data.calendarEvent === "object" && !("attendees" in data.calendarEvent)) {
+          const existing = previous?.record?.calendarEvent;
+          if (existing && typeof existing === "object" && "attendees" in existing) {
+            data.calendarEvent = { ...data.calendarEvent, attendees: existing.attendees };
+          }
+        }
         if (operation.action === "create") {
           const [existing] = await db.select({ active: schema.syncedMeeting.active })
             .from(schema.syncedMeeting).where(ownedMeeting(transaction.vaultId, operation.entityId)).limit(1);

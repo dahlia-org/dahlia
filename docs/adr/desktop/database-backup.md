@@ -10,7 +10,7 @@ Local Account 配下の複数の保管庫を選択して一つの Apple Archive�
 旧形式 v1 は読み込み・復元に対応しない。旧世代は削除できる。v2 は一つの保管庫を含む世代として読み込む。
 
 対象は選択した保管庫の DB 内データと参照関係。Project 階層、会議、文字起こし・翻訳、session timeline、要約、
-files の metadata、会議との紐付け、スクリーンショットの OCR / caption、顧客情報を含む。原本は `files/{fileId}/original`、DB は `database.sqlite` として格納し、`manifest.json` に各 entry のサイズと SHA-256 を記録する。
+files の metadata、会議との紐付け、スクリーンショットの OCR / caption を含む。原本は `files/{fileId}/original`、DB は `database.sqlite` として格納し、`manifest.json` に各 entry のサイズと SHA-256 を記録する。
 Server Account の保管庫とその未送信画像は対象外。Local Account の対象保管庫の原本は FileStore から取り込む。画面の選択肢と作成元 snapshot の所属を検証し、
 Server Account の保管庫を一つでも含む作成要求は世代を公開せず拒否する。端末固有の画像ファイル参照は含めない。
 共有タグ・カレンダー情報は対象会議から参照されるものだけを保存する。

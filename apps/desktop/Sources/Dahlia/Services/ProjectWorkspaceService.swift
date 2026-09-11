@@ -303,7 +303,7 @@ final class ProjectWorkspaceService {
                 )
             }
             return try performSummaryRelocations(summaryPlan.relocations) {
-                try repository.updateCustomerIntelligenceProject(
+                try repository.updateProject(
                     id: id,
                     vaultId: vault.id,
                     parentProjectId: parentProjectId,

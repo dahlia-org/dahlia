@@ -30,8 +30,8 @@ become a subproject. A childless root can become a subproject, and a subproject 
 Vault root. Database constraints, repository/service validation, UI choices, and MCP validation enforce the same limit.
 Sibling names, including root names, are unique by `nameKey`. Rename and reparent preserve Project UUIDs.
 
-Project identity and `parentProjectId` are deliberately independent from future Organization or Person relationships.
-Those tables may later reference stable Project IDs, but neither is a Project hierarchy parent.
+Project identity and `parentProjectId` are independent from Calendar attendee snapshots, which never act as Project
+hierarchy parents.
 
 ## Project appearance
 
@@ -105,14 +105,13 @@ Meeting–Project is an exclusive assignment: a Meeting has zero or one `project
 
 For multi-vault read access and live transcripts, see [Live MCP](live-mcp.md).
 
-Public MCP customer-organization IDs use `org_` TypeIDs in queries, trees, memberships, references, mutations, and cursor scopes. Transcript provenance uses `rec_` for recording-session IDs. Desktop storage retains UUIDs; provider metadata and domain names keep their original values.
+Transcript provenance uses `rec_` for recording-session IDs. Desktop storage retains UUIDs; provider metadata and domain names keep their original values.
 
 `dahlia-mcp --vault-id <vlt_TypeID>` is read-only. Adding the sole capability flag, `--write`, publishes update tools.
 Full-Vault in-app chat starts the helper with `--write`; summary-generation threads disable MCP tools.
 The in-app chat presets its skills in Dahlia's private `CODEX_HOME` and enables skill instructions for chat threads.
 Summary-generation threads keep skills disabled. `projects-optimizer` owns Project structure, Project descriptions, and
-Meeting-to-Project assignments; the customer-intelligence curators described in
-[Customer intelligence workspace](customer-intelligence-workspace.md) read Projects but never change them.
+Meeting-to-Project assignments.
 That preset also curates each Project's `description` from the Meetings assigned to it, because summary generation
 includes the description in its prompt as untrusted context data. It therefore writes durable reference facts rather
 than instructions to the summarizer. Dahlia keeps no earlier version of that text, so the preset does not drop or
@@ -164,8 +163,8 @@ only its fixed Vault; write-enabled processes can mutate only that Vault, use th
 and notify the running app after commits.
 
 Project deletion and merge are not exposed through MCP. A future design must define Meeting relocation, non-empty and
-missing output directories, Summary handling, and recovery before adding those tools. Organization/Person associations
-and changes to Vault identity or setup are also outside this Project change.
+missing output directories, Summary handling, and recovery before adding those tools. Calendar attendee snapshots and
+changes to Vault identity or setup are also outside this Project change.
 
 ## Migration
 

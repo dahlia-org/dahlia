@@ -96,7 +96,7 @@ extension [CalendarEvent] {
     /// iCalendar の UID と RECURRENCE-ID で照合し、会議 URI などの情報が揃っている
     /// Google 側を優先する。同一ソース内の重複
     /// （複数カレンダーに同じ予定がある場合）は従来どおり残す。
-    func deduplicatedAcrossSources() -> [CalendarEvent] {
+    func deduplicatedAcrossSources(mergingMissingMetadata: Bool = true) -> [CalendarEvent] {
         var indexByKey: [CalendarEventKey: Int] = [:]
         var result: [CalendarEvent] = []
 
@@ -118,7 +118,9 @@ extension [CalendarEvent] {
             } else {
                 let preferred = event.platform == CalendarEventPlatform.googleCalendar ? event : existing
                 let fallback = event.platform == CalendarEventPlatform.googleCalendar ? existing : event
-                result[existingIndex] = preferred.mergingMissingMetadata(from: fallback)
+                result[existingIndex] = mergingMissingMetadata
+                    ? preferred.mergingMissingMetadata(from: fallback)
+                    : preferred
             }
         }
         return result
@@ -156,7 +158,7 @@ private extension CalendarEvent {
         var indexByEmail: [String: Int] = [:]
 
         for participant in participants + fallbackParticipants {
-            guard let email = participant.email.flatMap(CustomerIdentityNormalizer.email) else {
+            guard let email = participant.email.flatMap(CalendarAttendeeNormalizer.email) else {
                 result.append(participant)
                 continue
             }

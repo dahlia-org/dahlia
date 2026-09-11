@@ -90,10 +90,7 @@ import Foundation
                 platform: CalendarEventPlatform.googleCalendar,
                 participants: [
                     participant(
-                        email: "ALICE@EXAMPLE.COM",
-                        role: .unknown,
-                        responseStatus: .unknown,
-                        source: CalendarEventPlatform.googleCalendar
+                        email: "ALICE@EXAMPLE.COM"
                     ),
                 ]
             )
@@ -103,17 +100,11 @@ import Foundation
                     participant(
                         email: "alice@example.com",
                         displayName: "Alice",
-                        role: .required,
-                        responseStatus: .accepted,
-                        isCurrentUser: true,
-                        source: CalendarEventPlatform.macOSCalendar
+                        isCurrentUser: true
                     ),
                     participant(
                         email: "bob@example.com",
-                        displayName: "Bob",
-                        role: .optional,
-                        responseStatus: .tentative,
-                        source: CalendarEventPlatform.macOSCalendar
+                        displayName: "Bob"
                     ),
                 ]
             )
@@ -122,13 +113,10 @@ import Foundation
                 let merged = try #require(events.deduplicatedAcrossSources().first)
                 #expect(merged.participants.count == 2)
                 let alice = try #require(merged.participants.first {
-                    CustomerIdentityNormalizer.email($0.email ?? "") == "alice@example.com"
+                    CalendarAttendeeNormalizer.email($0.email ?? "") == "alice@example.com"
                 })
                 #expect(alice.displayName == "Alice")
-                #expect(alice.role == .required)
-                #expect(alice.responseStatus == .accepted)
                 #expect(alice.isCurrentUser)
-                #expect(alice.source == CalendarEventPlatform.googleCalendar)
             }
         }
 
@@ -139,10 +127,7 @@ import Foundation
                 platform: CalendarEventPlatform.googleCalendar,
                 participants: [
                     participant(
-                        email: "alice@example.com",
-                        role: .required,
-                        responseStatus: .accepted,
-                        source: CalendarEventPlatform.googleCalendar
+                        email: "alice@example.com"
                     ),
                 ]
             )
@@ -183,19 +168,13 @@ import Foundation
     private func participant(
         email: String,
         displayName: String? = nil,
-        role: MeetingParticipantRole,
-        responseStatus: MeetingParticipantResponseStatus,
-        isCurrentUser: Bool = false,
-        source: String
+        isCurrentUser: Bool = false
     ) -> CalendarParticipant {
         CalendarParticipant(
             email: email,
             displayName: displayName,
-            role: role,
-            responseStatus: responseStatus,
             kind: .person,
-            isCurrentUser: isCurrentUser,
-            source: source
+            isCurrentUser: isCurrentUser
         )
     }
 #endif

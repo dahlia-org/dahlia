@@ -468,7 +468,7 @@ extension GoogleCalendarAPIClient {
         var calendarParticipants: [CalendarParticipant] {
             var participants = (attendees ?? []).map { $0.calendarParticipant() }
             if let organizer {
-                participants.insert(organizer.calendarParticipant(role: .organizer), at: 0)
+                participants.insert(organizer.calendarParticipant(), at: 0)
             }
             return participants
         }

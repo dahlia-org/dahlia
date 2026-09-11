@@ -8,7 +8,6 @@ public struct MCPUsageTelemetryEvent: Equatable, Sendable {
     public enum Category: String, Sendable {
         case meeting
         case project
-        case customerIntelligence
         case unknown
     }
 

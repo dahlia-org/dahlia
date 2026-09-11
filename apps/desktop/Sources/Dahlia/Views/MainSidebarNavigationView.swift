@@ -17,8 +17,6 @@ struct MainSidebarNavigationView: View {
     let isShowingUnprocessedRecordings: Bool
     let unprocessedRecordingCount: Int
     let onShowUnprocessedRecordings: () -> Void
-    let showsCustomerIntelligence: Bool
-    let onOpenCustomerIntelligence: () -> Void
 
     var body: some View {
         VStack(spacing: 2) {
@@ -59,17 +57,6 @@ struct MainSidebarNavigationView: View {
                     onOpen: onShowProjects,
                     onCreateProject: onCreateProject
                 )
-            }
-
-            if showsCustomerIntelligence {
-                Button(action: onOpenCustomerIntelligence) {
-                    MainSidebarNavigationLabel(
-                        title: L10n.customerIntelligence,
-                        systemImage: "building.2"
-                    )
-                }
-                .buttonStyle(.plain)
-                .help(L10n.openOrganizationWorkspace)
             }
 
             Button(action: onShowUnprocessedRecordings) {

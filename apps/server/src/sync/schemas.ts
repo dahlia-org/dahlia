@@ -26,6 +26,10 @@ export const calendarEventSchema = z.object({
   start: z.iso.datetime({ offset: true }),
   end: z.iso.datetime({ offset: true }),
   is_all_day: z.boolean(),
+  attendees: z.array(z.object({
+    email: z.email().max(254),
+    display_name: z.string().max(500).nullable(),
+  }).strict()).max(1_000).optional(),
 }).strict().refine(
   (value) => orderedInstants(value.start, value.end),
   "Calendar event end must be on or after start",

@@ -125,6 +125,24 @@ import DahliaRuntimeSupport
         }
 
         @Test
+        func meetingReviewerDoesNotReferenceRetiredCustomerRecords() throws {
+            let rootURL = URL.temporaryDirectory
+                .appending(path: "dahlia-meeting-reviewer-\(UUID().uuidString)", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+
+            let homeURL = try ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL).homeURL()
+            try BundledCodexPresetSkillInstaller().install(into: homeURL)
+            let body = try String(
+                contentsOf: homeURL.appending(path: "skills/meeting-reviewer/SKILL.md"),
+                encoding: .utf8
+            )
+
+            for retiredName in ["Insight", "Topic", "Contact", "Organization"] {
+                #expect(!body.contains(retiredName))
+            }
+        }
+
+        @Test
         func projectsOptimizerDefaultsToTheMostRecentNinetyDays() throws {
             let rootURL = URL.temporaryDirectory
                 .appending(path: "dahlia-codex-projects-default-\(UUID().uuidString)", directoryHint: .isDirectory)

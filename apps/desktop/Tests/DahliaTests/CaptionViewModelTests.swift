@@ -61,7 +61,7 @@ import os
             #expect(viewModel.reserveRecordingStart() == nil)
             #expect(viewModel.currentMeetingId == recordingMeetingId)
             #expect(viewModel.draftMeeting?.id == draftId)
-            #expect(viewModel.materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence) == nil)
+            #expect(viewModel.materializeDraftMeeting() == nil)
         }
 
         @Test
@@ -821,7 +821,7 @@ import os
             )
 
             let meetingId = try #require(
-                viewModel.materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence)
+                viewModel.materializeDraftMeeting()
             )
             let persisted = try database.dbQueue.read { db in
                 let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
@@ -939,7 +939,7 @@ import os
             )
 
             let meetingId = try #require(
-                viewModel.materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence)
+                viewModel.materializeDraftMeeting()
             )
             let persisted = try database.dbQueue.read { db in
                 let calendarEvent = try linkedCalendarEvent(meetingId: meetingId, in: db)

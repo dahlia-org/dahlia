@@ -41,11 +41,12 @@ meetings
 | `ical_uid`, `recurrence_id` | 論理主キー |
 | `title`, `description` | 予定の表示情報 |
 | `start`, `end`, `is_all_day` | 現在観測している開催時刻 |
+| `attendees_json` | 有効なメールを持つ人物の参加者スナップショット。現在ユーザー・非人物・重複を除外 |
 | `conference_uri` | Meet、Zoom、Teams、電話、SIPなどの参加先URI |
 | `url` | Google Calendar Web UIなど、予定自体を参照するURL |
 | `created_at`, `updated_at` | Dahliaでの初回・最終観測時刻 |
 
-別ソースから同じキーを観測した場合、開催時刻などの基本情報は最新の観測で更新する。一方、空description、NULLの`conference_uri`、NULLの`url`は、他ソースで取得済みの有効値を消去しない。
+別ソースから同じキーを観測した場合、開催時刻と参加者は最新の観測で更新する。一方、空description、NULLの`conference_uri`、NULLの`url`は、他ソースで取得済みの有効値を消去しない。
 
 ## `calendar_event_sources`
 

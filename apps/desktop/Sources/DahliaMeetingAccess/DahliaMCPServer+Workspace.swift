@@ -58,10 +58,6 @@ extension DahliaMCPServer {
                 "get_meeting_transcript": ("meeting_id", "meetings"),
                 "get_meeting_screenshots": ("meeting_id", "meetings"),
                 "get_project": ("project_id", "projects"),
-                "get_organization": ("organization_id", "organizations"),
-                "get_contact": ("contact_id", "contacts"),
-                "get_conversation_topic": ("topic_id", "conversation_topics"),
-                "get_insight": ("insight_id", "insights"),
             ]
             guard let (key, table) = mapping[name] else { throw ParameterError("vault_id is required for this tool") }
             let entityID = try requiredUUID(arguments, key: key)
@@ -115,31 +111,15 @@ extension DahliaMCPServer {
         try validate(arguments, allowedKeys: Set(keys + ["vault_id"]))
         var target = try optionalUUID(arguments, key: "vault_id") ?? vaultScope
         if let vaultScope, target != vaultScope { throw MeetingAccessError.vaultNotFound }
-        var references = [
+        let references = [
             "meeting_id": "meetings", "project_id": "projects", "parent_project_id": "projects",
-            "organization_id": "organizations", "parent_organization_id": "organizations", "contact_id": "contacts",
-            "provisional_contact_id": "contacts", "identified_contact_id": "contacts",
-            "topic_id": "conversation_topics", "insight_id": "insights",
         ]
-        if arguments["resource_id"] != nil {
-            let tables = [
-                "meeting": "meetings",
-                "project": "projects",
-                "organization": "organizations",
-                "contact": "contacts",
-                "topic": "conversation_topics",
-            ]
-            guard let kind = try string(arguments, key: "resource_type"), let table = tables[kind] else {
-                throw ParameterError("Invalid resource_type")
-            }
-            references["resource_id"] = table
-        }
         for (key, table) in references where arguments[key] != nil && !(arguments[key] is NSNull) {
             let id = try requiredUUID(arguments, key: key)
             guard let vaultID = try store.database.read({ db in
                 try UUID.fetchOne(db, sql: "SELECT vaultId FROM \(table) WHERE id = ?", arguments: [id])
-            }) else { throw key == "resource_id" ? MeetingAccessError.invalidCustomerIntelligenceReference : MeetingAccessError.vaultNotFound }
-            if let target, target != vaultID { throw MeetingAccessError.invalidCustomerIntelligenceReference }
+            }) else { throw MeetingAccessError.vaultNotFound }
+            if let target, target != vaultID { throw MeetingAccessError.vaultNotFound }
             target = vaultID
         }
         guard let target, try vaults().contains(where: { $0.id == target }) else {

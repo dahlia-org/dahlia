@@ -1149,6 +1149,11 @@ export interface components {
                 /** Format: date-time */
                 end: string;
                 is_all_day: boolean;
+                attendees?: {
+                    /** Format: email */
+                    email: string;
+                    display_name: string | null;
+                }[];
             } | null;
             /** Format: date-time */
             createdAt: string;
@@ -1471,6 +1476,11 @@ export interface components {
                 /** Format: date-time */
                 end: string;
                 is_all_day: boolean;
+                attendees?: {
+                    /** Format: email */
+                    email: string;
+                    display_name: string | null;
+                }[];
             } | null;
             /** Format: date-time */
             createdAt: string;
@@ -1974,6 +1984,11 @@ export interface components {
                         /** Format: date-time */
                         end: string;
                         is_all_day: boolean;
+                        attendees?: {
+                            /** Format: email */
+                            email: string;
+                            display_name: string | null;
+                        }[];
                     } | null;
                     icalUid?: string | null;
                     recurrenceId?: string | null;
@@ -2006,6 +2021,11 @@ export interface components {
                         /** Format: date-time */
                         end: string;
                         is_all_day: boolean;
+                        attendees?: {
+                            /** Format: email */
+                            email: string;
+                            display_name: string | null;
+                        }[];
                     } | null;
                     icalUid?: string | null;
                     recurrenceId?: string | null;

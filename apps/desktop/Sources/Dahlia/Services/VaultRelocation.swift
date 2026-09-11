@@ -33,7 +33,6 @@ struct VaultRelocation: Decodable, Sendable {
                 guard try SyncTransactionQueue.matchesExpectedConnection(vaultId: source, connectionId: connectionId, in: db) else {
                     throw SyncTransactionQueueError.invalidReceipt
                 }
-                try validateLocalReferences(item, in: db)
                 moves.append((item, source))
             }
         }
@@ -131,19 +130,6 @@ struct VaultRelocation: Decodable, Sendable {
             """, arguments: [id])
         }
         return true
-    }
-
-    private func validateLocalReferences(_ item: Item, in db: Database) throws {
-        guard item.entity != .file else { return }
-        let referenceTable = item.entity == .project ? "project_resource_references" : "meeting_participants"
-        let referenceKey = item.entity == .project ? "projectId" : "meetingId"
-        if try Bool.fetchOne(db, sql: """
-        SELECT EXISTS(SELECT 1 FROM \(referenceTable) WHERE \(referenceKey) = ?)
-            OR EXISTS(SELECT 1 FROM insight_references WHERE resourceType = ? AND resourceId = ?)
-            OR EXISTS(SELECT 1 FROM conversation_topic_references WHERE resourceType = ? AND resourceId = ?)
-        """, arguments: [item.id, item.entity.rawValue, item.id, item.entity.rawValue, item.id]) == true {
-            throw SyncHTTPError(status: 409, body: Data("{\"error\":\"transfer_local_changes\"}".utf8))
-        }
     }
 
 }

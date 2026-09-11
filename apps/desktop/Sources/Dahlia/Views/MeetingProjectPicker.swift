@@ -275,8 +275,7 @@ struct MeetingProjectPicker: View {
         guard let meetingId = viewModel.materializeDraftMeeting(
             projectURL: projectURL,
             projectId: projectId,
-            projectName: projectName,
-            customerIntelligenceIngestion: .afterMeetingPersistence
+            projectName: projectName
         ) else { return }
 
         if projectId != viewModel.currentProjectId,

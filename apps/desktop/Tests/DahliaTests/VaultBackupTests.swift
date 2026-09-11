@@ -119,26 +119,13 @@ import GRDB
                 #expect(try files.read(source, variant: .original)?.data == Data([1, 2, 3]))
                 let projects = try ProjectRecord.fetchResolvedAll(vaultId: targetID, in: db)
                 #expect(Set(projects.map(\.path)) == ["Parent", "Parent/Child"])
-                #expect(try Int.fetchOne(
+                let calendarEvent = try #require(try CalendarEventRecord.fetchOne(
                     db,
-                    sql: "SELECT COUNT(*) FROM conversation_topic_references JOIN conversation_topics ON id = topicId WHERE vaultId = ?",
-                    arguments: [targetID]
-                ) == 1)
-                let organizations = try OrganizationRecord.filter(Column("vaultId") == targetID).fetchAll(db)
-                #expect(organizations.count == 2)
-                let childOrganization = try #require(organizations.first { $0.nodeKind == .unit })
-                #expect(organizations.contains { $0.id == childOrganization.parentOrganizationId })
-                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM organization_domains WHERE vaultId = ?", arguments: [targetID]) == 2)
-                #expect(try String.fetchOne(
-                    db,
-                    sql: "SELECT domainName FROM organization_domains WHERE vaultId = ? AND isPrimary = 1",
-                    arguments: [targetID]
-                ) == "example.invalid")
-                #expect(try Int.fetchOne(
-                    db,
-                    sql: "SELECT COUNT(*) FROM project_resource_references r JOIN contacts c ON c.id = r.resourceId JOIN projects p ON p.id = r.projectId WHERE c.vaultId = ? AND p.vaultId = ?",
-                    arguments: [targetID, targetID]
-                ) == 1)
+                    key: ["ical_uid": "backup@example.invalid", "recurrence_id": ""]
+                ))
+                #expect(calendarEvent.attendees == [
+                    CalendarAttendeeSnapshot(email: "person@example.invalid", displayName: "Person"),
+                ])
                 try VaultBackupTransfer.validateIntegrity(in: db)
             }
             #expect(try Data(contentsOf: audioURL) == Data("keep audio".utf8))
@@ -417,11 +404,10 @@ import GRDB
         }
 
         private func seedRelationships(_ fixture: BatchAudioTestFixture) throws {
-            let vaultID = fixture.meeting.vaultId
-            let parent = ProjectRecord(id: .v7(), vaultId: vaultID, path: "Parent", createdAt: fixture.now)
+            let parent = ProjectRecord(id: .v7(), vaultId: fixture.meeting.vaultId, path: "Parent", createdAt: fixture.now)
             let child = ProjectRecord(
                 id: .v7(),
-                vaultId: vaultID,
+                vaultId: fixture.meeting.vaultId,
                 parentProjectId: parent.id,
                 name: "Child",
                 createdAt: fixture.now,
@@ -457,72 +443,26 @@ import GRDB
                 ).insert(db)
                 try db.execute(sql: "INSERT INTO tags(name, colorHex, createdAt) VALUES ('Shared', '#000000', ?)", arguments: [fixture.now])
                 try db.execute(sql: "INSERT INTO meeting_tags(meetingId, tagId) VALUES (?, ?)", arguments: [fixture.meeting.id, db.lastInsertedRowID])
-                let organization = OrganizationRecord(
-                    id: .v7(),
-                    vaultId: vaultID,
-                    parentOrganizationId: nil,
-                    nodeKind: .organization,
-                    name: "Company",
-                    revision: 1,
-                    createdAt: fixture.now,
-                    updatedAt: fixture.now
-                )
-                let unit = OrganizationRecord(
-                    id: .v7(),
-                    vaultId: vaultID,
-                    parentOrganizationId: organization.id,
-                    nodeKind: .unit,
-                    name: "Team",
-                    revision: 1,
-                    createdAt: fixture.now,
-                    updatedAt: fixture.now
-                )
-                let contact = ContactRecord(
-                    id: .v7(),
-                    vaultId: vaultID,
-                    email: "test@example.invalid",
-                    displayName: "Person",
-                    revision: 1,
-                    createdAt: fixture.now,
-                    updatedAt: fixture.now
-                )
-                try organization.insert(db)
-                try unit.insert(db)
-                try contact.insert(db)
-                try OrganizationMembershipRecord(organizationId: unit.id, contactId: contact.id, roleLabel: nil, createdAt: fixture.now).insert(db)
-                try OrganizationDomainRecord(
-                    vaultId: vaultID,
-                    domainName: "example.invalid",
-                    organizationId: organization.id,
-                    isPrimary: true,
-                    firstObservedAt: fixture.now,
-                    lastObservedAt: fixture.now
-                ).insert(db)
-                try OrganizationDomainRecord(
-                    vaultId: vaultID,
-                    domainName: "alpha.invalid",
-                    organizationId: organization.id,
-                    isPrimary: false,
-                    firstObservedAt: fixture.now,
-                    lastObservedAt: fixture.now
-                ).insert(db)
-                try ProjectResourceReferenceRecord(
-                    id: .v7(),
-                    projectId: child.id,
-                    resourceType: .contact,
-                    resourceId: contact.id,
-                    relationLabel: "Contact",
-                    createdAt: fixture.now,
-                    updatedAt: fixture.now
-                ).insert(db)
-                let topicID = UUID.v7()
                 try db.execute(
-                    sql: "INSERT INTO conversation_topics(id, vaultId, title, currentState, createdAt, updatedAt) VALUES (?, ?, 'Topic', 'Current', ?, ?)",
-                    arguments: [topicID, vaultID, fixture.now, fixture.now]
+                    sql: """
+                    INSERT INTO calendar_events (
+                        ical_uid, recurrence_id, created_at, updated_at, title, description,
+                        start, end, is_all_day, attendees_json
+                    ) VALUES (?, '', ?, ?, 'Backup event', '', ?, ?, 0, ?)
+                    """,
+                    arguments: [
+                        "backup@example.invalid", fixture.now, fixture.now, fixture.now,
+                        fixture.now.addingTimeInterval(3600),
+                        #"[{"email":"person@example.invalid","display_name":"Person"}]"#,
+                    ]
                 )
                 try db.execute(
-                    sql: "INSERT INTO conversation_topic_references(topicId, resourceType, resourceId, note, createdAt, updatedAt) VALUES (?, 'meeting', ?, 'Evidence', ?, ?)",
-                    arguments: [topicID, fixture.meeting.id, fixture.now, fixture.now]
+                    sql: """
+                    UPDATE meetings
+                    SET calendar_event_ical_uid = 'backup@example.invalid', calendar_event_recurrence_id = ''
+                    WHERE id = ?
+                    """,
+                    arguments: [fixture.meeting.id]
                 )
             }
         }

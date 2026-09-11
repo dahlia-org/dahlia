@@ -15,8 +15,6 @@ struct ContentView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openWindow) private var openWindow
-    @AppStorage(AppSettings.customerIntelligenceBetaEnabledUserDefaultsKey)
-    private var isCustomerIntelligenceBetaEnabled = AppSettings.defaultCustomerIntelligenceBetaEnabled
     @State private var isSidebarVisible = true
     @State private var isShowingUnprocessedRecordings = false
     @State private var isShowingChatHistory = false
@@ -55,8 +53,6 @@ struct ContentView: View {
                         onShowUpcomingSchedule: returnToCalendarSchedule,
                         onShowChat: showFullScreenChat,
                         onShowUnprocessedRecordings: showUnprocessedRecordings,
-                        showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
-                        onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
                         onCreateProject: presentProjectCreation,
                         onOpenProject: openProjectDetail,
                         onOpenMeeting: openProjectMeeting,
@@ -90,8 +86,6 @@ struct ContentView: View {
                                 onShowProjects: showProjectCatalog,
                                 isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
                                 onShowUnprocessedRecordings: showUnprocessedRecordings,
-                                showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
-                                onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
                                 onCreateProject: presentProjectCreation,
                                 onOpenProject: handleMeetingSidebarProjectAction,
                                 onSelectVault: onSelectVault

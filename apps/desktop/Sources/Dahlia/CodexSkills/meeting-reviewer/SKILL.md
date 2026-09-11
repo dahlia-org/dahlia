@@ -58,5 +58,4 @@ Respond in the user's language with:
    replacement would preserve.
 5. A short playbook of phrases or actions to use in the next similar Meeting.
 
-This skill is read-only. Never call a create, update, set, remove, delete, or resolve tool, and never change a Meeting,
-summary, Insight, Topic, Project, Contact, or Organization as part of the review.
+This skill is read-only. Never call a write tool or change Dahlia data as part of the review.

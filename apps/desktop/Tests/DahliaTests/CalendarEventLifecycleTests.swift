@@ -58,8 +58,7 @@ import GRDB
             let resolvedMeetingId = try repository.resolveMeetingIdForCalendarEvent(
                 googleEvent,
                 vaultId: vault.id,
-                observedAt: createdAt.addingTimeInterval(60),
-                customerIntelligenceIngestion: .afterMeetingPersistence
+                observedAt: createdAt.addingTimeInterval(60)
             )
             let persisted = try database.dbQueue.read { db in
                 try (
