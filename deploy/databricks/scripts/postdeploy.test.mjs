@@ -62,8 +62,9 @@ if (command === "list-model-services") {
     const resumed = run();
     assert.equal(resumed.status, 0, resumed.stderr);
     assert.match(resumed.stdout, /Keeping existing model service: model-services\/test_catalog.ai.gpt-5-6-luna/);
-    assert.equal(JSON.parse(readFileSync(state, "utf8")).length, 13);
+    assert.equal(JSON.parse(readFileSync(state, "utf8")).length, 14);
     for (const [name, source] of [
+      ["deepseek-v4-1-flash", "deepseek-v4-1-flash"],
       ["deepseek-v4-pro-0813", "deepseek-v4-pro-0813"],
       ["glm-5-3-flash", "glm-5-3-flash"],
       ["glm-5-3", "glm-5-3"],
