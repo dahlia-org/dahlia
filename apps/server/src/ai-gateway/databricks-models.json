@@ -866,23 +866,19 @@
       "default_reasoning_summary": "none",
       "display_name": "DeepSeek V4.1 Flash",
       "description": "Fast model for coding, agents, and reasoning.",
-      "default_reasoning_level": "medium",
+      "default_reasoning_level": "high",
       "supported_reasoning_levels": [
+        {
+          "effort": "none",
+          "description": "Disable thinking."
+        },
         {
           "effort": "low",
           "description": "Fast responses with lighter reasoning"
         },
         {
-          "effort": "medium",
-          "description": "Balances speed and reasoning depth for everyday tasks"
-        },
-        {
           "effort": "high",
           "description": "Greater reasoning depth for complex problems"
-        },
-        {
-          "effort": "xhigh",
-          "description": "Extra high reasoning depth for complex problems"
         },
         {
           "effort": "max",
