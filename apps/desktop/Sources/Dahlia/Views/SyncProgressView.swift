@@ -48,6 +48,10 @@ struct VaultSyncProgressView: View {
             .font(.footnote)
             if progress.phase == .attention {
                 Text(progress.state.title).font(.footnote).foregroundStyle(.secondary)
+                if let errorCode = progress.errorCode {
+                    LabeledContent(L10n.syncServerError, value: errorCode)
+                        .textSelection(.enabled)
+                }
             }
             if progress.phase != .preparing, progress.remaining > 0 {
                 LabeledContent(L10n.syncMeetingContents, value: progress.meetings.formatted())

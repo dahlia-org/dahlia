@@ -113,6 +113,17 @@
                 try db.execute(sql: "UPDATE sync_transactions SET blockedReason = 'authorization'")
                 #expect(try progress().phase == .attention)
                 #expect(try progress().state == .blocked(.authorization))
+                #expect(try progress().errorCode == nil)
+                try db.execute(
+                    sql: "UPDATE sync_transactions SET blockedReason = 'validation', serverResponseJSON = ?",
+                    arguments: [#"{"code":"invalid_sync_operation"}"#]
+                )
+                #expect(try progress().errorCode == "invalid_sync_operation")
+                try db.execute(
+                    sql: "UPDATE sync_transactions SET serverResponseJSON = ?",
+                    arguments: [#"{"code":400}"#]
+                )
+                #expect(try progress().errorCode == nil)
                 try db.execute(sql: "DELETE FROM sync_transactions")
                 try db.execute(sql: "UPDATE vaults SET syncPullCursor = 'after'")
                 #expect(try progress().phase == .synced)

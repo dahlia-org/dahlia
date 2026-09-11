@@ -1634,6 +1634,7 @@
 "sync.fetching" = "変更を取得中";
 "sync.retrying" = "再試行待ち";
 "sync.attention" = "要対応";
+"sync.serverError" = "Server エラー";
 "sync.meetingContents" = "会議本文の残り";
 "sync.files" = "ファイルの残り";
 "sync.attachments" = "添付関連付けの残り";
