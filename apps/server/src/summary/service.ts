@@ -139,7 +139,7 @@ export class SummaryService {
       if (current && ["pending", "processing"].includes(current.status)) throw new RequestError(409, "summary_already_running");
       let inputVersion: string;
       try {
-        inputVersion = await method.version(scoped, vaultId, meetingId, input);
+        inputVersion = await method.version(scoped, vaultId, meetingId, input, { requireCompleteMeeting: true });
       }
       catch (error) {
         if (error instanceof SummaryError) throw new RequestError(error.retryable ? 503 : 400, error.code);

@@ -15,7 +15,7 @@ import Foundation
               "search": { "version": 1 },
               "imageAnalysis": { "version": 1 },
               "conversationAnalytics": { "version": 1 },
-              "meetingSummaryGeneration": { "version": 1, "sources": ["transcript", "audio"] },
+              "meetingSummaryGeneration": { "version": 1, "sources": ["transcript", "audio"], "completeRecordings": true },
               "futureFeature": { "enabled": true }
             }
             """#.utf8)
@@ -28,6 +28,7 @@ import Foundation
             #expect(capabilities.conversationAnalytics?.version == 1)
             #expect(capabilities.meetingSummaryGeneration?.version == 1)
             #expect(capabilities.meetingSummaryGeneration?.sources == ["transcript", "audio"])
+            #expect(capabilities.meetingSummaryGeneration?.completeRecordings == true)
         }
 
         @Test(arguments: [#"{"version":3}"#, #"{"version":3,"sources":{"future":true}}"#])
@@ -46,7 +47,10 @@ import Foundation
             #expect(capabilities.meetingSummaryGeneration?.sources.isEmpty == true)
         }
 
-        @Test(arguments: [#"{"version":1}"#, #"{"version":1,"sources":{}}"#, #"{"version":2}"#, #"{"version":2,"sources":{}}"#])
+        @Test(arguments: [
+            #"{"version":1}"#, #"{"version":1,"sources":{}}"#,
+            #"{"version":2}"#, #"{"version":2,"sources":{}}"#,
+        ])
         func supportedSummaryRequiresValidSources(_ summary: String) {
             let data = Data("{\"meetingSummaryGeneration\":\(summary)}".utf8)
             #expect(throws: DecodingError.self) {

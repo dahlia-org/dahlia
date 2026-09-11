@@ -584,6 +584,7 @@ describe("SQLite canonical sync", () => {
       return runtime === "node" ? app.request(request) : workerFetch(request, {} as Cloudflare.Env, {} as ExecutionContext);
     };
     const base = `/api/v1/meetings/${meetingId}/recordings`;
+    const complete = () => send(base, { headers: { "X-Dahlia-Require-Complete-Recordings": "1" } });
     // Minimal ISO BMFF fixture: server validates the container; Desktop validates full audio decoding.
     const bytes = new Uint8Array([0, 0, 0, 20, 102, 116, 121, 112, 77, 52, 65, 32, 0, 0, 0, 0, 77, 52, 65, 32]);
     const post = (source: string, body = bytes) => send(`/api/v1/meetings/${meetingId}/recording-uploads/${sessionId}/audio/${source}`, {
@@ -596,6 +597,7 @@ describe("SQLite canonical sync", () => {
     const uploaded: { id: number; size: number; checksum: string; contentUrl: string } = await first.json();
     expect(uploaded).toMatchObject({ id: 1, size: bytes.length, contentType: "audio/mp4" });
     expect(await (await send(base)).json()).toEqual({ items: [], nextCursor: null });
+    expect((await complete()).status).toBe(409);
     expect((await post("mic")).status).toBe(200);
     const changed = bytes.slice(); changed[19] = 33;
     expect((await post("mic", changed)).status).toBe(409);
@@ -621,6 +623,7 @@ describe("SQLite canonical sync", () => {
     expect(list).toMatchObject({ items: [{ id: 1, audio: { mic: { checksum: uploaded.checksum } } }] });
     expect(JSON.stringify(list)).not.toContain(sessionId);
     expect(JSON.stringify(list)).not.toContain("system");
+    expect((await complete()).status).toBe(409);
     const download = await send(uploaded.contentUrl, { headers: { range: "bytes=0-3" } });
     expect(download.status).toBe(206);
     expect(new Uint8Array(await download.arrayBuffer())).toEqual(bytes.slice(0, 4));
@@ -651,8 +654,18 @@ describe("SQLite canonical sync", () => {
     expect(await storage.exists(`meetings/${meetingId}/recordings/audio_system_01.m4a`)).toBe(false);
     expect(await storage.exists(`meetings/${meetingId}/recordings/audio_mic_01.m4a`)).toBe(true);
     const cleaned = await store.sync.withIdentity(owner, (scoped) => scoped.getRecording(meetingId, 1, true));
-    expect(cleaned!.audio.system).toBeUndefined();
+    expect(cleaned!.audio.system).toMatchObject({ active: false, uploadedAt: null, size: 0, checksum: null });
+    expect(cleaned!.audio.system!.generation).not.toBe(oldGeneration);
     expect(cleaned!.audio.mic!.active).toBe(true);
+    expect(await (await send(base)).json()).toMatchObject({ items: [{ audio: { mic: { checksum: uploaded.checksum } } }] });
+    expect((await complete()).status).toBe(409);
+    const pendingSessionId = freshId();
+    for (const kind of ["recording_started", "recording_ended"]) {
+      await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting_event", action: "create",
+        entityId: freshId(), baseRevision: null, data: { meetingId, sessionId: pendingSessionId, kind, occurredAt: now } }]));
+    }
+    expect(await (await send(base)).json()).toMatchObject({ items: [{ audio: { mic: {} } }] });
+    expect((await complete()).status).toBe(409);
     expect((await post("system")).status).toBe(201);
     await maintain();
     expect(await store.sync.withIdentity(owner, (scoped) => scoped.markRecordingUploaded(sessionId, "system", oldGeneration, bytes.length, uploaded.checksum))).toBeNull();

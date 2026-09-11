@@ -398,6 +398,23 @@ import DahliaRuntimeSupport
         }
 
         @Test
+        func legacyCapabilityKeepsAutomaticAudioButNotManualAudio() async throws {
+            let origin = "https://capabilities-\(UUID.v7().uuidString.lowercased()).test"
+            ImageURLProtocol.register(origin: origin) { _ in
+                (200, [:], Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"]}}"#.utf8))
+            }
+            defer { ImageURLProtocol.remove(origin: origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let service = ServerSummaryService(client: SyncAPIClient(
+                session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" }
+            ))
+
+            #expect(try await service.methods(connectionID: .v7(), origin: origin) == ["transcript", "audio"])
+            #expect(try await service.manualMethods(connectionID: .v7(), origin: origin) == ["transcript"])
+        }
+
+        @Test
         func encodesAccountStylePatch() throws {
             let patch = ServerAccountSettings.Patch(summary: .init(style: .concise))
             let data = try JSONEncoder().encode(patch)
@@ -417,6 +434,15 @@ import DahliaRuntimeSupport
                 origin: "https://\(UUID().uuidString).example.test"
             )
             let first = UUID.v7(), later = UUID.v7(), jobID = UUID.v7(), fileID = UUID.v7()
+            let audioJSON = try String(decoding: SyncJSON.encoder.encode([
+                "mic": RecordingArchivedAudio(
+                    contentType: "audio/mp4",
+                    size: 1,
+                    checksum: "SHA-256:" + String(repeating: "0", count: 64),
+                    contentURL: "/audio",
+                    manifest: .init(sampleRate: 16000, frameCount: 16000, ranges: [])
+                ),
+            ]), as: UTF8.self)
             try await queue.write { db in
                 try DahliaAccountConnectionRecord(id: target.connectionID, origin: target.origin, clientID: "test", createdAt: .now).insert(db)
                 var vault = VaultRecord(id: target.vaultID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
@@ -444,7 +470,7 @@ import DahliaRuntimeSupport
                     vaultId: target.vaultID,
                     connectionId: target.connectionID,
                     number: 1,
-                    audioJSON: "{\"mic\":{}}",
+                    audioJSON: audioJSON,
                     state: "saved"
                 ).insert(db)
             }
@@ -476,7 +502,7 @@ import DahliaRuntimeSupport
             let bodies = Mutex<[Data]>([])
             ImageURLProtocol.register(origin: target.origin) { request in
                 if request.url!.path.hasSuffix("/capabilities") {
-                    return (200, [:], Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"]}}"#.utf8))
+                    return (200, [:], Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],"completeRecordings":true}}"#.utf8))
                 }
                 if request.url!.path.hasSuffix("/recordings") {
                     return (200, [:], Data("""

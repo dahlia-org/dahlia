@@ -85,7 +85,8 @@ export interface SummaryMethod {
   captureSettings(settings: AccountSettings, detail?: z.infer<typeof summaryDetailSchema>): SummaryJob["settings"];
   resolvePreferences?(preferences: GenerationPreferences, input: SummaryInput): Promise<{ settings: TranscriptSettings; input: SummaryInput }>;
   validateSettings?(settings: TranscriptSettings, input?: SummaryInput): Promise<void>;
-  version(store: IdentitySyncStore, vaultId: string, meetingId: string, input?: SummaryInput | null): Promise<string>;
+  version(store: IdentitySyncStore, vaultId: string, meetingId: string, input?: SummaryInput | null,
+    options?: { requireCompleteMeeting?: boolean }): Promise<string>;
   transcribe?(job: SummaryJob, signal: AbortSignal): Promise<GeneratedTranscript>;
   generate(job: SummaryJob, signal: AbortSignal): Promise<SummaryGenerationResult>;
 }

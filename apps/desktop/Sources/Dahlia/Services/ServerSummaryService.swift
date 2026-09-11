@@ -59,6 +59,13 @@ actor ServerSummaryService {
 
     private struct Response: Decodable { let job: Job? }
 
+    private struct TranscriptPage: Decodable {
+        let version: Int
+        let present: Bool
+        let items: [SyncTranscriptPage.Segment]?
+        let nextCursor: String?
+    }
+
     struct RecordingPair: Codable, Sendable {
         let micFileId: String?
         let systemFileId: String?
@@ -125,13 +132,21 @@ actor ServerSummaryService {
     }
 
     func methods(connectionID: UUID, origin: String) async throws -> [String] {
+        try await summaryCapability(connectionID: connectionID, origin: origin)?.sources ?? []
+    }
+
+    func manualMethods(connectionID: UUID, origin: String) async throws -> [String] {
+        guard let summary = try await summaryCapability(connectionID: connectionID, origin: origin) else { return [] }
+        return summary.sources.filter { $0 != SummaryGenerationSource.audio.rawValue || summary.completeRecordings }
+    }
+
+    private func summaryCapability(connectionID: UUID, origin: String) async throws -> ServerCapabilities.MeetingSummaryGeneration? {
         guard let origin = URL(string: origin) else { throw URLError(.badURL) }
         let data = try await client.data(origin: origin, connectionId: connectionID, maximumBytes: 8192) {
             try await $0.getCapabilities().ok.body.json
         }
         let summary = try JSONDecoder().decode(ServerCapabilities.self, from: data).meetingSummaryGeneration
-        guard let summary, summary.version == 2 else { return [] }
-        return summary.sources
+        return summary?.version == 2 ? summary : nil
     }
 
     func models(connectionID: UUID, origin: String) async throws -> [Model] {
@@ -143,6 +158,45 @@ actor ServerSummaryService {
         let list = try JSONDecoder().decode(ModelList.self, from: data)
         return list.data.filter { $0.id != "codex-auto-review" }
             .compactMap { entry in list.models.first { $0.id == entry.id } }
+    }
+
+    func availableTranscriptVersion(_ target: Target, dbQueue: DatabaseQueue) async throws -> Int? {
+        let hasPendingMutation = try await dbQueue.read { db in
+            try Bool.fetchOne(
+                db,
+                sql: """
+                SELECT EXISTS (
+                    SELECT 1 FROM sync_operations o
+                    JOIN sync_transactions t ON t.id = o.transactionId
+                    WHERE t.vaultId = ? AND o.entity = 'transcript' AND o.entityId = ?
+                )
+                """,
+                arguments: [target.vaultID, target.meetingID]
+            ) ?? false
+        }
+        guard !hasPendingMutation else { return nil }
+        return try await latestTranscriptVersion(target)
+    }
+
+    func hasAvailableAudio(_ target: Target) async throws -> Bool {
+        struct Page: Decodable {
+            struct Item: Decodable {}
+            let items: [Item]
+        }
+        guard let origin = URL(string: target.origin) else { throw URLError(.badURL) }
+        do {
+            let data = try await client.data(
+                origin: origin,
+                connectionId: target.connectionID,
+                maximumBytes: 2 * 1024 * 1024,
+                requireCompleteRecordings: true
+            ) {
+                try await $0.listRecordings(path: .init(meetingId: target.meetingID.uuidString.lowercased())).ok.body.json
+            }
+            return try !JSONDecoder().decode(Page.self, from: data).items.isEmpty
+        } catch let error as SyncHTTPError where error.status == 409 {
+            return false
+        }
     }
 
     func status(_ target: Target, id: UUID? = nil) async throws -> Job? {
@@ -232,30 +286,32 @@ actor ServerSummaryService {
         id: UUID,
         detail: String?,
         dbQueue: DatabaseQueue,
+        source: SummaryGenerationSource? = nil,
+        preparedRequest: Request? = nil,
         processing: RecordingProcessing? = nil,
         accountSettings: ServerAccountSettings? = nil,
         onPrepared: @Sendable (Request) async throws -> Void = { _ in },
         onStage: @MainActor @Sendable (String) async -> Void = { _ in }
     ) async throws {
-        guard try await !methods(connectionID: target.connectionID, origin: target.origin).isEmpty else { throw Failure.unavailable }
+        let supportedSources = try await supportedSources(for: source, target: target)
+        guard supports(source, in: supportedSources) else { throw Failure.unavailable }
+        await onStage("uploading")
+        try await awaitSynchronization(target, dbQueue: dbQueue)
         let sessionIDs: [UUID] = if let processing {
             processing.sessionIDs
         } else {
             try await dbQueue.read { db in
                 try RecordingSessionRecord.filter(Column("meetingId") == target.meetingID)
-                    .filter(Column("transcriptionMode") == "batch" && Column("batchDiscardedAt") == nil)
                     .order(Column("startedAt").asc).fetchAll(db).map(\.id)
             }
         }
-        await onStage("uploading")
-        try await awaitSynchronization(target, dbQueue: dbQueue)
         var job = try await status(target, id: id)
         if job == nil, let previousID = processing?.retryOf {
             job = try await retry(target, previousID: previousID, id: id)
         }
         if job == nil {
             let body: Request
-            if var saved = processing?.serverRequest {
+            if var saved = preparedRequest ?? processing?.serverRequest {
                 if saved.preferences == nil {
                     saved.reasoningEffort = saved.reasoningEffort ?? processing?.serverSettings?.processing?.remote.reasoningEffort
                 }
@@ -276,15 +332,16 @@ actor ServerSummaryService {
                 let isLegacyProcessing = processing != nil && processing?.summaryMode == nil
                 guard let summary = settings.summary, let accountProcessing = settings.processing,
                       accountProcessing.location == .remote || settings.legacyMethod != nil || isLegacyProcessing else { throw Failure.unavailable }
-                let method = processing?.method ?? (accountProcessing.remote.workflow == .combined ? .audio : .cloudTranscription)
+                let method = processing?.method ?? source?.processingMethod
+                    ?? (accountProcessing.remote.workflow == .combined ? .audio : .cloudTranscription)
                 let input: Input
                 if method == .transcript {
-                    guard let version = try await dbQueue.read({ db in try TranscriptRecord.current(target.meetingID, in: db)?.version }) else {
+                    guard let version = try await latestTranscriptVersion(target) else {
                         throw Failure.syncPending
                     }
                     input = Input(type: "transcript", version: String(version))
                 } else {
-                    try await awaitRecordingUploads(target, sessionIDs: sessionIDs, dbQueue: dbQueue)
+                    try await awaitRecordingUploads(target, sessionIDs: sessionIDs, dbQueue: dbQueue, wait: source == nil)
                     let numbers = try await dbQueue.read { db in
                         try sessionIDs.map { id in
                             guard let number = try RecordingArchiveRecord.fetchOne(db, key: id)?.number else { throw Failure.syncPending }
@@ -299,6 +356,7 @@ actor ServerSummaryService {
                 var preferences = settings.generationPreferences
                 preferences.processing.location = .remote
                 preferences.processing.remote.workflow = method == .audio ? .combined : .transcribeThenSummarize
+                preferences = await resettingIncompatibleManualModel(preferences, source: source, target: target)
                 preferences.summary.style = detail.map { SummaryStyle(detailLevel: .fromPersistedValue($0)) } ?? summary.style
                 body = Request(id: id.uuidString.lowercased(), input: input, preferences: preferences)
                 try await onPrepared(body)
@@ -331,7 +389,71 @@ actor ServerSummaryService {
         }
     }
 
-    private func awaitRecordingUploads(_ target: Target, sessionIDs: [UUID], dbQueue: DatabaseQueue) async throws {
+    private func supports(_ source: SummaryGenerationSource?, in supportedSources: [String]) -> Bool {
+        source.map { supportedSources.contains($0.rawValue) } ?? !supportedSources.isEmpty
+    }
+
+    private func supportedSources(for source: SummaryGenerationSource?, target: Target) async throws -> [String] {
+        if source == nil {
+            return try await methods(connectionID: target.connectionID, origin: target.origin)
+        }
+        return try await manualMethods(connectionID: target.connectionID, origin: target.origin)
+    }
+
+    private func latestTranscriptVersion(_ target: Target) async throws -> Int? {
+        guard let origin = URL(string: target.origin) else { throw URLError(.badURL) }
+        var cursor: String?
+        var version: Int?
+        repeat {
+            let pageCursor = cursor
+            let data: Data = if let version {
+                try await client.data(origin: origin, connectionId: target.connectionID, maximumBytes: 9 * 1024 * 1024) {
+                    try await $0.getTranscript(
+                        path: .init(meetingId: target.meetingID.uuidString.lowercased(), version: String(version)),
+                        query: .init(cursor: pageCursor)
+                    ).ok.body.json
+                }
+            } else {
+                try await client.data(origin: origin, connectionId: target.connectionID, maximumBytes: 9 * 1024 * 1024) {
+                    try await $0.getLatestTranscript(
+                        path: .init(meetingId: target.meetingID.uuidString.lowercased()),
+                        query: .init(cursor: pageCursor)
+                    ).ok.body.json
+                }
+            }
+            let page = try SyncJSON.decoder.decode(TranscriptPage.self, from: data)
+            guard page.present else { return nil }
+            version = version ?? page.version
+            guard page.version == version else { throw Failure.unavailable }
+            if page.items?.contains(where: { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) == true {
+                return version
+            }
+            cursor = page.nextCursor
+        } while cursor != nil
+        return nil
+    }
+
+    private func resettingIncompatibleManualModel(
+        _ preferences: ServerAccountSettings.GenerationPreferences,
+        source: SummaryGenerationSource?,
+        target: Target
+    ) async -> ServerAccountSettings.GenerationPreferences {
+        guard let source, let savedModel = preferences.processing.remote.summaryModel else { return preferences }
+        guard let models = try? await models(connectionID: target.connectionID, origin: target.origin),
+              let model = models.first(where: { $0.id == savedModel || savedModel.hasSuffix("." + $0.id) }),
+              !model.supportsSummary(method: source.rawValue) else { return preferences }
+        var preferences = preferences
+        preferences.processing.remote.summaryModel = nil
+        preferences.processing.remote.reasoningEffort = nil
+        return preferences
+    }
+
+    private func awaitRecordingUploads(
+        _ target: Target,
+        sessionIDs: [UUID],
+        dbQueue: DatabaseQueue,
+        wait: Bool
+    ) async throws {
         guard !sessionIDs.isEmpty else { throw Failure.unavailable }
         while true {
             try Task.checkCancellation()
@@ -339,11 +461,13 @@ actor ServerSummaryService {
             let ready = try await dbQueue.read { db in
                 try sessionIDs.allSatisfy { id in
                     guard let session = try RecordingSessionRecord.fetchOne(db, key: id),
+                          session.transcriptionMode == .batch,
                           session.batchDiscardedAt == nil else { throw Failure.unavailable }
                     return try session.endedAt != nil && RecordingArchiveRecord.isAvailable(sessionId: id, in: db)
                 }
             }
             if ready { return }
+            guard wait else { throw Failure.syncPending }
             try await Task.sleep(for: .seconds(3))
         }
     }

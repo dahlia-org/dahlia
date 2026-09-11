@@ -1689,6 +1689,7 @@ export interface components {
             meetingSummaryGeneration?: {
                 version: number;
                 sources: ("transcript" | "audio")[];
+                completeRecordings?: boolean;
             };
         };
         SummaryContent: {

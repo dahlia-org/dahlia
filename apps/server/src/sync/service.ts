@@ -671,11 +671,12 @@ export class MeetingSyncService {
     }));
   }
 
-  async listRecordings(identity: Identity, meetingId: string, cursor?: string) {
+  async listRecordings(identity: Identity, meetingId: string, cursor?: string, requireComplete = false) {
     const after = cursor === undefined ? 0 : Number(cursor);
     if (!Number.isSafeInteger(after) || after < 0) throw new RequestError(400, "invalid_recording_cursor");
     const records = await this.store.withIdentity(identity, async (scoped) => {
       if (!await scoped.resolveEntityVault("meeting", meetingId)) throw new RequestError(404, "meeting_not_found");
+      if (requireComplete && await scoped.hasPendingRecordings(meetingId)) throw new RequestError(409, "recording_upload_pending");
       return scoped.listRecordings(meetingId, after, SYNC_READ_PAGE_SIZE + 1);
     });
     const items = records.slice(0, SYNC_READ_PAGE_SIZE);

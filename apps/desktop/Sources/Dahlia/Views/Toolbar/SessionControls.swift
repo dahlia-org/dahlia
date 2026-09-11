@@ -58,7 +58,7 @@ struct RecordButton: View {
 struct GenerateSummaryHeaderButton: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
-    @State private var isConfirmationPresented = false
+    let onPresentConfirmation: () -> Void
     @State private var serverJob: ServerSummaryService.Job?
 
     private var isGeneratingCurrentMeeting: Bool {
@@ -70,7 +70,7 @@ struct GenerateSummaryHeaderButton: View {
     }
 
     var body: some View {
-        Button(action: presentConfirmation) {
+        Button(action: onPresentConfirmation) {
             Label {
                 Text(isGeneratingCurrentMeeting ? L10n.generatingSummary : serverJob?.status == "failed" ? L10n.retry : L10n.generateSummary)
             } icon: {
@@ -104,26 +104,6 @@ struct GenerateSummaryHeaderButton: View {
             }
         }
         .help(serverJob?.status == "failed" ? L10n.serverSummaryFailed : L10n.generateSummary)
-        .sheet(isPresented: $isConfirmationPresented) {
-            SummaryGenerationConfirmationView(
-                projects: sidebarViewModel.flatProjects,
-                initialProjectId: viewModel.currentProjectId,
-                initialDetailLevel: AppSettings.shared.summaryDetailLevel,
-                onGenerate: generateSummary
-            )
-        }
-    }
-
-    private func presentConfirmation() {
-        isConfirmationPresented = true
-    }
-
-    private func generateSummary(options: SummaryGenerationOptions, projectId: UUID?) -> String? {
-        if let error = viewModel.assignCurrentMeetingProject(projectId) {
-            return error
-        }
-        guard !viewModel.triggerManualSummary(options: options) else { return nil }
-        return viewModel.isSummaryGenerating ? nil : L10n.summaryGenerationFailed
     }
 }
 

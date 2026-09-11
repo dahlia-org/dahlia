@@ -1457,9 +1457,10 @@ struct ServerCapabilities: Decodable {
     struct MeetingSummaryGeneration: Decodable {
         let version: Int
         let sources: [String]
+        let completeRecordings: Bool
 
         private enum CodingKeys: String, CodingKey {
-            case version, sources
+            case version, sources, completeRecordings
         }
 
         init(from decoder: Decoder) throws {
@@ -1467,6 +1468,7 @@ struct ServerCapabilities: Decodable {
             version = try container.decode(Int.self, forKey: .version)
             // Future summary payloads must not disable unrelated capabilities.
             sources = version <= 2 ? try container.decode([String].self, forKey: .sources) : []
+            completeRecordings = try container.decodeIfPresent(Bool.self, forKey: .completeRecordings) ?? false
         }
     }
 

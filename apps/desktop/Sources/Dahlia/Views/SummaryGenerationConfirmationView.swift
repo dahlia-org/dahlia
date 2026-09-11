@@ -1,17 +1,22 @@
 import SwiftUI
 
 struct SummaryGenerationConfirmationView: View {
-    @Environment(\.dismiss) private var dismiss
     @State private var exportsToVault = SummaryExportOptions.manual.exportsToVault
     @State private var exportsToGoogleDocs = SummaryExportOptions.manual.exportsToGoogleDocs
     @State private var detailLevel: SummaryDetailLevel?
     @State private var selectedProjectId: UUID?
+    @State private var selectedSource: SummaryGenerationSource?
+    @State private var sourceAvailability: SummaryGenerationSourceAvailability?
+    @State private var isLoadingSources = true
+    @State private var sourceErrorMessage: String?
     @State private var errorMessage: String?
 
     let title: String
     let description: String
     let actionTitle: String
     let projects: [FlatProjectRow]?
+    let loadSourceAvailability: () async throws -> SummaryGenerationSourceAvailability
+    let onCancel: () -> Void
     let onGenerate: (SummaryGenerationOptions, UUID?) -> String?
 
     init(
@@ -21,12 +26,16 @@ struct SummaryGenerationConfirmationView: View {
         projects: [FlatProjectRow]? = nil,
         initialProjectId: UUID? = nil,
         initialDetailLevel: SummaryDetailLevel,
+        loadSourceAvailability: @escaping () async throws -> SummaryGenerationSourceAvailability,
+        onCancel: @escaping () -> Void,
         onGenerate: @escaping (SummaryGenerationOptions, UUID?) -> String?
     ) {
         self.title = title
         self.description = description
         self.actionTitle = actionTitle
         self.projects = projects
+        self.loadSourceAvailability = loadSourceAvailability
+        self.onCancel = onCancel
         self.onGenerate = onGenerate
         let connectionID = AppSettings.shared.currentVault?.accountConnectionId
         let serverDetail = connectionID.flatMap { connectionID -> SummaryDetailLevel? in
@@ -36,24 +45,6 @@ struct SummaryGenerationConfirmationView: View {
         _detailLevel = State(initialValue: connectionID == nil ? initialDetailLevel : serverDetail)
         _selectedProjectId = State(initialValue: initialProjectId)
         _errorMessage = State(initialValue: nil)
-    }
-
-    init(
-        title: String = L10n.summaryGenerationConfirmationTitle,
-        description: String = L10n.summaryGenerationConfirmationDescription,
-        actionTitle: String = L10n.generateSummary,
-        initialDetailLevel: SummaryDetailLevel,
-        onGenerate: @escaping (SummaryGenerationOptions) -> Void
-    ) {
-        self.init(
-            title: title,
-            description: description,
-            actionTitle: actionTitle,
-            initialDetailLevel: initialDetailLevel
-        ) { options, _ in
-            onGenerate(options)
-            return nil
-        }
     }
 
     var body: some View {
@@ -70,6 +61,15 @@ struct SummaryGenerationConfirmationView: View {
             .padding(.bottom, 8)
 
             Form {
+                Section(L10n.summaryGenerationSource) {
+                    SummaryGenerationSourcePicker(
+                        selection: $selectedSource,
+                        availability: sourceAvailability,
+                        isLoading: isLoadingSources,
+                        errorMessage: sourceErrorMessage
+                    )
+                }
+
                 Section(L10n.summaryAndExport) {
                     if let projects {
                         SummaryProjectPicker(projects: projects, selection: $selectedProjectId)
@@ -98,14 +98,17 @@ struct SummaryGenerationConfirmationView: View {
 
             HStack {
                 Spacer()
-                Button(L10n.cancel, role: .cancel, action: dismiss.callAsFunction)
+                Button(L10n.cancel, role: .cancel, action: onCancel)
                     .keyboardShortcut(.cancelAction)
                 Button(actionTitle, action: generateSummary)
                     .keyboardShortcut(.defaultAction)
+                    .disabled(selectedSource.map { sourceAvailability?.isAvailable($0) != true } ?? true)
             }
             .padding(20)
         }
-        .frame(minWidth: 500, idealWidth: 520, minHeight: 340, idealHeight: 380)
+        .frame(width: 560, height: 500)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .task(loadSources)
     }
 
     private func generateSummary() {
@@ -114,10 +117,27 @@ struct SummaryGenerationConfirmationView: View {
                 exportsToVault: exportsToVault,
                 exportsToGoogleDocs: exportsToGoogleDocs
             ),
-            detailLevel: detailLevel
+            detailLevel: detailLevel,
+            source: selectedSource
         ), selectedProjectId)
         if errorMessage == nil {
-            dismiss()
+            onCancel()
         }
+    }
+
+    private func loadSources() async {
+        isLoadingSources = true
+        sourceErrorMessage = nil
+        do {
+            let availability = try await loadSourceAvailability()
+            try Task.checkCancellation()
+            sourceAvailability = availability
+            selectedSource = availability.preferredSource
+        } catch is CancellationError {
+            return
+        } catch {
+            sourceErrorMessage = L10n.summarySourceCheckFailed
+        }
+        isLoadingSources = false
     }
 }

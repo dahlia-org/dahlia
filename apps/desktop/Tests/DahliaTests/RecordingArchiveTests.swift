@@ -349,10 +349,56 @@ import GRDB
                 #expect(try RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db))
                 #expect(try RecordingArchiveRecord.fetchOne(db, key: sessionId)?.number == 12)
                 #expect(try RecordingSessionRecord.fetchOne(db, key: sessionId)?.batchCompletedAt != nil)
+                let prepared = try String(
+                    decoding: JSONSerialization.data(withJSONObject: [
+                        "mic": [
+                            "relativePath": "mic.m4a",
+                            "size": 128,
+                            "checksum": "SHA-256:" + String(repeating: "0", count: 64),
+                            "manifest": [
+                                "sampleRate": 16000,
+                                "frameCount": 16000,
+                                "ranges": [[
+                                    "startFrame": 0,
+                                    "frameCount": 16000,
+                                    "sessionOffsetSeconds": 0,
+                                    "localeIdentifier": "ja_JP",
+                                ]],
+                            ],
+                        ],
+                        "system": [
+                            "relativePath": "system.m4a",
+                            "size": 128,
+                            "checksum": "SHA-256:" + String(repeating: "1", count: 64),
+                            "manifest": [
+                                "sampleRate": 16000,
+                                "frameCount": 16000,
+                                "ranges": [[
+                                    "startFrame": 0,
+                                    "frameCount": 16000,
+                                    "sessionOffsetSeconds": 0,
+                                    "localeIdentifier": "ja_JP",
+                                ]],
+                            ],
+                        ],
+                    ]),
+                    as: UTF8.self
+                )
+                try db.execute(
+                    sql: "UPDATE recording_archives SET preparedJSON = ? WHERE sessionId = ?",
+                    arguments: [prepared, sessionId]
+                )
+                #expect(try !RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db))
+                try db.execute(
+                    sql: "UPDATE recording_archives SET preparedJSON = '{}' WHERE sessionId = ?",
+                    arguments: [sessionId]
+                )
+                #expect(try RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db))
                 try SyncTransactionRecorder.record(vaultId: fixture.meeting.vaultId, operations: [
                     SyncOperationDraft(entity: .recording, action: .upsert, entityId: sessionId, payloadJSON: Data("{}".utf8)),
                 ], in: db)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sync_operations WHERE entity = 'recording'") == 1)
+                #expect(try !RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db))
                 #expect(try !RemoteChangePolicy.permits(.meeting, id: fixture.meeting.id, action: "delete", vaultId: fixture.meeting.vaultId, in: db))
                 try SyncTransactionRecorder.record(vaultId: fixture.meeting.vaultId, operations: [
                     SyncOperationDraft(entity: .meeting, action: .delete, entityId: fixture.meeting.id),

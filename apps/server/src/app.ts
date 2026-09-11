@@ -557,7 +557,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       search: { version: 1 },
       conversationAnalytics: { version: 1 },
       ...(dependencies.imageAnalysisEnabled === true ? { imageAnalysis: { version: 1 } } : {}),
-      ...(sources.length ? { meetingSummaryGeneration: { version: 2, sources } } : {}),
+      ...(sources.length ? { meetingSummaryGeneration: { version: 2, sources, completeRecordings: true } } : {}),
     });
   });
   registerApi(app, "getConversationAnalytics", async (context) => {
@@ -653,7 +653,8 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   });
   registerApi(app, "listRecordings", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.listRecordings(identity, sync.parseId(context.req.param("meetingId")!), context.req.query("cursor")));
+    return context.json(await sync.listRecordings(identity, sync.parseId(context.req.param("meetingId")!), context.req.query("cursor"),
+      context.req.header("X-Dahlia-Require-Complete-Recordings") === "1"));
   });
   for (const operation of ["getRecordingContent", "headRecordingContent"] as const) registerApi(app, operation, async (context) => {
     const identity = await syncIdentity(context.req.raw);

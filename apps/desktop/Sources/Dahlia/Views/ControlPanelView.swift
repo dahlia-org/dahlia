@@ -34,6 +34,7 @@ struct ControlPanelView: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
+    let onPresentSummaryGeneration: () -> Void
     @Binding var selectedTab: DetailTab
     @Binding var expandedScreenshot: ExpandedScreenshotPresentation?
 
@@ -82,7 +83,8 @@ struct ControlPanelView: View {
                         onBeginEditing: beginMeetingRename,
                         onCommit: commitMeetingRename,
                         onCancel: cancelMeetingRename,
-                        onEditorTap: markMeetingNameEditorTap
+                        onEditorTap: markMeetingNameEditorTap,
+                        onPresentSummaryGeneration: onPresentSummaryGeneration
                     )
                 }
 

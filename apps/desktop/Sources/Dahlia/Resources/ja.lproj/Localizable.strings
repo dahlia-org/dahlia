@@ -10,7 +10,7 @@
 "settings.organization.settingsApplyNextGeneration" = "変更は自動保存され、次回の生成から適用されます。";
 "settings.organization.settingsSummaryOutput" = "生成結果";
 "settings.organization.settingsOutputLanguageDescription" = "出力言語は要約と画像の説明に共通です。音声認識の言語は変更しません。";
-"settings.organization.settingsServerProcessingDescription" = "録音音声をサーバーに送り、サーバーのAI接続先で文字起こしと要約を作成します。";
+"settings.organization.settingsServerProcessingDescription" = "新しい録音はサーバーへ送り、選択した自動処理で文字起こしと要約を作成します。手動生成ではミーティング画面のソース選択が優先されます。";
 "settings.organization.settingsLocalAnalysisLanguages" = "画像の解析には「一般」で選んだ、このMacの対象言語を使用します。";
 "settings.organization.settingsAnalysisLanguagesDescription" = "画像に含まれる文字の言語を指定します。録音や字幕の言語は変更しません。";
 "settings.organization.settingsDuringRecording" = "録音中";
@@ -33,14 +33,14 @@
 "settings.preferences.localModelPreferences" = "このMacの要約モデル";
 "settings.preferences.localModelPreferencesDescription" = "このMacで処理するすべてのアカウントに共通です。モデル設定はサーバーに同期されません。";
 "settings.preferences.serverProcessingAdvanced" = "サーバー処理の詳細設定";
-"settings.preferences.processingWorkflow" = "処理方式";
+"settings.preferences.processingWorkflow" = "新しい録音の自動処理";
 "settings.preferences.transcribeThenSummarize" = "文字起こししてから要約";
 "settings.preferences.combinedTranscriptionSummary" = "文字起こしと要約を一括生成";
 "settings.preferences.summaryModel" = "要約モデル";
 "settings.preferences.automaticModelPreference" = "自動";
 "settings.preferences.unavailableModelPreference" = "この方式では利用不可";
 "settings.preferences.checkModelPreference" = "モデルとの対応を確認";
-"settings.preferences.automaticModelPreferenceDescription" = "自動では対応する既定モデルと推論強度を使います。明示指定は処理方式を切り替えても保持します。利用できない指定は自動変更せず、生成時にエラーを表示します。";
+"settings.preferences.automaticModelPreferenceDescription" = "ここでの選択は新しい録音後の自動処理に適用されます。手動生成ではミーティング画面で選んだソースが優先されます。明示したモデルは保持し、選んだソースに非対応の場合はその実行だけモデルと推論強度を自動に戻します。";
 /* Common */
 "Delete" = "削除";
 "Remove from Project" = "プロジェクトを解除";
@@ -989,6 +989,20 @@
 "Project" = "プロジェクト";
 "Generate this summary?" = "要約を生成しますか？";
 "Review the context and export options before generating the summary." = "要約を生成する前に、コンテキストと書き出し設定を確認してください。";
+"summary.source.title" = "今回の生成ソース";
+"summary.source.transcript" = "文字起こし";
+"summary.source.transcript.description" = "最新の文字起こしから要約だけを再生成します。";
+"summary.source.audio" = "録音音声";
+"summary.source.audio.description" = "すべての録音から文字起こしと要約を再生成します。";
+"summary.source.checking" = "利用可能なソースを確認中…";
+"summary.source.checkFailed" = "利用可能なソースを確認できませんでした。同期と接続を確認して再試行してください。";
+"summary.source.unsupported" = "このサーバーはこのソースに対応していません。";
+"summary.source.transcript.unavailable" = "最新の文字起こしが空か、まだサーバーに保存されていません。";
+"summary.source.audio.unavailable" = "確定済みの録音音声がありません。アップロード完了後に再試行してください。";
+"summary.source.audio.requiresServer" = "録音音声からの生成はサーバー処理で利用できます。";
+"summary.source.noneAvailable" = "すべての対象で利用できる共通ソースがありません。";
+"%lld selected meetings do not have an available transcript." = "選択したミーティングのうち%lld件で、文字起こしを利用できません。";
+"%lld selected meetings do not have completed recording audio." = "選択したミーティングのうち%lld件で、確定済みの録音音声を利用できません。";
 "Regenerate Summaries" = "要約を再生成";
 "Regenerate selected summaries?" = "選択したミーティングの要約を再生成しますか？";
 "Each selected meeting is regenerated independently. Existing summaries are replaced only after generation succeeds." = "選択したミーティングごとに要約を再生成します。既存の要約は、再生成に成功した場合のみ置き換えられます。";

@@ -13,6 +13,7 @@ extension SyncAPIClient {
         connectionId: UUID,
         maximumBytes: Int? = nil,
         preservingJSONBody: Data? = nil,
+        requireCompleteRecordings: Bool = false,
         capture: SyncJSONResponse? = nil,
         operation: @Sendable (DahliaServerAPI.Client) async throws -> Value
     ) async throws -> Value {
@@ -21,7 +22,13 @@ extension SyncAPIClient {
             let client = DahliaServerAPI.Client(
                 serverURL: origin, configuration: .init(dateTranscoder: SyncAPIDateTranscoder()),
                 transport: URLSessionTransport(configuration: .init(session: session)),
-                middlewares: [SyncAPIMiddleware(token: token, maximumBytes: maximumBytes, preservingJSONBody: preservingJSONBody, capture: capture)]
+                middlewares: [SyncAPIMiddleware(
+                    token: token,
+                    maximumBytes: maximumBytes,
+                    preservingJSONBody: preservingJSONBody,
+                    requireCompleteRecordings: requireCompleteRecordings,
+                    capture: capture
+                )]
             )
             do {
                 return try await operation(client)
@@ -40,6 +47,7 @@ extension SyncAPIClient {
         connectionId: UUID,
         maximumBytes: Int? = nil,
         preservingJSONBody: Data? = nil,
+        requireCompleteRecordings: Bool = false,
         operation: @Sendable (DahliaServerAPI.Client) async throws -> some Sendable
     ) async throws -> Data {
         let capture = SyncJSONResponse()
@@ -48,6 +56,7 @@ extension SyncAPIClient {
             connectionId: connectionId,
             maximumBytes: maximumBytes,
             preservingJSONBody: preservingJSONBody,
+            requireCompleteRecordings: requireCompleteRecordings,
             capture: capture,
             operation: operation
         )
@@ -64,6 +73,7 @@ struct SyncAPIMiddleware: ClientMiddleware {
     let token: String
     let maximumBytes: Int?
     let preservingJSONBody: Data?
+    var requireCompleteRecordings = false
     let capture: SyncJSONResponse?
 
     func intercept(
@@ -89,6 +99,9 @@ struct SyncAPIMiddleware: ClientMiddleware {
         }
         request.headerFields[.authorization] = "Bearer \(token)"
         request.headerFields[.init("X-Dahlia-Vault-Transfers")!] = "1"
+        if requireCompleteRecordings {
+            request.headerFields[.init("X-Dahlia-Require-Complete-Recordings")!] = "1"
+        }
         var responseShape = route?.response
         let internalBody = preservingJSONBody.map(HTTPBody.init) ?? body
         let publicBody: HTTPBody?

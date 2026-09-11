@@ -406,6 +406,17 @@ a.metadata-chip:hover { background: #e8e8e8; }
 .account-settings .select-trigger { width: 100%; }
 .summary-generation { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 24px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
 .summary-generation [role="alert"] { flex-basis: 100%; color: var(--danger); }
+.summary-source-options { flex-basis: 100%; min-width: 0; margin: 4px 0; padding: 0; border: 0; }
+.summary-source-options legend { margin-bottom: 8px; font-size: 12px; font-weight: 600; }
+.summary-source-options > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.summary-source-options label { display: flex; align-items: flex-start; gap: 10px; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.summary-source-options label:not([data-disabled="true"]):hover { background: var(--canvas); }
+.summary-source-options label:has(input:checked) { border-color: var(--plum); background: var(--plum-soft); }
+.summary-source-options label[data-disabled="true"] { color: var(--muted); }
+.summary-source-options input[type="radio"] { width: auto; min-height: 0; flex-shrink: 0; margin-top: 3px; padding: 0; border: 0; background: transparent; accent-color: var(--plum); }
+.summary-source-options span { display: grid; gap: 3px; min-width: 0; }
+.summary-source-options strong { font-size: 13px; }
+.summary-source-options small { color: var(--muted); line-height: 1.45; }
 
 .summary-generation-metadata { margin: 16px 0 26px; padding: 12px 14px; background: var(--sidebar); border: 1px solid var(--line); border-radius: 8px; font-size: 12px; color: var(--muted); }
 .summary-generation-metadata summary { cursor: pointer; line-height: 1.6; overflow-wrap: anywhere; }
@@ -556,6 +567,7 @@ kbd { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; font-
   .sidebar nav .tree-row a { padding-block: 12px; }
   input, select, textarea, .account-settings .select-trigger, .summary-generation .select-trigger { font-size: 16px; min-height: 44px; }
   input[type="checkbox"] { min-height: 18px; width: 18px; }
+  .summary-source-options input[type="radio"] { min-height: 0; }
   .meeting-list-row { flex-direction: row; align-items: center; gap: 12px; }
   .account-settings label { grid-template-columns: 1fr; gap: 8px; }
   .summary-generation-metadata dl { grid-template-columns: 1fr; gap: 4px; }
@@ -571,6 +583,7 @@ kbd { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; font-
   .page-header h1 { font-size: 26px; }
   .collection-icon { display: none; }
   .generation-controls { width: 100%; }
+  .summary-source-options > div { grid-template-columns: 1fr; }
   .generation-controls .select-trigger { flex: 1; min-width: 0; }
   .generation-controls .primary { flex: 1; }
   .dialog-header { padding: 20px 20px 0; }

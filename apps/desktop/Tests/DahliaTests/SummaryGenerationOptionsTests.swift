@@ -1,6 +1,7 @@
 @testable import Dahlia
 
 #if canImport(Testing)
+    import Foundation
     import Testing
 
     @MainActor
@@ -47,6 +48,21 @@
                 exportsToGoogleDocs: true
             ))
             #expect(merged.detailLevel == .eventSession)
+        }
+
+        @Test
+        func sourceIsBackwardCompatibleAndMergedWithManualOptions() throws {
+            let legacy = try JSONDecoder().decode(
+                SummaryGenerationOptions.self,
+                from: Data(#"{"exportOptions":{"exportsToVault":true,"exportsToGoogleDocs":false},"detailLevel":"high"}"#.utf8)
+            )
+            #expect(legacy.source == nil)
+
+            let merged = SummaryGenerationOptions.merging([
+                legacy,
+                SummaryGenerationOptions(exportOptions: .manual, source: .audio),
+            ])
+            #expect(merged.source == SummaryGenerationSource.audio)
         }
     }
 #endif

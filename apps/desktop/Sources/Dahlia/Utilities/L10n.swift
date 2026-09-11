@@ -1100,6 +1100,32 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Review the context and export options before generating the summary.",
         bundle: bundle
     ) }
+    static var summaryGenerationSource: String { String(localized: "summary.source.title", bundle: bundle) }
+    static var summarySourceTranscript: String { String(localized: "summary.source.transcript", bundle: bundle) }
+    static var summarySourceTranscriptDescription: String { String(
+        localized: "summary.source.transcript.description",
+        bundle: bundle
+    ) }
+    static var summarySourceAudio: String { String(localized: "summary.source.audio", bundle: bundle) }
+    static var summarySourceAudioDescription: String { String(localized: "summary.source.audio.description", bundle: bundle) }
+    static var summarySourceChecking: String { String(localized: "summary.source.checking", bundle: bundle) }
+    static var summarySourceCheckFailed: String { String(localized: "summary.source.checkFailed", bundle: bundle) }
+    static var summarySourceUnsupported: String { String(localized: "summary.source.unsupported", bundle: bundle) }
+    static var summarySourceTranscriptUnavailable: String { String(
+        localized: "summary.source.transcript.unavailable",
+        bundle: bundle
+    ) }
+    static var summarySourceAudioUnavailable: String { String(localized: "summary.source.audio.unavailable", bundle: bundle) }
+    static var summarySourceAudioRequiresServer: String { String(localized: "summary.source.audio.requiresServer", bundle: bundle) }
+    static var summarySourceNoneAvailable: String { String(localized: "summary.source.noneAvailable", bundle: bundle) }
+    static func summarySourceMissingTranscripts(_ count: Int) -> String { String(
+        localized: "\(count) selected meetings do not have an available transcript.",
+        bundle: bundle
+    ) }
+    static func summarySourceMissingAudio(_ count: Int) -> String { String(
+        localized: "\(count) selected meetings do not have completed recording audio.",
+        bundle: bundle
+    ) }
     static var regenerateSummaries: String { String(localized: "Regenerate Summaries", bundle: bundle) }
     static var regenerateSelectedSummariesConfirmationTitle: String { String(
         localized: "Regenerate selected summaries?",

@@ -253,6 +253,7 @@ export interface IdentitySyncStore {
   reserveRecording(vaultId: string, meetingId: string, sessionId: string, source: RecordingSource): Promise<RecordingRecord>;
   getRecording(meetingId: string, number: number, ownerOnly?: boolean): Promise<RecordingRecord | null>;
   markRecordingUploaded(sessionId: string, source: RecordingSource, generation: string, size: number, checksum: string): Promise<RecordingRecord | null>;
+  hasPendingRecordings(meetingId: string): Promise<boolean>;
   listRecordings(meetingId: string, after: number, limit: number): Promise<RecordingRecord[]>;
   expireRecordingUploads(vaultId: string, before: Date): Promise<void>;
 

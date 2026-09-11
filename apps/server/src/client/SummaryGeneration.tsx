@@ -4,7 +4,7 @@ import { apiQuery } from "./live-data";
 import { Select } from "./Select";
 import { MenuIcon } from "./Sidebar";
 import { useEffect, useRef, useState } from "react";
-import { RequestError, uiText } from "./api";
+import { json, RequestError, uiText } from "./api";
 import { refreshData, useLiveJSON } from "./live-data";
 import { encodeId } from "../typeid";
 import { uuidV7 } from "../id";
@@ -13,6 +13,61 @@ import { DEFAULT_ACCOUNT_SETTINGS, summaryStyles, summaryStyleDetail, type Accou
 type SummaryRequest = operations["startSummaryJob"]["requestBody"]["content"]["application/json"];
 import { isAudioSummaryModel, isSummaryModel } from "../summary/audio-model";
 import { CODEX_AUTO_REVIEW_ALIAS } from "../ai-gateway/model-alias";
+
+type SummarySource = "transcript" | "audio";
+type Recording = components["schemas"]["Recording"];
+type TranscriptContent = components["schemas"]["TranscriptContent"];
+type TranscriptSnapshot = { version: number; available: boolean };
+type RecordingSnapshot = {
+  items: Recording[];
+  recordings: { micFileId: string | null; systemFileId: string | null }[];
+  complete: boolean;
+};
+
+export function shouldResetManualSummaryModel(savedModel: string, models: GatewayModelList, source: SummarySource) {
+  const model = models.data.find(({ id }) => id === savedModel || savedModel.endsWith(`.${id}`));
+  return model && models.models.some(({ slug }) => slug === model.id) ? !isSummaryModel(model.id, models, source) : false;
+}
+
+async function loadRecordings(meetingId: string, signal?: AbortSignal): Promise<RecordingSnapshot> {
+  const items: Recording[] = [];
+  let cursor: string | null = null;
+  do {
+    const page = await api.listRecordings({ signal, headers: { "X-Dahlia-Require-Complete-Recordings": "1" },
+      params: { path: { meetingId }, query: { cursor: cursor ?? undefined } } });
+    items.push(...page.items);
+    cursor = page.nextCursor;
+  } while (cursor !== null);
+  return {
+    items,
+    recordings: items.map(({ audio }) => ({
+      micFileId: audio.mic?.fileId ?? null,
+      systemFileId: audio.system?.fileId ?? null,
+    })),
+    complete: items.length > 0 && items.every(({ audio }) => {
+      const tracks = Object.values(audio);
+      return tracks.length > 0 && tracks.every(({ fileId }) => !!fileId);
+    }),
+  };
+}
+
+export async function loadTranscript(meetingId: string, signal?: AbortSignal): Promise<TranscriptSnapshot> {
+  let cursor: string | null = null;
+  let version: number | undefined;
+  while (true) {
+    let page: TranscriptContent;
+    if (version === undefined) {
+      page = await api.getLatestTranscript({ signal, params: { path: { meetingId }, query: {} } });
+    } else {
+      page = await api.getTranscript({ signal, params: { path: { meetingId, version: String(version) }, query: { cursor: cursor ?? undefined } } });
+    }
+    version ??= page.version;
+    if (page.version !== version) throw new Error("Transcript version changed while loading");
+    if (page.items?.some(({ text }) => text.trim() !== "")) return { version, available: true };
+    if (!page.nextCursor) return { version, available: false };
+    cursor = page.nextCursor;
+  }
+}
 
 const summaryErrors: Record<string, string> = {
   summary_audio_empty: uiText("No committed audio is available. Finish uploading recordings first.", "確定済みの音声がありません。録音のアップロード完了後に再試行してください。"),
@@ -35,9 +90,17 @@ const styleDescription = (style: AccountSettings["summary"]["style"]) => ({
 })[style];
 
 function useSummaryMethods() {
-  const capabilities = useLiveJSON<{ meetingSummaryGeneration?: { version: number; sources: string[] } }>(apiQuery("getCapabilities", {}));
+  const capabilities = useLiveJSON<{
+    meetingSummaryGeneration?: { version: number; sources: string[]; completeRecordings?: boolean };
+  }>(apiQuery("getCapabilities", {}));
   const summary = capabilities.data?.meetingSummaryGeneration;
-  return { ...capabilities, methods: summary?.version === 2 ? summary.sources : [] };
+  return {
+    ...capabilities,
+    methods: summary?.version === 2 ? summary.sources : [],
+    manualMethods: summary?.version === 2
+      ? summary.sources.filter((source) => source !== "audio" || summary.completeRecordings === true)
+      : [],
+  };
 }
 
 export function ServerSummarySettings() {
@@ -107,7 +170,10 @@ export function ServerSummarySettings() {
             {uiText("Server", "サーバー")}</option>}
         </Select></label>
         {processing.location === "local" && <p>{uiText("Dahlia for Mac transcribes locally and sends transcripts and images to the AI provider configured on that Mac. Generation is unavailable on the web.", "Dahlia for Macで文字起こしし、そのMacに設定したAI接続先へ文字起こしや画像を送って要約します。Webからは生成できません。")}</p>}
-        {processing.location === "remote" && <p>{uiText("Sends recordings to the server for transcription and summarization using its connected AI.", "録音音声をサーバーに送り、サーバーのAI接続先で文字起こしと要約を作成します。")}</p>}
+        {processing.location === "remote" && <p>{uiText(
+          "New recordings use the selected automatic server processing. Manual generation uses the source selected on the meeting screen.",
+          "新しい録音には選択したサーバーの自動処理を使います。手動生成ではミーティング画面のソース選択が優先されます。",
+        )}</p>}
         {capabilities.loading && <p role="status">{uiText("Checking server capabilities…", "サーバー機能を確認中…")}</p>}
         {processing.location === "remote" && !remoteSupported && !capabilities.loading && <p>{uiText("Remote processing is unavailable on this server.", "このサーバーではリモート処理を利用できません。")}</p>}
         {capabilities.error && <p role="alert" className="error">{capabilities.error.message} <button className="secondary"
@@ -119,8 +185,11 @@ export function ServerSummarySettings() {
         )}</p>}
         {processing.location === "remote" && remoteSupported && <details className="settings-advanced">
           <summary>{uiText("Advanced server settings", "サーバー処理の詳細設定")}</summary>
-          <p>{uiText("Automatic uses supported product defaults. Explicit selections are retained when switching workflows.", "自動では対応する既定モデルを使用します。処理方式を切り替えても、指定したモデルは保持されます。")}</p>
-          <label>{uiText("Workflow", "処理方式")}<Select value={remote.workflow}
+          <p>{uiText(
+            "These choices apply automatically after new recordings. Manual generation uses the source selected on the meeting screen.",
+            "ここでの選択は、新しい録音後の自動処理に適用されます。手動生成では、ミーティング画面で選んだソースが優先されます。",
+          )}</p>
+          <label>{uiText("New recording automatic processing", "新しい録音の自動処理")}<Select value={remote.workflow}
             onValueChange={(value) => void saveRemote({ workflow: value as typeof remote.workflow })}>
             <option value="transcribeThenSummarize">{uiText("Transcribe, then summarize", "文字起こししてから要約")}</option>
             <option value="combined">{uiText("Generate together", "文字起こしと要約を一括生成")}</option>
@@ -153,14 +222,23 @@ export function ServerSummarySettings() {
 }
 
 export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
-  const methods = useSummaryMethods().methods;
+  const methods = useSummaryMethods().manualMethods;
   const enabled = methods.length > 0;
-  const remoteSupported = methods.includes("audio");
   const query = useLiveJSON<{ job: Job }>(enabled ? apiQuery("getLatestSummaryJob", { params: { path: { meetingId } } }) : undefined);
   const accountQuery = useLiveJSON<{ settings: AccountSettings | null }>(apiQuery("getSettings", {}), "account");
+  const transcriptQuery = useLiveJSON<TranscriptSnapshot>(methods.includes("transcript") ? {
+    key: JSON.stringify(["summaryTranscriptAvailability", { meetingId }]),
+    load: (signal) => loadTranscript(meetingId, signal),
+  } : undefined);
+  const recordingsQuery = useLiveJSON<RecordingSnapshot>(methods.includes("audio") ? {
+    key: JSON.stringify(["summaryRecordingAvailability", { meetingId }]),
+    load: (signal) => loadRecordings(meetingId, signal),
+  } : undefined);
+  const catalog = useLiveJSON<GatewayModelList>(enabled ? "/api/v1/models" : undefined, "manual");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string>();
   const [detail, setDetail] = useState("");
+  const [source, setSource] = useState<SummarySource>();
   const completed = useRef<string | undefined>(undefined);
   const requestID = useRef<string | undefined>(undefined);
   const requestBody = useRef<SummaryRequest | undefined>(undefined);
@@ -181,8 +259,34 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
     }
   }, [job?.id, job?.status]);
   if (!enabled) return null;
-  const remoteEnabled = remoteSupported && accountQuery.data?.settings?.processing.location === "remote";
+  const remoteEnabled = accountQuery.data?.settings?.processing.location === "remote";
   const active = job?.status === "pending" || job?.status === "processing";
+  const transcriptAvailable = methods.includes("transcript") && !transcriptQuery.loading && !transcriptQuery.error
+    && transcriptQuery.data?.available === true;
+  const audioAvailable = methods.includes("audio") && !recordingsQuery.loading && !recordingsQuery.error
+    && recordingsQuery.data?.complete === true;
+  const sourceAvailable = (candidate: SummarySource) => candidate === "transcript" ? transcriptAvailable : audioAvailable;
+  let preferredSource: SummarySource | undefined;
+  if (!methods.includes("transcript") || (!transcriptQuery.loading && !transcriptQuery.error)) {
+    if (transcriptAvailable) preferredSource = "transcript";
+    else if (audioAvailable) preferredSource = "audio";
+  }
+  const selectedSource = source ?? preferredSource;
+  const selectedSourceAvailable = selectedSource ? sourceAvailable(selectedSource) : false;
+  const sourceReason = (candidate: SummarySource) => {
+    if (!methods.includes(candidate)) return uiText("This server does not support this source.", "このサーバーはこのソースに対応していません。");
+    const state = candidate === "transcript" ? transcriptQuery : recordingsQuery;
+    if (state.loading) return uiText("Checking availability…", "利用可能か確認中…");
+    if (state.error) return candidate === "audio" && state.error instanceof RequestError && state.error.status === 409
+      ? uiText("Some recording audio is still uploading.", "一部の録音音声がアップロード中です。")
+      : uiText("Availability could not be confirmed.", "利用可能か確認できませんでした。");
+    if (candidate === "transcript" && !transcriptAvailable) return uiText(
+      "The latest transcript is empty or has not been saved.", "最新の文字起こしが空か、まだ保存されていません。",
+    );
+    if (candidate === "audio" && !audioAvailable) return recordingsQuery.data?.items?.length
+      ? uiText("Some recording audio is still uploading.", "一部の録音音声がアップロード中です。")
+      : uiText("No committed recording audio is available.", "確定済みの録音音声がありません。");
+  };
   const start = async () => {
     setStarting(true); setError(undefined);
     requestID.current ??= encodeId("summaryJob", uuidV7());
@@ -194,17 +298,32 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
           "This account processes summaries in Dahlia for Mac.",
           "このアカウントはDahlia for Macで要約を処理します。",
         ));
-        const recordings: { micFileId: string | null; systemFileId: string | null }[] = [];
-        let cursor: string | null = null;
-        do {
-          const page: { items: { audio: Partial<Record<"mic" | "system", { fileId?: string }>> }[]; nextCursor: string | null } =
-            await api.listRecordings({ params: { path: { meetingId }, query: { cursor: cursor ?? undefined } } });
-          recordings.push(...page.items.map(({ audio }) => ({ micFileId: audio.mic?.fileId ?? null, systemFileId: audio.system?.fileId ?? null })));
-          cursor = page.nextCursor;
-        } while (cursor !== null);
-        const input: Extract<SummaryRequest, { input: unknown }>["input"] = { type: "recording", recordings };
+        if (!selectedSource) throw new Error(uiText("Choose an available source.", "利用可能なソースを選択してください。"));
+        let input: Extract<SummaryRequest, { input: unknown }>["input"];
+        if (selectedSource === "transcript") {
+          const transcript = await loadTranscript(meetingId);
+          if (!transcript.available) throw new Error(uiText(
+            "The latest transcript is empty or has not been saved.", "最新の文字起こしが空か、まだ保存されていません。",
+          ));
+          input = { type: "transcript", version: String(transcript.version) };
+        } else {
+          const snapshot = await loadRecordings(meetingId);
+          if (!snapshot.complete) throw new Error(snapshot.items.length
+            ? uiText("Some recording audio is still uploading.", "一部の録音音声がアップロード中です。")
+            : summaryErrors.summary_audio_empty!);
+          input = { type: "recording", recordings: snapshot.recordings };
+        }
+        const remote = { ...settings.processing.remote,
+          workflow: selectedSource === "audio" ? "combined" as const : "transcribeThenSummarize" as const };
+        if (remote.summaryModel) {
+          const models = catalog.data ?? await json<GatewayModelList>("/api/v1/models", undefined, { notifyMutation: false });
+          if (shouldResetManualSummaryModel(remote.summaryModel, models, selectedSource)) {
+            delete remote.summaryModel;
+            delete remote.reasoningEffort;
+          }
+        }
         requestBody.current = { id: requestID.current, input,
-          preferences: { processing: settings.processing, outputLanguage: settings.outputLanguage,
+          preferences: { processing: { location: "remote", remote }, outputLanguage: settings.outputLanguage,
             summary: { style: detail ? summaryStyles[details.indexOf(detail as typeof details[number])]! : settings.summary.style } } };
       }
       await api.startSummaryJob({ params: { path: { meetingId } }, body: requestBody.current });
@@ -212,6 +331,7 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
     } catch (error) {
       if (error instanceof RequestError && error.status === 400) {
         clearPendingRequest();
+        transcriptQuery.reload(); recordingsQuery.reload();
       }
       setError(error instanceof Error ? summaryErrors[error.message] ?? error.message : uiText("Could not start summary", "要約を開始できません")); query.reload();
     }
@@ -245,19 +365,38 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
 
   return <div className="summary-generation">
     <div className="generation-copy"><strong><MenuIcon name="sparkles" />{uiText("AI summary", "AI 要約")}</strong><span>{uiText("Turn this conversation into clear next steps.", "会話のポイントと、次のアクションを整理します。")}</span></div>
+    <fieldset className="summary-source-options" disabled={active || starting} aria-busy={transcriptQuery.loading || recordingsQuery.loading}>
+      <legend>{uiText("Source for this generation", "今回の生成ソース")}</legend>
+      <div>
+        {(["transcript", "audio"] as const).map((candidate) => {
+          const available = sourceAvailable(candidate);
+          const reason = sourceReason(candidate);
+          return <label key={candidate} data-disabled={!available}>
+            <input type="radio" name={`summary-source-${meetingId}`} value={candidate} checked={selectedSource === candidate}
+              disabled={!available} onChange={() => { setSource(candidate); clearPendingRequest(); }} />
+            <span><strong>{candidate === "transcript" ? uiText("Transcript", "文字起こし") : uiText("Recording audio", "録音音声")}</strong>
+              <small>{candidate === "transcript"
+                ? uiText("Regenerate only the summary from the latest transcript.", "最新の文字起こしから要約だけを再生成します。")
+                : uiText("Regenerate both the transcript and summary from all recordings.", "すべての録音から文字起こしと要約を再生成します。")}</small>
+              {reason && <small>{reason}</small>}
+            </span>
+          </label>;
+        })}
+      </div>
+    </fieldset>
     <div className="generation-controls">
     <Select aria-label={uiText("Summary detail", "要約の詳細度")} value={detail} disabled={active || starting}
       onValueChange={(value) => { setDetail(value); clearPendingRequest(); }}>
       <option value="">{uiText("Account default", "アカウント設定")}</option>
       {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
     </Select>
-    <button className="primary" disabled={starting || active || query.loading || accountQuery.loading || !remoteEnabled} onClick={() => void start()}>
+    <button className="primary" disabled={starting || active || query.loading || accountQuery.loading || !remoteEnabled || !selectedSourceAvailable} onClick={() => void start()}>
       {starting ? uiText("Starting…", "開始中…") : buttonLabel}
     </button>
     </div>
     {!accountQuery.loading && !remoteEnabled && <span>{uiText(
-      remoteSupported ? "This account processes summaries in Dahlia for Mac." : "Remote summary generation is unavailable on this server.",
-      remoteSupported ? "このアカウントはDahlia for Macで要約を処理します。" : "このサーバーではリモート要約生成を利用できません。",
+      "This account processes summaries in Dahlia for Mac.",
+      "このアカウントはDahlia for Macで要約を処理します。",
     )}</span>}
     {active && <><span role="status">{stageLabel(job.stage)} — {uiText("You can close this window.", "画面を閉じても処理は続きます。")}</span>
       <button disabled={starting} onClick={() => void action("cancel")}>{uiText("Cancel", "キャンセル")}</button></>}
