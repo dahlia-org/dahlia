@@ -439,8 +439,7 @@ actor SyncWorker {
         guard stagedBody == body else { throw SyncTransactionQueueError.invalidReceipt }
         try Task.checkCancellation()
         guard try await dbQueue.read({ db in
-            try SyncTransactionQueue.matchesExpectedConnection(vaultId: transaction.vaultId, connectionId: transaction.connectionId, in: db)
-                && Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM sync_transactions WHERE id = ?)", arguments: [transaction.id]) == true
+            try SyncTransactionQueue.isCurrentForCommit(transaction, in: db)
         }) else { throw CancellationError() }
         let data = try await sendData(origin: target, connectionId: transaction.connectionId, preservingJSONBody: body) {
             try await $0.commitTransaction(body: .json(typedBody)).ok.body.json

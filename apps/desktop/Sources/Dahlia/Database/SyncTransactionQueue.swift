@@ -469,6 +469,11 @@ enum SyncTransactionRecorder {
 
 enum SyncTransactionQueue {
     static let leaseDuration: TimeInterval = 120
+    private static let sendableVaultPredicate = """
+    v.accountConnectionId = t.connectionId
+      AND v.syncConfirmedConnectionId = t.connectionId
+      AND (v.syncRecoveryState IS NULL OR v.syncRecoveryState IN ('pending', 'recovering'))
+    """
 
     static func discardPartialSnapshot(vaultId: UUID, in db: Database) throws {
         let resetSequence = try Int64.fetchOne(
@@ -500,9 +505,7 @@ enum SyncTransactionQueue {
                 SELECT t.sequence, t.id, t.vaultId, t.connectionId, t.createdAt, t.attempts
                 FROM sync_transactions t
                 JOIN vaults v ON v.id = t.vaultId
-                WHERE v.accountConnectionId = t.connectionId
-                  AND v.syncConfirmedConnectionId = t.connectionId
-                  AND (v.syncRecoveryState IS NULL OR v.syncRecoveryState IN ('pending', 'recovering'))
+                WHERE \(sendableVaultPredicate)
                   AND NOT EXISTS (
                     SELECT 1 FROM sync_entity_state s
                     WHERE s.vaultId = t.vaultId AND s.entity = 'vault' AND s.entityId = t.vaultId
@@ -919,6 +922,21 @@ enum SyncTransactionQueue {
             )
             """,
             arguments: [vaultId, connectionId, connectionId]
+        ) ?? false
+    }
+
+    static func isCurrentForCommit(_ transaction: SyncQueuedTransaction, in db: Database) throws -> Bool {
+        try Bool.fetchOne(
+            db,
+            sql: """
+            SELECT EXISTS (
+                SELECT 1 FROM sync_transactions t
+                JOIN vaults v ON v.id = t.vaultId
+                WHERE t.id = ? AND t.vaultId = ? AND t.connectionId = ?
+                  AND \(sendableVaultPredicate)
+            )
+            """,
+            arguments: [transaction.id, transaction.vaultId, transaction.connectionId]
         ) ?? false
     }
 
