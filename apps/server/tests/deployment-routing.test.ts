@@ -202,8 +202,7 @@ describe("deployment routing", () => {
     expect(bundle).toContain("- ../../apps/server");
     expect(bundle).not.toContain("../../pnpm-lock.yaml");
     expect(bundle).not.toContain("- ../../pnpm-workspace.yaml");
-    expect(bundle).toContain("app_name: dahlia-dev");
-    expect(bundle).toContain("app_name: dahlia-prod");
+    expect(bundle).not.toContain("app_name:");
     expect(bundle).toContain("database_project_id: dahlia-db-dev");
     expect(bundle).not.toContain("codex_auto_review_model");
     expect(resource).not.toContain("CODEX_AUTO_REVIEW_MODEL");
@@ -233,8 +232,10 @@ describe("deployment routing", () => {
     expect(bundle).not.toContain("admin_email");
     expect(bundle).not.toContain("postgres_databases:");
     expect(resource).toContain("source_code_path: ../../../apps/server");
+    expect(resource).toContain("name: mcp-dahlia-server-${bundle.target}");
     expect(resource).toContain(`user_api_scopes:
         - ai-gateway
+        - catalog.connections
         - files`);
     expect(resource).not.toContain("catalog.catalogs:read");
     expect(resource).not.toContain("catalog.schemas:read");
