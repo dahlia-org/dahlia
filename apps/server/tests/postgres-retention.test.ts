@@ -1,3 +1,5 @@
+import { seedPostgresIdentity } from "./public-test-client";
+import { testOrganizationID } from "./public-test-client";
 import { Client } from "pg";
 import { describe, expect, it } from "vitest";
 import { createNodeApplicationStore } from "../src/auth/node-store";
@@ -22,11 +24,11 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
     const meetingData = { projectId: null, name: "Meeting", description: "", status: "READY", duration: null,
       recordingStartedAt: null, createdAt: new Date(), updatedAt: new Date() };
     try {
-      await store.ensureIdentityUser(identity);
+      await seedPostgresIdentity(store, databaseUrl!, identity);
       const initial = await store.sync.withIdentity(identity, (sync) => sync.commitTransaction({
-        schemaVersion: 2, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "initial",
+        schemaVersion: 3, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "initial",
         operations: [
-          { id: crypto.randomUUID(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { name: "Vault", createdAt: new Date() } },
+          { id: crypto.randomUUID(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Vault", createdAt: new Date() } },
           { id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: meetingData },
         ],
       }));
@@ -38,11 +40,11 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
         SELECT file_id, vault_id, $2, file_id, now() FROM app.files WHERE vault_id = $1`, [vaultId, meetingId]);
       await raw.query("COMMIT");
       await store.sync.withIdentity(identity, (sync) => sync.commitTransaction({
-        schemaVersion: 2, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "delete",
+        schemaVersion: 3, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "delete",
         operations: [{ id: crypto.randomUUID(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }],
       }));
       const recreated = await store.sync.withIdentity(identity, (sync) => sync.commitTransaction({
-        schemaVersion: 2, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "recreate",
+        schemaVersion: 3, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "recreate",
         operations: [{ id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: meetingData }],
       }));
       const service = new MeetingSyncService(store.sync);
@@ -79,11 +81,11 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
     const transactionId = crypto.randomUUID();
     const target = { ownerUserId: userId, vaultId };
     try {
-      await store.ensureIdentityUser(owner);
+      await seedPostgresIdentity(store, databaseUrl!, owner);
       const receipt = await store.sync.withIdentity(owner, (sync) => sync.commitTransaction({
-        schemaVersion: 2, id: transactionId, vaultId, createdAt: new Date(), requestHash: "retention-test",
+        schemaVersion: 3, id: transactionId, vaultId, createdAt: new Date(), requestHash: "retention-test",
         operations: [{ id: crypto.randomUUID(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null,
-          data: { name: "Preserved", createdAt: new Date().toISOString() } }],
+          data: { organizationId: testOrganizationID, name: "Preserved", createdAt: new Date().toISOString() } }],
       }));
       expect((await raw.query("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user")).rows[0])
         .toEqual({ rolsuper: false, rolbypassrls: false });
@@ -103,7 +105,7 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
       const results = await Promise.all([
         store.sync.pruneHistoryBatch(target), store.sync.pruneHistoryBatch(target),
         store.sync.withIdentity(owner, (sync) => sync.commitTransaction({
-          schemaVersion: 2, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "new-edit",
+          schemaVersion: 3, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "new-edit",
           operations: [{ id: crypto.randomUUID(), entity: "vault", action: "update", entityId: vaultId, baseRevision: 1, data: { name: "Latest" } }],
         })),
       ]);

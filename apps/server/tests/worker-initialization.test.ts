@@ -23,13 +23,16 @@ describe("Worker initialization", () => {
       DAHLIA_ENCRYPTION_MASTER_KEY_3: btoa(String.fromCharCode(...new Uint8Array(32).fill(3))),
       DAHLIA_ENCRYPTION_ACTIVE_KEY_ID: "3",
       DAHLIA_AUTH_TYPE: "accounts",
+      DAHLIA_AUTH_PROVIDER_ID: "databricks",
+      DAHLIA_STORAGE_BACKEND: "r2",
       DAHLIA_DATABASE_TYPE: "postgres",
       DAHLIA_DATABASE_URL: "postgresql://dahlia.example/dahlia",
-      BETTER_AUTH_SECRET: "test-only-better-auth-secret-value",
+      DAHLIA_AUTH_SECRET: "test-only-better-auth-secret-value",
       GOOGLE_CLIENT_ID: "google-client",
       GOOGLE_CLIENT_SECRET: "google-secret",
     })).rejects.toThrow("seed failed");
     expect(vi.mocked(initializeDahliaAuth).mock.calls.at(-1)?.[0].encryption?.activeKeyId).toBe("3");
+    expect(vi.mocked(initializeDahliaAuth).mock.calls.at(-1)?.[0].authProviderId).toBe("databricks");
     expect(close).toHaveBeenCalledOnce();
   });
 });

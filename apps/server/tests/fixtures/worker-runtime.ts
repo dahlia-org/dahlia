@@ -25,7 +25,7 @@ export default {
     const path = new URL(request.url).pathname;
     if (path === "/runtime/provider") {
       const backend = new URL(request.url).searchParams.get("backend")!;
-      const config = loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: backend,
+      const config = loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_AUTH_SECRET: env.DAHLIA_AUTH_SECRET, DAHLIA_AI_BACKEND: backend,
         OPENAI_BASE_URL: "https://api.cloudflare.com/client/v4/accounts/synthetic/ai/v1", OPENAI_API_KEY: "synthetic",
         DATABRICKS_HOST: "https://synthetic.example", DATABRICKS_CLIENT_ID: "synthetic", DATABRICKS_CLIENT_SECRET: "synthetic", DATABRICKS_MODEL_SCHEMA: "test.ai",
         DAHLIA_CAPTIONING_MODEL: backend === "cloudflare" ? "gpt-4.1" : "test.ai.gpt-5-6-luna",

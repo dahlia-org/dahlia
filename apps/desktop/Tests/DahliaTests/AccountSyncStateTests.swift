@@ -44,6 +44,8 @@
                 )
                 try other.insert(db)
                 sibling.accountConnectionId = other.id
+                if sibling.syncRole == nil { sibling.syncRole = "admin" }
+                if sibling.organizationId == nil { sibling.organizationId = .v7() }
                 sibling.syncConfirmedConnectionId = other.id
                 sibling.syncPullCursor = "cursor"
                 try sibling.update(db)
@@ -208,6 +210,8 @@
             )
             var vault = VaultRecord(id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
             vault.accountConnectionId = connection.id
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = connection.id
             let savedVault = vault
             try await database.dbQueue.write { db in

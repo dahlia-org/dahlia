@@ -313,7 +313,10 @@
                                     )
                                     try db.execute(sql: "UPDATE vaults SET syncMutationGeneration = syncMutationGeneration + 1")
                                 } else {
-                                    try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL, syncConfirmedConnectionId = NULL")
+                                    try db
+                                        .execute(
+                                            sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL, syncConfirmedConnectionId = NULL"
+                                        )
                                 }
                                 return .commit
                             }
@@ -379,6 +382,8 @@
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: origin, clientID: "test", createdAt: .now)
             var vault = VaultRecord(id: vaultId, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
             vault.accountConnectionId = connection.id
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = connection.id
             try queue.write { db in
                 try connection.insert(db)

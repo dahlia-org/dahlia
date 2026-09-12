@@ -12,8 +12,8 @@
             let database = try AppDatabaseManager(path: ":memory:")
             let connection = makeConnection()
             try await database.dbQueue.write { try connection.insert($0) }
-            let owner = makeVault(connection: connection, role: "owner")
-            let member = makeVault(connection: connection, role: "member")
+            let owner = makeVault(connection: connection, role: "admin")
+            let member = makeVault(connection: connection, role: "viewer")
             let shared = Mutex(false)
             let ownedPage = try page([owner])
             let sharedPage = try page([owner, member])
@@ -56,7 +56,8 @@
             let snapshot = try JSONSerialization.data(withJSONObject: [
                 "items": [
                     ["entity": "vault", "id": remote.vaultId.uuidString, "revision": 7, "record": [
-                        "vaultId": remote.vaultId.uuidString, "name": remote.name, "revision": 7,
+                        "vaultId": remote.vaultId.uuidString, "organizationId": remote.organizationId.uuidString, "role": remote.role,
+                        "name": remote.name, "revision": 7,
                         "createdAt": "2023-11-14T22:13:20Z", "updatedAt": "2023-11-14T22:13:20Z",
                     ]],
                     ["entity": "meeting", "id": meetingID.uuidString, "revision": 1, "record": [
@@ -73,7 +74,7 @@
                 let path = request.url!.path
                 if path == "/api/v1/vaults" { return (200, [:], listing) }
                 if path == "/api/v1/organizations" { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
-                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":4}}"#.utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8)) }
                 if path.hasSuffix("/snapshot") { return (200, [:], snapshot) }
                 if path.hasSuffix("/changes") { return (
                     200,
@@ -136,6 +137,8 @@
             foreign.id = .v7()
             foreign.path = nil
             foreign.accountConnectionId = other.id
+            if foreign.syncRole == nil { foreign.syncRole = "admin" }
+            if foreign.organizationId == nil { foreign.organizationId = .v7() }
             foreign.syncConfirmedConnectionId = other.id
             let originalLocal = local
             let originalForeign = foreign
@@ -145,7 +148,7 @@
                 try originalLocal.insert(db)
                 try originalForeign.insert(db)
             }
-            let remote = makeVault(connection: connection, role: "owner")
+            let remote = makeVault(connection: connection, role: "admin")
             _ = try await MeetingRepository.registerDiscoveredCloudVaults([remote], connection: connection, dbQueue: database.dbQueue)
             let repository = MeetingRepository(dbQueue: database.dbQueue)
             _ = try await repository.updateVaultName(id: remote.vaultId, name: "Unsent name")
@@ -216,6 +219,8 @@
             var vault = VaultRecord(id: .v7(), name: "Vault", createdAt: .now, lastOpenedAt: .distantPast)
             #expect(!vault.isAwaitingInitialSync)
             vault.accountConnectionId = .v7()
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = vault.accountConnectionId
             #expect(vault.isAwaitingInitialSync)
             vault.syncPullCursor = "initial-snapshot-complete"
@@ -227,10 +232,11 @@
         .init(id: .v7(), origin: "https://\(UUID().uuidString).example.com", clientID: "desktop", createdAt: .now)
     }
 
-    private func makeVault(connection: DahliaAccountConnectionRecord, role: String = "member") -> CloudVaultRecord {
+    private func makeVault(connection: DahliaAccountConnectionRecord, role: String = "viewer") -> CloudVaultRecord {
         .init(
             vaultId: .v7(),
             connectionId: connection.id,
+            organizationId: .v7(),
             icon: "archivebox",
             color: "blue",
             name: "Server",
@@ -251,6 +257,7 @@
         let items = vaults.map { vault in
             [
                 "vaultId": vault.vaultId.uuidString,
+                "organizationId": vault.organizationId.uuidString,
                 "name": vault.name,
                 "icon": vault.icon ?? "",
                 "color": vault.color ?? "",

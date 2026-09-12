@@ -152,6 +152,7 @@ enum VaultBackupTransfer {
         result.path = nil
         result.accountConnectionId = nil
         result.syncRole = nil
+        result.organizationId = nil
         result.syncConfirmedConnectionId = nil
         result.syncPullCursor = nil
         result.syncLastCommittedCursor = nil

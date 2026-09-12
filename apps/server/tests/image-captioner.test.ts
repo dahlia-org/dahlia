@@ -4,7 +4,7 @@ import { DEFAULT_ACCOUNT_SETTINGS } from "../src/account-settings";
 import { createImageCaptioner } from "../src/image-analysis/captioner";
 import { fileMetadataLimits } from "../src/files/model";
 
-const environment = {
+const environment = { DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
   DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "databricks",
   DATABRICKS_HOST: "https://workspace.example", DATABRICKS_CLIENT_ID: "client", DATABRICKS_CLIENT_SECRET: "secret",
   DATABRICKS_MODEL_SCHEMA: "catalog.ai", DAHLIA_CAPTIONING_MODEL: "catalog.ai.gpt-5-6-luna",
@@ -51,6 +51,6 @@ describe("server image captioning", () => {
 
   it("disables an unset model and validates its backend", () => {
     expect(createImageCaptioner(loadConfig({ ...environment, DAHLIA_CAPTIONING_MODEL: " " }))).toBeUndefined();
-    expect(() => loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_CAPTIONING_MODEL: "model" })).toThrow("requires DAHLIA_AI_BACKEND=databricks");
+    expect(() => loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", DAHLIA_AUTH_TYPE: "header", DAHLIA_CAPTIONING_MODEL: "model" })).toThrow("requires DAHLIA_AI_BACKEND=databricks");
   });
 });

@@ -1,3 +1,4 @@
+import DahliaServerAPI
 import Foundation
 import GRDB
 import Observation
@@ -5,7 +6,8 @@ import Observation
 struct PendingVaultServerAdoption: Identifiable {
     let vault: VaultRecord
     let connection: DahliaAccountConnection
-    let serverVault: CloudVaultRecord?
+    let serverVaults: [CloudVaultRecord]
+    let organizations: [Components.Schemas.Organization]
 
     var id: UUID { vault.id }
 }
@@ -35,10 +37,15 @@ final class VaultManagementModel {
     private(set) var hasLoadedVaults = false
     private var repository: MeetingRepository?
     private let cloudVaultFetcher: CloudVaultFetcher?
+    private let organizationFetcher: ((DahliaAccountConnectionRecord) async throws -> [Components.Schemas.Organization])?
     private var syncObservation: AnyDatabaseCancellable?
 
-    init(cloudVaultFetcher: CloudVaultFetcher? = nil) {
+    init(
+        cloudVaultFetcher: CloudVaultFetcher? = nil,
+        organizationFetcher: ((DahliaAccountConnectionRecord) async throws -> [Components.Schemas.Organization])? = nil
+    ) {
         self.cloudVaultFetcher = cloudVaultFetcher
+        self.organizationFetcher = organizationFetcher
     }
 
     func configure(appDatabase: AppDatabaseManager?) async {
@@ -250,7 +257,7 @@ final class VaultManagementModel {
     }
 
     func renameVault(_ vault: VaultRecord, to proposedName: String, appearance: ProjectAppearance? = nil) async -> VaultRecord? {
-        guard vault.allowsCanonicalEdits else { return nil }
+        guard vault.allowsVaultManagement else { return nil }
         let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return nil }
         guard name != vault.name || (appearance != nil && appearance != vault.appearance) else { return vault }
@@ -286,12 +293,20 @@ final class VaultManagementModel {
         updatingVaultAccountID = vault.id
         defer { updatingVaultAccountID = nil }
         do {
-            let serverVault = try await fetchCloudVaults(from: connection.record)
-                .first(where: { $0.vaultId == vault.id })
+            let serverVaults = try await fetchCloudVaults(from: connection.record)
+            let organizations = try await fetchOrganizations(connection.record)
+            if let repository {
+                _ = try await MeetingRepository.registerDiscoveredCloudVaults(
+                    serverVaults,
+                    connection: connection.record,
+                    dbQueue: repository.dbQueue
+                )
+            }
             pendingServerAdoption = PendingVaultServerAdoption(
                 vault: vault,
                 connection: connection,
-                serverVault: serverVault
+                serverVaults: serverVaults,
+                organizations: organizations
             )
         } catch is CancellationError {
             return
@@ -300,33 +315,83 @@ final class VaultManagementModel {
         }
     }
 
-    func confirmServerAdoption(_ pendingServerAdoption: PendingVaultServerAdoption) async -> VaultRecord? {
+    private func fetchOrganizations(_ connection: DahliaAccountConnectionRecord) async throws -> [Components.Schemas.Organization] {
+        if let organizationFetcher { return try await organizationFetcher(connection) }
+        return try await CloudVaultDiscovery.organizations(connection: connection, api: SyncAPIClient(session: .shared))
+    }
+
+    func reloadServerAdoption() async {
+        guard let pending = pendingServerAdoption else { return }
+        await requestServerAdoption(for: pending.vault, connection: pending.connection)
+    }
+
+    func createAdoptionOrganization(name: String) async {
+        guard let pending = pendingServerAdoption, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        do {
+            try await CloudVaultDiscovery.createOrganization(name: name, connection: pending.connection.record, api: SyncAPIClient(session: .shared))
+            await reloadServerAdoption()
+        } catch { presentError(L10n.vaultOperationFailed, error: error, source: "createAdoptionOrganization") }
+    }
+
+    func confirmServerAdoption(
+        _ pending: PendingVaultServerAdoption, destinationId: UUID?, organizationId: UUID?
+    ) async -> VaultRecord? {
         guard updatingVaultAccountID == nil, let repository else { return nil }
-        self.pendingServerAdoption = nil
-        updatingVaultAccountID = pendingServerAdoption.vault.id
+        updatingVaultAccountID = pending.vault.id
         defer { updatingVaultAccountID = nil }
         do {
-            let currentServerVault = try await fetchCloudVaults(from: pendingServerAdoption.connection.record)
-                .first(where: { $0.vaultId == pendingServerAdoption.vault.id })
-            guard pendingServerAdoption.serverVault == nil || currentServerVault != nil else {
-                presentError(L10n.vaultOperationFailed, source: "confirmServerAdoption.revoked")
-                return nil
-            }
-            if (pendingServerAdoption.serverVault?.role, pendingServerAdoption.serverVault != nil)
-                != (currentServerVault?.role, currentServerVault != nil) {
-                self.pendingServerAdoption = PendingVaultServerAdoption(
-                    vault: pendingServerAdoption.vault,
-                    connection: pendingServerAdoption.connection,
-                    serverVault: currentServerVault
+            let api = SyncAPIClient(session: .shared)
+            let connection = pending.connection.record
+            let backup = BackupService(dbQueue: repository.dbQueue)
+            let currentVaults = try await fetchCloudVaults(from: connection)
+            let updated: VaultRecord
+            if let destinationId, destinationId != pending.vault.id {
+                guard let destination = currentVaults.first(where: { $0.vaultId == destinationId }) else { throw LocalVaultImportError.unavailable }
+                updated = try await LocalVaultImport.run(
+                    sourceId: pending.vault.id,
+                    destination: destination,
+                    dbQueue: repository.dbQueue,
+                    backup: backup,
+                    api: api
                 )
-                return nil
+            } else {
+                guard let organizationId,
+                      try await fetchOrganizations(connection)
+                      .contains(where: { $0.id == organizationId.uuidString.lowercased() && $0.kind == .team }) else {
+                    throw LocalVaultImportError.unavailable
+                }
+                let fence = try await repository.dbQueue.read { db in
+                    guard try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id) == connection,
+                          let source = try VaultRecord.fetchOne(db, key: pending.vault.id), source.accountConnectionId == nil,
+                          try !RecordingSessionRecord.hasActiveRecording(vaultId: source.id, in: db),
+                          try !SyncTransactionQueue.hasPending(vaultId: source.id, in: db) else { throw LocalVaultImportError.unavailable }
+                    return db.totalChangesCount
+                }
+                _ = try await backup.createGeneration(vaultIds: [pending.vault.id])
+                if !currentVaults.contains(where: { $0.vaultId == pending.vault.id }) {
+                    try await CloudVaultDiscovery.createVault(pending.vault, organizationId: organizationId, connection: connection, api: api)
+                }
+                guard let serverVault = try await fetchCloudVaults(from: connection).first(where: { $0.vaultId == pending.vault.id }),
+                      serverVault.organizationId == organizationId, serverVault.role == "admin",
+                      let origin = URL(string: connection.origin) else { throw LocalVaultImportError.unavailable }
+                let snapshot = try await SyncWorker(dbQueue: repository.dbQueue, apiClient: api)
+                    .importSnapshot(vaultId: serverVault.vaultId, connectionId: connection.id, origin: origin)
+                guard snapshot.projects.isEmpty, snapshot.meetings.isEmpty, snapshot.files.isEmpty else { throw LocalVaultImportError.collision }
+                guard try await fetchCloudVaults(from: connection).contains(where: {
+                    $0.vaultId == serverVault.vaultId && $0.organizationId == organizationId && $0.role == "admin"
+                }) else { throw LocalVaultImportError.unavailable }
+                guard let adopted = try await repository.adoptVaultForServerSync(
+                    id: pending.vault.id,
+                    connectionID: connection.id,
+                    serverVault: serverVault,
+                    expectedChanges: fence
+                ) else {
+                    throw LocalVaultImportError.changed
+                }
+                updated = adopted
             }
-            guard let updated = try await repository.adoptVaultForServerSync(
-                id: pendingServerAdoption.vault.id,
-                connectionID: pendingServerAdoption.connection.id,
-                serverVault: currentServerVault
-            ) else { return nil }
-            if let index = vaults.firstIndex(where: { $0.id == updated.id }) { vaults[index] = updated }
+            pendingServerAdoption = nil
+            await loadVaults()
             return updated
         } catch {
             presentError(L10n.vaultOperationFailed, error: error, source: "confirmServerAdoption")

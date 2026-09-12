@@ -151,6 +151,7 @@ struct SyncTransactionResponse: Decodable, Sendable {
 }
 
 struct SyncCanonicalPayload: Codable, Sendable {
+    var organizationId: UUID?
     var icalUid: String?
     var recurrenceId: String?
     var calendarEvent: MeetingCalendarSync.Event?
@@ -190,7 +191,7 @@ struct SyncCanonicalPayload: Codable, Sendable {
     var audio: [String: Components.Schemas.RecordingAudio]?
 
     enum CodingKeys: String, CodingKey {
-        case icalUid, recurrenceId, calendarEvent
+        case organizationId, icalUid, recurrenceId, calendarEvent
         case icon, color
         case contentOmitted, contentPresent, contentCount, hasSummary, transcriptRevision, transcript
         case parentProjectId, projectId, meetingId, name, description, projectType, status, duration, recordingStartedAt
@@ -331,9 +332,18 @@ enum SyncTransactionRecorder {
             }
             connectionId = confirmedConnectionId
         }
-        guard vault.syncRole != "member" else { throw SyncTransactionQueueError.readOnlyVault }
+        guard operations.contains(where: { $0.entity == .vault }) ? vault.allowsVaultManagement : vault.allowsCanonicalEdits
+        else { throw SyncTransactionQueueError.readOnlyVault }
         for operation in operations where (operation.entity == .meeting && operation.action == .delete)
             || (operation.entity == .vault && operation.action == .reset) {
+            // An explicit later deletion supersedes imported audio; retain the original ID until the deletion is acknowledged.
+            try db.execute(sql: """
+            UPDATE local_vault_import_operations SET replacementOperationId = ?
+            WHERE completedAt IS NULL AND operationId IN (
+                SELECT o.id FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
+                JOIN recording_archives a ON a.sessionId = o.entityId
+                WHERE t.vaultId = ? AND o.entity = 'recording' AND (? = 'vault' OR a.meetingId = ?))
+            """, arguments: [operation.id, vaultId, operation.entity.rawValue, operation.entityId])
             // Parent deletion also abandons its derived audio uploads, including an unacknowledged commit.
             try db.execute(sql: """
             DELETE FROM sync_transactions WHERE vaultId = ? AND id IN (
@@ -472,6 +482,9 @@ enum SyncTransactionQueue {
     private static let sendableVaultPredicate = """
     v.accountConnectionId = t.connectionId
       AND v.syncConfirmedConnectionId = t.connectionId
+      AND v.syncRole IN ('admin', 'editor')
+      AND (v.syncRole = 'admin' OR NOT EXISTS (
+        SELECT 1 FROM sync_operations o WHERE o.transactionId = t.id AND o.entity = 'vault'))
       AND (v.syncRecoveryState IS NULL OR v.syncRecoveryState IN ('pending', 'recovering'))
     """
 
@@ -700,7 +713,7 @@ enum SyncTransactionQueue {
                 if record.entity == .vault,
                    transaction.operations.contains(where: { $0.entity == .vault && $0.action == .create }) {
                     try db.execute(
-                        sql: "UPDATE vaults SET syncRole = 'owner' WHERE id = ? AND syncRole IS NULL",
+                        sql: "UPDATE vaults SET syncRole = 'admin' WHERE id = ? AND syncRole IS NULL",
                         arguments: [transaction.vaultId]
                     )
                 }
@@ -721,6 +734,7 @@ enum SyncTransactionQueue {
                     arguments: [response.cursor, transaction.vaultId]
                 )
             }
+            try LocalVaultImportRecord.acknowledge(transactionId: transaction.id, in: db)
             try db.execute(sql: "DELETE FROM sync_transactions WHERE id = ?", arguments: [transaction.id])
             if resetOperation, !hasLaterTransaction {
                 try db.execute(
@@ -761,6 +775,10 @@ enum SyncTransactionQueue {
         if try TextContentStore.observe(entity: entity, id: id, vaultId: vaultId, value: value, in: db) { return }
         switch entity {
         case .vault:
+            if let organizationId = value.organizationId,
+               try VaultRecord.fetchOne(db, key: vaultId)?.organizationId != organizationId {
+                throw SyncTransactionQueueError.invalidReceipt
+            }
             if let name = value.name {
                 try db.execute(
                     sql: "UPDATE vaults SET name = ?, icon = ?, color = ? WHERE id = ?",

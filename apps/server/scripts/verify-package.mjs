@@ -100,19 +100,19 @@ try {
     const codexLicense = await readFile(new URL("./Codex-LICENSE", packageUrl), "utf8");
     const codexNotice = await readFile(new URL("./Codex-NOTICE.txt", packageUrl), "utf8");
     const migration = await readFile(
-      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/20260909134058_initial/migration.sql")),
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/20260912095621_initial/migration.sql")),
       "utf8",
     );
     const authMigration = await readFile(
-      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres-auth/20260903034253_melodic_scalphunter/migration.sql")),
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres-auth/20260912095619_initial/migration.sql")),
       "utf8",
     );
     const applicationMigration = await readFile(
-      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres/20260909134056_initial/migration.sql")),
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres/20260912095620_initial/migration.sql")),
       "utf8",
     );
     const fileRlsMigration = await readFile(
-      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres/20260909134100_runtime_support/migration.sql")),
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres/20260912180000_runtime_support/migration.sql")),
       "utf8",
     );
     if (
@@ -158,7 +158,7 @@ try {
     }
   `);
   await writeFile(join(directory, "verify.ts"), `
-    import { createD1AuthStore, type D1DatabaseLike, type AIGatewayBackend, type RequestBody, type RequestContext } from "@dahlia-ai/server";
+    import { type AIGatewayBackend, type RequestBody, type RequestContext } from "@dahlia-ai/server";
     import {
       createNodeAuthStore,
       createPostgresApplicationStore,
@@ -172,10 +172,8 @@ try {
     const body: RequestBody = { model: "model", input: [], max_output_tokens: 256, stream: true };
     void backend.responses(body, context);
     void backend.listModels({ signal: context.signal });
-    declare const database: D1DatabaseLike;
-    const store = createD1AuthStore(database);
+
     const client: typeof App | undefined = undefined;
-    void store;
     void migrateApplicationDatabase;
     void client;
     void createNodeAuthStore;
@@ -210,7 +208,9 @@ try {
     }
   }
   for (const [file, source] of await readEntryGraph(join(installedPackage, "dist", "server", "index.js"))) {
-    if (/node:(?:fs|http2|net|path|sqlite|url)/.test(source) || source.includes("node-store")) {
+    // The optional auth-secret file uses a lazy fs import, also supported by Workers nodejs_compat.
+    const eagerSource = source.replace(/\bimport\(["']node:fs["']\)/g, "");
+    if (/node:(?:fs|http2|net|path|sqlite|url)/.test(eagerSource) || source.includes("node-store")) {
       throw new Error(`Node-only module leaked into the package root entry: ${file}`);
     }
   }

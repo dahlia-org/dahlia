@@ -35,6 +35,7 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
     var chatModelID = ""
     var chatReasoningEffort: String = CodexReasoningEffortOption.defaultValue
     var aiSettingsBackfilled = true
+    var organizationId: UUID?
     var syncRole: String?
     var syncConfirmedConnectionId: UUID?
     var syncPullCursor: String?
@@ -58,17 +59,22 @@ extension VaultRecord {
     }
 
     var allowsCanonicalEdits: Bool {
-        syncRole != "member"
+        accountConnectionId == nil || syncRole == "admin" || syncRole == "editor"
+    }
+
+    var allowsVaultManagement: Bool {
+        accountConnectionId == nil || syncRole == "admin"
     }
 
     var requiresServerDeletionBeforeRemoval: Bool {
-        allowsCanonicalEdits && accountConnectionId != nil
+        allowsVaultManagement && accountConnectionId != nil
     }
 }
 
 struct CloudVaultRecord: Identifiable, Equatable, Sendable {
     var vaultId: UUID
     var connectionId: UUID
+    var organizationId: UUID
     var icon: String?
     var color: String?
     var name: String

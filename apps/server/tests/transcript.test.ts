@@ -1,3 +1,4 @@
+import { testOrganizationID } from "./public-test-client";
 import { seedHeaderIdentity, testUserID } from "./public-test-client";
 import { z } from "zod";
 import { createHash } from "node:crypto";
@@ -38,9 +39,9 @@ async function setup() {
   await store.migrate(); await seedHeaderIdentity(store, databasePath, owner); await seedHeaderIdentity(store, databasePath, member);
   const sync = new MeetingSyncService(store.sync);
   const vaultId = uuidV7(); const meetingId = uuidV7(); const now = new Date().toISOString();
-  const body = (operations: unknown[]) => ({ schemaVersion: 2, id: uuidV7(), vaultId, createdAt: now, operations });
+  const body = (operations: unknown[]) => ({ schemaVersion: 3, id: uuidV7(), vaultId, createdAt: now, operations });
   await sync.commitTransaction(owner, body([
-    { id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { name: "Vault", createdAt: now } },
+    { id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Vault", createdAt: now } },
     { id: uuidV7(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
       data: { name: "Meeting", status: "READY", projectId: null, duration: null, recordingStartedAt: null, createdAt: now, updatedAt: now } },
   ]));
@@ -264,13 +265,13 @@ describe("transcript versions", () => {
         (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
       const send = (suffix: string, user = "reader") => {
         const request = new Request(`http://localhost:5173/api/v1/meetings/${meetingId}/transcripts${suffix}`, {
-          headers: { "x-forwarded-user": testUserID(user), "x-forwarded-email": `${user}@example.com` },
+          headers: { "x-forwarded-user": testUserID(user), "x-forwarded-email": `${testUserID(user)}@example.com` },
         });
         return runtime === "node" ? app.request(request) : fetch(request, {} as Cloudflare.Env, {} as ExecutionContext);
       };
       expect((await send("/1")).status).toBe(404);
       const grantDb = new DatabaseSync(databasePath);
-      grantDb.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', ?, 'member', ?, ?)").run(vaultId, member.userId, owner.userId, Date.now());
+      grantDb.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', ?, 'viewer', ?, ?)").run(vaultId, member.userId, owner.userId, Date.now());
       grantDb.close();
       const page = z.object({ items: z.array(z.unknown()), nextCursor: z.string() }).parse(await (await send("/1")).json());
       expect(page.items).toHaveLength(500);

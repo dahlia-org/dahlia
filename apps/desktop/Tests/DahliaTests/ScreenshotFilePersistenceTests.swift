@@ -179,7 +179,16 @@
                 try await repository.adoptVaultForServerSync(
                     id: fixture.vault.id,
                     connectionID: fixture.connection.id,
-                    serverVault: nil,
+                    serverVault: .init(
+                        vaultId: fixture.vault.id,
+                        connectionId: fixture.connection.id,
+                        organizationId: .v7(),
+                        name: fixture.vault.name,
+                        createdAt: .now,
+                        revision: 1,
+                        role: "admin"
+                    ),
+                    expectedChanges: queue.read { $0.totalChangesCount },
                     screenshotContent: fixture.provider
                 )
             }
@@ -192,7 +201,16 @@
             _ = try await repository.adoptVaultForServerSync(
                 id: fixture.vault.id,
                 connectionID: fixture.connection.id,
-                serverVault: nil,
+                serverVault: .init(
+                    vaultId: fixture.vault.id,
+                    connectionId: fixture.connection.id,
+                    organizationId: .v7(),
+                    name: fixture.vault.name,
+                    createdAt: .now,
+                    revision: 1,
+                    role: "admin"
+                ),
+                expectedChanges: queue.read { $0.totalChangesCount },
                 screenshotContent: fixture.provider
             )
             try await fixture.provider.trimFiles(dbQueue: queue, budget: 0)
@@ -255,6 +273,8 @@
                 var vault = VaultRecord(id: .v7(), path: nil, name: "Files", createdAt: .now, lastOpenedAt: .now)
                 if !local {
                     vault.accountConnectionId = connection.id
+                    if vault.syncRole == nil { vault.syncRole = "admin" }
+                    if vault.organizationId == nil { vault.organizationId = .v7() }
                     vault.syncConfirmedConnectionId = connection.id
                     vault.syncPullCursor = "cursor"
                 }

@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "9514b82c-3e2e-43fe-ae29-626f3f8f7374",
+  "id": "299ed8da-c43e-42ef-b0f0-52e396744289",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -57,12 +57,6 @@
       "name": "search_index",
       "entityType": "tables",
       "schema": "jobs"
-    },
-    {
-      "isRlsEnabled": false,
-      "name": "server_initializations",
-      "entityType": "tables",
-      "schema": "app"
     },
     {
       "isRlsEnabled": false,
@@ -974,19 +968,6 @@
       "table": "search_index"
     },
     {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "owner_user_id",
-      "entityType": "columns",
-      "schema": "jobs",
-      "table": "search_index"
-    },
-    {
       "type": "text",
       "typeSchema": null,
       "notNull": true,
@@ -1115,32 +1096,6 @@
       "entityType": "columns",
       "schema": "jobs",
       "table": "search_index"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "name",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "server_initializations"
-    },
-    {
-      "type": "timestamp with time zone",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "initialized_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "server_initializations"
     },
     {
       "type": "integer",
@@ -1696,19 +1651,6 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "owner_user_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "sync_changes"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
       "name": "vault_id",
       "entityType": "columns",
       "schema": "app",
@@ -1908,19 +1850,6 @@
       "entityType": "columns",
       "schema": "app",
       "table": "transaction_receipts"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "owner_user_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "sync_vault_state"
     },
     {
       "type": "uuid",
@@ -2846,6 +2775,32 @@
       "table": "vaults"
     },
     {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "vaults"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_by",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "vaults"
+    },
+    {
       "type": "text",
       "typeSchema": null,
       "notNull": true,
@@ -3244,19 +3199,6 @@
       "generated": null,
       "identity": null,
       "name": "vault_id",
-      "entityType": "columns",
-      "schema": "crypto",
-      "table": "vault_keys"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "owner_user_id",
       "entityType": "columns",
       "schema": "crypto",
       "table": "vault_keys"
@@ -3696,13 +3638,6 @@
       "nameExplicit": true,
       "columns": [
         {
-          "value": "owner_user_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
           "value": "vault_id",
           "isExpression": false,
           "asc": true,
@@ -3722,35 +3657,7 @@
       "with": "",
       "method": "btree",
       "concurrently": false,
-      "name": "sync_change_owner_vault_sequence_idx",
-      "entityType": "indexes",
-      "schema": "app",
-      "table": "sync_changes"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "owner_user_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "sequence",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "sync_change_owner_sequence_idx",
+      "name": "sync_change_vault_sequence_idx",
       "entityType": "indexes",
       "schema": "app",
       "table": "sync_changes"
@@ -4004,27 +3911,6 @@
       "nameExplicit": true,
       "columns": [
         {
-          "value": "vault_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": true,
-      "where": "\"role\" = 'owner'",
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "vault_permission_single_owner_idx",
-      "entityType": "indexes",
-      "schema": "app",
-      "table": "vault_permissions"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
           "value": "principal_type",
           "isExpression": false,
           "asc": true,
@@ -4268,23 +4154,6 @@
       "table": "search_index"
     },
     {
-      "nameExplicit": true,
-      "columns": [
-        "owner_user_id"
-      ],
-      "schemaTo": "auth",
-      "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "search_index_job_owner_user_fk",
-      "entityType": "fks",
-      "schema": "jobs",
-      "table": "search_index"
-    },
-    {
       "nameExplicit": false,
       "columns": [
         "meeting_id"
@@ -4368,23 +4237,6 @@
       "entityType": "fks",
       "schema": "app",
       "table": "transaction_receipts"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
-        "owner_user_id"
-      ],
-      "schemaTo": "auth",
-      "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "sync_vault_state_owner_user_id_user_id_fkey",
-      "entityType": "fks",
-      "schema": "app",
-      "table": "sync_vault_state"
     },
     {
       "nameExplicit": false,
@@ -4510,6 +4362,23 @@
       "table": "transcript_segments"
     },
     {
+      "nameExplicit": false,
+      "columns": [
+        "organization_id"
+      ],
+      "schemaTo": "auth",
+      "tableTo": "organization",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "RESTRICT",
+      "name": "vaults_organization_id_organization_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "vaults"
+    },
+    {
       "nameExplicit": true,
       "columns": [
         "vault_id"
@@ -4620,7 +4489,6 @@
     },
     {
       "columns": [
-        "owner_user_id",
         "vault_id"
       ],
       "nameExplicit": false,
@@ -4703,16 +4571,6 @@
       "name": "meeting_events_pkey",
       "schema": "app",
       "table": "meeting_events",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "name"
-      ],
-      "nameExplicit": false,
-      "name": "server_initializations_pkey",
-      "schema": "app",
-      "table": "server_initializations",
       "entityType": "pks"
     },
     {
@@ -5131,15 +4989,8 @@
       "table": "vault_permissions"
     },
     {
-      "value": "\"role\" IN ('owner', 'member')",
+      "value": "\"role\" IN ('admin', 'editor', 'viewer')",
       "name": "vault_permission_role_check",
-      "entityType": "checks",
-      "schema": "app",
-      "table": "vault_permissions"
-    },
-    {
-      "value": "\"role\" <> 'owner' OR \"principal_type\" = 'user'",
-      "name": "vault_permission_owner_user_check",
       "entityType": "checks",
       "schema": "app",
       "table": "vault_permissions"
@@ -5170,7 +5021,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"meeting_attachments\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"meeting_attachments\".\"vault_id\") OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.vault_id = \"app\".\"meeting_attachments\".\"vault_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
       "withCheck": null,
       "name": "meeting_attachment_select",
       "entityType": "policies",
@@ -5183,8 +5034,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"meeting_attachments\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"app\".\"meeting_attachments\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"meeting_attachments\".\"vault_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"meeting_attachments\".\"vault_id\")",
       "name": "meeting_attachment_write",
       "entityType": "policies",
       "schema": "app",
@@ -5196,7 +5047,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"meeting_events\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"meeting_events\".\"vault_id\") OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.vault_id = \"app\".\"meeting_events\".\"vault_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
       "withCheck": null,
       "name": "meeting_event_select",
       "entityType": "policies",
@@ -5209,8 +5060,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"meeting_events\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"app\".\"meeting_events\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"meeting_events\".\"vault_id\") OR current_setting('app.maintenance', true) = 'rotation'",
+      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"meeting_events\".\"vault_id\") OR current_setting('app.maintenance', true) = 'rotation'",
       "name": "meeting_event_write",
       "entityType": "policies",
       "schema": "app",
@@ -5222,7 +5073,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"search\".\"documents\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_read_vault\"(\"search\".\"documents\".\"vault_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"search\".\"documents\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)",
       "withCheck": null,
       "name": "search_document_select",
       "entityType": "policies",
@@ -5235,8 +5086,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"search\".\"documents\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"search\".\"documents\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_vault\"(\"search\".\"documents\".\"vault_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"search\".\"documents\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)",
+      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"search\".\"documents\".\"vault_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"search\".\"documents\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)",
       "name": "search_document_write",
       "entityType": "policies",
       "schema": "search",
@@ -5261,8 +5112,8 @@
       "roles": [
         "public"
       ],
-      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" m WHERE m.meeting_id = \"app\".\"summaries\".\"meeting_id\" AND \"app\".\"current_identity_owns_vault\"(m.vault_id))",
-      "withCheck": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" m WHERE m.meeting_id = \"app\".\"summaries\".\"meeting_id\" AND \"app\".\"current_identity_owns_vault\"(m.vault_id))",
+      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" m WHERE m.meeting_id = \"app\".\"summaries\".\"meeting_id\" AND \"app\".\"current_identity_can_write_vault\"(m.vault_id))",
+      "withCheck": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" m WHERE m.meeting_id = \"app\".\"summaries\".\"meeting_id\" AND \"app\".\"current_identity_can_write_vault\"(m.vault_id))",
       "name": "summary_write",
       "entityType": "policies",
       "schema": "app",
@@ -5287,8 +5138,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"transaction_receipts\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
-      "withCheck": "\"app\".\"transaction_receipts\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
+      "using": "\"app\".\"transaction_receipts\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid OR current_setting('app.maintenance', true) = 'retention'",
+      "withCheck": "\"app\".\"transaction_receipts\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid OR current_setting('app.maintenance', true) = 'retention'",
       "name": "transaction_receipt_owner",
       "entityType": "policies",
       "schema": "app",
@@ -5300,7 +5151,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"files\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"files\".\"vault_id\") OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"files\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.vault_id = \"app\".\"files\".\"vault_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
       "withCheck": null,
       "name": "file_select",
       "entityType": "policies",
@@ -5313,8 +5164,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"files\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"app\".\"files\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"files\".\"vault_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"files\".\"vault_id\")",
       "name": "file_write",
       "entityType": "policies",
       "schema": "app",
@@ -5326,7 +5177,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"meetings\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"meetings\".\"vault_id\") OR (current_setting('app.maintenance', true) IN ('search', 'storage', 'governance-delete') AND \"app\".\"meetings\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)",
       "withCheck": null,
       "name": "meeting_select",
       "entityType": "policies",
@@ -5339,8 +5190,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"meetings\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"app\".\"meetings\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"meetings\".\"vault_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"meetings\".\"vault_id\")",
       "name": "meeting_write",
       "entityType": "policies",
       "schema": "app",
@@ -5366,7 +5217,7 @@
         "public"
       ],
       "using": null,
-      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"app\".\"projects\".\"vault_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"projects\".\"vault_id\")",
       "name": "project_insert",
       "entityType": "policies",
       "schema": "app",
@@ -5378,8 +5229,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"projects\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"app\".\"projects\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"projects\".\"vault_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"projects\".\"vault_id\")",
       "name": "project_update",
       "entityType": "policies",
       "schema": "app",
@@ -5391,7 +5242,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"projects\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"projects\".\"vault_id\")",
       "withCheck": null,
       "name": "project_delete",
       "entityType": "policies",
@@ -5404,7 +5255,7 @@
       "roles": [
         "public"
       ],
-      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND \"app\".\"current_identity_can_read_vault\"(\"vault_id\"))",
+      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND (\"app\".\"current_identity_can_read_vault\"(\"vault_id\") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND \"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)))",
       "withCheck": null,
       "name": "recording_select",
       "entityType": "policies",
@@ -5417,8 +5268,8 @@
       "roles": [
         "public"
       ],
-      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND \"app\".\"current_identity_owns_vault\"(\"vault_id\"))",
-      "withCheck": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND \"app\".\"current_identity_owns_vault\"(\"vault_id\"))",
+      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND (\"app\".\"current_identity_can_write_vault\"(\"vault_id\") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND \"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)))",
+      "withCheck": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND (\"app\".\"current_identity_can_write_vault\"(\"vault_id\") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND \"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)))",
       "name": "recording_write",
       "entityType": "policies",
       "schema": "app",
@@ -5443,8 +5294,8 @@
       "roles": [
         "public"
       ],
-      "using": "exists (select 1 from \"app\".\"transcripts\" t join \"app\".\"meetings\" m on m.meeting_id = t.meeting_id where t.id = \"app\".\"transcript_segments\".\"transcript_id\" and \"app\".\"current_identity_owns_vault\"(m.vault_id))",
-      "withCheck": "exists (select 1 from \"app\".\"transcripts\" t join \"app\".\"meetings\" m on m.meeting_id = t.meeting_id where t.id = \"app\".\"transcript_segments\".\"transcript_id\" and \"app\".\"current_identity_owns_vault\"(m.vault_id))",
+      "using": "exists (select 1 from \"app\".\"transcripts\" t join \"app\".\"meetings\" m on m.meeting_id = t.meeting_id where t.id = \"app\".\"transcript_segments\".\"transcript_id\" and \"app\".\"current_identity_can_write_vault\"(m.vault_id))",
+      "withCheck": "exists (select 1 from \"app\".\"transcripts\" t join \"app\".\"meetings\" m on m.meeting_id = t.meeting_id where t.id = \"app\".\"transcript_segments\".\"transcript_id\" and \"app\".\"current_identity_can_write_vault\"(m.vault_id))",
       "name": "transcript_write",
       "entityType": "policies",
       "schema": "app",
@@ -5456,7 +5307,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"vaults\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"vaults\".\"vault_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"app\".\"vaults\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid) OR current_setting('app.maintenance', true) = 'authorization' OR (current_setting('app.maintenance', true) = 'governance' AND \"app\".\"vaults\".\"organization_id\" = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"vaults\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)",
       "withCheck": null,
       "name": "vault_select",
       "entityType": "policies",
@@ -5482,8 +5333,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"vaults\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"app\".\"vaults\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_admin_vault\"(\"app\".\"vaults\".\"vault_id\")",
+      "withCheck": "\"app\".\"current_identity_can_admin_vault\"(\"app\".\"vaults\".\"vault_id\")",
       "name": "vault_update",
       "entityType": "policies",
       "schema": "app",
@@ -5495,7 +5346,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"vaults\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_admin_vault\"(\"app\".\"vaults\".\"vault_id\") OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"vaults\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)",
       "withCheck": null,
       "name": "vault_delete",
       "entityType": "policies",
@@ -5521,8 +5372,8 @@
       "roles": [
         "public"
       ],
-      "using": "exists (select 1 from \"app\".\"meetings\" m where m.meeting_id = \"app\".\"transcripts\".\"meeting_id\" and \"app\".\"current_identity_owns_vault\"(m.vault_id))",
-      "withCheck": "exists (select 1 from \"app\".\"meetings\" m where m.meeting_id = \"app\".\"transcripts\".\"meeting_id\" and \"app\".\"current_identity_owns_vault\"(m.vault_id))",
+      "using": "exists (select 1 from \"app\".\"meetings\" m where m.meeting_id = \"app\".\"transcripts\".\"meeting_id\" and \"app\".\"current_identity_can_write_vault\"(m.vault_id))",
+      "withCheck": "exists (select 1 from \"app\".\"meetings\" m where m.meeting_id = \"app\".\"transcripts\".\"meeting_id\" and \"app\".\"current_identity_can_write_vault\"(m.vault_id))",
       "name": "transcript_version_write",
       "entityType": "policies",
       "schema": "app",
@@ -5534,7 +5385,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"transcript_patch_chunks\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"transcript_patch_chunks\".\"vault_id\")",
       "withCheck": null,
       "name": "transcript_patch_select",
       "entityType": "policies",
@@ -5547,8 +5398,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"transcript_patch_chunks\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"app\".\"transcript_patch_chunks\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"transcript_patch_chunks\".\"vault_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"transcript_patch_chunks\".\"vault_id\")",
       "name": "transcript_patch_write",
       "entityType": "policies",
       "schema": "app",
@@ -5560,7 +5411,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"crypto\".\"vault_keys\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid OR \"app\".\"current_identity_can_read_vault\"(\"crypto\".\"vault_keys\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_read_vault\"(\"crypto\".\"vault_keys\".\"vault_id\") OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"crypto\".\"vault_keys\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'governance' AND EXISTS (SELECT 1 FROM app.vaults v WHERE v.vault_id = \"crypto\".\"vault_keys\".\"vault_id\" AND v.organization_id = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid)) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.vault_id = \"crypto\".\"vault_keys\".\"vault_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
       "withCheck": null,
       "name": "vault_key_read",
       "entityType": "policies",
@@ -5573,8 +5424,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"crypto\".\"vault_keys\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
-      "withCheck": "\"crypto\".\"vault_keys\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
+      "using": "\"app\".\"current_identity_can_write_vault\"(\"crypto\".\"vault_keys\".\"vault_id\") OR current_setting('app.maintenance', true) = 'rotation'",
+      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"crypto\".\"vault_keys\".\"vault_id\") OR current_setting('app.maintenance', true) = 'rotation'",
       "name": "vault_key_write",
       "entityType": "policies",
       "schema": "crypto",

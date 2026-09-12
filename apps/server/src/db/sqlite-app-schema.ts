@@ -10,7 +10,7 @@ import type { FileMetadata } from "../files/model";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../account-settings-model";
 import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from "../search/settings-model";
 
-import { user as authUser } from "./generated/sqlite-auth-schema";
+import { user as authUser, organization as authOrganization } from "./generated/sqlite-auth-schema";
 
 const sqliteTimestamp = (name: string) => integer(name, { mode: "timestamp_ms" });
 
@@ -18,11 +18,6 @@ export const serverSettings = sqliteTable("server_settings", {
   id: integer("id").primaryKey(),
   searchWeights: text("search_weights", { mode: "json" }).$type<SearchSettings>().default(DEFAULT_SEARCH_SETTINGS).notNull(),
 }, (table) => [check("server_settings_singleton", sql`${table.id} = 1`)]);
-
-export const serverInitializations = sqliteTable("server_initializations", {
-  name: text("name").primaryKey(),
-  initializedAt: sqliteTimestamp("initialized_at").notNull(),
-});
 
 export const accountSettings = sqliteTable("account_settings", {
   userId: text("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
@@ -37,6 +32,8 @@ export const syncedVault = sqliteTable("vaults", {
   encryption: text("encryption").$type<"none" | "server">().default("none").notNull(),
   encryptedPayload: text("encrypted_payload"),
   vaultId: text("vault_id").primaryKey(),
+  organizationId: text("organization_id").notNull().references(() => authOrganization.id, { onDelete: "restrict" }),
+  createdBy: text("created_by", { mode: "json" }).$type<{ id: string; name: string; email: string }>().notNull(),
   name: text("name").notNull(),
   icon: text("icon"),
   color: text("color"),
@@ -93,9 +90,7 @@ export const syncedVaultPermission = sqliteTable("vault_permissions", {
     foreignColumns: [authUser.id],
   }).onDelete("restrict"),
   check("vault_permission_principal_type_check", sql`${table.principalType} IN ('user', 'organization', 'team')`),
-  check("vault_permission_role_check", sql`${table.role} IN ('owner', 'member')`),
-  check("vault_permission_owner_user_check", sql`${table.role} <> 'owner' OR ${table.principalType} = 'user'`),
-  uniqueIndex("vault_permission_single_owner_idx").on(table.vaultId).where(sql`${table.role} = 'owner'`),
+  check("vault_permission_role_check", sql`${table.role} IN ('admin', 'editor', 'viewer')`),
   index("vault_permission_principal_vault_idx")
     .on(table.principalType, table.principalId, table.role, table.vaultId),
 ]);
@@ -344,7 +339,6 @@ export const searchDocument = sqliteTable("search_documents", {
 export const searchIndexJob = sqliteTable("jobs_search_index", {
   vaultId: text("vault_id").notNull(),
   documentId: text("document_id").notNull(),
-  ownerUserId: text("owner_user_id").notNull(),
   model: text("model").notNull(),
   dimensions: integer("dimensions").notNull(),
   generation: integer("generation").default(1).notNull(),
@@ -360,10 +354,6 @@ export const searchIndexJob = sqliteTable("jobs_search_index", {
   foreignKey({
     columns: [table.vaultId],
     foreignColumns: [syncedVault.vaultId],
-  }).onDelete("cascade"),
-  foreignKey({
-    columns: [table.ownerUserId],
-    foreignColumns: [authUser.id],
   }).onDelete("cascade"),
   check("search_index_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
   check("search_index_job_dimensions_check", sql`${table.dimensions} BETWEEN 32 AND 1024`),
@@ -387,7 +377,6 @@ export const syncTransactionReceipt = sqliteTable("transaction_receipts", {
 
 export const syncChange = sqliteTable("sync_changes", {
   sequence: integer("sequence").primaryKey({ autoIncrement: true }),
-  ownerUserId: text("owner_user_id").notNull(),
   vaultId: text("vault_id").notNull(),
   entity: text("entity").notNull(),
   entityId: text("entity_id").notNull(),
@@ -398,18 +387,16 @@ export const syncChange = sqliteTable("sync_changes", {
 }, (table) => [
   check("sync_change_entity_check", sql`${table.entity} IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')`),
   check("sync_change_action_check", sql`${table.action} IN ('upsert', 'delete', 'reset')`),
-  index("sync_change_owner_vault_sequence_idx").on(table.ownerUserId, table.vaultId, table.sequence),
-  index("sync_change_owner_sequence_idx").on(table.ownerUserId, table.sequence),
+  index("sync_change_vault_sequence_idx").on(table.vaultId, table.sequence),
 ]);
 
 // Survives Vault deletion and ledger pruning; contains no canonical content.
 export const syncVaultState = sqliteTable("sync_vault_state", {
-  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   vaultId: text("vault_id").notNull(),
   latestSequence: integer("latest_sequence").default(0).notNull(),
   prunedThrough: integer("pruned_through").default(0).notNull(),
 }, (table) => [
-  primaryKey({ columns: [table.ownerUserId, table.vaultId] }),
+  primaryKey({ columns: [table.vaultId] }),
   check("sync_vault_state_boundary_check", sql`${table.prunedThrough} >= 0 AND ${table.latestSequence} >= ${table.prunedThrough}`),
 ]);
 
@@ -506,7 +493,6 @@ export const vaultTransfer = sqliteTable("vault_transfers", {
 
 export const vaultKey = sqliteTable("vault_keys", {
   vaultId: text("vault_id").primaryKey(),
-  ownerUserId: text("owner_user_id").notNull(),
   wrappedKey: text("wrapped_key").notNull(),
   createdAt: sqliteTimestamp("created_at").default(sql`(unixepoch() * 1000)`).notNull(),
 });

@@ -137,8 +137,9 @@ final class MeetingRepository {
             for cloud in cloudVaults where cloud.connectionId == connection.id {
                 if var existing = try VaultRecord.fetchOne(db, key: cloud.vaultId) {
                     guard existing.accountConnectionId == connection.id,
-                          existing.syncConfirmedConnectionId == connection.id,
-                          existing.syncRole != cloud.role else { continue }
+                          existing.syncConfirmedConnectionId == connection.id else { continue }
+                    guard existing.organizationId == cloud.organizationId else { throw SyncTransactionQueueError.invalidReceipt }
+                    guard existing.syncRole != cloud.role else { continue }
                     existing.syncRole = cloud.role
                     try existing.update(db)
                     changed = true
@@ -151,6 +152,7 @@ final class MeetingRepository {
                 vault.accountConnectionId = connection.id
                 vault.syncConfirmedConnectionId = connection.id
                 vault.syncRole = cloud.role
+                vault.organizationId = cloud.organizationId
                 try vault.insert(db)
                 try db.execute(
                     sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, ?)",
@@ -166,6 +168,7 @@ final class MeetingRepository {
     nonisolated func updateVaultName(id: UUID, name: String, appearance: ProjectAppearance? = nil) async throws -> VaultRecord? {
         try await dbQueue.write { db in
             guard var vault = try VaultRecord.fetchOne(db, key: id) else { return nil }
+            guard vault.allowsVaultManagement else { throw SyncTransactionQueueError.readOnlyVault }
             vault.name = name
             if let appearance { vault.appearance = appearance }
             try vault.update(db)
@@ -209,39 +212,37 @@ final class MeetingRepository {
     nonisolated func adoptVaultForServerSync(
         id: UUID,
         connectionID: UUID,
-        serverVault: CloudVaultRecord?,
+        serverVault: CloudVaultRecord,
+        expectedChanges: Int,
         screenshotContent: ScreenshotContentProvider = .shared
     ) async throws -> VaultRecord? {
+        guard serverVault.vaultId == id, serverVault.connectionId == connectionID, serverVault.role == "admin" else {
+            throw LocalVaultImportError.unavailable
+        }
         screenshotContent.retainOriginals(vaultIds: [id], dbQueue: dbQueue)
         defer { screenshotContent.releaseOriginals(vaultIds: [id], dbQueue: dbQueue) }
-        let eligible = try await dbQueue.read { db in
-            try VaultRecord.fetchOne(db, key: id)?.accountConnectionId == nil && !SyncTransactionQueue.hasPending(vaultId: id, in: db)
-        }
-        guard eligible else { return nil }
         let files = try await screenshotContent.prepareAccountTransfer(vaultId: id, connectionId: connectionID, dbQueue: dbQueue)
         return try await dbQueue.write { db in
-            guard var vault = try VaultRecord.fetchOne(db, key: id),
-                  vault.accountConnectionId == nil,
-                  try !SyncTransactionQueue.hasPending(vaultId: id, in: db)
-            else { return nil }
+            guard db.totalChangesCount == expectedChanges,
+                  var vault = try VaultRecord.fetchOne(db, key: id), vault.accountConnectionId == nil,
+                  try !RecordingSessionRecord.hasActiveRecording(vaultId: id, in: db),
+                  try !SyncTransactionQueue.hasPending(vaultId: id, in: db) else { throw LocalVaultImportError.changed }
             try ScreenshotContentProvider.installTransfers(files, vaultId: id, in: db)
             vault.accountConnectionId = connectionID
-            vault.syncRole = serverVault?.role
-            if let serverVault, serverVault.role == "member" {
-                vault.name = serverVault.name
-                vault.icon = serverVault.icon
-                vault.color = serverVault.color
-                vault.createdAt = serverVault.createdAt
-                vault.syncConfirmedConnectionId = connectionID
-                try db.execute(
-                    sql: """
-                    INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
-                    VALUES (?, 'vault', ?, ?)
-                    """,
-                    arguments: [id, id, serverVault.revision]
-                )
-            }
+            vault.organizationId = serverVault.organizationId
+            vault.syncRole = serverVault.role
+            vault.syncConfirmedConnectionId = connectionID
             try vault.update(db)
+            try db.execute(
+                sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, ?)",
+                arguments: [id, id, serverVault.revision]
+            )
+            var items: [VaultRelocation.Item] = []
+            for (entity, table) in [(SyncEntity.project, "projects"), (.meeting, "meetings"), (.file, "files")] {
+                items += try UUID.fetchAll(db, sql: "SELECT id FROM \(table) WHERE vaultId = ?", arguments: [id])
+                    .map { .init(entity: entity, id: $0, vaultId: id) }
+            }
+            try SyncInitialSnapshotBuilder.enqueueContents(items, vaultId: id, in: db)
             return vault
         }
     }
@@ -333,7 +334,7 @@ final class MeetingRepository {
     }
 
     private nonisolated static func deleteVaultRows(id: UUID, in db: Database) throws {
-        if try VaultRecord.fetchOne(db, key: id)?.syncRole == "member" {
+        if try VaultRecord.fetchOne(db, key: id)?.syncRole == "viewer" {
             try SyncTransactionQueue.discard(vaultId: id, in: db)
         }
         let projects = try ProjectRecord.fetchResolvedAll(vaultId: id, in: db)
@@ -408,7 +409,7 @@ final class MeetingRepository {
                 )
                 try db.execute(
                     sql: """
-                    UPDATE vaults SET accountConnectionId = NULL, syncRole = NULL,
+                    UPDATE vaults SET accountConnectionId = NULL, syncRole = NULL, organizationId = NULL,
                         syncConfirmedConnectionId = NULL, syncPullCursor = NULL,
                         syncLastCommittedCursor = NULL
                     WHERE accountConnectionId = ?

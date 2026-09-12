@@ -55,9 +55,10 @@
                     var otherVault = vault
                     otherVault.id = .v7()
                     otherVault.path = "/tmp/calendar-\(otherVault.id)"
-                    otherVault.syncRole = member ? "member" : nil
+                    otherVault.syncRole = member ? "viewer" : "admin"
                     if !member {
                         otherVault.accountConnectionId = nil
+                        otherVault.organizationId = otherVault.accountConnectionId == nil ? nil : (otherVault.organizationId ?? .v7())
                         otherVault.syncConfirmedConnectionId = nil
                     }
                     try otherVault.insert(db)
@@ -172,6 +173,8 @@
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://server.example.com", clientID: "desktop", createdAt: .now)
             var vault = VaultRecord(id: .v7(), path: "/tmp/calendar-sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
             vault.accountConnectionId = connection.id
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = connection.id
             let meeting = MeetingRecord(
                 id: .v7(), vaultId: vault.id, name: "Meeting", createdAt: .now, updatedAt: .now,

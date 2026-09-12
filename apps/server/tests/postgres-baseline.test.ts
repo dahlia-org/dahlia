@@ -33,7 +33,7 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     expect((await client.query("SELECT summary, processing FROM app.account_settings")).rows).toEqual([{
       summary: { style: "detailed" }, processing: { location: "local", remote: { workflow: "transcribeThenSummarize" } },
     }]);
-    expect((await client.query("SELECT * FROM app.server_initializations")).rows).toEqual([]);
+    expect((await client.query("SELECT id FROM app.server_settings")).rows).toEqual([]);
     const protectedTables = await client.query<{ relname: string; relforcerowsecurity: boolean }>(`SELECT relname, relforcerowsecurity FROM pg_class
       WHERE relnamespace IN ('app'::regnamespace, 'jobs'::regnamespace) AND relrowsecurity ORDER BY relname`);
     expect(protectedTables.rows.map((row) => row.relname)).toEqual([
@@ -74,8 +74,10 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("enforces file text limits in 
     const document = testUserID("limit-document");
     await client.query('INSERT INTO auth."user"(id, name, email) VALUES ($1, $2, $3)', [owner, "Owner", "limit@example.com"]);
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner]);
-    await client.query("INSERT INTO app.vaults(vault_id, name) VALUES ($1, 'Vault')", [vault]);
-    await client.query("INSERT INTO app.vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id) VALUES ($1, 'user', $2, 'owner', $2)", [vault, owner]);
+    await client.query("INSERT INTO auth.organization(id, name, slug, kind, created_at) VALUES ($1, 'Team', $2, 'team', now())", [owner, `team-${owner}`]);
+    await client.query("INSERT INTO auth.member(id, organization_id, user_id, role, created_at) VALUES ($1, $1, $1, 'owner', now())", [owner]);
+    await client.query("INSERT INTO app.vaults(vault_id, organization_id, created_by, name) VALUES ($1, $2, $3, 'Vault')", [vault, owner, { id: owner, name: "Owner", email: "limit@example.com" }]);
+    await client.query("INSERT INTO app.vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id) VALUES ($1, 'user', $2, 'admin', $2)", [vault, owner]);
     await client.query("INSERT INTO app.meetings(meeting_id, vault_id, name, status, created_at, updated_at) VALUES ($1, $2, 'Meeting', 'READY', now(), now())", [meeting, vault]);
     await client.query("INSERT INTO app.files(file_id, vault_id, uri, size, content_type, checksum, name, metadata) VALUES ($1, $2, 'file', 0, 'image/png', '', 'image', $3)", [
       file, vault, { source: "screenshot", ocr_text: "ocr", caption: "caption" },
@@ -125,15 +127,17 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("moves existing job rows and s
     const owner = testUserID("move-owner"), vault = testUserID("move-vault"), meeting = testUserID("move-meeting");
     await client.query('INSERT INTO auth."user"(id, name, email) VALUES ($1, \'Owner\', \'move@example.com\')', [owner]);
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner]);
-    await client.query("INSERT INTO app.vaults(vault_id, name) VALUES ($1, 'Vault')", [vault]);
-    await client.query("INSERT INTO app.vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id) VALUES ($1, 'user', $2, 'owner', $2)", [vault, owner]);
+    await client.query("INSERT INTO auth.organization(id, name, slug, kind, created_at) VALUES ($1, 'Team', $2, 'team', now())", [owner, `team-${owner}`]);
+    await client.query("INSERT INTO auth.member(id, organization_id, user_id, role, created_at) VALUES ($1, $1, $1, 'owner', now())", [owner]);
+    await client.query("INSERT INTO app.vaults(vault_id, organization_id, created_by, name) VALUES ($1, $2, $3, 'Vault')", [vault, owner, { id: owner, name: "Owner", email: "limit@example.com" }]);
+    await client.query("INSERT INTO app.vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id) VALUES ($1, 'user', $2, 'admin', $2)", [vault, owner]);
     await client.query("INSERT INTO app.meetings(meeting_id, vault_id, name, status, created_at, updated_at) VALUES ($1, $2, 'Meeting', 'READY', now(), now())", [meeting, vault]);
     await client.query(`INSERT INTO app.jobs_summary(id, vault_id, meeting_id, owner_user_id, method, settings, output_language,
       created_at, available_at, summary_revision, input_version, request_hash, encrypted_payload, status, attempts, claimed_at, lease_expires_at)
       VALUES ($1, $2, $3, $4, 'transcript', '{}', 'ja', now(), now(), 0, 'existing-hash', 'existing-request', 'opaque-ciphertext', 'processing', 2, now(), now())`, [testUserID("move-summary"), vault, meeting, owner]);
     await client.query("INSERT INTO app.files(file_id, vault_id, uri, size, content_type, checksum, name, metadata) VALUES ($1, $2, 'file', 0, 'image/png', '', 'image', '{}')", [testUserID("move-file"), vault]);
     await client.query("INSERT INTO app.jobs_image_analysis(file_id, vault_id, owner_user_id, model, status, attempts) VALUES ($1, $2, $3, 'model', 'failed', 3)", [testUserID("move-file"), vault, owner]);
-    await client.query("INSERT INTO app.jobs_search_index(vault_id, document_id, owner_user_id, model, dimensions, attempts) VALUES ($1, $2, $3, 'model', 32, 1)", [vault, meeting, owner]);
+    await client.query("INSERT INTO app.jobs_search_index(vault_id, document_id, model, dimensions, attempts) VALUES ($1, $2, 'model', 32, 1)", [vault, meeting]);
     await client.query("INSERT INTO app.jobs_storage_delete(storage_key, attempts) VALUES ('existing-key', 2)");
     const rows = await Promise.all(names.map((name) => client.query(`SELECT * FROM app.jobs_${name}`)));
     const relations = (await client.query<{ oid: number }>("SELECT oid FROM pg_class WHERE relnamespace = 'app'::regnamespace AND relname = ANY($1)", [names.map((name) => `jobs_${name}`)])).rows.map(({ oid }) => oid);

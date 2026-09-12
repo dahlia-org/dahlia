@@ -6,13 +6,13 @@
 
 Server account の Vault / Project / meeting は Desktop と Web が共有する Server canonical record とし、Desktop の既存 SQLite 行を offline working copy にする。Local Account は独立して動作し、sync transaction を作らない。録音と確定文字起こしの保存はネットワークを待たない。
 
-- サインインだけでは Local Vault を移さない。明示移行時に同じ Vault ID の存在を確認し、新規なら初期同期、既存 owner Vault なら通常の revision conflict 解決、member Vault なら Server version の採用だけを許可する。Server-managed Vault は常時同期し、別の同期 toggle は持たない。
+- サインインだけではLocal Vaultを移さない。移行画面でTeam Organizationを選び同じVault IDのServer Vaultを作るか、Admin／Editor権限のある既存Vaultへ内容を取り込む。バックアップ、snapshotのID衝突検査、接続・権限・録音・pending syncの検査後に確定する。詳細は[Organization所有・共同編集](organization-vaults.md)。
 - サインアウト前に local working copy を削除するか Local Account へ移す。どちらも Server record は残す。Local Account への移動では metadata 同期を完了し、全本文と不足する画像原本を先に揃え、ファイル参照の保存と queue、confirmed revision、cursor、接続関連の解除を同じ SQLite transaction で確定する。取得失敗時は接続と未送信データを保持する。
 - export folder は任意の端末固有設定で、同期しない。未設定でも SQLite と同期データは利用でき、Markdown export / filesystem watch だけを無効にする。
 
 ## Server 保管庫の自動発見（2026-09-10）
 
-Desktop は `GET /api/v1/vaults` で直接ユーザー共有・組織・チーム共有を含むサインイン済み接続の owner / member 保管庫を同期開始、foreground 復帰、定期同期、SSE 接続・通知時に発見し、設定での取り込みなしで一覧・同期対象にする。メタデータは自動同期し、本文・画像は既存の必要時取得を使う。初回同期前は空の保管庫と区別して表示する。所有者で絞る場合は `owner=user_…` を指定し、常に閲覧権限との積集合を返す。組織共有の `organizationId` は所有者とは別の条件として維持し、両者の併用は拒否する。
+Desktopは `GET /api/v1/vaults` で全principalからアクセスできるAdmin／Editor／ViewerのVaultを発見する。metadataを同期し、本文・画像は必要時に取得する。`organizationId` は所有Organizationで絞り、旧owner queryは提供しない。Webの初期contextはPersonalとし、所属外から共有されたVaultもアクセス可能一覧で発見する。
 登録は接続を再検査する SQLite transaction で冪等に行い、確定 revision と作業コピーを同時に保存する。登録による upload は作らない。Server 所属 Vault は常に利用可能として表示し、Desktop の Vault 削除操作によるローカル登録解除は提供しない。Local Account の Vault 削除とサインアウト時のデータ処理は維持する。同一 ID の Local Vault や別接続の Vault は自動移行しない。既存の同期待ち操作、cursor、最終選択は維持する。通信失敗や一覧からの欠落だけでは削除せず、権限失効は既存の同期・データ保全経路で処理する。サインイン操作から Local Vault の移行確認は出さず、明示移行操作を使う。
 
 ## 同期対象とモデル
@@ -54,7 +54,7 @@ snapshot 復旧の pending / recovering はローカル送信キューの確定�
 
 `capabilities` の `meetingEvents: { version: 1 }` を確認した接続だけで送信を有効にする。イベントは ID で冪等化し、履歴は Server だけに残す。開始・終了イベントから `recording_sessions` SQL view を構成し、未終了セッションがある会議を Web の一覧・詳細・サイドバーで録音中と表示する。生存通知や有効期限、状態カラムは追加しない。終了情報が同期されるまで表示が残る。録音・保存はネットワークを待たず、他端末のセッションをローカルの録音テーブルへ適用しない。
 
-イベント履歴は同期差分の90日保持とは独立し、期間削除や過去操作の補完は行わない。会議削除時は追加情報を除去し、ID・種別・時刻だけを残す。Vault・owner account 削除時は履歴も消す。調査はDBから行い、閲覧APIや専用UIは追加しない。
+イベント履歴は同期差分の90日保持とは独立し、期間削除や過去操作の補完は行わない。会議削除時は追加情報を除去し、ID・種別・時刻だけを残す。Vault削除時は履歴も消す。調査はDBから行い、閲覧APIや専用UIは追加しない。
 
 削除済み・無効・削除処理中の会議に届いた遅延イベントは `410 meeting_event_parent_unavailable` とし、Desktop はイベントだけの送信 transaction を破棄する。本文同期をブロックしたり、履歴送信のために会議を復元したりしない。会議読取の録音判定は対象会議の開始・終了イベントを索引で検索し、他 Vault の全履歴集計を避ける。
 
@@ -67,7 +67,7 @@ Server は Vault ごとの durable change ledger と opaque cursor を持つ。d
 原本は Vault 所有の `files`、会議との関係は独立 ID の `meeting_attachments` に保存する。`files` の基本項目は `uri`、`offset`（現在は0）、`size`、`content_type`、`checksum`（`SHA-256:` 接頭辞）とし、source / OCR / caption / 寸法は metadata に置く。source は作成時に固定し、metadata の部分更新は未指定キーを保持する。同じ Vault の複数会議で同じ file を共有でき、紐付けを解除しても原本を削除しない。参照が残る明示 file 削除は拒否する。
 
 2026-09-09: [OpenAPI ADR](../server/openapi.md) により、JSON の `POST /api/v1/file-uploads` で ID・Vault・属性・MIME を予約し、`PUT /api/v1/file-uploads/{id}/content` へ octet-stream を送る。従前の単一 POST と query 属性形式は廃止する。最大64 MiB、Content-Length 検証、Server 側の streaming SHA-256、同一再送の成功・異内容409、Transaction 確定まで private staging という制約は保持する。
-その後に `file` / `meeting_attachment` transaction で確定する。pending は通常の一覧から除外し、24時間後は再 upload を要求する。旧 upload API は残さず Desktop / Server を同時に切り替え、transaction schemaVersion 2 は維持する。
+その後に `file` / `meeting_attachment` transaction で確定する。pending は通常の一覧から除外し、24時間後は再 upload を要求する。旧 upload API は残さず Desktop / Server を同時に切り替え、transaction schemaVersion 3 を要求する。
 確定済み file の OCR / caption / 寸法は `PATCH /api/v1/files/{id}` でも更新できる。baseRevision と metadata の JSON 部分更新を受け付け、未指定キーを保持し、OCR / caption の null はクリアを表す。source と bytes は不変。metadata 更新は認可後に Server 内部で単一の `file:upsert` transaction を生成し、既存の競合検出・検索更新・durable delta を通す。Desktop は既存の永続 transaction queue を維持する。
 原本 key は `files/{fileId}/original`、派生画像は `files/{fileId}/variants/v1/{variant}.webp`（`thumb_480` / `thumb_1280` / `thumb_1568` / `thumb_1920`）。新 File API は Databricks Volume に保存し、canonical URI は `/Volumes/.../files/{fileId}/original` とする。Artifact APIは2026-09-08に廃止した。既存 cloud file がないため旧 key migration は行わない。
 原本とその HEAD は `/api/v1/files/{id}/content`、JSON metadata と metadata PATCH は `/api/v1/files/{id}` に分離する。公開 DTO は `contentType`、`contentUrl`、`ocrText` を使い、内部 URI / offset を返さない。DB の `uri` / `offset` / `content_type` / `ocr_text` は保存形式として維持し、境界で変換する。
@@ -126,7 +126,7 @@ v44 以前の BLOB はファイルの検証と参照切り替えが成功した�
 
 2026-09-02 の Databricks Apps + Lakebase の Phase 0 では owner read/write、upload、Range、delete と RLS identity の非漏洩を確認した。これは現在の全 deployment の検証済み宣言ではない。配置時には non-superuser / NOBYPASSRLS、FORCE RLS、同一 pinned connection での COMMIT / ROLLBACK 後の identity 非漏洩を fail-closed probe で確認し、失敗時は application-only 認可へ縮退しない。
 
-保持方針は以下の90日契約で確定した。D1 の atomic batch 制約は [Server 検索の制限](../server/search.md#制限と運用条件) に残る。認証方式・proxy の user ID 変更は既存 permission を自動移行しない。過去の未リリース baseline 整理は、released migration の変更を許可する前例ではない。
+保持方針は以下の90日契約で確定した。D1はサポート対象外。認証方式・proxy の user ID 変更は既存 permission を自動移行しない。過去の未リリース baseline 整理は、released migration の変更を許可する前例ではない。
 
 ## 90日保持と正本からの復帰（2026-09-06）
 
@@ -134,16 +134,16 @@ change ledger は同期専用として90日の差分復帰を保証し、それ�
 
 snapshot は entity / ID の keyset pagination と開始 cursor を返す。複数リクエストを跨ぐ DB transaction は持たず、開始 cursor 以降の delta で追加・更新・削除を補正する。開始 cursor が期限切れなら再取得する。Desktop は内容を一時 SQLite に退避し、取得と補正の完了後に既存 remote applier で適用する。未送信 queue がある間は適用せず、編集・接続変更の永続 generation と録音状態を各適用 transaction で検査する。不一致なら削除照合・checkpoint 確定を保留する。内容書き込みはページで区切り、全体の内容をメモリに展開しない。Project と照合用 ID は既存 applier の metadata 集合を再利用する。
 
-receipt 本文は90日後に縮約し、ID・owner・Vault・正規化 request hash・結果 ID / revision・commit cursor は既存アカウント削除契約まで保持する。再送前の resolve は staging を実行しない。縮約 receipt は該当 queue を ACK して正本取得を要求し、pull checkpoint を進めず後続編集を保持する。未処理 operation の ID・本文・base revision は変えず通常の409で競合を検出する。一律 rebase は行わず、既存の明示的 Server version 採用だけを例外とする。Web も縮約結果から最新の正本を再取得する。
+receipt 本文は90日後に縮約し、ID・操作者・Vault・正規化 request hash・結果 ID / revision・commit cursor は保持する（account削除は禁止）する。再送前の resolve は staging を実行しない。縮約 receipt は該当 queue を ACK して正本取得を要求し、pull checkpoint を進めず後続編集を保持する。未処理 operation の ID・本文・base revision は変えず通常の409で競合を検出する。一律 rebase は行わず、既存の明示的 Server version 採用だけを例外とする。Web も縮約結果から最新の正本を再取得する。
 
 削除は初期無効の明示管理コマンドで日次実行し、通常リクエストには入れない。Server 時刻による90日超の履歴・本文だけを小分けに処理し、commit と同じ Vault ロックを使う。migration、全 Server、対応クライアント、復帰検証、削除有効化の順とし、本番適用と scheduler 設定は別の運用操作にする。旧クライアントへ縮約結果を通常成功として返さず更新を要求する。会議データの保存期間は変えず、軽量 receipt が増え続けることは許容する。
 
-会議の削除は、親だけでなく summary / transcript / screenshot の canonical key も同じ transaction で無効化する。同じ会議 ID の削除・再作成が delta で集約されても、snapshot に退避された旧子データを再適用しない。期限切れ後に owner Vault が存在しない場合は、残っている reset event と同じくローカル内容・録音を保持して confirmed sync state だけを解除する。member のローカルコピー削除は role を確認し、実際の行削除が成立した場合だけ退避音声の削除を確定する。
+会議の削除は、親だけでなく summary / transcript / screenshot の canonical key も同じ transaction で無効化する。同じ会議 ID の削除・再作成が delta で集約されても、snapshot に退避された旧子データを再適用しない。期限切れ後に 書込可能なVault が存在しない場合は、残っている reset event と同じくローカル内容・録音を保持して confirmed sync state だけを解除する。Viewerのローカルコピー削除は role を確認し、実際の行削除が成立した場合だけ退避音声の削除を確定する。
 
 
 ## テキスト本文の部分保持（2026-09-07）
 
-metadata の全保持と本文の部分保持を分ける。`v46_textContent` で原文を `transcript_segment_bodies`、要約を `summary_bodies`、OCR / caption を `file_text_bodies` に分離し、`sync_content_state` に保持 revision、完全性、本文の存在・件数、検証 hash、UTF-8 byte 数、最終利用日時を記録する。本文テーブルは親 ID を主キー兼外部キーとし、原文と document は NOT NULL にする。未保持は本文行の不在で表し、空文字に変換しない。OCR / caption がともに NULL の本文行は取得済みの値として扱う。移行時の本文はすべて専用テーブルへ移し、Server の本文は未検証として残す。Server 観測 revision は既存 `sync_entity_state` が所有する。
+metadata の全保持と本文の部分保持を分ける。`v42_localFirstSchema` で原文を `transcript_segment_bodies`、要約を `summary_bodies`、OCR / caption を `file_text_bodies` に分離し、`sync_content_state` に保持 revision、完全性、本文の存在・件数、検証 hash、UTF-8 byte 数、最終利用日時を記録する。本文テーブルは親 ID を主キー兼外部キーとし、原文と document は NOT NULL にする。未保持は本文行の不在で表し、空文字に変換しない。OCR / caption がともに NULL の本文行は取得済みの値として扱う。移行時の本文はすべて専用テーブルへ移し、Server の本文は未検証として残す。Server 観測 revision は既存 `sync_entity_state` が所有する。
 
 metadata の Record は本文を持たず、本文を含む読取結果とは型を分ける。アプリの Repository と MCP は共通 `TextContentAccess` で完全性検査と本文取得を同じ SQLite 読取内で行い、呼び出し元の事前検査に依存しない。ページ取得でも会議全体の欠損を検出し、JOIN が欠損行を黙って除外しない。一覧・検索用の cached projection は明示した別の読取口を使う。録音・バッチ結果・本文編集は metadata、本文、同期 operation を従来の同じ transaction で確定する。
 
@@ -203,11 +203,11 @@ Server の要約正本は `summaries` の最大 `version` とし、meeting に�
 
 Project / Vault の `icon`・`color` は nullable な正準フィールドとし、既存の ProjectIcon / ProjectThemeColor の保存値を使う。transaction で未指定の項目は保持し、null は設定解除。外観変更も通常の revision・競合検出・snapshot / delta の対象にする。Web と Desktop の編集 UI は同じフィールドを使い、子 Project は親の外観を継承する。子の独自外観は送信・保存せず、親から子への変更時には解除する。並行開発された `appearance` JSON 列は追加の移行で既存の `icon`・`color` を優先しながら未設定値を引き継ぎ、削除する。
 
-Desktop の旧 `projectAppearances` UserDefaults は Vault を開いたときに DB へ移行する。Server 接続では確認済み owner の未設定 Project にだけ通常の transaction を記録し、未送信操作や競合を上書きしない。旧設定はローカル保存または送信確認まで保持する。Desktop 専用の `legacyAppearanceMigrated` は再移行を防ぐ印であり同期しない。競合解決で正本の未設定値を選んだ場合にも、旧設定を再適用しない。
+Desktop の旧 `projectAppearances` UserDefaults は Vault を開いたときに DB へ移行する。Server 接続では確認済みAdmin／Editor の未設定 Project にだけ通常の transaction を記録し、未送信操作や競合を上書きしない。旧設定はローカル保存または送信確認まで保持する。Desktop 専用の `legacyAppearanceMigrated` は再移行を防ぐ印であり同期しない。競合解決で正本の未設定値を選んだ場合にも、旧設定を再適用しない。
 
 ## 保管庫の全内容移管（2026-09-09）
 
-所有者が明示的に、自分の別の保管庫へ Server に保存済みの全内容をまとめて移管する。元の保管庫は空で残し、削除は別操作とする。リソースが残る保管庫の削除は拒否し、削除から暗黙に移管しない。
+両VaultのAdminがServerに保存済みの全内容を移管する。Editorはこの操作を行えない。元のVaultは空で残し、削除は別操作とする。
 
 未同期データ自体は移管対象に含めない。ただし、実行時に未同期データを検知できる場合は移管を拒否する。Server が確認できる upload staging や未確定の処理と、Desktop が確認できるローカル送信待ちは区別する。Web からオフライン端末の送信待ちがないことは保証できず、検知できない状態を「同期済み」と表示しない。
 
@@ -220,3 +220,5 @@ Desktop の旧 `projectAppearances` UserDefaults は Vault を開いたときに
 Desktopは移管を削除として適用しない。差分・snapshotの適用前に `GET /api/v1/vaults/{vault_id}/relocations` で既存IDの現在の所属と権限を確認し、必要な所属変更・参照・同期状態をローカルの一つのtransactionで更新する。録音の実体は変更しない。権限がない間、またはローカル送信待ちのtransaction・録音アーカイブがある間は、データと所属を保持して同期を停止する。権限復旧後は次の同期で再確認する。専用のバックアップ・破棄画面や、クライアントごとの移管履歴の適用位置・ACKは設けない。 送信の再試行では移管の送信待ち検査より先に既存のtransactionレシートを解決し、確定済みの処理を受領する。移管の確認・復旧に失敗しても、他の保管庫の受信と送信は継続する。
 
 移管レシートに対象IDを保持し、通常差分の期限切れ・元保管庫の削除後も現在の所属を解決する。移管に関係した保管庫では、`X-Dahlia-Vault-Transfers: 1` を送らない旧クライアントの差分・snapshotと書き込みを426で停止する。このヘッダーは対応能力の宣言であり、適用済み位置を表さない。
+
+Localから既存Vaultへの取り込みは、VaultRelocationの所属変更primitiveを使い、Project／Meeting／fileと従属データのID・本文・翻訳・録音pathを保持する。元Vaultの設定・instructionsは残す。所属変更、移行記録、通常create/upsertキューを単一SQLite transactionで保存し、移行時のoperation ID（画像・録音uploadを含む）のACKを永続追跡する。後続編集・録音を継続でき、キュー全体が空になるのを待たない。409／権限失効時は未送信変更・バックアップ・元Local Vaultを保持し、Serverへの部分確定を自動rollbackしない。

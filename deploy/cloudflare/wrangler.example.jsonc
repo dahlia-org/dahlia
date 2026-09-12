@@ -15,19 +15,23 @@
       "/healthz"
     ]
   },
-  "d1_databases": [
+  "hyperdrive": [
     {
-      "binding": "dahlia_db_prod",
-      "database_name": "replace-with-d1-database-name",
-      "database_id": "00000000-0000-0000-0000-000000000000",
-      "migrations_dir": "drizzle/d1"
+      "binding": "HYPERDRIVE",
+      "id": "00000000000000000000000000000000"
     }
   ],
-  "r2_buckets": [{
-    "binding": "DAHLIA_STORAGE",
-    "bucket_name": "replace-with-r2-bucket-name"
-  }],
-  "triggers": { "crons": ["* * * * *"] },
+  "r2_buckets": [
+    {
+      "binding": "DAHLIA_STORAGE",
+      "bucket_name": "replace-with-r2-bucket-name"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
+  },
   "observability": {
     "enabled": false,
     "logs": {
@@ -39,8 +43,57 @@
     "DAHLIA_AI_BACKEND": "cloudflare",
     "DAHLIA_STORAGE_BACKEND": "r2",
     "DAHLIA_AUTH_TYPE": "accounts",
-    "DAHLIA_DATABASE_TYPE": "d1",
+    "DAHLIA_DATABASE_TYPE": "hyperdrive",
     "DAHLIA_APP_URL": "https://{name}.{subdomain}.workers.dev",
-    "GOOGLE_CLIENT_ID": "replace-with-google-client-id"
+    "GOOGLE_CLIENT_ID": "replace-with-google-client-id",
+    "CLOUDFLARE_AI_GATEWAY_ID": "default",
+    "DAHLIA_CAPTIONING_MODEL": "gpt-4.1",
+    "DAHLIA_EMBEDDING_MODEL": "@cf/baai/bge-m3",
+    "DAHLIA_SEARCH_EMBEDDING_DIMENSIONS": "1024"
+  },
+  "images": {
+    "binding": "IMAGES"
+  },
+  "limits": {
+    "cpu_ms": 300000
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "DAHLIA_SUMMARY_QUEUE",
+        "queue": "dahlia-summary"
+      },
+      {
+        "binding": "DAHLIA_IMAGE_QUEUE",
+        "queue": "dahlia-image"
+      },
+      {
+        "binding": "DAHLIA_SEARCH_QUEUE",
+        "queue": "dahlia-search"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "dahlia-summary",
+        "max_batch_size": 1,
+        "max_concurrency": 1,
+        "max_retries": 3,
+        "dead_letter_queue": "dahlia-summary-dlq"
+      },
+      {
+        "queue": "dahlia-image",
+        "max_batch_size": 1,
+        "max_concurrency": 1,
+        "max_retries": 3,
+        "dead_letter_queue": "dahlia-image-dlq"
+      },
+      {
+        "queue": "dahlia-search",
+        "max_batch_size": 1,
+        "max_concurrency": 1,
+        "max_retries": 3,
+        "dead_letter_queue": "dahlia-search-dlq"
+      }
+    ]
   }
 }

@@ -53,7 +53,7 @@ function serverMetadata(...audioInputs: NonNullable<TranscriptMetadata["runs"][n
 }
 
 function service(options: {
-  role?: "owner" | "member";
+  role?: "admin" | "editor" | "viewer";
   recordings?: RecordingRecord[];
   segments?: Record<number, TranscriptAnalyticsSegment[]>;
   versions?: number[];
@@ -63,7 +63,7 @@ function service(options: {
   const versions = options.versions ?? [1];
   const recordings = options.recordings ?? [];
   const scoped = {
-    getVault: async () => ({ role: options.role ?? "owner" }),
+    getVault: async () => ({ role: options.role ?? "admin" }),
     getMeeting: async () => ({ meetingId }),
     getTranscript: async (_vaultId: string, _meetingId: string, version?: number) => {
       const selectedVersion = version ?? Math.max(...versions);
@@ -146,7 +146,7 @@ describe("conversation analytics", () => {
       .rejects.toMatchObject({ status: 409, code: "transcript_version_not_finalized" });
     await expect(service({ recordings: [recording(1, 0, 10)], versions: [1, 2], activeVersions: [1] })
       .get(identity, vaultId, meetingId, 1)).resolves.toMatchObject({ status: "ready", transcriptVersion: 1 });
-    await expect(service({ role: "member" }).get(identity, vaultId, meetingId, 1)).rejects.toMatchObject({ status: 404 });
+    await expect(service({ role: "viewer" }).get(identity, vaultId, meetingId, 1)).rejects.toMatchObject({ status: 404 });
     await expect(service({ versions: [] }).get(identity, vaultId, meetingId, 1)).rejects.toMatchObject({ status: 404 });
   });
 
@@ -192,15 +192,15 @@ describe("conversation analytics", () => {
       .resolves.toMatchObject({ status: "ready" });
   });
 
-  it.each(["node", "worker"])("exposes capability and owner-only unavailable responses through %s", async (runtime) => {
-    const ownerId = testUserID("analytics-owner");
+  it.each(["node", "worker"])("exposes capability and writer-only unavailable responses through %s", async (runtime) => {
+    const ownerId = testUserID("analytics-owner@example.com");
     const baseStore = testStore();
     const sync = {
       ...baseStore.sync,
       isAvailable: () => Promise.resolve(true),
       withIdentity: async <T>(requestIdentity: Identity, action: (value: IdentitySyncStore) => Promise<T>) => action({
         resolveEntityVault: async () => vaultId,
-        getVault: async () => ({ role: requestIdentity.userId === ownerId ? "owner" : "member" }),
+        getVault: async () => ({ role: requestIdentity.userId === ownerId ? "admin" : "viewer" }),
         getMeeting: async () => ({ meetingId }),
         getTranscript: async (_vaultId: string, _meetingId: string, version: number) => version === 1 ? transcript(1) : null,
         listRecordings: async () => [],
@@ -215,7 +215,7 @@ describe("conversation analytics", () => {
       (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
     const send = (path: string, userId = ownerId) => {
       const request = new Request(`http://localhost:5173${path}`, { headers: {
-        "x-forwarded-user": userId, "x-forwarded-email": `${userId}@example.com`,
+        "x-forwarded-user": userId, "x-forwarded-email": userId === ownerId ? "analytics-owner@example.com" : "analytics-member@example.com",
       } });
       return runtime === "node" ? app.request(request) : fetch(request, {} as Cloudflare.Env, {} as ExecutionContext);
     };

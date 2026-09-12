@@ -1,3 +1,5 @@
+import { seedPostgresIdentity } from "./public-test-client";
+import { testOrganizationID } from "./public-test-client";
 import type { SummaryJob } from "../src/summary/model";
 import { expect, it, vi } from "vitest";
 import { Client, Pool } from "pg";
@@ -31,11 +33,11 @@ it.runIf(process.env.TEST_ENCRYPTION_DATABASE_URL)("stores ciphertext under Post
       .toEqual([{ old_vectors: null, old_documents: null }]);
     const owner: Identity = { userId: uuidV7(), workspaceId: "personal", source: "header" };
     const member: Identity = { userId: uuidV7(), workspaceId: "personal", source: "header" };
-    await store.ensureIdentityUser(owner);
-    await store.ensureIdentityUser(member);
+    await seedPostgresIdentity(store, databaseUrl, owner);
+    await seedPostgresIdentity(store, databaseUrl, member);
     const vaultId = uuidV7(), meetingId = uuidV7(), now = new Date();
-    const tx: SyncTransaction = { schemaVersion: 2, id: uuidV7(), vaultId, requestHash: uuidV7(), createdAt: now, operations: [
-      { id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { encryption: "server", name: "PG_PRIVATE_VAULT", createdAt: now } },
+    const tx: SyncTransaction = { schemaVersion: 3, id: uuidV7(), vaultId, requestHash: uuidV7(), createdAt: now, operations: [
+      { id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { organizationId: testOrganizationID, encryption: "server", name: "PG_PRIVATE_VAULT", createdAt: now } },
       { id: uuidV7(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { name: "PG_PRIVATE_MEETING", description: "PG_PRIVATE_DESCRIPTION", status: "READY", projectId: null, createdAt: now, updatedAt: now } },
     ] };
     await store.sync.withIdentity(owner, (sync) => sync.commitTransaction(tx));
@@ -79,7 +81,7 @@ it.runIf(process.env.TEST_ENCRYPTION_DATABASE_URL)("stores ciphertext under Post
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
     expect(JSON.stringify((await client.query("SELECT * FROM app.meetings WHERE vault_id = $1", [vaultId])).rows)).not.toContain("PG_PRIVATE");
     expect(JSON.stringify((await client.query("SELECT * FROM app.transaction_receipts WHERE vault_id = $1", [vaultId])).rows)).not.toContain("PG_PRIVATE");
-    await client.query("INSERT INTO app.vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id) VALUES ($1, 'user', $2, 'member', $3)", [vaultId, member.userId, owner.userId]);
+    await client.query("INSERT INTO app.vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id) VALUES ($1, 'user', $2, 'viewer', $3)", [vaultId, member.userId, owner.userId]);
     await client.query("COMMIT");
     expect(await store.sync.withIdentity(member, (sync) => sync.getMeeting(vaultId, meetingId))).toMatchObject({ name: "PG_PRIVATE_MEETING" });
     await client.query("BEGIN");
@@ -93,7 +95,7 @@ it.runIf(process.env.TEST_ENCRYPTION_DATABASE_URL)("stores ciphertext under Post
     const service = new MeetingSyncService(sync);
     const index = createPostgresSearchIndexStore(db);
     const rename = (name: string, baseRevision: number) => service.commitTransaction(owner, {
-      schemaVersion: 2, id: uuidV7(), vaultId, createdAt: now.toISOString(), operations: [{
+      schemaVersion: 3, id: uuidV7(), vaultId, createdAt: now.toISOString(), operations: [{
         id: uuidV7(), entity: "meeting", action: "update", entityId: meetingId, baseRevision,
         data: { name, description: "", projectId: null, status: "READY", duration: null, recordingStartedAt: null, updatedAt: now.toISOString() },
       }],

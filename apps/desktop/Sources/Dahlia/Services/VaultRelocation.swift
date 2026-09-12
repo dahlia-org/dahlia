@@ -4,6 +4,7 @@ import GRDB
 struct VaultRelocation: Decodable, Sendable {
     struct Vault: Decodable, Sendable {
         let vaultId: UUID
+        let organizationId: UUID
         let name: String
         let createdAt: Date
         let role: String
@@ -60,6 +61,10 @@ struct VaultRelocation: Decodable, Sendable {
             }
         }
         for vault in vaults where affected.contains(vault.vaultId) {
+            guard ["admin", "editor", "viewer"].contains(vault.role) else { throw SyncTransactionQueueError.invalidReceipt }
+            if let existing = try VaultRecord.fetchOne(db, key: vault.vaultId), existing.organizationId != vault.organizationId {
+                throw SyncTransactionQueueError.invalidReceipt
+            }
             if try VaultRecord.fetchOne(db, key: vault.vaultId) == nil {
                 try VaultRecord(
                     id: vault.vaultId,
@@ -68,11 +73,24 @@ struct VaultRelocation: Decodable, Sendable {
                     createdAt: vault.createdAt,
                     lastOpenedAt: Date(),
                     accountConnectionId: connectionId,
+                    organizationId: vault.organizationId,
                     syncRole: vault.role,
                     syncConfirmedConnectionId: connectionId
                 ).insert(db)
             }
         }
+        try Self.move(moves, in: db)
+        for id in affected {
+            try db.execute(sql: """
+            UPDATE vaults SET syncPullCursor = NULL, syncRecoveryState = NULL,
+                syncMutationGeneration = syncMutationGeneration + 1 WHERE id = ?
+            """, arguments: [id])
+        }
+        return true
+    }
+
+    /// Shared affiliation change for remote transfer and Local import. Caller owns validation and transaction.
+    static func move(_ moves: [(Item, UUID)], in db: Database) throws {
         // Parent validation remains enabled: move roots before children and their meetings.
         let roots = try Set(UUID.fetchAll(db, sql: "SELECT id FROM projects WHERE parentProjectId IS NULL"))
         let ordered = moves.sorted { lhs, rhs in
@@ -123,13 +141,6 @@ struct VaultRelocation: Decodable, Sendable {
             }
         }
         try db.execute(sql: "DELETE FROM vault_relocation_scope")
-        for id in affected {
-            try db.execute(sql: """
-            UPDATE vaults SET syncPullCursor = NULL, syncRecoveryState = NULL,
-                syncMutationGeneration = syncMutationGeneration + 1 WHERE id = ?
-            """, arguments: [id])
-        }
-        return true
     }
 
 }

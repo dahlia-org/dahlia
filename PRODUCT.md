@@ -18,7 +18,7 @@ tenet は個別の機能仕様ではなく、仕様を決めるときの判断�
 ## Positioning
 
 Dahlia は、会議の音声を取りこぼさずに記録し、その記録から必要な文脈を AI に組み立てさせる、
-個人が単独で使う macOS ネイティブアプリである。
+個人の録音を中核とする macOS ネイティブアプリである。Server AccountではOrganizationのVaultを複数人で利用できる。
 
 - 主な利用者: 顧客との会議を継続的に持ち、発言と経緯を自分の判断材料にしたい個人
 - 中心となる仕事: 録る → 失わずに残す → 後から根拠付きで辿れる形にする → 整理・要約・分析は AI に任せる
@@ -26,7 +26,7 @@ Dahlia は、会議の音声を取りこぼさずに記録し、その記録か�
 
 Dahlia でないもの:
 
-- チームで共有する議事録プラットフォーム、顧客マスタ (CRM)、SFA
+- 顧客マスタ (CRM)、SFA
 - 業務システム間を接続する統合ハブや iPaaS
 - クラウド常時接続を前提としたサービス
 
@@ -142,8 +142,7 @@ Dahlia の scope 外であり、妨げない。
 - 既定の文字起こしはリアルタイムもバッチも Apple Speech の `SpeechTranscriber` が on-device で行う。Server Accountで利用者がリモート処理を明示選択した保存済み録音だけは、[処理場所のADR](docs/adr/shared/transcription-summary-processing.md) に従いServerで文字起こしできる。WhisperKit は付加機能であるバッチ自動言語判定で言語を選ぶためだけに使い、文字起こし自体は行わない。
 - ローカルアカウントの会議データと端末固有ファイルはローカルの SQLite と file system だけで完結する。一方、ServerアカウントのVault／ProjectはNotionやAsanaと同様にDesktopとWebが共有するServer canonical recordであり、Desktopからクラウドへ転送するコピーではない。SQLite は即時反映できるoffline working copyとし、
   Vault 名、Project の名前・説明・階層、meeting metadata、summary、transcript 原文、screenshot、OCR、AI caption を双方向同期する。翻訳文は同期しない。新規バッチ録音の結合音声は [音声保管契約](docs/adr/shared/recording-audio-archive.md) に従う
-  ([正本とアカウント境界](docs/adr/shared/sync.md#正本とアカウント境界), [同期対象とモデル](docs/adr/shared/sync.md#同期対象とモデル), [Transaction と競合](docs/adr/shared/sync.md#transaction-と競合))。Server record は個人所有を維持し、owner が複数の特定 organization
-  または特定 Team へ明示した場合だけ read-only 共有できる。Header認証のuserは固定`external` Organizationへ所属する
+  ([正本とアカウント境界](docs/adr/shared/sync.md#正本とアカウント境界), [同期対象とモデル](docs/adr/shared/sync.md#同期対象とモデル), [Transaction と競合](docs/adr/shared/sync.md#transaction-と競合))。Server VaultはOrganizationが所有し、明示したuser / organization / teamのadmin・editor・viewer権限で共同利用する。Organization所属だけでは内容へのアクセスを与えない。Header認証では設定されたメールヘッダーのドメインに対応するOrganizationへ初回登録時だけ自動参加する
   ([共有境界](docs/adr/server/sharing-and-administration.md#共有境界))。サインインだけではローカルVaultをServerアカウントへ移さず、ユーザーがVault単位で明示的に移行する。ServerアカウントのVaultは常時同期し、サインアウト時はServer recordを残したままローカルworking copyを削除するかローカルアカウントへ移す。
 - Server の任意 Hybrid 検索は同期済み summary、OCR、AI caption と検索時の query 原文を設定済み embedding
   provider へ送信できる。Dahlia は query 原文を保存・ログ出力しない。
@@ -154,7 +153,7 @@ Dahlia の scope 外であり、妨げない。
 
 **許容する例外**: 疎結合な付加機能は外部依存を持ってよい。Google Calendar と EventKit の読み取り、Google Docs や
 Drive への書き出し、Codex による要約生成、Sparkle の更新確認、Sentry の障害報告、TelemetryDeck の匿名利用計測、
-バッチ自動言語判定の初回モデル取得、Serverアカウントのcloud-backed working copyと明示的な read-only 共有、利用者が明示選択した保存済み録音のServer処理がこれにあたる。Codex の接続先として任意の Dahlia Server Gateway を選ぶ場合も
+バッチ自動言語判定の初回モデル取得、Serverアカウントのcloud-backed working copyと明示的な権限による共同編集、利用者が明示選択した保存済み録音のServer処理がこれにあたる。Codex の接続先として任意の Dahlia Server Gateway を選ぶ場合も
 同じ境界に置き、いずれも中核の前提条件にしない。
 
 **誤読しやすい点**: 「スタンドアローン」は「オフライン専用」ではない。外部機能を持つこと自体は否定せず、
@@ -193,7 +192,7 @@ Drive への書き出し、Codex による要約生成、Sparkle の更新確認
 
 現在の tenet の下では採用しない。
 
-- 共同編集
+- revision競合を黙って上書きする共同編集
 - CRM や SFA との双方向同期
 - Local Accountまたはローカル選択時のクラウド音声処理（Server Accountの明示的なリモート処理だけは[承認済みの例外](docs/adr/shared/transcription-summary-processing.md)）
 - 汎用の統合ハブ、ワークフロー自動化
@@ -207,3 +206,5 @@ Drive への書き出し、Codex による要約生成、Sparkle の更新確認
 - [`ARCHITECTURE.md`](ARCHITECTURE.md): 信頼性の保証範囲、workload class、負荷時の縮退順序
 - [ADR index](docs/adr/README.md): 各 tenet を具体化した決定と、その置換関係
 - [Project workspaces](docs/project-workspaces.md): T4 の read/write 境界を含む Project 運用
+
+Organization所有と共同編集は[承認済みADR](docs/adr/shared/organization-vaults.md)に従う。

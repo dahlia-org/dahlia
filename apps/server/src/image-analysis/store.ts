@@ -1,3 +1,4 @@
+import { vaultPermissions } from "../auth/vault-permissions";
 import { createContentEncryption } from "../encryption/store";
 import type { EncryptionConfig } from "../encryption/crypto";
 import { and, asc, eq, exists, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
@@ -41,10 +42,7 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
           eq(files.active, true), isNotNull(files.uploadedAt), inArray(files.contentType, [...imageContentTypes]),
           after ? gt(files.fileId, after) : undefined,
           or(isNull(jobs.fileId), ne(jobs.model, model)),
-          exists(transaction.select({ id: schema.syncedVaultPermission.vaultId }).from(schema.syncedVaultPermission).where(and(
-            eq(schema.syncedVaultPermission.vaultId, files.vaultId), eq(schema.syncedVaultPermission.principalType, "user"),
-            eq(schema.syncedVaultPermission.principalId, userId), eq(schema.syncedVaultPermission.role, "owner"),
-          ))),
+          vaultPermissions(transaction, schema, userId).write(files.vaultId),
           exists(transaction.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault).where(and(
             eq(schema.syncedVault.vaultId, files.vaultId), isNull(schema.syncedVault.deletingAt),
           ))),
@@ -78,10 +76,7 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
         .orderBy(asc(jobs.fileId)).limit(100);
     },
     async reconcile(model) {
-      const owners = await db.selectDistinct({ userId: schema.syncedVaultPermission.principalId })
-        .from(schema.syncedVaultPermission).where(and(
-          eq(schema.syncedVaultPermission.principalType, "user"), eq(schema.syncedVaultPermission.role, "owner"),
-        ));
+      const owners = await db.select({ userId: schema.user.id }).from(schema.user);
       for (const { userId } of owners) {
         let after: string | undefined;
         while (true) {

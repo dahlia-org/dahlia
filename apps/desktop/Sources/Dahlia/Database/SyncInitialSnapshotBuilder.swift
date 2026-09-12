@@ -18,7 +18,7 @@ enum SyncInitialSnapshotBuilder {
                 SELECT id FROM vaults
                 WHERE accountConnectionId IS NOT NULL
                   AND syncConfirmedConnectionId = accountConnectionId
-                  AND (syncRole IS NULL OR syncRole = 'owner')
+                  AND syncRole = 'admin'
                   AND NOT EXISTS (
                     SELECT 1 FROM sync_transactions t WHERE t.vaultId = vaults.id
                   )
@@ -40,7 +40,7 @@ enum SyncInitialSnapshotBuilder {
                     WHERE id = ?
                       AND accountConnectionId IS NOT NULL
                       AND syncConfirmedConnectionId = accountConnectionId
-                      AND (syncRole IS NULL OR syncRole = 'owner')
+                      AND syncRole = 'admin'
                       AND NOT EXISTS (
                         SELECT 1 FROM sync_transactions t WHERE t.vaultId = vaults.id
                       )
@@ -66,7 +66,7 @@ enum SyncInitialSnapshotBuilder {
                 FROM vaults v
                 WHERE v.accountConnectionId IS NOT NULL
                   AND v.syncConfirmedConnectionId IS NULL
-                  AND (v.syncRole IS NULL OR v.syncRole = 'owner')
+                  AND v.syncRole = 'admin'
                   AND (
                     EXISTS (
                       SELECT 1 FROM sync_transactions t
@@ -125,12 +125,7 @@ enum SyncInitialSnapshotBuilder {
             }
             return try SyncTransactionRecorder.record(
                 vaultId: vaultId,
-                operations: [operation(
-                    entity: .vault,
-                    action: .create,
-                    id: vault.id,
-                    payload: ["name": vault.name, "icon": json(vault.icon), "color": json(vault.color), "createdAt": vault.createdAt.ISO8601Format()]
-                )],
+                operations: [vaultOperation(vault, action: .create)],
                 allowAfterReset: restoring,
                 connectionIdOverride: connectionId,
                 in: db
@@ -356,7 +351,7 @@ enum SyncInitialSnapshotBuilder {
                 sql: """
                 SELECT id FROM vaults
                 WHERE syncConfirmedConnectionId IS NOT NULL
-                  AND (syncRole IS NULL OR syncRole = 'owner')
+                  AND syncRole = 'admin'
                 """
             )
             for vaultId in vaultIds {
@@ -559,7 +554,11 @@ enum SyncInitialSnapshotBuilder {
 
     static func vaultOperation(_ vault: VaultRecord, action: SyncAction) throws -> SyncOperationDraft {
         var payload: [String: Any] = ["name": vault.name, "icon": json(vault.icon), "color": json(vault.color)]
-        if action == .create { payload["createdAt"] = vault.createdAt.ISO8601Format() }
+        if action == .create {
+            guard let organizationId = vault.organizationId else { throw SyncTransactionQueueError.invalidReceipt }
+            payload["organizationId"] = json(organizationId)
+            payload["createdAt"] = vault.createdAt.ISO8601Format()
+        }
         return try operation(entity: .vault, action: action, id: vault.id, payload: payload)
     }
 
@@ -581,4 +580,73 @@ enum SyncInitialSnapshotBuilder {
     private static func json(_ value: Date?) -> Any { value?.ISO8601Format() ?? NSNull() }
     private static func json(_ value: String?) -> Any { value ?? NSNull() }
     private static func json(_ value: Double?) -> Any { value ?? NSNull() }
+    static func enqueueContents(_ items: [VaultRelocation.Item], vaultId: UUID, in db: Database) throws {
+        let projects = try items.filter { $0.entity == .project }.map { item in
+            guard let project = try ProjectRecord.fetchOne(db, key: item.id) else { throw LocalVaultImportError.changed }
+            return project
+        }.sorted { $0.parentProjectId == nil && $1.parentProjectId != nil }
+        try SyncTransactionRecorder.recordBatches(vaultId: vaultId, operations: projects.map {
+            try Self.projectOperation($0, action: .create)
+        }, in: db)
+        for item in items where item.entity == .meeting {
+            guard let meeting = try MeetingRecord.fetchOne(db, key: item.id) else { throw LocalVaultImportError.changed }
+            try TextContentAccess.requireComplete(entity: .summary, id: meeting.id, in: db)
+            try TextContentAccess.requireComplete(entity: .transcript, id: meeting.id, in: db)
+            try SyncTransactionRecorder.record(vaultId: vaultId, operations: [
+                Self.meetingOperation(meeting, action: .create, in: db),
+            ], in: db)
+            if let summary = try SummaryContent.fetchOne(db, key: meeting.id) {
+                try SyncTransactionRecorder.record(vaultId: vaultId, operations: [
+                    Self.summaryOperation(summary, action: .upsert),
+                ], in: db)
+            }
+            if var transcript = try TranscriptRecord.current(meeting.id, in: db) {
+                transcript.version = nil
+                transcript.syncRevision = nil
+                try TranscriptRecord(meetingId: meeting.id, info: transcript).save(db)
+                try TranscriptRecord.enqueueSnapshot(meetingId: meeting.id, info: transcript, in: db)
+            }
+        }
+        for item in items where item.entity == .file {
+            guard let file = try FileRecord.fetchOne(db, key: item.id), let reference = file.localReference else {
+                throw ScreenshotContentError.unavailable
+            }
+            let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
+            let operation = try Self.fileOperation(file, in: db)
+            try SyncTransactionRecorder.record(vaultId: vaultId, operations: [operation], screenshotAttachments: [
+                operation.id: .init(mimeType: file.contentType, source: source),
+            ], in: db)
+        }
+        for item in items where item.entity == .meeting {
+            let attachments = try MeetingAttachmentRecord.filter(Column("meetingId") == item.id).fetchCursor(db)
+            while let attachment = try attachments.next() {
+                try SyncTransactionRecorder.record(vaultId: vaultId, operations: [
+                    Self.meetingAttachmentOperation(attachment),
+                ], in: db)
+            }
+            let archives = try RecordingArchiveRecord.filter(Column("meetingId") == item.id).fetchCursor(db)
+            while var archive = try archives.next() {
+                guard let target = try VaultRecord.fetchOne(db, key: vaultId) else { throw LocalVaultImportError.changed }
+                let prepared = try SyncJSON.decoder.decode([String: RecordingArchiveEncoder.Prepared].self, from: Data(archive.preparedJSON.utf8))
+                guard !prepared.isEmpty else { throw LocalVaultImportError.unavailable }
+                archive.connectionId = target.accountConnectionId
+                archive.number = nil
+                archive.audioJSON = "{}"
+                archive.verifiedAt = nil
+                archive.state = "syncing"
+                try archive.update(db)
+                for (source, file) in prepared.sorted(by: { $0.key < $1.key }) {
+                    let payload = RecordingArchiveService.Commit(source: source, checksum: file.checksum, manifest: file.manifest)
+                    try SyncTransactionRecorder.record(vaultId: vaultId, operations: [
+                        SyncOperationDraft(
+                            entity: .recording,
+                            action: .upsert,
+                            entityId: archive.sessionId,
+                            payloadJSON: SyncJSON.encoder.encode(payload)
+                        ),
+                    ], in: db)
+                }
+            }
+        }
+    }
 }

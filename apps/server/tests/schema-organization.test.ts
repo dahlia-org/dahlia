@@ -7,21 +7,20 @@ import { DatabaseSync } from "node:sqlite";
 import { expect, it } from "vitest";
 import { serverMigrationManifest } from "../src/migrations";
 
-it.each(["sqlite", "d1"])("creates canonical tables, defaults, and cascading relationships (%s)", (dialect) => {
+it("creates canonical tables, defaults, and cascading relationships on SQLite", () => {
   const db = new DatabaseSync(":memory:");
   try {
     db.exec("PRAGMA foreign_keys = ON");
     for (const file of serverMigrationManifest.sqlite.files) {
-      const path = dialect === "d1"
-        ? file.replace("drizzle/sqlite/", "drizzle/d1/").replace("/migration.sql", ".sql")
-        : file;
+      const path = file;
       db.exec(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"));
     }
     db.exec(`
       INSERT INTO user(id, name, email, updated_at) VALUES ('owner', 'Owner', 'owner@example.com', 1);
-      INSERT INTO vaults(vault_id, name) VALUES ('vault', 'Vault');
+      INSERT INTO organization(id, name, slug, created_at) VALUES ('org', 'Team', 'team', 1);
+      INSERT INTO vaults(vault_id, organization_id, created_by, name) VALUES ('vault', 'org', '{"id":"owner","name":"Owner","email":"owner@example.com"}', 'Vault');
       INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id)
-        VALUES ('vault', 'user', 'owner', 'owner', 'owner');
+        VALUES ('vault', 'user', 'owner', 'admin', 'owner');
       INSERT INTO projects(project_id, vault_id, name, revision, created_at)
         VALUES ('project', 'vault', 'Project', 8, 1);
       INSERT INTO meetings(meeting_id, vault_id, project_id, name, status, created_at, updated_at)
@@ -35,8 +34,8 @@ it.each(["sqlite", "d1"])("creates canonical tables, defaults, and cascading rel
         VALUES ('session', 'meeting', 1, 1, 2, '{"mic":{"generation":"upload-token","active":false}}', 7, 1, 2);
       INSERT INTO account_settings(user_id, output_language, analysis_languages, revision)
         VALUES ('owner', 'ja', '{"scope":"automatic"}', 19);
-      INSERT INTO jobs_search_index(vault_id, document_id, owner_user_id, model, dimensions, generation, status, attempts, claimed_at)
-        VALUES ('vault', 'document', 'owner', 'model', 32, 4, 'processing', 2, 123);
+      INSERT INTO jobs_search_index(vault_id, document_id, model, dimensions, generation, status, attempts, claimed_at)
+        VALUES ('vault', 'document', 'model', 32, 4, 'processing', 2, 123);
       INSERT INTO jobs_storage_delete(storage_key, status, attempts, claimed_at) VALUES ('old-file', 'processing', 3, 124);
       INSERT INTO jobs_image_analysis(file_id, vault_id, owner_user_id, model, status, attempts)
         VALUES ('file', 'vault', 'owner', 'vision', 'failed', 5);
@@ -49,7 +48,6 @@ it.each(["sqlite", "d1"])("creates canonical tables, defaults, and cascading rel
       revision: 19, summary: JSON.stringify({ style: "detailed" }),
       processing: JSON.stringify({ location: "local", remote: { workflow: "transcribeThenSummarize" } }),
     });
-    expect(db.prepare("SELECT * FROM server_initializations").all()).toEqual([]);
     expect(db.prepare("SELECT revision, icon, color FROM projects").get()).toEqual({ revision: 8, icon: null, color: null });
     expect(db.prepare("SELECT icon, color FROM vaults").get()).toEqual({ icon: null, color: null });
     expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
@@ -63,16 +61,13 @@ it.each(["sqlite", "d1"])("creates canonical tables, defaults, and cascading rel
   } finally { db.close(); }
 });
 
-it("keeps OCR and caption database limits out of SQLite and D1", () => {
+it("keeps OCR and caption database limits out of SQLite", () => {
   const sqlite = serverMigrationManifest.sqlite.files
     .map((file) => readFileSync(new URL(`../${file}`, import.meta.url), "utf8")).join("\n");
-  const d1 = serverMigrationManifest.sqlite.files
-    .map((file) => readFileSync(new URL(`../${file.replace("drizzle/sqlite/", "drizzle/d1/").replace("/migration.sql", ".sql")}`, import.meta.url), "utf8")).join("\n");
-  for (const sql of [sqlite, d1]) {
+  const sql = sqlite;
     expect(sql).not.toContain("files_metadata_ocr_text_length_check");
     expect(sql).not.toContain("files_metadata_caption_length_check");
     expect(sql).not.toMatch(/(?:ocr_text|caption_text)[^\n]*varchar/i);
-  }
 });
 
 it.each([
@@ -83,14 +78,14 @@ it.each([
   expect(getTableName(sqlite[key])).toBe(`jobs_${name}`);
 });
 
-it.each(["sqlite", "d1"])("creates calendar metadata in the initial schema and preserves it through runtime setup (%s)", (dialect) => {
+it("creates calendar metadata in the initial schema and preserves it through runtime setup", () => {
   const db = new DatabaseSync(":memory:");
   const files = serverMigrationManifest.sqlite.files;
-  const migrate = (file: string) => db.exec(readFileSync(new URL(`../${dialect === "d1"
-    ? file.replace("drizzle/sqlite/", "drizzle/d1/").replace("/migration.sql", ".sql") : file}`, import.meta.url), "utf8"));
+  const migrate = (file: string) => db.exec(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
   try {
     for (const file of files.slice(0, -1)) migrate(file);
-    db.exec("INSERT INTO vaults(vault_id, name) VALUES ('vault', 'Vault')");
+    db.exec(`INSERT INTO organization(id, name, slug, created_at) VALUES ('org', 'Team', 'team', 1);
+      INSERT INTO vaults(vault_id, organization_id, created_by, name) VALUES ('vault', 'org', '{"id":"owner","name":"Owner","email":"owner@example.com"}', 'Vault')`);
     db.exec("INSERT INTO meetings(meeting_id, vault_id, name, status, created_at, updated_at) VALUES ('meeting', 'vault', 'Preserved', 'READY', 1, 2)");
     db.exec("UPDATE meetings SET ical_uid = 'shared@example.com', recurrence_id = '20260903T000000Z'");
     migrate(files.at(-1)!);

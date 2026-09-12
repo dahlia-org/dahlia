@@ -846,7 +846,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Preview readers gaining or losing access; owner only */
+        /** Preview readers gaining or losing access; admin only */
         get: operations["getTransferAudience"];
         put?: never;
         post?: never;
@@ -865,7 +865,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Move all content after revision and audience checks; owner only */
+        /** Move all content after revision and audience checks; admin only */
         post: operations["transferVault"];
         delete?: never;
         options?: never;
@@ -897,7 +897,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Search own organizations, their teams and co-members; owner only; 50 per type per page */
+        /** Search own organizations, their teams and co-members; admin only; 50 per type per page */
         get: operations["searchPermissionTargets"];
         put?: never;
         post?: never;
@@ -915,10 +915,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Grant read-only access to a fellow organization member; owner only */
+        /** Grant access to a known user; admin only */
         put: operations["putUserPermission"];
         post?: never;
-        /** Revoke direct user access; owner only */
+        /** Revoke direct user access; admin only */
         delete: operations["deleteUserPermission"];
         options?: never;
         head?: never;
@@ -950,10 +950,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Grant read-only organization access; owner only */
+        /** Grant organization access; admin only */
         put: operations["putOrganizationPermission"];
         post?: never;
-        /** Revoke organization access; owner only */
+        /** Revoke organization access; admin only */
         delete: operations["deleteOrganizationPermission"];
         options?: never;
         head?: never;
@@ -968,11 +968,62 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Grant read-only team access; owner only */
+        /** Grant team access; admin only */
         put: operations["putTeamPermission"];
         post?: never;
-        /** Revoke team access; owner only */
+        /** Revoke team access; admin only */
         delete: operations["deleteTeamPermission"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/vaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Organization Vault metadata; organization owner or admin only */
+        get: operations["listGovernanceVaults"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/vaults/{vaultId}/deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Confirm the current Vault revision and content cursor */
+        get: operations["confirmVaultDeletion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/vaults/{vaultId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a Team Organization Vault after confirmation */
+        delete: operations["forceDeleteVault"];
         options?: never;
         head?: never;
         patch?: never;
@@ -988,113 +1039,9 @@ export interface paths {
         /** Current organization memberships */
         get: operations["listOrganizations"];
         put?: never;
-        post?: never;
+        /** Create a Team Organization and creator membership through Better Auth */
+        post: operations["createOrganization"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/organizations/{organizationId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** External organization (header mode only) */
-        get: operations["getOrganization"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/organizations/{organizationId}/members": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** External organization members (header mode only) */
-        get: operations["listOrganizationMembers"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/organizations/{organizationId}/teams": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** External teams (header mode only) */
-        get: operations["listTeams"];
-        put?: never;
-        /** Create external team (header mode only) */
-        post: operations["createTeam"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/organizations/{organizationId}/teams/{teamId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete external team (header mode only) */
-        delete: operations["deleteTeam"];
-        options?: never;
-        head?: never;
-        /** Rename external team (header mode only) */
-        patch: operations["updateTeam"];
-        trace?: never;
-    };
-    "/api/v1/organizations/{organizationId}/teams/{teamId}/members": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** External team members (header mode only) */
-        get: operations["listTeamMembers"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Add an organization member to an external team */
-        put: operations["putTeamMember"];
-        post?: never;
-        /** Remove an external team member */
-        delete: operations["deleteTeamMember"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1108,6 +1055,7 @@ export interface components {
             /** @enum {string} */
             encryption?: "none" | "server";
             vaultId: string;
+            organizationId: string;
             name: string;
             icon?: string | null;
             color?: string | null;
@@ -1120,7 +1068,7 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             /** @enum {string} */
-            role?: "owner" | "member";
+            role: "admin" | "editor" | "viewer";
             hasResources?: boolean;
         };
         Project: {
@@ -1444,6 +1392,7 @@ export interface components {
             /** @enum {string} */
             encryption?: "none" | "server";
             vaultId: string;
+            organizationId: string;
             name: string;
             icon?: string | null;
             color?: string | null;
@@ -1456,7 +1405,7 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             /** @enum {string} */
-            role?: "owner" | "member";
+            role: "admin" | "editor" | "viewer";
             hasResources?: boolean;
         } | null;
         NullableProjectRecord: {
@@ -1632,6 +1581,8 @@ export interface components {
             id: string;
             name: string;
             slug: string;
+            /** @enum {string} */
+            kind: "personal" | "team";
             role?: string;
         };
         AccountSettingsResponse: {
@@ -1915,7 +1866,7 @@ export interface components {
         };
         Transaction: {
             /** @enum {number} */
-            schemaVersion: 2;
+            schemaVersion: 3;
             id: string;
             vaultId: string;
             /** Format: date-time */
@@ -1963,6 +1914,7 @@ export interface components {
                 entityId: string;
                 baseRevision: number | null;
                 data: {
+                    organizationId: string;
                     /** @enum {string} */
                     encryption?: "none" | "server";
                     /** @enum {string|null} */
@@ -2482,31 +2434,22 @@ export interface components {
             contentUrl: string;
         };
         VaultPermission: {
+            name?: string;
+            detail?: string;
             vaultId: string;
             /** @enum {string} */
             principalType: "user" | "organization" | "team";
             principalId: string;
             /** @enum {string} */
-            role: "owner" | "member";
+            role: "admin" | "editor" | "viewer";
             /** Format: date-time */
             createdAt: string;
         };
-        Team: {
-            id: string;
+        GovernanceVault: {
+            vaultId: string;
             name: string;
-            organizationId: string;
-            memberCount: number;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string | null;
-        };
-        TeamMember: {
-            name: string;
-            email: string;
-            id: string;
-            userId: string;
-            teamId: string;
+            revision: number;
+            creatorId: string;
         };
     };
     responses: {
@@ -3000,7 +2943,6 @@ export interface operations {
     listVaults: {
         parameters: {
             query?: {
-                owner?: string;
                 organizationId?: string;
             };
             header?: never;
@@ -4616,7 +4558,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    role: "admin" | "editor" | "viewer";
+                };
+            };
+        };
         responses: {
             /** @description Success; no response body. */
             204: {
@@ -4687,7 +4636,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    role: "admin" | "editor" | "viewer";
+                };
+            };
+        };
         responses: {
             /** @description Success; no response body. */
             204: {
@@ -4731,7 +4687,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    role: "admin" | "editor" | "viewer";
+                };
+            };
+        };
         responses: {
             /** @description Success; no response body. */
             204: {
@@ -4765,6 +4728,96 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    listGovernanceVaults: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor. Pass back unchanged with the original filters. */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["GovernanceVault"][];
+                        /** @description Opaque cursor. Pass back unchanged with the original filters. */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    confirmVaultDeletion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+                vaultId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GovernanceVault"] & {
+                        /** @description Opaque cursor. Pass back unchanged with the original filters. */
+                        changeCursor: string;
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    forceDeleteVault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+                vaultId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    id: string;
+                    revision: number;
+                    /** @description Opaque cursor. Pass back unchanged with the original filters. */
+                    changeCursor: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransactionReceipt"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     listOrganizations: {
         parameters: {
             query?: never;
@@ -4790,244 +4843,30 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    getOrganization: {
+    createOrganization: {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                organizationId: string;
-            };
+            path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    slug: string;
+                };
+            };
+        };
         responses: {
             /** @description Successful response */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["Organization"];
                 };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    listOrganizationMembers: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        items: {
-                            id: string;
-                            userId: string;
-                            role: string;
-                            user: {
-                                name: string;
-                                email: string;
-                            };
-                        }[];
-                        /** @description Opaque cursor. Pass back unchanged with the original filters. */
-                        nextCursor: string | null;
-                    };
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    listTeams: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        items: components["schemas"]["Team"][];
-                        /** @description Opaque cursor. Pass back unchanged with the original filters. */
-                        nextCursor: string | null;
-                    };
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    createTeam: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    name: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Created. An identical replay returns 200. */
-            201: {
-                headers: {
-                    /** @description URI of the created representation or individual job. */
-                    Location?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Team"];
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    deleteTeam: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-                teamId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Success; no response body. */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    updateTeam: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-                teamId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    name: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Team"];
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    listTeamMembers: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-                teamId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        items: components["schemas"]["TeamMember"][];
-                        /** @description Opaque cursor. Pass back unchanged with the original filters. */
-                        nextCursor: string | null;
-                    };
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    putTeamMember: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-                teamId: string;
-                userId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Success; no response body. */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    deleteTeamMember: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                organizationId: string;
-                teamId: string;
-                userId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Success; no response body. */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             default: components["responses"]["Problem"];
         };

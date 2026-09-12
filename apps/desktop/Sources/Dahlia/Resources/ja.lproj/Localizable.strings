@@ -1657,3 +1657,19 @@
 "sync.unavailable" = "同期の進捗を取得できません";
 "sync.syncing" = "同期中";
 "sync.synced" = "同期済み";
+
+"Finish recording and pending sync, then choose a writable Server Vault." = "録音と未完了の同期を終えてから、書き込み可能なServer Vaultを選択してください。";
+"The Vault changed during preparation. Your data is preserved. Try again." = "準備中にVaultが変更されました。データは保持されています。もう一度お試しください。";
+"Some IDs already exist on the Server. No local data was moved." = "同じIDのデータがServerに存在します。ローカルデータは移動していません。";
+"Import destination" = "取り込み先";
+"Existing Server Vault" = "既存のServer Vault";
+"New Server Vault" = "新しいServer Vault";
+"Organization" = "Organization";
+"Create Organization" = "Organizationを作成";
+"Reload destinations" = "候補を再読み込み";
+"A backup is saved before importing. Existing Vault settings stay unchanged. The original Local Vault remains available." = "取り込み前にバックアップを作成します。既存Vaultの設定は保持し、元のLocal Vaultも残します。";
+"Import" = "取り込む";
+"Organization name" = "Organization名";
+
+"Vault Admin" = "管理者";
+"Vault Editor" = "編集者";

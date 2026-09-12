@@ -18,7 +18,8 @@
       "parentProjectId": "id:project",
       "rootProjectId": "id:project",
       "typeOwnerProjectId": "id:project",
-      "id": "id:vault"
+      "id": "id:vault",
+      "organizationId": "id:organization"
     },
     "project": {
       "vaultId": "id:vault",
@@ -600,6 +601,17 @@
     },
     "mcpVaultList": {
       "vaults": "array:vault"
+    },
+    "governanceVault": {
+      "vaultId": "id:vault",
+      "creatorId": "id:user"
+    },
+    "governanceVaults": {
+      "items": "array:governanceVault",
+      "nextCursor": "id:vault"
+    },
+    "vaultDeletion": {
+      "id": "id:transaction"
     }
   },
   "routes": [
@@ -911,7 +923,6 @@
       "path": "/api/v1/vaults",
       "response": "vaults",
       "query": {
-        "owner": "id:user",
         "organizationId": "id:organization"
       },
       "methods": [
@@ -996,52 +1007,6 @@
     {
       "path": "/api/v1/organizations",
       "response": "organizationPage",
-      "methods": [
-        "GET",
-        "HEAD"
-      ]
-    },
-    {
-      "path": "/api/v1/organizations/:organization/teams/:team/members/:user",
-      "methods": [
-        "PUT",
-        "DELETE"
-      ]
-    },
-    {
-      "path": "/api/v1/organizations/:organization/teams/:team/members",
-      "response": "teamMemberPage",
-      "methods": [
-        "GET",
-        "HEAD"
-      ]
-    },
-    {
-      "path": "/api/v1/organizations/:organization/teams/:team",
-      "response": "team",
-      "methods": [
-        "PATCH",
-        "DELETE"
-      ]
-    },
-    {
-      "path": "/api/v1/organizations/:organization/teams",
-      "response": "team",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "path": "/api/v1/organizations/:organization/teams",
-      "response": "teamPage",
-      "methods": [
-        "GET",
-        "HEAD"
-      ]
-    },
-    {
-      "path": "/api/v1/organizations/:organization/members",
-      "response": "orgMembers",
       "methods": [
         "GET",
         "HEAD"
@@ -1942,6 +1907,32 @@
       "methods": [
         "PUT",
         "DELETE"
+      ]
+    },
+    {
+      "path": "/api/v1/organizations/:organization/vaults",
+      "response": "governanceVaults",
+      "query": {
+        "cursor": "id:vault"
+      }
+    },
+    {
+      "path": "/api/v1/organizations/:organization/vaults/:vault/deletion",
+      "response": "governanceVault"
+    },
+    {
+      "path": "/api/v1/organizations/:organization/vaults/:vault",
+      "methods": [
+        "DELETE"
+      ],
+      "response": "receipt",
+      "request": "vaultDeletion"
+    },
+    {
+      "path": "/api/v1/organizations",
+      "response": "organization",
+      "methods": [
+        "POST"
       ]
     }
   ]

@@ -27,7 +27,7 @@ actor RecordingArchiveService {
         let checksum: String
     }
 
-    private struct Commit: Codable {
+    struct Commit: Codable {
         let source: String
         let checksum: String
         let manifest: RecordingArchiveManifest
@@ -51,7 +51,7 @@ actor RecordingArchiveService {
               AND ((a.connectionId IS NULL AND v.accountConnectionId IS NULL)
                    OR (v.accountConnectionId = a.connectionId AND v.syncConfirmedConnectionId = a.connectionId))
               AND (a.connectionId IS NULL) = ?
-              AND v.syncRecoveryState IS NULL AND COALESCE(v.syncRole, 'owner') = 'owner'
+              AND v.syncRecoveryState IS NULL AND (v.accountConnectionId IS NULL OR v.syncRole IN ('admin', 'editor'))
               AND s.endedAt IS NOT NULL AND s.batchDiscardedAt IS NULL
               AND NOT EXISTS (SELECT 1 FROM recording_audio_segments WHERE recordingSessionId = a.sessionId AND state NOT IN ('ready', 'purgePending', 'purged'))
               AND NOT EXISTS (SELECT 1 FROM sync_transactions WHERE vaultId = a.vaultId)

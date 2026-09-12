@@ -48,7 +48,7 @@ private struct SyncTransactionResolution: Decodable {
 }
 
 private struct SyncTransactionBody: Encodable {
-    let schemaVersion = 2
+    let schemaVersion = 3
     let id: UUID
     let vaultId: UUID
     let createdAt: Date
@@ -113,7 +113,7 @@ struct SyncChangePage: Decodable {
     let hasMore: Bool
 }
 
-struct SyncResetSnapshot {
+struct SyncResetSnapshot: Sendable {
     let projects: Set<UUID>
     let meetings: Set<UUID>
     let summaries: Set<UUID>
@@ -832,7 +832,7 @@ actor SyncWorker {
             }
             let capabilities = try decode(ServerCapabilities.self, from: data)
             updateTransferSupport(capabilities, connectionId: target.connectionId)
-            guard capabilities.sync?.version == 4 else {
+            guard capabilities.sync?.version == 5 else {
                 throw SyncHTTPError(status: 426, body: Data())
             }
             let meetingEventsVersion = capabilities.meetingEvents?.version == 1 ? 1 : 0
@@ -957,7 +957,17 @@ actor SyncWorker {
         }
     }
 
-    private func fetchAndApplySnapshot(_ target: SyncTarget, generation: Int64?) async throws -> Bool {
+    func importSnapshot(vaultId: UUID, connectionId: UUID, origin: URL) async throws -> SyncResetSnapshot {
+        let target = SyncTarget(vaultId: vaultId, connectionId: connectionId, origin: origin, cursor: nil, mutationGeneration: 0)
+        let (staged, _, deletedVault) = try await fetchStagedSnapshot(target)
+        guard deletedVault == nil,
+              try await staged.revisionChanges().contains(where: { $0.entity == .vault && $0.entityId == vaultId }) else {
+            throw SyncTransactionQueueError.invalidReceipt
+        }
+        return try await staged.resetSnapshot()
+    }
+
+    private func fetchStagedSnapshot(_ target: SyncTarget) async throws -> (SyncSnapshotStore, String?, SyncChangePage.Change?) {
         let staged = try SyncSnapshotStore()
         var position: String?
         var startCursor: String?
@@ -994,6 +1004,12 @@ actor SyncWorker {
             cursor = page.cursor
             if !page.hasMore { break }
         } while true
+
+        return (staged, cursor, deletedVault)
+    }
+
+    private func fetchAndApplySnapshot(_ target: SyncTarget, generation: Int64?) async throws -> Bool {
+        let (staged, cursor, deletedVault) = try await fetchStagedSnapshot(target)
 
         if try await reconcileRelocations(vaultId: target.vaultId, connectionId: target.connectionId, origin: target.origin) {
             return false

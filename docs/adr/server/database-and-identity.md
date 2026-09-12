@@ -7,20 +7,20 @@
 認証・管理・同期で DB を分けず、Drizzle の単一 application database に統一する。認証方式、DB、AI provider、storage の選択は独立させる。
 
 - PostgreSQL / Lakebase は `auth`（生成 Better Auth）、`app`（Vault / Project、permission、meeting、transcript、screenshot、同期履歴）、`search`（文書・テキスト・vector）、`crypto`（wrapped Vault key）、`jobs`（summary / image_analysis / search_index / storage_delete）。検索 projection は `search.documents` に置き、`search → app → auth` の参照を持つ。検索データ全体は暗号化対象外だが、Vault 単位の RLS / FORCE RLS を適用する。ジョブは `jobs → app / auth` の参照を持つ。
-- SQLite / D1 は Better Auth を top-level、Dahlia table は prefix なしにする。PostgreSQL の content ID は native UUID、非 UUID の user / workspace ID や hash は text。SQLite / D1 も境界で canonical UUID を検証する。
-- Better Auth schema は生成物として手編集しない。全認証方式で Auth → application の順に migration を適用する。PostgreSQL の ledger は `drizzle.__dahlia_auth_migrations` と `drizzle.__dahlia_server_migrations` に分離し、SQLite / D1 は単一 baseline を使う。
-- Node は SQLite / PostgreSQL / Lakebase、Workers は D1 / Hyperdrive / direct PostgreSQL を対象とする。DB 接続可能性と個別 capability の有効性は別であり、D1 sync の制限を解除したとは扱わない。
+- SQLite は Better Auth を top-level、Dahlia table は prefix なしにする。PostgreSQL の content ID は native UUID、非 UUID の user / workspace ID や hash は text。SQLite も境界で canonical UUID を検証する。
+- Better Auth schema は生成物として手編集しない。全認証方式で Auth → application の順に migration を適用する。PostgreSQL の ledger は `drizzle.__dahlia_auth_migrations` と `drizzle.__dahlia_server_migrations` に分離し、SQLite は単一 baseline を使う。
+- Node は SQLite / PostgreSQL / Lakebase、Workers は Hyperdrive / direct PostgreSQL を対象とする。D1はサポート対象から外し、専用adapter・migrationを配布しない。
 - Lakebase は公式接続・OAuth refresh を再利用する。provider secret は DB に保存せず runtime secrets に置く。DB は認証と content を含む backup / retention / access-control の管理対象になる。
 
 初期の `dahlia` 単一 schema と header-only application migration は、参照方向と認証方式間の一貫性を保つため変更した。当時の未リリース DB は再生成 baseline を使い、旧開発データを自動変換しなかった。released migration は不変で、以後は forward migration を追加する。
 
-2026-09-06: Server canonical model では Vault / Project と meeting が同じ正本を構成するため、未リリースの `core` / `content` を `app` に統合した。SQLite / D1 は prefix を除去する。baseline を直接更新し、旧開発 DB からの自動移行は提供しない。認可、保持期間、再生成可否はスキーマではなく各テーブルの責務で区別する。
+2026-09-06: Server canonical model では Vault / Project と meeting が同じ正本を構成するため、未リリースの `core` / `content` を `app` に統合した。SQLite は prefix を除去する。baseline を直接更新し、旧開発 DB からの自動移行は提供しない。認可、保持期間、再生成可否はスキーマではなく各テーブルの責務で区別する。
 
 ## リリース前 baseline 統合（2026-09-09、2026-09-12更新）
 
 ユーザー承認により未リリース Server の開発履歴を現行 Drizzle schema から再生成した初期 migration に統合する。既存開発 DB の自動変換は提供せず、新しい空 DB への明示的な切り替えを必要とする。Desktop と既にリリースしたユーザー DB の migration は変更しない。
 
-PostgreSQL は既存の生成 Auth baseline → application initial → runtime_support、SQLite / D1 は initial → runtime_support とする。Drizzle が生成した policy は参照先 identity function の後に作成するため runtime_support に置く。FORCE RLS、membership index、移管の DEFERRABLE 制約、SQLite FTS5 と trigger を維持し、旧テーブル作成・変換・backfill は除去する。snapshot は将来の差分生成用に保持し、配布 package は実行 SQL のみを含む。
+PostgreSQL は既存の生成 Auth baseline → application initial → runtime_support、SQLite は initial → runtime_support とする。Drizzle が生成した policy は参照先 identity function の後に作成するため runtime_support に置く。FORCE RLS、membership index、移管の DEFERRABLE 制約、SQLite FTS5 と trigger を維持し、旧テーブル作成・変換・backfill は除去する。snapshot は将来の差分生成用に保持し、配布 package は実行 SQL のみを含む。
 
 2026-09-10: 初期リリース前のため、組織初期化記録、現行アカウント設定、検索のフィールド別重みも initial に統合した。旧設定の変換、既存組織の backfill、旧検索列からの再構築は提供せず、空 DB に現行スキーマと FTS を直接作成する。
 
@@ -34,20 +34,19 @@ PostgreSQL は既存の生成 Auth baseline → application initial → runtime_
 
 proxy は client-supplied identity header を除去・上書きし、Server への直接到達を防ぐ。Server 側の CIDR 判定で代替しない。
 
-Header mode でも `auth.user` を作り、検証済み `X-Forwarded-User`、未指定なら正規化 email を ID として request 開始時に JIT 射影する。name / email は更新するが、同じ email の別 ID は自動統合せず拒否する。Better Auth runtime / session / OAuth endpoint は accounts mode だけで有効にする。
+Header mode でも `auth.user` を作り、`DAHLIA_AUTH_HEADER`（既定 `X-Forwarded-Email`）の検証・正規化済み email を `account.account_id` として request 開始時に内部 UUID へ JIT 射影する。`X-Forwarded-User` は使わない。name は更新し、email の変更は別 identity として自動統合しない。Better Auth runtime / Web sessionは両モードで有効にし、GoogleログインとOAuth provider endpointだけをaccounts限定にする。Header Web操作でもproxy identityを毎回確認し、Cookie本人との不一致を拒否する。
 
-`app.search_index_jobs.owner_user_id` と `app.vault_permissions.granted_by_user_id` は `auth.user.id` を参照する。polymorphic な principal ID は type と組で扱い、単独の外部キーにしない。proxy の ID・認証方式変更による既存 permission の対応付けは自動化しない。
+Header mode で管理者がユーザーを事前作成する場合も、作成 transaction 内で Header account と Personal/domain Organization を初期化する。後の proxy ログインはその account を参照し、既存の別認証方式のユーザーを email だけで自動統合しない。
+
+`app.vault_permissions.granted_by_user_id` は `auth.user.id` を参照する。search jobはVault単位で、summary／image jobのuser IDはrequesterである。polymorphic な principal ID は type と組で扱い、単独の外部キーにしない。proxy の ID・認証方式変更による既存 permission の対応付けは自動化しない。
 
 ## Vault permission
 
-`app.vault_permissions` を ownership と read sharing の唯一の正本とする。principal は `user | organization | team`、role は `owner | member`。user principal は生の user ID を使い、OAuth の `personal:<userId>` workspace claim と混ぜない。
+`app.vaults.organization_id` が変更不能な所有Organizationを示す。削除はRESTRICTとし、`created_by {id,name,email}` は不変の監査snapshotとしてVault削除まで保持する。監査snapshotは通常APIやprincipal検索に公開しない。
 
-- Vault ごとに変更不能な user owner を1件だけ持ち、constraint と partial unique index で保証する。Vault と owner permission は同じ transaction で作る。
-- content に owner を重複保存せず、親子関係は Vault ID で制約する。非 owner の write / delete / permission mutation は存在を開示しない404。owner 移譲、member write、直接 user member の作成 API は追加しない。
-- PostgreSQL / Lakebase は transaction-local `app.user_id` から permission と `auth.member` / `auth.team_member` を評価し、context 未設定時は deny。membership 削除を即時反映し、owner の read/write は維持する。共有の有効化条件は [共有](sharing-and-administration.md#共有境界) に従う。
-- Vault / content / 検索 projection は RLS と application 認可を併用する。SQLite / D1 は同じ predicate を application 層で強制する。table owner や BYPASSRLS の挙動も配置時に検証する。
-- permission table 自体への RLS は自己参照再帰を避けて設定しない。identity transaction 内の sync store と organization / Team cleanup だけが認可して利用し、汎用 query surface へ公開しない。
-- API は `/api/v1/vaults/{vaultId}/permissions`。read model は有効な複数経路のうち owner を優先して `role: owner | member` を返す。
+`vault_permissions` のprincipalは `user | organization | team`、roleは `admin | editor | viewer`。有効roleはAdminを最優先とし、内容書込とVault管理を別predicateで評価する。Team権限はTeamと親Organizationの両membershipが必要。Organization所属だけではVaultアクセスを与えない。
+
+PostgreSQL / Lakebaseはtransaction-local `app.user_id` と現在membershipをRLS / FORCE RLSで評価し、SQLiteも同じアプリpredicateを使う。permission自体へのRLSは自己参照再帰を避けて設定せず、認可済みstore以外へ公開しない。組織・Team・permission変更は共通アプリ検査と変更を一つのtransactionに含める。PostgreSQLは共通advisory lock、SQLiteはwriter transactionで同時変更を直列化し、最後のowner/member/Adminを守る。DBには形・参照整合性・RLS・FTSだけを置き、Organizationライフサイクルの業務ロジックをtriggerにしない。
 
 ## 経緯と制約
 
@@ -57,7 +56,7 @@ owner column と share table の重複を Vault permission に集約した。hea
 
 ## Sync retention metadata（2026-09-06）
 
-`app.sync_vault_state` は owner / Vault と latest sequence / pruned boundary のみを保持する運用 metadata とし、既存 change ledger と同様に RLS の対象外とする。identity-scoped sync store と管理用 retention 処理以外へ公開せず、正本・receipt の認可は引き続き RLS と application 層で強制する。内容を追加する場合はこの例外を再評価する。
+`app.sync_vault_state` は Vault と latest sequence / pruned boundary のみを保持する運用 metadata とし、既存 change ledger と同様に RLS の対象外とする。identity-scoped sync store と管理用 retention 処理以外へ公開せず、正本・receipt の認可は引き続き RLS と application 層で強制する。内容を追加する場合はこの例外を再評価する。
 
 forward migration は既存 receipt 本文を保持したまま結果 ID / revision を抽出し、ledger と receipt の最大 sequence で Vault state を初期化する。PostgreSQL では migration owner が同一 transaction 内だけ receipt の FORCE RLS を解除して backfill し、完了前に復元する。保持処理は identity を transaction-local に設定し、失敗時は floor と削除を共に rollback する。
 
@@ -65,9 +64,9 @@ forward migration は既存 receipt 本文を保持したまま結果 ID / revis
 
 `app.account_settings` は `auth.user.id` を正本キーに出力言語と解析言語範囲・一覧を保持する。本人の GET/PATCH だけを公開し、PostgreSQL は transaction-local identity と FORCE RLS、SQLite は user ID predicate で分離する。PATCH は指定項目だけの upsert、初回初期化は conditional INSERT。設定の競合制御用 revision は持たない。
 
-`app.image_analysis_jobs` は file ID / Vault ID / owner user ID / model / lease / retry 状態だけの運用 metadata。既存の search job と同様に RLS の対象外とし、Node worker だけが利用する。画像・OCR・caption は queue に複製せず、identity-scoped store の認可と RLS を通して読取り・保存する。追加は forward migration で行い、既存の user / Vault / meeting / file を書き換えない。
+`app.image_analysis_jobs` は file ID / Vault ID / requester user ID / model / lease / retry 状態だけの運用 metadata。既存の search job と同様に RLS の対象外とし、Node worker だけが利用する。画像・OCR・caption は queue に複製せず、identity-scoped store の認可と RLS を通して読取り・保存する。追加は forward migration で行い、既存の user / Vault / meeting / file を書き換えない。
 
-OCR / caption の API 上限は OpenAPI `maxLength` の Unicode code point 数としてそれぞれ 32,768 / 1,024 とする。PostgreSQL は最終安全網として `app.files.metadata` と `search.documents` に 65,536 / 2,048 文字の制約を持ち、API validation を制約違反処理の代用にしない。SQLite / D1 には同じ DB 制約を追加しない。
+OCR / caption の API 上限は OpenAPI `maxLength` の Unicode code point 数としてそれぞれ 32,768 / 1,024 とする。PostgreSQL は最終安全網として `app.files.metadata` と `search.documents` に 65,536 / 2,048 文字の制約を持ち、API validation を制約違反処理の代用にしない。SQLite には同じ DB 制約を追加しない。
 
 ## アカウント設定の機能別集約（2026-09-08）
 
@@ -88,16 +87,16 @@ FORCE RLS は backfill transaction 内だけ解除し commit 前に復元する�
 
 ## 運用テーブルと番号の整理（2026-09-09）
 
-PostgreSQL / Lakebase のジョブは `jobs.search_index`、`jobs.storage_delete`、`jobs.image_analysis`、`jobs.summary` に配置する。SQLite / D1 は `jobs_*`、Desktop の検索ジョブは `jobs_search_index` を維持する。要約ジョブの暗号化ポリシー・AAD・HMAC purpose は物理名から独立した既存の `jobs_summary` を維持する。未リリース Server の baseline を更新し、既存開発 DB は [データを保持する手順](../../../apps/server/docs/jobs-schema-move.md)で手動移行する。
+PostgreSQL / Lakebase のジョブは `jobs.search_index`、`jobs.storage_delete`、`jobs.image_analysis`、`jobs.summary` に配置する。SQLite は `jobs_*`、Desktop の検索ジョブは `jobs_search_index` を維持する。要約ジョブの暗号化ポリシー・AAD・HMAC purpose は物理名から独立した既存の `jobs_summary` を維持する。未リリース Server の baseline を更新し、既存開発 DB は [データを保持する手順](../../../apps/server/docs/jobs-schema-move.md)で手動移行する。
 
 `recordings` は `meeting_id` を外部キーとし、Vault は親会議から導出する。PostgreSQL RLS と共通 store の認可をともに親会議経由にし、API の `vaultId` は維持する。`meeting_events.vault_id` は会議削除後の履歴認可のため、`meeting_attachments.vault_id` は同一 Vault の複合外部キー制約のため維持する。
 
 コンテンツ世代は `version`、同期・更新検出は `revision` とする。`account_settings.change_version` は `revision` に改名するが、項目単位の更新方法は維持し、CAS 必須にはしない。処理世代の generation、録音 UUID、解析方式・通信形式のバージョンは別概念として扱う。
 
-## 既定組織の初期化記録（2026-09-10）
+## 初回組織登録（2026-09-12）
 
-accounts mode の既定組織は、組織・ユーザーに外部キーを持たない `server_initializations` の `default_organization` 行で一度だけ初期化する。記録、組織、初期 owner を同じ PostgreSQL / SQLite transaction または D1 batch で保存し、明示的な組織削除後も記録を残す。forward migration は既存の `external` 組織を記録し、名前・所有権・membership を変更しない。
+Header は設定されたメールヘッダーを外部 identity に使い、初回だけ domain Organization に参加する。[組織の決定](../shared/organization-vaults.md#organization)に従う。Personal の作成も共通初期化に含め、user 内の非公開 `registrationState`（Header は `domain`、Google は `personal`、完了後 `ready`）で中断を再開する。処理は transaction 内で行い、完了後の再ログインで脱退を取り消さず、参加履歴 table は設けない。
 
-この table は処理名と初期化日時だけの運用 metadata として RLS 対象外とし、認証 store 以外へ公開しない。header mode の JIT projection は従来どおり維持する。
+`server_settings` は SQLite の認可変更を直列化する singleton として保持し、廃止した Default 有効化列は持たない。PostgreSQL の advisory lock も維持する。
 
 Better Auth runtime の `generateId` は UUIDv7 callback を使う。schema 生成だけは `generateId: "uuid"` とし、生成器が native uuid 型を選べるようにする。生成後に PostgreSQL の UUIDv4 default を除去し、runtime が ID を供給する。新規 mapping table は追加しない。

@@ -3153,4 +3153,28 @@ extension L10n {
         localized: "Enter your workspace URL and sign in again to replace the old CLI connection.",
         bundle: bundle
     ) }
+    static var vaultAdmin: String { String(localized: "Vault Admin", bundle: bundle) }
+    static var vaultEditor: String { String(localized: "Vault Editor", bundle: bundle) }
+    static var vaultImportUnavailable: String { String(
+        localized: "Finish recording and pending sync, then choose a writable Server Vault.",
+        bundle: bundle
+    ) }
+    static var vaultImportChanged: String { String(
+        localized: "The Vault changed during preparation. Your data is preserved. Try again.",
+        bundle: bundle
+    ) }
+    static var vaultImportCollision: String { String(localized: "Some IDs already exist on the Server. No local data was moved.", bundle: bundle) }
+    static var vaultImportDestination: String { String(localized: "Import destination", bundle: bundle) }
+    static var vaultImportExisting: String { String(localized: "Existing Server Vault", bundle: bundle) }
+    static var vaultImportNew: String { String(localized: "New Server Vault", bundle: bundle) }
+    static var vaultImportOrganization: String { String(localized: "Organization", bundle: bundle) }
+    static var vaultImportCreateOrganization: String { String(localized: "Create Organization", bundle: bundle) }
+    static var vaultImportRefresh: String { String(localized: "Reload destinations", bundle: bundle) }
+    static var vaultImportDescription: String { String(
+        localized: "A backup is saved before importing. Existing Vault settings stay unchanged. The original Local Vault remains available.",
+        bundle: bundle
+    ) }
+    static var vaultImportStart: String { String(localized: "Import", bundle: bundle) }
+    static var vaultImportName: String { String(localized: "Organization name", bundle: bundle) }
+
 }

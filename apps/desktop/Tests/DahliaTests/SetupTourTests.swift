@@ -17,6 +17,7 @@
             model.advance()
             var vault = VaultRecord(id: .v7(), name: "Shared", createdAt: .now, lastOpenedAt: .distantPast)
             vault.accountConnectionId = connectionID
+            vault.organizationId = vault.accountConnectionId == nil ? nil : (vault.organizationId ?? .v7())
             model.selectExistingVault(vault)
             #expect(model.selectedExistingVaultID == vault.id)
             #expect(model.canContinue)

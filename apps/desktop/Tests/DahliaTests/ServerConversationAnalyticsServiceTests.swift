@@ -56,15 +56,17 @@ import Synchronization
                 let fetched = try VaultRecord.fetchOne(db, key: vaultID)
                 var vault = try #require(fetched)
                 vault.accountConnectionId = connectionID
+                if vault.syncRole == nil { vault.syncRole = "admin" }
+                if vault.organizationId == nil { vault.organizationId = .v7() }
                 vault.syncConfirmedConnectionId = connectionID
-                vault.syncRole = "member"
+                vault.syncRole = "viewer"
                 try vault.update(db)
             }
             #expect(try await service.eligibility(meetingID: meetingID, dbQueue: database.dbQueue) == .hidden)
             try await database.dbQueue.write { db in
                 let fetched = try VaultRecord.fetchOne(db, key: vaultID)
                 var vault = try #require(fetched)
-                vault.syncRole = "owner"
+                vault.syncRole = "admin"
                 try vault.update(db)
             }
             #expect(try await service.eligibility(meetingID: meetingID, dbQueue: database.dbQueue) == .hidden)

@@ -4,13 +4,12 @@ import { createHash, createHmac } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type SQLInputValue, DatabaseSync } from "node:sqlite";
+import { DatabaseSync } from "node:sqlite";
 import { expect, it } from "vitest";
 import { z } from "zod";
 import { createApp } from "../src/app";
 import { initializeDahliaAuth } from "../src/auth/better-auth";
 import { createNodeApplicationStore } from "../src/auth/node-store";
-import { createD1ApplicationStore, type D1PreparedStatementLike } from "../src/auth/store";
 import { LocalObjectStorage } from "../src/storage/local";
 import { uuidV7 } from "../src/id";
 import { decodeId, encodeId } from "../src/typeid";
@@ -31,7 +30,7 @@ it("covers every registered resource route and method at the public boundary", (
 it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate through %s", async (runtime) => {
   const directory = mkdtempSync(join(tmpdir(), "dahlia-public-ids-"));
   const path = join(directory, "empty.sqlite");
-  const config = { authProvider: "header" as const, authHeader: "X-Forwarded-Email", databaseType: "sqlite" as const,
+  const config = { betterAuthSecret: "test-only-better-auth-secret-value", authProvider: "header" as const, authHeader: "X-Forwarded-Email", databaseType: "sqlite" as const,
     storageBackend: "databricks" as const, storageDatabricksVolumePath: "/Volumes/test/files",
     databaseUrl: `file:${path}`, baseUrl: "https://public.example", oauthRedirectUris: [], maxRequestBytes: 1048576 };
   const store = createNodeApplicationStore(config);
@@ -48,7 +47,7 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
   const vault = uuidV7(), meeting = uuidV7(), attachment = uuidV7(), file = uuidV7(), transcript = uuidV7(), segment = uuidV7(), patch = uuidV7();
   const vlt = encodeId("vault", vault), mtg = encodeId("meeting", meeting), att = encodeId("attachment", attachment), fileID = encodeId("file", file);
   const now = new Date().toISOString();
-  const transaction = (operations: unknown[]) => ({ schemaVersion: 2, id: encodeId("transaction", uuidV7()), vaultId: vlt, createdAt: now, operations });
+  const transaction = (operations: unknown[]) => ({ schemaVersion: 3, id: encodeId("transaction", uuidV7()), vaultId: vlt, createdAt: now, operations });
   const operation = (entity: string, action: string, entityId: string, baseRevision: number | null, data: unknown) => ({
     id: encodeId("operation", entity === "transcript" ? patch : uuidV7()), entity, action, entityId, baseRevision, data,
   });
@@ -79,23 +78,13 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
     expect(userID).toMatch(/^[0-9a-f-]{14}7[0-9a-f-]{21}$/);
     expect(await (await send("/api/v1/admin/members")).json())
       .toMatchObject({ items: [{ id: encodeId("user", userID) }], nextCursor: null });
+    const testOrganizationID = String(database.prepare("SELECT id FROM organization WHERE domain = 'example.com'").get()!.id);
     expect(await (await send("/api/v1/organizations")).json())
-      .toMatchObject({ items: [{ id: encodeId("organization", "01990ab0-0000-7000-8000-000000000001") }], nextCursor: null });
+      .toMatchObject({ items: expect.arrayContaining([{ id: encodeId("organization", testOrganizationID), name: "example.com", slug: `domain-${testOrganizationID}`, kind: "team" }]) as unknown, nextCursor: null });
 
-    const organizationID = encodeId("organization", "01990ab0-0000-7000-8000-000000000001");
-    const members = z.object({ items: z.array(z.object({ id: z.string(), userId: z.string() })) })
-      .parse(await (await send(`/api/v1/organizations/${organizationID}/members`)).json());
-    expect(members.items[0]!.id).toMatch(/^omem_/);
-    expect(members.items[0]!.userId).toBe(encodeId("user", userID));
-    const team = z.object({ id: z.string() }).parse(await (await send(`/api/v1/organizations/${organizationID}/teams`, {
-      method: "POST", headers: { origin: config.baseUrl }, body: JSON.stringify({ name: "Round-trip team" }),
-    })).json());
-    const memberURL = `/api/v1/organizations/${organizationID}/teams/${team.id}/members/${members.items[0]!.userId}`;
-    expect((await send(memberURL, { method: "PUT", headers: { origin: config.baseUrl } })).status).toBe(204);
-    expect((await send(memberURL, { method: "DELETE", headers: { origin: config.baseUrl } })).status).toBe(204);
-
+    const organizationID = encodeId("organization", testOrganizationID);
     const create = transaction([
-      operation("vault", "create", vlt, null, { name: "Vault", createdAt: now }),
+      operation("vault", "create", vlt, null, { organizationId: organizationID, name: "Vault", createdAt: now }),
       operation("meeting", "create", mtg, null, { projectId: null, name: "Meeting", description: meeting, status: "READY", duration: null,
         recordingStartedAt: null, createdAt: now, updatedAt: now }),
     ]);
@@ -109,7 +98,7 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
     expect(publicSchema("TransactionReceipt").safeParse(receipt).success).toBe(true);
     expect(receipt).toMatchObject({ id: create.id, records: [ { entity: "vault", id: vlt }, { entity: "meeting", id: mtg } ] });
     expect(await (await post(create)).json()).toEqual(receipt);
-    const owned = await send(`/api/v1/vaults?owner=${encodeId("user", userID)}`);
+    const owned = await send(`/api/v1/vaults?organizationId=${organizationID}`);
     expect(owned.status).toBe(200);
     expect(await owned.json()).toMatchObject({ items: [{ vaultId: vlt }] });
     for (const invalidOwner of [userID, encodeId("organization", userID), encodeId("team", userID)]) {
@@ -245,44 +234,6 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
   }
 });
 
-it("resolves D1 header subjects atomically without linking matching emails", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dahlia-d1-identity-"));
-  const path = join(directory, "empty.sqlite");
-  const store = createNodeApplicationStore({ authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite", databaseUrl: `file:${path}`,
-    baseUrl: "https://public.example", oauthRedirectUris: [], maxRequestBytes: 1024 });
-  await store.migrate();
-  const database = new DatabaseSync(path);
-  class Statement implements D1PreparedStatementLike {
-    values: SQLInputValue[] = [];
-    constructor(readonly query: string) {}
-    bind(...values: unknown[]) { this.values = values as SQLInputValue[]; return this; }
-    async first<T>() { return database.prepare(this.query).get(...this.values) as T ?? null; }
-    async all<T>() { return { results: database.prepare(this.query).all(...this.values) as T[] }; }
-    async run() { return { meta: { changes: Number(database.prepare(this.query).run(...this.values).changes) } }; }
-  }
-  const d1 = createD1ApplicationStore({ prepare: (query) => new Statement(query), async batch(statements) {
-    database.exec("BEGIN");
-    try {
-      const results = statements.map((statement) => {
-        const value = statement as Statement;
-        return database.prepare(value.query).run(...value.values);
-      });
-      database.exec("COMMIT");
-      return results;
-    } catch (error) { database.exec("ROLLBACK"); throw error; }
-  } });
-  const identity = { userId: "subject-one", email: "same@example.com", workspaceId: "personal:subject-one", source: "header" as const };
-  try {
-    const ids = await Promise.all(Array.from({ length: 12 }, () => d1.resolveHeaderUser(identity)));
-    expect(ids[0]).toMatch(/^[0-9a-f-]{36}$/);
-    expect(new Set(ids).size).toBe(1);
-    expect(await d1.resolveHeaderUser({ ...identity, userId: "subject-two" })).toBeNull();
-    expect(await d1.resolveHeaderUser(identity)).toBe(ids[0]);
-    expect(database.prepare('SELECT count(*) AS count FROM "user"').get()).toEqual({ count: 1 });
-    expect(database.prepare("SELECT count(*) AS count FROM account").get()).toEqual({ count: 1 });
-    expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
-  } finally { database.close(); await store.close?.(); rmSync(directory, { recursive: true, force: true }); }
-});
 
 it("keeps Better Auth sessions, organizations, teams and invitations typed at the public boundary", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dahlia-public-auth-"));
@@ -331,21 +282,21 @@ it("keeps Better Auth sessions, organizations, teams and invitations typed at th
       .toMatchObject({ members: [{ id: memberID }] });
     expect((await send(`/api/auth/organization/list-members?organizationId=${organization.id}&filterField=id&filterValue=${decodeId("organizationMember", memberID)}`)).status).toBe(400);
     const vaultID = encodeId("vault", uuidV7());
-    const createdVault = await send("/api/v1/transactions", { schemaVersion: 2, createdAt: new Date().toISOString(), id: encodeId("transaction", uuidV7()), vaultId: vaultID,
+    const createdVault = await send("/api/v1/transactions", { schemaVersion: 3, createdAt: new Date().toISOString(), id: encodeId("transaction", uuidV7()), vaultId: vaultID,
       operations: [{ id: encodeId("operation", uuidV7()), entity: "vault", entityId: vaultID, action: "create", baseRevision: null,
-        data: { name: "Sharing", createdAt: new Date().toISOString() } }] });
+        data: { organizationId: organization.id, name: "Sharing", createdAt: new Date().toISOString() } }] });
     expect(createdVault.status, await createdVault.text()).toBe(200);
     for (const [path, principalID] of [["organizations", organization.id], ["teams", team.id]] as const) {
       const permissionURL = `${config.baseUrl}/api/v1/vaults/${vaultID}/permissions/${path}/${principalID}`;
-      const headers = { cookie, origin: config.baseUrl };
-      const granted = await app.request(permissionURL, { method: "PUT", headers });
+      const headers = { cookie, origin: config.baseUrl, "content-type": "application/json" };
+      const granted = await app.request(permissionURL, { method: "PUT", headers, body: JSON.stringify({ role: "viewer" }) });
       expect(granted.status, await granted.text()).toBe(204);
-      expect((await app.request(permissionURL, { method: "PUT", headers })).status).toBe(204);
+      expect((await app.request(permissionURL, { method: "PUT", headers, body: JSON.stringify({ role: "viewer" }) })).status).toBe(204);
       expect(await (await send(`/api/v1/vaults/${vaultID}/permissions`)).json())
-        .toMatchObject({ items: expect.arrayContaining([{ vaultId: vaultID, principalId: principalID,
-          principalType: path === "teams" ? "team" : "organization", role: "member", createdAt: expect.any(String) as unknown }]) as unknown });
+        .toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ vaultId: vaultID, principalId: principalID,
+          principalType: path === "teams" ? "team" : "organization", role: "viewer", createdAt: expect.any(String) as unknown })]) as unknown });
       expect((await app.request(permissionURL, { method: "DELETE", headers })).status).toBe(204);
-      expect((await app.request(permissionURL.replace(vaultID, decodeId("vault", vaultID)), { method: "PUT", headers })).status).toBe(400);
+      expect((await app.request(permissionURL.replace(vaultID, decodeId("vault", vaultID)), { method: "PUT", headers, body: JSON.stringify({ role: "viewer" }) })).status).toBe(400);
     }
     const second = await post("create-team", { organizationId: organization.id, name: "Editors" });
     const invitation = await post("invite-member", { organizationId: organization.id, email: "invitee@example.com", role: "member", teamId: [team.id, second.id] });

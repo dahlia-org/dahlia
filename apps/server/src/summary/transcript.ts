@@ -1,3 +1,4 @@
+import { canWriteVault } from "../auth/vault-permissions";
 import { summaryResponseMetadataSchema } from "./metadata";
 import { summaryStyleDetail } from "../account-settings-model";
 import { resolveSummaryPreferences } from "./preferences";
@@ -18,8 +19,12 @@ export async function fingerprint(value: unknown): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)));
   return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
+export async function assertSummaryAccess(store: IdentitySyncStore, vaultId: string) {
+  if (!canWriteVault((await store.getVault(vaultId))?.role)) throw new SummaryError("summary_meeting_unavailable");
+}
+
 export async function collectSummaryInput(store: IdentitySyncStore, vaultId: string, meetingId: string, includeTranscript = true, reference?: SummaryInput | null) {
-  if ((await store.getVault(vaultId))?.role !== "owner") throw new SummaryError("summary_meeting_unavailable");
+  await assertSummaryAccess(store, vaultId);
   const meeting = await store.getMeeting(vaultId, meetingId);
   if (!meeting) throw new SummaryError("summary_meeting_unavailable");
   const project = meeting.projectId ? await store.getProject(vaultId, meeting.projectId) : null;
@@ -97,6 +102,7 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
         throw new SummaryError("summary_invalid_model");
       }
       const headers = await execution.headers(job.ownerUserId);
+      await store.withIdentity(identity, (scoped) => assertSummaryAccess(scoped, job.vaultId));
       const response = await sendOpenAIResponses(provider, headers.authorization!, {
         requestHeaders: new Headers({ accept: "application/json" }), signal, upstreamHeaders: headers,
         body: JSON.stringify({ model, stream: false, store: false,

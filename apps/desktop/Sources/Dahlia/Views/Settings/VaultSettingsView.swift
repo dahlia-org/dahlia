@@ -158,7 +158,7 @@ struct VaultSettingsView: View {
 
     private func vaultActions(for vault: VaultRecord) -> some View {
         Menu(L10n.actions, systemImage: "ellipsis.circle") {
-            if vault.allowsCanonicalEdits {
+            if vault.allowsVaultManagement {
                 Button(L10n.rename, systemImage: "pencil", action: { requestRename(vault) })
             }
 
@@ -180,7 +180,7 @@ struct VaultSettingsView: View {
                 Button(L10n.useServerVersion, systemImage: "icloud.and.arrow.down") {
                     Task { await model.acceptServerSyncVersion(for: vault) }
                 }
-                if vault.syncRole != "member" {
+                if vault.allowsCanonicalEdits {
                     Button(L10n.reapplyLocalVersion, systemImage: "arrow.up.circle") {
                         Task { await model.reapplyLocalSyncVersion(for: vault) }
                     }
@@ -238,7 +238,7 @@ struct VaultSettingsView: View {
     }
 
     private func requestRename(_ vault: VaultRecord) {
-        guard vault.allowsCanonicalEdits else { return }
+        guard vault.allowsVaultManagement else { return }
         pendingRename = vault
         proposedName = vault.name
         isShowingRenameAlert = true

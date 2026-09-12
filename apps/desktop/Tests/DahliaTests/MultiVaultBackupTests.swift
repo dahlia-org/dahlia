@@ -24,7 +24,7 @@ import GRDB
                 let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://example.invalid", clientID: "test", createdAt: fixture.now)
                 try connection.insert(db)
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, syncRole = 'owner', syncPullCursor = 'keep' WHERE id = ?",
+                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = 'admin', syncPullCursor = 'keep' WHERE id = ?",
                     arguments: [connection.id, other.vault.id]
                 )
                 try db.execute(
@@ -147,7 +147,7 @@ import GRDB
             let live = try AppDatabaseManager(path: databaseURL.path)
             try await live.dbQueue.write { db in
                 if failure == "missing" { _ = try VaultRecord.deleteOne(db, key: second.vault.id) }
-                if failure == "synced" { try db.execute(sql: "UPDATE vaults SET syncRole = 'owner' WHERE id = ?", arguments: [second.vault.id]) }
+                if failure == "synced" { try db.execute(sql: "UPDATE vaults SET syncRole = 'admin' WHERE id = ?", arguments: [second.vault.id]) }
             }
             try live.close()
             if failure == "safety" {
@@ -246,7 +246,7 @@ import GRDB
             #expect(model.canRestore)
             let overwrittenId = model.restoreSelections[0].id
             try await fixture.database.dbQueue.write { db in
-                try db.execute(sql: "UPDATE vaults SET syncRole = 'owner' WHERE id = ?", arguments: [overwrittenId])
+                try db.execute(sql: "UPDATE vaults SET syncRole = 'admin' WHERE id = ?", arguments: [overwrittenId])
             }
             await model.refresh()
             #expect(!model.canRestore)

@@ -2,7 +2,7 @@
 
 | Target | Authentication metadata | Gateway configuration | Guide |
 | --- | --- | --- | --- |
-| Cloudflare Workers | accounts/header + D1, Hyperdrive, or PostgreSQL | `DAHLIA_AI_BACKEND=cloudflare` + API token | [Cloudflare](cloudflare/README.md) |
+| Cloudflare Workers | accounts/header + Hyperdrive or PostgreSQL | `DAHLIA_AI_BACKEND=cloudflare` + API token | [Cloudflare](cloudflare/README.md) |
 | Databricks Apps | header + Lakebase | `DAHLIA_AI_BACKEND=databricks` + forwarded U2M token | [Databricks](databricks/README.md) |
 | Node container | accounts/header + SQLite, PostgreSQL, or Lakebase | `DAHLIA_AI_BACKEND=openai` + API key | [Node](../apps/server/README.md#local-node-deployment) |
 

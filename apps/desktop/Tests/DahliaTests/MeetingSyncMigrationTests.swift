@@ -550,7 +550,7 @@
         func memberVaultRejectsLocalDomainTransactions() async throws {
             let (database, vault) = try await syncedDatabase()
             try await database.dbQueue.write { db in
-                try db.execute(sql: "UPDATE vaults SET syncRole = 'member' WHERE id = ?", arguments: [vault.id])
+                try db.execute(sql: "UPDATE vaults SET syncRole = 'viewer' WHERE id = ?", arguments: [vault.id])
             }
 
             await #expect(throws: SyncTransactionQueueError.self) {
@@ -571,7 +571,7 @@
         func memberVaultDisablesRecordingBeforePersistenceStarts() async throws {
             let (database, originalVault) = try await syncedDatabase()
             var vault = originalVault
-            vault.syncRole = "member"
+            vault.syncRole = "viewer"
             let settings = AppSettings()
             settings.currentVault = vault
             let sidebar = SidebarViewModel(settings: settings)
@@ -959,8 +959,10 @@
                     createdAt: .now, lastOpenedAt: .now
                 )
                 member.accountConnectionId = vault.accountConnectionId
+                if member.syncRole == nil { member.syncRole = "admin" }
+                if member.organizationId == nil { member.organizationId = .v7() }
                 member.syncConfirmedConnectionId = vault.syncConfirmedConnectionId
-                member.syncRole = "member"
+                member.syncRole = "viewer"
                 member.syncPullCursor = "member-cursor"
                 try member.insert(db)
                 return member
@@ -1679,7 +1681,10 @@
         func initialSnapshotDefersOnlyConstructionWhileRecordingIsActive(recordingVault: String) async throws {
             let (database, vault) = try await syncedDatabase()
             var otherVault = VaultRecord(id: .v7(), path: nil, name: "Other", createdAt: .distantPast, lastOpenedAt: .now)
-            if recordingVault == "server" { otherVault.accountConnectionId = vault.accountConnectionId }
+            if recordingVault == "server" { otherVault.accountConnectionId = vault.accountConnectionId
+                otherVault.organizationId = .v7()
+                otherVault.syncRole = "admin"
+            }
             let recordingVaultRecord = otherVault
             let meeting = MeetingRecord(
                 id: .v7(),
@@ -1764,6 +1769,8 @@
             )
             var vault = VaultRecord(id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
             vault.accountConnectionId = connection.id
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = connection.id
             let savedVault = vault
             try await database.dbQueue.write { db in

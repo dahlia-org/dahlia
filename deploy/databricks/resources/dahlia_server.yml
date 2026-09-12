@@ -46,6 +46,10 @@ resources:
         env:
           - name: DAHLIA_AUTH_TYPE
             value: header
+          - name: DAHLIA_AUTH_PROVIDER_ID
+            value: databricks
+          - name: DAHLIA_AUTH_SECRET
+            value_from: better-auth-secret
           - name: DAHLIA_AI_BACKEND
             value: databricks
           - name: DATABRICKS_MODEL_SCHEMA
@@ -65,6 +69,11 @@ resources:
           - name: LAKEBASE_ENDPOINT
             value_from: postgres
       resources:
+        - name: better-auth-secret
+          secret:
+            scope: ${var.better_auth_secret_scope}
+            key: ${var.better_auth_secret_key}
+            permission: READ
         - name: postgres
           postgres:
             branch: ${resources.postgres_projects.dahlia_database_project.id}/branches/production

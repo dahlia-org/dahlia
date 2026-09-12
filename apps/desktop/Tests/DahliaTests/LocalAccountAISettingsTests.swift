@@ -17,6 +17,7 @@
             model.databricksProfile = "MAC"
             var server = makeVault(openedAt: .now)
             server.accountConnectionId = .v7()
+            server.organizationId = server.accountConnectionId == nil ? nil : (server.organizationId ?? .v7())
             server.summaryModelID = "not-the-mac-model"
             model.activate(vault: server)
             #expect(await model.waitForRuntimeContext())
@@ -53,6 +54,7 @@
             latest.summaryReasoningEffort = "max"
             var server = makeVault(openedAt: Date(timeIntervalSince1970: 3))
             server.accountConnectionId = connection.id
+            server.organizationId = server.accountConnectionId == nil ? nil : (server.organizationId ?? .v7())
             server.databricksProfile = "SERVER"
             try await database.dbQueue.write { [latest, server] db in
                 try connection.insert(db)
@@ -108,6 +110,7 @@
             }
             var server = makeVault(openedAt: .now)
             server.accountConnectionId = .v7()
+            server.organizationId = server.accountConnectionId == nil ? nil : (server.organizationId ?? .v7())
             server.summaryModelID = "hosted-summary"
             model.activate(vault: server)
             #expect(await model.waitForRuntimeContext())

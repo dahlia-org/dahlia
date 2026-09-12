@@ -201,7 +201,7 @@
             } else {
                 try await fixture.queue.write { db in
                     switch boundary {
-                    case "disconnect": try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL")
+                    case "disconnect": try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL")
                     case "discard": try SyncTransactionQueue.discard(vaultId: fixture.vaultId, in: db)
                     case "authorization": try db.execute(
                             sql: "UPDATE sync_transactions SET blockedReason = 'authorization' WHERE id = ?",
@@ -440,7 +440,8 @@
                     createdAt: .now,
                     lastOpenedAt: .now,
                     accountConnectionId: connectionId,
-                    syncRole: "owner",
+                    organizationId: .v7(),
+                    syncRole: "admin",
                     syncConfirmedConnectionId: connectionId,
                     syncPullCursor: "before"
                 ).insert(db)
@@ -574,7 +575,7 @@
         func handle(_ request: URLRequest) async throws -> (Int, Data) {
             let path = request.url!.path
             if expiredPullCursor {
-                if path.hasSuffix("/capabilities") { return (200, Data("{\"sync\":{\"version\":4}}".utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, Data("{\"sync\":{\"version\":5}}".utf8)) }
                 if path.hasSuffix("/changes") { return (410, Data("{\"code\":\"sync_cursor_expired\"}".utf8)) }
             }
             if path == "/api/v1/file-uploads" {
@@ -659,10 +660,10 @@
         private func canonicalFileRecord(id: String, operation: [String: Any]) throws -> [String: Any] {
             let file = try #require(files[id])
             let data = try #require(operation["data"] as? [String: Any])
-            return [
+            return try [
                 "id": id, "vaultId": file.vaultId.uuidString.lowercased(), "revision": 1,
                 "size": file.size, "contentType": file.contentType, "checksum": file.checksum, "name": file.name,
-                "metadata": try #require(data["metadata"]),
+                "metadata": #require(data["metadata"]),
                 "createdAt": "2026-09-11T00:00:00Z", "updatedAt": "2026-09-11T00:00:00Z",
             ]
         }

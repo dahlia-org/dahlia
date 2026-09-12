@@ -806,7 +806,7 @@ enum RemoteChangeApplier {
     ) async throws -> Bool {
         let meetingIds: Set<UUID>? = try await dbQueue.read { db in
             guard try SyncTransactionQueue.matchesExpectedConnection(vaultId: vaultId, connectionId: expectedConnectionId, in: db),
-                  try VaultRecord.fetchOne(db, key: vaultId)?.syncRole == "member" else { return nil }
+                  try VaultRecord.fetchOne(db, key: vaultId)?.syncRole == "viewer" else { return nil }
             return try Set(UUID.fetchAll(db, sql: "SELECT id FROM meetings WHERE vaultId = ?", arguments: [vaultId]))
         }
         guard let meetingIds else { return false }
@@ -827,7 +827,7 @@ enum RemoteChangeApplier {
                       try !RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db)
                 else { return false }
                 try db.execute(
-                    sql: "DELETE FROM vaults WHERE id = ? AND syncRole = 'member'",
+                    sql: "DELETE FROM vaults WHERE id = ? AND syncRole = 'viewer'",
                     arguments: [vaultId]
                 )
                 return db.changesCount > 0

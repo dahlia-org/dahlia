@@ -1,10 +1,11 @@
+import { validateAuthSecret } from "./auth/secret";
 import { z } from "zod";
 import { encryptionConfig, type EncryptionConfig } from "./encryption/crypto";
 
 import { UPSTREAM_MODEL_MAX_LENGTH } from "./ai-gateway/model-alias";
 
 export type AuthProvider = "accounts" | "header";
-export type DatabaseType = "sqlite" | "postgres" | "lakebase" | "hyperdrive" | "d1";
+export type DatabaseType = "sqlite" | "postgres" | "lakebase" | "hyperdrive";
 export type AIBackend = "databricks" | "cloudflare" | "openai";
 export type StorageBackend = "databricks" | "local" | "r2" | "s3";
 /** @deprecated Use DatabaseType. */
@@ -50,6 +51,7 @@ export interface AppConfig {
   encryption?: EncryptionConfig;
   authProvider: AuthProvider;
   authHeader: string;
+  authProviderId?: string;
   databaseType: DatabaseType;
   databaseUrl?: string;
   lakebaseDatabase?: LakebaseDatabaseConfig;
@@ -74,7 +76,7 @@ export interface AppConfig {
 }
 
 const authProviderSchema = z.enum(["accounts", "header"]);
-const databaseTypeSchema = z.enum(["sqlite", "postgres", "lakebase", "hyperdrive", "d1"]);
+const databaseTypeSchema = z.enum(["sqlite", "postgres", "lakebase", "hyperdrive"]);
 const aiBackendSchema = z.enum(["databricks", "cloudflare", "openai"]);
 export const MAX_FILE_BYTES = 64 * 1024 * 1024;
 
@@ -254,6 +256,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     encryption: encryptionConfig(env),
     authProvider,
     authHeader: env.DAHLIA_AUTH_HEADER?.trim() || "X-Forwarded-Email",
+    authProviderId: env.DAHLIA_AUTH_PROVIDER_ID?.trim() || "external",
     databaseType,
     databaseUrl: loadDatabaseUrl(env, databaseType),
     lakebaseDatabase: loadLakebaseDatabase(env, databaseType),
@@ -291,14 +294,9 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     }
   }
 
+  const secret = env.DAHLIA_AUTH_SECRET;
+  config.betterAuthSecret = secret ? validateAuthSecret(secret) : undefined;
   if (authProvider === "accounts") {
-    config.betterAuthSecret = required(env, "BETTER_AUTH_SECRET");
-    if (
-      config.betterAuthSecret.length < 32
-      || config.betterAuthSecret === "replace-with-at-least-32-random-characters"
-    ) {
-      throw new Error("BETTER_AUTH_SECRET must be a unique random value of at least 32 characters");
-    }
     config.googleClientId = required(env, "GOOGLE_CLIENT_ID");
     config.googleClientSecret = required(env, "GOOGLE_CLIENT_SECRET");
     if (config.oauthRedirectUris.length === 0) {

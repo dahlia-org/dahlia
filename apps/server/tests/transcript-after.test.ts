@@ -1,3 +1,4 @@
+import { testOrganizationID } from "./public-test-client";
 import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,9 +28,9 @@ async function fixture() {
   await store.migrate(); await seedHeaderIdentity(store, databasePath, owner); await seedHeaderIdentity(store, databasePath, reader);
   const sync = new MeetingSyncService(store.sync);
   const vaultId = uuidV7(), meetingId = uuidV7(), sessionId = uuidV7(), now = new Date().toISOString();
-  const transaction = (operations: unknown[]) => ({ schemaVersion: 2, id: uuidV7(), vaultId, createdAt: now, operations });
+  const transaction = (operations: unknown[]) => ({ schemaVersion: 3, id: uuidV7(), vaultId, createdAt: now, operations });
   await sync.commitTransaction(owner, transaction([
-    { id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { name: "Vault", createdAt: now } },
+    { id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Vault", createdAt: now } },
     { id: uuidV7(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
       data: { name: "Meeting", status: "READY", projectId: null, duration: null, recordingStartedAt: null, createdAt: now, updatedAt: now } },
   ]));
@@ -55,7 +56,7 @@ async function fixture() {
       chunks: [{ index: 0, sha256, segmentCount: 1, deletionCount: 0 }] } }]));
   const share = (enabled: boolean) => {
     const db = new DatabaseSync(databasePath);
-    if (enabled) db.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', ?, 'member', ?, ?)").run(vaultId, reader.userId, owner.userId, Date.now());
+    if (enabled) db.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', ?, 'viewer', ?, ?)").run(vaultId, reader.userId, owner.userId, Date.now());
     else db.prepare("DELETE FROM vault_permissions WHERE vault_id = ? AND principal_id = ?").run(vaultId, reader.userId);
     db.close();
   };

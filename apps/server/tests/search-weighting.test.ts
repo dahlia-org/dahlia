@@ -43,16 +43,18 @@ describe.each(["sqlite", "postgres", "lakebase"] as const)("%s weighted search",
       store.sync = createPostgresMeetingSyncStore(drizzle({ client: lakebase }), "lakebase");
     }
     await store.searchSettings.update(DEFAULT_SEARCH_SETTINGS);
-    const userId = uuidV7();
+    const externalId = uuidV7();
+    const userId = (await store.resolveHeaderUser({ userId: externalId, workspaceId: `personal:${externalId}`, source: "header", email: `${externalId}@example.test` }))!;
     const owner = { userId, workspaceId: `personal:${userId}`, source: "header" as const };
     await store.ensureIdentityUser(owner);
+    const testOrganizationID = (await store.listServerOrganizations(100, 0)).find((org) => org.name === "example.test")!.id;
     const vaultId = uuidV7();
     const service = new MeetingSyncService(store.sync);
     const commit = (operations: Array<Record<string, unknown>>) => service.commitTransaction(owner, {
-      schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(),
+      schemaVersion: 3, id: uuidV7(), vaultId, createdAt: new Date().toISOString(),
       operations: operations.map((operation) => ({ ...operation, id: uuidV7() })),
     });
-    await commit([{ entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { name: "Search", createdAt: new Date().toISOString() } }]);
+    await commit([{ entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Search", createdAt: new Date().toISOString() } }]);
     const meetingData = (name: string, description: string) => ({ name, description, projectId: null, status: "READY", duration: null, recordingStartedAt: null,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     const add = async (name: string, description = "", document?: string) => {

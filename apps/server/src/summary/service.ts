@@ -1,3 +1,4 @@
+import { canWriteVault } from "../auth/vault-permissions";
 import { z } from "zod";
 import { generationPreferencesSchema, normalizeSummaryDetail, outputLanguageSchema, summaryModelSettingsSchema } from "../account-settings-model";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettingsStore } from "../account-settings";
@@ -27,7 +28,7 @@ export class SummaryService {
 
   async status(identity: Identity, vaultId: string, meetingId: string, id?: string): Promise<SummaryJob | null> {
     return this.store.withIdentity(identity, async (scoped) => {
-      if ((await scoped.getVault(vaultId))?.role !== "owner" || !await scoped.getMeeting(vaultId, meetingId)) {
+      if (!canWriteVault((await scoped.getVault(vaultId))?.role) || !await scoped.getMeeting(vaultId, meetingId)) {
         throw new RequestError(404, "summary_meeting_unavailable");
       }
       return scoped.getSummaryJob(vaultId, meetingId, id);
@@ -37,7 +38,7 @@ export class SummaryService {
     if (identity.impersonated) throw new RequestError(403, "impersonation_read_only");
     return this.store.withIdentity(identity, async (scoped) => {
       await scoped.lockVault(vaultId);
-      if ((await scoped.getVault(vaultId))?.role !== "owner" || !await scoped.getMeeting(vaultId, meetingId)) {
+      if (!canWriteVault((await scoped.getVault(vaultId))?.role) || !await scoped.getMeeting(vaultId, meetingId)) {
         throw new RequestError(404, "summary_meeting_unavailable");
       }
       const job = await scoped.getSummaryJob(vaultId, meetingId, id);
@@ -53,7 +54,7 @@ export class SummaryService {
     return this.store.withIdentity(identity, async (scoped) => {
       await scoped.lockVault(vaultId);
       const meeting = await scoped.getMeeting(vaultId, meetingId);
-      if ((await scoped.getVault(vaultId))?.role !== "owner" || !meeting) {
+      if (!canWriteVault((await scoped.getVault(vaultId))?.role) || !meeting) {
         throw new RequestError(404, "summary_meeting_unavailable");
       }
       const requestHash = JSON.stringify({ vaultId, meetingId, retryOf: previousId });
@@ -127,7 +128,7 @@ export class SummaryService {
     }
     return this.store.withIdentity(identity, async (scoped) => {
       await scoped.lockVault(vaultId);
-      if ((await scoped.getVault(vaultId))?.role !== "owner") throw new RequestError(404, "summary_meeting_unavailable");
+      if (!canWriteVault((await scoped.getVault(vaultId))?.role)) throw new RequestError(404, "summary_meeting_unavailable");
       const meeting = await scoped.getMeeting(vaultId, meetingId);
       if (!meeting) throw new RequestError(404, "summary_meeting_unavailable");
       const previous = await scoped.getSummaryJob(vaultId, meetingId, parsed.data.id);

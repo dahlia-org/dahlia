@@ -52,11 +52,12 @@
             let relocation = try JSONSerialization.data(withJSONObject: [
                 "vaults": [[
                     "vaultId": destination.uuidString,
+                    "organizationId": destination.uuidString,
                     "name": "Moved",
                     "createdAt": "2026-09-09T00:00:00Z",
                     "updatedAt": "2026-09-09T00:00:00Z",
                     "revision": 1,
-                    "role": "owner",
+                    "role": "admin",
                 ]],
                 "items": [
                     ["entity": "meeting", "id": fixture.meetingId.uuidString, "vaultId": destination.uuidString],
@@ -67,7 +68,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":4},"vaultTransfers":{"version":1}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":5},"vaultTransfers":{"version":1}}"#.utf8))
                 }
                 if path.hasSuffix("/changes") {
                     if request.url!.query?.contains("cursor=middle") == true {
@@ -190,11 +191,12 @@
             let relocation = try JSONSerialization.data(withJSONObject: [
                 "vaults": [[
                     "vaultId": destination.uuidString,
+                    "organizationId": destination.uuidString,
                     "name": "Moved",
                     "createdAt": "2026-09-09T00:00:00Z",
                     "updatedAt": "2026-09-09T00:00:00Z",
                     "revision": 1,
-                    "role": "owner",
+                    "role": "admin",
                 ]],
                 "items": [["entity": "meeting", "id": fixture.meetingId.uuidString, "vaultId": destination.uuidString]],
             ])
@@ -208,7 +210,7 @@
                 let path = request.url!.path
                 requests.withLock { $0.append(path) }
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data("{\"sync\":{\"version\":4},\"vaultTransfers\":{\"version\":1}}".utf8))
+                    return (200, [:], Data("{\"sync\":{\"version\":5},\"vaultTransfers\":{\"version\":1}}".utf8))
                 }
                 if path.hasSuffix("/changes") { return (200, [:], changes) }
                 if path.hasSuffix("/relocations") { return (200, [:], relocation) }
@@ -248,6 +250,8 @@
                 try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'vault', ?, 1)", arguments: [fixture.vaultId, fixture.vaultId])
                 var vault = VaultRecord(id: healthy, path: nil, name: "Healthy", createdAt: .now, lastOpenedAt: .now)
                 vault.accountConnectionId = fixture.connectionId
+                if vault.syncRole == nil { vault.syncRole = "admin" }
+                if vault.organizationId == nil { vault.organizationId = .v7() }
                 vault.syncConfirmedConnectionId = fixture.connectionId
                 vault.syncPullCursor = "before"
                 try vault.insert(db)
@@ -270,7 +274,7 @@
                 let path = request.url!.path
                 paths.withLock { $0.append(path) }
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data("{\"sync\":{\"version\":4},\"vaultTransfers\":{\"version\":1}}".utf8))
+                    return (200, [:], Data("{\"sync\":{\"version\":5},\"vaultTransfers\":{\"version\":1}}".utf8))
                 }
                 if path.contains(fixture.vaultId.uuidString.lowercased()) {
                     if path.hasSuffix("/relocations") { return (403, [:], Data("{\"code\":\"transfer_access_required\"}".utf8)) }
@@ -320,9 +324,9 @@
                         return count
                     }
                     if requestNumber == 1 {
-                        return (200, [:], Data(#"{"sync":{"version":4},"vaultTransfers":{"version":1}}"#.utf8))
+                        return (200, [:], Data(#"{"sync":{"version":5},"vaultTransfers":{"version":1}}"#.utf8))
                     }
-                    return (200, [:], Data(#"{"sync":{"version":4}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
                 }
                 if path.hasSuffix("/changes") {
                     let requestNumber = changeRequestCount.withLock { count in
@@ -374,8 +378,8 @@
                         return count
                     }
                     return requestNumber == 1
-                        ? (200, [:], Data(#"{"sync":{"version":4},"meetingEvents":{"version":1},"vaultTransfers":{"version":1}}"#.utf8))
-                        : (200, [:], Data(#"{"sync":{"version":4},"meetingEvents":{"version":1}}"#.utf8))
+                        ? (200, [:], Data(#"{"sync":{"version":5},"meetingEvents":{"version":1},"vaultTransfers":{"version":1}}"#.utf8))
+                        : (200, [:], Data(#"{"sync":{"version":5},"meetingEvents":{"version":1}}"#.utf8))
                 }
                 if path.hasSuffix("/changes") { return (200, [:], initialPage) }
                 if path.hasSuffix("/relocations") {
@@ -399,7 +403,10 @@
             let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue))
             let operation = try #require(transaction.operations.first)
             receipt.withLock { value in
-                value = Data(#"{"id":"\#(transaction.id)","status":"committed","cursor":"event","records":[{"entity":"meeting_event","id":"\#(operation.entityId)","revision":null,"record":null}]}"#.utf8)
+                value = Data(
+                    #"{"id":"\#(transaction.id)","status":"committed","cursor":"event","records":[{"entity":"meeting_event","id":"\#(operation.entityId)","revision":null,"record":null}]}"#
+                        .utf8
+                )
             }
             let response = try await worker.push(transaction)
             #expect(response?.id == transaction.id)
@@ -437,7 +444,7 @@
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
                     capabilityRequests.withLock { $0 += 1 }
-                    return (200, [:], Data(#"{"sync":{"version":4},"meetingEvents":{"version":1}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":5},"meetingEvents":{"version":1}}"#.utf8))
                 }
                 if path.hasSuffix("/changes") {
                     changeRequests.withLock { $0 += 1 }
@@ -449,7 +456,14 @@
                 }
                 if path == "/api/v1/transactions", let queued {
                     commits.withLock { $0 += 1 }
-                    return (200, [:], Data(#"{"id":"\#(queued.transaction)","status":"committed","cursor":"event","records":[{"entity":"meeting_event","id":"\#(queued.operation)","revision":null,"record":null}]}"#.utf8))
+                    return (
+                        200,
+                        [:],
+                        Data(
+                            #"{"id":"\#(queued.transaction)","status":"committed","cursor":"event","records":[{"entity":"meeting_event","id":"\#(queued.operation)","revision":null,"record":null}]}"#
+                                .utf8
+                        )
+                    )
                 }
                 return (503, [:], Data())
             }
@@ -497,7 +511,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":4},"meetingEvents":{"version":1},"vaultTransfers":{"version":1}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":5},"meetingEvents":{"version":1},"vaultTransfers":{"version":1}}"#.utf8))
                 }
                 if path.hasSuffix("/relocations") {
                     relocationRequests.withLock { $0 += 1 }
@@ -543,7 +557,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 let cursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "cursor" }!.value!
                 cursors.withLock { $0.append(cursor) }
@@ -604,7 +618,7 @@
                 (
                     200,
                     [:],
-                    request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8) : changes
+                    request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8) : changes
                 )
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
@@ -631,7 +645,7 @@
                 (
                     200,
                     [:],
-                    request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8) : changes
+                    request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8) : changes
                 )
             }
             client.tokenProvider = { _, _ in await gate.wait()
@@ -758,7 +772,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 if request.url!.path.hasSuffix("snapshot") {
                     snapshots.withLock { $0 += 1 }
@@ -803,7 +817,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 if request.url!.path.hasSuffix("projects") {
                     snapshots.withLock { $0 += 1 }
@@ -840,7 +854,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 if request.url!.path.hasSuffix("changes") { return (200, [:], changes) }
                 #expect(request.url!
@@ -889,7 +903,7 @@
             ])
             let calls = Mutex(0)
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"sync":{"version":4}}"#.utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8)) }
                 if request.url!.path.hasSuffix("changes") { return (200, [:], changes) }
                 calls.withLock { $0 += 1 }
                 #expect(request.url!.path == "/api/v1/files/\(fileId.uuidString.lowercased())")
@@ -937,7 +951,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 #expect(request.url!.path.hasSuffix("changes"))
                 return (200, [:], changes)
@@ -991,7 +1005,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 if request.url!.query!.contains("cursor=before") { return (200, [:], first) }
                 return fail.withLock { $0 } ? (503, [:], Data()) : (200, [:], second)
@@ -1026,7 +1040,10 @@
                 record["vaultId"] = vaultId.uuidString
                 record["revision"] = change.revision ?? 0
                 switch change.entity {
-                case .vault: record["vaultId"] = change.entityId.uuidString
+                case .vault:
+                    record["vaultId"] = change.entityId.uuidString
+                    record["organizationId"] = change.entityId.uuidString
+                    record["role"] = "admin"
                 case .project: record["projectId"] = change.entityId.uuidString
                 case .meeting: record["meetingId"] = change.entityId.uuidString
                 case .summary, .transcript: record["meetingId"] = change.entityId.uuidString
@@ -1085,6 +1102,8 @@
                     try DahliaAccountConnectionRecord(id: connectionId, origin: origin, clientID: "test", createdAt: .now).insert(db)
                     var vault = VaultRecord(id: vaultId, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
                     vault.accountConnectionId = connectionId
+                    if vault.syncRole == nil { vault.syncRole = "admin" }
+                    if vault.organizationId == nil { vault.organizationId = .v7() }
                     vault.syncConfirmedConnectionId = connectionId
                     vault.syncPullCursor = "before"
                     try vault.insert(db)

@@ -315,8 +315,10 @@
             )
             var vault = makeVault(name: "Shared", lastOpenedAt: .distantPast)
             vault.accountConnectionId = connection.id
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = connection.id
-            vault.syncRole = "member"
+            vault.syncRole = "viewer"
             let vaultID = vault.id
             try await repository.insertDahliaAccountConnection(connection)
             try await repository.insertCloudVaultAsync(vault, revision: 1)
@@ -359,8 +361,10 @@
             )
             var vault = makeVault(name: "Shared", lastOpenedAt: .now)
             vault.accountConnectionId = connection.id
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = connection.id
-            vault.syncRole = "member"
+            vault.syncRole = "viewer"
             try await repository.insertDahliaAccountConnection(connection)
             try await repository.insertCloudVaultAsync(vault, revision: 1)
             let model = VaultManagementModel()
@@ -377,12 +381,15 @@
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
             let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+                id: .v7(),
+                origin: "https://server.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
             )
             let vault = makeVault(name: "Local", lastOpenedAt: .now)
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertVault(vault)
-            let model = VaultManagementModel(cloudVaultFetcher: { _ in [] })
+            let model = VaultManagementModel(cloudVaultFetcher: { _ in [] }, organizationFetcher: { _ in [] })
             await model.configure(appDatabase: database)
             let account = DahliaAccountConnection(
                 record: connection,
@@ -390,84 +397,59 @@
                 isCloud: false,
                 grantedScopes: ["all-apis"]
             )
-
             await model.requestServerAdoption(for: vault, connection: account)
-
-            #expect(model.pendingServerAdoption?.serverVault == nil)
+            #expect(model.pendingServerAdoption?.serverVaults.isEmpty == true)
             #expect(try repository.fetchAllVaults().first?.accountConnectionId == nil)
-
-            let pending = try #require(model.pendingServerAdoption)
             model.cancelServerAdoption()
-            let adopted = try #require(await model.confirmServerAdoption(pending))
-            #expect(adopted.accountConnectionId == connection.id)
-            #expect(adopted.syncConfirmedConnectionId == nil)
+            #expect(model.pendingServerAdoption == nil)
+            #expect(try repository.fetchAllVaults().first?.accountConnectionId == nil)
         }
 
-        @Test
-        func adoptingAnExistingMemberVaultStartsFromServerRevision() async throws {
+        @Test(arguments: ["viewer", "editor"])
+        func adoptingSameIDRequiresAnAdmin(role: String) async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
-            )
             let vault = makeVault(name: "Local", lastOpenedAt: .now)
-            let remoteCreatedAt = Date(timeIntervalSince1970: 1_800_000_000)
-            let remote = CloudVaultRecord(
-                vaultId: vault.id,
-                connectionId: connection.id,
-                name: "Server",
-                createdAt: remoteCreatedAt,
-                revision: 7,
-                role: "member"
-            )
-            try await repository.insertDahliaAccountConnection(connection)
             try repository.insertVault(vault)
-            let model = VaultManagementModel(cloudVaultFetcher: { _ in [remote] })
-            await model.configure(appDatabase: database)
-            let account = DahliaAccountConnection(
-                record: connection,
-                account: DahliaCloudAccount(id: "user", name: "User", email: nil),
-                isCloud: false,
-                grantedScopes: ["all-apis"]
-            )
-
-            await model.requestServerAdoption(for: vault, connection: account)
-            let pending = try #require(model.pendingServerAdoption)
-            let adopted = try #require(await model.confirmServerAdoption(pending))
-
-            #expect(adopted.syncRole == "member")
-            #expect(adopted.syncConfirmedConnectionId == connection.id)
-            #expect(adopted.name == remote.name)
-            #expect(adopted.createdAt == remote.createdAt)
-            #expect(try await SyncTransactionQueue.isConfirmed(
+            let remote = CloudVaultRecord(
                 vaultId: vault.id,
-                entity: .vault,
-                entityId: vault.id,
-                revision: 7,
-                dbQueue: database.dbQueue
-            ))
+                connectionId: .v7(),
+                organizationId: .v7(),
+                name: "Server",
+                createdAt: .now,
+                revision: 1,
+                role: role
+            )
+            await #expect(throws: LocalVaultImportError.self) {
+                try await repository.adoptVaultForServerSync(id: vault.id, connectionID: remote.connectionId, serverVault: remote, expectedChanges: 0)
+            }
+            #expect(try repository.fetchAllVaults().first?.accountConnectionId == nil)
         }
 
         @Test
-        func adoptionPreservesTheLocalVaultWhenMemberAccessWasRevokedBeforeConfirmation() async throws {
+        func adoptionPreservesTheLocalVaultWhenAccessWasRevokedBeforeConfirmation() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
             let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+                id: .v7(),
+                origin: "https://server.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
             )
             let vault = makeVault(name: "Local", lastOpenedAt: .now)
             let remote = CloudVaultRecord(
-                vaultId: vault.id,
+                vaultId: .v7(),
                 connectionId: connection.id,
+                organizationId: .v7(),
                 name: "Server",
                 createdAt: .now,
                 revision: 7,
-                role: "member"
+                role: "editor"
             )
             var responses = [[remote], []]
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertVault(vault)
-            let model = VaultManagementModel(cloudVaultFetcher: { _ in responses.removeFirst() })
+            let model = VaultManagementModel(cloudVaultFetcher: { _ in responses.removeFirst() }, organizationFetcher: { _ in [] })
             await model.configure(appDatabase: database)
             let account = DahliaAccountConnection(
                 record: connection,
@@ -475,49 +457,10 @@
                 isCloud: false,
                 grantedScopes: ["all-apis"]
             )
-
             await model.requestServerAdoption(for: vault, connection: account)
             let pending = try #require(model.pendingServerAdoption)
-            #expect(await model.confirmServerAdoption(pending) == nil)
-
-            let preserved = try #require(repository.fetchAllVaults().first)
-            #expect(preserved.accountConnectionId == nil)
-            #expect(preserved.syncConfirmedConnectionId == nil)
-        }
-
-        @Test
-        func adoptionRequiresAnotherConfirmationWhenTheServerVaultAppears() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            let vault = makeVault(name: "Local", lastOpenedAt: .now)
-            let remote = CloudVaultRecord(
-                vaultId: vault.id,
-                connectionId: connection.id,
-                name: "Server",
-                createdAt: .now,
-                revision: 7,
-                role: "member"
-            )
-            var responses: [[CloudVaultRecord]] = [[], [remote]]
-            try await repository.insertDahliaAccountConnection(connection)
-            try repository.insertVault(vault)
-            let model = VaultManagementModel(cloudVaultFetcher: { _ in responses.removeFirst() })
-            await model.configure(appDatabase: database)
-            let account = DahliaAccountConnection(
-                record: connection,
-                account: DahliaCloudAccount(id: "user", name: "User", email: nil),
-                isCloud: false,
-                grantedScopes: ["all-apis"]
-            )
-
-            await model.requestServerAdoption(for: vault, connection: account)
-            let pending = try #require(model.pendingServerAdoption)
-            #expect(await model.confirmServerAdoption(pending) == nil)
-            #expect(model.pendingServerAdoption?.serverVault?.role == "member")
-            #expect(try repository.fetchAllVaults().first?.accountConnectionId == nil)
+            #expect(await model.confirmServerAdoption(pending, destinationId: remote.vaultId, organizationId: nil) == nil)
+            #expect(try repository.fetchAllVaults().first(where: { $0.id == vault.id })?.accountConnectionId == nil)
         }
 
         @Test

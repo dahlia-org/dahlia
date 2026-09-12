@@ -1,6 +1,7 @@
 import { and, eq, exists, getTableColumns, getTableName, inArray, type AnyColumn, type SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import type * as Schema from "../db/postgres-app-schema";
+import type * as Schema from "../db/auth-schema";
+import { vaultPermissions } from "../auth/vault-permissions";
 import { createVaultCipher, EncryptionError, unwrapDataKey, wrapDataKey, type EncryptionConfig, type VaultCipher } from "./crypto";
 
 type ContentSchema = typeof Schema;
@@ -21,18 +22,19 @@ const policies: Record<string, { ids: string[]; fields: Row; hashes?: string[] }
 };
 
 /** One instance per authorized database transaction; plaintext keys are never persisted. */
-export function createContentEncryption(db: NodePgDatabase, schema: ContentSchema, userId: string, config?: EncryptionConfig, canRead?: (vault: AnyColumn) => SQL | undefined) {
+export function createContentEncryption(db: NodePgDatabase, schema: ContentSchema, userId: string, config?: EncryptionConfig, canRead?: (vault: AnyColumn) => SQL | undefined, maintenance?: "receipt" | "retention" | "governance") {
   const keys = new Map<string, Promise<VaultCipher | null>>();
   async function load(vaultId: string): Promise<VaultCipher | null> {
+    const readAccess = canRead ?? (maintenance ? () => undefined : vaultPermissions(db, schema, userId).read);
     const [vault] = await db.select({ encryption: schema.syncedVault.encryption }).from(schema.syncedVault)
-      .where(and(eq(schema.syncedVault.vaultId, vaultId), canRead ? canRead(schema.syncedVault.vaultId) : exists(
-        db.select({ id: schema.syncedVaultPermission.vaultId }).from(schema.syncedVaultPermission).where(and(
-          eq(schema.syncedVaultPermission.vaultId, vaultId), eq(schema.syncedVaultPermission.principalId, userId),
-          eq(schema.syncedVaultPermission.principalType, "user"), eq(schema.syncedVaultPermission.role, "owner")))))).limit(1);
+      .where(and(eq(schema.syncedVault.vaultId, vaultId), readAccess(schema.syncedVault.vaultId))).limit(1);
     if (vault?.encryption === "none") return null;
-    const [record] = await db.select().from(schema.vaultKey).where(eq(schema.vaultKey.vaultId, vaultId)).limit(1);
+    if (!vault && !maintenance) return null;
+    const [record] = await db.select().from(schema.vaultKey).where(and(eq(schema.vaultKey.vaultId, vaultId),
+      maintenance === "receipt" ? exists(db.select({ id: schema.syncTransactionReceipt.transactionId }).from(schema.syncTransactionReceipt)
+        .where(and(eq(schema.syncTransactionReceipt.vaultId, vaultId), eq(schema.syncTransactionReceipt.ownerUserId, userId)))) : undefined)).limit(1);
     if (!record && !vault) return null;
-    if (!record || (!vault && record.ownerUserId !== userId)) throw new EncryptionError();
+    if (!record) throw new EncryptionError();
     const raw = await unwrapDataKey(config, vaultId, record.wrappedKey);
     try { return await createVaultCipher(vaultId, raw); }
     finally { raw.fill(0); }
@@ -63,6 +65,7 @@ export function createContentEncryption(db: NodePgDatabase, schema: ContentSchem
     return JSON.stringify(policy.ids.map((id) => row[id]));
   }
   async function read<T extends Row>(table: ContentTable, rows: T[], vaultId?: string): Promise<T[]> {
+    if (maintenance && table !== schema.syncTransactionReceipt && !(maintenance === "governance" && table === schema.syncedVault)) throw new EncryptionError();
     const result: T[] = [];
     for (const row of rows) {
       const { encryptedPayload, ...plain } = row;
@@ -79,6 +82,7 @@ export function createContentEncryption(db: NodePgDatabase, schema: ContentSchem
     return result;
   }
   async function write<T extends Row>(table: ContentTable, values: T, keyFields: Row = {}): Promise<T & { encryptedPayload?: string | null }> {
+    if (maintenance === "receipt" || ((maintenance === "retention" || maintenance === "governance") && table !== schema.syncTransactionReceipt)) throw new EncryptionError();
     const context = { ...keyFields, ...values };
     const tableName = encryptionName(table);
     const policy = policies[tableName]!;
@@ -131,10 +135,13 @@ export function createContentEncryption(db: NodePgDatabase, schema: ContentSchem
       return result;
     },
     async create(vaultId: string) {
-      if (!config) throw new EncryptionError();
+      if (!config || maintenance) throw new EncryptionError();
+      const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
+        .where(and(eq(schema.syncedVault.vaultId, vaultId), vaultPermissions(db, schema, userId).write(schema.syncedVault.vaultId))).limit(1);
+      if (!vault) throw new EncryptionError();
       const raw = crypto.getRandomValues(new Uint8Array(32));
       try {
-        await db.insert(schema.vaultKey).values({ vaultId, ownerUserId: userId, wrappedKey: await wrapDataKey(config, vaultId, raw) });
+        await db.insert(schema.vaultKey).values({ vaultId, wrappedKey: await wrapDataKey(config, vaultId, raw) });
         const created = await createVaultCipher(vaultId, raw);
         keys.set(vaultId, Promise.resolve(created));
       } finally { raw.fill(0); }

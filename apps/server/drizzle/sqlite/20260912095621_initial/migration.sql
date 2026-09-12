@@ -189,7 +189,9 @@ CREATE TABLE `organization` (
 	`slug` text NOT NULL,
 	`logo` text,
 	`created_at` integer NOT NULL,
-	`metadata` text
+	`metadata` text,
+	`kind` text DEFAULT 'team' NOT NULL,
+	`domain` text UNIQUE
 );
 --> statement-breakpoint
 CREATE TABLE `session` (
@@ -238,7 +240,8 @@ CREATE TABLE `user` (
 	`role` text,
 	`banned` integer DEFAULT false,
 	`ban_reason` text,
-	`ban_expires` integer
+	`ban_expires` integer,
+	`registration_state` text DEFAULT 'personal' NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `verification` (
@@ -335,7 +338,6 @@ CREATE TABLE `search_documents` (
 CREATE TABLE `jobs_search_index` (
 	`vault_id` text NOT NULL,
 	`document_id` text NOT NULL,
-	`owner_user_id` text NOT NULL,
 	`model` text NOT NULL,
 	`dimensions` integer NOT NULL,
 	`generation` integer DEFAULT 1 NOT NULL,
@@ -348,14 +350,8 @@ CREATE TABLE `jobs_search_index` (
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	CONSTRAINT `jobs_search_index_pk` PRIMARY KEY(`vault_id`, `document_id`),
 	CONSTRAINT `fk_jobs_search_index_vault_id_vaults_vault_id_fk` FOREIGN KEY (`vault_id`) REFERENCES `vaults`(`vault_id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_jobs_search_index_owner_user_id_user_id_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
 	CONSTRAINT "search_index_job_status_check" CHECK("status" IN ('pending', 'processing', 'failed')),
 	CONSTRAINT "search_index_job_dimensions_check" CHECK("dimensions" BETWEEN 32 AND 1024)
-);
---> statement-breakpoint
-CREATE TABLE `server_initializations` (
-	`name` text PRIMARY KEY,
-	`initialized_at` integer NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `server_settings` (
@@ -421,7 +417,6 @@ CREATE TABLE `jobs_summary` (
 --> statement-breakpoint
 CREATE TABLE `sync_changes` (
 	`sequence` integer PRIMARY KEY AUTOINCREMENT,
-	`owner_user_id` text NOT NULL,
 	`vault_id` text NOT NULL,
 	`entity` text NOT NULL,
 	`entity_id` text NOT NULL,
@@ -447,12 +442,9 @@ CREATE TABLE `transaction_receipts` (
 );
 --> statement-breakpoint
 CREATE TABLE `sync_vault_state` (
-	`owner_user_id` text NOT NULL,
-	`vault_id` text NOT NULL,
+	`vault_id` text PRIMARY KEY NOT NULL,
 	`latest_sequence` integer DEFAULT 0 NOT NULL,
 	`pruned_through` integer DEFAULT 0 NOT NULL,
-	CONSTRAINT `sync_vault_state_pk` PRIMARY KEY(`owner_user_id`, `vault_id`),
-	CONSTRAINT `fk_sync_vault_state_owner_user_id_user_id_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
 	CONSTRAINT "sync_vault_state_boundary_check" CHECK("pruned_through" >= 0 AND "latest_sequence" >= "pruned_through")
 );
 --> statement-breakpoint
@@ -562,13 +554,16 @@ CREATE TABLE `vaults` (
 	`encryption` text DEFAULT 'none' NOT NULL,
 	`encrypted_payload` text,
 	`vault_id` text PRIMARY KEY,
+	`organization_id` text NOT NULL,
+	`created_by` text NOT NULL,
 	`name` text NOT NULL,
 	`icon` text,
 	`color` text,
 	`revision` integer DEFAULT 1 NOT NULL,
 	`deleting_at` integer,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL
+	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
+	CONSTRAINT `fk_vaults_organization_id_organization_id_fk` FOREIGN KEY (`organization_id`) REFERENCES `organization`(`id`) ON DELETE RESTRICT
 );
 --> statement-breakpoint
 CREATE TABLE `vault_permissions` (
@@ -582,8 +577,7 @@ CREATE TABLE `vault_permissions` (
 	CONSTRAINT `fk_vault_permissions_vault_id_vaults_vault_id_fk` FOREIGN KEY (`vault_id`) REFERENCES `vaults`(`vault_id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_vault_permissions_granted_by_user_id_user_id_fk` FOREIGN KEY (`granted_by_user_id`) REFERENCES `user`(`id`) ON DELETE RESTRICT,
 	CONSTRAINT "vault_permission_principal_type_check" CHECK("principal_type" IN ('user', 'organization', 'team')),
-	CONSTRAINT "vault_permission_role_check" CHECK("role" IN ('owner', 'member')),
-	CONSTRAINT "vault_permission_owner_user_check" CHECK("role" <> 'owner' OR "principal_type" = 'user')
+	CONSTRAINT "vault_permission_role_check" CHECK("role" IN ('admin', 'editor', 'viewer'))
 );
 --> statement-breakpoint
 CREATE TABLE `transcripts` (
@@ -616,7 +610,6 @@ CREATE TABLE `transcript_patch_chunks` (
 --> statement-breakpoint
 CREATE TABLE `vault_keys` (
 	`vault_id` text PRIMARY KEY,
-	`owner_user_id` text NOT NULL,
 	`wrapped_key` text NOT NULL,
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL
 );
@@ -670,8 +663,7 @@ CREATE INDEX `search_index_job_claim_idx` ON `jobs_search_index` (`status`,`avai
 CREATE INDEX `storage_delete_job_claim_idx` ON `jobs_storage_delete` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
 CREATE UNIQUE INDEX `summary_job_active_meeting_idx` ON `jobs_summary` (`meeting_id`) WHERE "jobs_summary"."status" IN ('pending', 'processing');--> statement-breakpoint
 CREATE INDEX `summary_job_owner_created_idx` ON `jobs_summary` (`owner_user_id`,`created_at`);--> statement-breakpoint
-CREATE INDEX `sync_change_owner_vault_sequence_idx` ON `sync_changes` (`owner_user_id`,`vault_id`,`sequence`);--> statement-breakpoint
-CREATE INDEX `sync_change_owner_sequence_idx` ON `sync_changes` (`owner_user_id`,`sequence`);--> statement-breakpoint
+CREATE INDEX `sync_change_vault_sequence_idx` ON `sync_changes` (`vault_id`,`sequence`);--> statement-breakpoint
 CREATE INDEX `transaction_receipt_owner_created_idx` ON `transaction_receipts` (`owner_user_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `files_vault_file_idx` ON `files` (`vault_id`,`file_id`);--> statement-breakpoint
 CREATE INDEX `meetings_calendar_event_idx` ON `meetings` (`ical_uid`,`recurrence_id`);--> statement-breakpoint
@@ -680,7 +672,6 @@ CREATE INDEX `project_vault_parent_name_idx` ON `projects` (`vault_id`,`parent_p
 CREATE INDEX `recordings_meeting_session_idx` ON `recordings` (`meeting_id`,`session_id`);--> statement-breakpoint
 CREATE INDEX `transcript_segment_created_idx` ON `transcript_segments` (`transcript_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `transcript_segment_start_id_idx` ON `transcript_segments` (`transcript_id`,`started_at`,`segment_id`);--> statement-breakpoint
-CREATE UNIQUE INDEX `vault_permission_single_owner_idx` ON `vault_permissions` (`vault_id`) WHERE "vault_permissions"."role" = 'owner';--> statement-breakpoint
 CREATE INDEX `vault_permission_principal_vault_idx` ON `vault_permissions` (`principal_type`,`principal_id`,`role`,`vault_id`);--> statement-breakpoint
 CREATE INDEX `vault_transfer_owner_sequence_idx` ON `vault_transfers` (`owner_user_id`,`sequence`);--> statement-breakpoint
 CREATE VIEW `recording_sessions` AS

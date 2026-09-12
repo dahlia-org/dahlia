@@ -246,10 +246,9 @@ import DahliaRuntimeSupport
                     clientID: "test",
                     createdAt: .now
                 ).insert(db)
-                var vault = VaultRecord(id: target.vaultID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
-                vault.accountConnectionId = target.connectionID
-                vault.syncConfirmedConnectionId = target.connectionID
-                vault.syncPullCursor = "ready"
+                let vault = VaultRecord(id: target.vaultID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now,
+                                        accountConnectionId: target.connectionID, organizationId: .v7(), syncRole: "admin",
+                                        syncConfirmedConnectionId: target.connectionID, syncPullCursor: "ready")
                 try vault.insert(db)
                 try MeetingRecord(
                     id: target.meetingID,
@@ -523,10 +522,9 @@ import DahliaRuntimeSupport
                 try DahliaAccountConnectionRecord(
                     id: target.connectionID, origin: target.origin, clientID: "test", createdAt: .now
                 ).insert(db)
-                var vault = VaultRecord(id: target.vaultID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
-                vault.accountConnectionId = target.connectionID
-                vault.syncConfirmedConnectionId = target.connectionID
-                vault.syncPullCursor = "ready"
+                let vault = VaultRecord(id: target.vaultID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now,
+                                        accountConnectionId: target.connectionID, organizationId: .v7(), syncRole: "admin",
+                                        syncConfirmedConnectionId: target.connectionID, syncPullCursor: "ready")
                 try vault.insert(db)
                 try MeetingRecord(
                     id: target.meetingID, vaultId: target.vaultID, projectId: nil, name: "Test",

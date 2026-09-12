@@ -15,7 +15,7 @@ function headerConfig(authHeader: string): AppConfig {
 }
 
 describe("proxy identity boundary", () => {
-  it("uses forwarded user ID and preferred username headers", async () => {
+  it("uses email identity and the preferred username, ignoring forwarded user ID", async () => {
     const config = headerConfig("X-Forwarded-Email");
     const identity = await new IdentityService(config).fromBrowser(new Request("https://dahlia.example/api/v1/session", {
       headers: {
@@ -26,10 +26,10 @@ describe("proxy identity boundary", () => {
     }));
 
     expect(identity).toEqual({
-      userId: "123456789",
+      userId: "user@example.com",
       email: "user@example.com",
       name: "Dahlia User",
-      workspaceId: "personal:123456789",
+      workspaceId: "personal:user@example.com",
       source: "header",
     });
   });
@@ -52,7 +52,7 @@ describe("proxy identity boundary", () => {
     const config = headerConfig("X-Forwarded-Email");
 
     await expect(new IdentityService(config).fromBrowser(new Request("https://dahlia.example/api/v1/session")))
-      .rejects.toThrow("X-Forwarded-Email is missing");
+      .rejects.toThrow("X-Forwarded-Email must contain a valid email");
   });
 
   it("projects the verified header identity before returning it", async () => {
@@ -69,7 +69,7 @@ describe("proxy identity boundary", () => {
       },
     }));
 
-    expect(projected).toEqual(["stable-user-id"]);
+    expect(projected).toEqual(["user@example.com"]);
   });
 
   it("fails closed when the header identity conflicts with the user directory", async () => {

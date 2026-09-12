@@ -149,7 +149,12 @@
             )
             try fixture.database.dbQueue.write { db in
                 try connection.insert(db)
-                try VaultRecord.filter(key: fixture.vault.id).updateAll(db, Column("accountConnectionId").set(to: connection.id))
+                try VaultRecord.filter(key: fixture.vault.id).updateAll(
+                    db,
+                    Column("accountConnectionId").set(to: connection.id),
+                    Column("organizationId").set(to: UUID.v7()),
+                    Column("syncRole").set(to: "admin")
+                )
             }
             return connection.id
         }

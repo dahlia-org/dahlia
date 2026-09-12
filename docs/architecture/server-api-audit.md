@@ -72,19 +72,14 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | putTeamPermission | maintained | PUT `/api/v1/vaults/{vaultId}/permissions/teams/{teamId}` | `/api/v1/vaults/{vaultId}/permissions/teams/{teamId}` | Grant read-only team access; owner only | apps/server/src/client/App.tsx |
 | deleteTeamPermission | maintained | DELETE `/api/v1/vaults/{vaultId}/permissions/teams/{teamId}` | `/api/v1/vaults/{vaultId}/permissions/teams/{teamId}` | Revoke team access; owner only | apps/server/src/client/App.tsx |
 | listOrganizations | modified | GET `/api/v1/organizations` | `/api/v1/organizations` | Current organization memberships | apps/server/src/client/App.tsx<br>apps/server/src/client/Sidebar.tsx<br>apps/desktop/Sources/Dahlia/Services/CloudVaultDiscovery.swift |
-| getOrganization | maintained | GET `/api/v1/organizations/{organizationId}` | `/api/v1/organizations/{organizationId}` | External organization (header mode only) | public API; no bundled caller |
-| listOrganizationMembers | modified | GET `/api/v1/organizations/{organizationId}/members` | `/api/v1/organizations/{organizationId}/members` | External organization members (header mode only) | apps/server/src/client/App.tsx |
-| listTeams | modified | GET `/api/v1/organizations/{organizationId}/teams` | `/api/v1/organizations/{organizationId}/teams` | External teams (header mode only) | apps/server/src/client/App.tsx |
-| createTeam | maintained | POST `/api/v1/organizations/{organizationId}/teams` | `/api/v1/organizations/{organizationId}/teams` | Create external team (header mode only) | apps/server/src/client/App.tsx |
-| updateTeam | maintained | PATCH `/api/v1/organizations/{organizationId}/teams/{teamId}` | `/api/v1/organizations/{organizationId}/teams/{teamId}` | Rename external team (header mode only) | apps/server/src/client/App.tsx |
-| deleteTeam | maintained | DELETE `/api/v1/organizations/{organizationId}/teams/{teamId}` | `/api/v1/organizations/{organizationId}/teams/{teamId}` | Delete external team (header mode only) | apps/server/src/client/App.tsx |
-| listTeamMembers | modified | GET `/api/v1/organizations/{organizationId}/teams/{teamId}/members` | `/api/v1/organizations/{organizationId}/teams/{teamId}/members` | External team members (header mode only) | apps/server/src/client/App.tsx |
-| putTeamMember | maintained | PUT `/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}` | `/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}` | Add an organization member to an external team | apps/server/src/client/App.tsx |
-| deleteTeamMember | maintained | DELETE `/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}` | `/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}` | Remove an external team member | apps/server/src/client/App.tsx |
 | getServerOrganization | modified | GET `/api/v1/admin/organizations/{organizationId}` | `none` | Open organization directory details for server administrators regardless of membership. | apps/server/src/client/App.tsx |
 | searchPermissionTargets | modified | GET `/api/v1/vaults/{vaultId}/permission-targets` | `new public contract` | Owner-managed read-only sharing with searchable organization-scoped targets | apps/server/src/client/App.tsx |
 | putUserPermission | modified | PUT `/api/v1/vaults/{vaultId}/permissions/users/{userId}` | `new public contract` | Owner-managed read-only sharing with searchable organization-scoped targets | apps/server/src/client/App.tsx |
 | deleteUserPermission | modified | DELETE `/api/v1/vaults/{vaultId}/permissions/users/{userId}` | `new public contract` | Owner-managed read-only sharing with searchable organization-scoped targets | apps/server/src/client/App.tsx |
+| listGovernanceVaults | modified | GET `/api/v1/organizations/{organizationId}/vaults` | `new public contract` | Organization governance metadata | apps/server/src/client/App.tsx |
+| confirmVaultDeletion | modified | GET `/api/v1/organizations/{organizationId}/vaults/{vaultId}/deletion` | `new public contract` | Confirmation for Vault deletion | apps/server/src/client/App.tsx |
+| forceDeleteVault | modified | DELETE `/api/v1/organizations/{organizationId}/vaults/{vaultId}` | `new public contract` | Confirmed Vault deletion | apps/server/src/client/App.tsx |
+| createOrganization | modified | POST `/api/v1/organizations` | `new public contract` | Desktop Organization creation uses the same atomic Better Auth operation. | apps/desktop/Sources/Dahlia/Services/CloudVaultDiscovery.swift |
 
 ## Delegated protocols
 
@@ -127,8 +122,8 @@ These concrete endpoints preserve Better Auth/OAuth/OIDC, OpenAI and MCP formats
 | deleteUserCallback | GET `/api/auth/delete-user/callback` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
 | error | GET `/api/auth/error` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
 | getAccessToken | POST `/api/auth/get-access-token` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| getSession | GET `/api/auth/get-session` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| getSession | POST `/api/auth/get-session` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
+| getSession | GET `/api/auth/get-session` | Better Auth / OAuth / OIDC | accounts and header |
+| getSession | POST `/api/auth/get-session` | Better Auth / OAuth / OIDC | accounts and header |
 | getJwks | GET `/api/auth/jwks` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
 | linkSocialAccount | POST `/api/auth/link-social` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
 | listUserAccounts | GET `/api/auth/list-accounts` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
@@ -159,37 +154,37 @@ These concrete endpoints preserve Better Auth/OAuth/OIDC, OpenAI and MCP formats
 | oauth2UserInfo | GET `/api/auth/oauth2/userinfo` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
 | oauth2UserInfo | POST `/api/auth/oauth2/userinfo` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
 | ok | GET `/api/auth/ok` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| acceptInvitation | POST `/api/auth/organization/accept-invitation` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| addTeamMember | POST `/api/auth/organization/add-team-member` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| cancelInvitation | POST `/api/auth/organization/cancel-invitation` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| checkOrganizationSlug | POST `/api/auth/organization/check-slug` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| createOrganization | POST `/api/auth/organization/create` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| createTeam | POST `/api/auth/organization/create-team` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| deleteOrganization | POST `/api/auth/organization/delete` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| getActiveMember | GET `/api/auth/organization/get-active-member` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| getActiveMemberRole | GET `/api/auth/organization/get-active-member-role` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| getFullOrganization | GET `/api/auth/organization/get-full-organization` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| getInvitation | GET `/api/auth/organization/get-invitation` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| getOrganization | GET `/api/auth/organization/get-organization` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| hasPermission | POST `/api/auth/organization/has-permission` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| createInvitation | POST `/api/auth/organization/invite-member` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| leaveOrganization | POST `/api/auth/organization/leave` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| listOrganizations | GET `/api/auth/organization/list` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| listInvitations | GET `/api/auth/organization/list-invitations` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| listMembers | GET `/api/auth/organization/list-members` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| listTeamMembers | GET `/api/auth/organization/list-team-members` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| listOrganizationTeams | GET `/api/auth/organization/list-teams` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| listUserInvitations | GET `/api/auth/organization/list-user-invitations` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| listUserTeams | GET `/api/auth/organization/list-user-teams` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| rejectInvitation | POST `/api/auth/organization/reject-invitation` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| removeMember | POST `/api/auth/organization/remove-member` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| removeTeam | POST `/api/auth/organization/remove-team` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| removeTeamMember | POST `/api/auth/organization/remove-team-member` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| setActiveOrganization | POST `/api/auth/organization/set-active` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| setActiveTeam | POST `/api/auth/organization/set-active-team` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| updateOrganization | POST `/api/auth/organization/update` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| updateMemberRole | POST `/api/auth/organization/update-member-role` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| updateTeam | POST `/api/auth/organization/update-team` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
+| acceptInvitation | POST `/api/auth/organization/accept-invitation` | Better Auth / OAuth / OIDC | accounts and header |
+| addTeamMember | POST `/api/auth/organization/add-team-member` | Better Auth / OAuth / OIDC | accounts and header |
+| cancelInvitation | POST `/api/auth/organization/cancel-invitation` | Better Auth / OAuth / OIDC | accounts and header |
+| checkOrganizationSlug | POST `/api/auth/organization/check-slug` | Better Auth / OAuth / OIDC | accounts and header |
+| createOrganization | POST `/api/auth/organization/create` | Better Auth / OAuth / OIDC | accounts and header |
+| createTeam | POST `/api/auth/organization/create-team` | Better Auth / OAuth / OIDC | accounts and header |
+| deleteOrganization | POST `/api/auth/organization/delete` | Better Auth / OAuth / OIDC | accounts and header |
+| getActiveMember | GET `/api/auth/organization/get-active-member` | Better Auth / OAuth / OIDC | accounts and header |
+| getActiveMemberRole | GET `/api/auth/organization/get-active-member-role` | Better Auth / OAuth / OIDC | accounts and header |
+| getFullOrganization | GET `/api/auth/organization/get-full-organization` | Better Auth / OAuth / OIDC | accounts and header |
+| getInvitation | GET `/api/auth/organization/get-invitation` | Better Auth / OAuth / OIDC | accounts and header |
+| getOrganization | GET `/api/auth/organization/get-organization` | Better Auth / OAuth / OIDC | accounts and header |
+| hasPermission | POST `/api/auth/organization/has-permission` | Better Auth / OAuth / OIDC | accounts and header |
+| createInvitation | POST `/api/auth/organization/invite-member` | Better Auth / OAuth / OIDC | accounts and header |
+| leaveOrganization | POST `/api/auth/organization/leave` | Better Auth / OAuth / OIDC | accounts and header |
+| listOrganizations | GET `/api/auth/organization/list` | Better Auth / OAuth / OIDC | accounts and header |
+| listInvitations | GET `/api/auth/organization/list-invitations` | Better Auth / OAuth / OIDC | accounts and header |
+| listMembers | GET `/api/auth/organization/list-members` | Better Auth / OAuth / OIDC | accounts and header |
+| listTeamMembers | GET `/api/auth/organization/list-team-members` | Better Auth / OAuth / OIDC | accounts and header |
+| listOrganizationTeams | GET `/api/auth/organization/list-teams` | Better Auth / OAuth / OIDC | accounts and header |
+| listUserInvitations | GET `/api/auth/organization/list-user-invitations` | Better Auth / OAuth / OIDC | accounts and header |
+| listUserTeams | GET `/api/auth/organization/list-user-teams` | Better Auth / OAuth / OIDC | accounts and header |
+| rejectInvitation | POST `/api/auth/organization/reject-invitation` | Better Auth / OAuth / OIDC | accounts and header |
+| removeMember | POST `/api/auth/organization/remove-member` | Better Auth / OAuth / OIDC | accounts and header |
+| removeTeam | POST `/api/auth/organization/remove-team` | Better Auth / OAuth / OIDC | accounts and header |
+| removeTeamMember | POST `/api/auth/organization/remove-team-member` | Better Auth / OAuth / OIDC | accounts and header |
+| setActiveOrganization | POST `/api/auth/organization/set-active` | Better Auth / OAuth / OIDC | accounts and header |
+| setActiveTeam | POST `/api/auth/organization/set-active-team` | Better Auth / OAuth / OIDC | accounts and header |
+| updateOrganization | POST `/api/auth/organization/update` | Better Auth / OAuth / OIDC | accounts and header |
+| updateMemberRole | POST `/api/auth/organization/update-member-role` | Better Auth / OAuth / OIDC | accounts and header |
+| updateTeam | POST `/api/auth/organization/update-team` | Better Auth / OAuth / OIDC | accounts and header |
 | refreshToken | POST `/api/auth/refresh-token` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
 | requestPasswordReset | POST `/api/auth/request-password-reset` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
 | resetPassword | POST `/api/auth/reset-password` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
@@ -200,7 +195,7 @@ These concrete endpoints preserve Better Auth/OAuth/OIDC, OpenAI and MCP formats
 | sendVerificationEmail | POST `/api/auth/send-verification-email` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
 | signInEmail | POST `/api/auth/sign-in/email` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
 | signInSocial | POST `/api/auth/sign-in/social` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
-| signOut | POST `/api/auth/sign-out` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
+| signOut | POST `/api/auth/sign-out` | Better Auth / OAuth / OIDC | accounts and header |
 | signUpEmail | POST `/api/auth/sign-up/email` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
 | getToken | GET `/api/auth/token` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
 | unlinkAccount | POST `/api/auth/unlink-account` | Better Auth / OAuth / OIDC | accounts; plugin privileges and session roles still apply |
@@ -217,6 +212,7 @@ These concrete endpoints preserve Better Auth/OAuth/OIDC, OpenAI and MCP formats
 | mcp | POST `/mcp` | MCP 2026-07-28 stateless JSON-RPC | MCP OAuth scopes/DPoP or trusted proxy |
 | mcpScreenshot | GET `/mcp/resources/vaults/{vaultId}/meetings/{meetingId}/screenshots/{screenshotId}/content` | MCP resource HTTP bytes | current Vault read permission and MCP read scope |
 | headMcpScreenshot | HEAD `/mcp/resources/vaults/{vaultId}/meetings/{meetingId}/screenshots/{screenshotId}/content` | MCP resource HTTP bytes | current Vault read permission and MCP read scope |
+| signInHeader | POST `/api/auth/header/sign-in` | Better Auth | header |
 
 MCP methods: tools/list, tools/call. Tools: search, query_meetings, query_projects, get_project, get_meeting, get_meeting_transcript, query_screenshots, get_meeting_screenshots. Read-only. Each call checks its capability scope and current Vault access.
 

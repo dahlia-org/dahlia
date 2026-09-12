@@ -183,7 +183,7 @@ describe("desktop-style meeting layout", () => {
     expect(navigation).not.toContain("organization-switcher");
     expect(navigation).not.toContain("Account settings");
     expect(footer).toContain('popoverTarget="account-menu"');
-    expect(footer).toContain("No organization selected");
+    expect(footer).toContain("All accessible Vaults");
     expect(footer).not.toContain('href="/vaults"');
     expect(navigation).toContain('href="/vaults"');
     expect(footer).toContain('<strong>Organizations</strong>');
@@ -331,7 +331,7 @@ describe("dashboard navigation", () => {
 
   it("builds exclusive scopes and expands the selected Project ancestry by ID", () => {
     expect(apiUrls.listVaults({})).toBe("/api/v1/vaults");
-    expect(apiUrls.listVaults({ params: { query: { owner: "user+1" } } })).toBe("/api/v1/vaults?owner=user%2B1");
+    expect(apiUrls.listVaults({ params: { query: { organizationId: "org+1" } } })).toBe("/api/v1/vaults?organizationId=org%2B1");
     expect(apiUrls.listVaults({ params: { query: { organizationId: "org+1" } } })).toBe("/api/v1/vaults?organizationId=org%2B1");
     const projects = [
       { projectId: "parent", name: "Same" },

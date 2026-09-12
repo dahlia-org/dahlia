@@ -1,3 +1,4 @@
+import { headerEmail } from "./header";
 import { originalPublicRequest } from "../public-http";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 
@@ -38,7 +39,7 @@ export class IdentityService {
     private readonly auth?: DahliaAuth,
     private readonly projectUser?: IdentityUserProjector,
   ) {
-    this.verifyAccessToken = auth ? createAccessTokenVerifier(auth) : undefined;
+    this.verifyAccessToken = auth && config.authProvider === "accounts" ? createAccessTokenVerifier(auth) : undefined;
   }
 
   async fromBrowser(request: Request): Promise<Identity> {
@@ -55,7 +56,10 @@ export class IdentityService {
         impersonated: Boolean(session.session.impersonatedBy),
       });
     }
-    return this.fromHeader(request);
+    const identity = await this.fromHeader(request);
+    const session = await this.auth?.api.getSession({ headers: request.headers });
+    if (session && session.user.id !== identity.userId) throw new AuthenticationError("proxy_session_mismatch");
+    return identity;
   }
 
   async fromGateway(
@@ -171,9 +175,9 @@ export class IdentityService {
   }
 
   private async fromHeader(request: Request): Promise<Identity> {
-    const email = request.headers.get(this.config.authHeader)?.trim().toLowerCase();
-    if (!email) throw new AuthenticationError(`${this.config.authHeader} is missing`);
-    const userId = request.headers.get("X-Forwarded-User")?.trim() || email;
+    const email = headerEmail(request.headers.get(this.config.authHeader));
+    if (!email) throw new AuthenticationError(`${this.config.authHeader} must contain a valid email`);
+    const userId = email;
     const name = request.headers.get("X-Forwarded-Preferred-Username")?.trim() || undefined;
     const identity: Identity = {
       userId,

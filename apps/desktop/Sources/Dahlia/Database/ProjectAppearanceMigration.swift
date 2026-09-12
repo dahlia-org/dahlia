@@ -12,7 +12,7 @@ enum ProjectAppearanceMigration {
             guard let vault = try VaultRecord.fetchOne(db, key: vaultId),
                   vault.allowsCanonicalEdits, vault.syncRecoveryState == nil else { return [] }
             let isRemote = vault.accountConnectionId != nil
-            if isRemote, vault.syncRole != "owner" || vault.syncConfirmedConnectionId != vault.accountConnectionId { return [] }
+            if isRemote, !vault.allowsCanonicalEdits || vault.syncConfirmedConnectionId != vault.accountConnectionId { return [] }
             var completed: Set<String> = []
             for (key, appearance) in saved {
                 guard let id = UUID(uuidString: key),

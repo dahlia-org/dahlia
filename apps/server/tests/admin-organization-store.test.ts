@@ -21,7 +21,7 @@ it("reads only the requested organization's members and teams with independent p
         db.prepare('INSERT INTO team (id,organization_id,name,created_at) VALUES (?,?,?,0)').run(id, id, id);
       }
     } finally { db.close(); }
-    expect(await store.getServerOrganization("one", 100, 0, 0)).toEqual({ id: "one", name: "one", slug: "one",
+    expect(await store.getServerOrganization("one", 100, 0, 0)).toEqual({ id: "one", name: "one", slug: "one", kind: "team",
       members: [{ id: "one", userId: "one", role: "member", name: "one", email: "one@example.com" }], teams: [{ id: "one", name: "one" }] });
     expect(await store.getServerOrganization("one", 100, 1, 0)).toMatchObject({ members: [], teams: [{ id: "one" }] });
     expect(await store.getServerOrganization("one", 100, 0, 1)).toMatchObject({ members: [{ id: "one" }], teams: [] });

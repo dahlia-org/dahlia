@@ -274,7 +274,7 @@
                 let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://references.invalid", clientID: "test", createdAt: .now)
                 try connection.insert(db)
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ? WHERE id = ?",
+                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'), syncConfirmedConnectionId = ? WHERE id = ?",
                     arguments: [connection.id, connection.id, vaultId]
                 )
                 try db.execute(
@@ -453,9 +453,9 @@
                             switch change {
                             case "revision": try db.execute(sql: "UPDATE sync_entity_state SET confirmedRevision = 4 WHERE entity = 'transcript'")
                             case "delete": try db.execute(sql: "DELETE FROM meetings WHERE id = ?", arguments: [fixture.meetingId])
-                            case "role": try db.execute(sql: "UPDATE vaults SET syncRole = 'member' WHERE id = ?", arguments: [fixture.vaultId])
+                            case "role": try db.execute(sql: "UPDATE vaults SET syncRole = 'viewer' WHERE id = ?", arguments: [fixture.vaultId])
                             case "signout": try db.execute(
-                                    sql: "UPDATE vaults SET accountConnectionId = NULL WHERE id = ?",
+                                    sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?",
                                     arguments: [fixture.vaultId]
                                 )
                             case "queue":
@@ -787,7 +787,7 @@
                         arguments: [UUID.v7(), Date(), Date(), fixture.vaultId]
                     )
                 case "conflict": try db.execute(sql: "UPDATE vaults SET syncRecoveryState = 'pending'")
-                default: try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL, syncConfirmedConnectionId = NULL")
+                default: try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL, syncConfirmedConnectionId = NULL")
                 }
             }
             try await provider.trim(dbQueue: fixture.queue, capacity: 1)
@@ -1219,7 +1219,7 @@
             ])
             let provider = provider(fixture) { request in
                 let path = request.url!.path
-                if path.hasSuffix("/capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4}}".utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data("{\"sync\":{\"version\":5}}".utf8)) }
                 if path.hasSuffix("/changes") {
                     let count = changeRequests.withLock { $0 += 1
                         return $0
@@ -1273,7 +1273,15 @@
             }
         }
 
-        @Test(arguments: [nil, "{}", #"{"sync":{"version":1}}"#, #"{"sync":{"version":2}}"#, #"{"sync":{"version":3}}"#, #"{"sync":{"version":5}}"#])
+        @Test(arguments: [
+            nil,
+            "{}",
+            #"{"sync":{"version":1}}"#,
+            #"{"sync":{"version":2}}"#,
+            #"{"sync":{"version":3}}"#,
+            #"{"sync":{"version":4}}"#,
+            #"{"sync":{"version":6}}"#,
+        ])
         func incompatibleServerStopsMetadataSyncWithoutDiscardingExistingText(capabilities: String?) async throws {
             let fixture = try textFixture()
             let connectionId = try await fixture.queue.write { db in
@@ -1339,7 +1347,7 @@
             let provider = provider(fixture) { request in
                 calls.withLock { $0.append(request.url!.path) }
                 if request.url!.path.hasSuffix("/capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":4},"futureFeature":{"enabled":true}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":5},"futureFeature":{"enabled":true}}"#.utf8))
                 }
                 return (200, [:], payload)
             }
@@ -1675,6 +1683,8 @@
             )
             var vault = VaultRecord(id: .v7(), path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
             vault.accountConnectionId = connection.id
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = connection.id
             let meeting = MeetingRecord(id: .v7(), vaultId: vault.id, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now)
             try queue.write { db in

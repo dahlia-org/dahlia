@@ -29,11 +29,9 @@ const applicationStore = createNodeApplicationStore(config);
 const searchIndexer = searchEmbedder && applicationStore.searchIndex
   ? new SearchIndexer(applicationStore.searchIndex, searchEmbedder)
   : undefined;
-const auth = config.authProvider === "accounts"
-  ? await initializeDahliaAuth(config, applicationStore, [{
+const auth = await initializeDahliaAuth(config, applicationStore, config.authProvider === "accounts" ? [{
       plugins: [cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" })],
-    }])
-  : undefined;
+    }] : []);
 const objectStorage = config.storageBackend === "databricks"
   ? new DatabricksVolumeObjectStorage(config.databricksWorkspace!, config.storageDatabricksVolumePath!)
   : config.storageBackend === "s3"

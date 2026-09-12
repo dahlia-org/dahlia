@@ -10,18 +10,11 @@ export async function rotateVaultKeys(database: NodePgDatabase | SQLiteDatabase,
   const db = database as NodePgDatabase;
   const schema = (isPostgres ? postgres : sqlite) as typeof postgres;
   const counts = { checked: 0, pending: 0, rotated: 0 };
-  let afterUser: string | undefined;
+  let afterVault: string | undefined;
   while (true) {
-    const users = await db.select({ id: schema.user.id }).from(schema.user)
-      .where(afterUser ? gt(schema.user.id, afterUser) : undefined).orderBy(asc(schema.user.id)).limit(100);
-    if (!users.length) return counts;
-    for (const user of users) {
-      let afterVault: string | undefined;
-      while (true) {
         const page = await db.transaction(async (transaction) => {
-          if (isPostgres) await transaction.execute(sql`select set_config('app.user_id', ${user.id}, true)`);
-          const rows = await transaction.select().from(schema.vaultKey).where(and(eq(schema.vaultKey.ownerUserId, user.id),
-            afterVault ? gt(schema.vaultKey.vaultId, afterVault) : undefined)).orderBy(asc(schema.vaultKey.vaultId)).limit(100);
+          if (isPostgres) await transaction.execute(sql`select set_config('app.maintenance', 'rotation', true)`);
+          const rows = await transaction.select().from(schema.vaultKey).where(afterVault ? gt(schema.vaultKey.vaultId, afterVault) : undefined).orderBy(asc(schema.vaultKey.vaultId)).limit(100);
           for (const row of rows) {
             const raw = await unwrapDataKey(config, row.vaultId, row.wrappedKey);
             try {
@@ -37,10 +30,7 @@ export async function rotateVaultKeys(database: NodePgDatabase | SQLiteDatabase,
           }
           return rows;
         });
-        if (!page.length) break;
-        afterVault = page.at(-1)!.vaultId;
-      }
-    }
-    afterUser = users.at(-1)!.id;
+    if (!page.length) return counts;
+    afterVault = page.at(-1)!.vaultId;
   }
 }

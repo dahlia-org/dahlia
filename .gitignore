@@ -17,3 +17,4 @@ node_modules/
 .pnpm-store/
 pnpm-debug.log*
 .claude/plans/
+dahlia-auth-secret

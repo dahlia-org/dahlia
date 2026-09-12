@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "d21cc908-bc49-4c9e-bcf3-96df0fae5238",
+  "id": "481282b7-4152-461c-8eed-f299aa10a0c8",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -96,10 +96,6 @@
     },
     {
       "name": "jobs_search_index",
-      "entityType": "tables"
-    },
-    {
-      "name": "server_initializations",
       "entityType": "tables"
     },
     {
@@ -1586,6 +1582,26 @@
     },
     {
       "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'team'",
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "organization"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "domain",
+      "entityType": "columns",
+      "table": "organization"
+    },
+    {
+      "type": "text",
       "notNull": false,
       "autoincrement": false,
       "default": null,
@@ -1911,6 +1927,16 @@
       "default": null,
       "generated": null,
       "name": "ban_expires",
+      "entityType": "columns",
+      "table": "user"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'personal'",
+      "generated": null,
+      "name": "registration_state",
       "entityType": "columns",
       "table": "user"
     },
@@ -2510,16 +2536,6 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "owner_user_id",
-      "entityType": "columns",
-      "table": "jobs_search_index"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "model",
       "entityType": "columns",
       "table": "jobs_search_index"
@@ -2613,26 +2629,6 @@
       "name": "updated_at",
       "entityType": "columns",
       "table": "jobs_search_index"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "name",
-      "entityType": "columns",
-      "table": "server_initializations"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "initialized_at",
-      "entityType": "columns",
-      "table": "server_initializations"
     },
     {
       "type": "integer",
@@ -3060,16 +3056,6 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "owner_user_id",
-      "entityType": "columns",
-      "table": "sync_changes"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "vault_id",
       "entityType": "columns",
       "table": "sync_changes"
@@ -3223,16 +3209,6 @@
       "name": "created_at",
       "entityType": "columns",
       "table": "transaction_receipts"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "owner_user_id",
-      "entityType": "columns",
-      "table": "sync_vault_state"
     },
     {
       "type": "text",
@@ -3950,6 +3926,26 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "table": "vaults"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_by",
+      "entityType": "columns",
+      "table": "vaults"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
       "name": "name",
       "entityType": "columns",
       "table": "vaults"
@@ -4251,16 +4247,6 @@
       "default": null,
       "generated": null,
       "name": "vault_id",
-      "entityType": "columns",
-      "table": "vault_keys"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "owner_user_id",
       "entityType": "columns",
       "table": "vault_keys"
     },
@@ -4837,21 +4823,6 @@
     },
     {
       "columns": [
-        "owner_user_id"
-      ],
-      "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_jobs_search_index_owner_user_id_user_id_fk",
-      "entityType": "fks",
-      "table": "jobs_search_index"
-    },
-    {
-      "columns": [
         "meeting_id"
       ],
       "tableTo": "meetings",
@@ -4924,21 +4895,6 @@
       "name": "fk_transaction_receipts_owner_user_id_user_id_fk",
       "entityType": "fks",
       "table": "transaction_receipts"
-    },
-    {
-      "columns": [
-        "owner_user_id"
-      ],
-      "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_sync_vault_state_owner_user_id_user_id_fk",
-      "entityType": "fks",
-      "table": "sync_vault_state"
     },
     {
       "columns": [
@@ -5051,6 +5007,21 @@
     },
     {
       "columns": [
+        "organization_id"
+      ],
+      "tableTo": "organization",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "RESTRICT",
+      "nameExplicit": false,
+      "name": "fk_vaults_organization_id_organization_id_fk",
+      "entityType": "fks",
+      "table": "vaults"
+    },
+    {
+      "columns": [
         "vault_id"
       ],
       "tableTo": "vaults",
@@ -5148,7 +5119,6 @@
     },
     {
       "columns": [
-        "owner_user_id",
         "vault_id"
       ],
       "nameExplicit": false,
@@ -5376,15 +5346,6 @@
       "nameExplicit": false,
       "name": "meeting_events_pk",
       "table": "meeting_events",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "name"
-      ],
-      "nameExplicit": false,
-      "name": "server_initializations_pk",
-      "table": "server_initializations",
       "entityType": "pks"
     },
     {
@@ -6092,10 +6053,6 @@
     {
       "columns": [
         {
-          "value": "owner_user_id",
-          "isExpression": false
-        },
-        {
           "value": "vault_id",
           "isExpression": false
         },
@@ -6107,25 +6064,7 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "sync_change_owner_vault_sequence_idx",
-      "entityType": "indexes",
-      "table": "sync_changes"
-    },
-    {
-      "columns": [
-        {
-          "value": "owner_user_id",
-          "isExpression": false
-        },
-        {
-          "value": "sequence",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "sync_change_owner_sequence_idx",
+      "name": "sync_change_vault_sequence_idx",
       "entityType": "indexes",
       "table": "sync_changes"
     },
@@ -6288,20 +6227,6 @@
     {
       "columns": [
         {
-          "value": "vault_id",
-          "isExpression": false
-        }
-      ],
-      "isUnique": true,
-      "where": "\"vault_permissions\".\"role\" = 'owner'",
-      "origin": "manual",
-      "name": "vault_permission_single_owner_idx",
-      "entityType": "indexes",
-      "table": "vault_permissions"
-    },
-    {
-      "columns": [
-        {
           "value": "principal_type",
           "isExpression": false
         },
@@ -6458,6 +6383,15 @@
       "name": "oauth_resource_identifier_unique",
       "entityType": "uniques",
       "table": "oauth_resource"
+    },
+    {
+      "columns": [
+        "domain"
+      ],
+      "nameExplicit": false,
+      "name": "organization_domain_unique",
+      "entityType": "uniques",
+      "table": "organization"
     },
     {
       "columns": [
@@ -6622,14 +6556,8 @@
       "table": "vault_permissions"
     },
     {
-      "value": "\"role\" IN ('owner', 'member')",
+      "value": "\"role\" IN ('admin', 'editor', 'viewer')",
       "name": "vault_permission_role_check",
-      "entityType": "checks",
-      "table": "vault_permissions"
-    },
-    {
-      "value": "\"role\" <> 'owner' OR \"principal_type\" = 'user'",
-      "name": "vault_permission_owner_user_check",
       "entityType": "checks",
       "table": "vault_permissions"
     },

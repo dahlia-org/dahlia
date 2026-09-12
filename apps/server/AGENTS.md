@@ -45,7 +45,7 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 - Preserve the durable cursor delta feed and its high-water pagination boundary. SSE sends invalidations and cursors only; clients recover from missed events through canonical reads. A commit receipt cursor must not advance a client's separate delta pull checkpoint.
 - Desktop records local edits and retryable operations atomically, applies receipts without losing newer local edits, and applies remote records without enqueueing echoes. Keep authorization, validation, revision conflicts, and retryable transport failures distinct. Validate both client and Server paths when changing this wire contract.
 - Signing in does not implicitly migrate a Local Account Vault. Removing a local working copy or signing out does not delete Server records. Keep deletion of canonical data explicit and authorized.
-- Current sharing grants read-only member access to personally owned Vaults; Server MCP is read-only. SaaS deployment does not imply collaborative write access or weaker owner checks.
+- Organizations own Vaults. Vault admin manages sharing and the Vault; admin/editor can mutate content and viewer can read. Organization membership alone grants no Vault access. Server MCP remains read-only. Follow docs/adr/shared/organization-vaults.md.
 
 ## Model Catalog Maintenance
 
@@ -61,18 +61,18 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 - Enforce request byte limits before parsing or buffering. Stream Responses and file/audio bodies without buffering the complete payload.
 - Header authentication is safe only behind a proxy that strips client-supplied identity headers, writes verified values, and prevents direct Server access. Do not weaken that deployment requirement with trust-by-header fallback logic.
 - With the Databricks backend, use `X-Forwarded-Access-Token` only for the current Responses request. Do not store, log, cache, return, or forward that header by name. Model discovery uses the App service principal and must not use the forwarded token.
-- Personal workspaces are deterministic identity claims. Organization and Team sharing must preserve personal Vault ownership and read-only member access; do not add per-organization providers or shared write access without an approved product and architecture decision.
+- Personal workspace claims and Personal Organizations are distinct. Evaluate current user/organization/team permissions with admin > editor > viewer, and require current parent-organization membership for Team access. Keep at least one effective Vault admin.
 - Files and recording reads require current Vault access before storage access or conditional responses. Preserve streaming, the file CSP sandbox, and non-disclosure of storage credentials. Artifact publishing is retired.
 
 ## Database and Migrations
 
-- Better Auth and Dahlia application tables share one Drizzle application database. All authentication modes use the generated `auth` tables and `app` for canonical data, `search` for search projections, `crypto` for wrapped keys, and `jobs` for job tables. Header mode projects validated users into `auth.user` without starting the Better Auth runtime. References flow from `jobs` to `app` / `auth` and from `app` to `auth`. Node supports SQLite, PostgreSQL, and Lakebase; Workers support D1, Hyperdrive, and direct PostgreSQL.
+- Better Auth and Dahlia application tables share one Drizzle application database. All authentication modes use the generated `auth` tables and `app` for canonical data, `search` for search projections, `crypto` for wrapped keys, and `jobs` for job tables. Header mode projects validated users into `auth.user` without starting the Better Auth runtime. References flow from `jobs` to `app` / `auth` and from `app` to `auth`. Node supports SQLite, PostgreSQL, and Lakebase; Workers support Hyperdrive, and direct PostgreSQL.
 - Released migrations are immutable. Add forward-only migrations; never edit, reorder, or silently omit an existing migration.
 - Treat the Drizzle schemas as the source of truth and use Drizzle Kit to generate migrations. Hand-write SQL only for data migrations or DDL that Drizzle cannot express, using a new custom migration while keeping the declarative schema synchronized.
 - `pnpm db:generate-auth` uses the pinned official Better Auth CLI to regenerate only `src/db/generated/postgres-auth-schema.ts` and `src/db/generated/sqlite-auth-schema.ts`. Keep those outputs unmodified and keep Dahlia-owned tables in the adjacent dialect-specific app schema files.
-- Better Auth tables live in the PostgreSQL `auth` schema and are outside the application RLS policy. SQLite and D1 have no schema namespaces, so their Better Auth tables remain top-level. Do not add RLS or hand-written DDL to generated Better Auth declarations.
+- Better Auth tables live in the PostgreSQL `auth` schema and are outside the application RLS policy. SQLite have no schema namespaces, so their Better Auth tables remain top-level. Do not add RLS or hand-written DDL to generated Better Auth declarations.
 - PostgreSQL tables containing Dahlia-owned user content require declaratively defined RLS policies in addition to application authorization. RLS receives only transaction-local `app.user_id`, resolves organization and Team membership from `auth.member` and `auth.team_member`, and must account for table-owner and privileged-role RLS bypass.
-- SQLite and D1 do not provide PostgreSQL RLS. Keep equivalent owner checks in the shared application/store layer; never remove them because PostgreSQL has RLS.
+- SQLite do not provide PostgreSQL RLS. Keep equivalent owner checks in the shared application/store layer; never remove them because PostgreSQL has RLS.
 - Drizzle Kit owns `drizzle/postgres-auth`, `drizzle/postgres`, and `drizzle/sqlite`. Run `pnpm db:generate` after declarative schema changes, preserve generated snapshots after release, and register each generated `migration.sql` package-relative path in `src/migrations.ts`; add a directory only for an independent migration ledger root.
 - Migration execution is explicit. Do not run production migrations or destructive cleanup as an incidental validation step.
 

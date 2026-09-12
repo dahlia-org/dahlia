@@ -1,4 +1,5 @@
-import { EXTERNAL_ORGANIZATION_ID } from "../src/auth/ids";
+import { seedPostgresIdentity } from "./public-test-client";
+import { testOrganizationID } from "./public-test-client";
 import { testUserID } from "./public-test-client";
 import { readFileSync } from "node:fs";
 import { Client } from "pg";
@@ -29,14 +30,14 @@ const connection = databaseUrl ? connectAuthDatabase(config) : undefined;
 afterAll(async () => connection?.close());
 
 integration("PostgreSQL application store", () => {
-  it("maps concurrent external subjects to one UUID user without email-only linking", async () => {
+  it("maps concurrent normalized emails to one UUID user regardless of external subject", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const subject = `external-${crypto.randomUUID()}`;
     const identity: Identity = { userId: subject, email: `${subject}@example.com`, workspaceId: `personal:${subject}`, source: "header" };
     const ids = await Promise.all(Array.from({ length: 12 }, () => store.resolveHeaderUser(identity)));
     expect(ids[0]).toMatch(/^[0-9a-f-]{14}7[0-9a-f-]{21}$/);
     expect(new Set(ids).size).toBe(1);
-    expect(await store.resolveHeaderUser({ ...identity, userId: `${subject}-other` })).toBeNull();
+    expect(await store.resolveHeaderUser({ ...identity, userId: `${subject}-other` })).toBe(ids[0]);
     expect(await store.resolveHeaderUser(identity)).toBe(ids[0]);
     const rows = await connection!.db.select().from(schema.user).where(eq(schema.user.email, identity.email!));
     expect(rows).toHaveLength(1);
@@ -46,7 +47,7 @@ integration("PostgreSQL application store", () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const userId = crypto.randomUUID();
     const owner: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
-    await store.ensureIdentityUser(owner);
+    await seedPostgresIdentity(store, databaseUrl!, owner);
     const source = crypto.randomUUID(), destination = crypto.randomUUID();
     await store.sync.withIdentity(owner, (sync) => createVault(sync, source));
     await store.sync.withIdentity(owner, (sync) => createVault(sync, destination));
@@ -87,7 +88,7 @@ integration("PostgreSQL application store", () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const userId = crypto.randomUUID();
     const owner: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
-    await store.ensureIdentityUser(owner);
+    await seedPostgresIdentity(store, databaseUrl!, owner);
     const source = crypto.randomUUID(), destination = crypto.randomUUID(), meeting = crypto.randomUUID();
     const now = new Date();
     await store.sync.withIdentity(owner, (sync) => createVault(sync, source, [{ id: crypto.randomUUID(), entity: "meeting",
@@ -135,7 +136,7 @@ integration("PostgreSQL application store", () => {
     try {
       await connection!.db.insert(schema.member).values({ id, organizationId: id, userId: id, role: "member", createdAt: now });
       await connection!.db.insert(schema.team).values({ id, organizationId: id, name: "Directory team", createdAt: now });
-      expect(await store.listServerOrganizations(1000, 0)).toContainEqual({ id, name: "Directory organization", slug: id, memberCount: 1, teamCount: 1 });
+      expect(await store.listServerOrganizations(1000, 0)).toContainEqual({ id, name: "Directory organization", slug: id, kind: "team", memberCount: 1, teamCount: 1 });
       expect(await store.getServerOrganization(id, 100, 0, 0)).toMatchObject({ id, name: "Directory organization", members: [{ userId: id, email: `${id}@example.com` }], teams: [{ id, name: "Directory team" }] });
       expect(await store.getServerOrganization(id, 100, 1, 1)).toMatchObject({ members: [], teams: [] });
       expect(await store.getServerOrganization(crypto.randomUUID(), 100, 0, 0)).toBeNull();
@@ -150,7 +151,7 @@ integration("PostgreSQL application store", () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const userId = crypto.randomUUID();
     const owner: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
-    await store.ensureIdentityUser(owner);
+    await seedPostgresIdentity(store, databaseUrl!, owner);
     const source = crypto.randomUUID(), destination = crypto.randomUUID(), alternative = crypto.randomUUID();
     const root = crypto.randomUUID(), child = crypto.randomUUID(), meeting = crypto.randomUUID();
     const now = new Date();
@@ -188,8 +189,8 @@ integration("PostgreSQL application store", () => {
     const meetingId = crypto.randomUUID();
     const sessionId = crypto.randomUUID();
     const now = new Date();
-    await store.ensureIdentityUser(owner);
-    await store.ensureIdentityUser(member);
+    await seedPostgresIdentity(store, databaseUrl!, owner);
+    await seedPostgresIdentity(store, databaseUrl!, member);
     try {
       await store.sync.withIdentity(owner, async (sync) => {
         await createVault(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meetingId,
@@ -203,7 +204,7 @@ integration("PostgreSQL application store", () => {
       });
       expect(await connection!.db.select().from(schema.syncedRecording).where(eq(schema.syncedRecording.sessionId, sessionId))).toEqual([]);
       expect(await store.sync.withIdentity(member, (sync) => sync.getRecording(meetingId, 1))).toBeNull();
-      await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", EXTERNAL_ORGANIZATION_ID));
+      await store.sync.withIdentity(owner, (sync) => sync.putPermission(vaultId, "organization", testOrganizationID, "viewer"));
       expect(await store.sync.withIdentity(member, (sync) => sync.getRecording(meetingId, 1))).toMatchObject({ vaultId, meetingId });
       expect(await store.sync.withIdentity(member, (sync) => sync.getRecording(meetingId, 1, true))).toBeNull();
       await connection!.db.transaction(async (tx) => {
@@ -213,7 +214,7 @@ integration("PostgreSQL application store", () => {
         expect(await tx.update(schema.syncedRecording).set({ revision: 99 })
           .where(eq(schema.syncedRecording.sessionId, sessionId)).returning()).toEqual([]);
       });
-      await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", EXTERNAL_ORGANIZATION_ID));
+      await store.sync.withIdentity(owner, (sync) => sync.deletePermission(vaultId, "organization", testOrganizationID));
       expect(await store.sync.withIdentity(member, (sync) => sync.getRecording(meetingId, 1))).toBeNull();
       const record = await store.sync.withIdentity(owner, (sync) => sync.getRecording(meetingId, 1));
       await store.sync.withIdentity(owner, (sync) => commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting", action: "delete",
@@ -242,7 +243,7 @@ integration("PostgreSQL application store", () => {
     const owner: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
     const reader: Identity = { userId: testUserID(`reader-${userId}`), workspaceId: `personal:${testUserID(`reader-${userId}`)}`, source: "header" };
     const outsider: Identity = { userId: testUserID(`other-${userId}`), workspaceId: `personal:${testUserID(`other-${userId}`)}`, source: "header" };
-    for (const identity of [owner, reader, outsider]) await store.ensureIdentityUser(identity);
+    for (const identity of [owner, reader, outsider]) await seedPostgresIdentity(store, databaseUrl!, identity);
     const vaultId = crypto.randomUUID(); const meetingId = crypto.randomUUID(); const now = new Date();
     await store.sync.withIdentity(owner, (sync) => createVault(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting",
       action: "create", entityId: meetingId, baseRevision: null, data: meetingData(null, now, "Meeting", "") }]));
@@ -255,7 +256,7 @@ integration("PostgreSQL application store", () => {
       expect(first).not.toHaveProperty("vaultId");
       expect(await connection!.db.select().from(schema.summary)).toEqual([]);
       await connection!.db.insert(schema.syncedVaultPermission).values({ vaultId, principalType: "user", principalId: reader.userId,
-        role: "member", grantedByUserId: owner.userId });
+        role: "viewer", grantedByUserId: owner.userId });
       expect(await store.sync.withIdentity(reader, (sync) => sync.getSummaryVersion(vaultId, meetingId))).toEqual(first);
       expect(await store.sync.withIdentity(outsider, (sync) => sync.getSummaryVersion(vaultId, meetingId))).toBeNull();
       expect(await store.sync.withIdentity(owner, (sync) => sync.getSummaryVersion(crypto.randomUUID(), meetingId))).toBeNull();
@@ -266,7 +267,7 @@ integration("PostgreSQL application store", () => {
         await tx.execute(sql`select set_config('app.sharing_enabled', 'true', true)`);
         await tx.insert(schema.summary).values({ id: crypto.randomUUID(), meetingId, version: 2, title: "Denied", document: "{}", savedAt: now });
       })).rejects.toThrow();
-      await connection!.db.delete(schema.syncedVaultPermission).where(eq(schema.syncedVaultPermission.principalId, reader.userId));
+      await store.sync.withIdentity(owner, (sync) => sync.deletePermission(vaultId, "user", reader.userId));
       expect(await store.sync.withIdentity(reader, (sync) => sync.getSummaryVersion(vaultId, meetingId))).toBeNull();
       const concurrent = await Promise.allSettled([1, 2].map(() => store.sync.withIdentity(owner, (sync) => save(sync, 1))));
       expect(concurrent.filter((result) => result.status === "fulfilled")).toHaveLength(1);
@@ -288,7 +289,7 @@ integration("PostgreSQL application store", () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const userId = crypto.randomUUID();
     const identity: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
-    await store.ensureIdentityUser(identity);
+    await seedPostgresIdentity(store, databaseUrl!, identity);
     const vaultId = crypto.randomUUID();
     const meetingId = crypto.randomUUID();
     const sessionId = crypto.randomUUID();
@@ -325,10 +326,10 @@ integration("PostgreSQL application store", () => {
     const userId = crypto.randomUUID();
     const identity: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
     const vaultId = crypto.randomUUID();
-    expect(await store.ensureIdentityUser(identity)).toBe(true);
+    await seedPostgresIdentity(store, databaseUrl!, identity);
     await store.sync.withIdentity(identity, (sync) => createVault(sync, vaultId));
     const update = (name: string) => store.sync.withIdentity(identity, (sync) => sync.commitTransaction({
-      schemaVersion: 2,
+      schemaVersion: 3,
       id: crypto.randomUUID(),
       vaultId,
       createdAt: new Date(),
@@ -426,8 +427,8 @@ integration("PostgreSQL application store", () => {
     `);
     expect(projectionColumns.rows.map(({ column_name }) => column_name)).toEqual(["search_text", "search_vector"]);
     expect(await store.sync.isAvailable()).toBe(true);
-    expect(await store.ensureIdentityUser(owner)).toBe(true);
-    expect(await store.ensureIdentityUser(other)).toBe(true);
+    await seedPostgresIdentity(store, databaseUrl!, owner);
+    await seedPostgresIdentity(store, databaseUrl!, other);
     await store.sync.withIdentity(owner, (sync) => createVault(sync, vaultId, [{
       id: crypto.randomUUID(),
       entity: "project",
@@ -471,7 +472,7 @@ integration("PostgreSQL application store", () => {
       principalType: "user",
       principalId: owner.userId,
       grantedByUserId: owner.userId,
-      role: "owner",
+      role: "admin",
     })]);
     expect(await store.sync.withIdentity(other, (sync) => sync.getVault(vaultId))).toBeNull();
     expect(await store.sync.withIdentity(other, (sync) => sync.listProjects(vaultId))).toEqual([]);
@@ -505,9 +506,12 @@ integration("PostgreSQL application store", () => {
       email,
       source: "header",
     };
-    expect(await store.ensureIdentityUser(identity)).toBe(true);
+    await seedPostgresIdentity(store, databaseUrl!, identity);
     expect(await store.addAdminUser(email)).toMatchObject({ id: suffix });
     expect(await store.isAdminUser(suffix)).toBe(true);
+    const replacement = { ...identity, userId: crypto.randomUUID(), email: `${suffix}-replacement@example.com` };
+    await seedPostgresIdentity(store, databaseUrl!, replacement);
+    await store.addAdminUser(replacement.email);
     expect(await store.removeAdminUser(suffix)).toBe("removed");
   });
 
@@ -541,7 +545,7 @@ integration("PostgreSQL application store", () => {
         { id: testUserID(`owner-membership-${suffix}`), organizationId, userId: owner.userId, role: "owner", createdAt: now },
         { id: testUserID(`member-membership-${suffix}`), organizationId, userId: member.userId, role: "member", createdAt: now },
       ]);
-      await store.sync.withIdentity(owner, (sync) => createVault(sync, vaultId));
+      await store.sync.withIdentity(owner, (sync) => createVault(sync, vaultId, [], organizationId));
       expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(false);
       await store.sync.withIdentity(owner, (sync) => commit(sync, vaultId, [{
         id: crypto.randomUUID(),
@@ -590,10 +594,10 @@ integration("PostgreSQL application store", () => {
         );
         expect(hidden.rows[0]?.count).toBe("0");
       }
-      expect(await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", organizationId)))
+      expect(await store.sync.withIdentity(owner, (sync) => sync.putPermission(vaultId, "organization", organizationId, "viewer")))
         .toBe(true);
       expect(await store.sync.withIdentity(member, (sync) => sync.getVault(vaultId)))
-        .toMatchObject({ vaultId, role: "member" });
+        .toMatchObject({ vaultId, role: "viewer" });
       await store.sync.withIdentity(member, async (sync) => {
         expect(await sync.getMeeting(vaultId, meetingId)).toMatchObject({ name: "Shared meeting" });
         expect(await sync.listMeetings(vaultId, { text: "shared", tokens: ["shared"] }, 10)).toHaveLength(1);
@@ -611,15 +615,12 @@ integration("PostgreSQL application store", () => {
       )).toEqual([]);
       await connection!.db.delete(schema.member).where(eq(schema.member.userId, member.userId));
       expect(await store.sync.withIdentity(member, (sync) => sync.getVault(vaultId))).toBeNull();
-      await store.deleteVaultPermissionsForOrganization(organizationId);
-      await connection!.db.delete(schema.organization).where(eq(schema.organization.id, organizationId));
+      await store.sync.withIdentity(owner, (sync) => sync.deletePermission(vaultId, "organization", organizationId));
+      await expect(connection!.db.delete(schema.organization).where(eq(schema.organization.id, organizationId))).rejects.toThrow();
       expect(await store.sync.withIdentity(owner, (sync) => sync.listPermissions(vaultId)))
-        .toEqual([expect.objectContaining({ principalType: "user", role: "owner" })]);
+        .toEqual([expect.objectContaining({ principalType: "user", role: "admin" })]);
     } finally {
-      await store.sync.withIdentity(owner, async (sync) => {
-        await sync.deleteMemberPermission(vaultId, "organization", organizationId);
-        await resetVault(sync, vaultId);
-      }).catch(() => undefined);
+      await store.sync.withIdentity(owner, (sync) => resetVault(sync, vaultId));
       await connection!.db.delete(schema.organization).where(eq(schema.organization.id, organizationId));
       await connection!.db.delete(schema.user).where(eq(schema.user.id, owner.userId));
       await connection!.db.delete(schema.user).where(eq(schema.user.id, member.userId));
@@ -635,25 +636,25 @@ integration("PostgreSQL application store", () => {
     const meetingId = crypto.randomUUID();
     const teamId = testUserID(`team-${suffix}`);
     try {
-      expect(await store.ensureIdentityUser(owner)).toBe(true);
-      expect(await store.ensureIdentityUser(member)).toBe(true);
+      await seedPostgresIdentity(store, databaseUrl!, owner);
+      await seedPostgresIdentity(store, databaseUrl!, member);
       await store.sync.withIdentity(owner, (sync) => createVault(sync, vaultId));
       expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(false);
       expect(await store.sync.withIdentity(member, (sync) => sync.getVault(vaultId))).toBeNull();
-      expect(await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(
+      expect(await store.sync.withIdentity(owner, (sync) => sync.putPermission(
         vaultId,
         "organization",
-        EXTERNAL_ORGANIZATION_ID,
-      ))).toBe(true);
+        testOrganizationID,
+        "viewer"))).toBe(true);
       expect(await store.sync.withIdentity(member, (sync) => sync.getVault(vaultId)))
-        .toMatchObject({ vaultId, role: "member" });
+        .toMatchObject({ vaultId, role: "viewer" });
       expect(await store.sync.withIdentity(member, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(false);
-      await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", EXTERNAL_ORGANIZATION_ID));
+      await store.sync.withIdentity(owner, (sync) => sync.deletePermission(vaultId, "organization", testOrganizationID));
       expect(await store.sync.withIdentity(member, (sync) => sync.getVault(vaultId))).toBeNull();
       await connection!.db.insert(schema.team).values({
         id: teamId,
         name: "Readers",
-        organizationId: EXTERNAL_ORGANIZATION_ID,
+        organizationId: testOrganizationID,
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -663,15 +664,15 @@ integration("PostgreSQL application store", () => {
         userId: member.userId,
         createdAt: new Date(),
       });
-      expect(await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "team", teamId))).toBe(true);
+      expect(await store.sync.withIdentity(owner, (sync) => sync.putPermission(vaultId, "team", teamId, "viewer"))).toBe(true);
       expect(await store.sync.withIdentity(member, (sync) => sync.getVault(vaultId)))
-        .toMatchObject({ vaultId, role: "member" });
+        .toMatchObject({ vaultId, role: "viewer" });
       await connection!.db.delete(schema.teamMember).where(eq(schema.teamMember.teamId, teamId));
       expect(await store.sync.withIdentity(member, (sync) => sync.getVault(vaultId))).toBeNull();
     } finally {
       await store.sync.withIdentity(owner, async (sync) => {
-        await sync.deleteMemberPermission(vaultId, "team", teamId);
-        await sync.deleteMemberPermission(vaultId, "organization", EXTERNAL_ORGANIZATION_ID);
+        await sync.deletePermission(vaultId, "team", teamId);
+        await sync.deletePermission(vaultId, "organization", testOrganizationID);
         await resetVault(sync, vaultId);
       }).catch(() => undefined);
       await connection!.db.delete(schema.team).where(eq(schema.team.id, teamId));
@@ -688,17 +689,17 @@ integration("PostgreSQL application store", () => {
     const meetingId = crypto.randomUUID();
     const id = crypto.randomUUID();
     const now = new Date();
-    const restore: SyncTransaction = { schemaVersion: 2, id, vaultId, createdAt: now, requestHash: id, operations: [
+    const restore: SyncTransaction = { schemaVersion: 3, id, vaultId, createdAt: now, requestHash: id, operations: [
       { id: crypto.randomUUID(), entity: "vault", action: "create", entityId: vaultId,
-        baseRevision: null, data: { name: "Restored", createdAt: now } },
+        baseRevision: null, data: { organizationId: testOrganizationID, name: "Restored", createdAt: now } },
       { id: crypto.randomUUID(), entity: "project", action: "create", entityId: projectId,
         baseRevision: null, data: { parentProjectId: null, name: "Project", description: "", projectType: "internal", createdAt: now } },
       { id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meetingId,
         baseRevision: null, data: meetingData(null, now, "Meeting", "Meeting") },
     ] };
     try {
-      await store.ensureIdentityUser(owner);
-      await store.ensureIdentityUser(member);
+      await seedPostgresIdentity(store, databaseUrl!, owner);
+      await seedPostgresIdentity(store, databaseUrl!, member);
       await store.sync.withIdentity(owner, async (sync) => {
         await createVault(sync, vaultId);
         await commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "vault", action: "reset", entityId: vaultId,
@@ -709,10 +710,10 @@ integration("PostgreSQL application store", () => {
       }));
       // RLS-hidden Vaults must fail with a non-retryable authorization error, not a raw constraint error.
       await expect(store.sync.withIdentity(member, (sync) => sync.commitTransaction(restore)))
-        .rejects.toMatchObject({ status: 404, code: "vault_not_found", conflicts: [], operationId: restore.operations[0]!.id });
-      await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", EXTERNAL_ORGANIZATION_ID));
+        .rejects.toMatchObject({ status: 409, code: "vault_id_reused" });
+      await store.sync.withIdentity(owner, (sync) => sync.putPermission(vaultId, "organization", testOrganizationID, "viewer"));
       await expect(store.sync.withIdentity(member, (sync) => sync.commitTransaction(restore)))
-        .rejects.toMatchObject({ status: 404, code: "vault_not_found", conflicts: [] });
+        .rejects.toMatchObject({ status: 404, code: "vault_not_found" });
       await store.sync.withIdentity(owner, async (sync) => {
         expect(await sync.getVault(vaultId)).toEqual(before.vault);
         expect(await sync.latestChangeSequence(vaultId)).toBe(before.cursor);
@@ -723,14 +724,14 @@ integration("PostgreSQL application store", () => {
       const receipt = await store.sync.withIdentity(owner, (sync) => sync.commitTransaction(restore));
       expect(await store.sync.withIdentity(owner, (sync) => sync.commitTransaction(restore))).toEqual(JSON.parse(JSON.stringify(receipt)));
       expect(await store.sync.withIdentity(member, (sync) => sync.getMeeting(vaultId, meetingId))).toMatchObject({ name: "Meeting" });
-      await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", EXTERNAL_ORGANIZATION_ID));
+      await store.sync.withIdentity(owner, (sync) => sync.deletePermission(vaultId, "organization", testOrganizationID));
       expect(await store.sync.withIdentity(member, (sync) => sync.getMeeting(vaultId, meetingId))).toBeNull();
     } finally {
       await store.sync.withIdentity(owner, (sync) => resetVault(sync, vaultId));
     }
   });
 
-  it("supports direct user members without granting writes or another owner", async () => {
+  it("supports direct user Viewers without granting content or management writes", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
     const owner: Identity = { userId: testUserID(`owner-${suffix}`), workspaceId: `personal:${testUserID(`owner-${suffix}`)}`, source: "header" };
@@ -738,46 +739,28 @@ integration("PostgreSQL application store", () => {
     const vaultId = crypto.randomUUID();
     const meetingId = crypto.randomUUID();
     try {
-      expect(await store.ensureIdentityUser(owner)).toBe(true);
-      expect(await store.ensureIdentityUser(member)).toBe(true);
+      await seedPostgresIdentity(store, databaseUrl!, owner);
+      await seedPostgresIdentity(store, databaseUrl!, member);
       await store.sync.withIdentity(owner, (sync) => createVault(sync, vaultId));
       expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(false);
       await connection!.db.insert(schema.syncedVaultPermission).values({
         vaultId,
         principalType: "user",
         principalId: member.userId,
-        role: "member",
+        role: "viewer",
         grantedByUserId: owner.userId,
       });
-      await expect(connection!.db.insert(schema.syncedVaultPermission).values({
-        vaultId,
-        principalType: "user",
-        principalId: testUserID(`second-owner-${suffix}`),
-        role: "owner",
-        grantedByUserId: owner.userId,
-      })).rejects.toThrow();
-      await expect(connection!.db.insert(schema.syncedVaultPermission).values({
-        vaultId,
-        principalType: "organization",
-        principalId: testUserID(`org-owner-${suffix}`),
-        role: "owner",
-        grantedByUserId: owner.userId,
-      })).rejects.toThrow();
-
       await store.sync.withIdentity(member, async (sync) => {
-        expect(await sync.getVault(vaultId)).toMatchObject({ role: "member" });
+        expect(await sync.getVault(vaultId)).toMatchObject({ role: "viewer" });
         expect(await sync.listPermissions(vaultId)).toEqual([
-          expect.objectContaining({ principalType: "user", principalId: member.userId, role: "member" }),
+          expect.objectContaining({ principalType: "user", principalId: member.userId, role: "viewer" }),
         ]);
         expect(await sync.ensureUploadTarget(vaultId, meetingId)).toBe(false);
-        await expect(resetVault(sync, vaultId)).rejects.toMatchObject({ status: 409, code: "revision_conflict" });
-        expect(await sync.putMemberPermission(vaultId, "organization", EXTERNAL_ORGANIZATION_ID)).toBe(false);
+        await expect(resetVault(sync, vaultId)).rejects.toMatchObject({ status: 403, code: "vault_admin_required" });
+        expect(await sync.putPermission(vaultId, "organization", testOrganizationID, "viewer")).toBe(false);
       });
     } finally {
-      await connection!.db.delete(schema.syncedVaultPermission).where(eq(
-        schema.syncedVaultPermission.principalId,
-        member.userId,
-      ));
+      await store.sync.withIdentity(owner, (sync) => sync.deletePermission(vaultId, "user", member.userId));
       await store.sync.withIdentity(owner, async (sync) => {
         await resetVault(sync, vaultId);
       }).catch(() => undefined);
@@ -790,7 +773,7 @@ integration("PostgreSQL application store", () => {
     const owner: Identity = { userId: testUserID(`transcript-${suffix}`), workspaceId: `personal:${testUserID(`transcript-${suffix}`)}`, source: "header" };
     const vaultId = crypto.randomUUID(), meetingId = crypto.randomUUID(), firstId = crypto.randomUUID(), secondId = crypto.randomUUID();
     const now = new Date();
-    await store.ensureIdentityUser(owner);
+    await seedPostgresIdentity(store, databaseUrl!, owner);
     await store.sync.withIdentity(owner, (sync) => createVault(sync, vaultId, [{ id: crypto.randomUUID(),
       entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: meetingData(null, now, "Versions", "") }]));
     const metadata = { provider: "apple", request: { model: "apple-speech-live" },
@@ -829,6 +812,7 @@ function createVault(
   sync: IdentitySyncStore,
   vaultId: string,
   operations: SyncTransactionOperation[] = [],
+  organizationId = testOrganizationID,
 ) {
   return commit(sync, vaultId, [{
     id: crypto.randomUUID(),
@@ -836,14 +820,14 @@ function createVault(
     action: "create",
     entityId: vaultId,
     baseRevision: null,
-    data: { name: "Vault", createdAt: new Date() },
+    data: { organizationId, name: "Vault", createdAt: new Date() },
   }, ...operations]);
 }
 
 function commit(sync: IdentitySyncStore, vaultId: string, operations: SyncTransactionOperation[]) {
   const id = crypto.randomUUID();
   return sync.commitTransaction({
-    schemaVersion: 2,
+    schemaVersion: 3,
     id,
     vaultId,
     createdAt: new Date(),

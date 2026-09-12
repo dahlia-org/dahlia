@@ -4,7 +4,7 @@
 
 ## 検索 projection
 
-Server は canonical content から自分の検索索引を作る。Desktop の token / ML runtime へ依存せず、`search.documents`（SQLite / D1 は `search_documents`） に meeting と screenshot 共通の再構築可能な projection を持つ。
+Server は canonical content から自分の検索索引を作る。Desktop の token / ML runtime へ依存せず、`search.documents`（SQLite は `search_documents`） に meeting と screenshot 共通の再構築可能な projection を持つ。
 
 対象は meeting 名・説明、summary の description / 表示本文、screenshot の OCR / AI caption。transcript、翻訳、UUID、summary 内部 metadata、transcript reference、Project context は含めない。壊れた summary JSON は同期を拒否せず meeting metadata だけを索引する。
 
@@ -12,11 +12,11 @@ Node は固定 Lindera WASM / IPADIC を再利用し、NFKC、原形、stop tag�
 
 ## 全文検索
 
-PostgreSQL は generated tsvector / GIN、Lakebase は `lakebase_text` / BM25、SQLite / D1 は FTS5 を使う。query は trim 後500文字、最大16 token、全 token の AND。一覧は query なしなら日時順、ありなら関連度・日時・UUID で安定化する。phrase / boolean / prefix 構文、score、内部 token は公開しない。
+PostgreSQL は generated tsvector / GIN、Lakebase は `lakebase_text` / BM25、SQLite は FTS5 を使う。query は trim 後500文字、最大16 token、全 token の AND。一覧は query なしなら日時順、ありなら関連度・日時・UUID で安定化する。phrase / boolean / prefix 構文、score、内部 token は公開しない。
 
 ## Hybrid 検索
 
-検索文書テーブルに nullable な `embedding` と `embedding_model` を統合する。独立した `search_embeddings` と `embedding_text` 列、文書の dimensions 列は持たない。既存の `search_text` を入力とし、その hash は既存の `embedding_content_hash` にのみ保存する。会議名・summary・OCR・caption を含む入力が変わると、同じ transaction で vector と model を NULL にする。`jobs.search_index` は raw text を持たない lease 付き durable queue。Node worker が owner identity で文書を読み、App service principal により最大16文書ずつ非同期推論する。保存の UPDATE 条件で最新 hash、claim の generation / model / dimensions、owner permission、文書と親の存在を確認する。Meeting / 画像の version は追加しない。モデルとベクトル長が設定に一致する結果だけ検索に使用する。
+検索文書テーブルに nullable な `embedding` と `embedding_model` を統合する。独立した `search_embeddings` と `embedding_text` 列、文書の dimensions 列は持たない。既存の `search_text` を入力とし、その hash は既存の `embedding_content_hash` にのみ保存する。会議名・summary・OCR・caption を含む入力が変わると、同じ transaction で vector と model を NULL にする。`jobs.search_index` は raw text を持たない lease 付き durable queue。Node worker がVault単位の限定された内部読取で文書を読み、App service principal により最大16文書ずつ非同期推論する。保存の UPDATE 条件で最新 hash、claim の generation / model / dimensions、Vault・文書と親の存在を確認する。Meeting / 画像の version は追加しない。モデルとベクトル長が設定に一致する結果だけ検索に使用する。
 
 - `DAHLIA_EMBEDDING_MODEL` が空なら無効。dimensions は32〜1024の2の冪、既定1024。DAB は `${var.catalog}.${var.ai_schema}.embedding` を使い、未登録時に `qwen3-embedding-0-6b` を登録する。
 - Lakebase は `lakebase_vector` / ANN、他 PostgreSQL は pgvector / HNSW、SQLite Node は Float32 BLOB の exact cosine。model / dimensions を index と query の条件に含める。
@@ -29,7 +29,6 @@ PostgreSQL は generated tsvector / GIN、Lakebase は `lakebase_text` / BM25、
 
 Lakebase Search と有効にした vector extension は operator が準備する。必要な extension / index の作成失敗は migration を停止し、実行時の推論障害だけを FTS へ縮退する。初期 corpus の統計更新も運用で行う。
 
-D1 は FTS-only target だが、現在の adapter は canonical content と projection の複数 statement を atomic batch にできないため sync capability 自体を fail-closed とする。専用 `D1Database.batch()` adapter と rollback 相当の失敗契約を実装するまで有効化しない。
 
 Node / Worker は tokenizer と vector capability が異なり、同じ DB の runtime 変更には再同期または projection 全再構築が必要。初期の LIKE 検索と各 canonical row 内の検索列は、再生成境界と非同期 vector 処理を共有する統合 projection に置き換えた。
 
@@ -61,3 +60,5 @@ Node は解析 worker を構築した場合だけ capabilities API の `imageAna
 ## Server Vault 暗号化との境界
 
 暗号化 Vault でも検索データ全体（検索用テキスト、vector、索引）は暗号化対象外とする。PostgreSQL / Lakebase は DB 側の全文検索・vector 検索と既存 RRF、SQLite は既存の exact cosine を使い、暗号化用の復号 scan は行わない。正本の暗号化は維持する。保護範囲は [Vault 暗号化](vault-encryption.md) を参照。
+
+search_index_jobsはVault IDをidentityとして再構築・リトライする。Adminの交代には依存せず、用途と対象Vaultを限定したmaintenance contextでRLSを通す。

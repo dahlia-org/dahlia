@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config";
 
 const accounts = {
-  BETTER_AUTH_SECRET: "test-only-better-auth-secret-value",
+  DAHLIA_AUTH_SECRET: "test-only-better-auth-secret-value",
   GOOGLE_CLIENT_ID: "google-client",
   GOOGLE_CLIENT_SECRET: "google-secret",
 };
@@ -33,7 +33,7 @@ describe("configuration", () => {
 
   it("keeps embeddings off unless a Databricks model is configured", () => {
     expect(loadConfig({ ...accounts }).searchEmbedding).toBeUndefined();
-    expect(loadConfig({
+    expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_AI_BACKEND: "databricks",
       DATABRICKS_HOST: "workspace.cloud.databricks.com",
@@ -42,12 +42,11 @@ describe("configuration", () => {
       DATABRICKS_CLIENT_SECRET: "app-client-secret",
       DAHLIA_EMBEDDING_MODEL: "system.ai.qwen3-embedding-0-6b",
     }).searchEmbedding).toEqual({ model: "system.ai.qwen3-embedding-0-6b", dimensions: 1024 });
-    expect(() => loadConfig({
-      ...accounts,
+    expect(() => loadConfig({ ...accounts,
       DAHLIA_EMBEDDING_MODEL: "model",
     })).toThrow("requires DAHLIA_AI_BACKEND=databricks");
     for (const dimensions of [31, 96, 2048]) {
-      expect(() => loadConfig({
+      expect(() => loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
         DAHLIA_AUTH_TYPE: "header",
         DAHLIA_AI_BACKEND: "databricks",
         DATABRICKS_HOST: "workspace.cloud.databricks.com",
@@ -66,15 +65,14 @@ describe("configuration", () => {
       DATABRICKS_HOST: "workspace.example", DATABRICKS_CLIENT_ID: "client", DATABRICKS_CLIENT_SECRET: "secret",
     };
     for (const schema of [undefined, "", "catalog", "a.b.c", "a/b.ai", "a.ai?x=1"]) {
-      expect(() => loadConfig({ ...env, DATABRICKS_MODEL_SCHEMA: schema })).toThrow("DATABRICKS_MODEL_SCHEMA");
+      expect(() => loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", ...env, DATABRICKS_MODEL_SCHEMA: schema })).toThrow("DATABRICKS_MODEL_SCHEMA");
     }
-    expect(loadConfig({ ...env, DATABRICKS_MODEL_SCHEMA: " custom_catalog.ai " }).provider)
+    expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", ...env, DATABRICKS_MODEL_SCHEMA: " custom_catalog.ai " }).provider)
       .toMatchObject({ modelSchema: "custom_catalog.ai" });
   });
 
   it("selects PostgreSQL independently from the AI Gateway", () => {
-    const config = loadConfig({
-      ...accounts,
+    const config = loadConfig({ ...accounts,
       DAHLIA_DATABASE_TYPE: "postgres",
       DAHLIA_DATABASE_URL: "postgresql://dahlia.example/dahlia",
       DAHLIA_AI_BACKEND: "openai",
@@ -95,7 +93,7 @@ describe("configuration", () => {
       DATABRICKS_HOST: "workspace.cloud.databricks.com",
       DATABRICKS_MODEL_SCHEMA: "dahlia.ai",
     };
-    expect(loadConfig({
+    expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       ...databricks,
       DATABRICKS_CLIENT_ID: "app-client-id",
       DATABRICKS_CLIENT_SECRET: "app-client-secret",
@@ -110,14 +108,14 @@ describe("configuration", () => {
       },
     });
     expect(() => loadConfig(databricks)).toThrow("DATABRICKS_CLIENT_ID is required");
-    expect(() => loadConfig({
+    expect(() => loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       ...databricks,
       DATABRICKS_CLIENT_ID: "app-client-id",
     })).toThrow("DATABRICKS_CLIENT_SECRET is required");
   });
 
   it("configures object storage independently from the AI backend", () => {
-    expect(loadConfig({
+    expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_STORAGE_BACKEND: "databricks",
       DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH: "/Volumes/dahlia/server/storage",
@@ -130,13 +128,13 @@ describe("configuration", () => {
       storageDatabricksVolumePath: "/Volumes/dahlia/server/storage",
       databricksWorkspace: { host: "https://workspace.cloud.databricks.com" },
     });
-    expect(loadConfig({
+    expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_STORAGE_BACKEND: "r2",
     })).toMatchObject({
       storageBackend: "r2",
     });
-    expect(loadConfig({
+    expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_STORAGE_BACKEND: "s3",
       DAHLIA_STORAGE_S3_BUCKET: "bucket",
@@ -158,7 +156,7 @@ describe("configuration", () => {
   });
 
   it("rejects invalid Volume paths", () => {
-    expect(() => loadConfig({
+    expect(() => loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_STORAGE_BACKEND: "databricks",
       DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH: "/Volumes/main/default/volume/nested",
@@ -170,7 +168,7 @@ describe("configuration", () => {
   });
 
   it("requires the Cloudflare account endpoint when its backend is configured", () => {
-    expect(() => loadConfig({
+    expect(() => loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_AI_BACKEND: "cloudflare",
       OPENAI_API_KEY: "secret",
@@ -178,7 +176,7 @@ describe("configuration", () => {
   });
 
   it("loads Lakebase connection fields for the official connector", () => {
-    expect(loadConfig({
+    expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_DATABASE_TYPE: "lakebase",
       LAKEBASE_ENDPOINT: "projects/project/branches/main/endpoints/app",
@@ -201,22 +199,20 @@ describe("configuration", () => {
     });
   });
 
-  it.each(["d1", "hyperdrive"] as const)("selects %s without a URL", (databaseType) => {
-    expect(loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_DATABASE_TYPE: databaseType }))
+  it.each(["hyperdrive"] as const)("selects %s without a URL", (databaseType) => {
+    expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", DAHLIA_AUTH_TYPE: "header", DAHLIA_DATABASE_TYPE: databaseType }))
       .toMatchObject({ databaseType, databaseUrl: undefined });
   });
 
   it("rejects invalid database URLs", () => {
     expect(() => loadConfig({ ...accounts, DAHLIA_DATABASE_URL: "./auth.sqlite" })).toThrow("must use file:");
-    expect(() => loadConfig({
-      ...accounts,
+    expect(() => loadConfig({ ...accounts,
       DAHLIA_DATABASE_TYPE: "postgres",
       DAHLIA_DATABASE_URL: "https://example.com/database",
     })).toThrow("must use postgres:");
     const password = "must-not-leak";
     try {
-      loadConfig({
-        ...accounts,
+      loadConfig({ ...accounts,
         DAHLIA_DATABASE_TYPE: "postgres",
         DAHLIA_DATABASE_URL: `postgresql://user:${password}@[invalid/database`,
       });
@@ -228,8 +224,7 @@ describe("configuration", () => {
   });
 
   it("ignores removed bundled-runtime variables", () => {
-    expect(loadConfig({
-      ...accounts,
+    expect(loadConfig({ ...accounts,
       DAHLIA_RUNTIME: "cloudflare",
       DAHLIA_AUTH_DATABASE: "postgres",
       DATABASE_URL: "postgresql://legacy.example/dahlia",
@@ -237,23 +232,28 @@ describe("configuration", () => {
   });
 
   it("keeps header identity configuration independent from storage", () => {
-    expect(loadConfig({
+    expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_AUTH_HEADER: "Cf-Access-Authenticated-User-Email",
       DAHLIA_APP_URL: "https://dahlia.example",
     })).toMatchObject({
       authProvider: "header",
+      authProviderId: "external",
       authHeader: "Cf-Access-Authenticated-User-Email",
       databaseType: "sqlite",
     });
   });
 
+  it.each([[undefined, "external"], ["  ", "external"], [" databricks ", "databricks"]])("loads Header account provider ID %s", (value, expected) => {
+    expect(loadConfig({ ...accounts, DAHLIA_AUTH_TYPE: "header", DAHLIA_AUTH_PROVIDER_ID: value }).authProviderId).toBe(expected);
+  });
+
   it("uses DATABRICKS_APP_URL unless DAHLIA_APP_URL overrides it", () => {
-    expect(loadConfig({
+    expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       DAHLIA_AUTH_TYPE: "header",
       DATABRICKS_APP_URL: "https://dahlia-dev.example/",
     }).baseUrl).toBe("https://dahlia-dev.example");
-    expect(loadConfig({
+    expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_APP_URL: "https://dahlia.example",
       DATABRICKS_APP_URL: "https://dahlia-dev.example",
@@ -261,11 +261,10 @@ describe("configuration", () => {
   });
 
   it("validates account secrets and provider URLs", () => {
-    expect(() => loadConfig({
-      ...accounts,
-      BETTER_AUTH_SECRET: "replace-with-at-least-32-random-characters",
+    expect(() => loadConfig({ ...accounts,
+      DAHLIA_AUTH_SECRET: "replace-with-at-least-32-random-characters",
     })).toThrow("unique random value");
-    expect(() => loadConfig({
+    expect(() => loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_AI_BACKEND: "openai",
       OPENAI_API_KEY: "secret",

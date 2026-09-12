@@ -5,6 +5,7 @@ import type { SummaryJob } from "../summary/model";
 import type { RecordingRecord } from "../recordings/model";
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   bigserial,
   boolean,
@@ -31,7 +32,7 @@ import { fileMetadataLimits, type FileMetadata } from "../files/model";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../account-settings-model";
 import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from "../search/settings-model";
 
-import { user as authUser } from "./generated/postgres-auth-schema";
+import { user as authUser, organization as authOrganization } from "./generated/postgres-auth-schema";
 
 export const appSchema = pgSchema("app");
 export const jobsSchema = pgSchema("jobs");
@@ -42,11 +43,6 @@ export const serverSettings = appSchema.table("server_settings", {
   id: integer("id").primaryKey(),
   searchWeights: jsonb("search_weights").$type<SearchSettings>().default(DEFAULT_SEARCH_SETTINGS).notNull(),
 }, (table) => [check("server_settings_singleton", sql`${table.id} = 1`)]);
-
-export const serverInitializations = appSchema.table("server_initializations", {
-  name: text("name").primaryKey(),
-  initializedAt: timestamp("initialized_at", { withTimezone: true }).notNull(),
-});
 
 export const accountSettings = appSchema.table("account_settings", {
   userId: uuid("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
@@ -63,10 +59,14 @@ export const accountSettings = appSchema.table("account_settings", {
   }),
 ]).enableRLS();
 
+const governanceVault = (vaultId: AnyPgColumn) => sql`current_setting('app.maintenance', true) = 'governance-delete' AND ${vaultId} = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid`;
+
 export const syncedVault = appSchema.table("vaults", {
   encryption: text("encryption").$type<"none" | "server">().default("none").notNull(),
   encryptedPayload: text("encrypted_payload"),
   vaultId: uuid("vault_id").primaryKey(),
+  organizationId: uuid("organization_id").notNull().references(() => authOrganization.id, { onDelete: "restrict" }),
+  createdBy: jsonb("created_by").$type<{ id: string; name: string; email: string }>().notNull(),
   name: text("name").notNull(),
   icon: text("icon"),
   color: text("color"),
@@ -78,7 +78,7 @@ export const syncedVault = appSchema.table("vaults", {
   check("vault_encryption_check", sql`${table.encryption} IN ('none', 'server')`),
   pgPolicy("vault_select", {
     for: "select",
-    using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})`,
+    using: sql`"app"."current_identity_can_read_vault"(${table.vaultId}) OR (current_setting('app.maintenance', true) = 'search' AND ${table.vaultId} = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid) OR current_setting('app.maintenance', true) = 'authorization' OR (current_setting('app.maintenance', true) = 'governance' AND ${table.organizationId} = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid) OR (${governanceVault(table.vaultId)})`,
   }),
   pgPolicy("vault_insert", {
     for: "insert",
@@ -86,12 +86,12 @@ export const syncedVault = appSchema.table("vaults", {
   }),
   pgPolicy("vault_update", {
     for: "update",
-    using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
-    withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
+    using: sql`"app"."current_identity_can_admin_vault"(${table.vaultId})`,
+    withCheck: sql`"app"."current_identity_can_admin_vault"(${table.vaultId})`,
   }),
   pgPolicy("vault_delete", {
     for: "delete",
-    using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
+    using: sql`"app"."current_identity_can_admin_vault"(${table.vaultId}) OR (${governanceVault(table.vaultId)})`,
   }),
 ]).enableRLS();
 
@@ -133,16 +133,16 @@ export const syncedProject = appSchema.table("projects", {
   }),
   pgPolicy("project_insert", {
     for: "insert",
-    withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
+    withCheck: sql`"app"."current_identity_can_write_vault"(${table.vaultId})`,
   }),
   pgPolicy("project_update", {
     for: "update",
-    using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
-    withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
+    using: sql`"app"."current_identity_can_write_vault"(${table.vaultId})`,
+    withCheck: sql`"app"."current_identity_can_write_vault"(${table.vaultId})`,
   }),
   pgPolicy("project_delete", {
     for: "delete",
-    using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
+    using: sql`"app"."current_identity_can_write_vault"(${table.vaultId})`,
   }),
 ]).enableRLS();
 
@@ -169,9 +169,7 @@ export const syncedVaultPermission = appSchema.table("vault_permissions", {
     foreignColumns: [authUser.id],
   }).onDelete("restrict"),
   check("vault_permission_principal_type_check", sql`${table.principalType} IN ('user', 'organization', 'team')`),
-  check("vault_permission_role_check", sql`${table.role} IN ('owner', 'member')`),
-  check("vault_permission_owner_user_check", sql`${table.role} <> 'owner' OR ${table.principalType} = 'user'`),
-  uniqueIndex("vault_permission_single_owner_idx").on(table.vaultId).where(sql`${table.role} = 'owner'`),
+  check("vault_permission_role_check", sql`${table.role} IN ('admin', 'editor', 'viewer')`),
   index("vault_permission_principal_vault_idx")
     .on(table.principalType, table.principalId, table.role, table.vaultId),
 ]);
@@ -212,12 +210,12 @@ export const syncedMeeting = appSchema.table("meetings", {
   index("synced_meeting_vault_created_id_idx").on(table.vaultId, table.createdAt, table.meetingId),
   pgPolicy("meeting_select", {
     for: "select",
-    using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})`,
+    using: sql`"app"."current_identity_can_read_vault"(${table.vaultId}) OR (current_setting('app.maintenance', true) IN ('search', 'storage', 'governance-delete') AND ${table.vaultId} = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)`,
   }),
   pgPolicy("meeting_write", {
     for: "all",
-    using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
-    withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
+    using: sql`"app"."current_identity_can_write_vault"(${table.vaultId})`,
+    withCheck: sql`"app"."current_identity_can_write_vault"(${table.vaultId})`,
   }),
 ]).enableRLS();
 
@@ -240,8 +238,8 @@ export const meetingEvent = appSchema.table("meeting_events", {
   index("meeting_events_session_idx").on(table.vaultId, table.sessionId),
   check("meeting_events_kind_check", sql`${table.kind} IN ('meeting_created', 'meeting_updated', 'meeting_deleted', 'tag_added', 'tag_removed', 'recording_started', 'recording_ended', 'segment_rotated')`),
   check("meeting_events_source_check", sql`${table.audioSource} IN ('mic', 'system')`),
-  pgPolicy("meeting_event_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})` }),
-  pgPolicy("meeting_event_write", { for: "all", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` }),
+  pgPolicy("meeting_event_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId}) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.vault_id = ${table.vaultId} AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)` }),
+  pgPolicy("meeting_event_write", { for: "all", using: sql`"app"."current_identity_can_write_vault"(${table.vaultId}) OR current_setting('app.maintenance', true) = 'rotation'`, withCheck: sql`"app"."current_identity_can_write_vault"(${table.vaultId}) OR current_setting('app.maintenance', true) = 'rotation'` }),
 ]).enableRLS();
 
 export const recordingSession = appSchema.view("recording_sessions", {
@@ -274,7 +272,7 @@ export const transcript = appSchema.table("transcripts", {
   foreignKey({ columns: [table.meetingId], foreignColumns: [syncedMeeting.meetingId] }).onDelete("cascade"),
   check("transcript_version_check", sql`${table.version} >= 1`),
   pgPolicy("transcript_version_select", { for: "select", using: sql`exists (select 1 from "app"."meetings" m where m.meeting_id = ${table.meetingId} and "app"."current_identity_can_read_vault"(m.vault_id))` }),
-  pgPolicy("transcript_version_write", { for: "all", using: sql`exists (select 1 from "app"."meetings" m where m.meeting_id = ${table.meetingId} and "app"."current_identity_owns_vault"(m.vault_id))`, withCheck: sql`exists (select 1 from "app"."meetings" m where m.meeting_id = ${table.meetingId} and "app"."current_identity_owns_vault"(m.vault_id))` }),
+  pgPolicy("transcript_version_write", { for: "all", using: sql`exists (select 1 from "app"."meetings" m where m.meeting_id = ${table.meetingId} and "app"."current_identity_can_write_vault"(m.vault_id))`, withCheck: sql`exists (select 1 from "app"."meetings" m where m.meeting_id = ${table.meetingId} and "app"."current_identity_can_write_vault"(m.vault_id))` }),
 ]).enableRLS();
 
 export const syncedTranscriptSegment = appSchema.table("transcript_segments", {
@@ -308,8 +306,8 @@ export const syncedTranscriptSegment = appSchema.table("transcript_segments", {
   }),
   pgPolicy("transcript_write", {
     for: "all",
-    using: sql`exists (select 1 from "app"."transcripts" t join "app"."meetings" m on m.meeting_id = t.meeting_id where t.id = ${table.transcriptId} and "app"."current_identity_owns_vault"(m.vault_id))`,
-    withCheck: sql`exists (select 1 from "app"."transcripts" t join "app"."meetings" m on m.meeting_id = t.meeting_id where t.id = ${table.transcriptId} and "app"."current_identity_owns_vault"(m.vault_id))`,
+    using: sql`exists (select 1 from "app"."transcripts" t join "app"."meetings" m on m.meeting_id = t.meeting_id where t.id = ${table.transcriptId} and "app"."current_identity_can_write_vault"(m.vault_id))`,
+    withCheck: sql`exists (select 1 from "app"."transcripts" t join "app"."meetings" m on m.meeting_id = t.meeting_id where t.id = ${table.transcriptId} and "app"."current_identity_can_write_vault"(m.vault_id))`,
   }),
 ]).enableRLS();
 
@@ -334,12 +332,12 @@ export const transcriptPatchChunk = appSchema.table("transcript_patch_chunks", {
   }).onDelete("cascade"),
   pgPolicy("transcript_patch_select", {
     for: "select",
-    using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
+    using: sql`"app"."current_identity_can_write_vault"(${table.vaultId})`,
   }),
   pgPolicy("transcript_patch_write", {
     for: "all",
-    using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
-    withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
+    using: sql`"app"."current_identity_can_write_vault"(${table.vaultId})`,
+    withCheck: sql`"app"."current_identity_can_write_vault"(${table.vaultId})`,
   }),
 ]).enableRLS();
 
@@ -366,8 +364,8 @@ export const syncedFile = appSchema.table("files", {
   check("files_size_check", sql`${table.size} >= 0`),
   check("files_metadata_ocr_text_length_check", sql`char_length(${table.metadata}->>'ocr_text') <= ${fileMetadataLimits.postgres.ocrText}`),
   check("files_metadata_caption_length_check", sql`char_length(${table.metadata}->>'caption') <= ${fileMetadataLimits.postgres.caption}`),
-  pgPolicy("file_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})` }),
-  pgPolicy("file_write", { for: "all", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` })
+  pgPolicy("file_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId}) OR (${governanceVault(table.vaultId)}) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.vault_id = ${table.vaultId} AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)` }),
+  pgPolicy("file_write", { for: "all", using: sql`"app"."current_identity_can_write_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_can_write_vault"(${table.vaultId})` })
 ]).enableRLS();
 
 
@@ -386,8 +384,8 @@ export const syncedRecording = appSchema.table("recordings", {
   unique("recordings_meeting_number_unique").on(table.meetingId, table.number),
   index("recordings_meeting_session_idx").on(table.meetingId, table.sessionId),
   check("recordings_number_check", sql`${table.number} > 0`),
-  pgPolicy("recording_select", { for: "select", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" WHERE "meeting_id" = ${table.meetingId} AND "app"."current_identity_can_read_vault"("vault_id"))` }),
-  pgPolicy("recording_write", { for: "all", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" WHERE "meeting_id" = ${table.meetingId} AND "app"."current_identity_owns_vault"("vault_id"))`, withCheck: sql`EXISTS (SELECT 1 FROM "app"."meetings" WHERE "meeting_id" = ${table.meetingId} AND "app"."current_identity_owns_vault"("vault_id"))` }),
+  pgPolicy("recording_select", { for: "select", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" WHERE "meeting_id" = ${table.meetingId} AND ("app"."current_identity_can_read_vault"("vault_id") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND "vault_id" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)))` }),
+  pgPolicy("recording_write", { for: "all", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" WHERE "meeting_id" = ${table.meetingId} AND ("app"."current_identity_can_write_vault"("vault_id") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND "vault_id" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)))`, withCheck: sql`EXISTS (SELECT 1 FROM "app"."meetings" WHERE "meeting_id" = ${table.meetingId} AND ("app"."current_identity_can_write_vault"("vault_id") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND "vault_id" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)))` }),
 ]).enableRLS();
 
 export const meetingAttachment = appSchema.table("meeting_attachments", {
@@ -404,8 +402,8 @@ export const meetingAttachment = appSchema.table("meeting_attachments", {
   foreignKey({ columns: [table.vaultId, table.fileId], foreignColumns: [syncedFile.vaultId, syncedFile.fileId] }),
   unique("meeting_attachments_meeting_attachment_unique").on(table.meetingId, table.fileId),
   index("meeting_attachments_vault_meeting_id_idx").on(table.vaultId, table.meetingId, table.id),
-  pgPolicy("meeting_attachment_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})` }),
-  pgPolicy("meeting_attachment_write", { for: "all", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` })
+  pgPolicy("meeting_attachment_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId}) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.vault_id = ${table.vaultId} AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)` }),
+  pgPolicy("meeting_attachment_write", { for: "all", using: sql`"app"."current_identity_can_write_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_can_write_vault"(${table.vaultId})` })
 ]).enableRLS();
 
 // Read-only image projection. All writes belong to files and meeting_attachments.
@@ -472,19 +470,18 @@ export const searchDocument = searchSchema.table("documents", {
     .on(table.vaultId, table.kind, table.meetingId, table.documentId),
   pgPolicy("search_document_select", {
     for: "select",
-    using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})`,
+    using: sql`"app"."current_identity_can_read_vault"(${table.vaultId}) OR (current_setting('app.maintenance', true) = 'search' AND ${table.vaultId} = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)`,
   }),
   pgPolicy("search_document_write", {
     for: "all",
-    using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
-    withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
+    using: sql`"app"."current_identity_can_write_vault"(${table.vaultId}) OR (current_setting('app.maintenance', true) = 'search' AND ${table.vaultId} = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)`,
+    withCheck: sql`"app"."current_identity_can_write_vault"(${table.vaultId}) OR (current_setting('app.maintenance', true) = 'search' AND ${table.vaultId} = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)`,
   }),
 ]).enableRLS();
 
 export const searchIndexJob = jobsSchema.table("search_index", {
   vaultId: uuid("vault_id").notNull(),
   documentId: uuid("document_id").notNull(),
-  ownerUserId: uuid("owner_user_id").notNull(),
   model: text("model").notNull(),
   dimensions: integer("dimensions").notNull(),
   generation: integer("generation").default(1).notNull(),
@@ -501,11 +498,6 @@ export const searchIndexJob = jobsSchema.table("search_index", {
     name: "search_index_job_vault_fk",
     columns: [table.vaultId],
     foreignColumns: [syncedVault.vaultId],
-  }).onDelete("cascade"),
-  foreignKey({
-    name: "search_index_job_owner_user_fk",
-    columns: [table.ownerUserId],
-    foreignColumns: [authUser.id],
   }).onDelete("cascade"),
   check("search_index_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
   check("search_index_job_dimensions_check", sql`${table.dimensions} BETWEEN 32 AND 1024`),
@@ -531,14 +523,13 @@ export const syncTransactionReceipt = appSchema.table("transaction_receipts", {
   index("transaction_receipt_owner_created_idx").on(table.ownerUserId, table.createdAt),
   pgPolicy("transaction_receipt_owner", {
     for: "all",
-    using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,
-    withCheck: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,
+    using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid OR current_setting('app.maintenance', true) = 'retention'`,
+    withCheck: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid OR current_setting('app.maintenance', true) = 'retention'`,
   }),
 ]).enableRLS();
 
 export const syncChange = appSchema.table("sync_changes", {
   sequence: bigserial("sequence", { mode: "number" }).primaryKey(),
-  ownerUserId: uuid("owner_user_id").notNull(),
   vaultId: uuid("vault_id").notNull(),
   entity: text("entity").notNull(),
   entityId: uuid("entity_id").notNull(),
@@ -549,18 +540,16 @@ export const syncChange = appSchema.table("sync_changes", {
 }, (table) => [
   check("sync_change_entity_check", sql`${table.entity} IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')`),
   check("sync_change_action_check", sql`${table.action} IN ('upsert', 'delete', 'reset')`),
-  index("sync_change_owner_vault_sequence_idx").on(table.ownerUserId, table.vaultId, table.sequence),
-  index("sync_change_owner_sequence_idx").on(table.ownerUserId, table.sequence),
+  index("sync_change_vault_sequence_idx").on(table.vaultId, table.sequence),
 ]);
 
 // Survives Vault deletion and ledger pruning; contains no canonical content.
 export const syncVaultState = appSchema.table("sync_vault_state", {
-  ownerUserId: uuid("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   vaultId: uuid("vault_id").notNull(),
   latestSequence: bigint("latest_sequence", { mode: "number" }).default(0).notNull(),
   prunedThrough: bigint("pruned_through", { mode: "number" }).default(0).notNull(),
 }, (table) => [
-  primaryKey({ columns: [table.ownerUserId, table.vaultId] }),
+  primaryKey({ columns: [table.vaultId] }),
   check("sync_vault_state_boundary_check", sql`${table.prunedThrough} >= 0 AND ${table.latestSequence} >= ${table.prunedThrough}`),
 ]);
 
@@ -649,7 +638,7 @@ export const summary = appSchema.table("summaries", {
   unique("summary_meeting_version_unique").on(table.meetingId, table.version),
   foreignKey({ columns: [table.meetingId], foreignColumns: [syncedMeeting.meetingId] }).onDelete("cascade"),
   pgPolicy("summary_select", { for: "select", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" m WHERE m.meeting_id = ${table.meetingId} AND "app"."current_identity_can_read_vault"(m.vault_id))` }),
-  pgPolicy("summary_write", { for: "all", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" m WHERE m.meeting_id = ${table.meetingId} AND "app"."current_identity_owns_vault"(m.vault_id))`, withCheck: sql`EXISTS (SELECT 1 FROM "app"."meetings" m WHERE m.meeting_id = ${table.meetingId} AND "app"."current_identity_owns_vault"(m.vault_id))` }),
+  pgPolicy("summary_write", { for: "all", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" m WHERE m.meeting_id = ${table.meetingId} AND "app"."current_identity_can_write_vault"(m.vault_id))`, withCheck: sql`EXISTS (SELECT 1 FROM "app"."meetings" m WHERE m.meeting_id = ${table.meetingId} AND "app"."current_identity_can_write_vault"(m.vault_id))` }),
 ]).enableRLS();
 
 // Retained independently of Vault deletion and ordinary sync-history pruning.
@@ -679,10 +668,9 @@ export const vaultTransfer = appSchema.table("vault_transfers", {
 export const cryptoSchema = pgSchema("crypto");
 export const vaultKey = cryptoSchema.table("vault_keys", {
   vaultId: uuid("vault_id").primaryKey(),
-  ownerUserId: uuid("owner_user_id").notNull(),
   wrappedKey: text("wrapped_key").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  pgPolicy("vault_key_read", { for: "select", using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid OR "app"."current_identity_can_read_vault"(${table.vaultId})` }),
-  pgPolicy("vault_key_write", { for: "all", using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`, withCheck: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid` }),
+  pgPolicy("vault_key_read", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId}) OR (${governanceVault(table.vaultId)}) OR (current_setting('app.maintenance', true) = 'governance' AND EXISTS (SELECT 1 FROM app.vaults v WHERE v.vault_id = ${table.vaultId} AND v.organization_id = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid)) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.vault_id = ${table.vaultId} AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)` }),
+  pgPolicy("vault_key_write", { for: "all", using: sql`"app"."current_identity_can_write_vault"(${table.vaultId}) OR current_setting('app.maintenance', true) = 'rotation'`, withCheck: sql`"app"."current_identity_can_write_vault"(${table.vaultId}) OR current_setting('app.maintenance', true) = 'rotation'` }),
 ]).enableRLS();
