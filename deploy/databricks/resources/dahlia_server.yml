@@ -18,6 +18,14 @@ resources:
       name: ${var.app_schema}
       comment: Resources for Dahlia Server ${bundle.target}
 
+  secrets:
+    auth_secret:
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.app_schema.name}
+      name: auth_secret
+      value: ${var.auth_secret_value}
+      comment: 'Dahlia authentication signing secret.'
+
   volumes:
     dahlia_storage:
       catalog_name: ${var.catalog}
@@ -69,10 +77,9 @@ resources:
           - name: LAKEBASE_ENDPOINT
             value_from: postgres
       resources:
-        - name: better-auth-secret
+        - name: auth-secret
           secret:
-            scope: ${var.better_auth_secret_scope}
-            key: ${var.better_auth_secret_key}
+            secret: ${resources.secrets.auth_secret.id}
             permission: READ
         - name: postgres
           postgres:

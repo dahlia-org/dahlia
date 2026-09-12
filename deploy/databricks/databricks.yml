@@ -16,12 +16,9 @@ experimental:
     postdeploy: "bash scripts/postdeploy.sh '${workspace.profile}' '${var.catalog}' '${var.ai_schema}' '${var.database_project_id}'"
 
 variables:
-  better_auth_secret_scope:
-    description: Existing secret scope containing the browser session secret.
-    default: dahlia
-  better_auth_secret_key:
+  auth_secret_value:
     description: Existing secret key with a unique random value of at least 32 characters.
-    default: better-auth-${bundle.target}
+    default: test-only-better-auth-secret-value
   database_project_id:
     description: Lakebase project ID.
   search_embedding_dimensions:
