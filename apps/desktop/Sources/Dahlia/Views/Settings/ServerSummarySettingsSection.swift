@@ -4,6 +4,7 @@ struct ServerSummarySettingsSection: View {
     let connectionID: UUID
     @Bindable private var model = ServerAccountSettingsModel.shared
     @State private var isExpanded = false
+    @State private var isHeaderHovered = false
     private var state: ServerAccountSettingsModel.State { model.state(for: connectionID) }
     private var remote: ServerAccountSettings.RemoteProcessing { state.settings?.processing?.remote ?? .init() }
     private var transcribesFirst: Bool { remote.workflow == .transcribeThenSummarize }
@@ -40,7 +41,12 @@ struct ServerSummarySettingsSection: View {
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                .background(
+                    isHeaderHovered ? DahliaDesign.contentHighlightColor : .clear,
+                    in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
+                )
+                .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
+                .onHover { isHeaderHovered = $0 }
             }
             .buttonStyle(.plain)
             .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
