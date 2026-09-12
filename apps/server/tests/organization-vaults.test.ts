@@ -1,7 +1,7 @@
 import { Client } from "pg";
 import { makeSignature } from "better-auth/crypto";
 import { encryptionConfig } from "../src/encryption/crypto";
-import { createApp } from "../src/app";
+import { AUTH_MAX_REQUEST_BYTES, createApp } from "../src/app";
 import { encodeId } from "../src/typeid";
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -76,6 +76,21 @@ async function teamVault(env: Awaited<ReturnType<typeof setup>>, actor: Identity
 }
 
 describe("Organization-owned Vaults", () => {
+  it.each([true, false])("rejects oversized organization JSON before validation (content length: %s)", async (knownLength) => {
+    const { store, auth, config, user, read } = await setup();
+    const actor = await user("creator@example.com");
+    const app = createApp({ config, auth, authStore: store });
+    const body = new TextEncoder().encode(JSON.stringify({ name: "x".repeat(AUTH_MAX_REQUEST_BYTES), slug: "oversized" }));
+    const headers = new Headers({ [config.authHeader]: actor.email!, "content-type": "application/json" });
+    if (knownLength) headers.set("content-length", String(body.length));
+    const response = await app.request("/api/v1/organizations", { method: "POST", headers,
+      body: knownLength ? body : new ReadableStream({ start(controller) { controller.enqueue(body); controller.close(); } }),
+      ...(!knownLength ? { duplex: "half" } : {}) });
+    expect(response.status).toBe(413);
+    expect(await response.json()).toMatchObject({ status: 413, code: "request_too_large" });
+    expect(await read("SELECT id FROM organization WHERE slug = ?", "oversized")).toEqual([]);
+  });
+
   it.each([undefined, "databricks"])("uses the configured Header provider ID %s without replacing existing accounts", async (authProviderId) => {
     const { read, user, headers } = await setup("header", authProviderId);
     const actor = await user("provider@example.com");

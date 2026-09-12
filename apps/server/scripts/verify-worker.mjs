@@ -44,6 +44,15 @@ try {
   const identityResponse = await mf.dispatchFetch('http://localhost:5173/api/v1/session', { headers: identityHeaders });
   assert.equal(identityResponse.status, 200, await identityResponse.clone().text());
   const identity = await identityResponse.json();
+  for (const knownLength of [true, false]) {
+    const body = JSON.stringify({ name: 'x'.repeat(64 * 1024), slug: 'oversized' });
+    const response = await mf.dispatchFetch('http://localhost:5173/api/v1/organizations', {
+      method: 'POST', headers: { ...identityHeaders, 'content-type': 'application/json',
+        ...(knownLength ? { 'content-length': String(body.length) } : {}) }, body,
+    });
+    assert.equal(response.status, 413, await response.clone().text());
+    assert.equal((await response.json()).code, 'request_too_large');
+  }
   const signIn = await mf.dispatchFetch('http://localhost:5173/api/auth/header/sign-in', { method: 'POST', headers: { ...identityHeaders, 'X-Forwarded-User': 'different', 'content-type': 'application/json' }, body: '{}' });
   assert.equal(signIn.status, 200, await signIn.clone().text());
   const session = await signIn.json();

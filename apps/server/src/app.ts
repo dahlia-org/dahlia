@@ -847,7 +847,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     return context.body(null, 204);
   });
 
-  registerApi(app, "createOrganization", async (context) => {
+  registerApi(app, "createOrganization", authBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);

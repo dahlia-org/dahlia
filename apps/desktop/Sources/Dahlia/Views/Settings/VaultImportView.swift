@@ -70,13 +70,13 @@ struct VaultImportView: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(useExisting ? destinationId == nil : organizationId == nil)
                 }
-                if isBusy { ProgressView().controlSize(.small) }
+                if isBusy || isCreating { ProgressView().controlSize(.small) }
             }
             .padding(24)
             .frame(width: 520)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         }
-        .disabled(isBusy)
+        .disabled(isBusy || isCreating)
         .task {
             destinationId = destinations.first?.vaultId
             organizationId = pending.organizations.first(where: { $0.kind == .team }).flatMap { UUID(uuidString: $0.id) }

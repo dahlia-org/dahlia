@@ -189,6 +189,10 @@
             configuration.httpAdditionalHeaders = ["X-Forwarded-Email": "swift-test@example.com", "X-Forwarded-User": "swift-test"]
             let api = SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" })
             let connectionID = UUID.v7(), vaultID = UUID.v7().uuidString.lowercased(), meetingID = UUID.v7().uuidString.lowercased()
+            let organizations = try await api.perform(origin: origin, connectionId: connectionID) {
+                try await $0.listOrganizations().ok.body.json
+            }
+            let organizationID = try #require(organizations.items.first(where: { $0.kind == .team })?.id)
             let data = Data("""
             {"schemaVersion":3,"id":"\(UUID.v7().uuidString
                 .lowercased())","vaultId":"\(vaultID)","createdAt":"2026-09-09T00:00:00.001Z","operations":[
@@ -196,7 +200,7 @@
                 .lowercased(
                 ))","entity":"vault","action":"create","entityId":"\(
                 vaultID
-            )","baseRevision":null,"data":{"name":"Swift integration","createdAt":"2026-09-09T00:00:00.001Z"}},
+            )","baseRevision":null,"data":{"organizationId":"\(organizationID)","name":"Swift integration","createdAt":"2026-09-09T00:00:00.001Z"}},
             {"id":"\(UUID.v7().uuidString
                 .lowercased(
                 ))","entity":"meeting","action":"create","entityId":"\(
