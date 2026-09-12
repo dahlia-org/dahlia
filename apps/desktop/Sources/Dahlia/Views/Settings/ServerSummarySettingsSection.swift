@@ -3,6 +3,7 @@ import SwiftUI
 struct ServerSummarySettingsSection: View {
     let connectionID: UUID
     @Bindable private var model = ServerAccountSettingsModel.shared
+    @State private var isExpanded = false
     private var state: ServerAccountSettingsModel.State { model.state(for: connectionID) }
     private var remote: ServerAccountSettings.RemoteProcessing { state.settings?.processing?.remote ?? .init() }
     private var transcribesFirst: Bool { remote.workflow == .transcribeThenSummarize }
@@ -28,7 +29,23 @@ struct ServerSummarySettingsSection: View {
                || (transcribesFirst && remote.transcriptionModel != nil && selectedTranscriptionModel == nil) {
                 SettingsStatusMessage(text: L10n.settingsCheckAdvancedModels, systemImage: "exclamationmark.triangle", tint: .orange)
             }
-            DisclosureGroup(L10n.serverProcessingAdvanced) {
+            Button {
+                isExpanded.toggle()
+            } label: {
+                HStack {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .accessibilityHidden(true)
+                    Text(L10n.serverProcessingAdvanced)
+                        .bold()
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
+
+            if isExpanded {
                 Picker(L10n.processingWorkflow, selection: workflowSelection) {
                     Text(L10n.transcribeThenSummarize).tag(ServerAccountSettings.Workflow.transcribeThenSummarize)
                     Text(L10n.combinedTranscriptionSummary).tag(ServerAccountSettings.Workflow.combined)

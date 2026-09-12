@@ -111,10 +111,10 @@ struct AccountProcessingSettingsView: View {
                 if let connectionID {
                     if location == .remote {
                         ServerSummarySettingsSection(connectionID: connectionID)
-                            .id(connectionID)
+                            .id("server-summary-\(connectionID)")
                     }
                     ServerAccountLanguageSettingsSection(connectionID: connectionID)
-                        .id(connectionID)
+                        .id("server-languages-\(connectionID)")
                 } else {
                     Section {
                         LabeledContent(L10n.imageAnalysisLanguages) {
