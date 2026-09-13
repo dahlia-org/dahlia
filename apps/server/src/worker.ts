@@ -40,6 +40,7 @@ export interface RuntimeSecrets {
   DAHLIA_AUTH_HEADER?: string;
   DAHLIA_AUTH_PROVIDER_ID?: string;
   DAHLIA_AUTH_TYPE?: string;
+  DAHLIA_LOCAL_SINGLE_USER?: string;
   DAHLIA_APP_URL?: string;
   DAHLIA_DATABASE_TYPE?: string;
   DAHLIA_DATABASE_URL?: string;

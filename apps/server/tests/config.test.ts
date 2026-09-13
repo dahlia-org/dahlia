@@ -248,6 +248,14 @@ describe("configuration", () => {
     expect(loadConfig({ ...accounts, DAHLIA_AUTH_TYPE: "header", DAHLIA_AUTH_PROVIDER_ID: value }).authProviderId).toBe(expected);
   });
 
+  it.each([[undefined, false], ["", false], ["0", false], ["true", false], ["1", true], [" 1 ", true]])(
+    "enables local single-user identity only for %s",
+    (value, expected) => {
+      expect(loadConfig({ ...accounts, DAHLIA_AUTH_TYPE: "header", DAHLIA_LOCAL_SINGLE_USER: value }).localSingleUser)
+        .toBe(expected);
+    },
+  );
+
   it("uses DATABRICKS_APP_URL unless DAHLIA_APP_URL overrides it", () => {
     expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       DAHLIA_AUTH_TYPE: "header",
