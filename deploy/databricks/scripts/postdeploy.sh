@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 4 ]]; then
-  echo "Usage: postdeploy.sh PROFILE CATALOG AI_SCHEMA DATABASE_PROJECT_ID" >&2
+if [[ $# -ne 6 ]]; then
+  echo "Usage: postdeploy.sh PROFILE CATALOG AI_SCHEMA DATABASE_PROJECT_ID APP_NAME AUTH_SECRET_NAME" >&2
   exit 1
 fi
 profile=$1
 catalog=$2
 ai_schema=$3
 database_project_id=$4
+app_name=$5
+auth_secret_name=$6
 
 # Keep successful response bodies quiet, but preserve CLI failure diagnostics.
 cli() {
@@ -19,6 +21,12 @@ cli() {
 }
 
 cli grants update catalog "$catalog" --json '{"changes":[{"principal":"account users","add":["USE_CATALOG"]}]}' >/dev/null
+
+# READ_SECRET is not yet represented in the CLI's bundle grants enum.
+app_principal=$(cli apps get "$app_name" | jq -er '.service_principal_client_id | select(type == "string" and length > 0)')
+secret_grant=$(jq -nc --arg principal "$app_principal" '{changes: [{principal: $principal, add: ["READ_SECRET"]}]}')
+secret_path=$(jq -nr --arg name "$auth_secret_name" '$name | @uri')
+cli api patch "/api/2.1/unity-catalog/permissions/secret/${secret_path}" --json "$secret_grant" >/dev/null
 
 cli api post "/api/2.0/postgres/projects/${database_project_id}/search-extensions" --json '{}' >/dev/null
 

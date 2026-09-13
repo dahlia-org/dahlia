@@ -13,12 +13,11 @@ sync:
 experimental:
   skip_name_prefix_for_schema: true
   scripts:
-    postdeploy: "bash scripts/postdeploy.sh '${workspace.profile}' '${var.catalog}' '${var.ai_schema}' '${var.database_project_id}'"
+    postdeploy: "bash scripts/postdeploy.sh '${workspace.profile}' '${var.catalog}' '${var.ai_schema}' '${var.database_project_id}' '${resources.apps.dahlia_server.name}' '${var.catalog}.${resources.schemas.app_schema.name}.auth_secret'"
 
 variables:
   auth_secret_value:
-    description: Existing secret key with a unique random value of at least 32 characters.
-    default: test-only-better-auth-secret-value
+    description: Stable random signing secret of at least 32 characters, supplied through BUNDLE_VAR_auth_secret_value.
   database_project_id:
     description: Lakebase project ID.
   search_embedding_dimensions:
