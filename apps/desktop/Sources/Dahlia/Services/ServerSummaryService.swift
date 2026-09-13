@@ -9,7 +9,7 @@ actor ServerSummaryService {
     private let synchronize: @Sendable (Target, DatabaseQueue) async throws -> Void
 
     struct Target: Equatable, Sendable {
-        let vaultID: UUID
+        let workspaceID: UUID
         let meetingID: UUID
         let connectionID: UUID
         let origin: String
@@ -114,20 +114,20 @@ actor ServerSummaryService {
         self.client = client
         self.synchronize = synchronize ?? { target, queue in
             let worker = SyncWorker(dbQueue: queue, session: client.session, apiClient: client)
-            try await worker.synchronizeForTransfer(vaultId: target.vaultID, connectionId: target.connectionID)
+            try await worker.synchronizeForTransfer(workspaceId: target.workspaceID, connectionId: target.connectionID)
         }
     }
 
     func target(meetingID: UUID, dbQueue: DatabaseQueue) async throws -> Target? {
         try await dbQueue.read { db in
             guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
-                  let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId) else { throw Failure.unavailable }
-            guard let connectionID = vault.accountConnectionId else { return nil }
+                  let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId) else { throw Failure.unavailable }
+            guard let connectionID = workspace.accountConnectionId else { return nil }
             guard let origin = try String.fetchOne(db, sql: "SELECT origin FROM dahlia_account_connections WHERE id = ?", arguments: [connectionID])
             else {
                 throw Failure.unavailable
             }
-            return Target(vaultID: vault.id, meetingID: meetingID, connectionID: connectionID, origin: origin)
+            return Target(workspaceID: workspace.id, meetingID: meetingID, connectionID: connectionID, origin: origin)
         }
     }
 
@@ -168,10 +168,10 @@ actor ServerSummaryService {
                 SELECT EXISTS (
                     SELECT 1 FROM sync_operations o
                     JOIN sync_transactions t ON t.id = o.transactionId
-                    WHERE t.vaultId = ? AND o.entity = 'transcript' AND o.entityId = ?
+                    WHERE t.workspace_id = ? AND o.entity = 'transcript' AND o.entityId = ?
                 )
                 """,
-                arguments: [target.vaultID, target.meetingID]
+                arguments: [target.workspaceID, target.meetingID]
             ) ?? false
         }
         guard !hasPendingMutation else { return nil }
@@ -509,12 +509,12 @@ actor ServerSummaryService {
         while ContinuousClock.now < deadline {
             guard try await self.target(meetingID: target.meetingID, dbQueue: dbQueue) == target else { throw Failure.unavailable }
             let ready = try await dbQueue.read { db in
-                try SyncTransactionQueue.matchesExpectedConnection(vaultId: target.vaultID, connectionId: target.connectionID, in: db)
-                    && !SyncTransactionQueue.hasPending(vaultId: target.vaultID, in: db)
+                try SyncTransactionQueue.matchesExpectedConnection(workspaceId: target.workspaceID, connectionId: target.connectionID, in: db)
+                    && !SyncTransactionQueue.hasPending(workspaceId: target.workspaceID, in: db)
                     && String.fetchOne(
                         db,
-                        sql: "SELECT syncPullCursor FROM vaults WHERE id = ? AND syncRecoveryState IS NULL",
-                        arguments: [target.vaultID]
+                        sql: "SELECT syncPullCursor FROM workspaces WHERE id = ? AND syncRecoveryState IS NULL",
+                        arguments: [target.workspaceID]
                     ) != nil
             }
             if ready {
@@ -522,7 +522,7 @@ actor ServerSummaryService {
                     try await synchronize(target, dbQueue)
                     return
                 } catch TextContentError.changed {
-                    // Another pull or local mutation may own the Vault; recheck its connection before retrying.
+                    // Another pull or local mutation may own the Workspace; recheck its connection before retrying.
                 }
             }
             try await Task.sleep(for: .seconds(1))

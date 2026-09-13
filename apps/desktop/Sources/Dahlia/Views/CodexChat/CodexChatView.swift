@@ -4,7 +4,7 @@ struct CodexChatView: View {
     @Bindable var session: CodexChatSessionModel
     @Bindable var coordinator: CodexChatCoordinator
     let meetingReferences: [CodexChatMeetingReference]
-    let meetingCatalogVaultID: UUID?
+    let meetingCatalogWorkspaceID: UUID?
     let isMeetingCatalogLoaded: Bool
     @Binding var showsHistory: Bool
     var configurationPresentation: Binding<Bool>?
@@ -96,7 +96,7 @@ struct CodexChatView: View {
         .onChange(of: meetingReferences) {
             updateMeetingCatalog()
         }
-        .onChange(of: meetingCatalogVaultID) {
+        .onChange(of: meetingCatalogWorkspaceID) {
             updateMeetingCatalog()
         }
         .onChange(of: isMeetingCatalogLoaded) {
@@ -164,7 +164,7 @@ struct CodexChatView: View {
     private func updateMeetingCatalog() {
         session.updateAvailableMeetings(
             meetingReferences,
-            catalogVaultID: meetingCatalogVaultID,
+            catalogWorkspaceID: meetingCatalogWorkspaceID,
             isCatalogLoaded: isMeetingCatalogLoaded
         )
     }

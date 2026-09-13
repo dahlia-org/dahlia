@@ -6,7 +6,7 @@ import GRDB
 struct SearchDocumentProjection {
     let kind: String
     let sourceID: UUID
-    let vaultID: UUID
+    let workspaceID: UUID
     let meetingID: UUID?
     let projectID: UUID?
     let fields: SearchDocumentFields
@@ -66,7 +66,7 @@ func indexScreenshotDocument(id: UUID, generation: Int, in db: Database) throws 
         db,
         sql: """
         SELECT meeting_images.id, meeting_images.meetingId, meeting_images.ocrText, meeting_images.caption,
-               meetings.vaultId, meetings.projectId
+               meetings.workspace_id, meetings.projectId
         FROM meeting_images
         JOIN meetings ON meetings.id = meeting_images.meetingId
         WHERE meeting_images.id = ? AND (meeting_images.ocrText IS NOT NULL OR meeting_images.caption IS NOT NULL)
@@ -84,7 +84,7 @@ func indexScreenshotDocument(id: UUID, generation: Int, in db: Database) throws 
         SearchDocumentProjection(
             kind: "screenshot",
             sourceID: row["id"],
-            vaultID: row["vaultId"],
+            workspaceID: row["workspace_id"],
             meetingID: row["meetingId"],
             projectID: row["projectId"],
             fields: SearchDocumentFields(
@@ -141,12 +141,12 @@ private func updateRegistry(
 ) throws {
     try db.execute(
         sql: """
-        UPDATE search_documents SET vaultId = ?, meetingId = ?, projectId = ?,
+        UPDATE search_documents SET workspace_id = ?, meetingId = ?, projectId = ?,
             sourceContentHash = ?, indexGeneration = ?, updatedAt = ?
         WHERE id = ?
         """,
         arguments: [
-            document.vaultID,
+            document.workspaceID,
             document.meetingID,
             document.projectID,
             hash,
@@ -166,14 +166,14 @@ private func insertRegistry(
     try db.execute(
         sql: """
         INSERT INTO search_documents(
-            kind, sourceId, vaultId, meetingId, projectId,
+            kind, sourceId, workspace_id, meetingId, projectId,
             sourceContentHash, indexGeneration, updatedAt
         ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
         """,
         arguments: [
             document.kind,
             document.sourceID,
-            document.vaultID,
+            document.workspaceID,
             document.meetingID,
             document.projectID,
             hash,
@@ -271,7 +271,7 @@ func indexMeetingDocument(id: UUID, generation: Int, projectPath knownProjectPat
     let document = SearchDocumentProjection(
         kind: "meeting",
         sourceID: id,
-        vaultID: meeting.vaultId,
+        workspaceID: meeting.workspaceId,
         meetingID: id,
         projectID: meeting.projectId,
         fields: fields

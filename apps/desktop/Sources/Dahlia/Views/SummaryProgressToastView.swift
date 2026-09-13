@@ -125,8 +125,8 @@ private struct SummaryGenerationJobProgressView: View {
                 )
             }
             SummaryProgressStepRow(label: L10n.generateSummary, status: job.progress.summaryGeneration)
-            if !job.progress.vaultExport.isSkipped {
-                SummaryProgressStepRow(label: L10n.exportBatchSummaryToVault, status: job.progress.vaultExport)
+            if !job.progress.workspaceExport.isSkipped {
+                SummaryProgressStepRow(label: L10n.exportBatchSummaryToWorkspace, status: job.progress.workspaceExport)
             }
             if !job.progress.googleDocsExport.isSkipped {
                 SummaryProgressStepRow(label: L10n.exportBatchSummaryToGoogleDocs, status: job.progress.googleDocsExport)

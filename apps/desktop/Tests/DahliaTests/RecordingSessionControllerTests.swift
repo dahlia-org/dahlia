@@ -611,8 +611,8 @@
             defer { try? FileManager.default.removeItem(at: directory) }
             let path = directory.appendingPathComponent("offline.sqlite").path
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://offline.example.test", clientID: "test", createdAt: .now)
-            let vault: VaultRecord = {
-                var value = VaultRecord(id: .v7(), path: nil, name: "Offline", createdAt: .now, lastOpenedAt: .now)
+            let workspace: WorkspaceRecord = {
+                var value = WorkspaceRecord(id: .v7(), path: nil, name: "Offline", createdAt: .now, lastOpenedAt: .now)
                 value.accountConnectionId = connection.id
                 if value.syncRole == nil { value.syncRole = "admin" }
                 if value.organizationId == nil { value.organizationId = .v7() }
@@ -623,7 +623,7 @@
                 let initial = try AppDatabaseManager(path: path)
                 try await initial.dbQueue.write { db in
                     try connection.insert(db)
-                    try vault.insert(db)
+                    try workspace.insert(db)
                 }
             }
             let database = try AppDatabaseManager(path: path)
@@ -635,7 +635,7 @@
             await settings.refresh(connectionID: connection.id)?.value
             #expect(settings.state(for: connection.id).settings == nil)
             let persistence = try await MeetingPersistenceService.createNew(
-                store: TranscriptStore(), dbQueue: database.dbQueue, vaultId: vault.id, projectId: nil, initialName: "Offline recording"
+                store: TranscriptStore(), dbQueue: database.dbQueue, workspaceId: workspace.id, projectId: nil, initialName: "Offline recording"
             )
             let probe = RecordingRuntimeProbe()
             let controller = RecordingSessionController(
@@ -682,8 +682,8 @@
         func recordingCreatedMeetingObservesSyncOnlyAfterSuccessfulStart(failsStart: Bool) async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://sync.example.test", clientID: "test", createdAt: .now)
-            let vault: VaultRecord = {
-                var value = VaultRecord(id: .v7(), path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now)
+            let workspace: WorkspaceRecord = {
+                var value = WorkspaceRecord(id: .v7(), path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now)
                 value.accountConnectionId = connection.id
                 if value.syncRole == nil { value.syncRole = "admin" }
                 if value.organizationId == nil { value.organizationId = .v7() }
@@ -693,8 +693,8 @@
             }()
             try await database.dbQueue.write { db in
                 try connection.insert(db)
-                try vault.insert(db)
-                try db.execute(sql: "UPDATE vaults SET syncMeetingEventsVersion = 1 WHERE id = ?", arguments: [vault.id])
+                try workspace.insert(db)
+                try db.execute(sql: "UPDATE workspaces SET syncMeetingEventsVersion = 1 WHERE id = ?", arguments: [workspace.id])
             }
             let probe = RecordingRuntimeProbe()
             let controller = RecordingSessionController(
@@ -712,8 +712,8 @@
             )
             viewModel.microphoneSelection = .none
             viewModel.isSystemAudioEnabled = true
-            viewModel.beginDraftMeeting(dbQueue: database.dbQueue, vaultURL: nil)
-            await viewModel.startListening(dbQueue: database.dbQueue, projectURL: nil, vaultId: vault.id, projectId: nil, vaultURL: nil)
+            viewModel.beginDraftMeeting(dbQueue: database.dbQueue, workspaceURL: nil)
+            await viewModel.startListening(dbQueue: database.dbQueue, projectURL: nil, workspaceId: workspace.id, projectId: nil, workspaceURL: nil)
             #expect(try await database.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity = 'meeting_event'")
             } == (failsStart ? 0 : 1))
@@ -729,11 +729,11 @@
             #expect(await pollUntil { viewModel.meetingSyncState == .pending })
             let document = try SummaryDocument(title: "Remote title", sections: []).databaseJSONString()
             try await database.dbQueue.write { db in
-                try SyncTransactionQueue.discard(vaultId: vault.id, in: db)
+                try SyncTransactionQueue.discard(workspaceId: workspace.id, in: db)
                 try SummaryContent(meetingId: meetingId, title: "Remote title", document: document, createdAt: .now).insert(db)
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'summary', ?, 1)",
-                    arguments: [vault.id, meetingId]
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'summary', ?, 1)",
+                    arguments: [workspace.id, meetingId]
                 )
             }
             #expect(await pollUntil { viewModel.meetingSyncState == .synced })
@@ -744,9 +744,9 @@
             await viewModel.startListening(
                 dbQueue: database.dbQueue,
                 projectURL: nil,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: nil,
-                vaultURL: nil,
+                workspaceURL: nil,
                 appendingTo: meetingId
             )
             #expect(viewModel.currentMeetingId == meetingId)

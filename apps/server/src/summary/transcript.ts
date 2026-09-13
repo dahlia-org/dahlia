@@ -1,4 +1,4 @@
-import { canWriteVault } from "../auth/vault-permissions";
+import { canWriteWorkspace } from "../auth/workspace-permissions";
 import { summaryResponseMetadataSchema } from "./metadata";
 import { summaryStyleDetail } from "../account-settings-model";
 import { resolveSummaryPreferences } from "./preferences";
@@ -7,7 +7,6 @@ import { z } from "zod";
 import type { AppConfig } from "../config";
 import type { IdentitySyncStore, MeetingSyncStore, SyncTranscriptSegment, SyncScreenshotRecord } from "../sync/types";
 import type { MeetingSyncService } from "../sync/service";
-import { personalWorkspaceId } from "../auth/workspace";
 import { DatabricksTokenError } from "../databricks/token";
 import { createJobProvider } from "../ai-gateway/job-provider";
 import { GatewayRequestError } from "../ai-gateway/errors";
@@ -19,22 +18,22 @@ export async function fingerprint(value: unknown): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)));
   return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
-export async function assertSummaryAccess(store: IdentitySyncStore, vaultId: string) {
-  if (!canWriteVault((await store.getVault(vaultId))?.role)) throw new SummaryError("summary_meeting_unavailable");
+export async function assertSummaryAccess(store: IdentitySyncStore, workspaceId: string) {
+  if (!canWriteWorkspace((await store.getWorkspace(workspaceId))?.role)) throw new SummaryError("summary_meeting_unavailable");
 }
 
-export async function collectSummaryInput(store: IdentitySyncStore, vaultId: string, meetingId: string, includeTranscript = true, reference?: SummaryInput | null) {
-  await assertSummaryAccess(store, vaultId);
-  const meeting = await store.getMeeting(vaultId, meetingId);
+export async function collectSummaryInput(store: IdentitySyncStore, workspaceId: string, meetingId: string, includeTranscript = true, reference?: SummaryInput | null) {
+  await assertSummaryAccess(store, workspaceId);
+  const meeting = await store.getMeeting(workspaceId, meetingId);
   if (!meeting) throw new SummaryError("summary_meeting_unavailable");
-  const project = meeting.projectId ? await store.getProject(vaultId, meeting.projectId) : null;
+  const project = meeting.projectId ? await store.getProject(workspaceId, meeting.projectId) : null;
   let transcriptVersion: number | undefined;
   if (reference?.type === "transcript") {
     transcriptVersion = Number(reference.version);
     if (!/^[1-9][0-9]*$/.test(reference.version) || !Number.isSafeInteger(transcriptVersion) || transcriptVersion > 2147483647) {
       throw new SummaryError("summary_input_version_unavailable");
     }
-    const version = await store.getTranscript(vaultId, meetingId, transcriptVersion);
+    const version = await store.getTranscript(workspaceId, meetingId, transcriptVersion);
     if (!version) throw new SummaryError("summary_input_version_unavailable");
   }
   const transcript: SyncTranscriptSegment[] = [];
@@ -42,7 +41,7 @@ export async function collectSummaryInput(store: IdentitySyncStore, vaultId: str
   let size = 0;
   while (includeTranscript) {
     const last = transcript.at(-1);
-    const page = await store.listTranscript(vaultId, meetingId, 200, last ? { startedAt: last.startedAt, segmentId: last.segmentId } : undefined, transcriptVersion);
+    const page = await store.listTranscript(workspaceId, meetingId, 200, last ? { startedAt: last.startedAt, segmentId: last.segmentId } : undefined, transcriptVersion);
     size += JSON.stringify(page).length;
     if (size > 2_000_000 || transcript.length + page.length > 20000) throw new SummaryError("summary_input_too_large");
     transcript.push(...page);
@@ -50,7 +49,7 @@ export async function collectSummaryInput(store: IdentitySyncStore, vaultId: str
   }
   while (true) {
     const last = images.at(-1);
-    const page = await store.listScreenshots(vaultId, meetingId, undefined, 200, last ? { capturedAt: last.capturedAt, screenshotId: last.screenshotId } : undefined);
+    const page = await store.listScreenshots(workspaceId, meetingId, undefined, 200, last ? { capturedAt: last.capturedAt, screenshotId: last.screenshotId } : undefined);
     size += JSON.stringify(page).length;
     if (size > 2_000_000 || images.length + page.length > 5000) throw new SummaryError("summary_input_too_large");
     images.push(...page);
@@ -77,7 +76,7 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
     async resolvePreferences(preferences, input) {
       return resolveSummaryPreferences(preferences, input, await backend.listModels({ signal: AbortSignal.timeout(30_000) }), execution.normalizeModel);
     },
-    async version(scoped, vaultId, meetingId, input) { return fingerprint(await collectSummaryInput(scoped, vaultId, meetingId, true, input)); },
+    async version(scoped, workspaceId, meetingId, input) { return fingerprint(await collectSummaryInput(scoped, workspaceId, meetingId, true, input)); },
     async validateSettings(settings, input) {
       if (!input && provider.backend === "databricks") return;
       const catalog = await backend.listModels({ signal: AbortSignal.timeout(30_000) });
@@ -90,10 +89,10 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
     async generate(job, signal) {
       let requestId: string | undefined;
       try {
-      const identity = { userId: job.ownerUserId, workspaceId: personalWorkspaceId(job.ownerUserId), source: "accounts" as const };
+      const identity = { userId: job.ownerUserId, source: "accounts" as const };
       const reference: SummaryInput | null | undefined = job.transcriptResult
         ? { type: "transcript", ...job.transcriptResult } : job.input;
-      const input = await store.withIdentity(identity, (scoped) => collectSummaryInput(scoped, job.vaultId, job.meetingId, true, reference));
+      const input = await store.withIdentity(identity, (scoped) => collectSummaryInput(scoped, job.workspaceId, job.meetingId, true, reference));
       if (!job.transcriptResult && await fingerprint(input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
       if (!input.transcript?.some((segment) => segment.text.trim())) throw new SummaryError("summary_transcript_empty");
       const { content, images, imageIds } = await summaryImageContent(input, sync, identity, signal);
@@ -102,7 +101,7 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
         throw new SummaryError("summary_invalid_model");
       }
       const headers = await execution.headers(job.ownerUserId);
-      await store.withIdentity(identity, (scoped) => assertSummaryAccess(scoped, job.vaultId));
+      await store.withIdentity(identity, (scoped) => assertSummaryAccess(scoped, job.workspaceId));
       const response = await sendOpenAIResponses(provider, headers.authorization!, {
         requestHeaders: new Headers({ accept: "application/json" }), signal, upstreamHeaders: headers,
         body: JSON.stringify({ model, stream: false, store: false,

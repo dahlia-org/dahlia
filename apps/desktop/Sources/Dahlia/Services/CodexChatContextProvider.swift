@@ -3,28 +3,28 @@ import GRDB
 
 @MainActor
 final class CodexChatContextProvider: CodexChatContextProviding {
-    private var vaultID: UUID?
+    private var workspaceID: UUID?
     private var meetingID: UUID?
     private var projectID: UUID?
     private var draftMeeting: DraftMeeting?
     private var dbQueue: DatabaseQueue?
 
     func update(
-        vaultID: UUID?,
+        workspaceID: UUID?,
         meetingID: UUID?,
         projectID: UUID? = nil,
         draftMeeting: DraftMeeting?,
         dbQueue: DatabaseQueue?
     ) {
-        self.vaultID = vaultID
+        self.workspaceID = workspaceID
         self.meetingID = meetingID
         self.projectID = projectID
         self.draftMeeting = draftMeeting
         self.dbQueue = dbQueue
     }
 
-    func currentContext(vaultID: UUID) async throws -> CodexChatContext? {
-        guard self.vaultID == vaultID else { return nil }
+    func currentContext(workspaceID: UUID) async throws -> CodexChatContext? {
+        guard self.workspaceID == workspaceID else { return nil }
         if let projectID {
             guard let dbQueue else { throw CodexChatContextError.selectedProjectUnavailable }
             let project = try await Task.detached(priority: .userInitiated) {
@@ -33,7 +33,7 @@ final class CodexChatContextProvider: CodexChatContextProviding {
                 }
             }.value
             guard let project,
-                  project.vaultId == vaultID else {
+                  project.workspaceId == workspaceID else {
                 throw CodexChatContextError.selectedProjectUnavailable
             }
             return .project(id: project.id, name: project.name, description: project.description)
@@ -51,7 +51,7 @@ final class CodexChatContextProvider: CodexChatContextProviding {
         let repository = MeetingRepository(dbQueue: dbQueue)
         let detail = try await repository.fetchCodexChatContext(id: meetingID)
         guard let meeting = detail.meeting,
-              meeting.vaultId == vaultID else {
+              meeting.workspaceId == workspaceID else {
             throw CodexChatContextError.selectedMeetingUnavailable
         }
         return .meeting(

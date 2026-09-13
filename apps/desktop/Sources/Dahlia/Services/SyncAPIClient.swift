@@ -27,7 +27,7 @@ struct SyncAPIClient: Sendable {
     func data(for unsigned: URLRequest, connectionId: UUID, maximumBytes: Int? = nil) async throws -> Data {
         for attempt in 0 ... 1 {
             var request = unsigned
-            request.setValue("1", forHTTPHeaderField: "X-Dahlia-Vault-Transfers")
+            request.setValue("1", forHTTPHeaderField: "X-Dahlia-Workspace-Transfers")
             let token = try await tokenProvider(connectionId, attempt == 1)
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             let data: Data

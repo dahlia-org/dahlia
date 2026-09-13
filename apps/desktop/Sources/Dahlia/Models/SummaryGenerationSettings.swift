@@ -14,11 +14,11 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
     @MainActor
     static func current(
         _ settings: AppSettings = .shared,
-        vaultAISettings: VaultAISettingsModel = .shared,
+        workspaceAISettings: WorkspaceAISettingsModel = .shared,
         detailLevel: SummaryDetailLevel? = nil,
         accountSettings: ServerAccountSettings? = nil
     ) -> Self {
-        let account = accountSettings ?? settings.currentVault?.accountConnectionId.flatMap {
+        let account = accountSettings ?? settings.currentWorkspace?.accountConnectionId.flatMap {
             ServerAccountSettingsModel.shared.state(for: $0).settings
         }
         return Self(
@@ -28,10 +28,10 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
             languageDisplayName: (account?.outputLanguage ?? settings.llmSummaryLanguage).displayName,
             runtimeProvider: CodexRuntimeProvider(
                 accountConnectionID: nil,
-                localProvider: vaultAISettings.localProvider,
-                databricksProfile: vaultAISettings.databricksProfile
+                localProvider: workspaceAISettings.localProvider,
+                databricksProfile: workspaceAISettings.databricksProfile
             ),
-            accountConnectionID: settings.currentVault?.accountConnectionId
+            accountConnectionID: settings.currentWorkspace?.accountConnectionId
         )
     }
 

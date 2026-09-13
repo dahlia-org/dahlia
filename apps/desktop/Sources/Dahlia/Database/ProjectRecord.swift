@@ -7,7 +7,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
     static let databaseTableName = "projects"
 
     var id: UUID
-    var vaultId: UUID
+    var workspaceId: UUID
     var parentProjectId: UUID?
     var name: String {
         didSet {
@@ -48,7 +48,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
 
     enum CodingKeys: String, CodingKey {
         case id
-        case vaultId
+        case workspaceId = "workspace_id"
         case parentProjectId
         case name
         case nameKey
@@ -61,7 +61,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
 
     init(
         id: UUID,
-        vaultId: UUID,
+        workspaceId: UUID,
         parentProjectId: UUID?,
         name: String,
         createdAt: Date,
@@ -74,7 +74,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         appearance: ProjectAppearance? = nil
     ) {
         self.id = id
-        self.vaultId = vaultId
+        self.workspaceId = workspaceId
         self.parentProjectId = parentProjectId
         self.name = name
         nameKey = DahliaProjectName.siblingKey(name)
@@ -91,14 +91,14 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
     /// Compatibility initializer for call sites that construct a root or an in-memory path fixture.
     init(
         id: UUID,
-        vaultId: UUID,
+        workspaceId: UUID,
         path: String,
         createdAt: Date,
         description: String = ""
     ) {
         self.init(
             id: id,
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             parentProjectId: nil,
             name: path.split(separator: "/").last.map(String.init) ?? path,
             createdAt: createdAt,
@@ -110,12 +110,12 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
 
     static func fetchResolved(id: UUID, in db: Database) throws -> Self? {
         guard let record = try fetchOne(db, key: id) else { return nil }
-        return try fetchResolvedAll(vaultId: record.vaultId, in: db).first { $0.id == id }
+        return try fetchResolvedAll(workspaceId: record.workspaceId, in: db).first { $0.id == id }
     }
 
-    static func fetchResolvedAll(vaultId: UUID, in db: Database) throws -> [Self] {
+    static func fetchResolvedAll(workspaceId: UUID, in db: Database) throws -> [Self] {
         var records = try Self
-            .filter(Column("vaultId") == vaultId)
+            .filter(Column("workspace_id") == workspaceId)
             .fetchAll(db)
         let paths = resolvedPaths(records)
         for index in records.indices {
@@ -152,8 +152,8 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         return paths
     }
 
-    static func hierarchy(projectId: UUID, vaultId: UUID, in db: Database) throws -> [Self] {
-        let records = try fetchResolvedAll(vaultId: vaultId, in: db)
+    static func hierarchy(projectId: UUID, workspaceId: UUID, in db: Database) throws -> [Self] {
+        let records = try fetchResolvedAll(workspaceId: workspaceId, in: db)
         return hierarchy(projectId: projectId, records: records)
     }
 
@@ -216,7 +216,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
 
     static func applyCanonical(
         id: UUID,
-        vaultId: UUID,
+        workspaceId: UUID,
         parentProjectId: UUID?,
         name: String,
         createdAt: Date,
@@ -229,7 +229,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         guard var project = try fetchOne(db, key: id) else {
             try Self(
                 id: id,
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 parentProjectId: parentProjectId,
                 name: name,
                 createdAt: createdAt,
@@ -239,7 +239,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
             ).insert(db)
             return
         }
-        guard project.vaultId == vaultId else {
+        guard project.workspaceId == workspaceId else {
             throw ProjectWorkspaceError.projectNotFound
         }
 
@@ -250,7 +250,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
             || project.createdAt != createdAt
             || project.description != description
             || project.icon != icon || project.color != color else { return }
-        let descendantIDs = try Set(hierarchy(projectId: id, vaultId: vaultId, in: db).dropFirst().map(\.id))
+        let descendantIDs = try Set(hierarchy(projectId: id, workspaceId: workspaceId, in: db).dropFirst().map(\.id))
         project.parentProjectId = parentProjectId
         project.name = name
         project.createdAt = createdAt

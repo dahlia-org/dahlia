@@ -13,7 +13,7 @@ import os
 
     @MainActor
     struct CaptionViewModelTests {
-        private let testVaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        private let testWorkspaceURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
 
         @Test
         func recordingStartReservationRejectsMeetingCreationAndDraftMaterialization() throws {
@@ -36,7 +36,7 @@ import os
             viewModel.beginDraftMeeting(
                 from: event,
                 dbQueue: database.dbQueue,
-                vaultURL: testVaultURL
+                workspaceURL: testWorkspaceURL
             )
             let draftId = viewModel.draftMeeting?.id
 
@@ -46,14 +46,14 @@ import os
             viewModel.createEmptyMeeting(
                 dbQueue: database.dbQueue,
                 projectURL: nil,
-                vaultId: UUID.v7(),
+                workspaceId: UUID.v7(),
                 projectId: nil,
-                vaultURL: testVaultURL
+                workspaceURL: testWorkspaceURL
             )
             viewModel.beginDraftMeeting(
                 from: event,
                 dbQueue: database.dbQueue,
-                vaultURL: testVaultURL
+                workspaceURL: testWorkspaceURL
             )
 
             #expect(viewModel.isRecordingLifecycleBusy)
@@ -68,7 +68,7 @@ import os
         func rejectedEmptyMeetingDoesNotReplaceTheVisibleMeeting() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             let connectionID = UUID.v7()
             let connection = DahliaAccountConnectionRecord(
                 id: connectionID,
@@ -76,21 +76,21 @@ import os
                 clientID: "desktop-client",
                 createdAt: .now
             )
-            var vault = VaultRecord(
-                id: vaultID,
+            var workspace = WorkspaceRecord(
+                id: workspaceID,
                 path: nil,
-                name: "Shared Vault",
+                name: "Shared Workspace",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
-            vault.accountConnectionId = connectionID
-            if vault.syncRole == nil { vault.syncRole = "admin" }
-            if vault.organizationId == nil { vault.organizationId = .v7() }
-            vault.syncConfirmedConnectionId = connectionID
-            vault.syncRole = "viewer"
+            workspace.accountConnectionId = connectionID
+            if workspace.syncRole == nil { workspace.syncRole = "admin" }
+            if workspace.organizationId == nil { workspace.organizationId = .v7() }
+            workspace.syncConfirmedConnectionId = connectionID
+            workspace.syncRole = "viewer"
             try database.dbQueue.write { db in
                 try connection.insert(db)
-                try vault.insert(db)
+                try workspace.insert(db)
             }
             let visibleMeetingID = UUID.v7()
             viewModel.currentMeetingId = visibleMeetingID
@@ -98,9 +98,9 @@ import os
             let createdMeetingID = viewModel.createEmptyMeeting(
                 dbQueue: database.dbQueue,
                 projectURL: nil,
-                vaultId: vaultID,
+                workspaceId: workspaceID,
                 projectId: nil,
-                vaultURL: nil
+                workspaceURL: nil
             )
 
             #expect(createdMeetingID == nil)
@@ -315,7 +315,7 @@ import os
 
             viewModel.isListening = true
             viewModel.currentMeetingId = meetingId
-            viewModel.currentVaultURL = testVaultURL
+            viewModel.currentWorkspaceURL = testWorkspaceURL
             viewModel.store.loadSegments([initialSegment])
 
             let storeIdentity = ObjectIdentifier(viewModel.store)
@@ -325,7 +325,7 @@ import os
                 dbQueue: dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: testVaultURL
+                workspaceURL: testWorkspaceURL
             )
 
             #expect(ObjectIdentifier(viewModel.store) == storeIdentity)
@@ -444,14 +444,14 @@ import os
             let freshViewModel = CaptionViewModel()
 
             #expect(viewModel.canGenerateSummary)
-            #expect(freshViewModel.canSwitchVault)
+            #expect(freshViewModel.canSwitchWorkspace)
 
             viewModel.isFinalizingRecording = true
             freshViewModel.isFinalizingRecording = true
             viewModel.triggerManualSummary()
 
             #expect(!viewModel.canGenerateSummary)
-            #expect(!freshViewModel.canSwitchVault)
+            #expect(!freshViewModel.canSwitchWorkspace)
             #expect(!viewModel.requestShowSummaryTab)
             #expect(viewModel.summaryGeneratingMeetingIDs.isEmpty)
         }
@@ -484,18 +484,18 @@ import os
             let database = try AppDatabaseManager(path: ":memory:")
             let meetingId = UUID.v7()
             let viewModel = CaptionViewModel()
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
-                path: testVaultURL.path,
-                name: "Retry Vault",
+                path: testWorkspaceURL.path,
+                name: "Retry Workspace",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try MeetingRecord(
                     id: meetingId,
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     projectId: nil,
                     name: "Recovered",
                     createdAt: .now,
@@ -515,7 +515,7 @@ import os
                 dbQueue: database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: testVaultURL
+                workspaceURL: testWorkspaceURL
             )
             try await waitUntil { viewModel.store.requiresFullMeetingReload }
             try await database.dbQueue.write { db in
@@ -554,7 +554,7 @@ import os
                     dbQueue: dbQueue,
                     projectURL: nil,
                     projectId: nil,
-                    vaultURL: testVaultURL
+                    workspaceURL: testWorkspaceURL
                 )
             }
             try expectStorePreserved { viewModel in
@@ -564,9 +564,9 @@ import os
                 try viewModel.createEmptyMeeting(
                     dbQueue: DatabaseQueue(path: ":memory:"),
                     projectURL: nil,
-                    vaultId: UUID.v7(),
+                    workspaceId: UUID.v7(),
                     projectId: nil,
-                    vaultURL: testVaultURL
+                    workspaceURL: testWorkspaceURL
                 )
             }
         }
@@ -581,7 +581,7 @@ import os
             )
 
             viewModel.currentMeetingId = UUID.v7()
-            viewModel.currentVaultURL = testVaultURL
+            viewModel.currentWorkspaceURL = testWorkspaceURL
             viewModel.store.loadSegments([segment])
 
             return viewModel
@@ -605,12 +605,12 @@ import os
                 isAllDay: false,
                 conferenceURI: URL(string: "https://meet.google.com/test-link")
             )
-            let vaultId = UUID.v7()
+            let workspaceId = UUID.v7()
             try database.dbQueue.write { db in
-                try VaultRecord(
-                    id: vaultId,
-                    path: testVaultURL.path,
-                    name: "Test Vault",
+                try WorkspaceRecord(
+                    id: workspaceId,
+                    path: testWorkspaceURL.path,
+                    name: "Test Workspace",
                     createdAt: Date(),
                     lastOpenedAt: Date()
                 ).insert(db)
@@ -619,7 +619,7 @@ import os
             viewModel.beginDraftMeeting(
                 from: event,
                 dbQueue: database.dbQueue,
-                vaultURL: testVaultURL
+                workspaceURL: testWorkspaceURL
             )
 
             let counts = try database.dbQueue.read { db in
@@ -656,7 +656,7 @@ import os
             try viewModel.beginDraftMeeting(
                 from: event,
                 dbQueue: DatabaseQueue(path: ":memory:"),
-                vaultURL: testVaultURL
+                workspaceURL: testWorkspaceURL
             )
             viewModel.clearCurrentMeeting()
 
@@ -684,7 +684,7 @@ import os
             try viewModel.beginDraftMeeting(
                 from: event,
                 dbQueue: DatabaseQueue(path: ":memory:"),
-                vaultURL: testVaultURL
+                workspaceURL: testWorkspaceURL
             )
             viewModel.updateDraftMeetingTitle("Edited title")
 
@@ -705,7 +705,7 @@ import os
             let database = try AppDatabaseManager(path: ":memory:")
             let dbQueue = database.dbQueue
             let projectId = UUID.v7()
-            let projectURL = testVaultURL.appending(path: "Projects/Design", directoryHint: .isDirectory)
+            let projectURL = testWorkspaceURL.appending(path: "Projects/Design", directoryHint: .isDirectory)
             let event = CalendarEvent(
                 id: "primary::event-1",
                 calendarID: "primary",
@@ -726,7 +726,7 @@ import os
                 projectURL: projectURL,
                 projectId: projectId,
                 projectName: "Projects/Design",
-                vaultURL: testVaultURL
+                workspaceURL: testWorkspaceURL
             )
             viewModel.updateDraftMeetingTitle("Edited design review")
             let reportedStartFailure = OSAllocatedUnfairLock(initialState: false)
@@ -753,9 +753,9 @@ import os
                 await viewModel.startListening(
                     dbQueue: dbQueue,
                     projectURL: nil,
-                    vaultId: UUID.v7(),
+                    workspaceId: UUID.v7(),
                     projectId: nil,
-                    vaultURL: testVaultURL,
+                    workspaceURL: testWorkspaceURL,
                     initialMeetingName: "Quick recording 2026-08-15 12:34:56",
                     usesDraftMeeting: false
                 )
@@ -783,25 +783,25 @@ import os
         func materializeDraftMeetingWithoutExportFolderPersistsMeetingAndCalendarEvent() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
-            let vaultId = UUID.v7()
+            let workspaceId = UUID.v7()
             try database.dbQueue.write { db in
-                try VaultRecord(
-                    id: vaultId,
+                try WorkspaceRecord(
+                    id: workspaceId,
                     path: nil,
-                    name: "Test Vault",
+                    name: "Test Workspace",
                     createdAt: Date(),
                     lastOpenedAt: Date()
                 ).insert(db)
             }
-            let previousVault = AppSettings.shared.currentVault
-            AppSettings.shared.currentVault = VaultRecord(
-                id: vaultId,
+            let previousWorkspace = AppSettings.shared.currentWorkspace
+            AppSettings.shared.currentWorkspace = WorkspaceRecord(
+                id: workspaceId,
                 path: nil,
-                name: "Test Vault",
+                name: "Test Workspace",
                 createdAt: Date(),
                 lastOpenedAt: Date()
             )
-            defer { AppSettings.shared.currentVault = previousVault }
+            defer { AppSettings.shared.currentWorkspace = previousWorkspace }
 
             viewModel.beginDraftMeeting(
                 from: CalendarEvent(
@@ -819,7 +819,7 @@ import os
                     conferenceURI: URL(string: "https://meet.google.com/test-link")
                 ),
                 dbQueue: database.dbQueue,
-                vaultURL: nil
+                workspaceURL: nil
             )
 
             let meetingId = try #require(
@@ -849,33 +849,33 @@ import os
         }
 
         @Test
-        func updatingVaultExportFolderRefreshesDraftProjectURL() throws {
+        func updatingWorkspaceExportFolderRefreshesDraftProjectURL() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
             viewModel.beginDraftMeeting(
                 dbQueue: database.dbQueue,
                 projectName: "Parent/Child",
-                vaultURL: nil
+                workspaceURL: nil
             )
 
-            viewModel.updateVaultExportFolder(testVaultURL)
+            viewModel.updateWorkspaceExportFolder(testWorkspaceURL)
 
-            let expected = testVaultURL.appending(path: "Parent/Child", directoryHint: .isDirectory)
-            #expect(viewModel.currentVaultURL == testVaultURL)
+            let expected = testWorkspaceURL.appending(path: "Parent/Child", directoryHint: .isDirectory)
+            #expect(viewModel.currentWorkspaceURL == testWorkspaceURL)
             #expect(viewModel.currentProjectURL == expected)
             #expect(viewModel.draftMeeting?.projectURL == expected)
         }
 
         @Test
-        func removingVaultExportFolderRefreshesNavigatedRecordingContext() throws {
+        func removingWorkspaceExportFolderRefreshesNavigatedRecordingContext() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
             let recordingMeetingID = UUID.v7()
             viewModel.isListening = true
             viewModel.currentMeetingId = recordingMeetingID
-            viewModel.currentVaultURL = testVaultURL
+            viewModel.currentWorkspaceURL = testWorkspaceURL
             viewModel.setExplicitProjectContext(
-                projectURL: testVaultURL.appending(path: "Parent/Child", directoryHint: .isDirectory),
+                projectURL: testWorkspaceURL.appending(path: "Parent/Child", directoryHint: .isDirectory),
                 projectId: UUID.v7(),
                 projectName: "Parent/Child"
             )
@@ -884,14 +884,14 @@ import os
                 dbQueue: database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: testVaultURL
+                workspaceURL: testWorkspaceURL
             )
 
-            viewModel.updateVaultExportFolder(nil)
+            viewModel.updateWorkspaceExportFolder(nil)
             viewModel.returnToRecordingMeeting()
 
             #expect(viewModel.currentMeetingId == recordingMeetingID)
-            #expect(viewModel.currentVaultURL == nil)
+            #expect(viewModel.currentWorkspaceURL == nil)
             #expect(viewModel.currentProjectURL == nil)
             #expect(viewModel.currentProjectName == "Parent/Child")
         }
@@ -900,25 +900,25 @@ import os
         func materializeDraftMeetingPersistsMacCalendarEventPlatform() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
-            let vaultId = UUID.v7()
+            let workspaceId = UUID.v7()
             try database.dbQueue.write { db in
-                try VaultRecord(
-                    id: vaultId,
-                    path: testVaultURL.path,
-                    name: "Test Vault",
+                try WorkspaceRecord(
+                    id: workspaceId,
+                    path: testWorkspaceURL.path,
+                    name: "Test Workspace",
                     createdAt: Date(),
                     lastOpenedAt: Date()
                 ).insert(db)
             }
-            let previousVault = AppSettings.shared.currentVault
-            AppSettings.shared.currentVault = VaultRecord(
-                id: vaultId,
-                path: testVaultURL.path,
-                name: "Test Vault",
+            let previousWorkspace = AppSettings.shared.currentWorkspace
+            AppSettings.shared.currentWorkspace = WorkspaceRecord(
+                id: workspaceId,
+                path: testWorkspaceURL.path,
+                name: "Test Workspace",
                 createdAt: Date(),
                 lastOpenedAt: Date()
             )
-            defer { AppSettings.shared.currentVault = previousVault }
+            defer { AppSettings.shared.currentWorkspace = previousWorkspace }
 
             viewModel.beginDraftMeeting(
                 from: CalendarEvent(
@@ -937,7 +937,7 @@ import os
                     conferenceURI: URL(string: "https://zoom.us/j/123456789")
                 ),
                 dbQueue: database.dbQueue,
-                vaultURL: testVaultURL
+                workspaceURL: testWorkspaceURL
             )
 
             let meetingId = try #require(

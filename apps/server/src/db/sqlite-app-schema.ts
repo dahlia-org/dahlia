@@ -28,10 +28,10 @@ export const accountSettings = sqliteTable("account_settings", {
   analysisLanguages: text("analysis_languages", { mode: "json" }).$type<AccountSettings["analysisLanguages"]>().notNull(),
 });
 
-export const syncedVault = sqliteTable("vaults", {
+export const syncedWorkspace = sqliteTable("workspaces", {
   encryption: text("encryption").$type<"none" | "server">().default("none").notNull(),
   encryptedPayload: text("encrypted_payload"),
-  vaultId: text("vault_id").primaryKey(),
+  workspaceId: text("workspace_id").primaryKey(),
   organizationId: text("organization_id").notNull().references(() => authOrganization.id, { onDelete: "restrict" }),
   createdBy: text("created_by", { mode: "json" }).$type<{ id: string; name: string; email: string }>().notNull(),
   name: text("name").notNull(),
@@ -46,7 +46,7 @@ export const syncedVault = sqliteTable("vaults", {
 export const syncedProject = sqliteTable("projects", {
   encryptedPayload: text("encrypted_payload"),
   projectId: text("project_id").primaryKey(),
-  vaultId: text("vault_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
   parentProjectId: text("parent_project_id"),
   name: text("name").notNull(),
   icon: text("icon"),
@@ -57,11 +57,11 @@ export const syncedProject = sqliteTable("projects", {
   createdAt: sqliteTimestamp("created_at").notNull(),
   updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 }, (table) => [
-  unique("project_vault_project_unique").on(table.vaultId, table.projectId),
-  foreignKey({ columns: [table.vaultId], foreignColumns: [syncedVault.vaultId] }).onDelete("cascade"),
+  unique("project_workspace_project_unique").on(table.workspaceId, table.projectId),
+  foreignKey({ columns: [table.workspaceId], foreignColumns: [syncedWorkspace.workspaceId] }).onDelete("cascade"),
   foreignKey({
-    columns: [table.vaultId, table.parentProjectId],
-    foreignColumns: [table.vaultId, table.projectId],
+    columns: [table.workspaceId, table.parentProjectId],
+    foreignColumns: [table.workspaceId, table.projectId],
   }).onDelete("restrict"),
   check("project_type_check", sql`(
     (${table.parentProjectId} IS NULL AND ${table.projectType} IN ('customer', 'internal', 'personal', 'undefined'))
@@ -69,36 +69,36 @@ export const syncedProject = sqliteTable("projects", {
   )`),
   check("project_revision_check", sql`${table.revision} >= 1`),
   check("project_parent_check", sql`${table.parentProjectId} IS NULL OR ${table.parentProjectId} <> ${table.projectId}`),
-  index("project_vault_parent_name_idx").on(table.vaultId, table.parentProjectId, table.name),
+  index("project_workspace_parent_name_idx").on(table.workspaceId, table.parentProjectId, table.name),
 ]);
 
-export const syncedVaultPermission = sqliteTable("vault_permissions", {
-  vaultId: text("vault_id").notNull(),
+export const syncedWorkspacePermission = sqliteTable("workspace_permissions", {
+  workspaceId: text("workspace_id").notNull(),
   principalType: text("principal_type").notNull(),
   principalId: text("principal_id").notNull(),
   role: text("role").notNull(),
   grantedByUserId: text("granted_by_user_id").notNull(),
   createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 }, (table) => [
-  primaryKey({ columns: [table.vaultId, table.principalType, table.principalId] }),
+  primaryKey({ columns: [table.workspaceId, table.principalType, table.principalId] }),
   foreignKey({
-    columns: [table.vaultId],
-    foreignColumns: [syncedVault.vaultId],
+    columns: [table.workspaceId],
+    foreignColumns: [syncedWorkspace.workspaceId],
   }).onDelete("cascade"),
   foreignKey({
     columns: [table.grantedByUserId],
     foreignColumns: [authUser.id],
   }).onDelete("restrict"),
-  check("vault_permission_principal_type_check", sql`${table.principalType} IN ('user', 'organization', 'team')`),
-  check("vault_permission_role_check", sql`${table.role} IN ('admin', 'editor', 'viewer')`),
-  index("vault_permission_principal_vault_idx")
-    .on(table.principalType, table.principalId, table.role, table.vaultId),
+  check("workspace_permission_principal_type_check", sql`${table.principalType} IN ('user', 'organization', 'team')`),
+  check("workspace_permission_role_check", sql`${table.role} IN ('admin', 'editor', 'viewer')`),
+  index("workspace_permission_principal_workspace_idx")
+    .on(table.principalType, table.principalId, table.role, table.workspaceId),
 ]);
 
 export const syncedMeeting = sqliteTable("meetings", {
   encryptedPayload: text("encrypted_payload"),
   meetingId: text("meeting_id").primaryKey(),
-  vaultId: text("vault_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
   projectId: text("project_id"),
   name: text("name").notNull(),
   description: text("description").default("").notNull(),
@@ -117,22 +117,22 @@ export const syncedMeeting = sqliteTable("meetings", {
   deletingAt: sqliteTimestamp("deleting_at"),
 }, (table) => [
   index("meetings_calendar_event_idx").on(table.icalUid, table.recurrenceId),
-  unique("synced_meeting_vault_meeting_unique").on(table.vaultId, table.meetingId),
+  unique("synced_meeting_workspace_meeting_unique").on(table.workspaceId, table.meetingId),
   foreignKey({
-    columns: [table.vaultId],
-    foreignColumns: [syncedVault.vaultId],
+    columns: [table.workspaceId],
+    foreignColumns: [syncedWorkspace.workspaceId],
   }).onDelete("cascade"),
   foreignKey({
-    columns: [table.vaultId, table.projectId],
-    foreignColumns: [syncedProject.vaultId, syncedProject.projectId],
+    columns: [table.workspaceId, table.projectId],
+    foreignColumns: [syncedProject.workspaceId, syncedProject.projectId],
   }),
-  index("synced_meeting_vault_created_id_idx").on(table.vaultId, table.createdAt, table.meetingId),
+  index("synced_meeting_workspace_created_id_idx").on(table.workspaceId, table.createdAt, table.meetingId),
 ]);
 
-// Domain history survives meeting deletion; Vault deletion removes it.
+// Domain history survives meeting deletion; Workspace deletion removes it.
 export const meetingEvent = sqliteTable("meeting_events", {
   id: text("id").primaryKey(),
-  vaultId: text("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   meetingId: text("meeting_id").notNull(),
   kind: text("kind").notNull(),
@@ -144,25 +144,25 @@ export const meetingEvent = sqliteTable("meeting_events", {
   segmentIndex: integer("segment_index"),
   changedFields: text("changed_fields"),
 }, (table) => [
-  index("meeting_events_meeting_time_idx").on(table.vaultId, table.meetingId, table.occurredAt, table.id),
-  index("meeting_events_session_idx").on(table.vaultId, table.sessionId),
+  index("meeting_events_meeting_time_idx").on(table.workspaceId, table.meetingId, table.occurredAt, table.id),
+  index("meeting_events_session_idx").on(table.workspaceId, table.sessionId),
   check("meeting_events_kind_check", sql`${table.kind} IN ('meeting_created', 'meeting_updated', 'meeting_deleted', 'tag_added', 'tag_removed', 'recording_started', 'recording_ended', 'segment_rotated')`),
   check("meeting_events_source_check", sql`${table.audioSource} IN ('mic', 'system')`),
 ]);
 
 export const recordingSession = sqliteView("recording_sessions", {
-  vaultId: text("vault_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
   meetingId: text("meeting_id").notNull(),
   sessionId: text("session_id").notNull(),
   startedAt: sqliteTimestamp("started_at"),
   endedAt: sqliteTimestamp("ended_at"),
 }).as(sql`
-  SELECT vault_id, meeting_id, session_id,
+  SELECT workspace_id, meeting_id, session_id,
     min(CASE WHEN kind = 'recording_started' THEN occurred_at END) AS started_at,
     max(CASE WHEN kind = 'recording_ended' THEN occurred_at END) AS ended_at
   FROM meeting_events
   WHERE session_id IS NOT NULL AND kind IN ('recording_started', 'recording_ended')
-  GROUP BY vault_id, meeting_id, session_id
+  GROUP BY workspace_id, meeting_id, session_id
 `);
 
 export const transcript = sqliteTable("transcripts", {
@@ -208,7 +208,7 @@ export const syncedTranscriptSegment = sqliteTable("transcript_segments", {
 
 export const transcriptPatchChunk = sqliteTable("transcript_patch_chunks", {
   encryptedPayload: text("encrypted_payload"),
-  vaultId: text("vault_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
   meetingId: text("meeting_id").notNull(),
   patchId: text("patch_id").notNull(),
   chunkIndex: integer("chunk_index").notNull(),
@@ -216,17 +216,17 @@ export const transcriptPatchChunk = sqliteTable("transcript_patch_chunks", {
   payload: text("payload").notNull(),
   createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 }, (table) => [
-  primaryKey({ columns: [table.vaultId, table.meetingId, table.patchId, table.chunkIndex] }),
+  primaryKey({ columns: [table.workspaceId, table.meetingId, table.patchId, table.chunkIndex] }),
   foreignKey({
-    columns: [table.vaultId, table.meetingId],
-    foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId],
+    columns: [table.workspaceId, table.meetingId],
+    foreignColumns: [syncedMeeting.workspaceId, syncedMeeting.meetingId],
   }).onDelete("cascade"),
 ]);
 
 export const syncedFile = sqliteTable("files", {
   encryptedPayload: text("encrypted_payload"),
   fileId: text("file_id").primaryKey(),
-  vaultId: text("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   uri: text("uri").notNull(),
   offset: integer("offset").notNull().default(0),
   size: integer("size").notNull(),
@@ -240,8 +240,8 @@ export const syncedFile = sqliteTable("files", {
   createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
   updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 }, (table) => [
-  unique("files_vault_file_unique").on(table.vaultId, table.fileId),
-  index("files_vault_file_idx").on(table.vaultId, table.fileId),
+  unique("files_workspace_file_unique").on(table.workspaceId, table.fileId),
+  index("files_workspace_file_idx").on(table.workspaceId, table.fileId),
   check("files_offset_check", sql`${table.offset} = 0`),
   check("files_size_check", sql`${table.size} >= 0`)
 ]);
@@ -267,7 +267,7 @@ export const syncedRecording = sqliteTable("recordings", {
 
 export const meetingAttachment = sqliteTable("meeting_attachments", {
   id: text("id").primaryKey(),
-  vaultId: text("vault_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
   meetingId: text("meeting_id").notNull(),
   fileId: text("file_id").notNull(),
   capturedAt: sqliteTimestamp("captured_at"),
@@ -275,17 +275,17 @@ export const meetingAttachment = sqliteTable("meeting_attachments", {
   createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
   revision: integer("revision").default(1).notNull(),
 }, (table) => [
-  foreignKey({ columns: [table.vaultId, table.meetingId], foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId] }).onDelete("cascade"),
-  foreignKey({ columns: [table.vaultId, table.fileId], foreignColumns: [syncedFile.vaultId, syncedFile.fileId] }),
+  foreignKey({ columns: [table.workspaceId, table.meetingId], foreignColumns: [syncedMeeting.workspaceId, syncedMeeting.meetingId] }).onDelete("cascade"),
+  foreignKey({ columns: [table.workspaceId, table.fileId], foreignColumns: [syncedFile.workspaceId, syncedFile.fileId] }),
   unique("meeting_attachments_meeting_attachment_unique").on(table.meetingId, table.fileId),
-  index("meeting_attachments_vault_meeting_id_idx").on(table.vaultId, table.meetingId, table.id)
+  index("meeting_attachments_workspace_meeting_id_idx").on(table.workspaceId, table.meetingId, table.id)
 ]);
 
 // Read-only image projection. All writes belong to files and meeting_attachments.
 export const syncedScreenshot = sqliteView("meeting_images", {
   screenshotId: text("screenshot_id").notNull(),
   fileId: text("file_id").notNull(),
-  vaultId: text("vault_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
   meetingId: text("meeting_id").notNull(),
   capturedAt: sqliteTimestamp("captured_at").notNull(),
   contentType: text("content_type").notNull(),
@@ -297,20 +297,20 @@ export const syncedScreenshot = sqliteView("meeting_images", {
   caption: text("caption"),
   revision: integer("revision").notNull(),
 }).as(sql`
-  SELECT m.id AS screenshot_id, f.file_id, m.vault_id, m.meeting_id,
+  SELECT m.id AS screenshot_id, f.file_id, m.workspace_id, m.meeting_id,
     coalesce(m.captured_at, m.created_at) AS captured_at, f.content_type,
     'files/' || f.file_id || '/original' AS storage_key,
     f.size AS content_length, substr(f.checksum, 9) AS content_hash, f.active,
     json_extract(f.metadata, '$.ocr_text') AS ocr_text,
     json_extract(f.metadata, '$.caption') AS caption,
     m.revision
-  FROM meeting_attachments m JOIN files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id
+  FROM meeting_attachments m JOIN files f ON f.file_id = m.file_id AND f.workspace_id = m.workspace_id
   WHERE json_extract(f.metadata, '$.source') = 'screenshot'
 `);
 
 export const searchDocument = sqliteTable("search_documents", {
   documentId: text("document_id").notNull(),
-  vaultId: text("vault_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
   meetingId: text("meeting_id").notNull(),
   kind: text("kind").notNull(),
   searchText: text("search_text").default("").notNull(),
@@ -325,19 +325,19 @@ export const searchDocument = sqliteTable("search_documents", {
   embeddingModel: text("embedding_model"),
   updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 }, (table) => [
-  primaryKey({ columns: [table.vaultId, table.documentId] }),
+  primaryKey({ columns: [table.workspaceId, table.documentId] }),
   foreignKey({
-    columns: [table.vaultId, table.meetingId],
-    foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId],
+    columns: [table.workspaceId, table.meetingId],
+    foreignColumns: [syncedMeeting.workspaceId, syncedMeeting.meetingId],
   }).onDelete("cascade"),
   check("search_document_embedding_dimensions_check", sql`${table.embedding} IS NULL OR (length(${table.embedding}) BETWEEN 128 AND 4096 AND length(${table.embedding}) % 4 = 0)`),
   check("search_document_kind_check", sql`${table.kind} IN ('meeting', 'screenshot')`),
-  index("search_document_vault_kind_meeting_document_idx")
-    .on(table.vaultId, table.kind, table.meetingId, table.documentId),
+  index("search_document_workspace_kind_meeting_document_idx")
+    .on(table.workspaceId, table.kind, table.meetingId, table.documentId),
 ]);
 
 export const searchIndexJob = sqliteTable("jobs_search_index", {
-  vaultId: text("vault_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
   documentId: text("document_id").notNull(),
   model: text("model").notNull(),
   dimensions: integer("dimensions").notNull(),
@@ -350,10 +350,10 @@ export const searchIndexJob = sqliteTable("jobs_search_index", {
   lastErrorCode: text("last_error_code"),
   updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 }, (table) => [
-  primaryKey({ columns: [table.vaultId, table.documentId] }),
+  primaryKey({ columns: [table.workspaceId, table.documentId] }),
   foreignKey({
-    columns: [table.vaultId],
-    foreignColumns: [syncedVault.vaultId],
+    columns: [table.workspaceId],
+    foreignColumns: [syncedWorkspace.workspaceId],
   }).onDelete("cascade"),
   check("search_index_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
   check("search_index_job_dimensions_check", sql`${table.dimensions} BETWEEN 32 AND 1024`),
@@ -364,7 +364,7 @@ export const syncTransactionReceipt = sqliteTable("transaction_receipts", {
   encryptedPayload: text("encrypted_payload"),
   transactionId: text("transaction_id").primaryKey(),
   ownerUserId: text("owner_user_id").notNull(),
-  vaultId: text("vault_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
   requestHash: text("request_hash").notNull(),
   responseJson: text("response_json"),
   resultsJson: text("results_json").default("[]").notNull(),
@@ -377,7 +377,7 @@ export const syncTransactionReceipt = sqliteTable("transaction_receipts", {
 
 export const syncChange = sqliteTable("sync_changes", {
   sequence: integer("sequence").primaryKey({ autoIncrement: true }),
-  vaultId: text("vault_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
   entity: text("entity").notNull(),
   entityId: text("entity_id").notNull(),
   action: text("action").notNull(),
@@ -385,19 +385,19 @@ export const syncChange = sqliteTable("sync_changes", {
   transactionId: text("transaction_id").notNull(),
   createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 }, (table) => [
-  check("sync_change_entity_check", sql`${table.entity} IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')`),
+  check("sync_change_entity_check", sql`${table.entity} IN ('workspace', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')`),
   check("sync_change_action_check", sql`${table.action} IN ('upsert', 'delete', 'reset')`),
-  index("sync_change_vault_sequence_idx").on(table.vaultId, table.sequence),
+  index("sync_change_workspace_sequence_idx").on(table.workspaceId, table.sequence),
 ]);
 
-// Survives Vault deletion and ledger pruning; contains no canonical content.
-export const syncVaultState = sqliteTable("sync_vault_state", {
-  vaultId: text("vault_id").notNull(),
+// Survives Workspace deletion and ledger pruning; contains no canonical content.
+export const syncWorkspaceState = sqliteTable("sync_workspace_state", {
+  workspaceId: text("workspace_id").notNull(),
   latestSequence: integer("latest_sequence").default(0).notNull(),
   prunedThrough: integer("pruned_through").default(0).notNull(),
 }, (table) => [
-  primaryKey({ columns: [table.vaultId] }),
-  check("sync_vault_state_boundary_check", sql`${table.prunedThrough} >= 0 AND ${table.latestSequence} >= ${table.prunedThrough}`),
+  primaryKey({ columns: [table.workspaceId] }),
+  check("sync_workspace_state_boundary_check", sql`${table.prunedThrough} >= 0 AND ${table.latestSequence} >= ${table.prunedThrough}`),
 ]);
 
 export const storageDeleteJob = sqliteTable("jobs_storage_delete", {
@@ -417,7 +417,7 @@ export const storageDeleteJob = sqliteTable("jobs_storage_delete", {
 // Operational queue metadata only; canonical image/text access remains owner-scoped.
 export const imageAnalysisJob = sqliteTable("jobs_image_analysis", {
   fileId: text("file_id").primaryKey().references(() => syncedFile.fileId, { onDelete: "cascade" }),
-  vaultId: text("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   model: text("model").notNull(),
   status: text("status").default("pending").notNull(),
@@ -435,7 +435,7 @@ export const imageAnalysisJob = sqliteTable("jobs_image_analysis", {
 export const summaryJob = sqliteTable("jobs_summary", {
   encryptedPayload: text("encrypted_payload"),
   id: text("id").primaryKey(),
-  vaultId: text("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   meetingId: text("meeting_id").notNull().references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),
   ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   method: text("method").$type<"transcript" | "audio">().notNull(),
@@ -476,23 +476,23 @@ export const summary = sqliteTable("summaries", {
   foreignKey({ columns: [table.meetingId], foreignColumns: [syncedMeeting.meetingId] }).onDelete("cascade"),
 ]);
 
-// Retained independently of Vault deletion and ordinary sync-history pruning.
-export const vaultTransfer = sqliteTable("vault_transfers", {
+// Retained independently of Workspace deletion and ordinary sync-history pruning.
+export const workspaceTransfer = sqliteTable("workspace_transfers", {
   sequence: integer("sequence").primaryKey({ autoIncrement: true }),
   id: text("id").notNull().unique(),
   ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   idempotencyKey: text("idempotency_key").notNull(),
   requestHash: text("request_hash").notNull(),
-  sourceVaultId: text("source_vault_id").notNull(),
-  destinationVaultId: text("destination_vault_id").notNull(),
+  sourceWorkspaceId: text("source_workspace_id").notNull(),
+  destinationWorkspaceId: text("destination_workspace_id").notNull(),
   manifest: text("manifest", { mode: "json" }).$type<{ projects: string[]; meetings: string[]; files: string[] }>().notNull(),
 }, (table) => [
-  unique("vault_transfer_owner_key_unique").on(table.ownerUserId, table.idempotencyKey),
-  index("vault_transfer_owner_sequence_idx").on(table.ownerUserId, table.sequence),
+  unique("workspace_transfer_owner_key_unique").on(table.ownerUserId, table.idempotencyKey),
+  index("workspace_transfer_owner_sequence_idx").on(table.ownerUserId, table.sequence),
 ]);
 
-export const vaultKey = sqliteTable("vault_keys", {
-  vaultId: text("vault_id").primaryKey(),
+export const workspaceKey = sqliteTable("workspace_keys", {
+  workspaceId: text("workspace_id").primaryKey(),
   wrappedKey: text("wrapped_key").notNull(),
   createdAt: sqliteTimestamp("created_at").default(sql`(unixepoch() * 1000)`).notNull(),
 });

@@ -30,21 +30,21 @@
         func mergingCombinesExports() {
             let merged = SummaryGenerationOptions.merging([
                 SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToVault: true, exportsToGoogleDocs: false),
+                    exportOptions: SummaryExportOptions(exportsToWorkspace: true, exportsToGoogleDocs: false),
                     detailLevel: .standard
                 ),
                 SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: true),
+                    exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: true),
                     detailLevel: .eventSession
                 ),
                 SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false),
+                    exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false),
                     detailLevel: .detailed
                 ),
             ])
 
             #expect(merged.exportOptions == SummaryExportOptions(
-                exportsToVault: true,
+                exportsToWorkspace: true,
                 exportsToGoogleDocs: true
             ))
             #expect(merged.detailLevel == .eventSession)
@@ -54,7 +54,7 @@
         func sourceIsBackwardCompatibleAndMergedWithManualOptions() throws {
             let legacy = try JSONDecoder().decode(
                 SummaryGenerationOptions.self,
-                from: Data(#"{"exportOptions":{"exportsToVault":true,"exportsToGoogleDocs":false},"detailLevel":"high"}"#.utf8)
+                from: Data(#"{"exportOptions":{"exportsToWorkspace":true,"exportsToGoogleDocs":false},"detailLevel":"high"}"#.utf8)
             )
             #expect(legacy.source == nil)
 

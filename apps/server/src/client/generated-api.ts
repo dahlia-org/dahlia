@@ -223,15 +223,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults": {
+    "/api/v1/workspaces": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Accessible Vaults */
-        get: operations["listVaults"];
+        /** Accessible Workspaces */
+        get: operations["listWorkspaces"];
         put?: never;
         post?: never;
         delete?: never;
@@ -240,15 +240,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}": {
+    "/api/v1/workspaces/{workspaceId}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Vault */
-        get: operations["getVault"];
+        /** Get Workspace */
+        get: operations["getWorkspace"];
         put?: never;
         post?: never;
         delete?: never;
@@ -257,14 +257,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}/projects": {
+    "/api/v1/workspaces/{workspaceId}/projects": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Vault project tree */
+        /** Workspace project tree */
         get: operations["listProjects"];
         put?: never;
         post?: never;
@@ -291,7 +291,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}/meetings": {
+    "/api/v1/workspaces/{workspaceId}/meetings": {
         parameters: {
             query?: never;
             header?: never;
@@ -538,7 +538,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Commit one atomic Vault transaction; maximum 8 MiB */
+        /** Commit one atomic Workspace transaction; maximum 8 MiB */
         post: operations["commitTransaction"];
         delete?: never;
         options?: never;
@@ -563,7 +563,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}/changes": {
+    "/api/v1/workspaces/{workspaceId}/changes": {
         parameters: {
             query?: never;
             header?: never;
@@ -580,7 +580,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}/snapshot": {
+    "/api/v1/workspaces/{workspaceId}/snapshot": {
         parameters: {
             query?: never;
             header?: never;
@@ -597,7 +597,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}/search": {
+    "/api/v1/workspaces/{workspaceId}/search": {
         parameters: {
             query?: never;
             header?: never;
@@ -614,7 +614,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}/text-search": {
+    "/api/v1/workspaces/{workspaceId}/text-search": {
         parameters: {
             query?: never;
             header?: never;
@@ -717,7 +717,7 @@ export interface paths {
         patch: operations["updateFile"];
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}/files": {
+    "/api/v1/workspaces/{workspaceId}/files": {
         parameters: {
             query?: never;
             header?: never;
@@ -839,7 +839,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}/transfer-audience": {
+    "/api/v1/workspaces/{workspaceId}/transfer-audience": {
         parameters: {
             query?: never;
             header?: never;
@@ -856,7 +856,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}/transfer": {
+    "/api/v1/workspaces/{workspaceId}/transfer": {
         parameters: {
             query?: never;
             header?: never;
@@ -866,21 +866,21 @@ export interface paths {
         get?: never;
         put?: never;
         /** Move all content after revision and audience checks; admin only */
-        post: operations["transferVault"];
+        post: operations["transferWorkspace"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}/relocations": {
+    "/api/v1/workspaces/{workspaceId}/relocations": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Resolve moved resources to currently accessible Vaults */
+        /** Resolve moved resources to currently accessible Workspaces */
         get: operations["getRelocations"];
         put?: never;
         post?: never;
@@ -890,7 +890,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}/permission-targets": {
+    "/api/v1/workspaces/{workspaceId}/permission-targets": {
         parameters: {
             query?: never;
             header?: never;
@@ -907,7 +907,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}/permissions/users/{userId}": {
+    "/api/v1/workspaces/{workspaceId}/permissions/users/{userId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -925,14 +925,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}/permissions": {
+    "/api/v1/workspaces/{workspaceId}/permissions": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Read Vault sharing permissions */
+        /** Read Workspace sharing permissions */
         get: operations["listPermissions"];
         put?: never;
         post?: never;
@@ -942,7 +942,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}": {
+    "/api/v1/workspaces/{workspaceId}/permissions/organizations/{organizationId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -960,7 +960,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{vaultId}/permissions/teams/{teamId}": {
+    "/api/v1/workspaces/{workspaceId}/permissions/teams/{teamId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -978,15 +978,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/organizations/{organizationId}/vaults": {
+    "/api/v1/organizations/{organizationId}/workspaces": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Organization Vault metadata; organization owner or admin only */
-        get: operations["listGovernanceVaults"];
+        /** Organization Workspace metadata; organization owner or admin only */
+        get: operations["listGovernanceWorkspaces"];
         put?: never;
         post?: never;
         delete?: never;
@@ -995,15 +995,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/organizations/{organizationId}/vaults/{vaultId}/deletion": {
+    "/api/v1/organizations/{organizationId}/workspaces/{workspaceId}/deletion": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Confirm the current Vault revision and content cursor */
-        get: operations["confirmVaultDeletion"];
+        /** Confirm the current Workspace revision and content cursor */
+        get: operations["confirmWorkspaceDeletion"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1012,7 +1012,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/organizations/{organizationId}/vaults/{vaultId}": {
+    "/api/v1/organizations/{organizationId}/workspaces/{workspaceId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1022,8 +1022,8 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete a Team Organization Vault after confirmation */
-        delete: operations["forceDeleteVault"];
+        /** Delete a Team Organization Workspace after confirmation */
+        delete: operations["forceDeleteWorkspace"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1051,10 +1051,10 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        Vault: {
+        Workspace: {
             /** @enum {string} */
             encryption?: "none" | "server";
-            vaultId: string;
+            workspaceId: string;
             organizationId: string;
             name: string;
             icon?: string | null;
@@ -1073,7 +1073,7 @@ export interface components {
         };
         Project: {
             projectId: string;
-            vaultId: string;
+            workspaceId: string;
             parentProjectId: string | null;
             name: string;
             description: string;
@@ -1096,7 +1096,7 @@ export interface components {
         };
         Meeting: {
             meetingId: string;
-            vaultId: string;
+            workspaceId: string;
             projectId: string | null;
             name: string;
             description: string;
@@ -1136,7 +1136,7 @@ export interface components {
         };
         File: {
             id: string;
-            vaultId: string;
+            workspaceId: string;
             name: string;
             contentType: string;
             size: number;
@@ -1308,11 +1308,6 @@ export interface components {
                 name?: string;
                 email?: string;
             };
-            workspace: {
-                id: string;
-                /** @enum {string} */
-                type: "personal";
-            };
         };
         /** @description RFC 9457 problem details. Branch on code, not the human-readable title. */
         Problem: {
@@ -1326,11 +1321,11 @@ export interface components {
         };
         RevisionConflict: {
             /** @enum {string} */
-            entity: "vault";
+            entity: "workspace";
             id: string;
             clientBaseRevision: number | null;
             serverRevision: number | null;
-            record: components["schemas"]["NullableVaultRecord"];
+            record: components["schemas"]["NullableWorkspaceRecord"];
         } | {
             /** @enum {string} */
             entity: "project";
@@ -1388,10 +1383,10 @@ export interface components {
             serverRevision: number | null;
             record: components["schemas"]["NullableMeetingEventRecord"];
         };
-        NullableVaultRecord: {
+        NullableWorkspaceRecord: {
             /** @enum {string} */
             encryption?: "none" | "server";
-            vaultId: string;
+            workspaceId: string;
             organizationId: string;
             name: string;
             icon?: string | null;
@@ -1410,7 +1405,7 @@ export interface components {
         } | null;
         NullableProjectRecord: {
             projectId: string;
-            vaultId: string;
+            workspaceId: string;
             parentProjectId: string | null;
             name: string;
             description: string;
@@ -1433,7 +1428,7 @@ export interface components {
         } | null;
         NullableMeetingRecord: {
             meetingId: string;
-            vaultId: string;
+            workspaceId: string;
             projectId: string | null;
             name: string;
             description: string;
@@ -1508,7 +1503,7 @@ export interface components {
         } | null;
         NullableFileRecord: {
             id: string;
-            vaultId: string;
+            workspaceId: string;
             name: string;
             contentType: string;
             size: number;
@@ -1529,7 +1524,7 @@ export interface components {
         } | null;
         NullableMeetingAttachmentRecord: {
             id: string;
-            vaultId: string;
+            workspaceId: string;
             meetingId: string;
             fileId: string;
             /** Format: date-time */
@@ -1552,7 +1547,7 @@ export interface components {
             recordingNumber: number;
             sessionId: string;
             meetingId: string;
-            vaultId: string;
+            workspaceId: string;
             revision: number;
         } | null;
         NullableMeetingEventRecord: Record<string, never> | null;
@@ -1613,13 +1608,13 @@ export interface components {
             } | null;
         };
         Capabilities: {
-            vaultEncryption?: {
+            workspaceEncryption?: {
                 version: number;
             };
             sync?: {
                 version: number;
             };
-            vaultTransfers?: {
+            workspaceTransfers?: {
                 version: number;
             };
             recordingArchive?: {
@@ -1811,10 +1806,10 @@ export interface components {
         };
         CanonicalRecord: {
             /** @enum {string} */
-            entity: "vault";
+            entity: "workspace";
             id: string;
             revision: number | null;
-            record?: components["schemas"]["NullableVaultRecord"];
+            record?: components["schemas"]["NullableWorkspaceRecord"];
         } | {
             /** @enum {string} */
             entity: "project";
@@ -1868,7 +1863,7 @@ export interface components {
             /** @enum {number} */
             schemaVersion: 3;
             id: string;
-            vaultId: string;
+            workspaceId: string;
             /** Format: date-time */
             createdAt: string;
             operations: ({
@@ -1908,7 +1903,7 @@ export interface components {
             } | {
                 id: string;
                 /** @enum {string} */
-                entity: "vault";
+                entity: "workspace";
                 /** @enum {string} */
                 action: "create";
                 entityId: string;
@@ -1918,7 +1913,7 @@ export interface components {
                     /** @enum {string} */
                     encryption?: "none" | "server";
                     /** @enum {string|null} */
-                    icon?: "vault" | "folder" | "dollarsign.circle" | "book.closed" | "graduationcap" | "pencil" | "tag" | "curlybraces" | "terminal" | "music.note" | "popcorn" | "paintbrush" | "paintpalette" | "stethoscope" | "asterisk" | "camera.macro" | "briefcase" | "chart.bar" | "medal" | "dumbbell" | "notebook" | "scales" | "globe.desk" | "airplane" | "globe" | "wrench" | "pawprint" | "flask" | "brain" | "heart" | "pottedplant" | "film" | "cross.case" | "puzzlepiece" | "leaf" | null;
+                    icon?: "workspace" | "folder" | "dollarsign.circle" | "book.closed" | "graduationcap" | "pencil" | "tag" | "curlybraces" | "terminal" | "music.note" | "popcorn" | "paintbrush" | "paintpalette" | "stethoscope" | "asterisk" | "camera.macro" | "briefcase" | "chart.bar" | "medal" | "dumbbell" | "notebook" | "scales" | "globe.desk" | "airplane" | "globe" | "wrench" | "pawprint" | "flask" | "brain" | "heart" | "pottedplant" | "film" | "cross.case" | "puzzlepiece" | "leaf" | null;
                     /** @enum {string|null} */
                     color?: "neutral" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink" | null;
                     name: string;
@@ -1928,7 +1923,7 @@ export interface components {
             } | {
                 id: string;
                 /** @enum {string} */
-                entity: "vault";
+                entity: "workspace";
                 /** @enum {string} */
                 action: "update";
                 entityId: string;
@@ -1937,7 +1932,7 @@ export interface components {
                     /** @enum {string} */
                     encryption?: "none" | "server";
                     /** @enum {string|null} */
-                    icon?: "vault" | "folder" | "dollarsign.circle" | "book.closed" | "graduationcap" | "pencil" | "tag" | "curlybraces" | "terminal" | "music.note" | "popcorn" | "paintbrush" | "paintpalette" | "stethoscope" | "asterisk" | "camera.macro" | "briefcase" | "chart.bar" | "medal" | "dumbbell" | "notebook" | "scales" | "globe.desk" | "airplane" | "globe" | "wrench" | "pawprint" | "flask" | "brain" | "heart" | "pottedplant" | "film" | "cross.case" | "puzzlepiece" | "leaf" | null;
+                    icon?: "workspace" | "folder" | "dollarsign.circle" | "book.closed" | "graduationcap" | "pencil" | "tag" | "curlybraces" | "terminal" | "music.note" | "popcorn" | "paintbrush" | "paintpalette" | "stethoscope" | "asterisk" | "camera.macro" | "briefcase" | "chart.bar" | "medal" | "dumbbell" | "notebook" | "scales" | "globe.desk" | "airplane" | "globe" | "wrench" | "pawprint" | "flask" | "brain" | "heart" | "pottedplant" | "film" | "cross.case" | "puzzlepiece" | "leaf" | null;
                     /** @enum {string|null} */
                     color?: "neutral" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink" | null;
                     name: string;
@@ -1945,7 +1940,7 @@ export interface components {
             } | {
                 id: string;
                 /** @enum {string} */
-                entity: "vault";
+                entity: "workspace";
                 /** @enum {string} */
                 action: "reset";
                 entityId: string;
@@ -1963,7 +1958,7 @@ export interface components {
                 baseRevision: number | null;
                 data: {
                     /** @enum {string|null} */
-                    icon?: "vault" | "folder" | "dollarsign.circle" | "book.closed" | "graduationcap" | "pencil" | "tag" | "curlybraces" | "terminal" | "music.note" | "popcorn" | "paintbrush" | "paintpalette" | "stethoscope" | "asterisk" | "camera.macro" | "briefcase" | "chart.bar" | "medal" | "dumbbell" | "notebook" | "scales" | "globe.desk" | "airplane" | "globe" | "wrench" | "pawprint" | "flask" | "brain" | "heart" | "pottedplant" | "film" | "cross.case" | "puzzlepiece" | "leaf" | null;
+                    icon?: "workspace" | "folder" | "dollarsign.circle" | "book.closed" | "graduationcap" | "pencil" | "tag" | "curlybraces" | "terminal" | "music.note" | "popcorn" | "paintbrush" | "paintpalette" | "stethoscope" | "asterisk" | "camera.macro" | "briefcase" | "chart.bar" | "medal" | "dumbbell" | "notebook" | "scales" | "globe.desk" | "airplane" | "globe" | "wrench" | "pawprint" | "flask" | "brain" | "heart" | "pottedplant" | "film" | "cross.case" | "puzzlepiece" | "leaf" | null;
                     /** @enum {string|null} */
                     color?: "neutral" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink" | null;
                     parentProjectId: string | null;
@@ -1985,7 +1980,7 @@ export interface components {
                 baseRevision: number | null;
                 data: {
                     /** @enum {string|null} */
-                    icon?: "vault" | "folder" | "dollarsign.circle" | "book.closed" | "graduationcap" | "pencil" | "tag" | "curlybraces" | "terminal" | "music.note" | "popcorn" | "paintbrush" | "paintpalette" | "stethoscope" | "asterisk" | "camera.macro" | "briefcase" | "chart.bar" | "medal" | "dumbbell" | "notebook" | "scales" | "globe.desk" | "airplane" | "globe" | "wrench" | "pawprint" | "flask" | "brain" | "heart" | "pottedplant" | "film" | "cross.case" | "puzzlepiece" | "leaf" | null;
+                    icon?: "workspace" | "folder" | "dollarsign.circle" | "book.closed" | "graduationcap" | "pencil" | "tag" | "curlybraces" | "terminal" | "music.note" | "popcorn" | "paintbrush" | "paintpalette" | "stethoscope" | "asterisk" | "camera.macro" | "briefcase" | "chart.bar" | "medal" | "dumbbell" | "notebook" | "scales" | "globe.desk" | "airplane" | "globe" | "wrench" | "pawprint" | "flask" | "brain" | "heart" | "pottedplant" | "film" | "cross.case" | "puzzlepiece" | "leaf" | null;
                     /** @enum {string|null} */
                     color?: "neutral" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink" | null;
                     parentProjectId: string | null;
@@ -2254,18 +2249,18 @@ export interface components {
         Changes: {
             items: ({
                 sequence: number;
-                vaultId: string;
+                workspaceId: string;
                 /** @enum {string} */
-                entity: "vault";
+                entity: "workspace";
                 entityId: string;
                 /** @enum {string} */
                 action: "upsert" | "delete" | "reset";
                 revision: number | null;
                 transactionId: string;
-                record: components["schemas"]["NullableVaultRecord"];
+                record: components["schemas"]["NullableWorkspaceRecord"];
             } | {
                 sequence: number;
-                vaultId: string;
+                workspaceId: string;
                 /** @enum {string} */
                 entity: "project";
                 entityId: string;
@@ -2276,7 +2271,7 @@ export interface components {
                 record: components["schemas"]["NullableProjectRecord"];
             } | {
                 sequence: number;
-                vaultId: string;
+                workspaceId: string;
                 /** @enum {string} */
                 entity: "meeting";
                 entityId: string;
@@ -2287,7 +2282,7 @@ export interface components {
                 record: components["schemas"]["NullableMeetingRecord"];
             } | {
                 sequence: number;
-                vaultId: string;
+                workspaceId: string;
                 /** @enum {string} */
                 entity: "summary";
                 entityId: string;
@@ -2298,7 +2293,7 @@ export interface components {
                 record: components["schemas"]["NullableSummaryRecord"];
             } | {
                 sequence: number;
-                vaultId: string;
+                workspaceId: string;
                 /** @enum {string} */
                 entity: "transcript";
                 entityId: string;
@@ -2309,7 +2304,7 @@ export interface components {
                 record: components["schemas"]["NullableTranscriptRecord"];
             } | {
                 sequence: number;
-                vaultId: string;
+                workspaceId: string;
                 /** @enum {string} */
                 entity: "file";
                 entityId: string;
@@ -2320,7 +2315,7 @@ export interface components {
                 record: components["schemas"]["NullableFileRecord"];
             } | {
                 sequence: number;
-                vaultId: string;
+                workspaceId: string;
                 /** @enum {string} */
                 entity: "meeting_attachment";
                 entityId: string;
@@ -2331,7 +2326,7 @@ export interface components {
                 record: components["schemas"]["NullableMeetingAttachmentRecord"];
             } | {
                 sequence: number;
-                vaultId: string;
+                workspaceId: string;
                 /** @enum {string} */
                 entity: "recording";
                 entityId: string;
@@ -2342,7 +2337,7 @@ export interface components {
                 record: components["schemas"]["NullableRecordingRecord"];
             } | {
                 sequence: number;
-                vaultId: string;
+                workspaceId: string;
                 /** @enum {string} */
                 entity: "meeting_event";
                 entityId: string;
@@ -2366,7 +2361,7 @@ export interface components {
             startCursor: string;
         };
         SearchResults: {
-            vaultId: string;
+            workspaceId: string;
             meetings: components["schemas"]["SearchHit"][];
             screenshots: components["schemas"]["SearchHit"][];
             projects: components["schemas"]["SearchHit"][];
@@ -2412,7 +2407,7 @@ export interface components {
         };
         MeetingFile: {
             id: string;
-            vaultId: string;
+            workspaceId: string;
             meetingId: string;
             fileId: string;
             /** Format: date-time */
@@ -2433,10 +2428,10 @@ export interface components {
             revision: number | null;
             contentUrl: string;
         };
-        VaultPermission: {
+        WorkspacePermission: {
             name?: string;
             detail?: string;
-            vaultId: string;
+            workspaceId: string;
             /** @enum {string} */
             principalType: "user" | "organization" | "team";
             principalId: string;
@@ -2445,8 +2440,8 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
-        GovernanceVault: {
-            vaultId: string;
+        GovernanceWorkspace: {
+            workspaceId: string;
             name: string;
             revision: number;
             creatorId: string;
@@ -2940,7 +2935,7 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    listVaults: {
+    listWorkspaces: {
         parameters: {
             query?: {
                 organizationId?: string;
@@ -2958,7 +2953,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        items: components["schemas"]["Vault"][];
+                        items: components["schemas"]["Workspace"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
                         nextCursor: string | null;
                     };
@@ -2967,12 +2962,12 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    getVault: {
+    getWorkspace: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
             };
             cookie?: never;
         };
@@ -2984,7 +2979,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Vault"];
+                    "application/json": components["schemas"]["Workspace"];
                 };
             };
             default: components["responses"]["Problem"];
@@ -2995,7 +2990,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
             };
             cookie?: never;
         };
@@ -3051,7 +3046,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
             };
             cookie?: never;
         };
@@ -3601,7 +3596,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
             };
             cookie?: never;
         };
@@ -3629,7 +3624,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
             };
             cookie?: never;
         };
@@ -3652,7 +3647,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
             };
             cookie?: never;
         };
@@ -3691,7 +3686,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
             };
             cookie?: never;
         };
@@ -3794,7 +3789,7 @@ export interface operations {
             content: {
                 "application/json": {
                     id: string;
-                    vaultId: string;
+                    workspaceId: string;
                     name: string;
                     contentType: string;
                     metadata: {
@@ -3938,7 +3933,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
             };
             cookie?: never;
         };
@@ -4414,11 +4409,11 @@ export interface operations {
     getTransferAudience: {
         parameters: {
             query: {
-                destinationVaultId: string;
+                destinationWorkspaceId: string;
             };
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
             };
             cookie?: never;
         };
@@ -4440,21 +4435,21 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    transferVault: {
+    transferWorkspace: {
         parameters: {
             query?: never;
             header: {
                 "idempotency-key": string;
             };
             path: {
-                vaultId: string;
+                workspaceId: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
                 "application/json": {
-                    destinationVaultId: string;
+                    destinationWorkspaceId: string;
                     sourceRevision: number;
                     destinationRevision: number;
                     audienceHash: string;
@@ -4472,8 +4467,8 @@ export interface operations {
                         id: string;
                         /** @enum {string} */
                         status: "committed";
-                        sourceVaultId: string;
-                        destinationVaultId: string;
+                        sourceWorkspaceId: string;
+                        destinationWorkspaceId: string;
                     };
                 };
             };
@@ -4485,7 +4480,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
             };
             cookie?: never;
         };
@@ -4498,12 +4493,12 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        vaults: components["schemas"]["Vault"][];
+                        workspaces: components["schemas"]["Workspace"][];
                         items: {
                             /** @enum {string} */
                             entity: "project" | "meeting" | "file";
                             id: string;
-                            vaultId: string;
+                            workspaceId: string;
                         }[];
                     };
                 };
@@ -4520,7 +4515,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
             };
             cookie?: never;
         };
@@ -4553,7 +4548,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
                 userId: string;
             };
             cookie?: never;
@@ -4582,7 +4577,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
                 userId: string;
             };
             cookie?: never;
@@ -4604,7 +4599,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
             };
             cookie?: never;
         };
@@ -4617,7 +4612,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        items: components["schemas"]["VaultPermission"][];
+                        items: components["schemas"]["WorkspacePermission"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
                         nextCursor: string | null;
                     };
@@ -4631,7 +4626,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
                 organizationId: string;
             };
             cookie?: never;
@@ -4660,7 +4655,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
                 organizationId: string;
             };
             cookie?: never;
@@ -4682,7 +4677,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
                 teamId: string;
             };
             cookie?: never;
@@ -4711,7 +4706,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                vaultId: string;
+                workspaceId: string;
                 teamId: string;
             };
             cookie?: never;
@@ -4728,7 +4723,7 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    listGovernanceVaults: {
+    listGovernanceWorkspaces: {
         parameters: {
             query?: {
                 /** @description Opaque cursor. Pass back unchanged with the original filters. */
@@ -4749,7 +4744,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        items: components["schemas"]["GovernanceVault"][];
+                        items: components["schemas"]["GovernanceWorkspace"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
                         nextCursor: string | null;
                     };
@@ -4758,13 +4753,13 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    confirmVaultDeletion: {
+    confirmWorkspaceDeletion: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 organizationId: string;
-                vaultId: string;
+                workspaceId: string;
             };
             cookie?: never;
         };
@@ -4776,7 +4771,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GovernanceVault"] & {
+                    "application/json": components["schemas"]["GovernanceWorkspace"] & {
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
                         changeCursor: string;
                     };
@@ -4785,13 +4780,13 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    forceDeleteVault: {
+    forceDeleteWorkspace: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 organizationId: string;
-                vaultId: string;
+                workspaceId: string;
             };
             cookie?: never;
         };

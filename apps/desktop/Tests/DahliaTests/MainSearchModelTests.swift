@@ -234,7 +234,7 @@ import GRDB
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func presentsEmptyStateAndReportsMissingVault() async throws {
+        func presentsEmptyStateAndReportsMissingWorkspace() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
             let sidebar = fixture.makeSidebarViewModel()
@@ -247,14 +247,14 @@ import GRDB
             #expect(model.errorMessage == nil)
 
             sidebar.setAppDatabase(nil)
-            model.resetForVaultChange(using: sidebar)
+            model.resetForWorkspaceChange(using: sidebar)
 
-            #expect(model.errorMessage == L10n.searchRequiresVault)
+            #expect(model.errorMessage == L10n.searchRequiresWorkspace)
             #expect(!model.hasResults)
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func vaultChangeAndDismissResetAllSearchState() async throws {
+        func workspaceChangeAndDismissResetAllSearchState() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
             try await fixture.insertSearchContent()
@@ -270,7 +270,7 @@ import GRDB
             #expect(!model.tokens.isEmpty)
 
             sidebar.setAppDatabase(nil)
-            model.resetForVaultChange(using: sidebar)
+            model.resetForWorkspaceChange(using: sidebar)
             #expect(model.inputText.isEmpty)
             #expect(model.tokens.isEmpty)
             #expect(!model.hasResults)
@@ -449,26 +449,26 @@ import GRDB
     @MainActor
     private final class MainSearchModelFixture {
         let manager: AppDatabaseManager
-        let vault: VaultRecord
+        let workspace: WorkspaceRecord
 
         init() throws {
             manager = try AppDatabaseManager(path: ":memory:")
-            let vaultURL = URL.temporaryDirectory
+            let workspaceURL = URL.temporaryDirectory
                 .appending(path: "dahlia-main-search-\(UUID.v7())", directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
-            vault = VaultRecord(
+            try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+            workspace = WorkspaceRecord(
                 id: .v7(),
-                path: vaultURL.path,
+                path: workspaceURL.path,
                 name: "Search Test",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
-            try manager.dbQueue.write { db in try vault.insert(db) }
+            try manager.dbQueue.write { db in try workspace.insert(db) }
         }
 
         func makeSidebarViewModel() -> SidebarViewModel {
             let settings = AppSettings()
-            settings.currentVault = vault
+            settings.currentWorkspace = workspace
             let sidebar = SidebarViewModel(settings: settings)
             sidebar.setAppDatabase(manager)
             return sidebar
@@ -476,19 +476,19 @@ import GRDB
 
         func insertProjectsAndMeetings(count: Int) async throws {
             let start = Date(timeIntervalSince1970: 1_800_000_000)
-            let vaultID = vault.id
+            let workspaceID = workspace.id
             try await manager.dbQueue.write { db in
                 for index in 0 ..< count {
                     try ProjectRecord(
                         id: .v7(),
-                        vaultId: vaultID,
+                        workspaceId: workspaceID,
                         parentProjectId: nil,
                         name: "Project \(index)",
                         createdAt: start.addingTimeInterval(TimeInterval(index)),
                         projectType: .undefined
                     ).insert(db)
                     try Self.insertMeeting(
-                        vaultID: vaultID,
+                        workspaceID: workspaceID,
                         name: "Meeting \(index)",
                         createdAt: start.addingTimeInterval(TimeInterval(index)),
                         in: db
@@ -500,18 +500,18 @@ import GRDB
 
         func insertSearchContent() async throws {
             let projectID = UUID.v7()
-            let vaultID = vault.id
+            let workspaceID = workspace.id
             try await manager.dbQueue.write { db in
                 try ProjectRecord(
                     id: projectID,
-                    vaultId: vaultID,
+                    workspaceId: workspaceID,
                     parentProjectId: nil,
                     name: "Needle project",
                     createdAt: .now,
                     projectType: .undefined
                 ).insert(db)
-                try Self.insertMeeting(vaultID: vaultID, name: "Needle meeting", projectID: projectID, in: db)
-                try Self.insertMeeting(vaultID: vaultID, name: "Older meeting", in: db)
+                try Self.insertMeeting(workspaceID: workspaceID, name: "Needle meeting", projectID: projectID, in: db)
+                try Self.insertMeeting(workspaceID: workspaceID, name: "Older meeting", in: db)
             }
             await manager.searchIndexer.drain()
         }
@@ -519,11 +519,11 @@ import GRDB
         func insertIndexedScreenshot(text: String) async throws -> (screenshotID: UUID, meetingID: UUID) {
             let meetingID = UUID.v7()
             let screenshotID = UUID.v7()
-            let vaultID = vault.id
+            let workspaceID = workspace.id
             try await manager.dbQueue.write { db in
                 try MeetingRecord(
                     id: meetingID,
-                    vaultId: vaultID,
+                    workspaceId: workspaceID,
                     projectId: nil,
                     name: "Visual meeting",
                     createdAt: .now,
@@ -543,7 +543,7 @@ import GRDB
                     SearchDocumentProjection(
                         kind: "screenshot",
                         sourceID: screenshotID,
-                        vaultID: vaultID,
+                        workspaceID: workspaceID,
                         meetingID: meetingID,
                         projectID: nil,
                         fields: SearchDocumentFields(
@@ -566,22 +566,22 @@ import GRDB
         }
 
         func insertMatchingMeetings(count: Int) async throws {
-            let vaultID = vault.id
+            let workspaceID = workspace.id
             try await manager.dbQueue.write { db in
                 for index in 0 ..< count {
-                    try Self.insertMeeting(vaultID: vaultID, name: "Planning \(index)", in: db)
+                    try Self.insertMeeting(workspaceID: workspaceID, name: "Planning \(index)", in: db)
                 }
             }
             await manager.searchIndexer.drain()
         }
 
         func insertMatchingProjects(count: Int) async throws {
-            let vaultID = vault.id
+            let workspaceID = workspace.id
             try await manager.dbQueue.write { db in
                 for index in 0 ..< count {
                     try ProjectRecord(
                         id: .v7(),
-                        vaultId: vaultID,
+                        workspaceId: workspaceID,
                         parentProjectId: nil,
                         name: "Planning \(index)",
                         createdAt: .now,
@@ -593,13 +593,13 @@ import GRDB
         }
 
         func stop() {
-            if let url = vault.url {
+            if let url = workspace.url {
                 try? FileManager.default.removeItem(at: url)
             }
         }
 
         private nonisolated static func insertMeeting(
-            vaultID: UUID,
+            workspaceID: UUID,
             name: String,
             projectID: UUID? = nil,
             createdAt: Date = .now,
@@ -607,7 +607,7 @@ import GRDB
         ) throws {
             try MeetingRecord(
                 id: .v7(),
-                vaultId: vaultID,
+                workspaceId: workspaceID,
                 projectId: projectID,
                 name: name,
                 createdAt: createdAt,

@@ -6,19 +6,19 @@ import GRDB
 
 enum BackupRestoreStartupOutcome: Equatable, Sendable {
     case none
-    case completed([VaultBackupRestoreResult])
+    case completed([WorkspaceBackupRestoreResult])
     case failed(String)
 }
 
-struct VaultBackupRestoreResult: Equatable, Sendable {
-    let request: VaultBackupRestoreRequest
+struct WorkspaceBackupRestoreResult: Equatable, Sendable {
+    let request: WorkspaceBackupRestoreRequest
     let error: String?
 
     var localizedMessage: String {
         if let error {
-            L10n.backupVaultRestoreFailed(request.name, sourceVaultId: request.sourceVaultId, reason: error)
+            L10n.backupWorkspaceRestoreFailed(request.name, sourceWorkspaceId: request.sourceWorkspaceId, reason: error)
         } else {
-            L10n.backupVaultRestored(request.name, sourceVaultId: request.sourceVaultId)
+            L10n.backupWorkspaceRestored(request.name, sourceWorkspaceId: request.sourceWorkspaceId)
         }
     }
 }
@@ -68,10 +68,10 @@ enum BackupRestoreStartupProcessor {
 
             let combinedURL = restoreDirectoryURL.appending(path: "combined-\(UUID.v7()).sqlite")
             defer { try? fileManager.removeItem(at: combinedURL) }
-            let results: [VaultBackupRestoreResult] = if try BackupArchive.isArchive(candidateURL) {
+            let results: [WorkspaceBackupRestoreResult] = if try BackupArchive.isArchive(candidateURL) {
                 try BackupArchive.withExtracted(at: candidateURL) { directory, manifest in
                     guard manifest.metadata == marker.sourceMetadata else { throw BackupServiceError.invalidBackup }
-                    return try mergeVaults(
+                    return try mergeWorkspaces(
                         marker: marker,
                         sourceURL: directory.appending(path: "database.sqlite"),
                         databaseURL: databaseURL,
@@ -81,7 +81,7 @@ enum BackupRestoreStartupProcessor {
                     )
                 }
             } else {
-                try mergeVaults(
+                try mergeWorkspaces(
                     marker: marker,
                     sourceURL: candidateURL,
                     databaseURL: databaseURL,
@@ -105,20 +105,20 @@ enum BackupRestoreStartupProcessor {
         }
     }
 
-    private static func mergeVaults(
+    private static func mergeWorkspaces(
         marker: PendingDatabaseRestore,
         sourceURL: URL,
         databaseURL: URL,
         combinedURL: URL,
         applicationSupportURL: URL,
         archiveDirectory: URL? = nil
-    ) throws -> [VaultBackupRestoreResult] {
+    ) throws -> [WorkspaceBackupRestoreResult] {
         let metadata = try BackupService.readAndValidateMetadata(at: sourceURL)
         let requests = marker.requests
         guard metadata == marker.sourceMetadata,
               !requests.isEmpty,
-              Set(requests.map(\.sourceVaultId)).count == requests.count,
-              Set(requests.map(\.targetVaultId)).count == requests.count else { throw BackupServiceError.invalidBackup }
+              Set(requests.map(\.sourceWorkspaceId)).count == requests.count,
+              Set(requests.map(\.targetWorkspaceId)).count == requests.count else { throw BackupServiceError.invalidBackup }
         // Migrate only a managed copy; retain the original generation and staged checksum for retry.
         let migratedURL = sourceURL.deletingLastPathComponent().appending(path: "migrated-\(UUID.v7()).sqlite")
         defer { try? FileManager.default.removeItem(at: migratedURL) }
@@ -129,7 +129,7 @@ enum BackupRestoreStartupProcessor {
             guard try AppDatabaseManager.hasExpectedCurrentSchema(db, excludingTableNames: [BackupService.metadataTableName]) else {
                 throw BackupServiceError.invalidBackup
             }
-            try VaultBackupTransfer.validateIntegrity(in: db)
+            try WorkspaceBackupTransfer.validateIntegrity(in: db)
         }
         try migrated.close()
         let current = try DatabaseQueue(path: databaseURL.path, configuration: AppDatabaseManager.configuration())
@@ -141,15 +141,15 @@ enum BackupRestoreStartupProcessor {
         try combined.dbQueue.writeWithoutTransaction { db in
             try db.execute(sql: "ATTACH DATABASE ? AS backup_source", arguments: [migratedURL.path])
         }
-        var results: [VaultBackupRestoreResult] = []
+        var results: [WorkspaceBackupRestoreResult] = []
         for request in requests {
             do {
                 let target = try combined.dbQueue.read { db in
-                    try BackupService.validateRestoreRequests([request], metadata: metadata, in: db)[request.targetVaultId]
+                    try BackupService.validateRestoreRequests([request], metadata: metadata, in: db)[request.targetWorkspaceId]
                 }
                 if let target {
                     _ = try BackupService.createGeneration(
-                        vaultIds: [target.id], dbQueue: combined.dbQueue,
+                        workspaceIds: [target.id], dbQueue: combined.dbQueue,
                         directoryURL: applicationSupportURL.appending(path: BackupService.backupDirectoryName),
                         reason: .beforeRestore,
                         appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development",
@@ -158,36 +158,36 @@ enum BackupRestoreStartupProcessor {
                     )
                 }
                 try combined.dbQueue.write { db in
-                    guard let original = try VaultRecord.fetchOne(
+                    guard let original = try WorkspaceRecord.fetchOne(
                         db,
-                        sql: "SELECT * FROM backup_source.vaults WHERE id = ?",
-                        arguments: [request.sourceVaultId]
+                        sql: "SELECT * FROM backup_source.workspaces WHERE id = ?",
+                        arguments: [request.sourceWorkspaceId]
                     ) else {
                         throw BackupServiceError.invalidBackup
                     }
-                    var restoredVault = VaultBackupTransfer.portableVault(original)
+                    var restoredWorkspace = WorkspaceBackupTransfer.portableWorkspace(original)
                     if let target {
-                        restoredVault.path = target.path
-                        restoredVault.accountConnectionId = target.accountConnectionId
-                        restoredVault.localAIProvider = target.localAIProvider
-                        restoredVault.databricksProfile = target.databricksProfile
-                        restoredVault.summaryModelID = target.summaryModelID
-                        restoredVault.summaryReasoningEffort = target.summaryReasoningEffort
-                        restoredVault.chatModelID = target.chatModelID
-                        restoredVault.chatReasoningEffort = target.chatReasoningEffort
+                        restoredWorkspace.path = target.path
+                        restoredWorkspace.accountConnectionId = target.accountConnectionId
+                        restoredWorkspace.localAIProvider = target.localAIProvider
+                        restoredWorkspace.databricksProfile = target.databricksProfile
+                        restoredWorkspace.summaryModelID = target.summaryModelID
+                        restoredWorkspace.summaryReasoningEffort = target.summaryReasoningEffort
+                        restoredWorkspace.chatModelID = target.chatModelID
+                        restoredWorkspace.chatReasoningEffort = target.chatReasoningEffort
                     } else {
-                        restoredVault.id = request.targetVaultId
-                        restoredVault.name = request.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        restoredVault.createdAt = .now
-                        restoredVault.lastOpenedAt = .now
+                        restoredWorkspace.id = request.targetWorkspaceId
+                        restoredWorkspace.name = request.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        restoredWorkspace.createdAt = .now
+                        restoredWorkspace.lastOpenedAt = .now
                     }
-                    let retainedAudio = target == nil ? [] : try VaultBackupTransfer.retainedAudio(vaultId: request.targetVaultId, in: db)
-                    if target != nil { try VaultBackupTransfer.removeVaultContent(id: request.targetVaultId, in: db) }
-                    try VaultBackupTransfer.copy(
-                        vaultId: request.sourceVaultId,
+                    let retainedAudio = target == nil ? [] : try WorkspaceBackupTransfer.retainedAudio(workspaceId: request.targetWorkspaceId, in: db)
+                    if target != nil { try WorkspaceBackupTransfer.removeWorkspaceContent(id: request.targetWorkspaceId, in: db) }
+                    try WorkspaceBackupTransfer.copy(
+                        workspaceId: request.sourceWorkspaceId,
                         in: db,
-                        destinationVault: restoredVault,
-                        remapIDs: request.mode == .newVault,
+                        destinationWorkspace: restoredWorkspace,
+                        remapIDs: request.mode == .newWorkspace,
                         storeOriginal: { sourceId, destinationId in
                             guard let file = try FileRecord
                                 .fetchOne(db, sql: "SELECT * FROM backup_source.files WHERE id = ?", arguments: [sourceId]) else {
@@ -222,12 +222,12 @@ enum BackupRestoreStartupProcessor {
                             return try source.jsonString()
                         }
                     )
-                    try VaultBackupTransfer.restoreRetainedAudio(retainedAudio, in: db)
-                    try VaultBackupTransfer.validateIntegrity(in: db)
+                    try WorkspaceBackupTransfer.restoreRetainedAudio(retainedAudio, in: db)
+                    try WorkspaceBackupTransfer.validateIntegrity(in: db)
                 }
-                results.append(VaultBackupRestoreResult(request: request, error: nil))
+                results.append(WorkspaceBackupRestoreResult(request: request, error: nil))
             } catch {
-                results.append(VaultBackupRestoreResult(request: request, error: error.localizedDescription))
+                results.append(WorkspaceBackupRestoreResult(request: request, error: error.localizedDescription))
             }
         }
         try combined.dbQueue.writeWithoutTransaction { db in

@@ -4,7 +4,7 @@ import GRDB
 /// サイドバーの段階表示に必要な情報だけを保持する軽量なミーティング行。
 struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
     var meetingId: UUID
-    var vaultId: UUID
+    var workspaceId: UUID
     var projectId: UUID?
     var projectName: String?
     var meetingName: String
@@ -27,7 +27,7 @@ struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
 
     init(
         meetingId: UUID,
-        vaultId: UUID,
+        workspaceId: UUID,
         projectId: UUID?,
         projectName: String?,
         meetingName: String,
@@ -39,7 +39,7 @@ struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
         searchMatchContext: MeetingSearchMatchContext? = nil
     ) {
         self.meetingId = meetingId
-        self.vaultId = vaultId
+        self.workspaceId = workspaceId
         self.projectId = projectId
         self.projectName = projectName
         self.meetingName = meetingName
@@ -54,7 +54,7 @@ struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
     init(detail: MeetingDetailItem) {
         self.init(
             meetingId: detail.meetingId,
-            vaultId: detail.vaultId,
+            workspaceId: detail.workspaceId,
             projectId: detail.projectId,
             projectName: detail.projectName,
             meetingName: detail.meetingName,
@@ -68,7 +68,7 @@ struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
 
     init(row: Row) throws {
         meetingId = row["meetingId"]
-        vaultId = row["vaultId"]
+        workspaceId = row["workspace_id"]
         projectId = row["projectId"]
         projectName = row["projectName"]
         meetingName = row["meetingName"]

@@ -102,7 +102,7 @@ export const uuidV7Schema = z.string()
   .transform((value) => value.toLowerCase()).meta({ format: "uuidv7" });
 export const transactionOperationSchema = z.object({
   id: uuidV7Schema,
-  entity: z.enum(["vault", "project", "meeting", "summary", "transcript", "file", "meeting_attachment", "meeting_event", "recording"]),
+  entity: z.enum(["workspace", "project", "meeting", "summary", "transcript", "file", "meeting_attachment", "meeting_event", "recording"]),
   action: z.enum(["create", "update", "delete", "upsert", "patch", "reset"]),
   entityId: uuidSchema,
   baseRevision: z.number().int().nonnegative().nullable(),
@@ -111,7 +111,7 @@ export const transactionOperationSchema = z.object({
 export const transactionSchema = z.object({
   schemaVersion: z.literal(3),
   id: uuidV7Schema,
-  vaultId: uuidSchema,
+  workspaceId: uuidSchema,
   createdAt: dateSchema,
   operations: z.array(transactionOperationSchema).min(1).max(10_000),
 }).strict();
@@ -125,9 +125,9 @@ export const transactionDataSchemas = {
     z.object({ meetingId: uuidSchema, kind: z.enum(["recording_started", "recording_ended"]), occurredAt: dateSchema, sessionId: uuidSchema }).strict(),
     z.object({ meetingId: uuidSchema, kind: z.literal("segment_rotated"), occurredAt: dateSchema, sessionId: uuidSchema, relatedId: uuidSchema, audioSource: z.enum(["mic", "system"]), segmentIndex: z.number().int().positive().max(2147483647) }).strict(),
   ]),
-  "vault:create": z.object({ organizationId: uuidSchema, encryption: z.enum(["none", "server"]).optional(), ...appearanceFields, name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
-  "vault:update": z.object({ encryption: z.enum(["none", "server"]).optional(), ...appearanceFields, name: z.string().trim().min(1) }).strict(),
-  "vault:reset": z.object({ preservePermissions: z.boolean().optional() }).strict(),
+  "workspace:create": z.object({ organizationId: uuidSchema, encryption: z.enum(["none", "server"]).optional(), ...appearanceFields, name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
+  "workspace:update": z.object({ encryption: z.enum(["none", "server"]).optional(), ...appearanceFields, name: z.string().trim().min(1) }).strict(),
+  "workspace:reset": z.object({ preservePermissions: z.boolean().optional() }).strict(),
   "project:create": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),
   "project:update": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),
   "project:delete": z.object({}).strict(),

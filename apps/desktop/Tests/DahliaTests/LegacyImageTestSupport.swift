@@ -7,13 +7,13 @@ import GRDB
     extension MeetingScreenshotRecord {
         /// Seeds the recoverable state produced by v45 when upgrading a released BLOB database.
         func insertLegacyForTesting(_ db: Database) throws {
-            guard let bytes = imageData, let vaultId = try MeetingRecord.fetchOne(db, key: meetingId)?.vaultId else {
+            guard let bytes = imageData, let workspaceId = try MeetingRecord.fetchOne(db, key: meetingId)?.workspaceId else {
                 try insert(db)
                 return
             }
             try FileRecord(
                 id: originalFileId,
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 size: Int64(bytes.count),
                 contentType: mimeType,
                 checksum: "SHA-256:" + ScreenshotRemoteReference.digest(bytes),

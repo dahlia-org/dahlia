@@ -10,7 +10,7 @@ enum ProjectWorkspaceError: LocalizedError, Equatable {
     case staleRevision(current: Int)
     case cycleDetected
     case hierarchyTooDeep
-    case vaultBusy
+    case workspaceBusy
     case trashLocationUnavailable
     case invalidMoveDestination
     case invalidSummaryOutputDestination
@@ -38,8 +38,8 @@ enum ProjectWorkspaceError: LocalizedError, Equatable {
             L10n.projectCycleError
         case .hierarchyTooDeep:
             L10n.projectHierarchyTooDeep
-        case .vaultBusy:
-            L10n.projectVaultBusy
+        case .workspaceBusy:
+            L10n.projectWorkspaceBusy
         case .trashLocationUnavailable:
             L10n.summaryTrashLocationUnavailable
         case .invalidMoveDestination:

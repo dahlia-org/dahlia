@@ -18,30 +18,30 @@ it("creates canonical tables, defaults, and cascading relationships on SQLite", 
     db.exec(`
       INSERT INTO user(id, name, email, updated_at) VALUES ('owner', 'Owner', 'owner@example.com', 1);
       INSERT INTO organization(id, name, slug, created_at) VALUES ('org', 'Team', 'team', 1);
-      INSERT INTO vaults(vault_id, organization_id, created_by, name) VALUES ('vault', 'org', '{"id":"owner","name":"Owner","email":"owner@example.com"}', 'Vault');
-      INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id)
-        VALUES ('vault', 'user', 'owner', 'admin', 'owner');
-      INSERT INTO projects(project_id, vault_id, name, revision, created_at)
-        VALUES ('project', 'vault', 'Project', 8, 1);
-      INSERT INTO meetings(meeting_id, vault_id, project_id, name, status, created_at, updated_at)
-        VALUES ('meeting', 'vault', 'project', 'Meeting', 'READY', 1, 1);
-      INSERT INTO meeting_events(id, vault_id, owner_user_id, meeting_id, kind, occurred_at, received_at)
-        VALUES ('event', 'vault', 'owner', 'meeting', 'meeting_created', 1, 1);
-      INSERT INTO files(file_id, vault_id, uri, size, content_type, checksum, name, metadata)
-        VALUES ('file', 'vault', 'files/file/original', 5, 'image/png', 'SHA-256:test', 'image.png', '{"source":"screenshot"}');
-      INSERT INTO meeting_attachments(id, vault_id, meeting_id, file_id) VALUES ('link', 'vault', 'meeting', 'file');
+      INSERT INTO workspaces(workspace_id, organization_id, created_by, name) VALUES ('workspace', 'org', '{"id":"owner","name":"Owner","email":"owner@example.com"}', 'Workspace');
+      INSERT INTO workspace_permissions(workspace_id, principal_type, principal_id, role, granted_by_user_id)
+        VALUES ('workspace', 'user', 'owner', 'admin', 'owner');
+      INSERT INTO projects(project_id, workspace_id, name, revision, created_at)
+        VALUES ('project', 'workspace', 'Project', 8, 1);
+      INSERT INTO meetings(meeting_id, workspace_id, project_id, name, status, created_at, updated_at)
+        VALUES ('meeting', 'workspace', 'project', 'Meeting', 'READY', 1, 1);
+      INSERT INTO meeting_events(id, workspace_id, owner_user_id, meeting_id, kind, occurred_at, received_at)
+        VALUES ('event', 'workspace', 'owner', 'meeting', 'meeting_created', 1, 1);
+      INSERT INTO files(file_id, workspace_id, uri, size, content_type, checksum, name, metadata)
+        VALUES ('file', 'workspace', 'files/file/original', 5, 'image/png', 'SHA-256:test', 'image.png', '{"source":"screenshot"}');
+      INSERT INTO meeting_attachments(id, workspace_id, meeting_id, file_id) VALUES ('link', 'workspace', 'meeting', 'file');
       INSERT INTO recordings(session_id, meeting_id, number, started_at, ended_at, audio, revision, created_at, updated_at)
         VALUES ('session', 'meeting', 1, 1, 2, '{"mic":{"generation":"upload-token","active":false}}', 7, 1, 2);
       INSERT INTO account_settings(user_id, output_language, analysis_languages, revision)
         VALUES ('owner', 'ja', '{"scope":"automatic"}', 19);
-      INSERT INTO jobs_search_index(vault_id, document_id, model, dimensions, generation, status, attempts, claimed_at)
-        VALUES ('vault', 'document', 'model', 32, 4, 'processing', 2, 123);
+      INSERT INTO jobs_search_index(workspace_id, document_id, model, dimensions, generation, status, attempts, claimed_at)
+        VALUES ('workspace', 'document', 'model', 32, 4, 'processing', 2, 123);
       INSERT INTO jobs_storage_delete(storage_key, status, attempts, claimed_at) VALUES ('old-file', 'processing', 3, 124);
-      INSERT INTO jobs_image_analysis(file_id, vault_id, owner_user_id, model, status, attempts)
-        VALUES ('file', 'vault', 'owner', 'vision', 'failed', 5);
-      INSERT INTO jobs_summary(id, vault_id, meeting_id, owner_user_id, method, settings, output_language, status,
+      INSERT INTO jobs_image_analysis(file_id, workspace_id, owner_user_id, model, status, attempts)
+        VALUES ('file', 'workspace', 'owner', 'vision', 'failed', 5);
+      INSERT INTO jobs_summary(id, workspace_id, meeting_id, owner_user_id, method, settings, output_language, status,
         created_at, available_at, summary_revision, input_version, request_hash)
-        VALUES ('summary-job', 'vault', 'meeting', 'owner', 'transcript', '{"model":"saved"}', 'ja', 'pending', 1, 1, 3, 'input', 'request');
+        VALUES ('summary-job', 'workspace', 'meeting', 'owner', 'transcript', '{"model":"saved"}', 'ja', 'pending', 1, 1, 3, 'input', 'request');
     `);
     expect(db.prepare("SELECT name FROM sqlite_master WHERE name IN ('artifact', 'summary_versions', 'screenshots')").all()).toEqual([]);
     expect(db.prepare("SELECT revision, summary, processing FROM account_settings").get()).toEqual({
@@ -49,14 +49,14 @@ it("creates canonical tables, defaults, and cascading relationships on SQLite", 
       processing: JSON.stringify({ location: "local", remote: { workflow: "transcribeThenSummarize" } }),
     });
     expect(db.prepare("SELECT revision, icon, color FROM projects").get()).toEqual({ revision: 8, icon: null, color: null });
-    expect(db.prepare("SELECT icon, color FROM vaults").get()).toEqual({ icon: null, color: null });
+    expect(db.prepare("SELECT icon, color FROM workspaces").get()).toEqual({ icon: null, color: null });
     expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     db.exec("DELETE FROM meetings WHERE meeting_id = 'meeting'");
     expect(db.prepare("SELECT * FROM recordings").all()).toEqual([]);
     expect(db.prepare("SELECT * FROM meeting_attachments").all()).toEqual([]);
     expect(db.prepare("SELECT count(*) AS count FROM files").get()).toEqual({ count: 1 });
     expect(db.prepare("SELECT count(*) AS count FROM meeting_events").get()).toEqual({ count: 1 });
-    db.exec("DELETE FROM vaults WHERE vault_id = 'vault'");
+    db.exec("DELETE FROM workspaces WHERE workspace_id = 'workspace'");
     expect(db.prepare("SELECT * FROM meeting_events").all()).toEqual([]);
   } finally { db.close(); }
 });
@@ -85,8 +85,8 @@ it("creates calendar metadata in the initial schema and preserves it through run
   try {
     for (const file of files.slice(0, -1)) migrate(file);
     db.exec(`INSERT INTO organization(id, name, slug, created_at) VALUES ('org', 'Team', 'team', 1);
-      INSERT INTO vaults(vault_id, organization_id, created_by, name) VALUES ('vault', 'org', '{"id":"owner","name":"Owner","email":"owner@example.com"}', 'Vault')`);
-    db.exec("INSERT INTO meetings(meeting_id, vault_id, name, status, created_at, updated_at) VALUES ('meeting', 'vault', 'Preserved', 'READY', 1, 2)");
+      INSERT INTO workspaces(workspace_id, organization_id, created_by, name) VALUES ('workspace', 'org', '{"id":"owner","name":"Owner","email":"owner@example.com"}', 'Workspace')`);
+    db.exec("INSERT INTO meetings(meeting_id, workspace_id, name, status, created_at, updated_at) VALUES ('meeting', 'workspace', 'Preserved', 'READY', 1, 2)");
     db.exec("UPDATE meetings SET ical_uid = 'shared@example.com', recurrence_id = '20260903T000000Z'");
     migrate(files.at(-1)!);
     expect(db.prepare("SELECT name, created_at, updated_at, ical_uid, recurrence_id, calendar_event FROM meetings").get())

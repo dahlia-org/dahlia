@@ -42,7 +42,7 @@
       }
     },
     "schemas": {
-      "Vault": {
+      "Workspace": {
         "type": "object",
         "properties": {
           "encryption": {
@@ -52,9 +52,9 @@
               "server"
             ]
           },
-          "vaultId": {
+          "workspaceId": {
             "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "organizationId": {
             "type": "string",
@@ -111,7 +111,7 @@
           }
         },
         "required": [
-          "vaultId",
+          "workspaceId",
           "organizationId",
           "name",
           "revision",
@@ -127,9 +127,9 @@
             "type": "string",
             "pattern": "^proj_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
-          "vaultId": {
+          "workspaceId": {
             "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "parentProjectId": {
             "type": [
@@ -215,7 +215,7 @@
         },
         "required": [
           "projectId",
-          "vaultId",
+          "workspaceId",
           "parentProjectId",
           "name",
           "description",
@@ -231,9 +231,9 @@
             "type": "string",
             "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
-          "vaultId": {
+          "workspaceId": {
             "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "projectId": {
             "type": [
@@ -382,7 +382,7 @@
         },
         "required": [
           "meetingId",
-          "vaultId",
+          "workspaceId",
           "projectId",
           "name",
           "description",
@@ -404,9 +404,9 @@
             "type": "string",
             "pattern": "^file_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
-          "vaultId": {
+          "workspaceId": {
             "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "name": {
             "type": "string"
@@ -459,7 +459,7 @@
         },
         "required": [
           "id",
-          "vaultId",
+          "workspaceId",
           "name",
           "contentType",
           "size",
@@ -1190,31 +1190,11 @@
             "required": [
               "id"
             ]
-          },
-          "workspace": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^personal:user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "personal"
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "type"
-            ]
           }
         },
         "required": [
           "capabilities",
-          "user",
-          "workspace"
+          "user"
         ]
       },
       "Problem": {
@@ -1262,12 +1242,12 @@
               "entity": {
                 "type": "string",
                 "enum": [
-                  "vault"
+                  "workspace"
                 ]
               },
               "id": {
                 "type": "string",
-                "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
               },
               "clientBaseRevision": {
                 "type": [
@@ -1286,7 +1266,7 @@
                 "maximum": 9007199254740991
               },
               "record": {
-                "$ref": "#/components/schemas/NullableVaultRecord"
+                "$ref": "#/components/schemas/NullableWorkspaceRecord"
               }
             },
             "required": [
@@ -1627,7 +1607,7 @@
           }
         ]
       },
-      "NullableVaultRecord": {
+      "NullableWorkspaceRecord": {
         "type": [
           "object",
           "null"
@@ -1640,9 +1620,9 @@
               "server"
             ]
           },
-          "vaultId": {
+          "workspaceId": {
             "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "organizationId": {
             "type": "string",
@@ -1699,7 +1679,7 @@
           }
         },
         "required": [
-          "vaultId",
+          "workspaceId",
           "organizationId",
           "name",
           "revision",
@@ -1718,9 +1698,9 @@
             "type": "string",
             "pattern": "^proj_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
-          "vaultId": {
+          "workspaceId": {
             "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "parentProjectId": {
             "type": [
@@ -1806,7 +1786,7 @@
         },
         "required": [
           "projectId",
-          "vaultId",
+          "workspaceId",
           "parentProjectId",
           "name",
           "description",
@@ -1825,9 +1805,9 @@
             "type": "string",
             "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
-          "vaultId": {
+          "workspaceId": {
             "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "projectId": {
             "type": [
@@ -1976,7 +1956,7 @@
         },
         "required": [
           "meetingId",
-          "vaultId",
+          "workspaceId",
           "projectId",
           "name",
           "description",
@@ -2165,9 +2145,9 @@
             "type": "string",
             "pattern": "^file_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
-          "vaultId": {
+          "workspaceId": {
             "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "name": {
             "type": "string"
@@ -2220,7 +2200,7 @@
         },
         "required": [
           "id",
-          "vaultId",
+          "workspaceId",
           "name",
           "contentType",
           "size",
@@ -2241,9 +2221,9 @@
             "type": "string",
             "pattern": "^att_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
-          "vaultId": {
+          "workspaceId": {
             "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "meetingId": {
             "type": "string",
@@ -2279,7 +2259,7 @@
         },
         "required": [
           "id",
-          "vaultId",
+          "workspaceId",
           "meetingId",
           "fileId",
           "capturedAt",
@@ -2331,9 +2311,9 @@
             "type": "string",
             "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
-          "vaultId": {
+          "workspaceId": {
             "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "revision": {
             "type": "integer",
@@ -2349,7 +2329,7 @@
           "recordingNumber",
           "sessionId",
           "meetingId",
-          "vaultId",
+          "workspaceId",
           "revision"
         ]
       },
@@ -2617,7 +2597,7 @@
       "Capabilities": {
         "type": "object",
         "properties": {
-          "vaultEncryption": {
+          "workspaceEncryption": {
             "type": "object",
             "properties": {
               "version": {
@@ -2643,7 +2623,7 @@
               "version"
             ]
           },
-          "vaultTransfers": {
+          "workspaceTransfers": {
             "type": "object",
             "properties": {
               "version": {
@@ -3544,12 +3524,12 @@
               "entity": {
                 "type": "string",
                 "enum": [
-                  "vault"
+                  "workspace"
                 ]
               },
               "id": {
                 "type": "string",
-                "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
               },
               "revision": {
                 "type": [
@@ -3560,7 +3540,7 @@
                 "maximum": 9007199254740991
               },
               "record": {
-                "$ref": "#/components/schemas/NullableVaultRecord"
+                "$ref": "#/components/schemas/NullableWorkspaceRecord"
               }
             },
             "required": [
@@ -3832,9 +3812,9 @@
             "type": "string",
             "pattern": "^txn_[0-7][0-9abcdefghjkmnpqrstvwxyz]{9}[ef][0-9abcdefghjkmnpqrstvwxyz]{2}[89abrstv][0-9abcdefghjkmnpqrstvwxyz]{12}$"
           },
-          "vaultId": {
+          "workspaceId": {
             "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "createdAt": {
             "type": "string",
@@ -4010,7 +3990,7 @@
                     "entity": {
                       "type": "string",
                       "enum": [
-                        "vault"
+                        "workspace"
                       ]
                     },
                     "action": {
@@ -4021,7 +4001,7 @@
                     },
                     "entityId": {
                       "type": "string",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     },
                     "baseRevision": {
                       "type": [
@@ -4050,7 +4030,7 @@
                             "null"
                           ],
                           "enum": [
-                            "vault",
+                            "workspace",
                             "folder",
                             "dollarsign.circle",
                             "book.closed",
@@ -4142,7 +4122,7 @@
                     "entity": {
                       "type": "string",
                       "enum": [
-                        "vault"
+                        "workspace"
                       ]
                     },
                     "action": {
@@ -4153,7 +4133,7 @@
                     },
                     "entityId": {
                       "type": "string",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     },
                     "baseRevision": {
                       "type": [
@@ -4178,7 +4158,7 @@
                             "null"
                           ],
                           "enum": [
-                            "vault",
+                            "workspace",
                             "folder",
                             "dollarsign.circle",
                             "book.closed",
@@ -4264,7 +4244,7 @@
                     "entity": {
                       "type": "string",
                       "enum": [
-                        "vault"
+                        "workspace"
                       ]
                     },
                     "action": {
@@ -4275,7 +4255,7 @@
                     },
                     "entityId": {
                       "type": "string",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     },
                     "baseRevision": {
                       "type": [
@@ -4343,7 +4323,7 @@
                             "null"
                           ],
                           "enum": [
-                            "vault",
+                            "workspace",
                             "folder",
                             "dollarsign.circle",
                             "book.closed",
@@ -4490,7 +4470,7 @@
                             "null"
                           ],
                           "enum": [
-                            "vault",
+                            "workspace",
                             "folder",
                             "dollarsign.circle",
                             "book.closed",
@@ -5807,7 +5787,7 @@
         "required": [
           "schemaVersion",
           "id",
-          "vaultId",
+          "workspaceId",
           "createdAt",
           "operations"
         ],
@@ -5854,19 +5834,19 @@
                       "minimum": 0,
                       "maximum": 9007199254740991
                     },
-                    "vaultId": {
+                    "workspaceId": {
                       "type": "string",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     },
                     "entity": {
                       "type": "string",
                       "enum": [
-                        "vault"
+                        "workspace"
                       ]
                     },
                     "entityId": {
                       "type": "string",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     },
                     "action": {
                       "type": "string",
@@ -5889,12 +5869,12 @@
                       "pattern": "^txn_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     },
                     "record": {
-                      "$ref": "#/components/schemas/NullableVaultRecord"
+                      "$ref": "#/components/schemas/NullableWorkspaceRecord"
                     }
                   },
                   "required": [
                     "sequence",
-                    "vaultId",
+                    "workspaceId",
                     "entity",
                     "entityId",
                     "action",
@@ -5911,9 +5891,9 @@
                       "minimum": 0,
                       "maximum": 9007199254740991
                     },
-                    "vaultId": {
+                    "workspaceId": {
                       "type": "string",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     },
                     "entity": {
                       "type": "string",
@@ -5951,7 +5931,7 @@
                   },
                   "required": [
                     "sequence",
-                    "vaultId",
+                    "workspaceId",
                     "entity",
                     "entityId",
                     "action",
@@ -5968,9 +5948,9 @@
                       "minimum": 0,
                       "maximum": 9007199254740991
                     },
-                    "vaultId": {
+                    "workspaceId": {
                       "type": "string",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     },
                     "entity": {
                       "type": "string",
@@ -6008,7 +5988,7 @@
                   },
                   "required": [
                     "sequence",
-                    "vaultId",
+                    "workspaceId",
                     "entity",
                     "entityId",
                     "action",
@@ -6025,9 +6005,9 @@
                       "minimum": 0,
                       "maximum": 9007199254740991
                     },
-                    "vaultId": {
+                    "workspaceId": {
                       "type": "string",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     },
                     "entity": {
                       "type": "string",
@@ -6065,7 +6045,7 @@
                   },
                   "required": [
                     "sequence",
-                    "vaultId",
+                    "workspaceId",
                     "entity",
                     "entityId",
                     "action",
@@ -6082,9 +6062,9 @@
                       "minimum": 0,
                       "maximum": 9007199254740991
                     },
-                    "vaultId": {
+                    "workspaceId": {
                       "type": "string",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     },
                     "entity": {
                       "type": "string",
@@ -6122,7 +6102,7 @@
                   },
                   "required": [
                     "sequence",
-                    "vaultId",
+                    "workspaceId",
                     "entity",
                     "entityId",
                     "action",
@@ -6139,9 +6119,9 @@
                       "minimum": 0,
                       "maximum": 9007199254740991
                     },
-                    "vaultId": {
+                    "workspaceId": {
                       "type": "string",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     },
                     "entity": {
                       "type": "string",
@@ -6179,7 +6159,7 @@
                   },
                   "required": [
                     "sequence",
-                    "vaultId",
+                    "workspaceId",
                     "entity",
                     "entityId",
                     "action",
@@ -6196,9 +6176,9 @@
                       "minimum": 0,
                       "maximum": 9007199254740991
                     },
-                    "vaultId": {
+                    "workspaceId": {
                       "type": "string",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     },
                     "entity": {
                       "type": "string",
@@ -6236,7 +6216,7 @@
                   },
                   "required": [
                     "sequence",
-                    "vaultId",
+                    "workspaceId",
                     "entity",
                     "entityId",
                     "action",
@@ -6253,9 +6233,9 @@
                       "minimum": 0,
                       "maximum": 9007199254740991
                     },
-                    "vaultId": {
+                    "workspaceId": {
                       "type": "string",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     },
                     "entity": {
                       "type": "string",
@@ -6293,7 +6273,7 @@
                   },
                   "required": [
                     "sequence",
-                    "vaultId",
+                    "workspaceId",
                     "entity",
                     "entityId",
                     "action",
@@ -6310,9 +6290,9 @@
                       "minimum": 0,
                       "maximum": 9007199254740991
                     },
-                    "vaultId": {
+                    "workspaceId": {
                       "type": "string",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     },
                     "entity": {
                       "type": "string",
@@ -6350,7 +6330,7 @@
                   },
                   "required": [
                     "sequence",
-                    "vaultId",
+                    "workspaceId",
                     "entity",
                     "entityId",
                     "action",
@@ -6415,9 +6395,9 @@
       "SearchResults": {
         "type": "object",
         "properties": {
-          "vaultId": {
+          "workspaceId": {
             "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "meetings": {
             "type": "array",
@@ -6458,7 +6438,7 @@
           }
         },
         "required": [
-          "vaultId",
+          "workspaceId",
           "meetings",
           "screenshots",
           "projects",
@@ -6612,9 +6592,9 @@
             "type": "string",
             "pattern": "^att_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
-          "vaultId": {
+          "workspaceId": {
             "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "meetingId": {
             "type": "string",
@@ -6650,7 +6630,7 @@
         },
         "required": [
           "id",
-          "vaultId",
+          "workspaceId",
           "meetingId",
           "fileId",
           "capturedAt",
@@ -6710,7 +6690,7 @@
           "contentUrl"
         ]
       },
-      "VaultPermission": {
+      "WorkspacePermission": {
         "type": "object",
         "properties": {
           "name": {
@@ -6719,9 +6699,9 @@
           "detail": {
             "type": "string"
           },
-          "vaultId": {
+          "workspaceId": {
             "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "principalType": {
             "type": "string",
@@ -6751,19 +6731,19 @@
           }
         },
         "required": [
-          "vaultId",
+          "workspaceId",
           "principalType",
           "principalId",
           "role",
           "createdAt"
         ]
       },
-      "GovernanceVault": {
+      "GovernanceWorkspace": {
         "type": "object",
         "properties": {
-          "vaultId": {
+          "workspaceId": {
             "type": "string",
-            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "name": {
             "type": "string"
@@ -6779,7 +6759,7 @@
           }
         },
         "required": [
-          "vaultId",
+          "workspaceId",
           "name",
           "revision",
           "creatorId"
@@ -7872,12 +7852,12 @@
         }
       }
     },
-    "/api/v1/vaults": {
+    "/api/v1/workspaces": {
       "get": {
-        "operationId": "listVaults",
-        "summary": "Accessible Vaults",
+        "operationId": "listWorkspaces",
+        "summary": "Accessible Workspaces",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "parameters": [
           {
@@ -7903,7 +7883,7 @@
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Vault"
+                        "$ref": "#/components/schemas/Workspace"
                       }
                     },
                     "nextCursor": {
@@ -7929,21 +7909,21 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}": {
+    "/api/v1/workspaces/{workspaceId}": {
       "get": {
-        "operationId": "getVault",
-        "summary": "Get Vault",
+        "operationId": "getWorkspace",
+        "summary": "Get Workspace",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           }
         ],
@@ -7953,7 +7933,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Vault"
+                  "$ref": "#/components/schemas/Workspace"
                 }
               }
             }
@@ -7964,21 +7944,21 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}/projects": {
+    "/api/v1/workspaces/{workspaceId}/projects": {
       "get": {
         "operationId": "listProjects",
-        "summary": "Vault project tree",
+        "summary": "Workspace project tree",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           }
         ],
@@ -8054,21 +8034,21 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}/meetings": {
+    "/api/v1/workspaces/{workspaceId}/meetings": {
       "get": {
         "operationId": "listMeetings",
         "summary": "Meetings by creation time and ID; 200 per page",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           },
           {
@@ -9499,7 +9479,7 @@
     "/api/v1/transactions": {
       "post": {
         "operationId": "commitTransaction",
-        "summary": "Commit one atomic Vault transaction; maximum 8 MiB",
+        "summary": "Commit one atomic Workspace transaction; maximum 8 MiB",
         "tags": [
           "transactions"
         ],
@@ -9564,21 +9544,21 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}/changes": {
+    "/api/v1/workspaces/{workspaceId}/changes": {
       "get": {
         "operationId": "getChanges",
         "summary": "Durable delta feed; retain highWaterCursor across a catch-up",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           },
           {
@@ -9621,21 +9601,21 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}/snapshot": {
+    "/api/v1/workspaces/{workspaceId}/snapshot": {
       "get": {
         "operationId": "getSnapshot",
         "summary": "Bounded snapshot; retain startCursor and catch up before reconciliation",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           },
           {
@@ -9678,21 +9658,21 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}/search": {
+    "/api/v1/workspaces/{workspaceId}/search": {
       "post": {
         "operationId": "search",
         "summary": "Ranked search with explicit truncation indicators; maximum 16 KiB",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           }
         ],
@@ -9757,21 +9737,21 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}/text-search": {
+    "/api/v1/workspaces/{workspaceId}/text-search": {
       "post": {
         "operationId": "textSearch",
         "summary": "Exhaustive full-text search pages; cursor invalidates when the ledger changes",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           }
         ],
@@ -10014,9 +9994,9 @@
                     "type": "string",
                     "pattern": "^file_[0-7][0-9abcdefghjkmnpqrstvwxyz]{9}[ef][0-9abcdefghjkmnpqrstvwxyz]{2}[89abrstv][0-9abcdefghjkmnpqrstvwxyz]{12}$"
                   },
-                  "vaultId": {
+                  "workspaceId": {
                     "type": "string",
-                    "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                   },
                   "name": {
                     "type": "string",
@@ -10057,7 +10037,7 @@
                 },
                 "required": [
                   "id",
-                  "vaultId",
+                  "workspaceId",
                   "name",
                   "contentType",
                   "metadata"
@@ -10313,21 +10293,21 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}/files": {
+    "/api/v1/workspaces/{workspaceId}/files": {
       "get": {
         "operationId": "listFiles",
         "summary": "Committed files by ID; 200 per page",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           },
           {
@@ -11738,30 +11718,30 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}/transfer-audience": {
+    "/api/v1/workspaces/{workspaceId}/transfer-audience": {
       "get": {
         "operationId": "getTransferAudience",
         "summary": "Preview readers gaining or losing access; admin only",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           },
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "destinationVaultId",
+            "name": "destinationWorkspaceId",
             "in": "query"
           }
         ],
@@ -11804,21 +11784,21 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}/transfer": {
+    "/api/v1/workspaces/{workspaceId}/transfer": {
       "post": {
-        "operationId": "transferVault",
+        "operationId": "transferWorkspace",
         "summary": "Move all content after revision and audience checks; admin only",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           },
           {
@@ -11838,9 +11818,9 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "destinationVaultId": {
+                  "destinationWorkspaceId": {
                     "type": "string",
-                    "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                   },
                   "sourceRevision": {
                     "type": "integer",
@@ -11858,7 +11838,7 @@
                   }
                 },
                 "required": [
-                  "destinationVaultId",
+                  "destinationWorkspaceId",
                   "sourceRevision",
                   "destinationRevision",
                   "audienceHash"
@@ -11886,20 +11866,20 @@
                         "committed"
                       ]
                     },
-                    "sourceVaultId": {
+                    "sourceWorkspaceId": {
                       "type": "string",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     },
-                    "destinationVaultId": {
+                    "destinationWorkspaceId": {
                       "type": "string",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     }
                   },
                   "required": [
                     "id",
                     "status",
-                    "sourceVaultId",
-                    "destinationVaultId"
+                    "sourceWorkspaceId",
+                    "destinationWorkspaceId"
                   ]
                 }
               }
@@ -11911,21 +11891,21 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}/relocations": {
+    "/api/v1/workspaces/{workspaceId}/relocations": {
       "get": {
         "operationId": "getRelocations",
-        "summary": "Resolve moved resources to currently accessible Vaults",
+        "summary": "Resolve moved resources to currently accessible Workspaces",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           }
         ],
@@ -11937,10 +11917,10 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "vaults": {
+                    "workspaces": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Vault"
+                        "$ref": "#/components/schemas/Workspace"
                       }
                     },
                     "items": {
@@ -11960,21 +11940,21 @@
                             "type": "string",
                             "pattern": "^(file|mtg|proj)_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                           },
-                          "vaultId": {
+                          "workspaceId": {
                             "type": "string",
-                            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                           }
                         },
                         "required": [
                           "entity",
                           "id",
-                          "vaultId"
+                          "workspaceId"
                         ]
                       }
                     }
                   },
                   "required": [
-                    "vaults",
+                    "workspaces",
                     "items"
                   ]
                 }
@@ -11987,12 +11967,12 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}/permission-targets": {
+    "/api/v1/workspaces/{workspaceId}/permission-targets": {
       "get": {
         "operationId": "searchPermissionTargets",
         "summary": "Search own organizations, their teams and co-members; admin only; 50 per type per page",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "security": [
           {
@@ -12006,10 +11986,10 @@
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           },
           {
@@ -12098,12 +12078,12 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}/permissions/users/{userId}": {
+    "/api/v1/workspaces/{workspaceId}/permissions/users/{userId}": {
       "put": {
         "operationId": "putUserPermission",
         "summary": "Grant access to a known user; admin only",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "security": [
           {
@@ -12117,10 +12097,10 @@
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           },
           {
@@ -12172,7 +12152,7 @@
         "operationId": "deleteUserPermission",
         "summary": "Revoke direct user access; admin only",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "security": [
           {
@@ -12186,10 +12166,10 @@
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           },
           {
@@ -12214,12 +12194,12 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}/permissions": {
+    "/api/v1/workspaces/{workspaceId}/permissions": {
       "get": {
         "operationId": "listPermissions",
-        "summary": "Read Vault sharing permissions",
+        "summary": "Read Workspace sharing permissions",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "security": [
           {
@@ -12233,10 +12213,10 @@
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           }
         ],
@@ -12251,7 +12231,7 @@
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/VaultPermission"
+                        "$ref": "#/components/schemas/WorkspacePermission"
                       }
                     },
                     "nextCursor": {
@@ -12277,12 +12257,12 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}": {
+    "/api/v1/workspaces/{workspaceId}/permissions/organizations/{organizationId}": {
       "put": {
         "operationId": "putOrganizationPermission",
         "summary": "Grant organization access; admin only",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "security": [
           {
@@ -12296,10 +12276,10 @@
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           },
           {
@@ -12351,7 +12331,7 @@
         "operationId": "deleteOrganizationPermission",
         "summary": "Revoke organization access; admin only",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "security": [
           {
@@ -12365,10 +12345,10 @@
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           },
           {
@@ -12393,12 +12373,12 @@
         }
       }
     },
-    "/api/v1/vaults/{vaultId}/permissions/teams/{teamId}": {
+    "/api/v1/workspaces/{workspaceId}/permissions/teams/{teamId}": {
       "put": {
         "operationId": "putTeamPermission",
         "summary": "Grant team access; admin only",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "security": [
           {
@@ -12412,10 +12392,10 @@
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           },
           {
@@ -12467,7 +12447,7 @@
         "operationId": "deleteTeamPermission",
         "summary": "Revoke team access; admin only",
         "tags": [
-          "vaults"
+          "workspaces"
         ],
         "security": [
           {
@@ -12481,10 +12461,10 @@
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           },
           {
@@ -12509,10 +12489,10 @@
         }
       }
     },
-    "/api/v1/organizations/{organizationId}/vaults": {
+    "/api/v1/organizations/{organizationId}/workspaces": {
       "get": {
-        "operationId": "listGovernanceVaults",
-        "summary": "Organization Vault metadata; organization owner or admin only",
+        "operationId": "listGovernanceWorkspaces",
+        "summary": "Organization Workspace metadata; organization owner or admin only",
         "tags": [
           "organizations"
         ],
@@ -12541,7 +12521,7 @@
               "type": "string",
               "minLength": 1,
               "description": "Opaque cursor. Pass back unchanged with the original filters.",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": false,
             "description": "Opaque cursor. Pass back unchanged with the original filters.",
@@ -12560,7 +12540,7 @@
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/GovernanceVault"
+                        "$ref": "#/components/schemas/GovernanceWorkspace"
                       }
                     },
                     "nextCursor": {
@@ -12570,7 +12550,7 @@
                       ],
                       "minLength": 1,
                       "description": "Opaque cursor. Pass back unchanged with the original filters.",
-                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                      "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                     }
                   },
                   "required": [
@@ -12587,10 +12567,10 @@
         }
       }
     },
-    "/api/v1/organizations/{organizationId}/vaults/{vaultId}/deletion": {
+    "/api/v1/organizations/{organizationId}/workspaces/{workspaceId}/deletion": {
       "get": {
-        "operationId": "confirmVaultDeletion",
-        "summary": "Confirm the current Vault revision and content cursor",
+        "operationId": "confirmWorkspaceDeletion",
+        "summary": "Confirm the current Workspace revision and content cursor",
         "tags": [
           "organizations"
         ],
@@ -12617,10 +12597,10 @@
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           }
         ],
@@ -12632,7 +12612,7 @@
                 "schema": {
                   "allOf": [
                     {
-                      "$ref": "#/components/schemas/GovernanceVault"
+                      "$ref": "#/components/schemas/GovernanceWorkspace"
                     },
                     {
                       "type": "object",
@@ -12658,10 +12638,10 @@
         }
       }
     },
-    "/api/v1/organizations/{organizationId}/vaults/{vaultId}": {
+    "/api/v1/organizations/{organizationId}/workspaces/{workspaceId}": {
       "delete": {
-        "operationId": "forceDeleteVault",
-        "summary": "Delete a Team Organization Vault after confirmation",
+        "operationId": "forceDeleteWorkspace",
+        "summary": "Delete a Team Organization Workspace after confirmation",
         "tags": [
           "organizations"
         ],
@@ -12688,10 +12668,10 @@
           {
             "schema": {
               "type": "string",
-              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": true,
-            "name": "vaultId",
+            "name": "workspaceId",
             "in": "path"
           }
         ],

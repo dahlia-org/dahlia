@@ -10,12 +10,12 @@ Dahlia は Desktop、Server / Private Web、公開サイトを持つモノレポ
 | 全体・runtime 境界 | [Architecture](../ARCHITECTURE.md) | ownership、同期境界、Desktop の信頼性・応答性、適合状況 |
 | Desktop | [README](../README.md) / [日本語](../README_ja.md) | macOS の導入・ビルド・利用 |
 | Desktop | [音声・文字起こし](architecture/audio-transcription-data-flow.md) | capture、保存、開始・停止・異常時の data flow |
-| Desktop | [Project workspaces](project-workspaces.md) | ローカル Project、Vault、MCP の操作契約 |
-| Desktop / Server | [MCP transcript access](live-mcp.md) | 全保管庫の読み書き、確定文字起こしの差分取得と待機（日英） |
+| Desktop | [Project workspaces](project-workspaces.md) | ローカル Project、Workspace、MCP の操作契約 |
+| Desktop / Server | [MCP transcript access](live-mcp.md) | 全ワークスペースの読み書き、確定文字起こしの差分取得と待機（日英） |
 | Desktop / Server | [Conversation analytics](conversation-analytics.md) | 会話分析のモデルと操作 |
 | Desktop | [Calendar schema](calendar-event-schema.md) | 予定のキーと Meeting との関係 |
 | Desktop | [Telemetry](telemetry.md) / [Release versioning](desktop-release-versioning.md) | 匿名収集規則、desktop release の版管理 |
-| Server / Private Web | [Server README](../apps/server/README.md) | API、認証・認可、Vault 共有、検索、設定、開発 |
+| Server / Private Web | [Server README](../apps/server/README.md) | API、認証・認可、Workspace 共有、検索、設定、開発 |
 | Server / Cloud | [Deployment](../deploy/README.md) | 配置方法の入口 |
 | Server / Cloud | [Cloudflare](../deploy/cloudflare/README.md) / [Databricks](../deploy/databricks/README.md) | 配置先ごとの手順・制約 |
 | 公開サイト | [Site README](../apps/site/README.md) | site の開発・配布 |

@@ -39,9 +39,9 @@ struct TranscriptionSettingsView: View {
                     .toggleStyle(.switch)
                 Button(L10n.settingsChooseSummaryPreferences, systemImage: "arrow.right", action: onOpenAccountSettings)
                 DisclosureGroup(L10n.settingsAutomaticExport) {
-                    Toggle(isOn: $settings.exportBatchSummaryToVault) {
-                        Text(L10n.exportBatchSummaryToVault)
-                        Text(L10n.exportBatchSummaryToVaultDescription)
+                    Toggle(isOn: $settings.exportBatchSummaryToWorkspace) {
+                        Text(L10n.exportBatchSummaryToWorkspace)
+                        Text(L10n.exportBatchSummaryToWorkspaceDescription)
                     }
                     .toggleStyle(.switch)
                     Toggle(isOn: $settings.exportBatchSummaryToGoogleDocs) {

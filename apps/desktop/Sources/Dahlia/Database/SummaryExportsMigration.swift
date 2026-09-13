@@ -42,8 +42,8 @@ enum SummaryExportsMigration {
         )
         for row in rows {
             let relativePath: String = row["vaultRelativePath"]
-            guard let url = SummaryExportRecord.vaultURL(relativePath: relativePath) else { continue }
-            try insertExport(type: .vault, url: url, from: row, in: db)
+            guard let url = SummaryExportRecord.workspaceURL(relativePath: relativePath) else { continue }
+            try insertExport(type: .workspace, url: url, from: row, in: db)
         }
     }
 

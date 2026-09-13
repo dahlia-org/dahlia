@@ -8,7 +8,7 @@ struct BatchTranscriptionOptionsForm: View {
     @Binding var languageSelection: BatchTranscriptionLanguageSelection
     @Binding var generateSummaryAfterBatchTranscription: Bool
     @Binding var summaryDetailLevel: SummaryDetailLevel?
-    @Binding var exportBatchSummaryToVault: Bool
+    @Binding var exportBatchSummaryToWorkspace: Bool
     @Binding var exportBatchSummaryToGoogleDocs: Bool
     let projects: [FlatProjectRow]
     @Binding var selectedProjectId: UUID?
@@ -61,7 +61,7 @@ struct BatchTranscriptionOptionsForm: View {
 
                 SummaryGenerationOptionsControls(
                     detailLevel: $summaryDetailLevel,
-                    exportsToVault: $exportBatchSummaryToVault,
+                    exportsToWorkspace: $exportBatchSummaryToWorkspace,
                     exportsToGoogleDocs: $exportBatchSummaryToGoogleDocs,
                     isEnabled: processingMethod != nil || generateSummaryAfterBatchTranscription
                 )

@@ -4,7 +4,7 @@ import { encodeId } from "../src/typeid";
 import { apiUrls } from "../src/client/generated-operations";
 import { SummaryHistory } from "../src/client/SummaryHistory";
 import { RecordingIndicator } from "../src/client/RecordingIndicator";
-import { projectAncestors, selectedSidebarVault, Sidebar, SidebarProvider } from "../src/client/Sidebar";
+import { projectAncestors, selectedSidebarWorkspace, Sidebar, SidebarProvider } from "../src/client/Sidebar";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -15,12 +15,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ScreenshotFigure,
   SyncedMeeting,
-  Vaults,
+  Workspaces,
   MeetingList,
   resolveDashboardExtensionRoute,
   type DashboardExtension,
 } from "../src/client/App";
-import { resolveDashboardRoute, shouldRedirectToSignIn } from "../src/client/routes";
+import { isCoreDashboardPath, resolveDashboardRoute, shouldRedirectToSignIn } from "../src/client/routes";
 
 import { FileViewer } from "../src/client/FileViewer";
 import * as liveData from "../src/client/live-data";
@@ -65,21 +65,21 @@ describe("desktop-style meeting layout", () => {
     } finally { query.mockRestore(); page.mockRestore(); }
   });
 
-  it("waits for meeting and vault data without flashing a placeholder page, and keeps errors visible", () => {
+  it("waits for meeting and workspace data without flashing a placeholder page, and keeps errors visible", () => {
     vi.stubGlobal("navigator", { language: "ja-JP" });
     const query = vi.spyOn(liveData, "useLiveJSON");
     const page = vi.spyOn(liveData, "useLivePage");
     const empty = { data: undefined, error: undefined, loading: true, reload: vi.fn(), replace: vi.fn() };
     const meeting = { meetingId: "m1", name: "Planning", description: "Description available to read-only members", createdAt: "2026-09-07T00:00:00Z" };
-    const render = () => renderToStaticMarkup(createElement(SyncedMeeting, { vaultId: "v1", meetingId: "m1" }));
+    const render = () => renderToStaticMarkup(createElement(SyncedMeeting, { workspaceId: "v1", meetingId: "m1" }));
     page.mockReturnValue({ ...empty, loadingMore: false, loadMore: vi.fn() });
     try {
-      for (const ready of ["neither", "meeting", "vault", "both"]) {
+      for (const ready of ["neither", "meeting", "workspace", "both"]) {
         query.mockImplementation((url) => {
           if (typeof url === "object" && url.key.startsWith('["getMeeting"') && ["meeting", "both"].includes(ready)) {
             return { ...empty, data: meeting };
           }
-          if (typeof url === "object" && url.key.startsWith('["getVault"') && ["vault", "both"].includes(ready)) {
+          if (typeof url === "object" && url.key.startsWith('["getWorkspace"') && ["workspace", "both"].includes(ready)) {
             return { ...empty, data: { role: "member" } };
           }
           return empty;
@@ -172,9 +172,9 @@ describe("desktop-style meeting layout", () => {
     expect(html).not.toContain("Hidden transcript");
   });
 
-  it("groups account actions in the footer and keeps Vault navigation in the sidebar", () => {
+  it("groups account actions in the footer and keeps Workspace navigation in the sidebar", () => {
     vi.stubGlobal("navigator", { language: "en" });
-    const session = { user: { id: "user", name: "Example User" }, workspace: { id: "personal", type: "personal" as const }, capabilities: { sync: true, sharing: true, sessions: true, admin: false } };
+    const session = { user: { id: "user", name: "Example User" },  capabilities: { sync: true, sharing: true, sessions: true, admin: false } };
     const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
       session, brand: "Dahlia", children: createElement("a", { href: "/dashboard/settings" }, "Settings"),
     }) }));
@@ -183,14 +183,14 @@ describe("desktop-style meeting layout", () => {
     expect(navigation).not.toContain("organization-switcher");
     expect(navigation).not.toContain("Account settings");
     expect(footer).toContain('popoverTarget="account-menu"');
-    expect(footer).toContain("All accessible Vaults");
-    expect(footer).not.toContain('href="/vaults"');
-    expect(navigation).toContain('href="/vaults"');
+    expect(footer).toContain("All accessible Workspaces");
+    expect(footer).not.toContain('href="/workspaces"');
+    expect(navigation).toContain('href="/workspaces"');
     expect(footer).toContain('<strong>Organizations</strong>');
     expect(footer).toContain('class="menu-account" href="/dashboard"');
     expect(footer).toContain('class="menu-icon"');
     expect(footer).toContain("Sign out");
-    expect(footer).not.toContain("Workspace");
+    expect(footer).not.toContain("personal:");
     expect(footer).not.toContain("Local account");
     expect(footer).toContain('href="/organizations"');
     expect(navigation).toContain('href="/organizations"');
@@ -201,12 +201,12 @@ describe("desktop-style meeting layout", () => {
 
   it("omits unsupported sign-out and sharing sections for proxy accounts", () => {
     vi.stubGlobal("navigator", { language: "ja-JP" });
-    const session = { user: { id: "user", name: "Example User" }, workspace: { id: "personal", type: "personal" as const }, capabilities: { sync: true, sharing: false, sessions: false, admin: false } };
+    const session = { user: { id: "user", name: "Example User" },  capabilities: { sync: true, sharing: false, sessions: false, admin: false } };
     const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
       session, brand: "Dahlia", children: null,
     }) }));
-    expect(html).toContain('aria-label="保管庫"');
-    expect(html).not.toContain("保管庫を管理");
+    expect(html).toContain('aria-label="ワークスペース"');
+    expect(html).not.toContain("ワークスペースを管理");
     expect(html).not.toContain("サインアウト");
     expect(html).not.toContain('<strong>組織</strong>');
     expect(html).not.toContain("組織を管理");
@@ -215,7 +215,7 @@ describe("desktop-style meeting layout", () => {
 
   it.each([false, true])("keeps server administration outside the account menu with sharing=%s", (sharing) => {
     vi.stubGlobal("navigator", { language: "ja-JP" });
-    const session = { user: { id: "user", name: "Example User" }, workspace: { id: "personal", type: "personal" as const }, capabilities: { sync: true, sharing, sessions: true, admin: true } };
+    const session = { user: { id: "user", name: "Example User" },  capabilities: { sync: true, sharing, sessions: true, admin: true } };
     const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
       session, brand: "Dahlia", children: createElement("a", { href: "/dashboard/settings" }, "設定"),
     }) }));
@@ -233,7 +233,7 @@ describe("desktop-style meeting layout", () => {
 
 describe("dashboard navigation", () => {
   it("uses advertised thumbnails for browsing and preserves the original link", () => {
-    const file = { id: "file", vaultId: "vault", name: "image.png", size: 1, checksum: "hash", revision: 1, createdAt: "2026-09-07T00:00:00Z", updatedAt: "2026-09-07T00:00:00Z", contentType: "image/png", metadata: { source: "screenshot" as const },
+    const file = { id: "file", workspaceId: "workspace", name: "image.png", size: 1, checksum: "hash", revision: 1, createdAt: "2026-09-07T00:00:00Z", updatedAt: "2026-09-07T00:00:00Z", contentType: "image/png", metadata: { source: "screenshot" as const },
       variants: { thumb_480: "/small", thumb_1280: "/medium", thumb_1568: "/preview", thumb_1920: "/large" } };
     const capturedAt = "2026-09-07T00:00:00Z";
     const html = renderToStaticMarkup(createElement(ScreenshotFigure, { file, capturedAt }));
@@ -307,20 +307,20 @@ describe("dashboard navigation", () => {
     }
   });
 
-  it("selects only the current Vault and restores the saved selection off Vault routes", () => {
-    const vaults = [{ vaultId: "v1", name: "First" }, { vaultId: "v2", name: "Second" }] as NonNullable<Parameters<typeof selectedSidebarVault>[0]>;
-    expect(selectedSidebarVault(vaults, "v2", "v1")).toBe(vaults[1]);
-    expect(selectedSidebarVault(vaults, undefined, "v2")).toBe(vaults[1]);
-    expect(selectedSidebarVault(vaults)).toBe(vaults[0]);
-    expect(selectedSidebarVault(vaults, undefined, "removed")).toBe(vaults[0]);
-    expect(selectedSidebarVault(vaults, "outside-scope", "v1")).toBeUndefined();
-    expect(selectedSidebarVault([], undefined, "v2")).toBeUndefined();
-    expect(selectedSidebarVault(undefined, "v2")).toBeUndefined();
+  it("selects only the current Workspace and restores the saved selection off Workspace routes", () => {
+    const workspaces = [{ workspaceId: "v1", name: "First" }, { workspaceId: "v2", name: "Second" }] as NonNullable<Parameters<typeof selectedSidebarWorkspace>[0]>;
+    expect(selectedSidebarWorkspace(workspaces, "v2", "v1")).toBe(workspaces[1]);
+    expect(selectedSidebarWorkspace(workspaces, undefined, "v2")).toBe(workspaces[1]);
+    expect(selectedSidebarWorkspace(workspaces)).toBe(workspaces[0]);
+    expect(selectedSidebarWorkspace(workspaces, undefined, "removed")).toBe(workspaces[0]);
+    expect(selectedSidebarWorkspace(workspaces, "outside-scope", "v1")).toBeUndefined();
+    expect(selectedSidebarWorkspace([], undefined, "v2")).toBeUndefined();
+    expect(selectedSidebarWorkspace(undefined, "v2")).toBeUndefined();
   });
 
   it("navigates dashboard links in place and leaves other URLs to the browser", () => {
-    const current = "https://dahlia.example/vaults/v1/meetings/m1";
-    for (const path of ["/dashboard", "/vaults/v1", "/vaults/v1/meetings/m2", "/vaults/v1/projects/p1", "/dashboard/settings"]) {
+    const current = "https://dahlia.example/workspaces/v1/meetings/m1";
+    for (const path of ["/dashboard", "/workspaces/v1", "/workspaces/v1/meetings/m2", "/workspaces/v1/projects/p1", "/dashboard/settings"]) {
       expect(dashboardNavigationPath(path, current)).toBe(path);
       expect(dashboardNavigationPath(`https://dahlia.example${path}`, current)).toBe(path);
     }
@@ -330,9 +330,9 @@ describe("dashboard navigation", () => {
   });
 
   it("builds exclusive scopes and expands the selected Project ancestry by ID", () => {
-    expect(apiUrls.listVaults({})).toBe("/api/v1/vaults");
-    expect(apiUrls.listVaults({ params: { query: { organizationId: "org+1" } } })).toBe("/api/v1/vaults?organizationId=org%2B1");
-    expect(apiUrls.listVaults({ params: { query: { organizationId: "org+1" } } })).toBe("/api/v1/vaults?organizationId=org%2B1");
+    expect(apiUrls.listWorkspaces({})).toBe("/api/v1/workspaces");
+    expect(apiUrls.listWorkspaces({ params: { query: { organizationId: "org+1" } } })).toBe("/api/v1/workspaces?organizationId=org%2B1");
+    expect(apiUrls.listWorkspaces({ params: { query: { organizationId: "org+1" } } })).toBe("/api/v1/workspaces?organizationId=org%2B1");
     const projects = [
       { projectId: "parent", name: "Same" },
       { projectId: "child", parentProjectId: "parent", name: "Same" },
@@ -357,7 +357,7 @@ describe("dashboard navigation", () => {
     for (const [path, result] of [[`/projects/${encodeId("project", "01990ab0-0000-7000-8000-000000000001")}`, { page: "project", projectId: encodeId("project", "01990ab0-0000-7000-8000-000000000001") }], [`/meetings/${encodeId("meeting", "01990ab0-0000-7000-8000-000000000001")}`, { page: "meeting", meetingId: encodeId("meeting", "01990ab0-0000-7000-8000-000000000001") }], [`/files/${encodeId("file", "01990ab0-0000-7000-8000-000000000001")}`, { page: "file", fileId: encodeId("file", "01990ab0-0000-7000-8000-000000000001") }]] as const) {
       expect(resolveDashboardRoute(path, { admin: false, sessions: true, sync: true })).toEqual(result);
       expect(resolveDashboardRoute(path, { admin: false, sessions: true, sync: false })).toEqual({ redirect: "/dashboard" });
-      expect(dashboardNavigationPath(path, "https://dahlia.example/vaults/v1")).toBe(path);
+      expect(dashboardNavigationPath(path, "https://dahlia.example/workspaces/v1")).toBe(path);
     }
   });
 
@@ -372,16 +372,16 @@ describe("dashboard navigation", () => {
     expect(renderToStaticMarkup(createElement(MeetingList, { meetings: [], loading: false }))).toContain("ミーティングはまだありません");
   });
 
-  it("gates synchronized Vault routes with the sync capability", () => {
+  it("gates synchronized Workspace routes with the sync capability", () => {
     const enabled = { admin: false, sessions: false, sync: true };
-    expect(resolveDashboardRoute("/vaults", enabled)).toEqual({ page: "vaults" });
-    const vault = encodeId("vault", "01990ab0-0000-7000-8000-000000000001");
-    expect(resolveDashboardRoute(`/vaults/${vault}`, enabled)).toEqual({ page: "vault", vaultId: vault });
-    expect(resolveDashboardRoute("/vaults/v1/projects/p1", enabled))
+    expect(resolveDashboardRoute("/workspaces", enabled)).toEqual({ page: "workspaces" });
+    const workspace = encodeId("workspace", "01990ab0-0000-7000-8000-000000000001");
+    expect(resolveDashboardRoute(`/workspaces/${workspace}`, enabled)).toEqual({ page: "workspace", workspaceId: workspace });
+    expect(resolveDashboardRoute("/workspaces/v1/projects/p1", enabled))
       .toEqual({ redirect: "/dashboard" });
-    expect(resolveDashboardRoute("/vaults/v1/meetings/m1", enabled))
+    expect(resolveDashboardRoute("/workspaces/v1/meetings/m1", enabled))
       .toEqual({ redirect: "/dashboard" });
-    expect(resolveDashboardRoute("/vaults", { admin: false, sessions: false, sync: false }))
+    expect(resolveDashboardRoute("/workspaces", { admin: false, sessions: false, sync: false }))
       .toEqual({ redirect: "/dashboard" });
   });
 
@@ -510,11 +510,23 @@ it("routes administrator organization details independently of sharing membershi
 });
 
 
-it.each(["", "selected-organization"])("keeps Vault creation available in scope %s", (organizationId) => {
+it.each(["", "selected-organization"])("keeps Workspace creation available in scope %s", (organizationId) => {
   vi.stubGlobal("navigator", { language: "en-US" });
-  const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", organizationId, vaults: [], select: vi.fn(), reload: vi.fn() });
+  const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", organizationId, workspaces: [], select: vi.fn(), reload: vi.fn() });
   const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue({ data: undefined, loading: false, error: undefined, reload: vi.fn(), replace: vi.fn() });
   try {
-    expect(renderToStaticMarkup(createElement(Vaults))).toContain("New Vault</button>");
+    expect(renderToStaticMarkup(createElement(Workspaces))).toContain("New Workspace</button>");
   } finally { scope.mockRestore(); query.mockRestore(); }
+});
+
+it("rejects retired Web paths and workspace ID prefixes", () => {
+  const capabilities = { admin: false, sessions: true, sync: true };
+  const id = encodeId("workspace", "01950000-0000-7000-8000-000000000001");
+  expect(isCoreDashboardPath("/vaults")).toBe(false);
+  expect(isCoreDashboardPath(`/vaults/${id.replace("ws_", "vlt_")}`)).toBe(false);
+  expect(resolveDashboardRoute("/vaults", capabilities)).toEqual({ redirect: "/dashboard" });
+  expect(resolveDashboardRoute(`/vaults/${id.replace("ws_", "vlt_")}`, capabilities)).toEqual({ redirect: "/dashboard" });
+  expect(resolveDashboardRoute(`/workspaces/${id.replace("ws_", "vlt_")}`, capabilities)).toEqual({ redirect: "/dashboard" });
+  expect(resolveDashboardRoute("/vaults/vlt_invalid", capabilities)).toEqual({ redirect: "/dashboard" });
+  expect(resolveDashboardRoute(`/vaults/${id.replace("ws_", "vlt_")}`, { ...capabilities, sync: false })).toEqual({ redirect: "/dashboard" });
 });

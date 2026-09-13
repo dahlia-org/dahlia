@@ -26,7 +26,7 @@ export const jobMessageSchema = z.union([
   z.object({ action: z.literal("run"), kind: z.literal("image"),
     reference: z.object({ fileId: id, ownerUserId, model: z.string().min(1).max(200) }).strict() }).strict(),
   z.object({ action: z.literal("run"), kind: z.literal("search"), references: z.array(z.object({
-    vaultId: id, documentId: id, generation: z.number().int().positive(),
+    workspaceId: id, documentId: id, generation: z.number().int().positive(),
   }).strict()).min(1).max(16) }).strict(),
 ]);
 export type JobMessage = z.infer<typeof jobMessageSchema>;
@@ -117,7 +117,7 @@ export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobSt
           }
           const last = rows.at(-1);
           count = rows.length;
-          after = last ? `${last.documentId}/${last.vaultId}` : undefined;
+          after = last ? `${last.documentId}/${last.workspaceId}` : undefined;
         }
         if (messages.length) await queue.sendBatch(messages.map((body) => ({ body })));
         if (count === 100) await queue.send({ ...message, after });

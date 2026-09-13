@@ -4,28 +4,28 @@ import GRDB
 
 extension MeetingRepository {
     nonisolated static func serverSearch(
-        vaultId: UUID,
+        workspaceId: UUID,
         criteria: MeetingSearchCriteria,
         dbQueue: DatabaseQueue,
         contentProvider: MeetingContentProvider = .shared
     ) async throws -> ServerSearchProjection {
-        guard let source = try await dbQueue.read({ try MeetingContentProvider.SearchSource.read(vaultId: vaultId, in: $0) })
+        guard let source = try await dbQueue.read({ try MeetingContentProvider.SearchSource.read(workspaceId: workspaceId, in: $0) })
         else { throw TextContentError.unavailable }
-        let result = try await contentProvider.searchAll(vaultId: vaultId, criteria: criteria, dbQueue: dbQueue)
+        let result = try await contentProvider.searchAll(workspaceId: workspaceId, criteria: criteria, dbQueue: dbQueue)
         let projected = try await dbQueue.read { db in
             let known = try Dictionary(uniqueKeysWithValues: fetchMeetingSidebarItems(
-                ids: result.meetings.map(\.id), vaultId: vaultId, in: db
+                ids: result.meetings.map(\.id), workspaceId: workspaceId, in: db
             ).map { ($0.id, $0) })
             let pendingMeetingIds = try Set(UUID.fetchAll(db, sql: """
-            SELECT meetings.id FROM meetings WHERE meetings.vaultId = ?
+            SELECT meetings.id FROM meetings WHERE meetings.workspace_id = ?
               AND meetings.id IN (\(result.meetings.map { _ in "?" }.joined(separator: ",")))
               AND \(pendingSearchMeetingSQL)
-            """, arguments: [vaultId] + StatementArguments(result.meetings.map(\.id))))
+            """, arguments: [workspaceId] + StatementArguments(result.meetings.map(\.id))))
             let pendingScreenshotIds = try Set(UUID.fetchAll(db, sql: """
             SELECT meeting_images.id FROM meeting_images JOIN meetings ON meetings.id = meeting_images.meetingId
-            WHERE meetings.vaultId = ? AND meeting_images.id IN (\(result.screenshots.map { _ in "?" }.joined(separator: ",")))
+            WHERE meetings.workspace_id = ? AND meeting_images.id IN (\(result.screenshots.map { _ in "?" }.joined(separator: ",")))
               AND \(pendingSearchScreenshotSQL)
-            """, arguments: [vaultId] + StatementArguments(result.screenshots.map(\.id))))
+            """, arguments: [workspaceId] + StatementArguments(result.screenshots.map(\.id))))
             let meetings = try result.meetings.filter { !pendingMeetingIds.contains($0.id) }.map { hit -> MeetingSidebarItem in
                 // Metadata is synchronized even when searchable bodies are not retained.
                 guard var item = known[hit.id] else { throw TextContentError.changed }
@@ -41,8 +41,8 @@ extension MeetingRepository {
                 guard let meetingId = hit.meetingId,
                       let row = try Row.fetchOne(db, sql: """
                       SELECT s.mimeType FROM meeting_images s JOIN meetings m ON m.id = s.meetingId
-                      WHERE s.id = ? AND m.id = ? AND m.vaultId = ? AND s.fileId = ?
-                      """, arguments: [hit.id, meetingId, vaultId, hit.fileId]) else { throw TextContentError.changed }
+                      WHERE s.id = ? AND m.id = ? AND m.workspace_id = ? AND s.fileId = ?
+                      """, arguments: [hit.id, meetingId, workspaceId, hit.fileId]) else { throw TextContentError.changed }
                 return ScreenshotSearchResult(
                     id: hit.id,
                     meetingID: meetingId,
@@ -53,7 +53,7 @@ extension MeetingRepository {
                     snippet: hit.snippet
                 )
             }
-            let localProjects = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
+            let localProjects = try ProjectRecord.fetchResolvedAll(workspaceId: workspaceId, in: db)
             let localProjectIds = Set(localProjects.map(\.id))
             let projects = try result.projects.map { hit in
                 guard localProjectIds.contains(hit.id) else { throw TextContentError.changed }
@@ -67,12 +67,12 @@ extension MeetingRepository {
                 )
             }
             let pendingProjectIds = try Set(UUID.fetchAll(db, sql: """
-            SELECT p.id FROM projects p WHERE p.vaultId = ? AND (
-              NOT EXISTS (SELECT 1 FROM sync_entity_state s WHERE s.vaultId = p.vaultId
+            SELECT p.id FROM projects p WHERE p.workspace_id = ? AND (
+              NOT EXISTS (SELECT 1 FROM sync_entity_state s WHERE s.workspace_id = p.workspace_id
                 AND s.entity = 'project' AND s.entityId = p.id AND s.confirmedRevision IS NOT NULL)
               OR EXISTS (SELECT 1 FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
-                WHERE t.vaultId = p.vaultId AND o.entity = 'project' AND o.entityId = p.id))
-            """, arguments: [vaultId]))
+                WHERE t.workspace_id = p.workspace_id AND o.entity = 'project' AND o.entityId = p.id))
+            """, arguments: [workspaceId]))
             let roots = localProjects.filter { criteria.projectIDs.contains($0.id) }.map(\.path)
             let terms = criteria.text.precomposedStringWithCompatibilityMapping.lowercased().split(whereSeparator: \.isWhitespace)
             let pendingProjects = try localProjects.filter { project in
@@ -111,10 +111,10 @@ extension MeetingRepository {
         var pendingUnavailable = false
         var limited = result.limited.any || projected.pendingProjects.count > 100
         do {
-            let pending = try await searchMeetingSidebarPage(vaultId: vaultId, criteria: pendingCriteria, limit: 100, dbQueue: dbQueue)
+            let pending = try await searchMeetingSidebarPage(workspaceId: workspaceId, criteria: pendingCriteria, limit: 100, dbQueue: dbQueue)
             pendingMeetings = pending.items
             limited = limited || pending.hasMore
-            let images = try await searchScreenshotPage(vaultID: vaultId, criteria: pendingCriteria, limit: 100, dbQueue: dbQueue)
+            let images = try await searchScreenshotPage(workspaceID: workspaceId, criteria: pendingCriteria, limit: 100, dbQueue: dbQueue)
             pendingScreenshots = images.items
             limited = limited || images.nextCursor != nil
         } catch is CancellationError {
@@ -124,7 +124,7 @@ extension MeetingRepository {
             pendingUnavailable = true
         }
         try Task.checkCancellation()
-        guard try await dbQueue.read({ try MeetingContentProvider.SearchSource.read(vaultId: vaultId, in: $0) }) == source
+        guard try await dbQueue.read({ try MeetingContentProvider.SearchSource.read(workspaceId: workspaceId, in: $0) }) == source
         else { throw TextContentError.changed }
         return ServerSearchProjection(
             meetings: projected.meetings,
@@ -136,18 +136,18 @@ extension MeetingRepository {
 
     nonisolated static let pendingSearchScreenshotSQL = """
     (\(pendingSearchMeetingSQL)
-    OR NOT EXISTS (SELECT 1 FROM sync_entity_state s WHERE s.vaultId = meetings.vaultId
+    OR NOT EXISTS (SELECT 1 FROM sync_entity_state s WHERE s.workspace_id = meetings.workspace_id
         AND s.entity = 'meeting_attachment' AND s.entityId = meeting_images.id AND s.confirmedRevision IS NOT NULL)
     OR EXISTS (SELECT 1 FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
-        WHERE t.vaultId = meetings.vaultId AND ((o.entity = 'file' AND o.entityId = meeting_images.fileId)
+        WHERE t.workspace_id = meetings.workspace_id AND ((o.entity = 'file' AND o.entityId = meeting_images.fileId)
             OR (o.entity = 'meeting_attachment' AND o.entityId = meeting_images.id))))
     """
 
     nonisolated static let pendingSearchMeetingSQL = """
     (NOT EXISTS (SELECT 1 FROM sync_entity_state s
-      WHERE s.vaultId = meetings.vaultId AND s.entity = 'meeting'
+      WHERE s.workspace_id = meetings.workspace_id AND s.entity = 'meeting'
         AND s.entityId = meetings.id AND s.confirmedRevision IS NOT NULL)
     OR EXISTS (SELECT 1 FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
-      WHERE t.vaultId = meetings.vaultId AND o.entity IN ('meeting', 'summary', 'transcript') AND o.entityId = meetings.id))
+      WHERE t.workspace_id = meetings.workspace_id AND o.entity IN ('meeting', 'summary', 'transcript') AND o.entityId = meetings.id))
     """
 }

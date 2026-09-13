@@ -46,7 +46,7 @@
                 try RecordingArchiveRecord(
                     sessionId: fixture.session.id,
                     meetingId: fixture.meeting.id,
-                    vaultId: fixture.meeting.vaultId,
+                    workspaceId: fixture.meeting.workspaceId,
                     number: 1,
                     audioJSON: String(decoding: SyncJSON.encoder.encode(["mic": audio]), as: UTF8.self)
                 ).insert(db)
@@ -202,8 +202,11 @@
             try await fixture.database.dbQueue.write { db in
                 try connection.insert(db)
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'), syncConfirmedConnectionId = ? WHERE id = ?",
-                    arguments: [connection.id, connection.id, fixture.meeting.vaultId]
+                    sql: """
+                    UPDATE workspaces SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id),
+                    syncRole = COALESCE(syncRole, 'admin'), syncConfirmedConnectionId = ? WHERE id = ?
+                    """,
+                    arguments: [connection.id, connection.id, fixture.meeting.workspaceId]
                 )
             }
             let first = TranscriptContent(
@@ -249,7 +252,7 @@
                     )
                 return try #require(try TranscriptRecord.current(fixture.meeting.id, in: db))
             }
-            try await SyncTransactionQueue.reapplyLocalVersion(vaultId: fixture.meeting.vaultId, dbQueue: fixture.database.dbQueue)
+            try await SyncTransactionQueue.reapplyLocalVersion(workspaceId: fixture.meeting.workspaceId, dbQueue: fixture.database.dbQueue)
             try await fixture.database.dbQueue.read { db throws in
                 #expect(try TranscriptRecord.current(fixture.meeting.id, in: db)?.id != secondInfo.id)
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity = 'transcript'") == 1)

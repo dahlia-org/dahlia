@@ -6,7 +6,7 @@ import OpenAPIRuntime
 
 private struct FileUploadResponse: Decodable {
     let id: UUID
-    let vaultId: UUID
+    let workspaceId: UUID
     let size: Int
     let checksum: String
 }
@@ -138,7 +138,7 @@ extension SyncWorker {
             throw SyncTransactionQueueError.invalidReceipt
         }
         let reservation = Reservation(
-            id: upload.operation.entityId.uuidString.lowercased(), vaultId: upload.vaultId.uuidString.lowercased(),
+            id: upload.operation.entityId.uuidString.lowercased(), workspaceId: upload.workspaceId.uuidString.lowercased(),
             name: payload.name, contentType: attachment.mimeType,
             metadata: .init(source: source, width: payload.metadata.width, height: payload.metadata.height)
         )
@@ -157,7 +157,7 @@ extension SyncWorker {
             return try response.ok.body.json
         }
         let uploaded = try SyncJSON.decoder.decode(FileUploadResponse.self, from: response)
-        guard uploaded.id == upload.operation.entityId, uploaded.vaultId == upload.vaultId,
+        guard uploaded.id == upload.operation.entityId, uploaded.workspaceId == upload.workspaceId,
               uploaded.size == attachment.bytes.count, uploaded.checksum == "SHA-256:" + attachment.sha256,
               uploaded.checksum == payload.checksum else { throw SyncTransactionQueueError.invalidReceipt }
     }

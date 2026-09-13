@@ -44,10 +44,10 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
     const request = new Request(`${config.baseUrl}${path}`, { ...init, headers: { ...headers, ...init.headers } });
     return runtime === "node" ? app.request(request) : workerFetch(request, {} as Cloudflare.Env, {} as ExecutionContext);
   };
-  const vault = uuidV7(), meeting = uuidV7(), attachment = uuidV7(), file = uuidV7(), transcript = uuidV7(), segment = uuidV7(), patch = uuidV7();
-  const vlt = encodeId("vault", vault), mtg = encodeId("meeting", meeting), att = encodeId("attachment", attachment), fileID = encodeId("file", file);
+  const workspace = uuidV7(), meeting = uuidV7(), attachment = uuidV7(), file = uuidV7(), transcript = uuidV7(), segment = uuidV7(), patch = uuidV7();
+  const vlt = encodeId("workspace", workspace), mtg = encodeId("meeting", meeting), att = encodeId("attachment", attachment), fileID = encodeId("file", file);
   const now = new Date().toISOString();
-  const transaction = (operations: unknown[]) => ({ schemaVersion: 3, id: encodeId("transaction", uuidV7()), vaultId: vlt, createdAt: now, operations });
+  const transaction = (operations: unknown[]) => ({ schemaVersion: 3, id: encodeId("transaction", uuidV7()), workspaceId: vlt, createdAt: now, operations });
   const operation = (entity: string, action: string, entityId: string, baseRevision: number | null, data: unknown) => ({
     id: encodeId("operation", entity === "transcript" ? patch : uuidV7()), entity, action, entityId, baseRevision, data,
   });
@@ -63,8 +63,8 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
     );
     const publicSchema = (name: string) => z.fromJSONSchema({ $ref: `#/$defs/${name}`, $defs: definitions });
     const pathParameter = z.object({ parameters: z.array(z.looseObject({})) })
-      .parse(spec.paths["/api/v1/vaults/{vaultId}"]!.get).parameters[0];
-    expect(pathParameter).toMatchObject({ name: "vaultId", schema: { pattern: "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$" } });
+      .parse(spec.paths["/api/v1/workspaces/{workspaceId}"]!.get).parameters[0];
+    expect(pathParameter).toMatchObject({ name: "workspaceId", schema: { pattern: "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$" } });
     const sessions = await Promise.all(Array.from({ length: 12 }, async () => {
       const response = await send("/api/v1/session");
       expect(response.status).toBe(200);
@@ -84,7 +84,7 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
 
     const organizationID = encodeId("organization", testOrganizationID);
     const create = transaction([
-      operation("vault", "create", vlt, null, { organizationId: organizationID, name: "Vault", createdAt: now }),
+      operation("workspace", "create", vlt, null, { organizationId: organizationID, name: "Workspace", createdAt: now }),
       operation("meeting", "create", mtg, null, { projectId: null, name: "Meeting", description: meeting, status: "READY", duration: null,
         recordingStartedAt: null, createdAt: now, updatedAt: now }),
     ]);
@@ -96,24 +96,24 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
     expect(committed.status).toBe(200);
     const receipt: unknown = await committed.json();
     expect(publicSchema("TransactionReceipt").safeParse(receipt).success).toBe(true);
-    expect(receipt).toMatchObject({ id: create.id, records: [ { entity: "vault", id: vlt }, { entity: "meeting", id: mtg } ] });
+    expect(receipt).toMatchObject({ id: create.id, records: [ { entity: "workspace", id: vlt }, { entity: "meeting", id: mtg } ] });
     expect(await (await post(create)).json()).toEqual(receipt);
-    const owned = await send(`/api/v1/vaults?organizationId=${organizationID}`);
+    const owned = await send(`/api/v1/workspaces?organizationId=${organizationID}`);
     expect(owned.status).toBe(200);
-    expect(await owned.json()).toMatchObject({ items: [{ vaultId: vlt }] });
+    expect(await owned.json()).toMatchObject({ items: [{ workspaceId: vlt }] });
     for (const invalidOwner of [userID, encodeId("organization", userID), encodeId("team", userID)]) {
-      expect((await send(`/api/v1/vaults?owner=${invalidOwner}`)).status).toBe(400);
+      expect((await send(`/api/v1/workspaces?owner=${invalidOwner}`)).status).toBe(400);
     }
-    const invalidID = await send(`/api/v1/vaults/${vault}`);
+    const invalidID = await send(`/api/v1/workspaces/${workspace}`);
     expect(invalidID.status).toBe(400);
     expect(invalidID.headers.get("content-type")).toContain("application/problem+json");
     expect(await invalidID.json()).toMatchObject({ status: 400, code: "invalid_public_id" });
-    expect((await send(`/api/v1/vaults/${mtg}`)).status).toBe(400);
-    expect((await send(`/api/v1/vaults/${vlt}`, { method: "HEAD" })).status).toBe(200);
-    const vaultResponse = await (await send(`/api/v1/vaults/${vlt}`)).json();
-    expect(publicSchema("Vault").safeParse(vaultResponse).success).toBe(true);
-    expect(publicSchema("Vault").safeParse({ ...vaultResponse as object, vaultId: vault }).success).toBe(false);
-    expect(database.prepare("SELECT meeting_id, vault_id, description FROM meetings").get()).toEqual({ meeting_id: meeting, vault_id: vault, description: meeting });
+    expect((await send(`/api/v1/workspaces/${mtg}`)).status).toBe(400);
+    expect((await send(`/api/v1/workspaces/${vlt}`, { method: "HEAD" })).status).toBe(200);
+    const workspaceResponse = await (await send(`/api/v1/workspaces/${vlt}`)).json();
+    expect(publicSchema("Workspace").safeParse(workspaceResponse).success).toBe(true);
+    expect(publicSchema("Workspace").safeParse({ ...workspaceResponse as object, workspaceId: workspace }).success).toBe(false);
+    expect(database.prepare("SELECT meeting_id, workspace_id, description FROM meetings").get()).toEqual({ meeting_id: meeting, workspace_id: workspace, description: meeting });
     expect((await post(transaction([operation("meeting", "delete", meeting, 1, {})]))).status).toBe(400);
     const staleRevision = await post(transaction([operation("meeting", "delete", mtg, 999, {})]));
     expect(staleRevision.status).toBe(409);
@@ -121,7 +121,7 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
 
     const bytes = new TextEncoder().encode("opaque file bytes");
     const reserved = await send("/api/v1/file-uploads", {
-      method: "POST", body: JSON.stringify({ id: fileID, vaultId: vlt, name: "note.txt", contentType: "text/plain", metadata: { source: "upload" } }),
+      method: "POST", body: JSON.stringify({ id: fileID, workspaceId: vlt, name: "note.txt", contentType: "text/plain", metadata: { source: "upload" } }),
     });
     expect(reserved.status).toBe(201);
     const uploaded = await send(`/api/v1/file-uploads/${fileID}/content`, {
@@ -137,8 +137,8 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
     ]))).status).toBe(200);
     const fileResponse = await (await send(`/api/v1/files/${fileID}`)).json();
     expect(publicSchema("File").safeParse(fileResponse).success).toBe(true);
-    const detail = z.object({ id: z.string(), vaultId: z.string(), contentUrl: z.string() }).parse(fileResponse);
-    expect(detail).toMatchObject({ id: fileID, vaultId: vlt, contentUrl: `/api/v1/files/${fileID}/content` });
+    const detail = z.object({ id: z.string(), workspaceId: z.string(), contentUrl: z.string() }).parse(fileResponse);
+    expect(detail).toMatchObject({ id: fileID, workspaceId: vlt, contentUrl: `/api/v1/files/${fileID}/content` });
     expect(await (await send(detail.contentUrl)).text()).toBe("opaque file bytes");
     expect(await (await send(metadata.contentUrl)).text()).toBe("opaque file bytes");
     expect(await (await send(`/api/v1/meetings/${mtg}/files`)).json())
@@ -151,12 +151,12 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
     const rowIDs = [attachment, uuidV7()];
     store.sync.withIdentity = (identity, action) => withIdentity(identity, (scoped) => action({
       ...scoped,
-      searchTextPage: (_vault, _query, _kind, offset, limit) => Promise.resolve(rowIDs.slice(offset, offset + limit)
+      searchTextPage: (_workspace, _query, _kind, offset, limit) => Promise.resolve(rowIDs.slice(offset, offset + limit)
         .map((id) => ({ id, meetingId: meeting, snippet: "needle" }))),
     }));
     try {
       for (const kind of ["meeting", "screenshot"] as const) {
-        const search = (cursor?: string) => send(`/api/v1/vaults/${vlt}/text-search`, {
+        const search = (cursor?: string) => send(`/api/v1/workspaces/${vlt}/text-search`, {
           method: "POST", body: JSON.stringify({ query: "needle", kind, limit: 1, ...(cursor ? { cursor } : {}) }),
         });
         const page = z.object({ items: z.array(z.object({ id: z.string(), meetingId: z.string() })), nextCursor: z.string().nullable() });
@@ -217,12 +217,12 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
         "mcp-method": "tools/call", "mcp-name": name, "mcp-protocol-version": "2026-07-28" } })).json();
     };
     const mcpResponse = z.object({ id: z.string(), result: z.object({ content: z.array(z.object({ text: z.string() })) }) });
-    const mcpMeeting = mcpResponse.parse(await mcp("get_meeting", { vault_id: vlt, meeting_id: mtg }));
+    const mcpMeeting = mcpResponse.parse(await mcp("get_meeting", { workspace_id: vlt, meeting_id: mtg }));
     expect(mcpMeeting.id).toBe("opaque-jsonrpc-id");
-    expect(JSON.parse(mcpMeeting.result.content[0]!.text)).toMatchObject({ meetingId: mtg, vaultId: vlt });
-    const mcpTranscript = mcpResponse.parse(await mcp("get_meeting_transcript", { vault_id: vlt, meeting_id: mtg }));
+    expect(JSON.parse(mcpMeeting.result.content[0]!.text)).toMatchObject({ meetingId: mtg, workspaceId: vlt });
+    const mcpTranscript = mcpResponse.parse(await mcp("get_meeting_transcript", { workspace_id: vlt, meeting_id: mtg }));
     expect(JSON.parse(mcpTranscript.result.content[0]!.text)).toMatchObject({ items: [{ segmentId: encodeId("segment", segment) }] });
-    expect(await mcp("get_meeting", { vault_id: vault, meeting_id: mtg })).toMatchObject({ result: { isError: true } });
+    expect(await mcp("get_meeting", { workspace_id: workspace, meeting_id: mtg })).toMatchObject({ result: { isError: true } });
     const conflict = await post(transaction([operation("meeting", "delete", mtg, 99, {})]));
     expect(conflict.status).toBe(409);
     expect(await conflict.json()).toMatchObject({ conflicts: [{ entity: "meeting", id: mtg }] });
@@ -281,22 +281,22 @@ it("keeps Better Auth sessions, organizations, teams and invitations typed at th
     expect(await (await send(`/api/auth/organization/list-members?organizationId=${organization.id}&filterField=id&filterValue=${memberID}`)).json())
       .toMatchObject({ members: [{ id: memberID }] });
     expect((await send(`/api/auth/organization/list-members?organizationId=${organization.id}&filterField=id&filterValue=${decodeId("organizationMember", memberID)}`)).status).toBe(400);
-    const vaultID = encodeId("vault", uuidV7());
-    const createdVault = await send("/api/v1/transactions", { schemaVersion: 3, createdAt: new Date().toISOString(), id: encodeId("transaction", uuidV7()), vaultId: vaultID,
-      operations: [{ id: encodeId("operation", uuidV7()), entity: "vault", entityId: vaultID, action: "create", baseRevision: null,
+    const workspaceID = encodeId("workspace", uuidV7());
+    const createdWorkspace = await send("/api/v1/transactions", { schemaVersion: 3, createdAt: new Date().toISOString(), id: encodeId("transaction", uuidV7()), workspaceId: workspaceID,
+      operations: [{ id: encodeId("operation", uuidV7()), entity: "workspace", entityId: workspaceID, action: "create", baseRevision: null,
         data: { organizationId: organization.id, name: "Sharing", createdAt: new Date().toISOString() } }] });
-    expect(createdVault.status, await createdVault.text()).toBe(200);
+    expect(createdWorkspace.status, await createdWorkspace.text()).toBe(200);
     for (const [path, principalID] of [["organizations", organization.id], ["teams", team.id]] as const) {
-      const permissionURL = `${config.baseUrl}/api/v1/vaults/${vaultID}/permissions/${path}/${principalID}`;
+      const permissionURL = `${config.baseUrl}/api/v1/workspaces/${workspaceID}/permissions/${path}/${principalID}`;
       const headers = { cookie, origin: config.baseUrl, "content-type": "application/json" };
       const granted = await app.request(permissionURL, { method: "PUT", headers, body: JSON.stringify({ role: "viewer" }) });
       expect(granted.status, await granted.text()).toBe(204);
       expect((await app.request(permissionURL, { method: "PUT", headers, body: JSON.stringify({ role: "viewer" }) })).status).toBe(204);
-      expect(await (await send(`/api/v1/vaults/${vaultID}/permissions`)).json())
-        .toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ vaultId: vaultID, principalId: principalID,
+      expect(await (await send(`/api/v1/workspaces/${workspaceID}/permissions`)).json())
+        .toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ workspaceId: workspaceID, principalId: principalID,
           principalType: path === "teams" ? "team" : "organization", role: "viewer", createdAt: expect.any(String) as unknown })]) as unknown });
       expect((await app.request(permissionURL, { method: "DELETE", headers })).status).toBe(204);
-      expect((await app.request(permissionURL.replace(vaultID, decodeId("vault", vaultID)), { method: "PUT", headers, body: JSON.stringify({ role: "viewer" }) })).status).toBe(400);
+      expect((await app.request(permissionURL.replace(workspaceID, decodeId("workspace", workspaceID)), { method: "PUT", headers, body: JSON.stringify({ role: "viewer" }) })).status).toBe(400);
     }
     const second = await post("create-team", { organizationId: organization.id, name: "Editors" });
     const invitation = await post("invite-member", { organizationId: organization.id, email: "invitee@example.com", role: "member", teamId: [team.id, second.id] });

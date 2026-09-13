@@ -72,14 +72,14 @@ enum SummaryService {
         )
     }
 
-    /// DB に保存した Vault 相対パスから要約ファイルを解決する。
+    /// DB に保存した Workspace 相対パスから要約ファイルを解決する。
     static func findSummaryFile(
         storedRelativePath: String?,
-        vaultURL: URL
+        workspaceURL: URL
     ) -> URL? {
-        VaultSummaryFileLocator.findSummaryFile(
+        WorkspaceSummaryFileLocator.findSummaryFile(
             storedRelativePath: storedRelativePath,
-            vaultURL: vaultURL
+            workspaceURL: workspaceURL
         )
     }
 

@@ -1,15 +1,15 @@
 struct SummaryExportOptions: Codable, Equatable {
-    let exportsToVault: Bool
+    let exportsToWorkspace: Bool
     let exportsToGoogleDocs: Bool
 
     static let manual = Self(
-        exportsToVault: true,
+        exportsToWorkspace: true,
         exportsToGoogleDocs: false
     )
 
     static func merging(_ options: [Self]) -> Self {
         Self(
-            exportsToVault: options.contains(where: \.exportsToVault),
+            exportsToWorkspace: options.contains(where: \.exportsToWorkspace),
             exportsToGoogleDocs: options.contains(where: \.exportsToGoogleDocs)
         )
     }

@@ -62,12 +62,12 @@ struct MeetingCalendarSync: Codable, Equatable, Sendable {
     static func recordChange(from previous: CalendarEventRecord?, to event: CalendarEventRecord, in db: Database) throws {
         guard previous.map(Event.init) != Event(event) else { return }
         let meetings = try MeetingRecord.fetchAll(db, sql: """
-        SELECT meetings.* FROM meetings JOIN vaults ON vaults.id = meetings.vaultId
+        SELECT meetings.* FROM meetings JOIN workspaces ON workspaces.id = meetings.workspace_id
         WHERE meetings.calendar_event_ical_uid = ? AND meetings.calendar_event_recurrence_id = ?
-            AND (vaults.accountConnectionId IS NULL OR vaults.syncRole IN ('admin', 'editor'))
+            AND (workspaces.accountConnectionId IS NULL OR workspaces.syncRole IN ('admin', 'editor'))
         """, arguments: [event.icalUid, event.recurrenceId])
         let updated = Self(icalUid: event.icalUid, recurrenceId: event.recurrenceId, calendarEvent: Event(event))
-        for (vaultId, meetings) in Dictionary(grouping: meetings, by: \.vaultId) {
+        for (workspaceId, meetings) in Dictionary(grouping: meetings, by: \.workspaceId) {
             var operations: [SyncOperationDraft] = []
             for meeting in meetings {
                 if let current = try fetch(meetingId: meeting.id, in: db) {
@@ -78,7 +78,7 @@ struct MeetingCalendarSync: Codable, Equatable, Sendable {
                 try updated.save(meetingId: meeting.id, in: db)
                 try operations.append(SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update, in: db))
             }
-            try SyncTransactionRecorder.recordBatches(vaultId: vaultId, operations: operations, in: db)
+            try SyncTransactionRecorder.recordBatches(workspaceId: workspaceId, operations: operations, in: db)
         }
     }
 }

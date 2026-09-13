@@ -121,22 +121,22 @@ import GRDB
         @Test
         func realtimePersistsTranslationWhileLiveSubtitlesAreDisabled() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/translated-meeting-vault",
-                name: "Test Vault",
+                path: "/tmp/translated-meeting-workspace",
+                name: "Test Workspace",
                 createdAt: Date(timeIntervalSince1970: 1_776_380_000),
                 lastOpenedAt: Date(timeIntervalSince1970: 1_776_380_000)
             )
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
             }
             let transcriptStore = TranscriptStore()
             transcriptStore.recordingStartTime = Date(timeIntervalSince1970: 1_776_384_000)
             let persistenceService = try await MeetingPersistenceService.createNew(
                 store: transcriptStore,
                 dbQueue: database.dbQueue,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: nil,
                 initialName: "Translated meeting"
             )

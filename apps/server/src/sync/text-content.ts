@@ -32,13 +32,13 @@ export function fileTextMetadata(record: Record<string, unknown>): Record<string
 
 export function meetingMetadata(record: Record<string, unknown>): Record<string, unknown> {
   // Only meeting metadata crosses the sync feed.
-  const keys = ["meetingId", "vaultId", "projectId", "name", "description", "status", "duration",
+  const keys = ["meetingId", "workspaceId", "projectId", "name", "description", "status", "duration",
     "icalUid", "recurrenceId", "calendarEvent", "recordingStartedAt", "isRecording", "createdAt", "updatedAt", "revision", "summaryRevision", "transcriptRevision", "active", "deletingAt"];
   const hasSummary = record.hasSummary ?? (record.summaryDocument !== null && record.summaryDocument !== undefined);
   return { ...Object.fromEntries(keys.filter((key) => key in record).map((key) => [key, record[key]])), contentOmitted: true, hasSummary };
 }
 
-export async function metadataRecord(value: SyncCanonicalRecord, store: IdentitySyncStore, vaultId: string): Promise<SyncCanonicalRecord> {
+export async function metadataRecord(value: SyncCanonicalRecord, store: IdentitySyncStore, workspaceId: string): Promise<SyncCanonicalRecord> {
   if (!value.record) return value;
   let record: Record<string, unknown> = { ...value.record };
   if (value.entity === "meeting") {
@@ -48,16 +48,16 @@ export async function metadataRecord(value: SyncCanonicalRecord, store: Identity
       contentOmitted: true, contentPresent: record.document !== null && record.document !== undefined };
   } else if (value.entity === "transcript") {
     record = { meetingId: record.meetingId, contentOmitted: true, contentPresent: true,
-      contentCount: await store.countTranscript(vaultId, value.id), transcript: record.transcript };
+      contentCount: await store.countTranscript(workspaceId, value.id), transcript: record.transcript };
   } else if (value.entity === "file") {
     record = fileTextMetadata(record);
   }
   return { ...value, record };
 }
 
-/** The caller holds the Vault lock within its identity transaction, including every revision check. */
+/** The caller holds the Workspace lock within its identity transaction, including every revision check. */
 export async function readTextContent(
-  store: IdentitySyncStore, vaultId: string, entity: TextEntity, entityId: string,
+  store: IdentitySyncStore, workspaceId: string, entity: TextEntity, entityId: string,
   revision: number, manifestOnly: boolean, after?: SyncTranscriptCursor, transcriptVersion?: number,
 ) {
   const digest = new TextContentDigest();
@@ -66,13 +66,13 @@ export async function readTextContent(
   let record: Record<string, unknown> | undefined;
   let items: Awaited<ReturnType<IdentitySyncStore["listTranscript"]>> | undefined;
   let nextCursor: string | null = null;
-  if (!await store.getVault(vaultId)) throw new SyncTransactionError(404, "vault_not_found");
-  const meeting = await store.getMeeting(vaultId, entityId);
+  if (!await store.getWorkspace(workspaceId)) throw new SyncTransactionError(404, "workspace_not_found");
+  const meeting = await store.getMeeting(workspaceId, entityId);
   if (!meeting) throw new SyncTransactionError(404, "meeting_not_found");
-  const transcript = entity === "transcript" ? await store.getTranscript(vaultId, entityId, transcriptVersion) : null;
+  const transcript = entity === "transcript" ? await store.getTranscript(workspaceId, entityId, transcriptVersion) : null;
   if (transcriptVersion !== undefined && !transcript) throw new SyncTransactionError(404, "transcript_version_not_found");
   if (transcriptVersion === undefined) assertRevision((entity === "summary" ? meeting.summaryRevision : meeting.transcriptRevision) ?? 0, revision);
-  const summary = entity === "summary" ? await store.getSummaryVersion(vaultId, entityId) : null;
+  const summary = entity === "summary" ? await store.getSummaryVersion(workspaceId, entityId) : null;
   if (entity === "summary") {
     present = summary !== null;
     digest.add(summary?.document ?? null);
@@ -82,7 +82,7 @@ export async function readTextContent(
     present = transcript !== null;
     let cursor = after;
     do {
-      const rows = await store.listTranscript(vaultId, entityId, 501, cursor, transcript?.version);
+      const rows = await store.listTranscript(workspaceId, entityId, 501, cursor, transcript?.version);
       const page = [] as typeof rows;
       let bytes = 0;
       for (const row of rows.slice(0, 500)) {

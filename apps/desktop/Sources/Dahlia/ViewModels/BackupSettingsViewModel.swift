@@ -4,26 +4,26 @@ import GRDB
 import Observation
 
 struct BackupRestoreSelection: Identifiable {
-    let vault: BackupVault
-    var mode: VaultBackupRestoreRequest.Mode?
+    let workspace: BackupWorkspace
+    var mode: WorkspaceBackupRestoreRequest.Mode?
     var name: String
-    var id: UUID { vault.id }
+    var id: UUID { workspace.id }
 }
 
 @Observable
 @MainActor
 final class BackupSettingsViewModel {
     private(set) var generations: [BackupGeneration] = []
-    private(set) var vaults: [VaultRecord] = []
-    var selectedVaultIds: Set<UUID> = []
+    private(set) var workspaces: [WorkspaceRecord] = []
+    var selectedWorkspaceIds: Set<UUID> = []
     var restoreSelections: [BackupRestoreSelection] = []
     private(set) var allPreflightItems: [BackupPreflightItem] = []
-    var preflightItems: [BackupPreflightItem] { allPreflightItems.filter { selectedVaultIds.contains($0.vaultId) } }
+    var preflightItems: [BackupPreflightItem] { allPreflightItems.filter { selectedWorkspaceIds.contains($0.workspaceId) } }
     private(set) var hasWorkInProgress = false
 
-    func canOverwrite(vaultId: UUID) -> Bool {
-        vaults.contains { $0.id == vaultId && $0.accountConnectionId == nil && $0.syncRole == nil && $0.syncConfirmedConnectionId == nil }
-            && !allPreflightItems.contains { $0.vaultId == vaultId }
+    func canOverwrite(workspaceId: UUID) -> Bool {
+        workspaces.contains { $0.id == workspaceId && $0.accountConnectionId == nil && $0.syncRole == nil && $0.syncConfirmedConnectionId == nil }
+            && !allPreflightItems.contains { $0.workspaceId == workspaceId }
     }
 
     private(set) var isBusy = false
@@ -59,17 +59,17 @@ final class BackupSettingsViewModel {
             self.generations = try await generations
             self.allPreflightItems = try await preflightItems
             hasWorkInProgress = try await service.hasProcessingAudio() || allPreflightItems.contains(where: \.isWorkInProgress)
-            vaults = try await service.listVaults()
-            selectedVaultIds.formIntersection(vaults.map(\.id))
+            workspaces = try await service.listWorkspaces()
+            selectedWorkspaceIds.formIntersection(workspaces.map(\.id))
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     func createBackup() async {
-        guard !selectedVaultIds.isEmpty else { return }
+        guard !selectedWorkspaceIds.isEmpty else { return }
         await perform {
-            _ = try await requireService().createGeneration(vaultIds: selectedVaultIds)
+            _ = try await requireService().createGeneration(workspaceIds: selectedWorkspaceIds)
             statusMessage = L10n.backupCreated
         }
     }
@@ -101,7 +101,7 @@ final class BackupSettingsViewModel {
             let discarded = try await MeetingRepository(dbQueue: dbQueue)
                 .discardUnprocessedBatchSessionSafely(
                     id: item.sessionId,
-                    expectedVaultId: item.vaultId
+                    expectedWorkspaceId: item.workspaceId
                 )
             guard discarded else { throw BackupServiceError.invalidBackup }
             statusMessage = L10n.unprocessedRecordingDiscarded
@@ -109,7 +109,7 @@ final class BackupSettingsViewModel {
     }
 
     func beginRestore(_ metadata: BackupMetadata) {
-        restoreSelections = metadata.vaults.map { BackupRestoreSelection(vault: $0, mode: nil, name: L10n.restoredVaultName($0.name)) }
+        restoreSelections = metadata.workspaces.map { BackupRestoreSelection(workspace: $0, mode: nil, name: L10n.restoredWorkspaceName($0.name)) }
         errorMessage = nil
     }
 
@@ -119,20 +119,20 @@ final class BackupSettingsViewModel {
             && restoreSelections.allSatisfy { selection in
                 switch selection.mode {
                 case .none: true
-                case .overwrite: canOverwrite(vaultId: selection.id)
-                case .newVault: selection.name.nilIfBlank != nil
+                case .overwrite: canOverwrite(workspaceId: selection.id)
+                case .newWorkspace: selection.name.nilIfBlank != nil
                 }
             }
     }
 
     func prepareRestore(_ generation: BackupGeneration) async -> Bool {
         guard canRestore else { return false }
-        let requests = restoreSelections.compactMap { selection -> VaultBackupRestoreRequest? in
+        let requests = restoreSelections.compactMap { selection -> WorkspaceBackupRestoreRequest? in
             guard let mode = selection.mode else { return nil }
-            return VaultBackupRestoreRequest(
-                sourceVaultId: selection.id,
-                targetVaultId: mode == .overwrite ? selection.id : .v7(),
-                mode: mode, name: mode == .overwrite ? selection.vault.name : selection.name
+            return WorkspaceBackupRestoreRequest(
+                sourceWorkspaceId: selection.id,
+                targetWorkspaceId: mode == .overwrite ? selection.id : .v7(),
+                mode: mode, name: mode == .overwrite ? selection.workspace.name : selection.name
             )
         }
         guard AppDelegate.beginBackupRestorePreparation() else {

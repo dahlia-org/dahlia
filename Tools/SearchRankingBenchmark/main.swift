@@ -157,15 +157,15 @@ private enum SearchRankingBenchmarkCommand {
 private struct Dataset {
     let judgments: [Judgment]
     let conjunctions: [[String]]
-    let vaultID: UUID
+    let workspaceID: UUID
     let sampledMeetingCount: Int
 }
 
 private func loadDataset(from database: DatabaseQueue) throws -> Dataset {
     try database.read { db in
-        guard let vaultID = try UUID.fetchOne(
+        guard let workspaceID = try UUID.fetchOne(
             db,
-            sql: "SELECT vaultId FROM meetings GROUP BY vaultId ORDER BY COUNT(*) DESC LIMIT 1"
+            sql: "SELECT workspace_id FROM meetings GROUP BY workspace_id ORDER BY COUNT(*) DESC LIMIT 1"
         ) else {
             throw BenchmarkError.noMeetings
         }
@@ -178,11 +178,11 @@ private func loadDataset(from database: DatabaseQueue) throws -> Dataset {
             LEFT JOIN calendar_events
               ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
              AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
-            WHERE meetings.vaultId = ?
+            WHERE meetings.workspace_id = ?
             ORDER BY COALESCE(meetings.recordingStartedAt, meetings.createdAt) DESC, meetings.id DESC
             LIMIT 60
             """,
-            arguments: [vaultID]
+            arguments: [workspaceID]
         )
         let samples = try rows.map { row -> SampledMeeting in
             let id: UUID = row["id"]
@@ -225,7 +225,7 @@ private func loadDataset(from database: DatabaseQueue) throws -> Dataset {
         return Dataset(
             judgments: judgments,
             conjunctions: conjunctions,
-            vaultID: vaultID,
+            workspaceID: workspaceID,
             sampledMeetingCount: samples.count
         )
     }
@@ -352,7 +352,7 @@ private func evaluate(
                 JOIN search_documents ON search_documents.id = search_documents_fts.rowid
                 JOIN meetings ON meetings.id = search_documents.meetingId
                 WHERE search_documents_fts MATCH ?
-                  AND search_documents.vaultId = ?
+                  AND search_documents.workspace_id = ?
                   AND search_documents.kind = 'meeting'
                 ORDER BY relevance DESC, meetingDate DESC, meetingId ASC
                 LIMIT 10
@@ -374,7 +374,7 @@ private func evaluate(
                         policy.calendar,
                         policy.tags,
                         expression,
-                        dataset.vaultID,
+                        dataset.workspaceID,
                     ]
                 )
                 perQuery.append(metric(ranked: ranked, grades: dataset.judgments[index].grades))

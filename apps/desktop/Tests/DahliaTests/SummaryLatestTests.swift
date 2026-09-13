@@ -29,11 +29,11 @@ import Synchronization
             let bodyData = try JSONSerialization.data(withJSONObject: body)
             let otherMeetingId = UUID.v7()
             try await fixture.queue.write { db in
-                try db.execute(sql: "UPDATE vaults SET syncPullCursor = 'before' WHERE id = ?", arguments: [fixture.vaultId])
+                try db.execute(sql: "UPDATE workspaces SET syncPullCursor = 'before' WHERE id = ?", arguments: [fixture.workspaceId])
                 if pending != "none" {
                     try MeetingRecord(
                         id: otherMeetingId,
-                        vaultId: fixture.vaultId,
+                        workspaceId: fixture.workspaceId,
                         projectId: nil,
                         name: "Recording",
                         createdAt: .now,
@@ -41,32 +41,32 @@ import Synchronization
                     ).insert(db)
                     let transactionId = UUID.v7()
                     try db.execute(sql: """
-                    INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt)
-                    SELECT ?, id, accountConnectionId, ?, ? FROM vaults WHERE id = ?
-                    """, arguments: [transactionId, Date(), Date(), fixture.vaultId])
+                    INSERT INTO sync_transactions(id, workspace_id, connectionId, createdAt, availableAt)
+                    SELECT ?, id, accountConnectionId, ?, ? FROM workspaces WHERE id = ?
+                    """, arguments: [transactionId, Date(), Date(), fixture.workspaceId])
                     try db.execute(sql: """
                     INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, payloadJSON)
                     VALUES (?, 0, ?, 'transcript', 'patch', ?, '{}')
                     """, arguments: [transactionId, UUID.v7(), otherMeetingId])
                 }
                 try db.execute(sql: "INSERT INTO summaries(meetingId, title, createdAt) VALUES (?, 'Old', ?)", arguments: [fixture.meetingId, Date()])
-                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'summary', ?, 3)", arguments: [fixture.vaultId, fixture.meetingId])
+                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'summary', ?, 3)", arguments: [fixture.workspaceId, fixture.meetingId])
                 try db.execute(
-                    sql: "INSERT INTO sync_content_state(vaultId, entity, entityId) VALUES (?, 'summary', ?)",
-                    arguments: [fixture.vaultId, fixture.meetingId]
+                    sql: "INSERT INTO sync_content_state(workspace_id, entity, entityId) VALUES (?, 'summary', ?)",
+                    arguments: [fixture.workspaceId, fixture.meetingId]
                 )
             }
             var changes: [[String: Any]] = []
             if pending == "deferred" {
                 changes.append([
-                    "vaultId": fixture.vaultId.uuidString, "transactionId": UUID.v7().uuidString,
+                    "workspaceId": fixture.workspaceId.uuidString, "transactionId": UUID.v7().uuidString,
                     "sequence": 3, "entity": "transcript", "entityId": otherMeetingId.uuidString,
                     "action": "upsert", "revision": 2,
                     "record": ["meetingId": otherMeetingId.uuidString, "contentOmitted": true, "contentPresent": true, "contentCount": 1],
                 ])
             }
             changes.append([
-                "vaultId": fixture.vaultId.uuidString, "transactionId": UUID.v7().uuidString,
+                "workspaceId": fixture.workspaceId.uuidString, "transactionId": UUID.v7().uuidString,
                 "sequence": 4, "entity": "summary", "entityId": fixture.meetingId.uuidString,
                 "action": "upsert", "revision": 4,
                 "record": [
@@ -106,9 +106,9 @@ import Synchronization
             #expect(try await fixture.queue
                 .read { try TextContentAccess.availability(entity: .summary, id: fixture.meetingId, in: $0).revision } == 4)
             try await fixture.queue.read { db throws in
-                #expect(try SyncTransactionQueue.hasPending(vaultId: fixture.vaultId, in: db) == (pending != "none"))
+                #expect(try SyncTransactionQueue.hasPending(workspaceId: fixture.workspaceId, in: db) == (pending != "none"))
                 #expect(try String
-                    .fetchOne(db, sql: "SELECT syncPullCursor FROM vaults WHERE id = ?", arguments: [fixture.vaultId]) ==
+                    .fetchOne(db, sql: "SELECT syncPullCursor FROM workspaces WHERE id = ?", arguments: [fixture.workspaceId]) ==
                     (pending == "deferred" ? "before" : "after"))
             }
         }

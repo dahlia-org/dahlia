@@ -23,8 +23,8 @@ describe("public TypeIDs", () => {
     }
   });
   it("rejects raw UUIDs, wrong types, invalid characters, lengths and overflow", () => {
-    for (const value of [uuid, encodeId("meeting", uuid), "vlt_8" + "0".repeat(25), "vlt_" + "a".repeat(25), "vlt_" + "0".repeat(25) + "I", "VLT_" + "0".repeat(26)]) {
-      expect(() => decodeId("vault", value)).toThrow();
+    for (const value of [uuid, encodeId("meeting", uuid), "vlt_" + vectors[0]!.suffix, "ws_8" + "0".repeat(25), "ws_" + "a".repeat(25), "ws_" + "0".repeat(25) + "I", "VLT_" + "0".repeat(26)]) {
+      expect(() => decodeId("workspace", value)).toThrow();
     }
   });
   it("preserves document whitespace and non-reference UUID text", () => {
@@ -35,13 +35,13 @@ describe("public TypeIDs", () => {
     expect(wireDocument(publicDocument, "decode")).toBe(document);
   });
   it("uses the referenced type rather than the operation entity name", () => {
-    const value = { id: uuid, vaultId: uuid, operations: [{ id: uuid, entity: "summary", entityId: uuid, data: { document: "plain text" } }] };
+    const value = { id: uuid, workspaceId: uuid, operations: [{ id: uuid, entity: "summary", entityId: uuid, data: { document: "plain text" } }] };
     const publicValue = wireValue(value, "transaction", "encode") as typeof value;
     expect(publicValue.operations[0]!.entityId).toBe(encodeId("meeting", uuid));
     expect(wireValue(publicValue, "transaction", "decode")).toEqual(value);
   });
   it("converts resource URLs and preserves opaque versions", () => {
-    const url = `/api/v1/vaults/${uuid}/meetings/${uuid}/summary/3`;
+    const url = `/api/v1/workspaces/${uuid}/meetings/${uuid}/summary/3`;
     expect(wireURL(wireURL(url, "encode"), "decode")).toBe(url);
     expect(() => wireURL(url, "decode")).toThrow();
   });
@@ -59,7 +59,7 @@ describe("public TypeIDs", () => {
     expect(encoded.job.input.recordings[0]!.micFileId).toBe(encodeId("file", uuid));
     expect(encoded.job.transcriptResult.transcriptId).toBe(encodeId("transcript", uuid));
     expect(wireValue(encoded, "summaryJobResponse", "decode")).toEqual(value);
-    expect(wireURL(`/api/v1/vaults/${encodeId("vault", uuid)}/meetings/${encodeId("meeting", uuid)}/summary/job/${encoded.job.id}/cancel`, "decode", "POST"))
+    expect(wireURL(`/api/v1/workspaces/${encodeId("workspace", uuid)}/meetings/${encodeId("meeting", uuid)}/summary/job/${encoded.job.id}/cancel`, "decode", "POST"))
       .toContain(`/summary/job/${uuid}/cancel`);
   });
   it("preserves empty auth failures and immutable redirect responses", async () => {

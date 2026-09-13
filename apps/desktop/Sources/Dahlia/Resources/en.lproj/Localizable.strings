@@ -3,9 +3,9 @@
 "settings.organization.generationAndAnalysis" = "Summary & image analysis";
 "settings.organization.searchSettings" = "Search settings";
 "settings.organization.settingsAccountIntro" = "Choose how each account creates summaries and analyzes images.";
-"settings.organization.settingsAccountsIntro" = "Manage connected accounts and the vaults that belong to them.";
+"settings.organization.settingsAccountsIntro" = "Manage connected accounts and the workspaces that belong to them.";
 "settings.organization.settingsExportIntro" = "Configure export destinations on this Mac for the account selected in the sidebar.";
-"settings.organization.settingsAccountSelectionDescription" = "Choosing an account here does not switch your open vault.";
+"settings.organization.settingsAccountSelectionDescription" = "Choosing an account here does not switch your open workspace.";
 "settings.organization.settingsLoading" = "Loading settings…";
 "settings.organization.settingsApplyNextGeneration" = "Changes save automatically and apply to the next generation.";
 "settings.organization.settingsSummaryOutput" = "Results";
@@ -53,13 +53,13 @@
 "Delete Backup" = "Delete Backup";
 "Backup Generations" = "Backup Generations";
 "No Backups" = "No Backups";
-"Create a backup to preserve the selected vault." = "Create a backup to preserve the selected vault.";
+"Create a backup to preserve the selected workspace." = "Create a backup to preserve the selected workspace.";
 "Backup created." = "Backup created.";
 "Backup imported." = "Backup imported.";
 "Backup exported." = "Backup exported.";
 "Backup deleted." = "Backup deleted.";
 "The selected file is not a valid Dahlia backup." = "The selected file is not a valid Dahlia backup.";
-"Another vault restore is already pending." = "Another vault restore is already pending.";
+"Another workspace restore is already pending." = "Another workspace restore is already pending.";
 "The selected backup generation no longer exists." = "The selected backup generation no longer exists.";
 "Untitled Meeting" = "Untitled Meeting";
 "Resolve %lld unprocessed recording before continuing." = "Resolve %lld unprocessed recording before continuing.";
@@ -67,8 +67,8 @@
 "Backup format %lld is not supported by this version of Dahlia." = "Backup format %lld is not supported by this version of Dahlia.";
 "This backup uses the newer database schema %@." = "This backup uses the newer database schema %@.";
 "The backup failed its integrity check: %@" = "The backup failed its integrity check: %@";
-"Vault restored." = "Vault restored.";
-"Could not restore the vault: %@" = "Could not restore the vault: %@";
+"Workspace restored." = "Workspace restored.";
+"Could not restore the workspace: %@" = "Could not restore the workspace: %@";
 "Invalid backup" = "Invalid backup";
 "Created before restore" = "Created before restore";
 "Delete this backup?" = "Delete this backup?";
@@ -77,7 +77,7 @@
 "The current database will be backed up first, then replaced. Dahlia will restart. Audio files and app settings are not restored." = "The current database will be backed up first, then replaced. Dahlia will restart. Audio files and app settings are not restored.";
 "Unprocessed Recordings" = "Unprocessed Recordings";
 "Open Unprocessed Recordings" = "Open Unprocessed Recordings";
-"Finish the current recording before opening unprocessed recordings in another vault." = "Finish the current recording before opening unprocessed recordings in another vault.";
+"Finish the current recording before opening unprocessed recordings in another workspace." = "Finish the current recording before opening unprocessed recordings in another workspace.";
 "Recordings that need manual transcription will appear here." = "Recordings that need manual transcription will appear here.";
 "Transcribe or discard every unprocessed recording before creating or restoring a backup." = "Transcribe or discard every unprocessed recording before creating or restoring a backup.";
 "Waiting for transcription" = "Waiting for transcription";
@@ -179,9 +179,9 @@
 "New Project" = "New Project";
 "Create Project" = "Create Project";
 "New Subproject" = "New Subproject";
-"New Project at Vault Top" = "New Project at Vault Top";
+"New Project at Workspace Top" = "New Project at Workspace Top";
 "Create a subproject inside %@." = "Create a subproject inside %@.";
-"Create a project at the top level of the vault." = "Create a project at the top level of the vault.";
+"Create a project at the top level of the workspace." = "Create a project at the top level of the workspace.";
 "Could Not Create Project" = "Could Not Create Project";
 "The project could not be created." = "The project could not be created.";
 "New meeting" = "New meeting";
@@ -318,7 +318,7 @@
 "Summary Destinations" = "Summary Destinations";
 "The logical Project path determines this destination. The folder is created when a Summary is exported." = "The logical Project path determines this destination. The folder is created when a Summary is exported.";
 "Local Summary Folder" = "Local Summary Folder";
-"The Summary output destination must resolve inside the Vault without symlink or file path components." = "The Summary output destination must resolve inside the Vault without symlink or file path components.";
+"The Summary output destination must resolve inside the Workspace without symlink or file path components." = "The Summary output destination must resolve inside the Workspace without symlink or file path components.";
 "The Summary output folder has not been created yet." = "The Summary output folder has not been created yet.";
 "Project Description" = "Project Description";
 "The description is provided as context when generating summaries. For example, you can include project members." = "The description is provided as context when generating summaries. For example, you can include project members.";
@@ -362,7 +362,7 @@
 "The summary file %@ is linked to multiple meetings and cannot be moved safely." = "The summary file %@ is linked to multiple meetings and cannot be moved safely.";
 "The project operation failed (%@), and Dahlia could not restore the Summary output (%@)." = "The project operation failed (%@), and Dahlia could not restore the Summary output (%@).";
 "Select a project to manage summary destinations and instructions." = "Select a project to manage summary destinations and instructions.";
-"Open a vault before managing project settings." = "Open a vault before managing project settings.";
+"Open a workspace before managing project settings." = "Open a workspace before managing project settings.";
 "Today" = "Today";
 "Tomorrow" = "Tomorrow";
 "In Progress" = "In Progress";
@@ -544,8 +544,8 @@
 "Max" = "Max";
 "Ultra" = "Ultra";
 "Developer Settings" = "Developer Settings";
-"Vault" = "Vault";
-"Accounts and Vaults" = "Accounts and Vaults";
+"Workspace" = "Workspace";
+"Accounts and Workspaces" = "Accounts and Workspaces";
 "Dahlia Account" = "Dahlia Account";
 "Dahlia Cloud" = "Dahlia Cloud";
 "Dahlia Server" = "Dahlia Server";
@@ -571,37 +571,37 @@
 "Dahlia credentials could not be saved securely." = "Dahlia credentials could not be saved securely.";
 "A Dahlia connection already exists for this server." = "A Dahlia connection already exists for this server.";
 "Sign in with the same Dahlia account, or add a new connection." = "Sign in with the same Dahlia account, or add a new connection.";
-"Resolve this connection's Server Vaults before removing it." = "Resolve this connection's Server Vaults before removing it.";
-"Choose what to do with this account's local Vaults before signing out." = "Choose what to do with this account's local Vaults before signing out.";
+"Resolve this connection's Server Workspaces before removing it." = "Resolve this connection's Server Workspaces before removing it.";
+"Choose what to do with this account's local Workspaces before signing out." = "Choose what to do with this account's local Workspaces before signing out.";
 "Manage the Local Account and sign-ins to Dahlia Cloud and Server." = "Manage the Local Account and sign-ins to Dahlia Cloud and Server.";
 "%lld Dahlia accounts" = "%lld Dahlia accounts";
 "Sign In Again" = "Sign In Again";
 "Sign-in required" = "Sign-in required";
 "Sign out of %@?" = "Sign out of %@?";
-"Move Vaults to Local Account and Sign Out" = "Move Vaults to Local Account and Sign Out";
-"Delete Local Vaults and Sign Out" = "Delete Local Vaults and Sign Out";
-"The Server Vaults will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac." = "The Server Vaults will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac.";
+"Move Workspaces to Local Account and Sign Out" = "Move Workspaces to Local Account and Sign Out";
+"Delete Local Workspaces and Sign Out" = "Delete Local Workspaces and Sign Out";
+"The Server Workspaces will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac." = "The Server Workspaces will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac.";
 "Move to Server" = "Move to Server";
-"Reconnect Server Vault" = "Reconnect Server Vault";
+"Reconnect Server Workspace" = "Reconnect Server Workspace";
 "Keep in Local Account" = "Keep in Local Account";
 "Reconnect %@ to this Server?" = "Reconnect %@ to this Server?";
 "Move %@ to this Server?" = "Move %@ to this Server?";
-"A Vault with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict." = "A Vault with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict.";
-"This Vault will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac." = "This Vault will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac.";
+"A Workspace with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict." = "A Workspace with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict.";
+"This Workspace will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac." = "This Workspace will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac.";
 "Remove Dahlia connection %@?" = "Remove Dahlia connection %@?";
 "The connection will be removed. Local meeting data will not be deleted." = "The connection will be removed. Local meeting data will not be deleted.";
 "Signed in as %@" = "Signed in as %@";
 "Dahlia request failed (HTTP %lld)." = "Dahlia request failed (HTTP %lld).";
 "Coming Soon" = "Coming Soon";
-"Loading Vaults…" = "Loading Vaults…";
-"Removing Vault…" = "Removing Vault…";
+"Loading Workspaces…" = "Loading Workspaces…";
+"Removing Workspace…" = "Removing Workspace…";
 "Confirm Meeting Deletions" = "Confirm Meeting Deletions";
 "Continue Deleting" = "Continue Deleting";
 "%lld server meeting deletions are waiting. Continue deleting them?" = "%lld server meeting deletions are waiting. Continue deleting them?";
-"Current Vault" = "Current Vault";
-"Choose the vault used for recordings and sync." = "Choose the vault used for recordings and sync.";
-"Open the account and vault menu." = "Open the account and vault menu.";
-"No vault selected" = "No vault selected";
+"Current Workspace" = "Current Workspace";
+"Choose the workspace used for recordings and sync." = "Choose the workspace used for recordings and sync.";
+"Open the account and workspace menu." = "Open the account and workspace menu.";
+"No workspace selected" = "No workspace selected";
 "Appearance" = "Appearance";
 "Display" = "Display";
 "Typography" = "Typography";
@@ -726,32 +726,32 @@
 "Google Calendar HTTP %lld: %@" = "Google Calendar HTTP %lld: %@";
 "Could not parse Google Calendar date: %@" = "Could not parse Google Calendar date: %@";
 
-/* Vault Picker */
-"Create New Vault" = "Create New Vault";
-"Create a vault without a local export folder." = "Create a vault without a local export folder.";
-"Add Vault" = "Add Vault";
-"Registered Vaults" = "Registered Vaults";
-"Open Folder as Vault" = "Open Folder as Vault";
-"Select an existing folder to use as a vault." = "Select an existing folder to use as a vault.";
-"Remove Vault" = "Remove Vault";
-"Open a different vault before removing this one." = "Open a different vault before removing this one.";
+/* Workspace Picker */
+"Create New Workspace" = "Create New Workspace";
+"Create a workspace without a local export folder." = "Create a workspace without a local export folder.";
+"Add Workspace" = "Add Workspace";
+"Registered Workspaces" = "Registered Workspaces";
+"Open Folder as Workspace" = "Open Folder as Workspace";
+"Select an existing folder to use as a workspace." = "Select an existing folder to use as a workspace.";
+"Remove Workspace" = "Remove Workspace";
+"Open a different workspace before removing this one." = "Open a different workspace before removing this one.";
 "Remove %@?" = "Remove %@?";
-"Dahlia will remove this vault and its meeting history from the app. Audio files managed outside the vault folder will also be deleted. Files inside the vault folder are not changed." = "Dahlia will remove this vault and its meeting history from the app. Audio files managed outside the vault folder will also be deleted. Files inside the vault folder are not changed.";
-"Vault Details" = "Vault Details";
-"Vault Name" = "Vault Name";
-"Enter a name for the new vault." = "Enter a name for the new vault.";
+"Dahlia will remove this workspace and its meeting history from the app. Audio files managed outside the workspace folder will also be deleted. Files inside the workspace folder are not changed." = "Dahlia will remove this workspace and its meeting history from the app. Audio files managed outside the workspace folder will also be deleted. Files inside the workspace folder are not changed.";
+"Workspace Details" = "Workspace Details";
+"Workspace Name" = "Workspace Name";
+"Enter a name for the new workspace." = "Enter a name for the new workspace.";
 "Rename %@" = "Rename %@";
-"Open Vault" = "Open Vault";
-"Use this vault for recordings and sync." = "Use this vault for recordings and sync.";
-"Select a vault to view its details." = "Select a vault to view its details.";
-"No Vaults" = "No Vaults";
+"Open Workspace" = "Open Workspace";
+"Use this workspace for recordings and sync." = "Use this workspace for recordings and sync.";
+"Select a workspace to view its details." = "Select a workspace to view its details.";
+"No Workspaces" = "No Workspaces";
 "Add a folder to start recording and syncing meetings." = "Add a folder to start recording and syncing meetings.";
-"Vault Operation Failed" = "Vault Operation Failed";
-"Could not select the vault folder." = "Could not select the vault folder.";
-"Could not load vaults." = "Could not load vaults.";
-"Could not add the vault." = "Could not add the vault.";
-"Could not rename the vault." = "Could not rename the vault.";
-"Could not remove the vault." = "Could not remove the vault.";
+"Workspace Operation Failed" = "Workspace Operation Failed";
+"Could not select the workspace folder." = "Could not select the workspace folder.";
+"Could not load workspaces." = "Could not load workspaces.";
+"Could not add the workspace." = "Could not add the workspace.";
+"Could not rename the workspace." = "Could not rename the workspace.";
+"Could not remove the workspace." = "Could not remove the workspace.";
 "Open" = "Open";
 "Enlarge screenshot" = "Enlarge screenshot";
 "Enlarge screenshot: %@" = "Enlarge screenshot: %@";
@@ -801,7 +801,7 @@
 "Open in Editor" = "Open in Editor";
 "Open Templates Folder" = "Open Templates Folder";
 "Reset Presets" = "Reset Presets";
-"Select a template from _custom_instructions/ in the vault." = "Select a template from _custom_instructions/ in the vault.";
+"Select a template from _custom_instructions/ in the workspace." = "Select a template from _custom_instructions/ in the workspace.";
 
 /* Error Messages - Audio */
 "Screen recording access denied. Please allow it in System Settings > Privacy & Security > Screen Recording." = "Screen recording access denied. Please allow it in System Settings > Privacy & Security > Screen Recording.";
@@ -842,9 +842,9 @@
 "Stop and save after both recording and supported meeting-app activity have lasted at least 30 seconds. Browser activity also requires a recognized meeting window. In-person meetings are not detected." = "Stop and save after both recording and supported meeting-app activity have lasted at least 30 seconds. Browser activity also requires a recognized meeting window. In-person meetings are not detected.";
 
 /* Sidebar Footer */
-"Switch Vault" = "Switch Vault";
+"Switch Workspace" = "Switch Workspace";
 "MCP Settings" = "MCP Settings";
-"Manage Vaults" = "Manage Vaults";
+"Manage Workspaces" = "Manage Workspaces";
 "Manage Projects..." = "Manage Projects...";
 "Settings" = "Settings";
 "Help" = "Help";
@@ -1006,8 +1006,8 @@
 "Regenerate Summaries" = "Regenerate Summaries";
 "Regenerate selected summaries?" = "Regenerate selected summaries?";
 "Each selected meeting is regenerated independently. Existing summaries are replaced only after generation succeeds." = "Each selected meeting is regenerated independently. Existing summaries are replaced only after generation succeeds.";
-"Export Summary to Vault" = "Export Summary to Vault";
-"Write the generated summary and related files to the current Vault." = "Write the generated summary and related files to the current Vault.";
+"Export Summary to Workspace" = "Export Summary to Workspace";
+"Write the generated summary and related files to the current Workspace." = "Write the generated summary and related files to the current Workspace.";
 "Export Summary to Google Docs" = "Export Summary to Google Docs";
 "Export the generated summary to the configured Google Docs folder." = "Export the generated summary to the configured Google Docs folder.";
 "Later" = "Later";
@@ -1101,7 +1101,7 @@
 "Stopped" = "Stopped";
 "The bundled Codex helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build." = "The bundled Codex helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build.";
 "Could not start Codex: %@" = "Could not start Codex: %@";
-"Codex is not signed in. Open Accounts and Vaults in Settings and sign in, then try again." = "Codex is not signed in. Open Accounts and Vaults in Settings and sign in, then try again.";
+"Codex is not signed in. Open Accounts and Workspaces in Settings and sign in, then try again." = "Codex is not signed in. Open Accounts and Workspaces in Settings and sign in, then try again.";
 "Codex sign-in failed: %@" = "Codex sign-in failed: %@";
 "Codex sign-in failed." = "Codex sign-in failed.";
 "Could not open the Codex sign-in page." = "Could not open the Codex sign-in page.";
@@ -1120,7 +1120,7 @@
 "Selected Account" = "Selected Account";
 "Local Account Model Provider" = "Local Account Model Provider";
 "Choose the model provider used by the Local Account." = "Choose the model provider used by the Local Account.";
-"This setting is shared by all Local Account vaults. Dahlia Server and Cloud use hosted models automatically." = "This setting is shared by all Local Account vaults. Dahlia Server and Cloud use hosted models automatically.";
+"This setting is shared by all Local Account workspaces. Dahlia Server and Cloud use hosted models automatically." = "This setting is shared by all Local Account workspaces. Dahlia Server and Cloud use hosted models automatically.";
 "ChatGPT Subscription" = "ChatGPT Subscription";
 "Databricks" = "Databricks";
 "Codex Account" = "Codex Account";
@@ -1154,7 +1154,7 @@
 "Codex Configuration" = "Codex Configuration";
 "Could not update the Codex configuration: %@" = "Could not update the Codex configuration: %@";
 "Codex is configured for Databricks" = "Codex is configured for Databricks";
-"The selected AI account is not ready. Open Accounts and Vaults in Settings and finish its configuration." = "The selected AI account is not ready. Open Accounts and Vaults in Settings and finish its configuration.";
+"The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration." = "The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration.";
 "This chat uses %@. Start a new chat to use the current account." = "This chat uses %@. Start a new chat to use the current account.";
 "Codex returned no available models. Try again." = "Codex returned no available models. Try again.";
 "Models are loaded from the bundled Codex app-server." = "Models are loaded from the bundled Codex app-server.";
@@ -1204,7 +1204,7 @@
 "Submit" = "Submit";
 "This request is too large to review completely, so it cannot be approved." = "This request is too large to review completely, so it cannot be approved.";
 "This request asks for permissions outside the allowed workspace and cannot be approved." = "This request asks for permissions outside the allowed workspace and cannot be approved.";
-"Open Accounts and Vaults Settings" = "Open Accounts and Vaults Settings";
+"Open Accounts and Workspaces Settings" = "Open Accounts and Workspaces Settings";
 "Loading models…" = "Loading models…";
 "Chat is running" = "Chat is running";
 "Waiting for your response or approval" = "Waiting for your response or approval";
@@ -1246,8 +1246,8 @@
 "The Project changed before this update. Its current revision is %lld." = "The Project changed before this update. Its current revision is %lld.";
 "A Project cannot be moved inside itself or one of its descendants." = "A Project cannot be moved inside itself or one of its descendants.";
 "Projects support one level of subprojects. Choose a root Project as the parent." = "Projects support one level of subprojects. Choose a root Project as the parent.";
-"Another Project operation is already running for this Vault." = "Another Project operation is already running for this Vault.";
-"mcp.scopeFooter" = "Agents can read meeting content and confirmed transcripts from the chosen vault scope. All added vaults includes local and Server vaults on this Mac. Write access allows edits to Projects, meeting assignments, and stored summaries.";
+"Another Project operation is already running for this Workspace." = "Another Project operation is already running for this Workspace.";
+"mcp.scopeFooter" = "Agents can read meeting content and confirmed transcripts from the chosen workspace scope. All added workspaces includes local and Server workspaces on this Mac. Write access allows edits to Projects, meeting assignments, and stored summaries.";
 "Copy Command" = "Copy Command";
 "Copy meeting_id" = "Copy meeting_id";
 "Copies meeting_id to the clipboard" = "Copies meeting_id to the clipboard";
@@ -1291,7 +1291,7 @@
 "Close search" = "Close search";
 "Remove search filter" = "Remove search filter";
 "Search unavailable" = "Search unavailable";
-"Select a Vault to search." = "Select a Vault to search.";
+"Select a Workspace to search." = "Select a Workspace to search.";
 "Show chat" = "Show chat";
 "Shown" = "Shown";
 "Hidden" = "Hidden";
@@ -1417,7 +1417,7 @@
 "Ranking preset custom" = "Custom";
 "Excluded from search" = "Excluded";
 "Search benchmark" = "Search quality benchmark";
-"Search benchmark description" = "Dahlia creates search queries and expected results from meetings in this vault entirely on this Mac, then scores each set of weights for search quality. The generated evaluation set is stored locally so it can be re-scored.";
+"Search benchmark description" = "Dahlia creates search queries and expected results from meetings in this workspace entirely on this Mac, then scores each set of weights for search quality. The generated evaluation set is stored locally so it can be re-scored.";
 "Run benchmark" = "Run benchmark";
 "Re-evaluate" = "Re-score same set";
 "Building the evaluation set" = "Building the evaluation set";
@@ -1457,9 +1457,9 @@
 "Continue with Local Account" = "Continue with Local Account";
 "Or continue without signing in" = "Or continue without signing in";
 "Switching AI account…" = "Switching AI account…";
-"Choose the AI account used by this Vault." = "Choose the AI account used by this Vault.";
-"This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex and Google Drive connection data will be deleted." = "This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex and Google Drive connection data will be deleted.";
-"Dahlia stores meeting data and generated files in a local Vault." = "Dahlia stores meeting data and generated files in a local Vault.";
+"Choose the AI account used by this Workspace." = "Choose the AI account used by this Workspace.";
+"This account is used by %lld Workspaces. Those Workspaces will use the Local Account, and this account's Codex and Google Drive connection data will be deleted." = "This account is used by %lld Workspaces. Those Workspaces will use the Local Account, and this account's Codex and Google Drive connection data will be deleted.";
+"Dahlia stores meeting data and generated files in a local Workspace." = "Dahlia stores meeting data and generated files in a local Workspace.";
 "Choose the languages Dahlia should recognize and the primary language for AI output." = "Choose the languages Dahlia should recognize and the primary language for AI output.";
 "Recognition and OCR Languages" = "Recognition and OCR Languages";
 "Primary Language" = "Summary & Image Caption Language";
@@ -1470,7 +1470,7 @@
 "Allow access to the audio sources Dahlia records. You can continue and grant access later." = "Allow access to the audio sources Dahlia records. You can continue and grant access later.";
 "Calendar (Optional)" = "Calendar (Optional)";
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later.";
-"Review your choices, then create or open the selected Vault." = "Review your choices, then create or open the selected Vault.";
+"Review your choices, then create or open the selected Workspace." = "Review your choices, then create or open the selected Workspace.";
 "Setup Summary" = "Setup Summary";
 "Sync conflict" = "Sync conflict";
 "Use Server Version" = "Use Server Version";
@@ -1485,27 +1485,27 @@
 "Waiting to retrieve latest data" = "Waiting to retrieve latest data";
 "Update Dahlia and the Server to resume sync" = "Update Dahlia and the Server to resume sync";
 
-/* Vault backup */
-"Vault Backup" = "Vault Backup";
-"Back up the selected vaults together, including screenshots. Audio, external files, and account credentials are excluded." = "Back up the selected vaults together, including screenshots. Audio, external files, and account credentials are excluded.";
+/* Workspace backup */
+"Workspace Backup" = "Workspace Backup";
+"Back up the selected workspaces together, including screenshots. Audio, external files, and account credentials are excluded." = "Back up the selected workspaces together, including screenshots. Audio, external files, and account credentials are excluded.";
 "Restore Method" = "Restore Method";
-"Restore as a New Local Vault" = "Restore as a New Local Vault";
-"Overwrite the Original Local Vault" = "Overwrite the Original Local Vault";
-"Overwrite requires the original local vault with no unprocessed recordings. Synced vaults cannot be overwritten." = "Overwrite requires the original local vault with no unprocessed recordings. Synced vaults cannot be overwritten.";
-"Restore selected vaults after a restart. Back up and restore each vault independently; failed vaults stay unchanged. Audio and external files are excluded." = "Restore selected vaults after a restart. Back up and restore each vault independently; failed vaults stay unchanged. Audio and external files are excluded.";
+"Restore as a New Local Workspace" = "Restore as a New Local Workspace";
+"Overwrite the Original Local Workspace" = "Overwrite the Original Local Workspace";
+"Overwrite requires the original local workspace with no unprocessed recordings. Synced workspaces cannot be overwritten." = "Overwrite requires the original local workspace with no unprocessed recordings. Synced workspaces cannot be overwritten.";
+"Restore selected workspaces after a restart. Back up and restore each workspace independently; failed workspaces stay unchanged. Audio and external files are excluded." = "Restore selected workspaces after a restart. Back up and restore each workspace independently; failed workspaces stay unchanged. Audio and external files are excluded.";
 "%@ (Restored)" = "%@ (Restored)";
 
-"Deselect All Vaults" = "Deselect All Vaults";
+"Deselect All Workspaces" = "Deselect All Workspaces";
 
 "Do Not Restore" = "Do Not Restore";
 
-"Vaults: %d" = "Vaults: %d";
+"Workspaces: %d" = "Workspaces: %d";
 "%@ (Source: %@): Restored." = "%@ (Source: %@): Restored.";
 "%@ (Source: %@): Restore failed — %@" = "%@ (Source: %@): Restore failed — %@";
 
 // Meeting working copy and synchronization
 "meetingSync.local" = "Saved on this device";
-"meetingSync.pending" = "Saved on device · Vault sync pending";
+"meetingSync.pending" = "Saved on device · Workspace sync pending";
 "meetingSync.synced" = "Synced";
 "meetingSync.authorization" = "Saved on device · Sign in to sync";
 "meetingSync.validation" = "Saved on device · Sync needs attention";
@@ -1513,7 +1513,7 @@
 "screenshot.cache.limit" = "Cloud image cache limit";
 "screenshot.cache.description" = "Synced images are downloaded as needed. Older cached images are removed when the limit is exceeded. Local account images, unsent images, and backups are excluded.";
 
-"Only vaults in the Local Account can be backed up." = "Only vaults in the Local Account can be backed up.";
+"Only workspaces in the Local Account can be backed up." = "Only workspaces in the Local Account can be backed up.";
 
 // Server text availability and search coverage
 "text.content.missing" = "Text not downloaded";
@@ -1562,8 +1562,8 @@
 "settings.processing.location" = "Processing location";
 "settings.processing.local" = "This Mac";
 "settings.processing.remote" = "Server";
-"settings.processing.localScope" = "Applies to every vault in the Local Account on this Mac.";
-"settings.processing.syncedScope" = "Applies to every vault in this account and syncs across your devices.";
+"settings.processing.localScope" = "Applies to every workspace in the Local Account on this Mac.";
+"settings.processing.syncedScope" = "Applies to every workspace in this account and syncs across your devices.";
 "settings.processing.localDescription" = "Apple Speech transcribes on this Mac, then the AI provider configured on this Mac creates the summary.";
 "settings.processing.transcribeFirst" = "Transcribe before generating the summary";
 "settings.processing.thisMac" = "This Mac";
@@ -1622,7 +1622,7 @@
 
 "Waiting for initial sync" = "Waiting for initial sync";
 "Server meetings will appear after sync. An internet connection and sign-in are required." = "Server meetings will appear after sync. An internet connection and sign-in are required.";
-"mcp.allVaults" = "All added vaults";
+"mcp.allWorkspaces" = "All added workspaces";
 
 "Connect a Databricks workspace." = "Connect a Databricks workspace.";
 
@@ -1658,18 +1658,18 @@
 "sync.syncing" = "Syncing";
 "sync.synced" = "Synced";
 
-"Finish recording and pending sync, then choose a writable Server Vault." = "Finish recording and pending sync, then choose a writable Server Vault.";
-"The Vault changed during preparation. Your data is preserved. Try again." = "The Vault changed during preparation. Your data is preserved. Try again.";
+"Finish recording and pending sync, then choose a writable Server Workspace." = "Finish recording and pending sync, then choose a writable Server Workspace.";
+"The Workspace changed during preparation. Your data is preserved. Try again." = "The Workspace changed during preparation. Your data is preserved. Try again.";
 "Some IDs already exist on the Server. No local data was moved." = "Some IDs already exist on the Server. No local data was moved.";
 "Import destination" = "Import destination";
-"Existing Server Vault" = "Existing Server Vault";
-"New Server Vault" = "New Server Vault";
+"Existing Server Workspace" = "Existing Server Workspace";
+"New Server Workspace" = "New Server Workspace";
 "Organization" = "Organization";
 "Create Organization" = "Create Organization";
 "Reload destinations" = "Reload destinations";
-"A backup is saved before importing. Existing Vault settings stay unchanged. The original Local Vault remains available." = "A backup is saved before importing. Existing Vault settings stay unchanged. The original Local Vault remains available.";
+"A backup is saved before importing. Existing Workspace settings stay unchanged. The original Local Workspace remains available." = "A backup is saved before importing. Existing Workspace settings stay unchanged. The original Local Workspace remains available.";
 "Import" = "Import";
 "Organization name" = "Organization name";
 
-"Vault Admin" = "Admin";
-"Vault Editor" = "Editor";
+"Workspace Admin" = "Admin";
+"Workspace Editor" = "Editor";

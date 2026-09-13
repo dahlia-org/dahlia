@@ -39,7 +39,7 @@ public struct MeetingQuery: Sendable, Equatable {
 }
 
 public struct MeetingQueryPage: Codable, Sendable, Equatable {
-    public let vault: ScopedVault
+    public let workspace: ScopedWorkspace
     public let meetings: [MeetingMetadata]
     public let nextCursor: String?
     public var searchScope: String?
@@ -75,7 +75,7 @@ public struct ScreenshotTextQuery: Sendable, Equatable {
 }
 
 public struct ScreenshotTextQueryPage: Codable, Sendable, Equatable {
-    public let vault: ScopedVault
+    public let workspace: ScopedWorkspace
     public let screenshots: [ScreenshotTextMetadata]
     public let nextCursor: String?
     public var searchScope: String?
@@ -92,7 +92,7 @@ public struct ScreenshotTextMetadata: Codable, Sendable, Equatable {
     public let caption: String
 }
 
-public struct ScopedVault: Codable, Sendable, Equatable {
+public struct ScopedWorkspace: Codable, Sendable, Equatable {
     public let id: UUID
     public let name: String
 }
@@ -116,7 +116,7 @@ public struct MeetingMetadata: Codable, Sendable, Equatable {
 }
 
 public struct MeetingDetail: Codable, Sendable, Equatable {
-    public let vault: ScopedVault
+    public let workspace: ScopedWorkspace
     public let meeting: MeetingMetadata
     public let summary: String?
     public let summaryDocument: JSONValue?
@@ -126,12 +126,12 @@ public struct MeetingDetail: Codable, Sendable, Equatable {
 }
 
 public struct SummaryMutationResult: Codable, Sendable, Equatable {
-    public enum VaultExportOutcome: String, Codable, Sendable {
-        /// Vault の Markdown を新しい内容で書き直した。
+    public enum WorkspaceExportOutcome: String, Codable, Sendable {
+        /// Workspace の Markdown を新しい内容で書き直した。
         case updated
         /// 送られたドキュメントが保存済みと同一だったため、何も書かなかった。
         case unchanged
-        /// この要約はまだ Vault へ書き出されていないため、ファイルは作らなかった。
+        /// この要約はまだ Workspace へ書き出されていないため、ファイルは作らなかった。
         case notExported = "not_exported"
         /// 書き出し記録はあるが実ファイルへ到達できなかったため、データベースだけ更新した。
         case fileMissing = "file_missing"
@@ -142,14 +142,14 @@ public struct SummaryMutationResult: Codable, Sendable, Equatable {
     public let title: String
     public let description: String
     public let changed: Bool
-    public let vaultExport: VaultExportOutcome
+    public let workspaceExport: WorkspaceExportOutcome
     /// 追従できず古いままになっている書き出し先。
     public let staleExports: [String]
 }
 
 public struct TranscriptPage: Codable, Sendable, Equatable {
     public var transcript: TranscriptInfo?
-    public let vault: ScopedVault
+    public let workspace: ScopedWorkspace
     public let meetingID: UUID
     public let segments: [TranscriptEntry]
     public let nextCursor: String?
@@ -188,7 +188,7 @@ public struct ScreenshotQuery: Sendable, Equatable {
 }
 
 public struct MeetingScreenshotPage: Codable, Sendable, Equatable {
-    public let vault: ScopedVault
+    public let workspace: ScopedWorkspace
     public let meetingID: UUID
     public let screenshots: [MeetingScreenshotMetadata]
     public let nextCursor: String?
@@ -245,13 +245,13 @@ public struct ProjectMetadata: Codable, Sendable, Equatable {
 }
 
 public struct ProjectQueryResult: Codable, Sendable, Equatable {
-    public let vault: ScopedVault
+    public let workspace: ScopedWorkspace
     public let projects: [ProjectMetadata]
 }
 
 public enum ProjectParentUpdate: Sendable, Equatable {
     case unchanged
-    case vaultRoot
+    case workspaceRoot
     case project(UUID)
 }
 
@@ -309,7 +309,7 @@ public struct MeetingProjectMembershipResult: Codable, Sendable, Equatable {
 public typealias JSONValue = DahliaRuntimeSupport.JSONValue
 
 public enum MeetingAccessError: Error, LocalizedError, Equatable {
-    case vaultNotFound
+    case workspaceNotFound
     case meetingNotFound
     case databaseUpgradeRequired
     case searchUnavailable
@@ -341,10 +341,10 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .vaultNotFound:
-            "The configured vault was not found."
+        case .workspaceNotFound:
+            "The configured workspace was not found."
         case .meetingNotFound:
-            "The meeting was not found in the configured vault."
+            "The meeting was not found in the configured workspace."
         case .databaseUpgradeRequired:
             "The Dahlia database must be upgraded before meeting access can start. Open Dahlia once, then try again."
         case .searchUnavailable:
@@ -354,7 +354,7 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
         case .invalidSummaryDocument:
             "The stored summary document is invalid. Open Dahlia and regenerate the summary."
         case .invalidCursor:
-            "The cursor is invalid for the configured vault or meeting."
+            "The cursor is invalid for the configured workspace or meeting."
         case let .invalidLimit(maximum):
             "The limit must be between 1 and \(maximum)."
         case let .invalidSearchQuery(maximum):
@@ -364,7 +364,7 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
         case .invalidTimeRange:
             "Elapsed time values must be finite and nonnegative, and the start must be before the end."
         case .screenshotNotFound:
-            "The screenshot was not found in the configured meeting and vault."
+            "The screenshot was not found in the configured meeting and workspace."
         case .screenshotUnavailable:
             "This image is not cached. Open Dahlia and connect the account to download it, then retry."
         case .screenshotEncodingFailed:
@@ -372,7 +372,7 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
         case .writeAccessRequired:
             "This dahlia-mcp process is read-only. Restart it with --write to use update tools."
         case .projectNotFound:
-            "The project was not found in the configured vault."
+            "The project was not found in the configured workspace."
         case let .projectConflict(message):
             "Project update conflict: \(message)"
         case .invalidProjectName:
@@ -388,7 +388,7 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
         case .meetingMembershipConflict:
             "At least one meeting no longer has the expected project membership; no meetings were changed."
         case .workspaceBusy:
-            "Another Dahlia process is updating this vault. Refresh the project state and try again."
+            "Another Dahlia process is updating this workspace. Refresh the project state and try again."
         case .workspaceRollbackFailed:
             "The workspace update failed and its filesystem rollback also failed."
         case .summaryNotFound:
@@ -404,7 +404,7 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
 
     public var reasonCode: String {
         switch self {
-        case .vaultNotFound, .meetingNotFound, .projectNotFound, .screenshotNotFound, .summaryNotFound:
+        case .workspaceNotFound, .meetingNotFound, .projectNotFound, .screenshotNotFound, .summaryNotFound:
             "not_found"
         case .projectConflict, .meetingMembershipConflict, .summaryVersionConflict:
             "revision_conflict"

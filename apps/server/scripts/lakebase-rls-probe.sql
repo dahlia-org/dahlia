@@ -10,9 +10,9 @@ BEGIN
   END IF;
   SELECT relrowsecurity INTO permission_rls
   FROM pg_class JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
-  WHERE pg_namespace.nspname = 'app' AND pg_class.relname = 'vault_permissions';
+  WHERE pg_namespace.nspname = 'app' AND pg_class.relname = 'workspace_permissions';
   IF permission_rls IS DISTINCT FROM false THEN
-    RAISE EXCEPTION 'app.vault_permissions must remain outside RLS';
+    RAISE EXCEPTION 'app.workspace_permissions must remain outside RLS';
   END IF;
 END $$;
 
@@ -28,25 +28,25 @@ INSERT INTO auth.organization (id, name, slug, created_at)
 VALUES ('00000000-0000-7000-8000-000000005899', 'Probe owner organization', 'rls-probe-owner-organization', now());
 INSERT INTO auth.member (id, organization_id, user_id, role, created_at)
 VALUES ('00000000-0000-7000-8000-000000005898', '00000000-0000-7000-8000-000000005899', '00000000-0000-7000-8000-000000005804', 'owner', now());
-INSERT INTO app.vaults (vault_id, organization_id, created_by, name)
+INSERT INTO app.workspaces (workspace_id, organization_id, created_by, name)
 VALUES ('00000000-0000-0000-0000-000000005900', '00000000-0000-7000-8000-000000005899',
   '{"id":"00000000-0000-7000-8000-000000005804","name":"RLS probe owner","email":"rls-probe-owner@invalid.example"}', 'RLS probe');
-INSERT INTO app.vault_permissions
-  (vault_id, principal_type, principal_id, role, granted_by_user_id)
+INSERT INTO app.workspace_permissions
+  (workspace_id, principal_type, principal_id, role, granted_by_user_id)
 VALUES
   ('00000000-0000-0000-0000-000000005900', 'user', '00000000-0000-7000-8000-000000005804', 'admin', '00000000-0000-7000-8000-000000005804'),
   ('00000000-0000-0000-0000-000000005900', 'user', '00000000-0000-7000-8000-000000005800', 'viewer', '00000000-0000-7000-8000-000000005804'),
   ('00000000-0000-0000-0000-000000005900', 'organization', '00000000-0000-7000-8000-000000005802', 'viewer', '00000000-0000-7000-8000-000000005804'),
   ('00000000-0000-0000-0000-000000005900', 'team', '00000000-0000-7000-8000-000000005805', 'viewer', '00000000-0000-7000-8000-000000005804');
 INSERT INTO app.meetings
-  (meeting_id, vault_id, name, status, created_at, updated_at)
+  (meeting_id, workspace_id, name, status, created_at, updated_at)
 VALUES
   ('00000000-0000-0000-0000-000000005901', '00000000-0000-0000-0000-000000005900', 'RLS probe', 'READY', now(), now());
 
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM app.meetings WHERE vault_id = '00000000-0000-0000-0000-000000005900') <> 1 THEN
-    RAISE EXCEPTION 'Vault owner cannot read content through FORCE RLS';
+  IF (SELECT count(*) FROM app.meetings WHERE workspace_id = '00000000-0000-0000-0000-000000005900') <> 1 THEN
+    RAISE EXCEPTION 'Workspace owner cannot read content through FORCE RLS';
   END IF;
 END $$;
 
@@ -54,14 +54,14 @@ SELECT set_config('app.user_id', '00000000-0000-7000-8000-000000005800', true);
 DO $$
 DECLARE affected integer;
 BEGIN
-  IF (SELECT count(*) FROM app.meetings WHERE vault_id = '00000000-0000-0000-0000-000000005900') <> 1 THEN
+  IF (SELECT count(*) FROM app.meetings WHERE workspace_id = '00000000-0000-0000-0000-000000005900') <> 1 THEN
     RAISE EXCEPTION 'Direct user member cannot read shared content';
   END IF;
   UPDATE app.meetings SET name = 'forbidden'
-  WHERE vault_id = '00000000-0000-0000-0000-000000005900';
+  WHERE workspace_id = '00000000-0000-0000-0000-000000005900';
   GET DIAGNOSTICS affected = ROW_COUNT;
   IF affected <> 0 THEN
-    RAISE EXCEPTION 'Vault member updated content';
+    RAISE EXCEPTION 'Workspace member updated content';
   END IF;
 END $$;
 
@@ -76,7 +76,7 @@ VALUES ('00000000-0000-7000-8000-000000005805', 'RLS probe team', '00000000-0000
 SELECT set_config('app.user_id', '00000000-0000-7000-8000-000000005803', true);
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM app.meetings WHERE vault_id = '00000000-0000-0000-0000-000000005900') <> 1 THEN
+  IF (SELECT count(*) FROM app.meetings WHERE workspace_id = '00000000-0000-0000-0000-000000005900') <> 1 THEN
     RAISE EXCEPTION 'Current organization member cannot read shared content';
   END IF;
 END $$;
@@ -90,7 +90,7 @@ VALUES ('00000000-0000-7000-8000-000000005807', '00000000-0000-7000-8000-0000000
 SELECT set_config('app.user_id', '00000000-0000-7000-8000-000000005806', true);
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM app.meetings WHERE vault_id = '00000000-0000-0000-0000-000000005900') <> 1 THEN
+  IF (SELECT count(*) FROM app.meetings WHERE workspace_id = '00000000-0000-0000-0000-000000005900') <> 1 THEN
     RAISE EXCEPTION 'Team member cannot read shared content';
   END IF;
 END $$;

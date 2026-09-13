@@ -7,8 +7,8 @@ struct MainSidebarAccountRootMenuView: View {
     let currentConnectionID: UUID?
     let isLocalAccount: Bool
     let isLocalAccountAvailable: Bool
-    let vaults: [VaultRecord]
-    let currentVault: VaultRecord?
+    let workspaces: [WorkspaceRecord]
+    let currentWorkspace: WorkspaceRecord?
     let onShowLanguages: (CGFloat?) -> Void
     let onShowSyncProgress: (CGFloat?) -> Void
     let onDismissSubmenu: () -> Void
@@ -16,8 +16,8 @@ struct MainSidebarAccountRootMenuView: View {
     let onDismissAccountHelp: () -> Void
     let onOpenSettings: (SettingsCategory?) -> Void
     let onSelectAccount: (DahliaAccountConnection?) -> Void
-    let onSelectVault: (VaultRecord) -> Void
-    let onManageVaults: () -> Void
+    let onSelectWorkspace: (WorkspaceRecord) -> Void
+    let onManageWorkspaces: () -> Void
     let onAccountAction: () -> Void
 
     @State private var accountController = DahliaCloudAccountController.shared
@@ -43,7 +43,7 @@ struct MainSidebarAccountRootMenuView: View {
                         ?? (connection.isCloud ? L10n.dahliaCloud : L10n.dahliaServer),
                     syncState: accountController.syncStates[connection.id] ?? .pending,
                     selectionState: connection.id == currentConnectionID,
-                    isEnabled: connection.vaultCount > 0,
+                    isEnabled: connection.workspaceCount > 0,
                     isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == index,
                     help: connection.origin,
                     showsHelp: false,
@@ -73,33 +73,33 @@ struct MainSidebarAccountRootMenuView: View {
             Divider()
                 .padding(.vertical, 4)
 
-            Text(L10n.vault)
+            Text(L10n.workspace)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)
                 .accessibilityAddTraits(.isHeader)
 
-            ForEach(vaults.enumerated(), id: \.element.id) { index, vault in
+            ForEach(workspaces.enumerated(), id: \.element.id) { index, workspace in
                 MainSidebarAccountMenuRow(
-                    title: vault.name,
-                    image: Image(systemName: (vault.appearance ?? .vaultDefault).icon.systemImageName),
-                    imageColor: (vault.appearance ?? .vaultDefault).color.color,
-                    selectionState: vault.id == currentVault?.id,
-                    isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == vaultOffset + index,
-                    onHoverStart: { hover(index: vaultOffset + index, submenu: nil, action: onDismissSubmenu) },
+                    title: workspace.name,
+                    image: Image(systemName: (workspace.appearance ?? .workspaceDefault).icon.systemImageName),
+                    imageColor: (workspace.appearance ?? .workspaceDefault).color.color,
+                    selectionState: workspace.id == currentWorkspace?.id,
+                    isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == workspaceOffset + index,
+                    onHoverStart: { hover(index: workspaceOffset + index, submenu: nil, action: onDismissSubmenu) },
                     onHoverEnd: cancelPendingHover,
-                    action: { activate(index: vaultOffset + index, action: { onSelectVault(vault) }) }
+                    action: { activate(index: workspaceOffset + index, action: { onSelectWorkspace(workspace) }) }
                 )
             }
 
             MainSidebarAccountMenuRow(
-                title: L10n.manageVaults,
+                title: L10n.manageWorkspaces,
                 image: Image(systemName: "gearshape"),
-                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == manageVaultsIndex,
-                onHoverStart: { hover(index: manageVaultsIndex, submenu: nil, action: onDismissSubmenu) },
+                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == manageWorkspacesIndex,
+                onHoverStart: { hover(index: manageWorkspacesIndex, submenu: nil, action: onDismissSubmenu) },
                 onHoverEnd: cancelPendingHover,
-                action: { activate(index: manageVaultsIndex, action: onManageVaults) }
+                action: { activate(index: manageWorkspacesIndex, action: onManageWorkspaces) }
             )
 
             if !connections.isEmpty {
@@ -153,9 +153,9 @@ struct MainSidebarAccountRootMenuView: View {
         .onDisappear(perform: cancelPendingHover)
     }
 
-    private var vaultOffset: Int { connections.count + 1 }
-    private var manageVaultsIndex: Int { vaultOffset + vaults.count }
-    private var syncProgressIndex: Int { manageVaultsIndex + 1 }
+    private var workspaceOffset: Int { connections.count + 1 }
+    private var manageWorkspacesIndex: Int { workspaceOffset + workspaces.count }
+    private var syncProgressIndex: Int { manageWorkspacesIndex + 1 }
     private var menuOffset: Int { syncProgressIndex + (connections.isEmpty ? 0 : 1) }
     private var currentConnection: DahliaAccountConnection? {
         connections.first { $0.id == currentConnectionID }

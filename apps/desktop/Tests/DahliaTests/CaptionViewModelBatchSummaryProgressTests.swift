@@ -18,7 +18,7 @@ import Foundation
                 meetingID: fixture.first.id,
                 options: .manual,
                 dbQueue: fixture.database.dbQueue,
-                vaultURL: fixture.vaultURL
+                workspaceURL: fixture.workspaceURL
             )
 
             await viewModel.handleBatchTranscriptionUpdate(.init(
@@ -45,7 +45,7 @@ import Foundation
                 meetingID: fixture.first.id,
                 options: .manual,
                 dbQueue: fixture.database.dbQueue,
-                vaultURL: fixture.vaultURL
+                workspaceURL: fixture.workspaceURL
             )
             viewModel.registerConfirmedBatchSummarySessionsForTesting(
                 anchorSessionID: secondSessionID,
@@ -89,7 +89,7 @@ import Foundation
                 meetingID: fixture.first.id,
                 options: .manual,
                 dbQueue: fixture.database.dbQueue,
-                vaultURL: fixture.vaultURL
+                workspaceURL: fixture.workspaceURL
             )
             viewModel.registerConfirmedBatchSummarySessionsForTesting(
                 anchorSessionID: secondSessionID,

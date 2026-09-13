@@ -3,7 +3,7 @@ import Foundation
 struct ProjectAppearance: Codable, Equatable, Sendable {
     static let `default` = Self(icon: .folder, color: .neutral)
 
-    static let vaultDefault = Self(icon: .vault, color: .neutral)
+    static let workspaceDefault = Self(icon: .workspace, color: .neutral)
 
     var icon: ProjectIcon
     var color: ProjectThemeColor

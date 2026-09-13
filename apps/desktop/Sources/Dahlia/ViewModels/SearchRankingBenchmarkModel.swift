@@ -38,24 +38,24 @@ final class SearchRankingBenchmarkModel {
 
     var isRunning: Bool { phase != .idle }
 
-    /// 保存済みの正解データを読み込む。保管庫が変わっていれば破棄する。
-    func loadStoredJudgments(vaultID: UUID?) {
-        guard let vaultID else {
+    /// 保存済みの正解データを読み込む。ワークスペースが変わっていれば破棄する。
+    func loadStoredJudgments(workspaceID: UUID?) {
+        guard let workspaceID else {
             judgmentList = nil
             return
         }
         let stored = AppSettings.meetingSearchJudgmentList(in: .standard)
-        judgmentList = stored?.vaultID == vaultID ? stored : nil
+        judgmentList = stored?.workspaceID == workspaceID ? stored : nil
     }
 
     /// 正解データを作り直してから採点する。
-    func regenerateAndRun(vaultID: UUID?) {
-        start(vaultID: vaultID, reusingJudgments: false)
+    func regenerateAndRun(workspaceID: UUID?) {
+        start(workspaceID: workspaceID, reusingJudgments: false)
     }
 
     /// 保存済みの正解データがあればそれを使って採点し直す。
-    func runWithStoredJudgments(vaultID: UUID?) {
-        start(vaultID: vaultID, reusingJudgments: true)
+    func runWithStoredJudgments(workspaceID: UUID?) {
+        start(workspaceID: workspaceID, reusingJudgments: true)
     }
 
     func cancel() {
@@ -73,15 +73,15 @@ final class SearchRankingBenchmarkModel {
         result = nil
     }
 
-    private func start(vaultID: UUID?, reusingJudgments: Bool) {
+    private func start(workspaceID: UUID?, reusingJudgments: Bool) {
         guard !isRunning else { return }
-        guard let database, let vaultID else {
-            errorMessage = L10n.searchRequiresVault
+        guard let database, let workspaceID else {
+            errorMessage = L10n.searchRequiresWorkspace
             return
         }
         errorMessage = nil
         result = nil
-        let reusable = reusingJudgments && judgmentList?.vaultID == vaultID ? judgmentList : nil
+        let reusable = reusingJudgments && judgmentList?.workspaceID == workspaceID ? judgmentList : nil
         let currentPolicy = rankingPolicy()
         // 探索は数百回の検索を発行するため、書き込みキューを塞がない読み取り専用キューを使う。
         let dbQueue = database.searchDBQueue
@@ -95,7 +95,7 @@ final class SearchRankingBenchmarkModel {
                     judgments = reusable
                 } else {
                     judgments = try await MeetingSearchJudgmentService.generateJudgments(
-                        vaultID: vaultID,
+                        workspaceID: workspaceID,
                         dbQueue: dbQueue
                     )
                     try Task.checkCancellation()
@@ -110,7 +110,7 @@ final class SearchRankingBenchmarkModel {
                     generatedAt: judgments.generatedAt
                 ) { query, policy in
                     try await MeetingRepository.searchMeetingSidebarPage(
-                        vaultId: vaultID,
+                        workspaceId: workspaceID,
                         query: query,
                         rankingPolicy: policy,
                         limit: MeetingSearchRankingBenchmark.cutoff,

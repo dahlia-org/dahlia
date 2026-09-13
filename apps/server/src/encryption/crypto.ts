@@ -5,7 +5,7 @@ export interface EncryptionConfig {
 
 export class EncryptionError extends Error {
   constructor() {
-    super("vault_encryption_unavailable");
+    super("workspace_encryption_unavailable");
   }
 }
 
@@ -75,28 +75,28 @@ async function masterKey(config: EncryptionConfig | undefined, id: string): Prom
   return crypto.subtle.importKey("raw", key, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 
-export async function wrapDataKey(config: EncryptionConfig, vaultId: string, raw: Uint8Array<ArrayBuffer>): Promise<string> {
-  return seal(await masterKey(config, config.activeKeyId), config.activeKeyId, ["dahlia", vaultId, "vault_keys", "1"], raw);
+export async function wrapDataKey(config: EncryptionConfig, workspaceId: string, raw: Uint8Array<ArrayBuffer>): Promise<string> {
+  return seal(await masterKey(config, config.activeKeyId), config.activeKeyId, ["dahlia", workspaceId, "workspace_keys", "1"], raw);
 }
 
-export async function unwrapDataKey(config: EncryptionConfig | undefined, vaultId: string, wrapped: string): Promise<Uint8Array<ArrayBuffer>> {
+export async function unwrapDataKey(config: EncryptionConfig | undefined, workspaceId: string, wrapped: string): Promise<Uint8Array<ArrayBuffer>> {
   const id = envelope(wrapped).keyId;
-  const raw = await open(await masterKey(config, id), id, ["dahlia", vaultId, "vault_keys", "1"], wrapped);
+  const raw = await open(await masterKey(config, id), id, ["dahlia", workspaceId, "workspace_keys", "1"], wrapped);
   if (raw.length !== 32) throw new EncryptionError();
   return raw;
 }
 
-export async function createVaultCipher(vaultId: string, raw: Uint8Array<ArrayBuffer>) {
+export async function createWorkspaceCipher(workspaceId: string, raw: Uint8Array<ArrayBuffer>) {
   const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
   const source = await crypto.subtle.importKey("raw", raw, "HKDF", false, ["deriveKey"]);
-  const hashKey = await crypto.subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: encoder.encode(vaultId),
+  const hashKey = await crypto.subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: encoder.encode(workspaceId),
     info: encoder.encode("dahlia-content-comparison-v1") }, source, { name: "HMAC", hash: "SHA-256", length: 256 }, false, ["sign"]);
   return {
     encrypt(table: string, id: string, field: string, value: unknown) {
-      return seal(key, "1", ["dahlia", vaultId, table, id, field], encoder.encode(JSON.stringify(value)));
+      return seal(key, "1", ["dahlia", workspaceId, table, id, field], encoder.encode(JSON.stringify(value)));
     },
     async decrypt<T>(table: string, id: string, field: string, value: string): Promise<T> {
-      const bytes = await open(key, "1", ["dahlia", vaultId, table, id, field], value);
+      const bytes = await open(key, "1", ["dahlia", workspaceId, table, id, field], value);
       try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as T; }
       catch { throw new EncryptionError(); }
     },
@@ -107,4 +107,4 @@ export async function createVaultCipher(vaultId: string, raw: Uint8Array<ArrayBu
   };
 }
 
-export type VaultCipher = Awaited<ReturnType<typeof createVaultCipher>>;
+export type WorkspaceCipher = Awaited<ReturnType<typeof createWorkspaceCipher>>;

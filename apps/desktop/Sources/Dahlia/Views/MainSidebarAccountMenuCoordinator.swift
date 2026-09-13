@@ -11,13 +11,13 @@ struct MainSidebarAccountSelection {
 final class MainSidebarAccountMenuCoordinator: NSObject {
     weak var button: NSButton?
 
-    private var vaults: [VaultRecord]
-    private var currentVault: VaultRecord?
+    private var workspaces: [WorkspaceRecord]
+    private var currentWorkspace: WorkspaceRecord?
     private var connections: [DahliaAccountConnection]
     private var currentConnectionID: UUID?
     private var isLocalAccount: Bool
     private var isLocalAccountAvailable: Bool
-    private var onSelectVault: (VaultRecord) -> Void
+    private var onSelectWorkspace: (WorkspaceRecord) -> Void
     private var onOpenSettings: (SettingsCategory?) -> Void
     private var onSelectAccount: (DahliaAccountConnection?) -> Void
     private var onAccountAction: () -> Void
@@ -33,22 +33,22 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private var typeAheadBuffer = ""
 
     init(
-        vaults: [VaultRecord],
-        currentVault: VaultRecord?,
+        workspaces: [WorkspaceRecord],
+        currentWorkspace: WorkspaceRecord?,
         connections: [DahliaAccountConnection],
         accountSelection: MainSidebarAccountSelection,
-        onSelectVault: @escaping (VaultRecord) -> Void,
+        onSelectWorkspace: @escaping (WorkspaceRecord) -> Void,
         onOpenSettings: @escaping (SettingsCategory?) -> Void,
         onSelectAccount: @escaping (DahliaAccountConnection?) -> Void,
         onAccountAction: @escaping () -> Void
     ) {
-        self.vaults = vaults
-        self.currentVault = currentVault
+        self.workspaces = workspaces
+        self.currentWorkspace = currentWorkspace
         self.connections = connections
         currentConnectionID = accountSelection.connectionID
         isLocalAccount = accountSelection.isLocal
         isLocalAccountAvailable = accountSelection.isLocalAvailable
-        self.onSelectVault = onSelectVault
+        self.onSelectWorkspace = onSelectWorkspace
         self.onOpenSettings = onOpenSettings
         self.onSelectAccount = onSelectAccount
         self.onAccountAction = onAccountAction
@@ -59,22 +59,22 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     }
 
     func update(
-        vaults: [VaultRecord],
-        currentVault: VaultRecord?,
+        workspaces: [WorkspaceRecord],
+        currentWorkspace: WorkspaceRecord?,
         connections: [DahliaAccountConnection],
         accountSelection: MainSidebarAccountSelection,
-        onSelectVault: @escaping (VaultRecord) -> Void,
+        onSelectWorkspace: @escaping (WorkspaceRecord) -> Void,
         onOpenSettings: @escaping (SettingsCategory?) -> Void,
         onSelectAccount: @escaping (DahliaAccountConnection?) -> Void,
         onAccountAction: @escaping () -> Void
     ) {
-        self.vaults = vaults
-        self.currentVault = currentVault
+        self.workspaces = workspaces
+        self.currentWorkspace = currentWorkspace
         self.connections = connections
         currentConnectionID = accountSelection.connectionID
         isLocalAccount = accountSelection.isLocal
         isLocalAccountAvailable = accountSelection.isLocalAvailable
-        self.onSelectVault = onSelectVault
+        self.onSelectWorkspace = onSelectWorkspace
         self.onOpenSettings = onOpenSettings
         self.onSelectAccount = onSelectAccount
         self.onAccountAction = onAccountAction
@@ -108,8 +108,8 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 currentConnectionID: currentConnectionID,
                 isLocalAccount: isLocalAccount,
                 isLocalAccountAvailable: isLocalAccountAvailable,
-                vaults: vaults,
-                currentVault: currentVault,
+                workspaces: workspaces,
+                currentWorkspace: currentWorkspace,
                 onShowLanguages: { [weak self] in self?.presentLanguageMenu(anchorMinY: $0) },
                 onShowSyncProgress: { [weak self] in self?.presentSyncProgress(anchorMinY: $0) },
                 onDismissSubmenu: { [weak self] in self?.closeSubmenu() },
@@ -117,8 +117,8 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 onDismissAccountHelp: { [weak self] in self?.dismissAccountHelp() },
                 onOpenSettings: { [weak self] in self?.openSettings(category: $0) },
                 onSelectAccount: { [weak self] in self?.selectAccount($0) },
-                onSelectVault: { [weak self] in self?.selectVault($0) },
-                onManageVaults: { [weak self] in self?.manageVaults() },
+                onSelectWorkspace: { [weak self] in self?.selectWorkspace($0) },
+                onManageWorkspaces: { [weak self] in self?.manageWorkspaces() },
                 onAccountAction: { [weak self] in self?.performAccountAction() }
             )
         }
@@ -263,14 +263,14 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         closePanel(&accountHelpPanel)
     }
 
-    private func selectVault(_ vault: VaultRecord) {
+    private func selectWorkspace(_ workspace: WorkspaceRecord) {
         dismissMenu()
-        guard vault.id != currentVault?.id else { return }
-        onSelectVault(vault)
+        guard workspace.id != currentWorkspace?.id else { return }
+        onSelectWorkspace(workspace)
     }
 
-    private func manageVaults() {
-        openSettings(category: .accountsAndVaults)
+    private func manageWorkspaces() {
+        openSettings(category: .accountsAndWorkspaces)
     }
 
     private func openSettings(category: SettingsCategory? = nil) {
@@ -525,7 +525,7 @@ extension MainSidebarAccountMenuCoordinator {
     func activateRootSelection() {
         guard let selection = navigation.rootSelection else { return }
         if connections.indices.contains(selection) {
-            guard connections[selection].vaultCount > 0 else { return }
+            guard connections[selection].workspaceCount > 0 else { return }
             selectAccount(connections[selection])
             return
         }
@@ -534,13 +534,13 @@ extension MainSidebarAccountMenuCoordinator {
             selectAccount(nil)
             return
         }
-        let vaultIndex = selection - vaultOffset
-        if vaults.indices.contains(vaultIndex) {
-            selectVault(vaults[vaultIndex])
+        let workspaceIndex = selection - workspaceOffset
+        if workspaces.indices.contains(workspaceIndex) {
+            selectWorkspace(workspaces[workspaceIndex])
             return
         }
-        if selection == manageVaultsIndex {
-            manageVaults()
+        if selection == manageWorkspacesIndex {
+            manageWorkspaces()
             return
         }
         if !connections.isEmpty, selection == syncProgressIndex {
@@ -569,8 +569,8 @@ extension MainSidebarAccountMenuCoordinator {
         switch navigation.activeMenu {
         case .root:
             let titles = connections.map(\.displayName) + [L10n.localAccount]
-                + vaults.map(\.name)
-                + [L10n.manageVaults] + (connections.isEmpty ? [] : [L10n.syncProgress])
+                + workspaces.map(\.name)
+                + [L10n.manageWorkspaces] + (connections.isEmpty ? [] : [L10n.syncProgress])
                 + [L10n.language, L10n.settings, hasCurrentConnection ? L10n.signOut : L10n.dahliaSignIn]
             title = navigation.rootSelection.flatMap { titles.indices.contains($0) ? titles[$0] : nil }
         case .syncProgress:
@@ -600,13 +600,13 @@ extension MainSidebarAccountMenuCoordinator {
         connections.contains { $0.id == currentConnectionID }
     }
 
-    var vaultOffset: Int { connections.count + 1 }
-    var manageVaultsIndex: Int { vaultOffset + vaults.count }
-    var syncProgressIndex: Int { manageVaultsIndex + 1 }
+    var workspaceOffset: Int { connections.count + 1 }
+    var manageWorkspacesIndex: Int { workspaceOffset + workspaces.count }
+    var syncProgressIndex: Int { manageWorkspacesIndex + 1 }
     var menuOffset: Int { syncProgressIndex + (connections.isEmpty ? 0 : 1) }
 
     private func isRootIndexEnabled(_ index: Int) -> Bool {
-        if connections.indices.contains(index) { return connections[index].vaultCount > 0 }
+        if connections.indices.contains(index) { return connections[index].workspaceCount > 0 }
         if index == connections.count { return isLocalAccountAvailable }
         return true
     }

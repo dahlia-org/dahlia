@@ -173,12 +173,12 @@ import GRDB
             nonisolated static let query = "固有検索語"
 
             let database: AppDatabaseManager
-            let vault: VaultRecord
+            let workspace: WorkspaceRecord
             let ids: [String: UUID]
 
             init() async throws {
                 database = try AppDatabaseManager(path: ":memory:")
-                vault = VaultRecord(
+                workspace = WorkspaceRecord(
                     id: .v7(),
                     path: "/tmp/search-ranking-\(UUID.v7())",
                     name: "Ranking",
@@ -188,13 +188,13 @@ import GRDB
                 let titleID = UUID.v7()
                 let tagID = UUID.v7()
                 let summaryID = UUID.v7()
-                let vaultID = vault.id
-                let vaultRecord = vault
+                let workspaceID = workspace.id
+                let workspaceRecord = workspace
                 try await database.dbQueue.write { db in
-                    try vaultRecord.insert(db)
-                    try Self.meeting(id: titleID, vaultID: vaultID, name: "\(Self.query) の会議").insert(db)
-                    try Self.meeting(id: tagID, vaultID: vaultID, name: "タグ側の会議").insert(db)
-                    try Self.meeting(id: summaryID, vaultID: vaultID, name: "要約側の会議").insert(db)
+                    try workspaceRecord.insert(db)
+                    try Self.meeting(id: titleID, workspaceID: workspaceID, name: "\(Self.query) の会議").insert(db)
+                    try Self.meeting(id: tagID, workspaceID: workspaceID, name: "タグ側の会議").insert(db)
+                    try Self.meeting(id: summaryID, workspaceID: workspaceID, name: "要約側の会議").insert(db)
                     let tag = TagRecord(id: nil, name: Self.query, colorHex: "#808080", createdAt: .now)
                     try tag.insert(db)
                     try db.execute(
@@ -234,7 +234,7 @@ import GRDB
 
             func page(policy: MeetingSearchRankingPolicy) async throws -> MeetingSearchPage {
                 try await MeetingRepository.searchMeetingSidebarPage(
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     query: Self.query,
                     rankingPolicy: policy,
                     limit: 20,
@@ -246,10 +246,10 @@ import GRDB
                 try await page(policy: policy).items.map(\.id)
             }
 
-            private nonisolated static func meeting(id: UUID, vaultID: UUID, name: String) -> MeetingRecord {
+            private nonisolated static func meeting(id: UUID, workspaceID: UUID, name: String) -> MeetingRecord {
                 MeetingRecord(
                     id: id,
-                    vaultId: vaultID,
+                    workspaceId: workspaceID,
                     projectId: nil,
                     name: name,
                     description: "共通の説明文",

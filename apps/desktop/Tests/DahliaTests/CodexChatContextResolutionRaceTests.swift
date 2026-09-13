@@ -10,7 +10,7 @@ import Foundation
         func stopDuringContextResolutionCancelsBeforeSending() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let contextProvider = DelayedCodexChatContextProvider()
             let session = Self.session(service: service, settings: settings, contextProvider: contextProvider)
             session.draft = "Do not start"
@@ -27,10 +27,10 @@ import Foundation
         }
 
         @Test
-        func vaultSwitchDuringContextResolutionCancelsBeforeSending() async {
+        func workspaceSwitchDuringContextResolutionCancelsBeforeSending() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let contextProvider = DelayedCodexChatContextProvider()
             let session = Self.session(
                 backendThreadID: "existing-thread",
@@ -38,15 +38,15 @@ import Foundation
                 settings: settings,
                 contextProvider: contextProvider
             )
-            session.draft = "Stay in old vault"
+            session.draft = "Stay in old workspace"
 
             session.sendDraft()
             await waitUntil { contextProvider.isWaiting }
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             contextProvider.resume()
             await waitUntil { !session.isGenerating }
 
-            #expect(session.draft == "Stay in old vault")
+            #expect(session.draft == "Stay in old workspace")
             #expect(session.messages.isEmpty)
             #expect(await service.sentTextBlocks.isEmpty)
         }
@@ -55,7 +55,7 @@ import Foundation
         func approvalChangeDuringContextResolutionAppliesAfterSubmittedTurn() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let contextProvider = DelayedCodexChatContextProvider()
             let session = Self.session(
                 backendThreadID: "existing-thread",
@@ -92,10 +92,10 @@ import Foundation
             )
         }
 
-        private static func testVault() -> VaultRecord {
-            VaultRecord(
+        private static func testWorkspace() -> WorkspaceRecord {
+            WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/chat-context-race-test-vault",
+                path: "/tmp/chat-context-race-test-workspace",
                 name: "Chat Context Race Test",
                 createdAt: .now,
                 lastOpenedAt: .now
@@ -114,7 +114,7 @@ import Foundation
 
         var isWaiting: Bool { continuation != nil }
 
-        func currentContext(vaultID _: UUID) async throws -> CodexChatContext? {
+        func currentContext(workspaceID _: UUID) async throws -> CodexChatContext? {
             await withCheckedContinuation { continuation in
                 self.continuation = continuation
             }

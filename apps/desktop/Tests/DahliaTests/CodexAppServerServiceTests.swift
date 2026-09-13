@@ -1409,13 +1409,13 @@ import Foundation
             let configReadResult = JSONValue.object([
                 "config": .object([:]),
             ])
-            let vaultID = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))
+            let workspaceID = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))
             let executableURL = URL(fileURLWithPath: "/Applications/Dahlia Dev.app/Contents/Helpers/dahlia-mcp")
 
             let config = try #require(CodexAppServerService.chatThreadConfig(
                 from: configReadResult,
                 helperURL: executableURL,
-                vaultID: vaultID,
+                workspaceID: workspaceID,
                 runtimeProfile: .development
             ).objectValue)
             let server = try #require(config["mcp_servers"]?.objectValue?["dahlia"])
@@ -1426,8 +1426,8 @@ import Foundation
                 "args": .array([
                     .string("DAHLIA_RUNTIME_PROFILE=development"),
                     .string(executableURL.path),
-                    .string("--vault-id"),
-                    .string(TypeID.encode(vaultID, as: .vault)),
+                    .string("--workspace-id"),
+                    .string(TypeID.encode(workspaceID, as: .workspace)),
                     .string("--write"),
                     .string("--telemetry-origin"),
                     .string("codexChat"),

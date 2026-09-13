@@ -5,39 +5,39 @@
 
     struct BackupSettingsNavigationTests {
         @Test
-        func navigationUsesCurrentVaultWhenSwitchingIsUnavailable() {
-            let currentVaultID = UUID.v7()
-            let otherVaultID = UUID.v7()
+        func navigationUsesCurrentWorkspaceWhenSwitchingIsUnavailable() {
+            let currentWorkspaceID = UUID.v7()
+            let otherWorkspaceID = UUID.v7()
             let items = [
-                Self.item(vaultID: otherVaultID),
-                Self.item(vaultID: currentVaultID),
+                Self.item(workspaceID: otherWorkspaceID),
+                Self.item(workspaceID: currentWorkspaceID),
             ]
 
-            let target = BackupSettingsView.unprocessedRecordingsTargetVaultID(
+            let target = BackupSettingsView.unprocessedRecordingsTargetWorkspaceID(
                 in: items,
-                currentVaultID: currentVaultID,
-                canSwitchVault: false
+                currentWorkspaceID: currentWorkspaceID,
+                canSwitchWorkspace: false
             )
 
-            #expect(target == currentVaultID)
+            #expect(target == currentWorkspaceID)
         }
 
         @Test
-        func navigationIsUnavailableWhenAnotherVaultCannotBeOpened() {
-            let target = BackupSettingsView.unprocessedRecordingsTargetVaultID(
-                in: [Self.item(vaultID: .v7())],
-                currentVaultID: .v7(),
-                canSwitchVault: false
+        func navigationIsUnavailableWhenAnotherWorkspaceCannotBeOpened() {
+            let target = BackupSettingsView.unprocessedRecordingsTargetWorkspaceID(
+                in: [Self.item(workspaceID: .v7())],
+                currentWorkspaceID: .v7(),
+                canSwitchWorkspace: false
             )
 
             #expect(target == nil)
         }
 
-        private static func item(vaultID: UUID) -> BackupPreflightItem {
+        private static func item(workspaceID: UUID) -> BackupPreflightItem {
             BackupPreflightItem(
                 sessionId: .v7(),
                 meetingId: .v7(),
-                vaultId: vaultID,
+                workspaceId: workspaceID,
                 meetingName: "Recording",
                 startedAt: .now,
                 state: .failed,

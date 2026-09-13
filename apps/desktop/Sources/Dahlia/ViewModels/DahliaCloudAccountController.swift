@@ -6,20 +6,20 @@ struct DahliaAccountConnection: Identifiable, Equatable, Sendable {
     let record: DahliaAccountConnectionRecord
     let account: DahliaCloudAccount?
     let isCloud: Bool
-    let vaultCount: Int
+    let workspaceCount: Int
     let grantedScopes: Set<String>
 
     init(
         record: DahliaAccountConnectionRecord,
         account: DahliaCloudAccount?,
         isCloud: Bool,
-        vaultCount: Int = 0,
+        workspaceCount: Int = 0,
         grantedScopes: Set<String> = []
     ) {
         self.record = record
         self.account = account
         self.isCloud = isCloud
-        self.vaultCount = vaultCount
+        self.workspaceCount = workspaceCount
         self.grantedScopes = grantedScopes
     }
 
@@ -27,7 +27,7 @@ struct DahliaAccountConnection: Identifiable, Equatable, Sendable {
     var origin: String { record.origin }
     var isSignedIn: Bool { account != nil }
     var displayName: String { account?.displayName ?? origin }
-    var supportsVaultSync: Bool {
+    var supportsWorkspaceSync: Bool {
         grantedScopes.contains("all-apis")
     }
 }
@@ -128,7 +128,7 @@ final class DahliaCloudAccountController {
                 let (changes, continuation) = AsyncThrowingStream<Void, Error>.makeStream(bufferingPolicy: .bufferingNewest(1))
                 // Registration and reads stay off MainActor; writes only yield a coalesced invalidation.
                 let observation = try await queue.write { _ in
-                    DatabaseRegionObservation(tracking: VaultRecord.all(), Table<Row>("sync_transactions"), Table<Row>("sync_operations"))
+                    DatabaseRegionObservation(tracking: WorkspaceRecord.all(), Table<Row>("sync_transactions"), Table<Row>("sync_operations"))
                         .start(in: queue, onError: { continuation.finish(throwing: $0) }, onChange: { _ in continuation.yield(()) })
                 }
                 defer { observation.cancel()
@@ -159,7 +159,7 @@ final class DahliaCloudAccountController {
         }
         do {
             let records = try await repository.fetchDahliaAccountConnections()
-            let vaultCounts = try await repository.vaultCountsByAccountConnectionID()
+            let workspaceCounts = try await repository.workspaceCountsByAccountConnectionID()
             var loadedConnections: [DahliaAccountConnection] = []
             for record in records {
                 let service = try service(for: record)
@@ -169,7 +169,7 @@ final class DahliaCloudAccountController {
                     record: record,
                     account: credential?.account,
                     isCloud: isCloudOrigin(record.origin),
-                    vaultCount: vaultCounts[record.id, default: 0],
+                    workspaceCount: workspaceCounts[record.id, default: 0],
                     grantedScopes: credential?.grantedScopes ?? []
                 ))
             }
@@ -211,7 +211,7 @@ final class DahliaCloudAccountController {
     func requestSignOut(connectionID: UUID) {
         guard !isBusy else { return }
         guard let connection = connections.first(where: { $0.id == connectionID }) else { return }
-        if connection.vaultCount > 0 {
+        if connection.workspaceCount > 0 {
             pendingSignOutConnection = connection
         } else {
             _ = startSignOut(connectionID: connectionID)
@@ -219,10 +219,10 @@ final class DahliaCloudAccountController {
     }
 
     @discardableResult
-    func confirmSignOut(disposition: DahliaAccountVaultDisposition) -> Task<Void, Never>? {
+    func confirmSignOut(disposition: DahliaAccountWorkspaceDisposition) -> Task<Void, Never>? {
         guard let connection = pendingSignOutConnection else { return nil }
         pendingSignOutConnection = nil
-        return startSignOut(connectionID: connection.id, vaultDisposition: disposition)
+        return startSignOut(connectionID: connection.id, workspaceDisposition: disposition)
     }
 
     func cancelSignOut() {
@@ -232,14 +232,14 @@ final class DahliaCloudAccountController {
     @discardableResult
     func startSignOut(
         connectionID: UUID,
-        vaultDisposition: DahliaAccountVaultDisposition? = nil
+        workspaceDisposition: DahliaAccountWorkspaceDisposition? = nil
     ) -> Task<Void, Never>? {
         guard let generation = beginOperation(.signingOut(connectionID)) else { return nil }
         let task = Task { [weak self] in
             guard let self else { return }
             await signOut(
                 connectionID: connectionID,
-                vaultDisposition: vaultDisposition,
+                workspaceDisposition: workspaceDisposition,
                 generation: generation
             )
         }
@@ -411,22 +411,22 @@ final class DahliaCloudAccountController {
 
     private func signOut(
         connectionID: UUID,
-        vaultDisposition: DahliaAccountVaultDisposition?,
+        workspaceDisposition: DahliaAccountWorkspaceDisposition?,
         generation: Int
     ) async {
         defer { finishOperation(generation) }
         do {
             guard let connection = connections.first(where: { $0.id == connectionID }) else { return }
-            await syncWorker?.suspendCloudVaultDiscovery(connectionID: connectionID)
-            defer { Task { await syncWorker?.resumeCloudVaultDiscovery(connectionID: connectionID) } }
-            let vaults = try await repository?.fetchAllVaultsAsync() ?? []
-            if vaults.contains(where: { $0.accountConnectionId == connectionID }) {
-                guard let vaultDisposition, let repository else {
-                    throw DahliaAccountConnectionError.vaultDispositionRequired
+            await syncWorker?.suspendCloudWorkspaceDiscovery(connectionID: connectionID)
+            defer { Task { await syncWorker?.resumeCloudWorkspaceDiscovery(connectionID: connectionID) } }
+            let workspaces = try await repository?.fetchAllWorkspacesAsync() ?? []
+            if workspaces.contains(where: { $0.accountConnectionId == connectionID }) {
+                guard let workspaceDisposition, let repository else {
+                    throw DahliaAccountConnectionError.workspaceDispositionRequired
                 }
-                try await repository.resolveVaultsForSignOut(
+                try await repository.resolveWorkspacesForSignOut(
                     connectionID: connectionID,
-                    disposition: vaultDisposition
+                    disposition: workspaceDisposition
                 )
             }
             do {
@@ -473,9 +473,9 @@ final class DahliaCloudAccountController {
             if try await repository.connectionHasPendingServerDeletion(id: connectionID) {
                 throw DahliaAccountConnectionError.pendingServerDeletion
             }
-            if VaultAISettingsModel.shared.accountConnectionID == connectionID {
-                VaultAISettingsModel.shared.accountConnectionID = nil
-                guard await VaultAISettingsModel.shared.waitForRuntimeContext() else {
+            if WorkspaceAISettingsModel.shared.accountConnectionID == connectionID {
+                WorkspaceAISettingsModel.shared.accountConnectionID = nil
+                guard await WorkspaceAISettingsModel.shared.waitForRuntimeContext() else {
                     throw CodexConfigurationError.accountNotReady
                 }
             }
@@ -505,7 +505,7 @@ final class DahliaCloudAccountController {
     }
 
     private func reloadCodexAuthenticationIfActive(_ connectionID: UUID) async throws {
-        guard VaultAISettingsModel.shared.accountConnectionID == connectionID else { return }
+        guard WorkspaceAISettingsModel.shared.accountConnectionID == connectionID else { return }
         try await CodexAppServerService.shared.reloadConfiguration()
     }
 

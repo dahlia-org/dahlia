@@ -24,7 +24,7 @@ struct MeetingProjectPicker: View {
     }
 
     private var canEdit: Bool {
-        sidebarViewModel.canEditCurrentVault
+        sidebarViewModel.canEditCurrentWorkspace
     }
 
     private var showsRemoveButton: Bool {
@@ -46,7 +46,7 @@ struct MeetingProjectPicker: View {
         return mainWindowNavigation.projectAppearance(
             for: project.projectId,
             in: sidebarViewModel.projectItemsByID,
-            vaultId: sidebarViewModel.currentVault?.id
+            workspaceId: sidebarViewModel.currentWorkspace?.id
         ).color.color
     }
 

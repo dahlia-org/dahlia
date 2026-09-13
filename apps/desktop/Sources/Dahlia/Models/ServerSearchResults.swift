@@ -21,7 +21,7 @@ struct ServerSearchResults: Decodable, Sendable {
         var any: Bool { meeting || screenshot || project }
     }
 
-    let vaultId: UUID
+    let workspaceId: UUID
     let meetings: [Hit]
     let screenshots: [Hit]
     let projects: [Hit]

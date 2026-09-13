@@ -42,7 +42,7 @@ import GRDB
                 try db.execute(sql: "UPDATE search_documents SET sourceContentHash = 'changed' WHERE id = ?", arguments: [documentID])
                 try db.execute(
                     sql: """
-                    INSERT INTO search_documents(kind, sourceId, vaultId, projectId, sourceContentHash, indexGeneration, updatedAt)
+                    INSERT INTO search_documents(kind, sourceId, workspace_id, projectId, sourceContentHash, indexGeneration, updatedAt)
                     VALUES('project', ?, ?, ?, 'new', 1, ?)
                     """,
                     arguments: [UUID.v7(), UUID.v7(), UUID.v7(), Date()]

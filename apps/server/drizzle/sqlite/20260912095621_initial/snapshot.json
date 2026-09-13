@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "481282b7-4152-461c-8eed-f299aa10a0c8",
+  "id": "8f731c85-7c5a-4f3a-b25b-c1f65e3675a2",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -123,7 +123,7 @@
       "entityType": "tables"
     },
     {
-      "name": "sync_vault_state",
+      "name": "sync_workspace_state",
       "entityType": "tables"
     },
     {
@@ -147,11 +147,11 @@
       "entityType": "tables"
     },
     {
-      "name": "vaults",
+      "name": "workspaces",
       "entityType": "tables"
     },
     {
-      "name": "vault_permissions",
+      "name": "workspace_permissions",
       "entityType": "tables"
     },
     {
@@ -163,11 +163,11 @@
       "entityType": "tables"
     },
     {
-      "name": "vault_keys",
+      "name": "workspace_keys",
       "entityType": "tables"
     },
     {
-      "name": "vault_transfers",
+      "name": "workspace_transfers",
       "entityType": "tables"
     },
     {
@@ -2076,7 +2076,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "table": "jobs_image_analysis"
     },
@@ -2176,7 +2176,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "table": "meeting_attachments"
     },
@@ -2256,7 +2256,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "table": "meeting_events"
     },
@@ -2376,7 +2376,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "table": "search_documents"
     },
@@ -2516,7 +2516,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "table": "jobs_search_index"
     },
@@ -2846,7 +2846,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "table": "jobs_summary"
     },
@@ -3056,7 +3056,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "table": "sync_changes"
     },
@@ -3156,7 +3156,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "table": "transaction_receipts"
     },
@@ -3216,9 +3216,9 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
-      "table": "sync_vault_state"
+      "table": "sync_workspace_state"
     },
     {
       "type": "integer",
@@ -3228,7 +3228,7 @@
       "generated": null,
       "name": "latest_sequence",
       "entityType": "columns",
-      "table": "sync_vault_state"
+      "table": "sync_workspace_state"
     },
     {
       "type": "integer",
@@ -3238,7 +3238,7 @@
       "generated": null,
       "name": "pruned_through",
       "entityType": "columns",
-      "table": "sync_vault_state"
+      "table": "sync_workspace_state"
     },
     {
       "type": "text",
@@ -3266,7 +3266,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "table": "files"
     },
@@ -3416,7 +3416,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "table": "meetings"
     },
@@ -3606,7 +3606,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "table": "projects"
     },
@@ -3898,7 +3898,7 @@
       "generated": null,
       "name": "encryption",
       "entityType": "columns",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "text",
@@ -3908,7 +3908,7 @@
       "generated": null,
       "name": "encrypted_payload",
       "entityType": "columns",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "text",
@@ -3916,9 +3916,9 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "text",
@@ -3928,7 +3928,7 @@
       "generated": null,
       "name": "organization_id",
       "entityType": "columns",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "text",
@@ -3938,7 +3938,7 @@
       "generated": null,
       "name": "created_by",
       "entityType": "columns",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "text",
@@ -3948,7 +3948,7 @@
       "generated": null,
       "name": "name",
       "entityType": "columns",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "text",
@@ -3958,7 +3958,7 @@
       "generated": null,
       "name": "icon",
       "entityType": "columns",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "text",
@@ -3968,7 +3968,7 @@
       "generated": null,
       "name": "color",
       "entityType": "columns",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "integer",
@@ -3978,7 +3978,7 @@
       "generated": null,
       "name": "revision",
       "entityType": "columns",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "integer",
@@ -3988,7 +3988,7 @@
       "generated": null,
       "name": "deleting_at",
       "entityType": "columns",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "integer",
@@ -3998,7 +3998,7 @@
       "generated": null,
       "name": "created_at",
       "entityType": "columns",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "integer",
@@ -4008,7 +4008,7 @@
       "generated": null,
       "name": "updated_at",
       "entityType": "columns",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "text",
@@ -4016,9 +4016,9 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "type": "text",
@@ -4028,7 +4028,7 @@
       "generated": null,
       "name": "principal_type",
       "entityType": "columns",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "type": "text",
@@ -4038,7 +4038,7 @@
       "generated": null,
       "name": "principal_id",
       "entityType": "columns",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "type": "text",
@@ -4048,7 +4048,7 @@
       "generated": null,
       "name": "role",
       "entityType": "columns",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "type": "text",
@@ -4058,7 +4058,7 @@
       "generated": null,
       "name": "granted_by_user_id",
       "entityType": "columns",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "type": "integer",
@@ -4068,7 +4068,7 @@
       "generated": null,
       "name": "created_at",
       "entityType": "columns",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "type": "text",
@@ -4176,7 +4176,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "table": "transcript_patch_chunks"
     },
@@ -4246,9 +4246,9 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
-      "table": "vault_keys"
+      "table": "workspace_keys"
     },
     {
       "type": "text",
@@ -4258,7 +4258,7 @@
       "generated": null,
       "name": "wrapped_key",
       "entityType": "columns",
-      "table": "vault_keys"
+      "table": "workspace_keys"
     },
     {
       "type": "integer",
@@ -4268,7 +4268,7 @@
       "generated": null,
       "name": "created_at",
       "entityType": "columns",
-      "table": "vault_keys"
+      "table": "workspace_keys"
     },
     {
       "type": "integer",
@@ -4278,7 +4278,7 @@
       "generated": null,
       "name": "sequence",
       "entityType": "columns",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "type": "text",
@@ -4288,7 +4288,7 @@
       "generated": null,
       "name": "id",
       "entityType": "columns",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "type": "text",
@@ -4298,7 +4298,7 @@
       "generated": null,
       "name": "owner_user_id",
       "entityType": "columns",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "type": "text",
@@ -4308,7 +4308,7 @@
       "generated": null,
       "name": "idempotency_key",
       "entityType": "columns",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "type": "text",
@@ -4318,7 +4318,7 @@
       "generated": null,
       "name": "request_hash",
       "entityType": "columns",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "type": "text",
@@ -4326,9 +4326,9 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "source_vault_id",
+      "name": "source_workspace_id",
       "entityType": "columns",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "type": "text",
@@ -4336,9 +4336,9 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "destination_vault_id",
+      "name": "destination_workspace_id",
       "entityType": "columns",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "type": "text",
@@ -4348,7 +4348,7 @@
       "generated": null,
       "name": "manifest",
       "entityType": "columns",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "columns": [
@@ -4697,16 +4697,16 @@
     },
     {
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_jobs_image_analysis_vault_id_vaults_vault_id_fk",
+      "name": "fk_jobs_image_analysis_workspace_id_workspaces_workspace_id_fk",
       "entityType": "fks",
       "table": "jobs_image_analysis"
     },
@@ -4727,50 +4727,50 @@
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "meeting_id"
       ],
       "tableTo": "meetings",
       "columnsTo": [
-        "vault_id",
+        "workspace_id",
         "meeting_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_meeting_attachments_vault_id_meeting_id_meetings_vault_id_meeting_id_fk",
+      "name": "fk_meeting_attachments_workspace_id_meeting_id_meetings_workspace_id_meeting_id_fk",
       "entityType": "fks",
       "table": "meeting_attachments"
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "file_id"
       ],
       "tableTo": "files",
       "columnsTo": [
-        "vault_id",
+        "workspace_id",
         "file_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": false,
-      "name": "fk_meeting_attachments_vault_id_file_id_files_vault_id_file_id_fk",
+      "name": "fk_meeting_attachments_workspace_id_file_id_files_workspace_id_file_id_fk",
       "entityType": "fks",
       "table": "meeting_attachments"
     },
     {
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_meeting_events_vault_id_vaults_vault_id_fk",
+      "name": "fk_meeting_events_workspace_id_workspaces_workspace_id_fk",
       "entityType": "fks",
       "table": "meeting_events"
     },
@@ -4791,33 +4791,33 @@
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "meeting_id"
       ],
       "tableTo": "meetings",
       "columnsTo": [
-        "vault_id",
+        "workspace_id",
         "meeting_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_search_documents_vault_id_meeting_id_meetings_vault_id_meeting_id_fk",
+      "name": "fk_search_documents_workspace_id_meeting_id_meetings_workspace_id_meeting_id_fk",
       "entityType": "fks",
       "table": "search_documents"
     },
     {
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_jobs_search_index_vault_id_vaults_vault_id_fk",
+      "name": "fk_jobs_search_index_workspace_id_workspaces_workspace_id_fk",
       "entityType": "fks",
       "table": "jobs_search_index"
     },
@@ -4838,16 +4838,16 @@
     },
     {
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_jobs_summary_vault_id_vaults_vault_id_fk",
+      "name": "fk_jobs_summary_workspace_id_workspaces_workspace_id_fk",
       "entityType": "fks",
       "table": "jobs_summary"
     },
@@ -4898,80 +4898,80 @@
     },
     {
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_files_vault_id_vaults_vault_id_fk",
+      "name": "fk_files_workspace_id_workspaces_workspace_id_fk",
       "entityType": "fks",
       "table": "files"
     },
     {
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_meetings_vault_id_vaults_vault_id_fk",
+      "name": "fk_meetings_workspace_id_workspaces_workspace_id_fk",
       "entityType": "fks",
       "table": "meetings"
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "project_id"
       ],
       "tableTo": "projects",
       "columnsTo": [
-        "vault_id",
+        "workspace_id",
         "project_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": false,
-      "name": "fk_meetings_vault_id_project_id_projects_vault_id_project_id_fk",
+      "name": "fk_meetings_workspace_id_project_id_projects_workspace_id_project_id_fk",
       "entityType": "fks",
       "table": "meetings"
     },
     {
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_projects_vault_id_vaults_vault_id_fk",
+      "name": "fk_projects_workspace_id_workspaces_workspace_id_fk",
       "entityType": "fks",
       "table": "projects"
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "parent_project_id"
       ],
       "tableTo": "projects",
       "columnsTo": [
-        "vault_id",
+        "workspace_id",
         "project_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
       "nameExplicit": false,
-      "name": "fk_projects_vault_id_parent_project_id_projects_vault_id_project_id_fk",
+      "name": "fk_projects_workspace_id_parent_project_id_projects_workspace_id_project_id_fk",
       "entityType": "fks",
       "table": "projects"
     },
@@ -5016,24 +5016,24 @@
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
       "nameExplicit": false,
-      "name": "fk_vaults_organization_id_organization_id_fk",
+      "name": "fk_workspaces_organization_id_organization_id_fk",
       "entityType": "fks",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_vault_permissions_vault_id_vaults_vault_id_fk",
+      "name": "fk_workspace_permissions_workspace_id_workspaces_workspace_id_fk",
       "entityType": "fks",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "columns": [
@@ -5046,9 +5046,9 @@
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
       "nameExplicit": false,
-      "name": "fk_vault_permissions_granted_by_user_id_user_id_fk",
+      "name": "fk_workspace_permissions_granted_by_user_id_user_id_fk",
       "entityType": "fks",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "columns": [
@@ -5067,18 +5067,18 @@
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "meeting_id"
       ],
       "tableTo": "meetings",
       "columnsTo": [
-        "vault_id",
+        "workspace_id",
         "meeting_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_transcript_patch_chunks_vault_id_meeting_id_meetings_vault_id_meeting_id_fk",
+      "name": "fk_transcript_patch_chunks_workspace_id_meeting_id_meetings_workspace_id_meeting_id_fk",
       "entityType": "fks",
       "table": "transcript_patch_chunks"
     },
@@ -5093,13 +5093,13 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_vault_transfers_owner_user_id_user_id_fk",
+      "name": "fk_workspace_transfers_owner_user_id_user_id_fk",
       "entityType": "fks",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "document_id"
       ],
       "nameExplicit": false,
@@ -5109,7 +5109,7 @@
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "document_id"
       ],
       "nameExplicit": false,
@@ -5119,12 +5119,12 @@
     },
     {
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
       "nameExplicit": false,
-      "name": "sync_vault_state_pk",
+      "name": "sync_workspace_state_pk",
       "entityType": "pks",
-      "table": "sync_vault_state"
+      "table": "sync_workspace_state"
     },
     {
       "columns": [
@@ -5138,18 +5138,18 @@
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "principal_type",
         "principal_id"
       ],
       "nameExplicit": false,
-      "name": "vault_permissions_pk",
+      "name": "workspace_permissions_pk",
       "entityType": "pks",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "meeting_id",
         "patch_id",
         "chunk_index"
@@ -5440,11 +5440,11 @@
     },
     {
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
       "nameExplicit": false,
-      "name": "vaults_pk",
-      "table": "vaults",
+      "name": "workspaces_pk",
+      "table": "workspaces",
       "entityType": "pks"
     },
     {
@@ -5458,11 +5458,11 @@
     },
     {
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
       "nameExplicit": false,
-      "name": "vault_keys_pk",
-      "table": "vault_keys",
+      "name": "workspace_keys_pk",
+      "table": "workspace_keys",
       "entityType": "pks"
     },
     {
@@ -5470,8 +5470,8 @@
         "sequence"
       ],
       "nameExplicit": false,
-      "name": "vault_transfers_pk",
-      "table": "vault_transfers",
+      "name": "workspace_transfers_pk",
+      "table": "workspace_transfers",
       "entityType": "pks"
     },
     {
@@ -5885,7 +5885,7 @@
     {
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false
         },
         {
@@ -5900,14 +5900,14 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "meeting_attachments_vault_meeting_id_idx",
+      "name": "meeting_attachments_workspace_meeting_id_idx",
       "entityType": "indexes",
       "table": "meeting_attachments"
     },
     {
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false
         },
         {
@@ -5933,7 +5933,7 @@
     {
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false
         },
         {
@@ -5951,7 +5951,7 @@
     {
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false
         },
         {
@@ -5970,7 +5970,7 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "search_document_vault_kind_meeting_document_idx",
+      "name": "search_document_workspace_kind_meeting_document_idx",
       "entityType": "indexes",
       "table": "search_documents"
     },
@@ -6053,7 +6053,7 @@
     {
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false
         },
         {
@@ -6064,7 +6064,7 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "sync_change_vault_sequence_idx",
+      "name": "sync_change_workspace_sequence_idx",
       "entityType": "indexes",
       "table": "sync_changes"
     },
@@ -6089,7 +6089,7 @@
     {
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false
         },
         {
@@ -6100,7 +6100,7 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "files_vault_file_idx",
+      "name": "files_workspace_file_idx",
       "entityType": "indexes",
       "table": "files"
     },
@@ -6125,7 +6125,7 @@
     {
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false
         },
         {
@@ -6140,14 +6140,14 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "synced_meeting_vault_created_id_idx",
+      "name": "synced_meeting_workspace_created_id_idx",
       "entityType": "indexes",
       "table": "meetings"
     },
     {
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false
         },
         {
@@ -6162,7 +6162,7 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "project_vault_parent_name_idx",
+      "name": "project_workspace_parent_name_idx",
       "entityType": "indexes",
       "table": "projects"
     },
@@ -6239,16 +6239,16 @@
           "isExpression": false
         },
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false
         }
       ],
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "vault_permission_principal_vault_idx",
+      "name": "workspace_permission_principal_workspace_idx",
       "entityType": "indexes",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "columns": [
@@ -6264,9 +6264,9 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "vault_transfer_owner_sequence_idx",
+      "name": "workspace_transfer_owner_sequence_idx",
       "entityType": "indexes",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "columns": [
@@ -6290,31 +6290,31 @@
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "file_id"
       ],
       "nameExplicit": true,
-      "name": "files_vault_file_unique",
+      "name": "files_workspace_file_unique",
       "entityType": "uniques",
       "table": "files"
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "meeting_id"
       ],
       "nameExplicit": true,
-      "name": "synced_meeting_vault_meeting_unique",
+      "name": "synced_meeting_workspace_meeting_unique",
       "entityType": "uniques",
       "table": "meetings"
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "project_id"
       ],
       "nameExplicit": true,
-      "name": "project_vault_project_unique",
+      "name": "project_workspace_project_unique",
       "entityType": "uniques",
       "table": "projects"
     },
@@ -6344,9 +6344,9 @@
         "idempotency_key"
       ],
       "nameExplicit": true,
-      "name": "vault_transfer_owner_key_unique",
+      "name": "workspace_transfer_owner_key_unique",
       "entityType": "uniques",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "columns": [
@@ -6425,9 +6425,9 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "vault_transfers_id_unique",
+      "name": "workspace_transfers_id_unique",
       "entityType": "uniques",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "value": "\"status\" IN ('pending', 'processing', 'failed')",
@@ -6490,7 +6490,7 @@
       "table": "jobs_summary"
     },
     {
-      "value": "\"entity\" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')",
+      "value": "\"entity\" IN ('workspace', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')",
       "name": "sync_change_entity_check",
       "entityType": "checks",
       "table": "sync_changes"
@@ -6503,9 +6503,9 @@
     },
     {
       "value": "\"pruned_through\" >= 0 AND \"latest_sequence\" >= \"pruned_through\"",
-      "name": "sync_vault_state_boundary_check",
+      "name": "sync_workspace_state_boundary_check",
       "entityType": "checks",
-      "table": "sync_vault_state"
+      "table": "sync_workspace_state"
     },
     {
       "value": "\"offset\" = 0",
@@ -6551,15 +6551,15 @@
     },
     {
       "value": "\"principal_type\" IN ('user', 'organization', 'team')",
-      "name": "vault_permission_principal_type_check",
+      "name": "workspace_permission_principal_type_check",
       "entityType": "checks",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "value": "\"role\" IN ('admin', 'editor', 'viewer')",
-      "name": "vault_permission_role_check",
+      "name": "workspace_permission_role_check",
       "entityType": "checks",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "value": "\"version\" >= 1",
@@ -6568,14 +6568,14 @@
       "table": "transcripts"
     },
     {
-      "definition": "\n  SELECT vault_id, meeting_id, session_id,\n    min(CASE WHEN kind = 'recording_started' THEN occurred_at END) AS started_at,\n    max(CASE WHEN kind = 'recording_ended' THEN occurred_at END) AS ended_at\n  FROM meeting_events\n  WHERE session_id IS NOT NULL AND kind IN ('recording_started', 'recording_ended')\n  GROUP BY vault_id, meeting_id, session_id\n",
+      "definition": "\n  SELECT workspace_id, meeting_id, session_id,\n    min(CASE WHEN kind = 'recording_started' THEN occurred_at END) AS started_at,\n    max(CASE WHEN kind = 'recording_ended' THEN occurred_at END) AS ended_at\n  FROM meeting_events\n  WHERE session_id IS NOT NULL AND kind IN ('recording_started', 'recording_ended')\n  GROUP BY workspace_id, meeting_id, session_id\n",
       "isExisting": false,
       "error": null,
       "name": "recording_sessions",
       "entityType": "views"
     },
     {
-      "definition": "\n  SELECT m.id AS screenshot_id, f.file_id, m.vault_id, m.meeting_id,\n    coalesce(m.captured_at, m.created_at) AS captured_at, f.content_type,\n    'files/' || f.file_id || '/original' AS storage_key,\n    f.size AS content_length, substr(f.checksum, 9) AS content_hash, f.active,\n    json_extract(f.metadata, '$.ocr_text') AS ocr_text,\n    json_extract(f.metadata, '$.caption') AS caption,\n    m.revision\n  FROM meeting_attachments m JOIN files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id\n  WHERE json_extract(f.metadata, '$.source') = 'screenshot'\n",
+      "definition": "\n  SELECT m.id AS screenshot_id, f.file_id, m.workspace_id, m.meeting_id,\n    coalesce(m.captured_at, m.created_at) AS captured_at, f.content_type,\n    'files/' || f.file_id || '/original' AS storage_key,\n    f.size AS content_length, substr(f.checksum, 9) AS content_hash, f.active,\n    json_extract(f.metadata, '$.ocr_text') AS ocr_text,\n    json_extract(f.metadata, '$.caption') AS caption,\n    m.revision\n  FROM meeting_attachments m JOIN files f ON f.file_id = m.file_id AND f.workspace_id = m.workspace_id\n  WHERE json_extract(f.metadata, '$.source') = 'screenshot'\n",
       "isExisting": false,
       "error": null,
       "name": "meeting_images",

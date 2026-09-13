@@ -7,7 +7,7 @@ public enum TranscriptAfterError: String, Error {
 }
 
 struct TranscriptAfter: Codable {
-    let vaultID: UUID
+    let workspaceID: UUID
     let meetingID: UUID
     let from: Double?
     let to: Double?
@@ -17,7 +17,7 @@ struct TranscriptAfter: Codable {
 
     // ponytail: O(n) prefix verification detects edits/deletions/late inserts; use a change journal if long-meeting reads become costly.
     static func page(
-        vaultID: UUID,
+        workspaceID: UUID,
         meetingID: UUID,
         from: Double?,
         to: Double?,
@@ -36,7 +36,7 @@ struct TranscriptAfter: Codable {
         if let after {
             guard after.utf8.count <= 2048, let bytes = Data(base64Encoded: after),
                   let previous = try? JSONDecoder().decode(Self.self, from: bytes), previous.position >= 0,
-                  previous.vaultID == vaultID, previous.meetingID == meetingID, previous.from == from, previous.to == to else {
+                  previous.workspaceID == workspaceID, previous.meetingID == meetingID, previous.from == from, previous.to == to else {
                 throw TranscriptAfterError.invalid
             }
             guard previous.generation == generation || previous.generation == "none", previous.position <= segments.count,
@@ -44,7 +44,15 @@ struct TranscriptAfter: Codable {
             position = previous.position
         }
         let end = min(segments.count, position + limit)
-        let next = try Self(vaultID: vaultID, meetingID: meetingID, from: from, to: to, generation: generation, position: end, digest: digest(end))
+        let next = try Self(
+            workspaceID: workspaceID,
+            meetingID: meetingID,
+            from: from,
+            to: to,
+            generation: generation,
+            position: end,
+            digest: digest(end)
+        )
         return try (Array(segments[position ..< end]), encoder.encode(next).base64EncodedString())
     }
 }

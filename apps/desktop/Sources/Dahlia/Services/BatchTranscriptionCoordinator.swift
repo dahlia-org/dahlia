@@ -42,7 +42,7 @@ actor BatchTranscriptionCoordinator {
     struct Job {
         let session: RecordingSessionRecord
         let meeting: MeetingRecord
-        let vault: VaultRecord
+        let workspace: WorkspaceRecord
         let projectName: String
     }
 
@@ -593,7 +593,7 @@ actor BatchTranscriptionCoordinator {
         try dbQueue.read { db in
             guard let session = try RecordingSessionRecord.fetchOne(db, key: sessionId),
                   let meeting = try MeetingRecord.fetchOne(db, key: session.meetingId),
-                  let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId) else {
+                  let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId) else {
                 throw CocoaError(.fileNoSuchFile)
             }
             let projectName: String = if let projectId = meeting.projectId,
@@ -611,14 +611,14 @@ actor BatchTranscriptionCoordinator {
             return Job(
                 session: session,
                 meeting: meeting,
-                vault: vault,
+                workspace: workspace,
                 projectName: projectName
             )
         }
     }
 
     private func exportTranscript(for job: Job) throws {
-        guard let vaultURL = job.vault.url else { return }
+        guard let workspaceURL = job.workspace.url else { return }
         let detail = try dbQueue.read { db in
             let segments = try TextContentAccess.transcript(meetingId: job.meeting.id, in: db)
             let sessions = try RecordingSessionRecord
@@ -628,7 +628,7 @@ actor BatchTranscriptionCoordinator {
             return (segments, sessions)
         }
         _ = try TranscriptExportService.exportTranscript(
-            vaultURL: vaultURL,
+            workspaceURL: workspaceURL,
             meetingId: job.meeting.id,
             projectName: job.projectName,
             createdAt: job.meeting.effectiveRecordingStartedAt,

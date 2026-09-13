@@ -12,7 +12,7 @@ import Synchronization
         func eligibilityRequiresOwnerCapabilityAndSynchronizedVersion() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let meetingID = UUID.v7()
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             let connectionID = UUID.v7()
             let origin = try #require(URL(string: "https://\(UUID().uuidString).example.test"))
             try await database.dbQueue.write { db in
@@ -22,8 +22,8 @@ import Synchronization
                     clientID: "test",
                     createdAt: .now
                 ).insert(db)
-                try VaultRecord(
-                    id: vaultID,
+                try WorkspaceRecord(
+                    id: workspaceID,
                     path: nil,
                     name: "Server",
                     createdAt: .now,
@@ -31,7 +31,7 @@ import Synchronization
                 ).insert(db)
                 try MeetingRecord(
                     id: meetingID,
-                    vaultId: vaultID,
+                    workspaceId: workspaceID,
                     projectId: nil,
                     name: "Meeting",
                     createdAt: .now,
@@ -53,21 +53,21 @@ import Synchronization
 
             #expect(try await service.eligibility(meetingID: meetingID, dbQueue: database.dbQueue) == .hidden)
             try await database.dbQueue.write { db in
-                let fetched = try VaultRecord.fetchOne(db, key: vaultID)
-                var vault = try #require(fetched)
-                vault.accountConnectionId = connectionID
-                if vault.syncRole == nil { vault.syncRole = "admin" }
-                if vault.organizationId == nil { vault.organizationId = .v7() }
-                vault.syncConfirmedConnectionId = connectionID
-                vault.syncRole = "viewer"
-                try vault.update(db)
+                let fetched = try WorkspaceRecord.fetchOne(db, key: workspaceID)
+                var workspace = try #require(fetched)
+                workspace.accountConnectionId = connectionID
+                if workspace.syncRole == nil { workspace.syncRole = "admin" }
+                if workspace.organizationId == nil { workspace.organizationId = .v7() }
+                workspace.syncConfirmedConnectionId = connectionID
+                workspace.syncRole = "viewer"
+                try workspace.update(db)
             }
             #expect(try await service.eligibility(meetingID: meetingID, dbQueue: database.dbQueue) == .hidden)
             try await database.dbQueue.write { db in
-                let fetched = try VaultRecord.fetchOne(db, key: vaultID)
-                var vault = try #require(fetched)
-                vault.syncRole = "admin"
-                try vault.update(db)
+                let fetched = try WorkspaceRecord.fetchOne(db, key: workspaceID)
+                var workspace = try #require(fetched)
+                workspace.syncRole = "admin"
+                try workspace.update(db)
             }
             #expect(try await service.eligibility(meetingID: meetingID, dbQueue: database.dbQueue) == .hidden)
             capability.withLock { $0 = Data(#"{"conversationAnalytics":{"version":1}}"#.utf8) }

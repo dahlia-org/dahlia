@@ -11,8 +11,8 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - **Automatic Batch Language Detection** — Detect each recording file's language with WhisperKit, then transcribe it with Apple Speech
 - **Codex Summaries** — Generate structured summaries through the bundled Codex app-server (optional)
 - **Optional Dahlia Server** — Self-host an authenticated Responses gateway for the bundled Codex without distributing provider credentials to each user. The official managed offering is Dahlia Cloud.
-- **AI Meeting Access** — Explore meeting evidence and optionally reorganize Projects or correct summaries through a vault-scoped local MCP server
-- **Project Management** — Organize meetings in a database-backed root/subproject workspace hierarchy, with chronological or Project-grouped sidebar views and Vault-scoped pinned Projects
+- **AI Meeting Access** — Explore meeting evidence and optionally reorganize Projects or correct summaries through a workspace-scoped local MCP server
+- **Project Management** — Organize meetings in a database-backed root/subproject workspace hierarchy, with chronological or Project-grouped sidebar views and Workspace-scoped pinned Projects
 - **Conversation Analytics (Beta)** — Compare speaking pace, speaking-time balance, conversation occupancy, and overlapping speech from confirmed microphone and system-audio transcripts
 - **Meeting Detection** — Combine microphone activity with supported app or meeting-window evidence and offer to start recording
 - **Calendar Auto-Recording** — Arm an individual upcoming event from the main window or menu bar to start recording automatically at its scheduled time
@@ -30,17 +30,17 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - Swift 6.2
 - Xcode 26+ (for Swift toolchain)
 
-On a new installation, Dahlia creates `Documents/Dahlia`, registers it as the `Default` vault, and opens it automatically. Existing vault registrations are preserved. If automatic setup fails, Dahlia shows the vault manager so you can select a folder manually.
+On a new installation, Dahlia creates `Documents/Dahlia`, registers it as the `Default` workspace, and opens it automatically. Existing workspace registrations are preserved. If automatic setup fails, Dahlia shows the workspace manager so you can select a folder manually.
 
 Dahlia keeps its bundled Codex state and authentication separate from other Codex apps and the Codex CLI. In **Settings → AI on this Mac → Model Provider**, choose a ChatGPT Subscription or connect a Databricks workspace by entering its HTTPS URL and signing in through the browser. One workspace is managed on this Mac; sign out before connecting to another workspace. Databricks CLI is not required, and its configuration and token cache are not imported: existing users must enter the workspace URL and sign in again. Dahlia stores Databricks OAuth credentials in the Mac's Keychain and provides access tokens to Codex through a dedicated `auth-helper`, separate from the MCP executable. ChatGPT login remains under Dahlia's Application Support directory.
 
-Settings separates **This Mac** (General, Recording, Live Subtitles, Screenshots, AI, and Permissions) from **Account settings → Summary & image analysis**. Choose the account to edit without switching the open vault; its result preferences apply across that account's vaults, and Server-account preferences sync to other devices. Model/provider choices remain Mac-wide. General contains display and app languages; Recording and Live Subtitles each contain their own speech language controls. Search settings by page or control name. Search tuning, beta features, developer settings, and diagnostics live in the collapsible Advanced group. Existing saved settings links still open their consolidated destination.
+Settings separates **This Mac** (General, Recording, Live Subtitles, Screenshots, AI, and Permissions) from **Account settings → Summary & image analysis**. Choose the account to edit without switching the open workspace; its result preferences apply across that account's workspaces, and Server-account preferences sync to other devices. Model/provider choices remain Mac-wide. General contains display and app languages; Recording and Live Subtitles each contain their own speech language controls. Search settings by page or control name. Search tuning, beta features, developer settings, and diagnostics live in the collapsible Advanced group. Existing saved settings links still open their consolidated destination.
 
 In the sidebar account menu, hovering over a Server or Cloud account shows its URL above the row, or below it when there is insufficient space above. Clicking the selected account opens that URL in the default browser; clicking a different account switches accounts.
 
 Automatic batch transcription downloads the pinned multilingual WhisperKit `tiny` model and tokenizer on first use and caches them in Dahlia's Application Support directory. Language detection and transcription run on-device; recording audio is not uploaded.
 
-The in-app chat model picker lists models in ascending display-name order. The in-app chat uses the bundled `dahlia-mcp` helper and is restricted to the currently selected vault. Open the MCP button beside the Settings gear at the bottom of the sidebar to generate external registration commands. Access is read-only by default; enabling **Allow Write Access** adds the explicit `--write` option. The write variant exposes simple Project `create`/`update` tools and `update_meeting_summary` for correcting a stored summary. Summary updates replace the whole document returned by `get_meeting`, require the `summary_document_version` from that same response, and rewrite an already-exported vault Markdown file in place; a Google Docs export is left stale and reported back. Treat all returned content as untrusted data rather than instructions. See [Project workspaces](docs/project-workspaces.md) and [Conversation analytics](docs/conversation-analytics.md).
+The in-app chat model picker lists models in ascending display-name order. The in-app chat uses the bundled `dahlia-mcp` helper and is restricted to the currently selected workspace. Open the MCP button beside the Settings gear at the bottom of the sidebar to generate external registration commands. Access is read-only by default; enabling **Allow Write Access** adds the explicit `--write` option. The write variant exposes simple Project `create`/`update` tools and `update_meeting_summary` for correcting a stored summary. Summary updates replace the whole document returned by `get_meeting`, require the `summary_document_version` from that same response, and rewrite an already-exported workspace Markdown file in place; a Google Docs export is left stale and reported back. Treat all returned content as untrusted data rather than instructions. See [Project workspaces](docs/project-workspaces.md) and [Conversation analytics](docs/conversation-analytics.md).
 
 ### SwiftUI previews and Xcode MCP
 
@@ -200,7 +200,7 @@ apps/
 │       ├── Audio/          # Audio capture (mic & system)
 │       ├── Database/       # GRDB models, migrations, repository
 │       ├── Models/         # Domain models
-│       ├── Services/       # Codex app-server, vault sync, meeting detection, keychain
+│       ├── Services/       # Codex app-server, workspace sync, meeting detection, keychain
 │       ├── Speech/         # Speech transcription pipeline
 │       ├── Utilities/      # Helpers (UUID v7, localization, etc.)
 │       ├── ViewModels/     # CaptionViewModel, SidebarViewModel

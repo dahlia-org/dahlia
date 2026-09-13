@@ -265,7 +265,7 @@ CREATE TABLE `account_settings` (
 --> statement-breakpoint
 CREATE TABLE `jobs_image_analysis` (
 	`file_id` text PRIMARY KEY,
-	`vault_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
 	`owner_user_id` text NOT NULL,
 	`model` text NOT NULL,
 	`status` text DEFAULT 'pending' NOT NULL,
@@ -275,28 +275,28 @@ CREATE TABLE `jobs_image_analysis` (
 	`lease_expires_at` integer,
 	`last_error_code` text,
 	CONSTRAINT `fk_jobs_image_analysis_file_id_files_file_id_fk` FOREIGN KEY (`file_id`) REFERENCES `files`(`file_id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_jobs_image_analysis_vault_id_vaults_vault_id_fk` FOREIGN KEY (`vault_id`) REFERENCES `vaults`(`vault_id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_jobs_image_analysis_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_jobs_image_analysis_owner_user_id_user_id_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
 	CONSTRAINT "image_analysis_job_status_check" CHECK("status" IN ('pending', 'processing', 'failed'))
 );
 --> statement-breakpoint
 CREATE TABLE `meeting_attachments` (
 	`id` text PRIMARY KEY,
-	`vault_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
 	`meeting_id` text NOT NULL,
 	`file_id` text NOT NULL,
 	`captured_at` integer,
 	`session_id` text,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	`revision` integer DEFAULT 1 NOT NULL,
-	CONSTRAINT `fk_meeting_attachments_vault_id_meeting_id_meetings_vault_id_meeting_id_fk` FOREIGN KEY (`vault_id`,`meeting_id`) REFERENCES `meetings`(`vault_id`,`meeting_id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_meeting_attachments_vault_id_file_id_files_vault_id_file_id_fk` FOREIGN KEY (`vault_id`,`file_id`) REFERENCES `files`(`vault_id`,`file_id`),
+	CONSTRAINT `fk_meeting_attachments_workspace_id_meeting_id_meetings_workspace_id_meeting_id_fk` FOREIGN KEY (`workspace_id`,`meeting_id`) REFERENCES `meetings`(`workspace_id`,`meeting_id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_meeting_attachments_workspace_id_file_id_files_workspace_id_file_id_fk` FOREIGN KEY (`workspace_id`,`file_id`) REFERENCES `files`(`workspace_id`,`file_id`),
 	CONSTRAINT `meeting_attachments_meeting_attachment_unique` UNIQUE(`meeting_id`,`file_id`)
 );
 --> statement-breakpoint
 CREATE TABLE `meeting_events` (
 	`id` text PRIMARY KEY,
-	`vault_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
 	`owner_user_id` text NOT NULL,
 	`meeting_id` text NOT NULL,
 	`kind` text NOT NULL,
@@ -307,7 +307,7 @@ CREATE TABLE `meeting_events` (
 	`audio_source` text,
 	`segment_index` integer,
 	`changed_fields` text,
-	CONSTRAINT `fk_meeting_events_vault_id_vaults_vault_id_fk` FOREIGN KEY (`vault_id`) REFERENCES `vaults`(`vault_id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_meeting_events_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_meeting_events_owner_user_id_user_id_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
 	CONSTRAINT "meeting_events_kind_check" CHECK("kind" IN ('meeting_created', 'meeting_updated', 'meeting_deleted', 'tag_added', 'tag_removed', 'recording_started', 'recording_ended', 'segment_rotated')),
 	CONSTRAINT "meeting_events_source_check" CHECK("audio_source" IN ('mic', 'system'))
@@ -315,7 +315,7 @@ CREATE TABLE `meeting_events` (
 --> statement-breakpoint
 CREATE TABLE `search_documents` (
 	`document_id` text NOT NULL,
-	`vault_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
 	`meeting_id` text NOT NULL,
 	`kind` text NOT NULL,
 	`search_text` text DEFAULT '' NOT NULL,
@@ -329,14 +329,14 @@ CREATE TABLE `search_documents` (
 	`embedding` blob,
 	`embedding_model` text,
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	CONSTRAINT `search_documents_pk` PRIMARY KEY(`vault_id`, `document_id`),
-	CONSTRAINT `fk_search_documents_vault_id_meeting_id_meetings_vault_id_meeting_id_fk` FOREIGN KEY (`vault_id`,`meeting_id`) REFERENCES `meetings`(`vault_id`,`meeting_id`) ON DELETE CASCADE,
+	CONSTRAINT `search_documents_pk` PRIMARY KEY(`workspace_id`, `document_id`),
+	CONSTRAINT `fk_search_documents_workspace_id_meeting_id_meetings_workspace_id_meeting_id_fk` FOREIGN KEY (`workspace_id`,`meeting_id`) REFERENCES `meetings`(`workspace_id`,`meeting_id`) ON DELETE CASCADE,
 	CONSTRAINT "search_document_embedding_dimensions_check" CHECK("embedding" IS NULL OR (length("embedding") BETWEEN 128 AND 4096 AND length("embedding") % 4 = 0)),
 	CONSTRAINT "search_document_kind_check" CHECK("kind" IN ('meeting', 'screenshot'))
 );
 --> statement-breakpoint
 CREATE TABLE `jobs_search_index` (
-	`vault_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
 	`document_id` text NOT NULL,
 	`model` text NOT NULL,
 	`dimensions` integer NOT NULL,
@@ -348,8 +348,8 @@ CREATE TABLE `jobs_search_index` (
 	`lease_expires_at` integer,
 	`last_error_code` text,
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	CONSTRAINT `jobs_search_index_pk` PRIMARY KEY(`vault_id`, `document_id`),
-	CONSTRAINT `fk_jobs_search_index_vault_id_vaults_vault_id_fk` FOREIGN KEY (`vault_id`) REFERENCES `vaults`(`vault_id`) ON DELETE CASCADE,
+	CONSTRAINT `jobs_search_index_pk` PRIMARY KEY(`workspace_id`, `document_id`),
+	CONSTRAINT `fk_jobs_search_index_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
 	CONSTRAINT "search_index_job_status_check" CHECK("status" IN ('pending', 'processing', 'failed')),
 	CONSTRAINT "search_index_job_dimensions_check" CHECK("dimensions" BETWEEN 32 AND 1024)
 );
@@ -389,7 +389,7 @@ CREATE TABLE `summaries` (
 CREATE TABLE `jobs_summary` (
 	`encrypted_payload` text,
 	`id` text PRIMARY KEY,
-	`vault_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
 	`meeting_id` text NOT NULL,
 	`owner_user_id` text NOT NULL,
 	`method` text NOT NULL,
@@ -409,7 +409,7 @@ CREATE TABLE `jobs_summary` (
 	`summary_revision` integer NOT NULL,
 	`input_version` text NOT NULL,
 	`request_hash` text NOT NULL,
-	CONSTRAINT `fk_jobs_summary_vault_id_vaults_vault_id_fk` FOREIGN KEY (`vault_id`) REFERENCES `vaults`(`vault_id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_jobs_summary_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_jobs_summary_meeting_id_meetings_meeting_id_fk` FOREIGN KEY (`meeting_id`) REFERENCES `meetings`(`meeting_id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_jobs_summary_owner_user_id_user_id_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
 	CONSTRAINT "summary_job_status_check" CHECK("status" IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled'))
@@ -417,14 +417,14 @@ CREATE TABLE `jobs_summary` (
 --> statement-breakpoint
 CREATE TABLE `sync_changes` (
 	`sequence` integer PRIMARY KEY AUTOINCREMENT,
-	`vault_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
 	`entity` text NOT NULL,
 	`entity_id` text NOT NULL,
 	`action` text NOT NULL,
 	`revision` integer,
 	`transaction_id` text NOT NULL,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	CONSTRAINT "sync_change_entity_check" CHECK("entity" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')),
+	CONSTRAINT "sync_change_entity_check" CHECK("entity" IN ('workspace', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')),
 	CONSTRAINT "sync_change_action_check" CHECK("action" IN ('upsert', 'delete', 'reset'))
 );
 --> statement-breakpoint
@@ -432,7 +432,7 @@ CREATE TABLE `transaction_receipts` (
 	`encrypted_payload` text,
 	`transaction_id` text PRIMARY KEY,
 	`owner_user_id` text NOT NULL,
-	`vault_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
 	`request_hash` text NOT NULL,
 	`response_json` text,
 	`results_json` text DEFAULT '[]' NOT NULL,
@@ -441,17 +441,17 @@ CREATE TABLE `transaction_receipts` (
 	CONSTRAINT `fk_transaction_receipts_owner_user_id_user_id_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE
 );
 --> statement-breakpoint
-CREATE TABLE `sync_vault_state` (
-	`vault_id` text PRIMARY KEY NOT NULL,
+CREATE TABLE `sync_workspace_state` (
+	`workspace_id` text PRIMARY KEY NOT NULL,
 	`latest_sequence` integer DEFAULT 0 NOT NULL,
 	`pruned_through` integer DEFAULT 0 NOT NULL,
-	CONSTRAINT "sync_vault_state_boundary_check" CHECK("pruned_through" >= 0 AND "latest_sequence" >= "pruned_through")
+	CONSTRAINT "sync_workspace_state_boundary_check" CHECK("pruned_through" >= 0 AND "latest_sequence" >= "pruned_through")
 );
 --> statement-breakpoint
 CREATE TABLE `files` (
 	`encrypted_payload` text,
 	`file_id` text PRIMARY KEY,
-	`vault_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
 	`uri` text NOT NULL,
 	`offset` integer DEFAULT 0 NOT NULL,
 	`size` integer NOT NULL,
@@ -464,8 +464,8 @@ CREATE TABLE `files` (
 	`revision` integer DEFAULT 0 NOT NULL,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	CONSTRAINT `fk_files_vault_id_vaults_vault_id_fk` FOREIGN KEY (`vault_id`) REFERENCES `vaults`(`vault_id`) ON DELETE CASCADE,
-	CONSTRAINT `files_vault_file_unique` UNIQUE(`vault_id`,`file_id`),
+	CONSTRAINT `fk_files_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `files_workspace_file_unique` UNIQUE(`workspace_id`,`file_id`),
 	CONSTRAINT "files_offset_check" CHECK("offset" = 0),
 	CONSTRAINT "files_size_check" CHECK("size" >= 0)
 );
@@ -473,7 +473,7 @@ CREATE TABLE `files` (
 CREATE TABLE `meetings` (
 	`encrypted_payload` text,
 	`meeting_id` text PRIMARY KEY,
-	`vault_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
 	`project_id` text,
 	`name` text NOT NULL,
 	`description` text DEFAULT '' NOT NULL,
@@ -490,15 +490,15 @@ CREATE TABLE `meetings` (
 	`transcript_revision` integer DEFAULT 0 NOT NULL,
 	`active` integer DEFAULT false NOT NULL,
 	`deleting_at` integer,
-	CONSTRAINT `fk_meetings_vault_id_vaults_vault_id_fk` FOREIGN KEY (`vault_id`) REFERENCES `vaults`(`vault_id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_meetings_vault_id_project_id_projects_vault_id_project_id_fk` FOREIGN KEY (`vault_id`,`project_id`) REFERENCES `projects`(`vault_id`,`project_id`),
-	CONSTRAINT `synced_meeting_vault_meeting_unique` UNIQUE(`vault_id`,`meeting_id`)
+	CONSTRAINT `fk_meetings_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_meetings_workspace_id_project_id_projects_workspace_id_project_id_fk` FOREIGN KEY (`workspace_id`,`project_id`) REFERENCES `projects`(`workspace_id`,`project_id`),
+	CONSTRAINT `synced_meeting_workspace_meeting_unique` UNIQUE(`workspace_id`,`meeting_id`)
 );
 --> statement-breakpoint
 CREATE TABLE `projects` (
 	`encrypted_payload` text,
 	`project_id` text PRIMARY KEY,
-	`vault_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
 	`parent_project_id` text,
 	`name` text NOT NULL,
 	`icon` text,
@@ -508,9 +508,9 @@ CREATE TABLE `projects` (
 	`revision` integer NOT NULL,
 	`created_at` integer NOT NULL,
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	CONSTRAINT `fk_projects_vault_id_vaults_vault_id_fk` FOREIGN KEY (`vault_id`) REFERENCES `vaults`(`vault_id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_projects_vault_id_parent_project_id_projects_vault_id_project_id_fk` FOREIGN KEY (`vault_id`,`parent_project_id`) REFERENCES `projects`(`vault_id`,`project_id`) ON DELETE RESTRICT,
-	CONSTRAINT `project_vault_project_unique` UNIQUE(`vault_id`,`project_id`),
+	CONSTRAINT `fk_projects_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_projects_workspace_id_parent_project_id_projects_workspace_id_project_id_fk` FOREIGN KEY (`workspace_id`,`parent_project_id`) REFERENCES `projects`(`workspace_id`,`project_id`) ON DELETE RESTRICT,
+	CONSTRAINT `project_workspace_project_unique` UNIQUE(`workspace_id`,`project_id`),
 	CONSTRAINT "project_type_check" CHECK((
     ("parent_project_id" IS NULL AND "project_type" IN ('customer', 'internal', 'personal', 'undefined'))
     OR ("parent_project_id" IS NOT NULL AND "project_type" IS NULL)
@@ -550,10 +550,10 @@ CREATE TABLE `transcript_segments` (
 	CONSTRAINT "transcript_segment_normalized_character_count_check" CHECK("normalized_character_count" IS NULL OR "normalized_character_count" >= 0)
 );
 --> statement-breakpoint
-CREATE TABLE `vaults` (
+CREATE TABLE `workspaces` (
 	`encryption` text DEFAULT 'none' NOT NULL,
 	`encrypted_payload` text,
-	`vault_id` text PRIMARY KEY,
+	`workspace_id` text PRIMARY KEY,
 	`organization_id` text NOT NULL,
 	`created_by` text NOT NULL,
 	`name` text NOT NULL,
@@ -563,21 +563,21 @@ CREATE TABLE `vaults` (
 	`deleting_at` integer,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	CONSTRAINT `fk_vaults_organization_id_organization_id_fk` FOREIGN KEY (`organization_id`) REFERENCES `organization`(`id`) ON DELETE RESTRICT
+	CONSTRAINT `fk_workspaces_organization_id_organization_id_fk` FOREIGN KEY (`organization_id`) REFERENCES `organization`(`id`) ON DELETE RESTRICT
 );
 --> statement-breakpoint
-CREATE TABLE `vault_permissions` (
-	`vault_id` text NOT NULL,
+CREATE TABLE `workspace_permissions` (
+	`workspace_id` text NOT NULL,
 	`principal_type` text NOT NULL,
 	`principal_id` text NOT NULL,
 	`role` text NOT NULL,
 	`granted_by_user_id` text NOT NULL,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	CONSTRAINT `vault_permissions_pk` PRIMARY KEY(`vault_id`, `principal_type`, `principal_id`),
-	CONSTRAINT `fk_vault_permissions_vault_id_vaults_vault_id_fk` FOREIGN KEY (`vault_id`) REFERENCES `vaults`(`vault_id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_vault_permissions_granted_by_user_id_user_id_fk` FOREIGN KEY (`granted_by_user_id`) REFERENCES `user`(`id`) ON DELETE RESTRICT,
-	CONSTRAINT "vault_permission_principal_type_check" CHECK("principal_type" IN ('user', 'organization', 'team')),
-	CONSTRAINT "vault_permission_role_check" CHECK("role" IN ('admin', 'editor', 'viewer'))
+	CONSTRAINT `workspace_permissions_pk` PRIMARY KEY(`workspace_id`, `principal_type`, `principal_id`),
+	CONSTRAINT `fk_workspace_permissions_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_workspace_permissions_granted_by_user_id_user_id_fk` FOREIGN KEY (`granted_by_user_id`) REFERENCES `user`(`id`) ON DELETE RESTRICT,
+	CONSTRAINT "workspace_permission_principal_type_check" CHECK("principal_type" IN ('user', 'organization', 'team')),
+	CONSTRAINT "workspace_permission_role_check" CHECK("role" IN ('admin', 'editor', 'viewer'))
 );
 --> statement-breakpoint
 CREATE TABLE `transcripts` (
@@ -597,34 +597,34 @@ CREATE TABLE `transcripts` (
 --> statement-breakpoint
 CREATE TABLE `transcript_patch_chunks` (
 	`encrypted_payload` text,
-	`vault_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
 	`meeting_id` text NOT NULL,
 	`patch_id` text NOT NULL,
 	`chunk_index` integer NOT NULL,
 	`content_hash` text NOT NULL,
 	`payload` text NOT NULL,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	CONSTRAINT `transcript_patch_chunks_pk` PRIMARY KEY(`vault_id`, `meeting_id`, `patch_id`, `chunk_index`),
-	CONSTRAINT `fk_transcript_patch_chunks_vault_id_meeting_id_meetings_vault_id_meeting_id_fk` FOREIGN KEY (`vault_id`,`meeting_id`) REFERENCES `meetings`(`vault_id`,`meeting_id`) ON DELETE CASCADE
+	CONSTRAINT `transcript_patch_chunks_pk` PRIMARY KEY(`workspace_id`, `meeting_id`, `patch_id`, `chunk_index`),
+	CONSTRAINT `fk_transcript_patch_chunks_workspace_id_meeting_id_meetings_workspace_id_meeting_id_fk` FOREIGN KEY (`workspace_id`,`meeting_id`) REFERENCES `meetings`(`workspace_id`,`meeting_id`) ON DELETE CASCADE
 );
 --> statement-breakpoint
-CREATE TABLE `vault_keys` (
-	`vault_id` text PRIMARY KEY,
+CREATE TABLE `workspace_keys` (
+	`workspace_id` text PRIMARY KEY,
 	`wrapped_key` text NOT NULL,
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `vault_transfers` (
+CREATE TABLE `workspace_transfers` (
 	`sequence` integer PRIMARY KEY AUTOINCREMENT,
 	`id` text NOT NULL UNIQUE,
 	`owner_user_id` text NOT NULL,
 	`idempotency_key` text NOT NULL,
 	`request_hash` text NOT NULL,
-	`source_vault_id` text NOT NULL,
-	`destination_vault_id` text NOT NULL,
+	`source_workspace_id` text NOT NULL,
+	`destination_workspace_id` text NOT NULL,
 	`manifest` text NOT NULL,
-	CONSTRAINT `fk_vault_transfers_owner_user_id_user_id_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
-	CONSTRAINT `vault_transfer_owner_key_unique` UNIQUE(`owner_user_id`,`idempotency_key`)
+	CONSTRAINT `fk_workspace_transfers_owner_user_id_user_id_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
+	CONSTRAINT `workspace_transfer_owner_key_unique` UNIQUE(`owner_user_id`,`idempotency_key`)
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `account_issuer_accountId_uidx` ON `account` (`issuer`,`account_id`);--> statement-breakpoint
@@ -655,41 +655,41 @@ CREATE INDEX `teamMember_teamId_idx` ON `team_member` (`team_id`);--> statement-
 CREATE INDEX `teamMember_userId_idx` ON `team_member` (`user_id`);--> statement-breakpoint
 CREATE INDEX `verification_identifier_idx` ON `verification` (`identifier`);--> statement-breakpoint
 CREATE INDEX `image_analysis_job_claim_idx` ON `jobs_image_analysis` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
-CREATE INDEX `meeting_attachments_vault_meeting_id_idx` ON `meeting_attachments` (`vault_id`,`meeting_id`,`id`);--> statement-breakpoint
-CREATE INDEX `meeting_events_meeting_time_idx` ON `meeting_events` (`vault_id`,`meeting_id`,`occurred_at`,`id`);--> statement-breakpoint
-CREATE INDEX `meeting_events_session_idx` ON `meeting_events` (`vault_id`,`session_id`);--> statement-breakpoint
-CREATE INDEX `search_document_vault_kind_meeting_document_idx` ON `search_documents` (`vault_id`,`kind`,`meeting_id`,`document_id`);--> statement-breakpoint
+CREATE INDEX `meeting_attachments_workspace_meeting_id_idx` ON `meeting_attachments` (`workspace_id`,`meeting_id`,`id`);--> statement-breakpoint
+CREATE INDEX `meeting_events_meeting_time_idx` ON `meeting_events` (`workspace_id`,`meeting_id`,`occurred_at`,`id`);--> statement-breakpoint
+CREATE INDEX `meeting_events_session_idx` ON `meeting_events` (`workspace_id`,`session_id`);--> statement-breakpoint
+CREATE INDEX `search_document_workspace_kind_meeting_document_idx` ON `search_documents` (`workspace_id`,`kind`,`meeting_id`,`document_id`);--> statement-breakpoint
 CREATE INDEX `search_index_job_claim_idx` ON `jobs_search_index` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
 CREATE INDEX `storage_delete_job_claim_idx` ON `jobs_storage_delete` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
 CREATE UNIQUE INDEX `summary_job_active_meeting_idx` ON `jobs_summary` (`meeting_id`) WHERE "jobs_summary"."status" IN ('pending', 'processing');--> statement-breakpoint
 CREATE INDEX `summary_job_owner_created_idx` ON `jobs_summary` (`owner_user_id`,`created_at`);--> statement-breakpoint
-CREATE INDEX `sync_change_vault_sequence_idx` ON `sync_changes` (`vault_id`,`sequence`);--> statement-breakpoint
+CREATE INDEX `sync_change_workspace_sequence_idx` ON `sync_changes` (`workspace_id`,`sequence`);--> statement-breakpoint
 CREATE INDEX `transaction_receipt_owner_created_idx` ON `transaction_receipts` (`owner_user_id`,`created_at`);--> statement-breakpoint
-CREATE INDEX `files_vault_file_idx` ON `files` (`vault_id`,`file_id`);--> statement-breakpoint
+CREATE INDEX `files_workspace_file_idx` ON `files` (`workspace_id`,`file_id`);--> statement-breakpoint
 CREATE INDEX `meetings_calendar_event_idx` ON `meetings` (`ical_uid`,`recurrence_id`);--> statement-breakpoint
-CREATE INDEX `synced_meeting_vault_created_id_idx` ON `meetings` (`vault_id`,`created_at`,`meeting_id`);--> statement-breakpoint
-CREATE INDEX `project_vault_parent_name_idx` ON `projects` (`vault_id`,`parent_project_id`,`name`);--> statement-breakpoint
+CREATE INDEX `synced_meeting_workspace_created_id_idx` ON `meetings` (`workspace_id`,`created_at`,`meeting_id`);--> statement-breakpoint
+CREATE INDEX `project_workspace_parent_name_idx` ON `projects` (`workspace_id`,`parent_project_id`,`name`);--> statement-breakpoint
 CREATE INDEX `recordings_meeting_session_idx` ON `recordings` (`meeting_id`,`session_id`);--> statement-breakpoint
 CREATE INDEX `transcript_segment_created_idx` ON `transcript_segments` (`transcript_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `transcript_segment_start_id_idx` ON `transcript_segments` (`transcript_id`,`started_at`,`segment_id`);--> statement-breakpoint
-CREATE INDEX `vault_permission_principal_vault_idx` ON `vault_permissions` (`principal_type`,`principal_id`,`role`,`vault_id`);--> statement-breakpoint
-CREATE INDEX `vault_transfer_owner_sequence_idx` ON `vault_transfers` (`owner_user_id`,`sequence`);--> statement-breakpoint
+CREATE INDEX `workspace_permission_principal_workspace_idx` ON `workspace_permissions` (`principal_type`,`principal_id`,`role`,`workspace_id`);--> statement-breakpoint
+CREATE INDEX `workspace_transfer_owner_sequence_idx` ON `workspace_transfers` (`owner_user_id`,`sequence`);--> statement-breakpoint
 CREATE VIEW `recording_sessions` AS
-  SELECT vault_id, meeting_id, session_id,
+  SELECT workspace_id, meeting_id, session_id,
     min(CASE WHEN kind = 'recording_started' THEN occurred_at END) AS started_at,
     max(CASE WHEN kind = 'recording_ended' THEN occurred_at END) AS ended_at
   FROM meeting_events
   WHERE session_id IS NOT NULL AND kind IN ('recording_started', 'recording_ended')
-  GROUP BY vault_id, meeting_id, session_id
+  GROUP BY workspace_id, meeting_id, session_id
 ;--> statement-breakpoint
 CREATE VIEW `meeting_images` AS
-  SELECT m.id AS screenshot_id, f.file_id, m.vault_id, m.meeting_id,
+  SELECT m.id AS screenshot_id, f.file_id, m.workspace_id, m.meeting_id,
     coalesce(m.captured_at, m.created_at) AS captured_at, f.content_type,
     'files/' || f.file_id || '/original' AS storage_key,
     f.size AS content_length, substr(f.checksum, 9) AS content_hash, f.active,
     json_extract(f.metadata, '$.ocr_text') AS ocr_text,
     json_extract(f.metadata, '$.caption') AS caption,
     m.revision
-  FROM meeting_attachments m JOIN files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id
+  FROM meeting_attachments m JOIN files f ON f.file_id = m.file_id AND f.workspace_id = m.workspace_id
   WHERE json_extract(f.metadata, '$.source') = 'screenshot'
 ;

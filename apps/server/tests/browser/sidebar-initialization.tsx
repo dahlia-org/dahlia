@@ -21,7 +21,7 @@ async function until(predicate: () => unknown) {
 }
 async function run() {
   createRoot(document.getElementById("root")!).render(<SidebarProvider session={{ user: { id: "sidebar-regression" },
-    workspace: { id: "personal", type: "personal" }, capabilities: { sessions: true, sharing: true, sync: false, admin: false } }}><Draft /></SidebarProvider>);
+     capabilities: { sessions: true, sharing: true, sync: false, admin: false } }}><Draft /></SidebarProvider>);
   await until(() => document.querySelector("input") && resolveOrganizations);
   const input = document.querySelector("input")!;
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Unsaved draft");

@@ -54,10 +54,6 @@ export function projectPublicIDs(document: ReturnType<OpenAPIHono["getOpenAPI31D
       visit(schema.items, shape.slice(6));
       return;
     }
-    if (shape === "personalWorkspace") {
-      schema.pattern = "^personal:user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$";
-      return;
-    }
     // Cursors, URLs and serialized documents retain their opaque string schemas.
     if (!object(schema.properties)) return;
     const properties = schema.properties;
@@ -69,14 +65,14 @@ export function projectPublicIDs(document: ReturnType<OpenAPIHono["getOpenAPI31D
       const recordID = resolve(properties.id);
       if (entityID) id(entityID, names.map((name) => entityKinds[name]!));
       if (recordID) id(recordID, shape === "operation" ? ["operation"] : names.map((name) => entityKinds[name]!));
-      for (const [field, kind] of Object.entries({ vaultId: "vault", transactionId: "transaction", operationId: "operation" })) visit(properties[field], `id:${kind}`);
+      for (const [field, kind] of Object.entries({ workspaceId: "workspace", transactionId: "transaction", operationId: "operation" })) visit(properties[field], `id:${kind}`);
       for (const name of names) for (const field of ["data", "record"]) visit(properties[field], recordShapes[name]!);
       return;
     }
     if (shape === "permission") {
       const principal = resolve(properties.principalId);
       if (principal) id(principal, ["user", "organization", "team"]);
-      visit(properties.vaultId, "id:vault");
+      visit(properties.workspaceId, "id:workspace");
       visit(properties.grantedByUserId, "id:user");
       return;
     }

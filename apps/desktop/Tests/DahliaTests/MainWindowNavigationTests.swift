@@ -81,11 +81,11 @@
         }
 
         @Test
-        func changingVaultKeepsChatVisible() {
+        func changingWorkspaceKeepsChatVisible() {
             let navigation = MainWindowNavigation(openMainWindow: {})
             navigation.recordNavigation(to: .chat)
 
-            navigation.changeVault(to: .v7())
+            navigation.changeWorkspace(to: .v7())
 
             #expect(navigation.currentLocation == .chat)
             #expect(navigation.section == .chat)
@@ -94,73 +94,73 @@
         }
 
         @Test
-        func persistsSidebarModeAndVaultScopedPinOrder() throws {
+        func persistsSidebarModeAndWorkspaceScopedPinOrder() throws {
             let suiteName = "MainWindowNavigationTests-\(UUID.v7())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
-            let firstVault = UUID.v7()
-            let secondVault = UUID.v7()
+            let firstWorkspace = UUID.v7()
+            let secondWorkspace = UUID.v7()
             let firstProject = UUID.v7()
             let secondProject = UUID.v7()
             let navigation = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
 
             navigation.meetingSidebarDisplayMode = .byProject
-            navigation.toggleProjectPin(firstProject, vaultId: firstVault)
-            navigation.toggleProjectPin(secondProject, vaultId: firstVault)
-            navigation.toggleProjectPin(firstProject, vaultId: secondVault)
+            navigation.toggleProjectPin(firstProject, workspaceId: firstWorkspace)
+            navigation.toggleProjectPin(secondProject, workspaceId: firstWorkspace)
+            navigation.toggleProjectPin(firstProject, workspaceId: secondWorkspace)
 
             let restored = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
             #expect(restored.meetingSidebarDisplayMode == .byProject)
-            #expect(restored.pinnedProjectIDs(vaultId: firstVault) == [secondProject, firstProject])
-            #expect(restored.pinnedProjectIDs(vaultId: secondVault) == [firstProject])
+            #expect(restored.pinnedProjectIDs(workspaceId: firstWorkspace) == [secondProject, firstProject])
+            #expect(restored.pinnedProjectIDs(workspaceId: secondWorkspace) == [firstProject])
         }
 
         @Test
-        func readsLegacyVaultScopedProjectAppearancesAndDefaultsInvalidValues() throws {
+        func readsLegacyWorkspaceScopedProjectAppearancesAndDefaultsInvalidValues() throws {
             let suiteName = "MainWindowNavigationTests-\(UUID.v7())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
-            let firstVault = UUID.v7()
-            let secondVault = UUID.v7()
+            let firstWorkspace = UUID.v7()
+            let secondWorkspace = UUID.v7()
             let project = UUID.v7()
             let validProject = UUID.v7()
             let appearance = ProjectAppearance(icon: .music, color: .purple)
             let navigation = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
 
-            #expect(navigation.projectAppearance(projectId: project, vaultId: firstVault) == .default)
-            try defaults.set(JSONEncoder().encode([firstVault.uuidString: [project.uuidString: appearance]]), forKey: "projectAppearances")
+            #expect(navigation.projectAppearance(projectId: project, workspaceId: firstWorkspace) == .default)
+            try defaults.set(JSONEncoder().encode([firstWorkspace.uuidString: [project.uuidString: appearance]]), forKey: "projectAppearances")
 
             let restored = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
-            #expect(restored.projectAppearance(projectId: project, vaultId: firstVault) == appearance)
-            #expect(restored.projectAppearance(projectId: project, vaultId: secondVault) == .default)
+            #expect(restored.projectAppearance(projectId: project, workspaceId: firstWorkspace) == appearance)
+            #expect(restored.projectAppearance(projectId: project, workspaceId: secondWorkspace) == .default)
 
             defaults.set(
                 Data(
-                    #"{"\#(firstVault.uuidString)":{"\#(project.uuidString)":{"icon":"unknown","color":"blue"},"\#(validProject.uuidString)":{"icon":"music.note","color":"purple"}}}"#
+                    #"{"\#(firstWorkspace.uuidString)":{"\#(project.uuidString)":{"icon":"unknown","color":"blue"},"\#(validProject.uuidString)":{"icon":"music.note","color":"purple"}}}"#
                         .utf8
                 ),
                 forKey: "projectAppearances"
             )
             let invalidRestored = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
-            #expect(invalidRestored.projectAppearance(projectId: project, vaultId: firstVault) == .default)
-            #expect(invalidRestored.projectAppearance(projectId: validProject, vaultId: firstVault) == appearance)
+            #expect(invalidRestored.projectAppearance(projectId: project, workspaceId: firstWorkspace) == .default)
+            #expect(invalidRestored.projectAppearance(projectId: validProject, workspaceId: firstWorkspace) == appearance)
         }
 
         @Test
-        func persistsVaultScopedProjectDetailDisplayMode() throws {
+        func persistsWorkspaceScopedProjectDetailDisplayMode() throws {
             let suiteName = "MainWindowNavigationTests-\(UUID.v7())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
-            let firstVault = UUID.v7()
-            let secondVault = UUID.v7()
+            let firstWorkspace = UUID.v7()
+            let secondWorkspace = UUID.v7()
             let navigation = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
 
-            #expect(navigation.projectDetailDisplayMode(vaultId: firstVault) == .list)
-            navigation.setProjectDetailDisplayMode(.calendar, vaultId: firstVault)
+            #expect(navigation.projectDetailDisplayMode(workspaceId: firstWorkspace) == .list)
+            navigation.setProjectDetailDisplayMode(.calendar, workspaceId: firstWorkspace)
 
             let restored = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
-            #expect(restored.projectDetailDisplayMode(vaultId: firstVault) == .calendar)
-            #expect(restored.projectDetailDisplayMode(vaultId: secondVault) == .list)
+            #expect(restored.projectDetailDisplayMode(workspaceId: firstWorkspace) == .calendar)
+            #expect(restored.projectDetailDisplayMode(workspaceId: secondWorkspace) == .list)
         }
 
     }
@@ -307,15 +307,15 @@
         }
 
         @Test
-        func resettingHistoryForVaultChangeClearsBothDirections() async {
+        func resettingHistoryForWorkspaceChangeClearsBothDirections() async {
             let navigation = MainWindowNavigation(openMainWindow: {})
-            let vaultId = UUID.v7()
+            let workspaceId = UUID.v7()
             navigation.recordNavigation(to: .meeting(.v7()))
             navigation.recordNavigation(to: .projects)
             navigation.recordNavigation(to: .unprocessedRecordings)
             await navigateBack(navigation)
 
-            navigation.changeVault(to: vaultId)
+            navigation.changeWorkspace(to: workspaceId)
 
             #expect(navigation.currentLocation == .projects)
             #expect(!navigation.canGoBack)
@@ -323,11 +323,11 @@
         }
 
         @Test
-        func changingVaultKeepsUnprocessedRecordingsAsCurrentLocation() {
+        func changingWorkspaceKeepsUnprocessedRecordingsAsCurrentLocation() {
             let navigation = MainWindowNavigation(openMainWindow: {})
             navigation.recordNavigation(to: .unprocessedRecordings)
 
-            navigation.changeVault(to: .v7())
+            navigation.changeWorkspace(to: .v7())
 
             #expect(navigation.currentLocation == .unprocessedRecordings)
             #expect(!navigation.canGoBack)

@@ -2,19 +2,19 @@ import AppKit
 import SwiftUI
 
 struct MCPSettingsView: View {
-    let vaults: [VaultRecord]
-    let currentVault: VaultRecord?
+    let workspaces: [WorkspaceRecord]
+    let currentWorkspace: WorkspaceRecord?
 
     @State private var selectedClient = MCPClient.codex
-    @State private var selectedVaultID: UUID?
+    @State private var selectedWorkspaceID: UUID?
     @State private var isWriteEnabled = false
     @State private var copiedContent: String?
     @State private var copyFeedbackTask: Task<Void, Never>?
 
-    init(vaults: [VaultRecord], currentVault: VaultRecord?) {
-        self.vaults = vaults
-        self.currentVault = currentVault
-        _selectedVaultID = State(initialValue: nil)
+    init(workspaces: [WorkspaceRecord], currentWorkspace: WorkspaceRecord?) {
+        self.workspaces = workspaces
+        self.currentWorkspace = currentWorkspace
+        _selectedWorkspaceID = State(initialValue: nil)
     }
 
     var body: some View {
@@ -22,9 +22,9 @@ struct MCPSettingsView: View {
             Section {
                 MCPPreviewOptionsView(
                     selectedClient: $selectedClient,
-                    selectedVaultID: $selectedVaultID,
+                    selectedWorkspaceID: $selectedWorkspaceID,
                     isWriteEnabled: $isWriteEnabled,
-                    availableVaults: availableVaults
+                    availableWorkspaces: availableWorkspaces
                 )
             } header: {
                 Text(L10n.mcpPreview)
@@ -32,7 +32,7 @@ struct MCPSettingsView: View {
                 Text(L10n.mcpFooter)
             }
 
-            if let commands = commands(for: selectedVault) {
+            if let commands = commands(for: selectedWorkspace) {
                 Section(L10n.mcpConfigurationOutput) {
                     switch selectedClient {
                     case .codex, .claude:
@@ -65,40 +65,40 @@ struct MCPSettingsView: View {
 
         }
         .formStyle(.grouped)
-        .onAppear(perform: reconcileSelectedVault)
-        .onChange(of: vaults) {
-            reconcileSelectedVault()
+        .onAppear(perform: reconcileSelectedWorkspace)
+        .onChange(of: workspaces) {
+            reconcileSelectedWorkspace()
         }
-        .onChange(of: currentVault?.id) {
-            reconcileSelectedVault()
+        .onChange(of: currentWorkspace?.id) {
+            reconcileSelectedWorkspace()
         }
         .onDisappear {
             copyFeedbackTask?.cancel()
         }
     }
 
-    private var availableVaults: [VaultRecord] {
-        guard let currentVault,
-              !vaults.contains(where: { $0.id == currentVault.id }) else {
-            return vaults
+    private var availableWorkspaces: [WorkspaceRecord] {
+        guard let currentWorkspace,
+              !workspaces.contains(where: { $0.id == currentWorkspace.id }) else {
+            return workspaces
         }
-        return [currentVault] + vaults
+        return [currentWorkspace] + workspaces
     }
 
-    private var selectedVault: VaultRecord? {
-        availableVaults.first { $0.id == selectedVaultID }
+    private var selectedWorkspace: WorkspaceRecord? {
+        availableWorkspaces.first { $0.id == selectedWorkspaceID }
     }
 
-    private func commands(for vault: VaultRecord?) -> MCPRegistrationCommands? {
+    private func commands(for workspace: WorkspaceRecord?) -> MCPRegistrationCommands? {
         guard let helperURL = try? DahliaMCPBundle.executableURL() else { return nil }
         return MCPRegistrationCommands(
             helperURL: helperURL,
-            vaultID: vault?.id
+            workspaceID: workspace?.id
         )
     }
 
-    private func reconcileSelectedVault() {
-        if selectedVaultID != nil, selectedVault == nil { selectedVaultID = nil }
+    private func reconcileSelectedWorkspace() {
+        if selectedWorkspaceID != nil, selectedWorkspace == nil { selectedWorkspaceID = nil }
     }
 
     private func copy(_ command: String) {

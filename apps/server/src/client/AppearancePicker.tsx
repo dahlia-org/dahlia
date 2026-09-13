@@ -17,7 +17,7 @@ export const appearanceColors = {
 
 // Keys match Desktop's ProjectIcon raw values.
 export const appearanceIcons = {
-  vault: ["Vault", "保管庫", ""],
+  workspace: ["Workspace", "ワークスペース", ""],
   folder: ["Folder", "フォルダ", ""],
   "dollarsign.circle": ["Finance", "金融", "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM12 6v12M15 8H10a2 2 0 0 0 0 4h4a2 2 0 0 1 0 4H9"],
   "book.closed": ["Book", "本", "M5 3h14v18H7a2 2 0 0 1-2-2V3ZM5 17h14M8 3v14"],
@@ -71,7 +71,7 @@ export function AppearanceIcon({ appearance, size = 18 }: { appearance: Appearan
   const icon = appearance.icon in aliases ? aliases[appearance.icon as keyof typeof aliases] : appearance.icon as keyof typeof appearanceIcons;
   const { color } = appearance;
   return <span className="appearance-icon" style={{ color: color === "neutral" ? "currentColor" : appearanceColors[color][0], width: size, height: size }}>
-    {icon === "folder" || icon === "vault" ? <MenuIcon name={icon} /> : <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={appearanceIcons[icon][2]} /></svg>}
+    {icon === "folder" || icon === "workspace" ? <MenuIcon name={icon} /> : <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={appearanceIcons[icon][2]} /></svg>}
   </span>;
 }
 

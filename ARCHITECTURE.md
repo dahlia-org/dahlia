@@ -103,8 +103,8 @@ Server Account の画像本体は未送信分も含めて Application Support �
 ファイルを検証・確定してから画像 metadata と operation を同じ SQLite transaction で保存する。未送信・再試行・競合中の原本は容量上限の対象外とし、同じ画像の Server 確定後にだけ削除可能とする。
 表示・解析・書き出しは `ScreenshotContentProvider` が 移行待ちの旧 BLOB、共通ファイル、認証付き取得を解決する。
 一覧用 `thumb_480`（長辺最大480px）、`thumb_1280`（1280px）、プレビュー用 `thumb_1568`（1568px）、`thumb_1920`（1920px）は Node Server が要求時に生成し Volume に永続化する。生成非対応の環境は variant を広告しない。Web の画像リンクは1568px版を開き、原寸リンクも提供する。Desktop の要約・OCR・キャプション・チャット・MCP通常画像入力は共通の1280px上限を使い、原寸指定は維持する。
-MCP の本文・画像の cache miss は同梱 helper 用 broker でアプリの共通 provider に取得を依頼する。未送信原本は解放しない。Local Account への移動は metadata 同期と全本文取得を完了し、必要な原本をファイルで揃えてから、所属変更とファイル参照を同じ transaction で確定する。バックアップの新規作成は Local Account の保管庫に限定する。
-`files` は Vault 所有の原本と metadata、`meeting_attachments` は会議への独立した紐付けを保持する。原本 URI は Volume の絶対パスで、Local Account と未確定の原本は NULL とする。端末の保存先は FileStore/index.sqlite と local/files/{fileId}/original または server/{accountConnectionId}/files/{fileId}/original。
+MCP の本文・画像の cache miss は同梱 helper 用 broker でアプリの共通 provider に取得を依頼する。未送信原本は解放しない。Local Account への移動は metadata 同期と全本文取得を完了し、必要な原本をファイルで揃えてから、所属変更とファイル参照を同じ transaction で確定する。バックアップの新規作成は Local Account のワークスペースに限定する。
+`files` は Workspace 所有の原本と metadata、`meeting_attachments` は会議への独立した紐付けを保持する。原本 URI は Volume の絶対パスで、Local Account と未確定の原本は NULL とする。端末の保存先は FileStore/index.sqlite と local/files/{fileId}/original または server/{accountConnectionId}/files/{fileId}/original。
 詳細は [同期 ADR](docs/adr/shared/sync.md) を参照する。
 
 利用テレメトリは録音・永続化の正本から独立した lossy projection である。`CaptionViewModel` などの owner は低頻度の
@@ -120,9 +120,9 @@ Google Calendar / EventKit
 CalendarAttendeeNormalizer
     ↓ person・有効なemail・現在ユーザー除外・正規化emailで重複排除
 calendar_events.attendees_json
-    ↓ writable Server VaultのMeeting更新
+    ↓ writable Server WorkspaceのMeeting更新
 meetings.calendar_event.attendees
-    └─ encrypted Vaultではcalendar_event全体をencrypted_payloadへ格納
+    └─ encrypted Workspaceではcalendar_event全体をencrypted_payloadへ格納
 ```
 
 Desktopはemailと表示名だけを保存し、Serverは旧Desktopがattendeesを省略した更新では既存値を維持する。
@@ -130,9 +130,9 @@ Desktopはemailと表示名だけを保存し、Serverは旧Desktopがattendees�
 廃止した顧客インテリジェンスの判断は[履歴ADR](docs/adr/desktop/customer-intelligence.md)に残す。
 
 任意の Dahlia Server runtime は内蔵 Codex の provider transport を所有し、macOS の録音・文字起こし critical path には入らない。
-macOS の Dahlia アカウントは Vault の所有者ではなく、アプリ共有の接続として SQLite に登録する。OAuth credential と remote identity は
-接続 UUID ごとに Keychain が所有し、token 利用側は connection ID を明示する。sign-out は選択した接続の credential を削除し、Server record を残したまま local working copy の削除または Local Account への移動を選ぶ。Vault は AI provider
-利用のために任意の接続を参照し、接続ごとの private `CODEX_HOME` を使う。サインインだけでは Local Vault を移さず、Vault 単位の明示移行を要求する。Server-managed Vault は常時同期し、独立した同期 toggle は持たない。ローカルアカウントだけが
+macOS の Dahlia アカウントは Workspace の所有者ではなく、アプリ共有の接続として SQLite に登録する。OAuth credential と remote identity は
+接続 UUID ごとに Keychain が所有し、token 利用側は connection ID を明示する。sign-out は選択した接続の credential を削除し、Server record を残したまま local working copy の削除または Local Account への移動を選ぶ。Workspace は AI provider
+利用のために任意の接続を参照し、接続ごとの private `CODEX_HOME` を使う。サインインだけでは Local Workspace を移さず、Workspace 単位の明示移行を要求する。Server-managed Workspace は常時同期し、独立した同期 toggle は持たない。ローカルアカウントだけが
 ChatGPT Subscription または Databricks AI Gateway を使い、Dahlia アカウントは接続先の Gateway を使う。この境界は
 [Codex account context](docs/adr/desktop/accounts.md#codex-account-context)を正本とする。
 Better Auth、Gateway 管理 metadata、meeting sync は単一の Drizzle application database を共有する。PostgreSQL は生成済み認証 table を
@@ -160,7 +160,7 @@ Dahlia macOS / bundled Codex 0.148.0
 
 Drizzle application store (SQLite, PostgreSQL, Lakebase, or Hyperdrive)
     ├─ auth: 共通 user directory + session/OAuth/organization/Team membership
-    └─ app: artifact + Vault + Project + principal permission + meetings + transcript_segments + screenshots
+    └─ app: artifact + Workspace + Project + principal permission + meetings + transcript_segments + screenshots
             + search projections + sync receipts / changes + jobs
 
 /api/v1/artifacts
@@ -170,17 +170,17 @@ Drizzle application store (SQLite, PostgreSQL, Lakebase, or Hyperdrive)
     └─ local / S3 / R2 / Databricks Volume bytes → authenticated streaming relay
 /mcp
     ├─ owner-scoped artifact create / replace / visibility / delete tools
-    └─ Vault permission-scoped synchronized meeting read tools
+    └─ Workspace permission-scoped synchronized meeting read tools
 
 /api/v1/transactions
-    └─ immutable Vault-scoped domain operations → atomic canonical commit
-/api/v1/vaults/{vault_id}/meetings/{meeting_id}
+    └─ immutable Workspace-scoped domain operations → atomic canonical commit
+/api/v1/workspaces/{workspace_id}/meetings/{meeting_id}
     ├─ transcript patch chunks
     └─ screenshot metadata + local / S3 / R2 / Databricks Volume bytes
-/api/v1/events + /api/v1/vaults/{vault_id}/changes
+/api/v1/events + /api/v1/workspaces/{workspace_id}/changes
     └─ SSE invalidation + cursor-based canonical catch-up
 
-app.vault_permissions
+app.workspace_permissions
     ├─ user / Better Auth organization / Team principal
     └─ admin / editor / viewer（Organization所属だけではアクセスを付与しない）
 ```
@@ -192,10 +192,10 @@ Workers Static Assets が直接配信し、Worker 内から asset binding を呼
 `index.html` へ fallback する一方、API と discovery の未定義 path は Hono の 404 を維持する。
 
 Gateway、認証 store、upstream、artifact storage の停止は Server 操作だけを失敗させる。macOS の起動、録音、音声保存、文字起こし、
-閲覧、検索はこの runtime を待たない。Artifact API は明示的に渡された任意 asset だけを扱う。これとは別に、ServerアカウントのVault、Project、meeting、summary、transcript 原文、screenshot、OCR、AI captionはDesktopとWebが共有するServer canonical dataである。Desktop は既存の domain table を offline working-copy record cache とし、ローカル変更と immutable domain transaction の記録を同じ SQLite transaction で確定する。これはローカルからServer copyを作る一方向転送ではない。サインインはローカルVaultを暗黙に関連付けず、明示的にServerへ移したVaultは常時同期する。ログイン済み接続で権限のある既存Server保管庫もDesktopが自動発見し、取り込み操作なしで一覧と同期に参加する。サインアウトではServer canonical dataを変更せず、working copyを削除するかLocal Accountへ移す。Server Vaultの所有主体は変更不能なOrganizationとする。Vault Adminがuser／Organization／Teamへadmin・editor・viewerを付与し、Admin／Editorは内容を編集、AdminだけがVaultの設定・共有・削除・reset・全内容移管を行う。Personalは本人専用。Header認証では設定されたメールヘッダーを識別に使い、初回登録時だけドメイン組織を作成・参加する。
+閲覧、検索はこの runtime を待たない。Artifact API は明示的に渡された任意 asset だけを扱う。これとは別に、ServerアカウントのWorkspace、Project、meeting、summary、transcript 原文、screenshot、OCR、AI captionはDesktopとWebが共有するServer canonical dataである。Desktop は既存の domain table を offline working-copy record cache とし、ローカル変更と immutable domain transaction の記録を同じ SQLite transaction で確定する。これはローカルからServer copyを作る一方向転送ではない。サインインはローカルWorkspaceを暗黙に関連付けず、明示的にServerへ移したWorkspaceは常時同期する。ログイン済み接続で権限のある既存ServerワークスペースもDesktopが自動発見し、取り込み操作なしで一覧と同期に参加する。サインアウトではServer canonical dataを変更せず、working copyを削除するかLocal Accountへ移す。Server Workspaceの所有主体は変更不能なOrganizationとする。Workspace Adminがuser／Organization／Teamへadmin・editor・viewerを付与し、Admin／Editorは内容を編集、AdminだけがWorkspaceの設定・共有・削除・reset・全内容移管を行う。Personalは本人専用。Header認証では設定されたメールヘッダーを識別に使い、初回登録時だけドメイン組織を作成・参加する。
 PostgreSQL／LakebaseではBetter Authの機械生成migrationとDahlia application migrationを別ledgerに置き、認証方式によらず
 `auth`、`app`の順で適用する。Header identityは検証直後に`auth.user`へ射影し、Webはaccountsと共通のBetter Authセッション・Organization APIを使う。保護操作では検証済みHeaderを引き続き必須とし、Cookie本人不一致を拒否する。Serverは各identity transactionで
-`app.user_id`だけをtransaction-localに設定する。Vault/content RLSは`app.vault_permissions`を評価し、organizationとTeam membershipを
+`app.user_id`だけをtransaction-localに設定する。Workspace/content RLSは`app.workspace_permissions`を評価し、organizationとTeam membershipを
 `auth.member`と`auth.team_member`から直接解決する。
 Server は meeting の名前・説明・summary 表示本文と screenshot の OCR・caption を domain transaction 受理時に自前で token 化し、
 共通の `app.search_documents` projection を canonical row と同じ transaction で更新する。PostgreSQL は GIN、Lakebase は
@@ -203,30 +203,30 @@ Server は meeting の名前・説明・summary 表示本文と screenshot の O
 非同期 worker が summary／OCR／caption の自然文から再生成可能な vector projection を作る。Lakebase は `lakebase_vector`、
 その他の PostgreSQL は pgvector、SQLite は exact cosine を使う。query 時は FTS と vector の上位候補を
 RRF で統合し、embedding の未設定・未完成・障害時は FTS に縮退する。transcript と内部識別子は Server 検索対象に含めず、
-すべての検索 query は `vault_id` 経由の permission／RLS を通す。D1 adapterは削除し、WorkerはPostgreSQL／Hyperdriveを使用する。
+すべての検索 query は `workspace_id` 経由の permission／RLS を通す。D1 adapterは削除し、WorkerはPostgreSQL／Hyperdriveを使用する。
 Node の画像解析 worker は canonical 登録済みの会議画像をファイル単位で扱い、既存1280px variant と App service principal を使って不足する OCR・caption を生成する。requesterの現在のAdmin／Editor権限・checksum・revision・lease を再確認し、正本・差分・検索 projection・embedding job を同じ transaction で更新する。Desktop は Local Account の画像だけを解析する。
 Server の出力言語・画像解析言語は本人の account settings API を正本とし、Desktop はメモリに保持する。SSE は invalidation のみ、再接続時に再取得する。設定用のローカル table・revision・再送 queue は作らず、設定や認証の取得を録音開始・継続・停止の前提にしない。文字起こしと要約は[処理場所の契約](docs/adr/shared/transcription-summary-processing.md)に従い、localではDesktop、remoteではServerが担当する。
 翻訳文、音声、SQLite file、note、tag、calendar、
 Project は階層参照と meeting 絞り込みのためだけに同期し、Server の全文・vector projection へは含めない。transcript の `audio_source` は `mic`／`system` の収録経路、nullable な `speaker_label` は将来の話者分離ラベルとし、音声特徴量は同期しない。runtime と data boundary の判断は次を正本とする。
 
-- [Server database と認可 identity](docs/adr/server/database-and-identity.md): schema、Vault permission、content RLS、header user 射影。
+- [Server database と認可 identity](docs/adr/server/database-and-identity.md): schema、Workspace permission、content RLS、header user 射影。
 - [Artifact](docs/adr/server/artifacts.md): ownership、storage、ID、Remote MCP。
 - [Databricks upstream identity](docs/adr/server/databricks.md#upstream-identity): Responses と model discovery の認証境界。
-- [Canonical sync](docs/adr/shared/sync.md): Vault／Project、transcript 話者モデル、Desktop／Web の双方向変更、revision、transaction、delta、SSE。
-- [Vault 共有と管理者](docs/adr/server/sharing-and-administration.md): shared read、Organization／Team 共有、Server 管理者権限。
+- [Canonical sync](docs/adr/shared/sync.md): Workspace／Project、transcript 話者モデル、Desktop／Web の双方向変更、revision、transaction、delta、SSE。
+- [Workspace 共有と管理者](docs/adr/server/sharing-and-administration.md): shared read、Organization／Team 共有、Server 管理者権限。
 - [Server Hybrid 検索](docs/adr/server/search.md#hybrid-検索): 同期済み content の検索 projection。
 
-Desktop SQLite は offline working copy であり、単方向の転送元ではない。Server Account の本文は `sync_content_state` で完全性・保持 revision・検証済み hash・byte 数・利用日時を管理する。metadata-only snapshot / delta は本文取得を待たず進み、`MeetingContentProvider` が SQLite を先に読み、必要時だけ指定 revision の全ページを一時領域へ取得して manifest と照合する。全 Server Account の本文予算は128 MiB、検証済みで再取得できる未使用本文だけを LRU で80%まで解放する。Local Account・queue・復旧・録音・利用中本文は保全し、翻訳・音声特徴量・summary export の参照は残す。詳細は [本文の部分保持](docs/adr/shared/sync.md#テキスト本文の部分保持2026-09-07)。SSE はデータ本体を運ばない。Server 側採用では未送信変更を破棄して cursor をリセットし、Server の revision 一覧を取得するまで revision 未確定の Vault 同期行を保持して送信を停止する。この間のローカル変更と確定文字起こしはキューへ保存し、取得した revision で未送信操作を順序どおり補正してから送信を再開する。revision 取得と canonical 本体の適用は区別し、cursor が未設定なら同じ revision でも本体を再取得・適用する。これを初期送信の中断と混同して create を再生成してはならない。local mutation は record cache と operation snapshot を同じ SQLite transaction へ明示的に書き、remote applier は recorder を呼ばない。
+Desktop SQLite は offline working copy であり、単方向の転送元ではない。Server Account の本文は `sync_content_state` で完全性・保持 revision・検証済み hash・byte 数・利用日時を管理する。metadata-only snapshot / delta は本文取得を待たず進み、`MeetingContentProvider` が SQLite を先に読み、必要時だけ指定 revision の全ページを一時領域へ取得して manifest と照合する。全 Server Account の本文予算は128 MiB、検証済みで再取得できる未使用本文だけを LRU で80%まで解放する。Local Account・queue・復旧・録音・利用中本文は保全し、翻訳・音声特徴量・summary export の参照は残す。詳細は [本文の部分保持](docs/adr/shared/sync.md#テキスト本文の部分保持2026-09-07)。SSE はデータ本体を運ばない。Server 側採用では未送信変更を破棄して cursor をリセットし、Server の revision 一覧を取得するまで revision 未確定の Workspace 同期行を保持して送信を停止する。この間のローカル変更と確定文字起こしはキューへ保存し、取得した revision で未送信操作を順序どおり補正してから送信を再開する。revision 取得と canonical 本体の適用は区別し、cursor が未設定なら同じ revision でも本体を再取得・適用する。これを初期送信の中断と混同して create を再生成してはならない。local mutation は record cache と operation snapshot を同じ SQLite transaction へ明示的に書き、remote applier は recorder を呼ばない。
 
 通常差分と本文反映の競合判定は同期層の `RemoteChangePolicy` が共有する。録音中も安全な差分は適用し、保留を含むページ以降の永続 cursor は進めず次回に再取得する。本文 provider は同期済み revision の本文だけを取得する。復旧・reset と本文の破棄は通常差分より厳しい保護単位を維持する。詳細は [録音中の通常差分適用](docs/adr/shared/sync.md#録音中の通常差分適用2026-09-07)。
 
 ### 起動準備と録音開始
 
 メインウィンドウは起動準備中も処理名と待機案内を表示する。プロセスロック取得後、
-バックアップ復元とDB変換をMainActor外で順に完了させてから、保管庫とサービスを構成する。
+バックアップ復元とDB変換をMainActor外で順に完了させてから、ワークスペースとサービスを構成する。
 DB初期化失敗は起動を止める。復元の失敗・一部失敗は利用可能なDBの準備完了後に確認を求め、
 「続ける」まで録音を開始しない。起動中の終了要求は、復元・DB初期化とサービスの終了処理登録までは
-所有された起動タスクの完了を待ち、その後の保管庫取得はキャンセルしてサービスを停止する。
+所有された起動タスクの完了を待ち、その後のワークスペース取得はキャンセルしてサービスを停止する。
 
 ## Workload Classes
 
@@ -529,8 +529,8 @@ New batch sessions enqueue a durable `recording_archives` job at session creatio
 
 ### ライブ MCP 配信
 
-ローカル stdio MCP は追加済み全 Vault を既定とし、任意の起動引数で読み書きの範囲を制限する。Local / Server の `get_meeting_transcript` は保存済みの確定文だけを読み、`after` で差分取得、`wait` で最大25秒の待機を行う。待機中に DB ロックを保持せず、Server は認証と Vault 共有権限を各読取で再確認する。未確定文の MCP 公開や専用ライブ HTTP / SSE は持たない。AI Chat のライブ自動投入は廃止し、通常チャットと履歴は維持する。契約は [MCP の差分取得と保管庫](docs/live-mcp.md) にまとめる。
+ローカル stdio MCP は追加済み全 Workspace を既定とし、任意の起動引数で読み書きの範囲を制限する。Local / Server の `get_meeting_transcript` は保存済みの確定文だけを読み、`after` で差分取得、`wait` で最大25秒の待機を行う。待機中に DB ロックを保持せず、Server は認証と Workspace 共有権限を各読取で再確認する。未確定文の MCP 公開や専用ライブ HTTP / SSE は持たない。AI Chat のライブ自動投入は廃止し、通常チャットと履歴は維持する。契約は [MCP の差分取得とワークスペース](docs/live-mcp.md) にまとめる。
 
-## Organization-owned Server Vaults
+## Organization-owned Server Workspaces
 
-[Organization ownership ADR](docs/adr/shared/organization-vaults.md) supersedes personal Server Vault ownership and read-only sharing. Organization membership and Vault access are separate; admin manages the Vault and permissions, admin/editor writes content, and viewer reads. Header/accounts share Better Auth browser sessions while retaining their identity-entry and machine-client boundaries. The sync ledger, search projection work, and encryption keys are Vault-scoped. Local migration reuses relocation and the durable sync queue, preserving recordings and newer edits.
+[Organization ownership ADR](docs/adr/shared/organization-vaults.md) supersedes personal Server Workspace ownership and read-only sharing. Organization membership and Workspace access are separate; admin manages the Workspace and permissions, admin/editor writes content, and viewer reads. Header/accounts share Better Auth browser sessions while retaining their identity-entry and machine-client boundaries. The sync ledger, search projection work, and encryption keys are Workspace-scoped. Local migration reuses relocation and the durable sync queue, preserving recordings and newer edits.

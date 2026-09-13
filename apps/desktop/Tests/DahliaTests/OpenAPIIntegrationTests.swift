@@ -12,11 +12,11 @@
     struct SyncAPIMiddlewareTests {
         @Test(arguments: ["meeting", "screenshot"])
         func textSearchUsesBodyKindAndRoundTripsCursor(kind: String) async throws {
-            let vaultID = "019f0d36-0520-7000-8000-000000000001"
+            let workspaceID = "019f0d36-0520-7000-8000-000000000001"
             let rowID = "019f0d36-0520-7000-8000-000000000002"
             let origin = try #require(URL(string: "https://example.com"))
-            let url = try #require(URL(string: "/api/v1/vaults/\(vaultID)/text-search", relativeTo: origin))
-            let cursor = try String(decoding: JSONSerialization.data(withJSONObject: [vaultID, kind, "needle", 1, 1]), as: UTF8.self)
+            let url = try #require(URL(string: "/api/v1/workspaces/\(workspaceID)/text-search", relativeTo: origin))
+            let cursor = try String(decoding: JSONSerialization.data(withJSONObject: [workspaceID, kind, "needle", 1, 1]), as: UTF8.self)
             let publicCursor = try #require(PublicIDWire.cursor(cursor, kind: "textSearch", direction: .encode) as? String)
             let publicRowID = try TypeID.encode(#require(UUID(uuidString: rowID)), as: kind == "screenshot" ? .attachment : .meeting)
             let requestData = try JSONSerialization.data(withJSONObject: ["kind": kind, "query": "needle", "cursor": cursor])
@@ -51,16 +51,16 @@
             let id = "019f0d36-0520-7000-8000-000000000001"
             let capture = SyncJSONResponse()
             let middleware = SyncAPIMiddleware(token: "test", maximumBytes: nil, preservingJSONBody: nil, capture: capture)
-            let bytes = try PublicIDWire.data(Data("{\"vaultId\":\"\(id)\"}".utf8), shape: "vault", direction: .encode)
+            let bytes = try PublicIDWire.data(Data("{\"workspaceId\":\"\(id)\"}".utf8), shape: "workspace", direction: .encode)
             _ = try await middleware.intercept(
-                HTTPRequest(method: .get, scheme: "https", authority: "example.com", path: "/api/v1/vaults/\(id)"),
-                body: nil, baseURL: #require(URL(string: "https://example.com")), operationID: "getVault"
+                HTTPRequest(method: .get, scheme: "https", authority: "example.com", path: "/api/v1/workspaces/\(id)"),
+                body: nil, baseURL: #require(URL(string: "https://example.com")), operationID: "getWorkspace"
             ) { request, _, _ in
-                #expect(request.path?.contains("/vlt_") == true)
+                #expect(request.path?.contains("/ws_") == true)
                 return (HTTPResponse(status: .ok), HTTPBody(bytes))
             }
             let data = try #require(capture.value.withLock { $0 })
-            #expect(try JSONSerialization.jsonObject(with: data) as? [String: String] == ["vaultId": id])
+            #expect(try JSONSerialization.jsonObject(with: data) as? [String: String] == ["workspaceId": id])
         }
 
         @Test
@@ -83,24 +83,24 @@
         func sharedNullableDTOsPreserveRecordsAndTombstones(deleted: Bool) throws {
             let id = "019f0d36-0520-7000-8000-000000000001"
             let record = deleted ? "null" : """
-            {"vaultId":"\(id)","organizationId":"\(
+            {"workspaceId":"\(id)","organizationId":"\(
                 id
-            )","role":"admin","name":"Vault","revision":1,"createdAt":"2026-09-09T00:00:00Z","updatedAt":"2026-09-09T00:00:00Z"}
+            )","role":"admin","name":"Workspace","revision":1,"createdAt":"2026-09-09T00:00:00Z","updatedAt":"2026-09-09T00:00:00Z"}
             """
             let expected = deleted ? nil : id
             let canonical = try SyncJSON.decoder.decode(Components.Schemas.CanonicalRecord.self, from: Data("""
-            {"entity":"vault","id":"\(id)","revision":1,"record":\(record)}
+            {"entity":"workspace","id":"\(id)","revision":1,"record":\(record)}
             """.utf8))
-            #expect(try #require(canonical.value1).record?.vaultId == expected)
+            #expect(try #require(canonical.value1).record?.workspaceId == expected)
             let conflict = try SyncJSON.decoder.decode(Components.Schemas.RevisionConflict.self, from: Data("""
-            {"entity":"vault","id":"\(id)","clientBaseRevision":0,"serverRevision":1,"record":\(record)}
+            {"entity":"workspace","id":"\(id)","clientBaseRevision":0,"serverRevision":1,"record":\(record)}
             """.utf8))
-            #expect(try #require(conflict.value1).record?.vaultId == expected)
+            #expect(try #require(conflict.value1).record?.workspaceId == expected)
             let changes = try SyncJSON.decoder.decode(Components.Schemas.Changes.self, from: Data("""
-            {"items":[{"sequence":1,"vaultId":"\(id)","entity":"vault","entityId":"\(id)","action":"upsert","revision":1,
+            {"items":[{"sequence":1,"workspaceId":"\(id)","entity":"workspace","entityId":"\(id)","action":"upsert","revision":1,
             "transactionId":"\(id)","record":\(record)}],"cursor":"1","highWaterCursor":"1","hasMore":false}
             """.utf8))
-            #expect(try #require(changes.items.first?.value1).record?.vaultId == expected)
+            #expect(try #require(changes.items.first?.value1).record?.workspaceId == expected)
         }
 
         @Test
@@ -188,19 +188,21 @@
             let configuration = URLSessionConfiguration.ephemeral
             configuration.httpAdditionalHeaders = ["X-Forwarded-Email": "swift-test@example.com", "X-Forwarded-User": "swift-test"]
             let api = SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" })
-            let connectionID = UUID.v7(), vaultID = UUID.v7().uuidString.lowercased(), meetingID = UUID.v7().uuidString.lowercased()
+            let connectionID = UUID.v7(), workspaceID = UUID.v7().uuidString.lowercased(), meetingID = UUID.v7().uuidString.lowercased()
             let organizations = try await api.perform(origin: origin, connectionId: connectionID) {
                 try await $0.listOrganizations().ok.body.json
             }
             let organizationID = try #require(organizations.items.first(where: { $0.kind == .team })?.id)
             let data = Data("""
             {"schemaVersion":3,"id":"\(UUID.v7().uuidString
-                .lowercased())","vaultId":"\(vaultID)","createdAt":"2026-09-09T00:00:00.001Z","operations":[
+                .lowercased())","workspaceId":"\(workspaceID)","createdAt":"2026-09-09T00:00:00.001Z","operations":[
             {"id":"\(UUID.v7().uuidString
                 .lowercased(
-                ))","entity":"vault","action":"create","entityId":"\(
-                vaultID
-            )","baseRevision":null,"data":{"organizationId":"\(organizationID)","name":"Swift integration","createdAt":"2026-09-09T00:00:00.001Z"}},
+                ))","entity":"workspace","action":"create","entityId":"\(
+                workspaceID
+            )","baseRevision":null,"data":{"organizationId":"\(
+                organizationID
+            )","name":"Swift integration","createdAt":"2026-09-09T00:00:00.001Z"}},
             {"id":"\(UUID.v7().uuidString
                 .lowercased(
                 ))","entity":"meeting","action":"create","entityId":"\(
@@ -226,7 +228,7 @@
             _ = try await api.perform(origin: origin, connectionId: connectionID) {
                 try await $0.reserveFileUpload(body: .json(.init(
                     id: fileID,
-                    vaultId: vaultID,
+                    workspaceId: workspaceID,
                     name: "bytes.bin",
                     contentType: "application/octet-stream",
                     metadata: .init(source: .upload)
@@ -255,7 +257,8 @@
             #expect(uploaded.checksum == checksum)
             #expect(uploaded.size == bytes.count)
             let commit = Data("""
-            {"schemaVersion":3,"id":"\(UUID.v7().uuidString.lowercased())","vaultId":"\(vaultID)","createdAt":"2026-09-09T00:00:00Z","operations":[
+            {"schemaVersion":3,"id":"\(UUID.v7().uuidString
+                .lowercased())","workspaceId":"\(workspaceID)","createdAt":"2026-09-09T00:00:00Z","operations":[
             {"id":"\(UUID.v7().uuidString
                 .lowercased(
                 ))","entity":"file","action":"upsert","entityId":"\(fileID)","baseRevision":null,"data":{"checksum":"\(checksum)","metadata":{}}}]}

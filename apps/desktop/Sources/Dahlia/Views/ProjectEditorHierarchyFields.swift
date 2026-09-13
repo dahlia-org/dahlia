@@ -12,7 +12,7 @@ struct ProjectEditorHierarchyFields: View {
                 Spacer(minLength: 12)
 
                 Picker(L10n.parentProject, selection: $parentProjectId) {
-                    Text(L10n.vaultRoot)
+                    Text(L10n.workspaceRoot)
                         .tag(nil as UUID?)
                     ForEach(parentProjects) { project in
                         Text(project.projectName)

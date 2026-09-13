@@ -10,7 +10,7 @@
     struct MeetingCalendarSyncTests {
         @Test(arguments: ["cleared", "reassigned", "rescheduled"])
         func canonicalCalendarSurvivesRenameAndRecreation(change: String) throws {
-            let (database, vault, meeting) = try fixture()
+            let (database, workspace, meeting) = try fixture()
             let calendar: [String: Any] = change == "cleared"
                 ? ["icalUid": NSNull(), "recurrenceId": NSNull(), "calendarEvent": NSNull()]
                 : [
@@ -22,7 +22,14 @@
                 var body = try payload(SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .create, in: db))
                 body.merge(calendar) { _, remote in remote }
                 let canonical = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: JSONSerialization.data(withJSONObject: body))
-                try SyncTransactionQueue.applyCanonical(.meeting, id: meeting.id, vaultId: vault.id, value: canonical, remoteRevision: 2, in: db)
+                try SyncTransactionQueue.applyCanonical(
+                    .meeting,
+                    id: meeting.id,
+                    workspaceId: workspace.id,
+                    value: canonical,
+                    remoteRevision: 2,
+                    in: db
+                )
                 var renamed = try #require(try MeetingRecord.fetchOne(db, key: meeting.id))
                 #expect(renamed.calendarEventIcalUid == "event@example.com")
                 #expect(renamed.calendarEventRecurrenceId?.isEmpty == true)
@@ -41,7 +48,7 @@
 
         @Test
         func calendarRefreshQueuesLinkedOwnersAndPreservesNewerChangesAcrossReceipt() async throws {
-            let (database, vault, meeting) = try fixture()
+            let (database, workspace, meeting) = try fixture()
             let secondID = UUID.v7(), clearedID = UUID.v7(), localID = UUID.v7(), memberID = UUID.v7()
             try await database.dbQueue.write { db in
                 var second = meeting
@@ -52,19 +59,19 @@
                 try cleared.insert(db)
                 try MeetingCalendarSync(icalUid: nil, recurrenceId: nil, calendarEvent: nil).save(meetingId: cleared.id, in: db)
                 for member in [false, true] {
-                    var otherVault = vault
-                    otherVault.id = .v7()
-                    otherVault.path = "/tmp/calendar-\(otherVault.id)"
-                    otherVault.syncRole = member ? "viewer" : "admin"
+                    var otherWorkspace = workspace
+                    otherWorkspace.id = .v7()
+                    otherWorkspace.path = "/tmp/calendar-\(otherWorkspace.id)"
+                    otherWorkspace.syncRole = member ? "viewer" : "admin"
                     if !member {
-                        otherVault.accountConnectionId = nil
-                        otherVault.organizationId = otherVault.accountConnectionId == nil ? nil : (otherVault.organizationId ?? .v7())
-                        otherVault.syncConfirmedConnectionId = nil
+                        otherWorkspace.accountConnectionId = nil
+                        otherWorkspace.organizationId = otherWorkspace.accountConnectionId == nil ? nil : (otherWorkspace.organizationId ?? .v7())
+                        otherWorkspace.syncConfirmedConnectionId = nil
                     }
-                    try otherVault.insert(db)
+                    try otherWorkspace.insert(db)
                     var otherMeeting = meeting
                     otherMeeting.id = member ? memberID : localID
-                    otherMeeting.vaultId = otherVault.id
+                    otherMeeting.workspaceId = otherWorkspace.id
                     try otherMeeting.insert(db)
                     if !member {
                         // A detached Local copy retains the last canonical calendar snapshot.
@@ -130,15 +137,15 @@
         func migrationPreservesExistingMeetingAndLocalCalendarReference() throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v42_localFirstSchema")
-            let vaultID = UUID.v7(), meetingID = UUID.v7()
+            let workspaceID = UUID.v7(), meetingID = UUID.v7()
             try queue.write { db in
                 try db.execute(sql: """
-                INSERT INTO vaults(id, name, createdAt, lastOpenedAt) VALUES (?, 'Vault', 1, 1);
+                INSERT INTO workspaces(id, name, createdAt, lastOpenedAt) VALUES (?, 'Workspace', 1, 1);
                 INSERT INTO calendar_events(ical_uid, recurrence_id, created_at, updated_at, title, start, "end", is_all_day)
                 VALUES ('event@example.com', '', 1, 1, 'Event', 1, 2, 0);
-                INSERT INTO meetings(id, vaultId, name, status, createdAt, updatedAt, calendar_event_ical_uid, calendar_event_recurrence_id)
+                INSERT INTO meetings(id, workspace_id, name, status, createdAt, updatedAt, calendar_event_ical_uid, calendar_event_recurrence_id)
                 VALUES (?, ?, 'Preserved', 'READY', 1, 1, 'event@example.com', '');
-                """, arguments: [vaultID, meetingID, vaultID])
+                """, arguments: [workspaceID, meetingID, workspaceID])
             }
             try AppDatabaseManager.migrator.migrate(queue)
             try queue.read { db in
@@ -168,25 +175,25 @@
             )
         }
 
-        private func fixture() throws -> (AppDatabaseManager, VaultRecord, MeetingRecord) {
+        private func fixture() throws -> (AppDatabaseManager, WorkspaceRecord, MeetingRecord) {
             let database = try AppDatabaseManager(path: ":memory:")
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://server.example.com", clientID: "desktop", createdAt: .now)
-            var vault = VaultRecord(id: .v7(), path: "/tmp/calendar-sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
-            vault.accountConnectionId = connection.id
-            if vault.syncRole == nil { vault.syncRole = "admin" }
-            if vault.organizationId == nil { vault.organizationId = .v7() }
-            vault.syncConfirmedConnectionId = connection.id
+            var workspace = WorkspaceRecord(id: .v7(), path: "/tmp/calendar-sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
+            workspace.accountConnectionId = connection.id
+            if workspace.syncRole == nil { workspace.syncRole = "admin" }
+            if workspace.organizationId == nil { workspace.organizationId = .v7() }
+            workspace.syncConfirmedConnectionId = connection.id
             let meeting = MeetingRecord(
-                id: .v7(), vaultId: vault.id, name: "Meeting", createdAt: .now, updatedAt: .now,
+                id: .v7(), workspaceId: workspace.id, name: "Meeting", createdAt: .now, updatedAt: .now,
                 calendarEventIcalUid: "event@example.com", calendarEventRecurrenceId: ""
             )
             try database.dbQueue.write { db in
                 try connection.insert(db)
-                try vault.insert(db)
+                try workspace.insert(db)
                 try CalendarEventRecord.upsert(event: event(), now: .now, in: db)
                 try meeting.insert(db)
             }
-            return (database, vault, meeting)
+            return (database, workspace, meeting)
         }
     }
 #endif

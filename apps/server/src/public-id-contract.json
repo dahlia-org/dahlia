@@ -3,8 +3,8 @@
     "conversationAnalytics": {
       "transcriptId": "id:transcript"
     },
-    "vault": {
-      "vaultId": "id:vault",
+    "workspace": {
+      "workspaceId": "id:workspace",
       "meetingId": "id:meeting",
       "projectId": "id:project",
       "fileId": "id:file",
@@ -18,11 +18,11 @@
       "parentProjectId": "id:project",
       "rootProjectId": "id:project",
       "typeOwnerProjectId": "id:project",
-      "id": "id:vault",
+      "id": "id:workspace",
       "organizationId": "id:organization"
     },
     "project": {
-      "vaultId": "id:vault",
+      "workspaceId": "id:workspace",
       "meetingId": "id:meeting",
       "projectId": "id:project",
       "fileId": "id:file",
@@ -39,7 +39,7 @@
       "id": "id:project"
     },
     "meeting": {
-      "vaultId": "id:vault",
+      "workspaceId": "id:workspace",
       "meetingId": "id:meeting",
       "projectId": "id:project",
       "fileId": "id:file",
@@ -58,7 +58,7 @@
       "summary_document": "document"
     },
     "file": {
-      "vaultId": "id:vault",
+      "workspaceId": "id:workspace",
       "meetingId": "id:meeting",
       "projectId": "id:project",
       "fileId": "id:file",
@@ -78,7 +78,7 @@
       "contentUrl": "url"
     },
     "attachment": {
-      "vaultId": "id:vault",
+      "workspaceId": "id:workspace",
       "meetingId": "id:meeting",
       "projectId": "id:project",
       "fileId": "id:file",
@@ -97,7 +97,7 @@
       "file": "file"
     },
     "summary": {
-      "vaultId": "id:vault",
+      "workspaceId": "id:workspace",
       "meetingId": "id:meeting",
       "projectId": "id:project",
       "fileId": "id:file",
@@ -115,7 +115,7 @@
       "document": "document"
     },
     "transcript": {
-      "vaultId": "id:vault",
+      "workspaceId": "id:workspace",
       "meetingId": "id:meeting",
       "projectId": "id:project",
       "fileId": "id:file",
@@ -143,7 +143,7 @@
       "segmentId": "id:segment"
     },
     "recording": {
-      "vaultId": "id:vault",
+      "workspaceId": "id:workspace",
       "meetingId": "id:meeting",
       "projectId": "id:project",
       "fileId": "id:file",
@@ -170,7 +170,7 @@
       "contentURL": "url"
     },
     "event": {
-      "vaultId": "id:vault",
+      "workspaceId": "id:workspace",
       "meetingId": "id:meeting",
       "projectId": "id:project",
       "fileId": "id:file",
@@ -188,7 +188,7 @@
       "sessionId": "id:recording"
     },
     "summaryJob": {
-      "vaultId": "id:vault",
+      "workspaceId": "id:workspace",
       "meetingId": "id:meeting",
       "projectId": "id:project",
       "fileId": "id:file",
@@ -226,7 +226,7 @@
     "transcriptPatch": {
       "patchId": "id:patch",
       "transcript": "transcript",
-      "vaultId": "id:vault",
+      "workspaceId": "id:workspace",
       "meetingId": "id:meeting",
       "projectId": "id:project",
       "fileId": "id:file",
@@ -243,7 +243,7 @@
     },
     "transaction": {
       "id": "id:transaction",
-      "vaultId": "id:vault",
+      "workspaceId": "id:workspace",
       "operations": "array:operation",
       "records": "array:canonical",
       "conflicts": "array:canonical",
@@ -251,7 +251,7 @@
     },
     "resolve": {
       "id": "id:transaction",
-      "vaultId": "id:vault"
+      "workspaceId": "id:workspace"
     },
     "changes": {
       "changes": "array:canonical",
@@ -264,24 +264,24 @@
       "nextCursor": "cursor:snapshot"
     },
     "relocations": {
-      "vaults": "array:vault",
+      "workspaces": "array:workspace",
       "items": "array:canonical"
     },
     "transfer": {
       "id": "id:transaction",
-      "sourceVaultId": "id:vault",
-      "destinationVaultId": "id:vault"
+      "sourceWorkspaceId": "id:workspace",
+      "destinationWorkspaceId": "id:workspace"
     },
     "audience": {
-      "source": "audienceVault",
-      "destination": "audienceVault",
-      "sourceVaultId": "id:vault",
-      "destinationVaultId": "id:vault",
+      "source": "audienceWorkspace",
+      "destination": "audienceWorkspace",
+      "sourceWorkspaceId": "id:workspace",
+      "destinationWorkspaceId": "id:workspace",
       "added": "array:user",
       "removed": "array:user"
     },
-    "audienceVault": {
-      "vaultId": "id:vault",
+    "audienceWorkspace": {
+      "workspaceId": "id:workspace",
       "principals": "array:permission",
       "permissions": "array:permission",
       "users": "array:user"
@@ -342,11 +342,7 @@
     },
     "sessionResponse": {
       "user": "user",
-      "session": "session",
-      "workspace": "workspace"
-    },
-    "workspace": {
-      "id": "personalWorkspace"
+      "session": "session"
     },
     "authRequest": {
       "userId": "id:user",
@@ -371,11 +367,11 @@
       "member": "organizationMember"
     },
     "searchRequest": {
-      "vaultId": "id:vault",
+      "workspaceId": "id:workspace",
       "projectId": "id:project"
     },
     "search": {
-      "vaultId": "id:vault",
+      "workspaceId": "id:workspace",
       "meetings": "array:meeting",
       "projects": "array:project",
       "screenshots": "array:attachment"
@@ -387,8 +383,8 @@
     "fileUpload": {
       "file": "file"
     },
-    "vaults": {
-      "items": "array:vault"
+    "workspaces": {
+      "items": "array:workspace"
     },
     "projects": {
       "items": "array:project"
@@ -430,7 +426,7 @@
       "members": "array:organizationMember"
     },
     "mcpMeeting": {
-      "vault_id": "id:vault",
+      "workspace_id": "id:workspace",
       "meeting_id": "id:meeting",
       "project_id": "id:project",
       "parent_project_id": "id:project",
@@ -442,7 +438,7 @@
       "id": "id:meeting"
     },
     "mcpProject": {
-      "vault_id": "id:vault",
+      "workspace_id": "id:workspace",
       "meeting_id": "id:meeting",
       "project_id": "id:project",
       "parent_project_id": "id:project",
@@ -454,7 +450,7 @@
       "id": "id:project"
     },
     "mcpScreenshot": {
-      "vault_id": "id:vault",
+      "workspace_id": "id:workspace",
       "meeting_id": "id:meeting",
       "project_id": "id:project",
       "parent_project_id": "id:project",
@@ -466,7 +462,7 @@
       "id": "id:attachment"
     },
     "mcpSegment": {
-      "vault_id": "id:vault",
+      "workspace_id": "id:workspace",
       "meeting_id": "id:meeting",
       "project_id": "id:project",
       "parent_project_id": "id:project",
@@ -478,7 +474,7 @@
       "id": "id:segment"
     },
     "mcpTranscript": {
-      "vault_id": "id:vault",
+      "workspace_id": "id:workspace",
       "meeting_id": "id:meeting",
       "project_id": "id:project",
       "parent_project_id": "id:project",
@@ -499,7 +495,7 @@
       "file": "mcpManifest"
     },
     "mcpResult": {
-      "vault_id": "id:vault",
+      "workspace_id": "id:workspace",
       "meeting_id": "id:meeting",
       "project_id": "id:project",
       "parent_project_id": "id:project",
@@ -508,7 +504,7 @@
       "transcript_id": "id:transcript",
       "screenshot_id": "id:attachment",
       "file_id": "id:file",
-      "vault": "mcpVault",
+      "workspace": "mcpWorkspace",
       "meeting": "mcpMeeting",
       "project": "mcpProject",
       "meetings": "array:mcpMeeting",
@@ -524,14 +520,14 @@
       "effective_type_changed_project_ids": "array:id:project",
       "changed_meeting_ids": "array:id:meeting"
     },
-    "mcpVault": {
-      "id": "id:vault"
+    "mcpWorkspace": {
+      "id": "id:workspace"
     },
     "mcpServerSearch": {
       "items": "array:textSearchHit"
     },
     "mcpInput": {
-      "vault_id": "id:vault",
+      "workspace_id": "id:workspace",
       "meeting_id": "id:meeting",
       "project_id": "id:project",
       "parent_project_id": "id:project",
@@ -599,18 +595,18 @@
     "mcpTranscriptRun": {
       "recording_session_id": "id:recording"
     },
-    "mcpVaultList": {
-      "vaults": "array:vault"
+    "mcpWorkspaceList": {
+      "workspaces": "array:workspace"
     },
-    "governanceVault": {
-      "vaultId": "id:vault",
+    "governanceWorkspace": {
+      "workspaceId": "id:workspace",
       "creatorId": "id:user"
     },
-    "governanceVaults": {
-      "items": "array:governanceVault",
-      "nextCursor": "id:vault"
+    "governanceWorkspaces": {
+      "items": "array:governanceWorkspace",
+      "nextCursor": "id:workspace"
     },
-    "vaultDeletion": {
+    "workspaceDeletion": {
       "id": "id:transaction"
     }
   },
@@ -662,7 +658,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/meetings/:meeting/summary/job/:summaryJob/:action",
+      "path": "/api/v1/workspaces/:workspace/meetings/:meeting/summary/job/:summaryJob/:action",
       "response": "summaryJobResponse",
       "request": "summaryJob",
       "limit": 12582912,
@@ -671,7 +667,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/meetings/:meeting/summary/job",
+      "path": "/api/v1/workspaces/:workspace/meetings/:meeting/summary/job",
       "response": "summaryJobResponse",
       "query": {
         "id": "id:summaryJob"
@@ -682,7 +678,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/meetings/:meeting/summary/latest",
+      "path": "/api/v1/workspaces/:workspace/meetings/:meeting/summary/latest",
       "response": "summaryContent",
       "methods": [
         "GET",
@@ -690,7 +686,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/meetings/:meeting/summary/:version",
+      "path": "/api/v1/workspaces/:workspace/meetings/:meeting/summary/:version",
       "response": "summary",
       "methods": [
         "GET",
@@ -698,7 +694,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/meetings/:meeting/summary",
+      "path": "/api/v1/workspaces/:workspace/meetings/:meeting/summary",
       "response": "summaryJobResponse",
       "request": "summaryJob",
       "limit": 12582912,
@@ -707,7 +703,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/meetings/:meeting/summary",
+      "path": "/api/v1/workspaces/:workspace/meetings/:meeting/summary",
       "response": "summaries",
       "methods": [
         "GET",
@@ -715,7 +711,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/meetings/:meeting/transcripts/:patch/chunks/:index",
+      "path": "/api/v1/workspaces/:workspace/meetings/:meeting/transcripts/:patch/chunks/:index",
       "request": "chunk",
       "limit": 12582912,
       "methods": [
@@ -723,7 +719,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/meetings/:meeting/transcript/:version",
+      "path": "/api/v1/workspaces/:workspace/meetings/:meeting/transcript/:version",
       "response": "transcriptContent",
       "query": {
         "cursor": "cursor:segment"
@@ -734,7 +730,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/meetings/:meeting/transcript",
+      "path": "/api/v1/workspaces/:workspace/meetings/:meeting/transcript",
       "response": "transcripts",
       "methods": [
         "GET",
@@ -742,7 +738,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/meetings/:meeting/files",
+      "path": "/api/v1/workspaces/:workspace/meetings/:meeting/files",
       "response": "attachments",
       "query": {
         "cursor": "cursor:attachment"
@@ -753,7 +749,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/meetings/:meeting",
+      "path": "/api/v1/workspaces/:workspace/meetings/:meeting",
       "response": "meeting",
       "methods": [
         "GET",
@@ -761,10 +757,10 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/transfer-audience",
+      "path": "/api/v1/workspaces/:workspace/transfer-audience",
       "response": "audience",
       "query": {
-        "destinationVaultId": "id:vault"
+        "destinationWorkspaceId": "id:workspace"
       },
       "methods": [
         "GET",
@@ -772,7 +768,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/transfer",
+      "path": "/api/v1/workspaces/:workspace/transfer",
       "response": "transfer",
       "request": "transfer",
       "limit": 12582912,
@@ -784,7 +780,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/relocations",
+      "path": "/api/v1/workspaces/:workspace/relocations",
       "response": "relocations",
       "methods": [
         "GET",
@@ -810,7 +806,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/changes",
+      "path": "/api/v1/workspaces/:workspace/changes",
       "response": "changes",
       "methods": [
         "GET",
@@ -818,7 +814,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/snapshot",
+      "path": "/api/v1/workspaces/:workspace/snapshot",
       "response": "snapshot",
       "query": {
         "cursor": "cursor:snapshot"
@@ -838,7 +834,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/search",
+      "path": "/api/v1/workspaces/:workspace/search",
       "response": "textSearch",
       "query": {
         "cursor": "cursor:textSearch"
@@ -878,7 +874,7 @@
       "response": "file",
       "query": {
         "id": "id:file",
-        "vaultId": "id:vault"
+        "workspaceId": "id:workspace"
       },
       "methods": [
         "POST"
@@ -909,7 +905,7 @@
       "response": "file"
     },
     {
-      "path": "/api/v1/vaults/:vault/files",
+      "path": "/api/v1/workspaces/:workspace/files",
       "response": "files",
       "query": {
         "cursor": "cursor:file"
@@ -920,8 +916,8 @@
       ]
     },
     {
-      "path": "/api/v1/vaults",
-      "response": "vaults",
+      "path": "/api/v1/workspaces",
+      "response": "workspaces",
       "query": {
         "organizationId": "id:organization"
       },
@@ -931,8 +927,8 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault",
-      "response": "vault",
+      "path": "/api/v1/workspaces/:workspace",
+      "response": "workspace",
       "methods": [
         "GET",
         "HEAD"
@@ -955,7 +951,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/projects",
+      "path": "/api/v1/workspaces/:workspace/projects",
       "response": "projects",
       "methods": [
         "GET",
@@ -963,7 +959,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/projects/:project",
+      "path": "/api/v1/workspaces/:workspace/projects/:project",
       "response": "project",
       "methods": [
         "GET",
@@ -971,7 +967,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/meetings",
+      "path": "/api/v1/workspaces/:workspace/meetings",
       "response": "meetings",
       "query": {
         "projectId": "id:project",
@@ -983,7 +979,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/permissions",
+      "path": "/api/v1/workspaces/:workspace/permissions",
       "response": "permissions",
       "methods": [
         "GET",
@@ -991,14 +987,14 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/permissions/organizations/:organization",
+      "path": "/api/v1/workspaces/:workspace/permissions/organizations/:organization",
       "methods": [
         "PUT",
         "DELETE"
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/permissions/teams/:team",
+      "path": "/api/v1/workspaces/:workspace/permissions/teams/:team",
       "methods": [
         "PUT",
         "DELETE"
@@ -1021,7 +1017,7 @@
       ]
     },
     {
-      "path": "/mcp/resources/vaults/:vault/meetings/:meeting/screenshots/:attachment/content",
+      "path": "/mcp/resources/workspaces/:workspace/meetings/:meeting/screenshots/:attachment/content",
       "methods": [
         "GET",
         "HEAD"
@@ -1773,7 +1769,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/search",
+      "path": "/api/v1/workspaces/:workspace/search",
       "response": "search",
       "request": "searchRequest",
       "limit": 16384,
@@ -1782,7 +1778,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/text-search",
+      "path": "/api/v1/workspaces/:workspace/text-search",
       "response": "textSearch",
       "request": "textSearchRequest",
       "limit": 16384,
@@ -1895,7 +1891,7 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/permission-targets",
+      "path": "/api/v1/workspaces/:workspace/permission-targets",
       "response": "permissions",
       "methods": [
         "GET",
@@ -1903,30 +1899,30 @@
       ]
     },
     {
-      "path": "/api/v1/vaults/:vault/permissions/users/:user",
+      "path": "/api/v1/workspaces/:workspace/permissions/users/:user",
       "methods": [
         "PUT",
         "DELETE"
       ]
     },
     {
-      "path": "/api/v1/organizations/:organization/vaults",
-      "response": "governanceVaults",
+      "path": "/api/v1/organizations/:organization/workspaces",
+      "response": "governanceWorkspaces",
       "query": {
-        "cursor": "id:vault"
+        "cursor": "id:workspace"
       }
     },
     {
-      "path": "/api/v1/organizations/:organization/vaults/:vault/deletion",
-      "response": "governanceVault"
+      "path": "/api/v1/organizations/:organization/workspaces/:workspace/deletion",
+      "response": "governanceWorkspace"
     },
     {
-      "path": "/api/v1/organizations/:organization/vaults/:vault",
+      "path": "/api/v1/organizations/:organization/workspaces/:workspace",
       "methods": [
         "DELETE"
       ],
       "response": "receipt",
-      "request": "vaultDeletion"
+      "request": "workspaceDeletion"
     },
     {
       "path": "/api/v1/organizations",

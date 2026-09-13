@@ -3,7 +3,7 @@ import Foundation
 /// Public representation only; persistence and domain models continue to use UUID.
 public enum TypeID {
     public enum Kind: String, CaseIterable, Sendable {
-        case vault = "vlt", project = "proj", meeting = "mtg", file, attachment = "att"
+        case workspace = "ws", project = "proj", meeting = "mtg", file, attachment = "att"
         case summary = "sum", transcript, segment = "seg", recording = "rec", event = "evt"
         case summaryJob = "sjob"
         case user, organization = "org", team, organizationMember = "omem", teamMember = "tmem"

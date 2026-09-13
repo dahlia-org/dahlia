@@ -33,7 +33,7 @@ actor SearchIndexer {
         apiClient: SyncAPIClient = SyncAPIClient(session: .shared),
         runtimeProviderResolver: @escaping RuntimeProviderResolver = { CodexRuntimeContextStore.shared.provider },
         localAccountSettingsResolver: @escaping LocalAccountSettingsResolver = {
-            VaultAISettingsModel.shared.localAccountSettings
+            WorkspaceAISettingsModel.shared.localAccountSettings
         }
     ) {
         self.apiClient = apiClient
@@ -388,7 +388,7 @@ actor SearchIndexer {
         try await dbQueue.write { db in
             let now = Date()
             let cleanupFilter = cleanupOnly
-                ? "AND targetKind IN ('vaultCleanup', 'meetingCleanup', 'projectCleanup', 'screenshotCleanup')"
+                ? "AND targetKind IN ('workspaceCleanup', 'meetingCleanup', 'projectCleanup', 'screenshotCleanup')"
                 : ""
             guard let firstRow = try Row.fetchOne(
                 db,
@@ -459,8 +459,8 @@ actor SearchIndexer {
         let generation = try await currentGeneration()
         guard let job = jobs.first else { return }
         switch job.targetKind {
-        case "vaultCleanup":
-            try await deleteDocuments(where: "vaultId = ?", arguments: [job.targetID])
+        case "workspaceCleanup":
+            try await deleteDocuments(where: "workspace_id = ?", arguments: [job.targetID])
         case "meeting":
             try await indexMeeting(id: job.targetID, generation: generation)
         case "meetingCleanup":
@@ -495,7 +495,7 @@ actor SearchIndexer {
     private func reconcileProjectHierarchyChange(id: UUID, generation: Int) async throws {
         let affected = try await dbQueue.read { db -> ([ProjectRecord], [UUID: String]) in
             guard let project = try ProjectRecord.fetchOne(db, key: id) else { return ([], [:]) }
-            let projects = try ProjectRecord.hierarchy(projectId: id, vaultId: project.vaultId, in: db)
+            let projects = try ProjectRecord.hierarchy(projectId: id, workspaceId: project.workspaceId, in: db)
             let paths = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0.path) })
             guard !paths.isEmpty else { return ([], [:]) }
             let projectIDs = Array(paths.keys)
@@ -534,7 +534,7 @@ private extension SearchIndexer {
             try Dictionary(uniqueKeysWithValues: jobs.compactMap { job -> (UUID, ScreenshotAnalysisInput)? in
                 guard let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: job.targetID),
                       let meeting = try MeetingRecord.fetchOne(db, key: screenshot.meetingId),
-                      let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId)
+                      let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId)
                 else { return nil }
                 guard screenshot.remoteReference == nil || screenshot.localReference != nil,
                       (try? TextContentAccess.requireComplete(entity: .file, id: screenshot.originalFileId, in: db)) != nil else { return nil }
@@ -543,7 +543,7 @@ private extension SearchIndexer {
                     imageData: screenshot.imageData,
                     mimeType: screenshot.mimeType,
                     runtimeProvider: CodexRuntimeProvider(
-                        accountConnectionID: vault.accountConnectionId,
+                        accountConnectionID: workspace.accountConnectionId,
                         localProvider: localSettings.provider,
                         databricksProfile: localSettings.databricksProfile
                     )
@@ -643,8 +643,8 @@ private extension SearchIndexer {
             for result in results {
                 guard let existing = try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID),
                       let meeting = try MeetingRecord.fetchOne(db, key: existing.meetingId),
-                      let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId),
-                      vault.accountConnectionId == expectedConnectionId,
+                      let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId),
+                      workspace.accountConnectionId == expectedConnectionId,
                       existing.remoteReference == nil || existing.localReference != nil,
                       (try? TextContentAccess.requireComplete(entity: .file, id: existing.originalFileId, in: db)) != nil,
                       try TextContentAccess.availability(entity: .file, id: existing.originalFileId, in: db).state != .stale else { continue }
@@ -659,13 +659,13 @@ private extension SearchIndexer {
                     arguments: [result.ocrText, result.caption, result.screenshotID]
                 )
                 if let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID),
-                   let vaultId = try UUID.fetchOne(
+                   let workspaceId = try UUID.fetchOne(
                        db,
-                       sql: "SELECT vaultId FROM meetings WHERE id = ?",
+                       sql: "SELECT workspace_id FROM meetings WHERE id = ?",
                        arguments: [screenshot.meetingId]
                    ) {
                     try SyncTransactionRecorder.record(
-                        vaultId: vaultId,
+                        workspaceId: workspaceId,
                         operations: [SyncInitialSnapshotBuilder.screenshotOperation(screenshot, action: .upsert)],
                         in: db
                     )
@@ -713,7 +713,7 @@ private extension SearchIndexer {
         SearchDocumentProjection(
             kind: "project",
             sourceID: project.id,
-            vaultID: project.vaultId,
+            workspaceID: project.workspaceId,
             meetingID: nil,
             projectID: project.id,
             fields: SearchDocumentFields(
@@ -804,7 +804,7 @@ private extension SearchIndexer {
                 if let expectedConnectionId {
                     let connectionId = try UUID.fetchOne(db, sql: """
                     SELECT v.accountConnectionId FROM meeting_attachments f
-                    JOIN meetings m ON m.id = f.meetingId JOIN vaults v ON v.id = m.vaultId
+                    JOIN meetings m ON m.id = f.meetingId JOIN workspaces v ON v.id = m.workspace_id
                     WHERE f.id = ?
                     """, arguments: [job.targetID])
                     guard connectionId == expectedConnectionId else { throw TextContentError.changed }

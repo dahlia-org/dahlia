@@ -11,7 +11,7 @@ import DahliaRuntimeSupport
         @Test
         func recordingJobResponsesRemainReadableAcrossActionsAndRecovery() async throws {
             let target = ServerSummaryService.Target(
-                vaultID: .v7(), meetingID: .v7(), connectionID: .v7(),
+                workspaceID: .v7(), meetingID: .v7(), connectionID: .v7(),
                 origin: "https://\(UUID().uuidString).example.test"
             )
             let id = UUID.v7()
@@ -60,22 +60,29 @@ import DahliaRuntimeSupport
         func generationPreparesSynchronizationBeforeAnyJobRequest(detached: Bool) async throws {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
             let target = ServerSummaryService.Target(
-                vaultID: .v7(),
+                workspaceID: .v7(),
                 meetingID: .v7(),
                 connectionID: .v7(),
                 origin: "https://\(UUID().uuidString).example.test"
             )
             try await queue.write { db in
                 try DahliaAccountConnectionRecord(id: target.connectionID, origin: target.origin, clientID: "test", createdAt: .now).insert(db)
-                var vault = VaultRecord(id: target.vaultID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
-                vault.accountConnectionId = detached ? nil : target.connectionID
-                if vault.syncRole == nil { vault.syncRole = "admin" }
-                vault.organizationId = vault.accountConnectionId == nil ? nil : .v7()
-                vault.syncConfirmedConnectionId = target.connectionID
-                vault.syncPullCursor = "before"
-                try vault.insert(db)
-                try MeetingRecord(id: target.meetingID, vaultId: target.vaultID, projectId: nil, name: "New", createdAt: .now, updatedAt: .now)
-                    .insert(db)
+                var workspace = WorkspaceRecord(id: target.workspaceID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
+                workspace.accountConnectionId = detached ? nil : target.connectionID
+                if workspace.syncRole == nil { workspace.syncRole = "admin" }
+                workspace.organizationId = workspace.accountConnectionId == nil ? nil : .v7()
+                workspace.syncConfirmedConnectionId = target.connectionID
+                workspace.syncPullCursor = "before"
+                try workspace.insert(db)
+                try MeetingRecord(
+                    id: target.meetingID,
+                    workspaceId: target.workspaceID,
+                    projectId: nil,
+                    name: "New",
+                    createdAt: .now,
+                    updatedAt: .now
+                )
+                .insert(db)
             }
             let paths = Mutex<[String]>([])
             ImageURLProtocol.register(origin: target.origin) { request in
@@ -109,7 +116,7 @@ import DahliaRuntimeSupport
         func generationRetriesPullContentionBeforeAndAfterTheJob(contendedCall: Int, transientFailure: Bool) async throws {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
             let target = ServerSummaryService.Target(
-                vaultID: .v7(),
+                workspaceID: .v7(),
                 meetingID: .v7(),
                 connectionID: .v7(),
                 origin: "https://\(UUID().uuidString).example.test"
@@ -117,15 +124,22 @@ import DahliaRuntimeSupport
             let id = UUID.v7()
             try await queue.write { db in
                 try DahliaAccountConnectionRecord(id: target.connectionID, origin: target.origin, clientID: "test", createdAt: .now).insert(db)
-                var vault = VaultRecord(id: target.vaultID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
-                vault.accountConnectionId = target.connectionID
-                if vault.syncRole == nil { vault.syncRole = "admin" }
-                vault.organizationId = vault.accountConnectionId == nil ? nil : .v7()
-                vault.syncConfirmedConnectionId = target.connectionID
-                vault.syncPullCursor = "before"
-                try vault.insert(db)
-                try MeetingRecord(id: target.meetingID, vaultId: target.vaultID, projectId: nil, name: "New", createdAt: .now, updatedAt: .now)
-                    .insert(db)
+                var workspace = WorkspaceRecord(id: target.workspaceID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
+                workspace.accountConnectionId = target.connectionID
+                if workspace.syncRole == nil { workspace.syncRole = "admin" }
+                workspace.organizationId = workspace.accountConnectionId == nil ? nil : .v7()
+                workspace.syncConfirmedConnectionId = target.connectionID
+                workspace.syncPullCursor = "before"
+                try workspace.insert(db)
+                try MeetingRecord(
+                    id: target.meetingID,
+                    workspaceId: target.workspaceID,
+                    projectId: nil,
+                    name: "New",
+                    createdAt: .now,
+                    updatedAt: .now
+                )
+                .insert(db)
                 var info = TranscriptInfo(id: .v7(), startedAt: nil, endedAt: nil, metadata: nil)
                 info.version = 1
                 try TranscriptRecord(meetingId: target.meetingID, info: info).insert(db)
@@ -220,7 +234,7 @@ import DahliaRuntimeSupport
         func sendsOnlyIdAndDetailAndReadsDurableState(detail: String?) async throws {
             let origin = "https://\(UUID().uuidString).example.test"
             let id = UUID.v7()
-            let target = ServerSummaryService.Target(vaultID: .v7(), meetingID: .v7(), connectionID: .v7(), origin: origin)
+            let target = ServerSummaryService.Target(workspaceID: .v7(), meetingID: .v7(), connectionID: .v7(), origin: origin)
             let posts = Mutex<[Data]>([])
             ImageURLProtocol.register(origin: origin) { request in
                 #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
@@ -432,7 +446,7 @@ import DahliaRuntimeSupport
         func cloudProcessingKeepsItsCapturedRecordingAndMarksOnlyThatSessionComplete(status: String) async throws {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
             let target = ServerSummaryService.Target(
-                vaultID: .v7(),
+                workspaceID: .v7(),
                 meetingID: .v7(),
                 connectionID: .v7(),
                 origin: "https://\(UUID().uuidString).example.test"
@@ -449,15 +463,22 @@ import DahliaRuntimeSupport
             ]), as: UTF8.self)
             try await queue.write { db in
                 try DahliaAccountConnectionRecord(id: target.connectionID, origin: target.origin, clientID: "test", createdAt: .now).insert(db)
-                var vault = VaultRecord(id: target.vaultID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
-                vault.accountConnectionId = target.connectionID
-                if vault.syncRole == nil { vault.syncRole = "admin" }
-                vault.organizationId = vault.accountConnectionId == nil ? nil : .v7()
-                vault.syncConfirmedConnectionId = target.connectionID
-                vault.syncPullCursor = "ready"
-                try vault.insert(db)
-                try MeetingRecord(id: target.meetingID, vaultId: target.vaultID, projectId: nil, name: "Test", createdAt: .now, updatedAt: .now)
-                    .insert(db)
+                var workspace = WorkspaceRecord(id: target.workspaceID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
+                workspace.accountConnectionId = target.connectionID
+                if workspace.syncRole == nil { workspace.syncRole = "admin" }
+                workspace.organizationId = workspace.accountConnectionId == nil ? nil : .v7()
+                workspace.syncConfirmedConnectionId = target.connectionID
+                workspace.syncPullCursor = "ready"
+                try workspace.insert(db)
+                try MeetingRecord(
+                    id: target.meetingID,
+                    workspaceId: target.workspaceID,
+                    projectId: nil,
+                    name: "Test",
+                    createdAt: .now,
+                    updatedAt: .now
+                )
+                .insert(db)
                 for id in [first, later] {
                     try RecordingSessionRecord(
                         id: id,
@@ -473,7 +494,7 @@ import DahliaRuntimeSupport
                 try RecordingArchiveRecord(
                     sessionId: first,
                     meetingId: target.meetingID,
-                    vaultId: target.vaultID,
+                    workspaceId: target.workspaceID,
                     connectionId: target.connectionID,
                     number: 1,
                     audioJSON: audioJSON,

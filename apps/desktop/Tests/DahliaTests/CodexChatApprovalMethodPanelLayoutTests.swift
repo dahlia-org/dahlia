@@ -7,7 +7,7 @@ import Foundation
     struct CodexChatApprovalMethodPanelLayoutTests {
         @Test
         func usesPreferredWidthAndAdjustsOnlyAtTheWindowEdge() {
-            let wideWindow = CGRect(x: -70, y: -500, width: 1_280, height: 800)
+            let wideWindow = CGRect(x: -70, y: -500, width: 1280, height: 800)
             let width = CodexChatApprovalMethodPanelLayout.width(windowBounds: wideWindow)
 
             #expect(width == CodexChatApprovalMethodPanelLayout.preferredWidth)

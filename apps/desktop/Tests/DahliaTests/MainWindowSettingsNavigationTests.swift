@@ -61,7 +61,7 @@
         }
 
         @Test
-        func openingVaultSettingsPreservesCurrentAppLocation() {
+        func openingWorkspaceSettingsPreservesCurrentAppLocation() {
             let meetingID = UUID.v7()
             let navigation = MainWindowNavigation(
                 openMainWindow: {},
@@ -69,10 +69,10 @@
             )
             navigation.recordNavigation(to: .meeting(meetingID))
 
-            navigation.openSettings(category: .vault)
+            navigation.openSettings(category: .workspace)
 
             #expect(navigation.isShowingSettings)
-            #expect(navigation.settingsCategory == .accountsAndVaults)
+            #expect(navigation.settingsCategory == .accountsAndWorkspaces)
             #expect(navigation.currentLocation == .meeting(meetingID))
         }
 
@@ -107,7 +107,7 @@
         }
 
         @Test
-        func changingVaultWhileSettingsAreVisibleResetsThePreservedLocation() {
+        func changingWorkspaceWhileSettingsAreVisibleResetsThePreservedLocation() {
             let navigation = MainWindowNavigation(
                 openMainWindow: {},
                 initialSettingsCategory: .general
@@ -115,7 +115,7 @@
             navigation.recordNavigation(to: .meeting(UUID.v7()))
             navigation.openSettings()
 
-            navigation.changeVault(to: UUID.v7())
+            navigation.changeWorkspace(to: UUID.v7())
             navigation.dismissSettings()
 
             #expect(navigation.currentLocation == .upcomingSchedule)

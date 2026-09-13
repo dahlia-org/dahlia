@@ -24,7 +24,7 @@
             await fixture.select(fixture.first, in: viewModel, note: "note")
             if bulk {
                 viewModel.triggerManualSummaries(
-                    meetingIds: [fixture.first.id, fixture.second.id], dbQueue: fixture.database.dbQueue, vaultURL: nil
+                    meetingIds: [fixture.first.id, fixture.second.id], dbQueue: fixture.database.dbQueue, workspaceURL: nil
                 )
             } else {
                 try #require(viewModel.triggerManualSummary())
@@ -73,7 +73,7 @@
             try await fixture.database.dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
             viewModel.registerPendingBatchSummaryForTesting(
                 sessionID: sessionID, meetingID: fixture.first.id, options: .manual,
-                dbQueue: fixture.database.dbQueue, vaultURL: fixture.vaultURL,
+                dbQueue: fixture.database.dbQueue, workspaceURL: fixture.workspaceURL,
                 generationSettings: generationSettings, processing: processing
             )
             await viewModel.handleBatchTranscriptionUpdate(.init(meetingId: fixture.first.id, state: .completed(sessionId: sessionID)))
@@ -149,7 +149,7 @@
             )
             try fixture.database.dbQueue.write { db in
                 try connection.insert(db)
-                try VaultRecord.filter(key: fixture.vault.id).updateAll(
+                try WorkspaceRecord.filter(key: fixture.workspace.id).updateAll(
                     db,
                     Column("accountConnectionId").set(to: connection.id),
                     Column("organizationId").set(to: UUID.v7()),

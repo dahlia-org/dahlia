@@ -42,8 +42,8 @@ actor CodexChatService: CodexChatServicing {
         try await appServer.models(forceRefresh: forceRefresh)
     }
 
-    func listThreads(cursor: String? = nil, vaultID: UUID) async throws -> CodexChatThreadPage {
-        let workspaceURL = try workspaceLocator.workspaceURL(vaultID: vaultID)
+    func listThreads(cursor: String? = nil, workspaceID: UUID) async throws -> CodexChatThreadPage {
+        let workspaceURL = try workspaceLocator.workspaceURL(workspaceID: workspaceID)
         var params: [String: JSONValue] = [
             "archived": .bool(false),
             "cwd": .array([.string(workspaceURL.path)]),
@@ -94,13 +94,13 @@ actor CodexChatService: CodexChatServicing {
         return try Self.parseThread(thread, model: nil, reasoningEffort: nil)
     }
 
-    func resumeThread(id: String, vaultID: UUID) async throws -> CodexChatThread {
-        let workspaceURL = try workspaceLocator.workspaceURL(vaultID: vaultID)
+    func resumeThread(id: String, workspaceID: UUID) async throws -> CodexChatThread {
+        let workspaceURL = try workspaceLocator.workspaceURL(workspaceID: workspaceID)
         let helperURL = try resolvedMCPExecutableURL()
         let result = try await appServer.withChatOperation { appServer in
             let config = try await appServer.chatThreadConfiguration(
                 reasoningEffort: CodexReasoningEffortOption.defaultValue,
-                vaultID: vaultID,
+                workspaceID: workspaceID,
                 helperURL: helperURL,
                 bypassConfigurationReloadAdmission: true
             )
@@ -132,8 +132,8 @@ actor CodexChatService: CodexChatServicing {
         )
     }
 
-    func startThread(model: String?, effort: String, vaultID: UUID) async throws -> CodexChatThread {
-        let workspaceURL = try workspaceLocator.workspaceURL(vaultID: vaultID)
+    func startThread(model: String?, effort: String, workspaceID: UUID) async throws -> CodexChatThread {
+        let workspaceURL = try workspaceLocator.workspaceURL(workspaceID: workspaceID)
         let helperURL = try resolvedMCPExecutableURL()
         let (result, selectedModel) = try await appServer.withChatOperation { appServer in
             let availableModels = try await appServer.models(
@@ -150,7 +150,7 @@ actor CodexChatService: CodexChatServicing {
 
             let config = try await appServer.chatThreadConfiguration(
                 reasoningEffort: effort,
-                vaultID: vaultID,
+                workspaceID: workspaceID,
                 helperURL: helperURL,
                 bypassConfigurationReloadAdmission: true
             )

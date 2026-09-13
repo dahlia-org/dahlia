@@ -12,8 +12,8 @@ import Foundation
         private struct WorkspaceLocator: CodexChatWorkspaceLocating {
             let url: URL
 
-            func workspaceURL(vaultID: UUID) throws -> URL {
-                url.appending(path: vaultID.uuidString.lowercased(), directoryHint: .isDirectory)
+            func workspaceURL(workspaceID: UUID) throws -> URL {
+                url.appending(path: workspaceID.uuidString.lowercased(), directoryHint: .isDirectory)
             }
         }
 
@@ -87,7 +87,9 @@ import Foundation
                 transportFactory: { transport },
                 configurationReadiness: {
                     readinessStarted.continuation.yield()
-                    while !ready.withLock({ $0 }) { await Task.yield() }
+                    while !ready.withLock({ $0 }) {
+                        await Task.yield()
+                    }
                     return true
                 },
                 runtimeProviderResolver: { provider.withLock { $0 } }
@@ -103,7 +105,9 @@ import Foundation
                     expectedProvider: .chatGPTSubscription
                 )
             }
-            for await _ in readinessStarted.stream { break }
+            for await _ in readinessStarted.stream {
+                break
+            }
             provider.withLock { $0 = .databricks(profile: "WORK") }
             ready.withLock { $0 = true }
 
@@ -127,7 +131,9 @@ import Foundation
                 },
                 configurationReadiness: {
                     readinessStarted.continuation.yield()
-                    while !ready.withLock({ $0 }) { await Task.yield() }
+                    while !ready.withLock({ $0 }) {
+                        await Task.yield()
+                    }
                     return true
                 },
                 runtimeProviderResolver: { provider.withLock { $0 } }
@@ -141,7 +147,9 @@ import Foundation
                     effort: "medium"
                 )
             }
-            for await _ in readinessStarted.stream { break }
+            for await _ in readinessStarted.stream {
+                break
+            }
             provider.withLock { $0 = .databricks(profile: "WORK") }
             ready.withLock { $0 = true }
 
@@ -178,13 +186,13 @@ import Foundation
                 workspaceLocator: WorkspaceLocator(url: URL(filePath: "/tmp/dahlia-chat-auth")),
                 mcpExecutableURL: URL(filePath: "/tmp/dahlia-mcp")
             )
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             try await appServer.start()
 
             let models = Task { try await service.models() }
-            let list = Task { try await service.listThreads(vaultID: vaultID) }
+            let list = Task { try await service.listThreads(workspaceID: workspaceID) }
             let load = Task { try await service.loadThread(id: "thread-history") }
-            let resume = Task { try await service.resumeThread(id: "thread-history", vaultID: vaultID) }
+            let resume = Task { try await service.resumeThread(id: "thread-history", workspaceID: workspaceID) }
             for await _ in preparationStarted.stream {
                 break
             }
@@ -238,7 +246,7 @@ import Foundation
             let reload = Task { try await appServer.reloadConfiguration() }
             await appServer.waitUntilChatTurnReloadIsWaitingForTesting()
             let newThread = Task {
-                try await service.startThread(model: nil, effort: "medium", vaultID: UUID.v7())
+                try await service.startThread(model: nil, effort: "medium", workspaceID: UUID.v7())
             }
             await Task.yield()
             let firstMethods = await first.messages().compactMap { $0.objectValue?["method"]?.stringValue }
@@ -280,7 +288,7 @@ import Foundation
             )
 
             let newThread = Task {
-                try await service.startThread(model: nil, effort: "medium", vaultID: UUID.v7())
+                try await service.startThread(model: nil, effort: "medium", workspaceID: UUID.v7())
             }
             #expect(await pollUntil(timeout: .seconds(10)) {
                 await first.messages().contains { $0.objectValue?["method"]?.stringValue == "model/list" }

@@ -38,7 +38,7 @@ import GRDB
                 managedRootURL: batch.managedRootURL
             ) {
                 recoveredState = try? await BackupService(dbQueue: batch.database.dbQueue)
-                    .preflightItems(vaultId: batch.meeting.vaultId)
+                    .preflightItems(workspaceId: batch.meeting.workspaceId)
                     .first?
                     .state
             }
@@ -83,7 +83,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: batch.vaultURL
+                workspaceURL: batch.workspaceURL
             )
             #expect(await waitUntil { viewModel.canRetranscribeBatchAudio })
 
@@ -243,7 +243,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: batch.vaultURL
+                workspaceURL: batch.workspaceURL
             )
             #expect(await waitUntil {
                 if case .failed = viewModel.batchTranscriptionState {
@@ -279,7 +279,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: batch.vaultURL
+                workspaceURL: batch.workspaceURL
             )
             #expect(await waitUntil { viewModel.canRetranscribeBatchAudio })
 
@@ -321,7 +321,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: batch.vaultURL
+                workspaceURL: batch.workspaceURL
             )
             #expect(await waitUntil {
                 if case .retranscriptionFailed = viewModel.batchTranscriptionState {
@@ -374,7 +374,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: batch.vaultURL
+                workspaceURL: batch.workspaceURL
             )
             #expect(await waitUntil {
                 viewModel.batchTranscriptionState == .interrupted(
@@ -425,7 +425,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: batch.vaultURL
+                workspaceURL: batch.workspaceURL
             )
             #expect(await waitUntil {
                 if case .failed = viewModel.batchTranscriptionState { true } else { false }
@@ -482,7 +482,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: batch.vaultURL
+                workspaceURL: batch.workspaceURL
             )
             #expect(await waitUntil {
                 if case .retranscriptionFailed = viewModel.batchTranscriptionState { true } else { false }

@@ -37,7 +37,7 @@ import GRDB
 
         @Test
         func resolvingExistingMeetingRefreshesCanonicalEventAndSourceMapping() throws {
-            let (database, vault) = try makeDatabase(named: "Source Refresh")
+            let (database, workspace) = try makeDatabase(named: "Source Refresh")
             let createdAt = Date(timeIntervalSince1970: 1_776_384_000)
             let meetingId = UUID.v7()
             let macEvent = event(
@@ -51,13 +51,13 @@ import GRDB
 
             try database.dbQueue.write { db in
                 try CalendarEventRecord.upsert(event: macEvent, now: createdAt, in: db)
-                try insertMeeting(id: meetingId, vaultId: vault.id, createdAt: createdAt, key: key, in: db)
+                try insertMeeting(id: meetingId, workspaceId: workspace.id, createdAt: createdAt, key: key, in: db)
             }
 
             let repository = MeetingRepository(dbQueue: database.dbQueue)
             let resolvedMeetingId = try repository.resolveMeetingIdForCalendarEvent(
                 googleEvent,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 observedAt: createdAt.addingTimeInterval(60)
             )
             let persisted = try database.dbQueue.read { db in
@@ -74,7 +74,7 @@ import GRDB
 
         @Test
         func calendarEventIsDeletedAfterItsLastMeetingReference() throws {
-            let (database, vault) = try makeDatabase(named: "Reference Cleanup")
+            let (database, workspace) = try makeDatabase(named: "Reference Cleanup")
             let calendarEvent = event()
             let key = try #require(calendarEvent.key)
             let firstMeetingId = UUID.v7()
@@ -82,8 +82,8 @@ import GRDB
 
             try database.dbQueue.write { db in
                 try CalendarEventRecord.upsert(event: calendarEvent, now: .now, in: db)
-                try insertMeeting(id: firstMeetingId, vaultId: vault.id, createdAt: .now, key: key, in: db)
-                try insertMeeting(id: secondMeetingId, vaultId: vault.id, createdAt: .now, key: key, in: db)
+                try insertMeeting(id: firstMeetingId, workspaceId: workspace.id, createdAt: .now, key: key, in: db)
+                try insertMeeting(id: secondMeetingId, workspaceId: workspace.id, createdAt: .now, key: key, in: db)
                 _ = try MeetingRecord.deleteOne(db, key: firstMeetingId)
             }
 
@@ -101,12 +101,12 @@ import GRDB
 
         @Test
         func cancellingNewMeetingDeletesUnreferencedCalendarEvent() async throws {
-            let (database, vault) = try makeDatabase(named: "Cancellation Cleanup")
+            let (database, workspace) = try makeDatabase(named: "Cancellation Cleanup")
             let calendarEvent = event()
             let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: nil,
                 initialName: calendarEvent.title,
                 calendarEvent: calendarEvent
@@ -123,9 +123,9 @@ import GRDB
             #expect(calendarCounts.sources == 0)
         }
 
-        private func makeDatabase(named name: String) throws -> (AppDatabaseManager, VaultRecord) {
+        private func makeDatabase(named name: String) throws -> (AppDatabaseManager, WorkspaceRecord) {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/calendar-lifecycle-\(UUID().uuidString)",
                 name: name,
@@ -133,9 +133,9 @@ import GRDB
                 lastOpenedAt: .now
             )
             try database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
             }
-            return (database, vault)
+            return (database, workspace)
         }
 
         private func event(
@@ -167,14 +167,14 @@ import GRDB
 
         private func insertMeeting(
             id: UUID,
-            vaultId: UUID,
+            workspaceId: UUID,
             createdAt: Date,
             key: CalendarEventKey,
             in db: Database
         ) throws {
             try MeetingRecord(
                 id: id,
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 projectId: nil,
                 name: "Planning",
                 createdAt: createdAt,

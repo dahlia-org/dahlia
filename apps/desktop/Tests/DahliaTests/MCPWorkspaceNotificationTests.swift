@@ -12,11 +12,11 @@ import Foundation
         @Test(.timeLimit(.minutes(1)))
         func projectMutationNotifiesTheRunningApplication() async throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let center = DistributedNotificationCenter.default()
             let (notifications, continuation) = AsyncStream<Void>.makeStream()
             let observer = center.addObserver(
-                forName: DahliaWorkspaceChangeNotification.name(vaultID: fixture.primaryVaultID),
+                forName: DahliaWorkspaceChangeNotification.name(workspaceID: fixture.primaryWorkspaceID),
                 object: nil,
                 queue: nil
             ) { _ in
@@ -39,23 +39,23 @@ import Foundation
         @Test(.timeLimit(.minutes(1)))
         func projectMutationRefreshesTheRunningSidebar() async throws {
             let fixture = try Fixture()
-            let vault = VaultRecord(
-                id: fixture.primaryVaultID,
-                path: fixture.primaryVaultURL.path,
+            let workspace = WorkspaceRecord(
+                id: fixture.primaryWorkspaceID,
+                path: fixture.primaryWorkspaceURL.path,
                 name: "Primary",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
             let settings = AppSettings()
             let sidebar = SidebarViewModel(settings: settings)
-            settings.currentVault = vault
+            settings.currentWorkspace = workspace
             sidebar.setAppDatabase(fixture.manager)
             defer {
                 sidebar.setAppDatabase(nil)
             }
 
             #expect(await waitUntil { sidebar.isProjectCatalogLoaded })
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             _ = try store.createProject(
                 name: "Sidebar Refresh",
                 parentProjectID: nil,

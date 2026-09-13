@@ -6,7 +6,7 @@ struct SettingsDetailView: View {
     var captionViewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     let appDatabase: AppDatabaseManager?
-    var vaultManagementModel: VaultManagementModel
+    var workspaceManagementModel: WorkspaceManagementModel
     let onShowUnprocessedRecordings: (UUID) -> Void
 
     @ObservedObject private var appSettings = AppSettings.shared
@@ -38,11 +38,11 @@ struct SettingsDetailView: View {
             selectedSettings
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .onChange(of: appSettings.currentVault?.accountConnectionId, initial: true) { _, connectionID in
+        .onChange(of: appSettings.currentWorkspace?.accountConnectionId, initial: true) { _, connectionID in
             settingsAccountID = connectionID
         }
         .onChange(of: selection) { _, selection in
-            if selection != .accountsAndVaults { mainWindowNavigation.dismissDahliaSignIn() }
+            if selection != .accountsAndWorkspaces { mainWindowNavigation.dismissDahliaSignIn() }
         }
     }
 
@@ -53,14 +53,14 @@ struct SettingsDetailView: View {
             GeneralSettingsView()
         case .macInference, .modelProvider:
             MacInferenceSettingsView()
-        case .accountsAndVaults, .dahliaAccounts, .vault:
-            AccountsAndVaultsSettingsView(
+        case .accountsAndWorkspaces, .dahliaAccounts, .workspace:
+            AccountsAndWorkspacesSettingsView(
                 appDatabase: appDatabase,
-                vaultModel: vaultManagementModel,
-                currentVault: appSettings.currentVault,
+                workspaceModel: workspaceManagementModel,
+                currentWorkspace: appSettings.currentWorkspace,
                 accountController: dahliaAccountController,
                 onShowSignIn: mainWindowNavigation.openDahliaSignIn,
-                onUpdateVault: updateCurrentVaultIfNeeded
+                onUpdateWorkspace: updateCurrentWorkspaceIfNeeded
             )
         case .permissions:
             PermissionSettingsView()
@@ -80,7 +80,7 @@ struct SettingsDetailView: View {
             )
         case .transcription:
             TranscriptionSettingsView(onOpenAccountSettings: {
-                settingsAccountID = appSettings.currentVault?.accountConnectionId
+                settingsAccountID = appSettings.currentWorkspace?.accountConnectionId
                 selection = .accountPreferences
             })
         case .liveSubtitles:
@@ -105,21 +105,21 @@ struct SettingsDetailView: View {
     private var scopeDescription: String {
         switch SettingsNavigation.visibleSelection(selection) {
         case .accountPreferences: L10n.settingsAccountIntro
-        case .accountsAndVaults: L10n.settingsAccountsIntro
-        case .backups: L10n.backupLocalVaultsOnly
+        case .accountsAndWorkspaces: L10n.settingsAccountsIntro
+        case .backups: L10n.backupLocalWorkspacesOnly
         case .macInference: L10n.localModelPreferencesDescription
         case .cloudStorage: L10n.settingsExportIntro
         default: L10n.thisMacSettingsDescription
         }
     }
 
-    private func updateCurrentVaultIfNeeded(_ vault: VaultRecord) {
-        guard let currentVault = appSettings.currentVault, currentVault.id == vault.id else { return }
-        let exportFolderChanged = currentVault.path != vault.path
-        appSettings.currentVault = vault
+    private func updateCurrentWorkspaceIfNeeded(_ workspace: WorkspaceRecord) {
+        guard let currentWorkspace = appSettings.currentWorkspace, currentWorkspace.id == workspace.id else { return }
+        let exportFolderChanged = currentWorkspace.path != workspace.path
+        appSettings.currentWorkspace = workspace
         guard exportFolderChanged else { return }
-        captionViewModel.updateVaultExportFolder(vault.url)
-        sidebarViewModel.refreshCurrentVaultFilesystemServices(vault)
+        captionViewModel.updateWorkspaceExportFolder(workspace.url)
+        sidebarViewModel.refreshCurrentWorkspaceFilesystemServices(workspace)
     }
 
 }

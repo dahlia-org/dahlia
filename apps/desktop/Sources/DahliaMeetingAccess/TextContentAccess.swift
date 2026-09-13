@@ -8,7 +8,7 @@ public enum TextContentAccess {
         guard try db.tableExists("sync_content_state"),
               let row = try Row.fetchOne(db, sql: """
               SELECT c.*, s.confirmedRevision FROM sync_content_state c
-              LEFT JOIN sync_entity_state s ON s.vaultId = c.vaultId AND s.entity = c.entity AND s.entityId = c.entityId
+              LEFT JOIN sync_entity_state s ON s.workspace_id = c.workspace_id AND s.entity = c.entity AND s.entityId = c.entityId
               WHERE c.entity = ? AND c.entityId = ?
               """, arguments: [entity.rawValue, id]) else { return .init(state: .ready) }
         let resident: Int? = row["residentRevision"]

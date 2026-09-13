@@ -28,17 +28,17 @@ export function installDevelopmentSeed(config: AppConfig, store: ApplicationStor
 async function seedEmptyAccount(identity: Identity, sync: MeetingSyncService): Promise<void> {
   const personal = (await sync.listOrganizations(identity)).find((organization) => organization.kind === "personal");
   if (!personal) return;
-  const [vault] = await sync.listVaults(identity, personal.id);
-  if (!vault || (await sync.listSnapshot(identity, vault.vaultId)).startCursor !== encodeSyncCursor(0)) return;
+  const [workspace] = await sync.listWorkspaces(identity, personal.id);
+  if (!workspace || (await sync.listSnapshot(identity, workspace.workspaceId)).startCursor !== encodeSyncCursor(0)) return;
   const now = new Date().toISOString();
-  const vaultId = vault.vaultId;
+  const workspaceId = workspace.workspaceId;
   const projectId = uuidV7();
   const operations = [
   { id: uuidV7(), entity: "project", action: "create", entityId: projectId, baseRevision: null,
     data: { name: "新サービス開発", description: "ローカル動作確認用のサンプルプロジェクト", parentProjectId: null, projectType: null, createdAt: now } }];
   const meetings = ["週次進捗ミーティング", "デザインレビュー", "顧客ヒアリング"];
   await sync.commitTransaction(identity, {
-    schemaVersion: 3, id: uuidV7(), vaultId, createdAt: now,
+    schemaVersion: 3, id: uuidV7(), workspaceId, createdAt: now,
     operations: [...operations, ...meetings.flatMap((name, index) => {
       const meetingId = uuidV7();
       const createdAt = new Date(Date.now() - index * 86_400_000).toISOString();

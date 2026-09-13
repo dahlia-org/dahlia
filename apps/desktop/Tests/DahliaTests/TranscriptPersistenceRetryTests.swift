@@ -15,7 +15,7 @@
             let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: fixture.database.dbQueue,
-                vaultId: fixture.vault.id,
+                workspaceId: fixture.workspace.id,
                 projectId: nil,
                 initialName: "Retry"
             )
@@ -58,7 +58,7 @@
             let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: fixture.database.dbQueue,
-                vaultId: fixture.vault.id,
+                workspaceId: fixture.workspace.id,
                 projectId: nil,
                 initialName: "Single flight"
             )
@@ -110,7 +110,7 @@
             let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: fixture.database.dbQueue,
-                vaultId: fixture.vault.id,
+                workspaceId: fixture.workspace.id,
                 projectId: nil,
                 initialName: "Automatic retry"
             )
@@ -143,7 +143,7 @@
             let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: fixture.database.dbQueue,
-                vaultId: fixture.vault.id,
+                workspaceId: fixture.workspace.id,
                 projectId: nil,
                 initialName: "Backoff"
             )
@@ -181,7 +181,7 @@
             let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: fixture.database.dbQueue,
-                vaultId: fixture.vault.id,
+                workspaceId: fixture.workspace.id,
                 projectId: nil,
                 initialName: "Still failing"
             )
@@ -204,13 +204,13 @@
 
     private struct PersistenceFixture {
         let database: AppDatabaseManager
-        let vault: VaultRecord
+        let workspace: WorkspaceRecord
     }
 
     @MainActor
     private func makePersistenceFixture() throws -> PersistenceFixture {
         let database = try AppDatabaseManager(path: ":memory:")
-        let vault = VaultRecord(
+        let workspace = WorkspaceRecord(
             id: .v7(),
             path: URL.temporaryDirectory.path,
             name: "Persistence Retry",
@@ -218,9 +218,9 @@
             lastOpenedAt: .now
         )
         try database.dbQueue.write { db in
-            try vault.insert(db)
+            try workspace.insert(db)
         }
-        return PersistenceFixture(database: database, vault: vault)
+        return PersistenceFixture(database: database, workspace: workspace)
     }
 
     private func installFailingInsertTrigger(in dbQueue: DatabaseQueue) throws {

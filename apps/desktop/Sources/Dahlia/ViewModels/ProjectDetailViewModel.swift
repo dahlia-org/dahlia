@@ -16,16 +16,16 @@ final class ProjectDetailViewModel {
     private(set) var calendarError: String?
 
     @ObservationIgnored private var projectIDs: [UUID] = []
-    @ObservationIgnored private var vaultID: UUID?
+    @ObservationIgnored private var workspaceID: UUID?
     @ObservationIgnored private var dbQueue: DatabaseQueue?
     @ObservationIgnored private var listLoadGeneration: UInt64 = 0
     @ObservationIgnored private var calendarLoadGeneration: UInt64 = 0
 
-    func reload(projectIDs: [UUID], vaultID: UUID?, dbQueue: DatabaseQueue?) async {
+    func reload(projectIDs: [UUID], workspaceID: UUID?, dbQueue: DatabaseQueue?) async {
         listLoadGeneration &+= 1
         let generation = listLoadGeneration
         self.projectIDs = projectIDs
-        self.vaultID = vaultID
+        self.workspaceID = workspaceID
         self.dbQueue = dbQueue
         listItems = []
         hasMoreListItems = false
@@ -42,7 +42,7 @@ final class ProjectDetailViewModel {
     private func loadMore(generation: UInt64) async {
         guard generation == listLoadGeneration,
               !isLoadingList, !isListLimited,
-              let vaultID, let dbQueue else { return }
+              let workspaceID, let dbQueue else { return }
         let projectIDs = projectIDs
         let cursor = listItems.last.map(MeetingSidebarCursor.init)
         isLoadingList = true
@@ -61,7 +61,7 @@ final class ProjectDetailViewModel {
             }
             let page = try await Self.fetchPage(
                 projectIDs: projectIDs,
-                vaultID: vaultID,
+                workspaceID: workspaceID,
                 after: cursor,
                 limit: min(SidebarViewModel.meetingPageSize, remaining),
                 dbQueue: dbQueue
@@ -81,7 +81,7 @@ final class ProjectDetailViewModel {
     func loadCalendar(
         containing month: Date,
         projectIDs: [UUID],
-        vaultID: UUID?,
+        workspaceID: UUID?,
         dbQueue: DatabaseQueue?,
         calendar: Calendar = .current
     ) async {
@@ -92,7 +92,7 @@ final class ProjectDetailViewModel {
         isLoadingCalendar = false
         calendarError = nil
         guard let interval = ProjectCalendarMonth.interval(containing: month, calendar: calendar),
-              let vaultID, let dbQueue else { return }
+              let workspaceID, let dbQueue else { return }
         isLoadingCalendar = true
         defer {
             if generation == calendarLoadGeneration {
@@ -102,7 +102,7 @@ final class ProjectDetailViewModel {
         do {
             let page = try await Self.fetchPage(
                 projectIDs: projectIDs,
-                vaultID: vaultID,
+                workspaceID: workspaceID,
                 dateInterval: interval,
                 limit: SidebarViewModel.maximumVisibleMeetings,
                 dbQueue: dbQueue
@@ -120,7 +120,7 @@ final class ProjectDetailViewModel {
 
     private nonisolated static func fetchPage(
         projectIDs: [UUID],
-        vaultID: UUID,
+        workspaceID: UUID,
         dateInterval: DateInterval? = nil,
         after cursor: MeetingSidebarCursor? = nil,
         limit: Int,
@@ -130,7 +130,7 @@ final class ProjectDetailViewModel {
             try dbQueue.read { db in
                 try MeetingRepository.fetchProjectHierarchyMeetingPage(
                     projectIds: projectIDs,
-                    vaultId: vaultID,
+                    workspaceId: workspaceID,
                     dateInterval: dateInterval,
                     after: cursor,
                     limit: limit,

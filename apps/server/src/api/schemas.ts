@@ -19,26 +19,26 @@ export const page = <T extends z.ZodType>(item: T) => z.object({ items: z.array(
 const appearance = { icon: z.string().nullable().optional(), color: z.string().nullable().optional() };
 const syncFields = { active: z.boolean().optional(), deletingAt: date.nullable().optional(), revision: integer };
 const contentFields = { contentOmitted: z.boolean().optional(), contentPresent: z.boolean().optional() };
-export const vault = z.object({ encryption: z.enum(["none", "server"]).optional(), vaultId: id, organizationId: id, name: z.string(), ...appearance, ...syncFields,
+export const workspace = z.object({ encryption: z.enum(["none", "server"]).optional(), workspaceId: id, organizationId: id, name: z.string(), ...appearance, ...syncFields,
   createdAt: date, updatedAt: date, role: z.enum(["admin", "editor", "viewer"]), hasResources: z.boolean().optional(),
-}).openapi("Vault");
-export const governanceVault = vault.pick({ vaultId: true, name: true, revision: true }).extend({ creatorId: id }).openapi("GovernanceVault");
-export const project = z.object({ projectId: id, vaultId: id, parentProjectId: id.nullable(), name: z.string(), description: z.string(),
+}).openapi("Workspace");
+export const governanceWorkspace = workspace.pick({ workspaceId: true, name: true, revision: true }).extend({ creatorId: id }).openapi("GovernanceWorkspace");
+export const project = z.object({ projectId: id, workspaceId: id, parentProjectId: id.nullable(), name: z.string(), description: z.string(),
   projectType: z.enum(["customer", "internal", "personal", "undefined"]).nullable(), ...appearance, ...syncFields,
   createdAt: date, path: z.string().optional(), rootProjectId: id.optional(), effectiveType: z.string().optional(),
   typeOwnerProjectId: id.optional(), directMeetingCount: integer.optional(), subtreeMeetingCount: integer.optional(),
 }).openapi("Project");
-export const meeting = z.object({ meetingId: id, vaultId: id, projectId: id.nullable(), name: z.string(), description: z.string(),
+export const meeting = z.object({ meetingId: id, workspaceId: id, projectId: id.nullable(), name: z.string(), description: z.string(),
   status: z.enum(["PROCESSING_TRANSCRIPT", "TRANSCRIPT_NOT_FOUND", "READY", "RECORDING"]), duration: z.number().nonnegative().nullable(), recordingStartedAt: date.nullable(), isRecording: z.boolean().optional(),
   icalUid: z.string().nullable(), recurrenceId: z.string().nullable(), calendarEvent: calendarEventSchema.nullable(),
   createdAt: date, updatedAt: date, ...syncFields, ...contentFields, hasSummary: z.boolean().optional(),
   summaryRevision: integer.optional(), transcriptRevision: integer.optional(),
 }).openapi("Meeting");
-export const file = z.object({ id, vaultId: id, name: z.string(), contentType: z.string(), size: integer, checksum: z.string(),
+export const file = z.object({ id, workspaceId: id, name: z.string(), contentType: z.string(), size: integer, checksum: z.string(),
   metadata: fileWireResponseMetadataSchema, revision: integer, createdAt: date, updatedAt: date, active: z.boolean().optional(),
   contentUrl: z.string().optional(), variants: z.record(z.string(), z.string()).optional(), ...contentFields,
 }).openapi("File");
-export const meetingFile = z.object({ id, vaultId: id, meetingId: id, fileId: id, capturedAt: date.nullable(), sessionId: id.nullable(),
+export const meetingFile = z.object({ id, workspaceId: id, meetingId: id, fileId: id, capturedAt: date.nullable(), sessionId: id.nullable(),
   createdAt: date, revision: integer,
 }).openapi("MeetingFile");
 export const transcript = z.object({ id, meetingId: id, version: integer, syncRevision: integer,
@@ -62,8 +62,8 @@ export const audio = z.object({ fileId: id.optional(), contentType: z.literal("a
 export const recording = z.object({ id: integer, startedAt: date, endedAt: date,
   audio: z.object({ mic: audio.optional(), system: audio.optional() }),
 }).openapi("Recording");
-const recordingProjection = recording.extend({ recordingNumber: integer, sessionId: id, meetingId: id, vaultId: id, revision: integer }).openapi("RecordingProjection");
-const canonicalSchemas = { vault, project, meeting, summary: summaryProjection, transcript: transcriptProjection, file,
+const recordingProjection = recording.extend({ recordingNumber: integer, sessionId: id, meetingId: id, workspaceId: id, revision: integer }).openapi("RecordingProjection");
+const canonicalSchemas = { workspace, project, meeting, summary: summaryProjection, transcript: transcriptProjection, file,
   meeting_attachment: meetingFile, recording: recordingProjection, meeting_event: z.object({}) };
 // Name the nullable object itself: Swift cannot generate the equivalent anyOf([$ref, null]).
 const nullableCanonicalSchemas = Object.fromEntries(Object.entries(canonicalSchemas).map(([entity, record]) => [
@@ -72,7 +72,7 @@ const nullableCanonicalSchemas = Object.fromEntries(Object.entries(canonicalSche
 export const canonicalRecord = z.union(Object.entries(nullableCanonicalSchemas).map(([entity, record]) => z.object({
   entity: z.literal(entity), id, revision: integer.nullable(), record: record.optional(),
 }))).openapi("CanonicalRecord");
-export const syncEntity = z.enum(["vault", "project", "meeting", "summary", "transcript", "file", "meeting_attachment", "recording", "meeting_event"]);
+export const syncEntity = z.enum(["workspace", "project", "meeting", "summary", "transcript", "file", "meeting_attachment", "recording", "meeting_event"]);
 export const conflict = z.union(Object.entries(nullableCanonicalSchemas).map(([entity, record]) => z.object({
   entity: z.literal(entity), id, clientBaseRevision: integer.nullable(), serverRevision: integer.nullable(),
   record,
@@ -90,7 +90,7 @@ export const receipt = z.object({ id, status: z.literal("committed"), cursor, re
 }).openapi("TransactionReceipt");
 export const resolution = z.union([receipt, z.object({ id, status: z.literal("unknown") })]).openapi("TransactionResolution");
 export const changes = z.object({ items: z.array(z.union(Object.entries(nullableCanonicalSchemas).map(([entity, record]) => z.object({
-  sequence: integer, vaultId: id, entity: z.literal(entity), entityId: id,
+  sequence: integer, workspaceId: id, entity: z.literal(entity), entityId: id,
   action: z.enum(["upsert", "delete", "reset"]), revision: integer.nullable(), transactionId: id,
   record,
 })))), cursor, highWaterCursor: cursor, hasMore: z.boolean() }).openapi("Changes");
@@ -109,8 +109,8 @@ export const summaryJob = z.object({ id, method: z.enum(["transcript", "audio"])
   createdAt: date, error: z.string().nullable(),
 }).openapi("SummaryJob");
 export const capabilities = z.object({
-  vaultEncryption: z.object({ version: integer }).optional(),
-  sync: z.object({ version: integer }).optional(), vaultTransfers: z.object({ version: integer }).optional(),
+  workspaceEncryption: z.object({ version: integer }).optional(),
+  sync: z.object({ version: integer }).optional(), workspaceTransfers: z.object({ version: integer }).optional(),
   recordingArchive: z.object({ version: integer }).optional(), meetingEvents: z.object({ version: integer }).optional(),
   search: z.object({ version: integer }).optional(), imageAnalysis: z.object({ version: integer }).optional(),
   conversationAnalytics: z.object({ version: integer }).optional(),
@@ -125,13 +125,13 @@ export const organization = z.object({ id: principalId, name: z.string(), slug: 
 export const team = z.object({ id: principalId, name: z.string(), organizationId: principalId, memberCount: integer,
   createdAt: date, updatedAt: date.nullable(),
 }).openapi("Team");
-export const permission = z.object({ name: z.string().optional(), detail: z.string().optional(), vaultId: id, principalType: z.enum(["user", "organization", "team"]), principalId,
+export const permission = z.object({ name: z.string().optional(), detail: z.string().optional(), workspaceId: id, principalType: z.enum(["user", "organization", "team"]), principalId,
   role: z.enum(["admin", "editor", "viewer"]), createdAt: date,
-}).openapi("VaultPermission");
+}).openapi("WorkspacePermission");
 export const searchHit = z.object({ id, kind: z.enum(["meeting", "screenshot", "project"]), title: z.string(), date: z.string(), snippet: z.string(),
   meetingId: id.optional(), projectId: id.optional(), projectPath: z.string().optional(), fileId: id.optional(), meetingCount: integer.optional(),
 }).openapi("SearchHit");
-export const searchResults = z.object({ vaultId: id, meetings: z.array(searchHit), screenshots: z.array(searchHit), projects: z.array(searchHit),
+export const searchResults = z.object({ workspaceId: id, meetings: z.array(searchHit), screenshots: z.array(searchHit), projects: z.array(searchHit),
   limited: z.object({ meeting: z.boolean(), screenshot: z.boolean(), project: z.boolean() }),
 }).openapi("SearchResults");
 export const textSearchRequest = z.object({ query: z.string().min(1).max(500), kind: z.enum(["meeting", "screenshot"]),

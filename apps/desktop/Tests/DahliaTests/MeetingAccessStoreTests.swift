@@ -15,7 +15,7 @@ import ImageIO
         @Test
         func publicMCPUsesTypedIDsAndPreservesDatabaseUUIDs() throws {
             let fixture = try Fixture()
-            let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true))
+            let server = try DahliaMCPServer(store: fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true))
             _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
             _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
             func call(_ name: String, _ arguments: [String: Any]) throws -> [String: Any] {
@@ -61,7 +61,7 @@ import ImageIO
             }
             let detail = try body(call("get_meeting", ["meeting_id": meetingID]))
             #expect((detail["meeting"] as? [String: Any])?["id"] as? String == meetingID)
-            #expect((detail["vault"] as? [String: Any])?["id"] as? String == TypeID.encode(fixture.primaryVaultID, as: .vault))
+            #expect((detail["workspace"] as? [String: Any])?["id"] as? String == TypeID.encode(fixture.primaryWorkspaceID, as: .workspace))
             let transcript = try body(call("get_meeting_transcript", ["meeting_id": meetingID, "limit": 1]))
             #expect(((transcript["segments"] as? [[String: Any]])?.first?["id"] as? String)?.hasPrefix("seg_") == true)
             let descriptor = try #require(transcript["transcript"] as? [String: Any])
@@ -100,9 +100,9 @@ import ImageIO
         func createsProjectWithoutALocalExportFolder() throws {
             let fixture = try Fixture()
             try fixture.manager.dbQueue.write { db in
-                try db.execute(sql: "UPDATE vaults SET path = NULL WHERE id = ?", arguments: [fixture.primaryVaultID])
+                try db.execute(sql: "UPDATE workspaces SET path = NULL WHERE id = ?", arguments: [fixture.primaryWorkspaceID])
             }
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
 
             let created = try store.createProject(
                 name: "Database only",
@@ -116,7 +116,7 @@ import ImageIO
         @Test
         func projectWorkspaceReadAndWriteOperationsEnforceHierarchyTypeAndRevision() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
 
             let initial = try store.queryProjects()
             let root = try #require(initial.projects.first(where: { $0.projectID == fixture.primaryProjectID }))
@@ -126,8 +126,8 @@ import ImageIO
             #expect(root.directMeetingCount == 2)
             #expect(throws: MeetingAccessError.projectNotFound) {
                 try store.createProject(
-                    name: "Cross Vault",
-                    parentProjectID: fixture.otherVaultProjectID,
+                    name: "Cross Workspace",
+                    parentProjectID: fixture.otherWorkspaceProjectID,
                     projectType: nil
                 )
             }
@@ -141,7 +141,7 @@ import ImageIO
             #expect(created.project.path == "Acme/Platform")
             #expect(created.project.isTypeInherited)
             #expect(!FileManager.default.fileExists(
-                atPath: fixture.primaryVaultURL.appending(path: "Acme/Platform").path
+                atPath: fixture.primaryWorkspaceURL.appending(path: "Acme/Platform").path
             ))
             #expect(throws: MeetingAccessError.projectHierarchyTooDeep) {
                 try store.createProject(
@@ -192,7 +192,7 @@ import ImageIO
 
             let promoted = try store.updateProject(
                 id: created.project.projectID,
-                update: ProjectUpdate(parent: .vaultRoot, expectedRevision: reparented.project.revision)
+                update: ProjectUpdate(parent: .workspaceRoot, expectedRevision: reparented.project.revision)
             )
             #expect(promoted.project.projectID == created.project.projectID)
             #expect(promoted.project.path == "Platform")
@@ -203,7 +203,7 @@ import ImageIO
         @Test
         func meetingMembershipBatchRejectsOneConflictWithoutPartialUpdates() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let destination = try store.createProject(
                 name: "Destination",
                 parentProjectID: nil,
@@ -212,13 +212,13 @@ import ImageIO
             let outsideURL = fixture.rootURL.appending(path: "membership-external", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: false)
             try FileManager.default.createSymbolicLink(
-                at: fixture.primaryVaultURL.appending(path: "Destination", directoryHint: .isDirectory),
+                at: fixture.primaryWorkspaceURL.appending(path: "Destination", directoryHint: .isDirectory),
                 withDestinationURL: outsideURL
             )
             try fixture.manager.dbQueue.write { db in
                 try SummaryExportRecord(
                     meetingId: fixture.firstMeetingID,
-                    type: .vault,
+                    type: .workspace,
                     url: "vault:///Acme/Missing.md",
                     createdAt: .now,
                     updatedAt: .now
@@ -266,7 +266,7 @@ import ImageIO
             let staleExportCount = try fixture.manager.dbQueue.read { db in
                 try SummaryExportRecord
                     .filter(Column("meetingId") == fixture.firstMeetingID)
-                    .filter(Column("type") == SummaryExportType.vault)
+                    .filter(Column("type") == SummaryExportType.workspace)
                     .fetchCount(db)
             }
             #expect(staleExportCount == 0)
@@ -276,7 +276,7 @@ import ImageIO
         @Test
         func meetingMembershipNeverMovesDirectoryReferencedAsSummary() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let destination = try store.createProject(
                 name: "Destination",
                 parentProjectID: nil,
@@ -285,7 +285,7 @@ import ImageIO
             try fixture.manager.dbQueue.write { db in
                 try SummaryExportRecord(
                     meetingId: fixture.firstMeetingID,
-                    type: .vault,
+                    type: .workspace,
                     url: "vault:///Acme",
                     createdAt: .now,
                     updatedAt: .now
@@ -298,27 +298,27 @@ import ImageIO
             )
 
             #expect(result.changed)
-            #expect(FileManager.default.fileExists(atPath: fixture.primaryVaultURL.appending(path: "Acme").path))
+            #expect(FileManager.default.fileExists(atPath: fixture.primaryWorkspaceURL.appending(path: "Acme").path))
             #expect(!FileManager.default.fileExists(
-                atPath: fixture.primaryVaultURL.appending(path: "Destination/Acme").path
+                atPath: fixture.primaryWorkspaceURL.appending(path: "Destination/Acme").path
             ))
             let exportCount = try fixture.manager.dbQueue.read { db in
                 try SummaryExportRecord
                     .filter(Column("meetingId") == fixture.firstMeetingID)
-                    .filter(Column("type") == SummaryExportType.vault)
+                    .filter(Column("type") == SummaryExportType.workspace)
                     .fetchCount(db)
             }
             #expect(exportCount == 0)
         }
 
         @Test
-        func meetingMembershipRejectsVaultExportPathOutsideScopedVault() throws {
+        func meetingMembershipRejectsWorkspaceExportPathOutsideScopedWorkspace() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             try fixture.manager.dbQueue.write { db in
                 try SummaryExportRecord(
                     meetingId: fixture.firstMeetingID,
-                    type: .vault,
+                    type: .workspace,
                     url: "vault:///../../Outside.md",
                     createdAt: .now,
                     updatedAt: .now
@@ -326,7 +326,7 @@ import ImageIO
             }
 
             #expect(throws: MeetingAccessError.projectFileConflict(
-                fixture.primaryVaultURL.appending(path: "../../Outside.md").standardizedFileURL.path
+                fixture.primaryWorkspaceURL.appending(path: "../../Outside.md").standardizedFileURL.path
             )) {
                 try store.setMeetingProjectMemberships(
                     [.init(meetingID: fixture.firstMeetingID, expectedProjectID: fixture.primaryProjectID)],
@@ -337,7 +337,7 @@ import ImageIO
             let export = try fixture.manager.dbQueue.read { db in
                 try SummaryExportRecord.fetchOne(
                     meetingId: fixture.firstMeetingID,
-                    type: .vault,
+                    type: .workspace,
                     in: db
                 )
             }
@@ -347,13 +347,13 @@ import ImageIO
         @Test
         func projectMutationWithoutTrackedSummaryDoesNotTouchSourceSymlink() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let project = try #require(try store.queryProjects(ProjectQuery(
                 projectID: fixture.primaryProjectID
             )).projects.first)
             let external = fixture.rootURL.appending(path: "external", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: external, withIntermediateDirectories: false)
-            let projectURL = fixture.primaryVaultURL.appending(path: "Acme", directoryHint: .isDirectory)
+            let projectURL = fixture.primaryWorkspaceURL.appending(path: "Acme", directoryHint: .isDirectory)
             try FileManager.default.removeItem(at: projectURL)
             try FileManager.default.createSymbolicLink(at: projectURL, withDestinationURL: external)
 
@@ -370,7 +370,7 @@ import ImageIO
         @Test
         func projectSiblingIdentityUsesUUIDDespiteEquivalentNames() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let first = try store.createProject(
                 name: "Équipe",
                 parentProjectID: nil,
@@ -389,8 +389,8 @@ import ImageIO
         @Test
         func projectCreateAllowsDuplicateSiblingWithoutFilesystemMutation() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
-            try FileManager.default.removeItem(at: fixture.primaryVaultURL.appending(path: "Acme"))
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
+            try FileManager.default.removeItem(at: fixture.primaryWorkspaceURL.appending(path: "Acme"))
 
             let created = try store.createProject(
                 name: "acme",
@@ -399,17 +399,17 @@ import ImageIO
             )
 
             #expect(created.project.projectID != fixture.primaryProjectID)
-            #expect(!FileManager.default.fileExists(atPath: fixture.primaryVaultURL.appending(path: "acme").path))
+            #expect(!FileManager.default.fileExists(atPath: fixture.primaryWorkspaceURL.appending(path: "acme").path))
         }
 
         @Test
-        func projectMutationReportsVaultLockConflict() throws {
+        func projectMutationReportsWorkspaceLockConflict() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
 
-            _ = try DahliaVaultMutationLock.withLock(
-                vaultURL: fixture.primaryVaultURL,
-                vaultID: fixture.primaryVaultID
+            _ = try DahliaWorkspaceMutationLock.withLock(
+                workspaceURL: fixture.primaryWorkspaceURL,
+                workspaceID: fixture.primaryWorkspaceID
             ) {
                 #expect(throws: MeetingAccessError.workspaceBusy) {
                     try store.createProject(
@@ -420,23 +420,23 @@ import ImageIO
                 }
             }
             #expect(!FileManager.default.fileExists(
-                atPath: fixture.primaryVaultURL.appending(path: "Blocked").path
+                atPath: fixture.primaryWorkspaceURL.appending(path: "Blocked").path
             ))
         }
 
         @Test
         func projectUpdateRollsSummaryBackWhenDatabaseCommitFails() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let project = try #require(try store.queryProjects(ProjectQuery(
                 projectID: fixture.primaryProjectID
             )).projects.first)
-            let sourceSummary = fixture.primaryVaultURL.appending(path: "Acme/Summary.md")
+            let sourceSummary = fixture.primaryWorkspaceURL.appending(path: "Acme/Summary.md")
             try Data("Summary".utf8).write(to: sourceSummary, options: .atomic)
             try fixture.manager.dbQueue.write { db in
                 try SummaryExportRecord(
                     meetingId: fixture.firstMeetingID,
-                    type: .vault,
+                    type: .workspace,
                     url: "vault:///Acme/Summary.md",
                     createdAt: .now,
                     updatedAt: .now
@@ -457,13 +457,13 @@ import ImageIO
                 )
             }
             #expect(FileManager.default.fileExists(atPath: sourceSummary.path))
-            #expect(!FileManager.default.fileExists(atPath: fixture.primaryVaultURL.appending(path: "Renamed").path))
+            #expect(!FileManager.default.fileExists(atPath: fixture.primaryWorkspaceURL.appending(path: "Renamed").path))
         }
 
         @Test
         func projectRenameMovesAlignedSummaryAndLeavesLegacyOutputUntouched() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let root = try #require(try store.queryProjects(ProjectQuery(
                 projectID: fixture.primaryProjectID
             )).projects.first)
@@ -472,10 +472,10 @@ import ImageIO
                 parentProjectID: root.projectID,
                 projectType: nil
             ).project
-            let alignedSummary = fixture.primaryVaultURL.appending(path: "Acme/Summary.md")
-            let legacyDirectory = fixture.primaryVaultURL.appending(path: "Legacy", directoryHint: .isDirectory)
+            let alignedSummary = fixture.primaryWorkspaceURL.appending(path: "Acme/Summary.md")
+            let legacyDirectory = fixture.primaryWorkspaceURL.appending(path: "Legacy", directoryHint: .isDirectory)
             let legacySummary = legacyDirectory.appending(path: "Budget.md")
-            let unrelatedFile = fixture.primaryVaultURL.appending(path: "Acme/keep.txt")
+            let unrelatedFile = fixture.primaryWorkspaceURL.appending(path: "Acme/keep.txt")
             try FileManager.default.createDirectory(at: legacyDirectory, withIntermediateDirectories: false)
             try Data("Aligned".utf8).write(to: alignedSummary, options: .atomic)
             try Data("Legacy".utf8).write(to: legacySummary, options: .atomic)
@@ -493,7 +493,7 @@ import ImageIO
                 ] {
                     try SummaryExportRecord(
                         meetingId: meetingID,
-                        type: .vault,
+                        type: .workspace,
                         url: path,
                         createdAt: .now,
                         updatedAt: .now
@@ -513,7 +513,7 @@ import ImageIO
             #expect(updatedChild.path == "Renamed/Platform")
             #expect(updatedChild.revision == child.revision + 1)
             #expect(FileManager.default.fileExists(
-                atPath: fixture.primaryVaultURL.appending(path: "Renamed/Summary.md").path
+                atPath: fixture.primaryWorkspaceURL.appending(path: "Renamed/Summary.md").path
             ))
             #expect(FileManager.default.fileExists(atPath: legacySummary.path))
             #expect(FileManager.default.fileExists(atPath: unrelatedFile.path))
@@ -521,14 +521,14 @@ import ImageIO
                 try [
                     SummaryExportRecord.fetchOne(
                         meetingId: fixture.firstMeetingID,
-                        type: .vault,
+                        type: .workspace,
                         in: db
-                    )?.vaultRelativePath,
+                    )?.workspaceRelativePath,
                     SummaryExportRecord.fetchOne(
                         meetingId: fixture.secondMeetingID,
-                        type: .vault,
+                        type: .workspace,
                         in: db
-                    )?.vaultRelativePath,
+                    )?.workspaceRelativePath,
                 ]
             }
             #expect(paths == ["Renamed/Summary.md", "Legacy/Budget.md"])
@@ -537,7 +537,7 @@ import ImageIO
         @Test
         func projectRenameRejectsSummarySharedWithRetainedLegacyExport() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let root = try #require(try store.queryProjects(ProjectQuery(
                 projectID: fixture.primaryProjectID
             )).projects.first)
@@ -546,7 +546,7 @@ import ImageIO
                 parentProjectID: root.projectID,
                 projectType: nil
             ).project
-            let sharedSummary = fixture.primaryVaultURL.appending(path: "Acme/Shared.md")
+            let sharedSummary = fixture.primaryWorkspaceURL.appending(path: "Acme/Shared.md")
             try Data("Shared".utf8).write(to: sharedSummary, options: .atomic)
             try fixture.manager.dbQueue.write { db in
                 try db.execute(
@@ -562,7 +562,7 @@ import ImageIO
                 for meetingID in [fixture.firstMeetingID, fixture.secondMeetingID] {
                     try SummaryExportRecord(
                         meetingId: meetingID,
-                        type: .vault,
+                        type: .workspace,
                         url: "vault:///Acme/Shared.md",
                         createdAt: .now,
                         updatedAt: .now
@@ -580,18 +580,18 @@ import ImageIO
             #expect(try store.queryProjects(ProjectQuery(projectID: root.projectID)).projects.first?.path == "Acme")
             #expect(FileManager.default.fileExists(atPath: sharedSummary.path))
             #expect(!FileManager.default.fileExists(
-                atPath: fixture.primaryVaultURL.appending(path: "Renamed/Shared.md").path
+                atPath: fixture.primaryWorkspaceURL.appending(path: "Renamed/Shared.md").path
             ))
         }
 
         @Test
-        func querySearchesMetadataPaginatesAndNeverCrossesVaults() async throws {
+        func querySearchesMetadataPaginatesAndNeverCrossesWorkspaces() async throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
             await fixture.manager.searchIndexer.drain()
 
             let firstPage = try store.queryMeetings(MeetingQuery(limit: 2))
-            #expect(firstPage.vault.id == fixture.primaryVaultID)
+            #expect(firstPage.workspace.id == fixture.primaryWorkspaceID)
             #expect(firstPage.meetings.count == 2)
             let cursor = try #require(firstPage.nextCursor)
             let secondPage = try store.queryMeetings(MeetingQuery(limit: 2, cursor: cursor))
@@ -625,12 +625,12 @@ import ImageIO
                 projectID: fixture.primaryProjectID,
                 icalUID: "missing@example.com"
             )).meetings.isEmpty)
-            #expect(try store.queryMeetings(MeetingQuery(projectID: fixture.otherVaultProjectID)).meetings.isEmpty)
+            #expect(try store.queryMeetings(MeetingQuery(projectID: fixture.otherWorkspaceProjectID)).meetings.isEmpty)
             #expect(try store.queryMeetings(MeetingQuery(query: "secret body")).meetings.map(\.id) == [fixture.firstMeetingID])
             #expect(try store.queryMeetings(MeetingQuery(query: "cret bo", simple: true)).meetings.isEmpty)
-            #expect(!firstPage.meetings.contains { $0.id == fixture.otherVaultMeetingID })
+            #expect(!firstPage.meetings.contains { $0.id == fixture.otherWorkspaceMeetingID })
 
-            let otherStore = try fixture.store(vaultID: fixture.otherVaultID)
+            let otherStore = try fixture.store(workspaceID: fixture.otherWorkspaceID)
             #expect(try otherStore.queryMeetings(MeetingQuery(query: "secret body")).meetings.isEmpty)
             #expect(throws: MeetingAccessError.invalidCursor) {
                 try otherStore.queryMeetings(MeetingQuery(cursor: cursor))
@@ -640,7 +640,7 @@ import ImageIO
         @Test
         func fullTextSearchRejectsFailedOrChangedIndex() async throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
             await fixture.manager.searchIndexer.drain()
 
             let firstPage = try store.queryMeetings(.init(query: "review", limit: 1))
@@ -671,9 +671,9 @@ import ImageIO
         }
 
         @Test
-        func meetingReturnsSummaryAndCrossVaultIDsAreNotFound() throws {
+        func meetingReturnsSummaryAndCrossWorkspaceIDsAreNotFound() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
 
             let detail = try store.meeting(id: fixture.firstMeetingID)
             #expect(detail.meeting.name == "AI planning title")
@@ -701,14 +701,14 @@ import ImageIO
             #expect(detail.meeting.transcriptSegmentCount == 2)
             #expect(try store.meeting(id: fixture.secondMeetingID).summary == nil)
             #expect(throws: MeetingAccessError.meetingNotFound) {
-                try store.meeting(id: fixture.otherVaultMeetingID)
+                try store.meeting(id: fixture.otherWorkspaceMeetingID)
             }
         }
 
         @Test
         func transcriptReturnsOnlyConfirmedOriginalTextAndSessionElapsedTime() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
 
             let firstPage = try store.transcript(meetingID: fixture.firstMeetingID, limit: 1)
             let cursor = try #require(firstPage.nextCursor)
@@ -730,7 +730,7 @@ import ImageIO
                 try store.transcript(meetingID: fixture.secondMeetingID, cursor: cursor)
             }
             #expect(throws: MeetingAccessError.meetingNotFound) {
-                try store.transcript(meetingID: fixture.otherVaultMeetingID)
+                try store.transcript(meetingID: fixture.otherWorkspaceMeetingID)
             }
 
             let range = try store.transcript(
@@ -759,7 +759,7 @@ import ImageIO
         @Test
         func staleTranscriptKeepsItsResidentGenerationUntilHydration() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
             var resident = TranscriptInfo(
                 id: .v7(), startedAt: nil, endedAt: nil,
                 metadata: .init(provider: "apple", model: "apple-speech-live", runs: [.init(startedAt: nil)])
@@ -779,13 +779,13 @@ import ImageIO
             try fixture.manager.dbQueue.write { db in
                 try TranscriptRecord(meetingId: fixture.firstMeetingID, info: resident).save(db)
                 try db.execute(sql: """
-                INSERT INTO sync_content_state(vaultId, entity, entityId, residentRevision, complete, present)
+                INSERT INTO sync_content_state(workspace_id, entity, entityId, residentRevision, complete, present)
                 VALUES (?, 'transcript', ?, 1, 1, 1);
-                INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
+                INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision)
                 VALUES (?, 'transcript', ?, 2);
-                """, arguments: [fixture.primaryVaultID, fixture.firstMeetingID, fixture.primaryVaultID, fixture.firstMeetingID])
+                """, arguments: [fixture.primaryWorkspaceID, fixture.firstMeetingID, fixture.primaryWorkspaceID, fixture.firstMeetingID])
                 _ = try TextContentStore.observe(
-                    entity: .transcript, id: fixture.firstMeetingID, vaultId: fixture.primaryVaultID, value: observation, in: db
+                    entity: .transcript, id: fixture.firstMeetingID, workspaceId: fixture.primaryWorkspaceID, value: observation, in: db
                 )
                 #expect(try TranscriptRecord.current(fixture.firstMeetingID, in: db)?.metadata?.request.model == "apple-speech-live")
             }
@@ -807,7 +807,7 @@ import ImageIO
                 )
                 manifest.transcript = incoming
                 try TextContentStore.markVerified(manifest, source: .init(
-                    vaultId: fixture.primaryVaultID, connectionId: .v7(), origin: "https://hydration.invalid",
+                    workspaceId: fixture.primaryWorkspaceID, connectionId: .v7(), origin: "https://hydration.invalid",
                     generation: 0, revision: 2, checksum: nil
                 ), accessed: false, in: db)
             }
@@ -829,7 +829,7 @@ import ImageIO
                 )
             }
 
-            let page = try fixture.store(vaultID: fixture.primaryVaultID).transcript(
+            let page = try fixture.store(workspaceID: fixture.primaryWorkspaceID).transcript(
                 meetingID: fixture.firstMeetingID
             )
             let segment = try #require(page.segments.first { $0.id == fixture.firstSegmentID })
@@ -839,7 +839,7 @@ import ImageIO
         @Test
         func screenshotsArePagedFilteredAndReturnedOneAtATimeAsResizedImages() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
 
             let firstPage = try store.screenshots(
                 meetingID: fixture.firstMeetingID,
@@ -888,7 +888,7 @@ import ImageIO
             #expect((properties?[kCGImagePropertyPixelWidth] as? Int ?? 0) <= 1280)
             #expect((properties?[kCGImagePropertyPixelHeight] as? Int ?? 0) <= 1280)
             #expect(throws: MeetingAccessError.screenshotNotFound) {
-                try store.screenshot(meetingID: fixture.firstMeetingID, screenshotID: fixture.otherVaultScreenshotID)
+                try store.screenshot(meetingID: fixture.firstMeetingID, screenshotID: fixture.otherWorkspaceScreenshotID)
             }
         }
 
@@ -908,7 +908,7 @@ import ImageIO
                     SearchDocumentProjection(
                         kind: "screenshot",
                         sourceID: fixture.firstScreenshotID,
-                        vaultID: fixture.primaryVaultID,
+                        workspaceID: fixture.primaryWorkspaceID,
                         meetingID: fixture.firstMeetingID,
                         projectID: meeting.projectId,
                         fields: SearchDocumentFields(
@@ -925,7 +925,7 @@ import ImageIO
                     in: db
                 )
             }
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
             #expect(throws: MeetingAccessError.searchQueryTooShort(minimum: 2)) {
                 try store.queryScreenshots(ScreenshotTextQuery(query: "a"))
             }
@@ -942,7 +942,7 @@ import ImageIO
         @Test
         func screenshotCacheMissUsesImageResolverWithoutOmittingTheImage() throws {
             let fixture = try Fixture()
-            let vaultID = fixture.primaryVaultID
+            let workspaceID = fixture.primaryWorkspaceID
             let meetingID = fixture.firstMeetingID
             let imageID = fixture.firstScreenshotID
             let bytes = try fixture.manager.dbQueue.write { db in
@@ -950,12 +950,16 @@ import ImageIO
                 try db.execute(sql: "DELETE FROM file_migration_content WHERE fileId = ?", arguments: [imageID])
                 return bytes
             }
-            let store = try MeetingAccessStore(databaseURL: fixture.databaseURL, vaultID: vaultID, imageResolver: { vault, meeting, image in
-                #expect(vault == vaultID && meeting == meetingID && image == imageID)
-                return bytes
-            })
+            let store = try MeetingAccessStore(
+                databaseURL: fixture.databaseURL,
+                workspaceID: workspaceID,
+                imageResolver: { workspace, meeting, image in
+                    #expect(workspace == workspaceID && meeting == meetingID && image == imageID)
+                    return bytes
+                }
+            )
             #expect(try store.screenshot(meetingID: meetingID, screenshotID: imageID, originalSize: true).imageData == bytes)
-            let unavailable = try fixture.store(vaultID: vaultID)
+            let unavailable = try fixture.store(workspaceID: workspaceID)
             #expect(throws: MeetingAccessError.screenshotUnavailable) {
                 try unavailable.screenshot(meetingID: meetingID, screenshotID: imageID, originalSize: true)
             }
@@ -967,7 +971,7 @@ import ImageIO
             let largeImage = try #require(Self.makeImage(width: 2048, height: 512))
             let largeData = try #require(ImageEncoder.encode(largeImage, quality: 0.9))
             try fixture.updateFirstScreenshot(data: largeData)
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
 
             let image = try store.screenshot(meetingID: fixture.firstMeetingID, screenshotID: fixture.firstScreenshotID)
             let source = try #require(CGImageSourceCreateWithData(image.imageData as CFData, nil))
@@ -1006,7 +1010,7 @@ import ImageIO
         func elapsedTimelineUsesOffsetsAcrossPausedRecordingSessions() throws {
             let fixture = try Fixture()
             let inserted = try fixture.insertPausedSessionContent()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
 
             let transcript = try store.transcript(
                 meetingID: fixture.firstMeetingID,
@@ -1025,18 +1029,18 @@ import ImageIO
         }
 
         @Test
-        func relatedRecordsCannotCrossTheVaultBoundary() throws {
+        func relatedRecordsCannotCrossTheWorkspaceBoundary() throws {
             let fixture = try Fixture()
             try fixture.corruptPrimaryProjectAssociation()
             try fixture.corruptPrimarySessionAssociation()
             try fixture.corruptPrimaryScreenshotSessionAssociation()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
 
             let detail = try store.meeting(id: fixture.firstMeetingID)
             #expect(detail.meeting.project == nil)
             #expect(detail.meeting.projectID == nil)
-            #expect(try store.queryMeetings(MeetingQuery(query: "Other vault project", simple: true)).meetings.isEmpty)
-            #expect(try store.queryMeetings(MeetingQuery(projectID: fixture.otherVaultProjectID)).meetings.isEmpty)
+            #expect(try store.queryMeetings(MeetingQuery(query: "Other workspace project", simple: true)).meetings.isEmpty)
+            #expect(try store.queryMeetings(MeetingQuery(projectID: fixture.otherWorkspaceProjectID)).meetings.isEmpty)
             let transcript = try store.transcript(meetingID: fixture.firstMeetingID)
             let segment = try #require(transcript.segments.first(where: { $0.id == fixture.firstSegmentID }))
             #expect(segment.elapsedSeconds == 0)
@@ -1047,7 +1051,7 @@ import ImageIO
         @Test
         func internalMCPReportsOnlyCoarseToolUsageCategories() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             var events: [MCPUsageTelemetryEvent] = []
             let server = DahliaMCPServer(
                 store: store,
@@ -1104,9 +1108,9 @@ import ImageIO
 
         @Test
         // swiftlint:disable:next function_body_length
-        func mcpProtocolRequiresInitializationAndReportsScopedVaultErrors() throws {
+        func mcpProtocolRequiresInitializationAndReportsScopedWorkspaceErrors() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
             let server = DahliaMCPServer(store: store)
 
             let preInitialize = try Self.json(server.handleInternalTestLine(#"""
@@ -1124,11 +1128,11 @@ import ImageIO
             let tools = try Self.json(server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#))
             let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             #expect(definitions.map { $0["name"] as? String } == [
-                "list_vaults", "query_meetings", "query_screenshots", "get_meeting", "get_meeting_transcript", "get_meeting_screenshots",
+                "list_workspaces", "query_meetings", "query_screenshots", "get_meeting", "get_meeting_transcript", "get_meeting_screenshots",
                 "query_projects", "get_project",
             ])
             #expect((definitions.first?["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == true)
-            #expect(definitions.filter { !["list_vaults"].contains($0["name"] as? String ?? "") }
+            #expect(definitions.filter { !["list_workspaces"].contains($0["name"] as? String ?? "") }
                 .allSatisfy { $0["outputSchema"] != nil })
             #expect(definitions.filter { $0["outputSchema"] != nil }.allSatisfy {
                 ($0["outputSchema"] as? [String: Any])?["additionalProperties"] as? Bool == false
@@ -1231,9 +1235,9 @@ import ImageIO
             """#))
             #expect((invalidVersion["error"] as? [String: Any])?["code"] as? Int == -32600)
 
-            let missingVaultStore = try fixture.store(vaultID: UUID.v7())
-            let missingVaultServer = DahliaMCPServer(store: missingVaultStore)
-            let missing = try Self.json(missingVaultServer.handleInternalTestLine(#"{"jsonrpc":"2.0","id":4,"method":"initialize","params":{}}"#))
+            let missingWorkspaceStore = try fixture.store(workspaceID: UUID.v7())
+            let missingWorkspaceServer = DahliaMCPServer(store: missingWorkspaceStore)
+            let missing = try Self.json(missingWorkspaceServer.handleInternalTestLine(#"{"jsonrpc":"2.0","id":4,"method":"initialize","params":{}}"#))
             #expect((missing["error"] as? [String: Any])?["code"] as? Int == -32000)
         }
 
@@ -1243,7 +1247,7 @@ import ImageIO
             let largeImage = try #require(Self.makeImage(width: 2048, height: 512))
             let largeData = try #require(ImageEncoder.encode(largeImage, quality: 0.9))
             try fixture.updateFirstScreenshot(data: largeData)
-            let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
+            let server = try DahliaMCPServer(store: fixture.store(workspaceID: fixture.primaryWorkspaceID))
             _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
             _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
 
@@ -1316,7 +1320,7 @@ import ImageIO
                     arguments: ["Plan\u{1f}Acme", fixture.firstMeetingID, fixture.secondMeetingID]
                 )
             }
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
             let delimiterCursor = try #require(store.queryMeetings(.init(
                 query: "Plan\u{1f}Acme",
                 simple: true,
@@ -1348,7 +1352,7 @@ import ImageIO
         @Test
         func screenshotIDSelectorRejectsPaginationArguments() throws {
             let fixture = try Fixture()
-            let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
+            let server = try DahliaMCPServer(store: fixture.store(workspaceID: fixture.primaryWorkspaceID))
             _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
             _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
             let response = try Self.json(server.handleInternalTestLine(#"""
@@ -1383,7 +1387,7 @@ import ImageIO
         @Test
         func elapsedTimeInputsRejectInvalidRanges() throws {
             let fixture = try Fixture()
-            let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
+            let server = try DahliaMCPServer(store: fixture.store(workspaceID: fixture.primaryWorkspaceID))
             _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
             _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
             let response = try Self.json(server.handleInternalTestLine(#"""
@@ -1399,17 +1403,17 @@ import ImageIO
                 .appending(path: "dahlia-meeting-access-v18-\(UUID.v7().uuidString)")
                 .appendingPathExtension("sqlite")
             defer { try? FileManager.default.removeItem(at: databaseURL) }
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             let queue = try DatabaseQueue(path: databaseURL.path)
             try queue.write { db in
-                try db.execute(sql: "CREATE TABLE vaults (id BLOB PRIMARY KEY, name TEXT NOT NULL)")
-                try db.execute(sql: "CREATE TABLE meetings (id BLOB PRIMARY KEY, vaultId BLOB NOT NULL, name TEXT NOT NULL)")
-                try db.execute(sql: "INSERT INTO vaults (id, name) VALUES (?, ?)", arguments: [vaultID, "Old"])
+                try db.execute(sql: "CREATE TABLE workspaces (id BLOB PRIMARY KEY, name TEXT NOT NULL)")
+                try db.execute(sql: "CREATE TABLE meetings (id BLOB PRIMARY KEY, workspace_id BLOB NOT NULL, name TEXT NOT NULL)")
+                try db.execute(sql: "INSERT INTO workspaces (id, name) VALUES (?, ?)", arguments: [workspaceID, "Old"])
             }
-            let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vaultID)
+            let store = try MeetingAccessStore(databaseURL: databaseURL, workspaceID: workspaceID)
 
             #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
-                try store.scopedVault()
+                try store.scopedWorkspace()
             }
         }
 
@@ -1419,16 +1423,16 @@ import ImageIO
                 .appending(path: "dahlia-meeting-access-v24-\(UUID.v7().uuidString)")
                 .appendingPathExtension("sqlite")
             defer { try? FileManager.default.removeItem(at: databaseURL) }
-            let vault = VaultRecord(id: .v7(), path: "/tmp/before-v25", name: "Before v25", createdAt: .now, lastOpenedAt: .now)
+            let workspace = WorkspaceRecord(id: .v7(), path: "/tmp/before-v25", name: "Before v25", createdAt: .now, lastOpenedAt: .now)
             let queue = try DatabaseQueue(path: databaseURL.path)
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v24_projectWorkspaceHierarchy")
             try queue.write { db in
-                try insertLegacyVault(vault, in: db)
+                try insertLegacyWorkspace(workspace, in: db)
             }
-            let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vault.id)
+            let store = try MeetingAccessStore(databaseURL: databaseURL, workspaceID: workspace.id)
 
             #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
-                try store.scopedVault()
+                try store.scopedWorkspace()
             }
         }
 
@@ -1438,14 +1442,14 @@ import ImageIO
                 .appending(path: "dahlia-meeting-access-v34-\(UUID.v7().uuidString)")
                 .appendingPathExtension("sqlite")
             defer { try? FileManager.default.removeItem(at: databaseURL) }
-            let vault = VaultRecord(id: .v7(), path: "/tmp/before-v35", name: "Before v35", createdAt: .now, lastOpenedAt: .now)
+            let workspace = WorkspaceRecord(id: .v7(), path: "/tmp/before-v35", name: "Before v35", createdAt: .now, lastOpenedAt: .now)
             let queue = try DatabaseQueue(path: databaseURL.path)
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v34_meetingRecordingStartedAt")
-            try queue.write { try insertLegacyVault(vault, in: $0) }
-            let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vault.id)
+            try queue.write { try insertLegacyWorkspace(workspace, in: $0) }
+            let store = try MeetingAccessStore(databaseURL: databaseURL, workspaceID: workspace.id)
 
             #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
-                try store.scopedVault()
+                try store.scopedWorkspace()
             }
             #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
                 try store.queryMeetings(.init(query: "meeting"))
@@ -1458,14 +1462,14 @@ import ImageIO
                 .appending(path: "dahlia-meeting-access-v35-\(UUID.v7().uuidString)")
                 .appendingPathExtension("sqlite")
             defer { try? FileManager.default.removeItem(at: databaseURL) }
-            let vault = VaultRecord(id: .v7(), path: "/tmp/before-v36", name: "Before v36", createdAt: .now, lastOpenedAt: .now)
+            let workspace = WorkspaceRecord(id: .v7(), path: "/tmp/before-v36", name: "Before v36", createdAt: .now, lastOpenedAt: .now)
             let queue = try DatabaseQueue(path: databaseURL.path)
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v35_searchDocuments")
-            try queue.write { try insertLegacyVault(vault, in: $0) }
-            let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vault.id)
+            try queue.write { try insertLegacyWorkspace(workspace, in: $0) }
+            let store = try MeetingAccessStore(databaseURL: databaseURL, workspaceID: workspace.id)
 
             #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
-                try store.scopedVault()
+                try store.scopedWorkspace()
             }
         }
 
@@ -1475,10 +1479,10 @@ import ImageIO
                 .appending(path: "dahlia-meeting-access-project-schema-\(UUID.v7().uuidString)")
                 .appendingPathExtension("sqlite")
             defer { try? FileManager.default.removeItem(at: databaseURL) }
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             let queue = try DatabaseQueue(path: databaseURL.path)
             try queue.write { db in
-                try db.execute(sql: "CREATE TABLE vaults (id BLOB PRIMARY KEY, name TEXT NOT NULL)")
+                try db.execute(sql: "CREATE TABLE workspaces (id BLOB PRIMARY KEY, name TEXT NOT NULL)")
                 try db.execute(sql: "CREATE TABLE meetings (id BLOB PRIMARY KEY, description TEXT NOT NULL)")
                 try db.execute(sql: """
                 CREATE TABLE summaries (
@@ -1497,12 +1501,12 @@ import ImageIO
                     revision INTEGER NOT NULL
                 )
                 """)
-                try db.execute(sql: "INSERT INTO vaults (id, name) VALUES (?, ?)", arguments: [vaultID, "Old"])
+                try db.execute(sql: "INSERT INTO workspaces (id, name) VALUES (?, ?)", arguments: [workspaceID, "Old"])
             }
-            let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vaultID)
+            let store = try MeetingAccessStore(databaseURL: databaseURL, workspaceID: workspaceID)
 
             #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
-                try store.scopedVault()
+                try store.scopedWorkspace()
             }
         }
 
@@ -1512,10 +1516,10 @@ import ImageIO
                 .appending(path: "dahlia-meeting-access-v20-\(UUID.v7().uuidString)")
                 .appendingPathExtension("sqlite")
             defer { try? FileManager.default.removeItem(at: databaseURL) }
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             let queue = try DatabaseQueue(path: databaseURL.path)
             try queue.write { db in
-                try db.execute(sql: "CREATE TABLE vaults (id BLOB PRIMARY KEY, name TEXT NOT NULL)")
+                try db.execute(sql: "CREATE TABLE workspaces (id BLOB PRIMARY KEY, name TEXT NOT NULL)")
                 try db.execute(sql: "CREATE TABLE meetings (id BLOB PRIMARY KEY, description TEXT NOT NULL)")
                 try db.execute(
                     sql: """
@@ -1525,17 +1529,17 @@ import ImageIO
                         summary TEXT NOT NULL,
                         document TEXT,
                         googleFileId TEXT,
-                        vaultRelativePath TEXT,
+                        workspaceRelativePath TEXT,
                         createdAt DATETIME NOT NULL
                     )
                     """
                 )
-                try db.execute(sql: "INSERT INTO vaults (id, name) VALUES (?, ?)", arguments: [vaultID, "Old"])
+                try db.execute(sql: "INSERT INTO workspaces (id, name) VALUES (?, ?)", arguments: [workspaceID, "Old"])
             }
-            let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vaultID)
+            let store = try MeetingAccessStore(databaseURL: databaseURL, workspaceID: workspaceID)
 
             #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
-                try store.scopedVault()
+                try store.scopedWorkspace()
             }
         }
 
@@ -1568,7 +1572,7 @@ import ImageIO
         func exposesRelationshipKeys() async throws {
             let fixture = try Fixture()
             await fixture.manager.searchIndexer.drain()
-            let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
+            let server = try DahliaMCPServer(store: fixture.store(workspaceID: fixture.primaryWorkspaceID))
 
             let initialized = try Self.json(server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
             let instructions = try #require((initialized["result"] as? [String: Any])?["instructions"] as? String)
@@ -1678,23 +1682,23 @@ import ImageIO
     final class Fixture {
         let databaseURL: URL
         let rootURL: URL
-        let primaryVaultURL: URL
-        let otherVaultURL: URL
+        let primaryWorkspaceURL: URL
+        let otherWorkspaceURL: URL
         let manager: AppDatabaseManager
-        let primaryVaultID = UUID.v7()
-        let otherVaultID = UUID.v7()
+        let primaryWorkspaceID = UUID.v7()
+        let otherWorkspaceID = UUID.v7()
         let primaryProjectID = UUID.v7()
         let firstMeetingID = UUID.v7()
         let secondMeetingID = UUID.v7()
         let recurringMeetingID = UUID.v7()
-        let otherVaultMeetingID = UUID.v7()
+        let otherWorkspaceMeetingID = UUID.v7()
         let firstSegmentID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         let secondSegmentID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
         let firstScreenshotID = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
         let secondScreenshotID = UUID(uuidString: "00000000-0000-0000-0000-000000000012")!
-        let otherVaultScreenshotID = UUID(uuidString: "00000000-0000-0000-0000-000000000013")!
-        let otherVaultProjectID = UUID.v7()
-        let otherVaultSessionID = UUID.v7()
+        let otherWorkspaceScreenshotID = UUID(uuidString: "00000000-0000-0000-0000-000000000013")!
+        let otherWorkspaceProjectID = UUID.v7()
+        let otherWorkspaceSessionID = UUID.v7()
         var primaryMeetingIDs: Set<UUID> { [firstMeetingID, secondMeetingID, recurringMeetingID] }
         var projectMeetingIDs: Set<UUID> { [firstMeetingID, secondMeetingID] }
         var primaryScreenshotIDs: Set<UUID> { [firstScreenshotID, secondScreenshotID] }
@@ -1704,13 +1708,13 @@ import ImageIO
 
         init() throws {
             rootURL = URL.temporaryDirectory.appending(path: "dahlia-meeting-access-\(UUID.v7().uuidString)")
-            primaryVaultURL = rootURL.appending(path: "primary", directoryHint: .isDirectory)
-            otherVaultURL = rootURL.appending(path: "other", directoryHint: .isDirectory)
+            primaryWorkspaceURL = rootURL.appending(path: "primary", directoryHint: .isDirectory)
+            otherWorkspaceURL = rootURL.appending(path: "other", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(
-                at: primaryVaultURL.appending(path: "Acme", directoryHint: .isDirectory),
+                at: primaryWorkspaceURL.appending(path: "Acme", directoryHint: .isDirectory),
                 withIntermediateDirectories: true
             )
-            try FileManager.default.createDirectory(at: otherVaultURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: otherWorkspaceURL, withIntermediateDirectories: true)
             databaseURL = URL.temporaryDirectory
                 .appending(path: "dahlia-meeting-access-\(UUID.v7().uuidString)")
                 .appendingPathExtension("sqlite")
@@ -1725,29 +1729,29 @@ import ImageIO
         }
 
         private func insertMetadata(in db: Database, createdAt: Date, projectID: UUID) throws {
-            for vault in [
-                VaultRecord(
-                    id: primaryVaultID,
-                    path: primaryVaultURL.path,
+            for workspace in [
+                WorkspaceRecord(
+                    id: primaryWorkspaceID,
+                    path: primaryWorkspaceURL.path,
                     name: "Primary",
                     createdAt: createdAt,
                     lastOpenedAt: createdAt
                 ),
-                VaultRecord(
-                    id: otherVaultID,
-                    path: otherVaultURL.path,
+                WorkspaceRecord(
+                    id: otherWorkspaceID,
+                    path: otherWorkspaceURL.path,
                     name: "Other",
                     createdAt: createdAt,
                     lastOpenedAt: createdAt
                 ),
             ] {
-                try vault.insert(db)
+                try workspace.insert(db)
             }
-            try ProjectRecord(id: projectID, vaultId: primaryVaultID, path: "Acme", createdAt: createdAt).insert(db)
+            try ProjectRecord(id: projectID, workspaceId: primaryWorkspaceID, path: "Acme", createdAt: createdAt).insert(db)
             try ProjectRecord(
-                id: otherVaultProjectID,
-                vaultId: otherVaultID,
-                path: "Other vault project",
+                id: otherWorkspaceProjectID,
+                workspaceId: otherWorkspaceID,
+                path: "Other workspace project",
                 createdAt: createdAt
             ).insert(db)
             try insertCalendarEvents(in: db, createdAt: createdAt)
@@ -1814,7 +1818,7 @@ import ImageIO
         private func insertMeetings(in db: Database, createdAt: Date, projectID: UUID) throws {
             try MeetingRecord(
                 id: firstMeetingID,
-                vaultId: primaryVaultID,
+                workspaceId: primaryWorkspaceID,
                 projectId: projectID,
                 name: "AI planning title",
                 description: "Product planning decisions",
@@ -1826,7 +1830,7 @@ import ImageIO
             ).insert(db)
             try MeetingRecord(
                 id: secondMeetingID,
-                vaultId: primaryVaultID,
+                workspaceId: primaryWorkspaceID,
                 projectId: projectID,
                 name: "Budget 100% review",
                 status: .ready,
@@ -1837,7 +1841,7 @@ import ImageIO
             ).insert(db)
             try MeetingRecord(
                 id: recurringMeetingID,
-                vaultId: primaryVaultID,
+                workspaceId: primaryWorkspaceID,
                 projectId: nil,
                 name: "Recurring series follow-up",
                 status: .ready,
@@ -1850,10 +1854,10 @@ import ImageIO
             try tag.insert(db)
             try MeetingTagRecord(meetingId: firstMeetingID, tagId: db.lastInsertedRowID).insert(db)
             try MeetingRecord(
-                id: otherVaultMeetingID,
-                vaultId: otherVaultID,
+                id: otherWorkspaceMeetingID,
+                workspaceId: otherWorkspaceID,
                 projectId: nil,
-                name: "Other vault",
+                name: "Other workspace",
                 status: .ready,
                 createdAt: createdAt.addingTimeInterval(30),
                 updatedAt: createdAt,
@@ -1896,8 +1900,8 @@ import ImageIO
                 updatedAt: createdAt
             ).insert(db)
             try RecordingSessionRecord(
-                id: otherVaultSessionID,
-                meetingId: otherVaultMeetingID,
+                id: otherWorkspaceSessionID,
+                meetingId: otherWorkspaceMeetingID,
                 startedAt: createdAt,
                 endedAt: createdAt.addingTimeInterval(20),
                 duration: 20,
@@ -1953,9 +1957,9 @@ import ImageIO
                 mimeType: "image/png"
             ).insertLegacyForTesting(db)
             try MeetingScreenshotRecord(
-                id: otherVaultScreenshotID,
-                meetingId: otherVaultMeetingID,
-                sessionId: otherVaultSessionID,
+                id: otherWorkspaceScreenshotID,
+                meetingId: otherWorkspaceMeetingID,
+                sessionId: otherWorkspaceSessionID,
                 capturedAt: createdAt.addingTimeInterval(6),
                 imageData: imageData,
                 mimeType: "image/png"
@@ -1967,10 +1971,10 @@ import ImageIO
             try? FileManager.default.removeItem(at: rootURL)
         }
 
-        func store(vaultID: UUID, allowsWrites: Bool = false) throws -> MeetingAccessStore {
+        func store(workspaceID: UUID, allowsWrites: Bool = false) throws -> MeetingAccessStore {
             try MeetingAccessStore(
                 databaseURL: databaseURL,
-                vaultID: vaultID,
+                workspaceID: workspaceID,
                 allowsWrites: allowsWrites
             )
         }
@@ -1984,7 +1988,7 @@ import ImageIO
             }
         }
 
-        func insertVaultExport(meetingID: UUID, relativePath: String) throws {
+        func insertWorkspaceExport(meetingID: UUID, relativePath: String) throws {
             let now = Date()
             try manager.dbQueue.write { db in
                 try db.execute(
@@ -2062,10 +2066,10 @@ import ImageIO
 
         func corruptPrimaryProjectAssociation() throws {
             try manager.dbQueue.write { db in
-                try db.execute(sql: "DROP TRIGGER IF EXISTS meetings_validate_project_vault_update")
+                try db.execute(sql: "DROP TRIGGER IF EXISTS meetings_validate_project_workspace_update")
                 try db.execute(
                     sql: "UPDATE meetings SET projectId = ? WHERE id = ?",
-                    arguments: [otherVaultProjectID, firstMeetingID]
+                    arguments: [otherWorkspaceProjectID, firstMeetingID]
                 )
             }
         }
@@ -2074,7 +2078,7 @@ import ImageIO
             try manager.dbQueue.write { db in
                 try db.execute(
                     sql: "UPDATE transcript_segments SET sessionId = ? WHERE id = ?",
-                    arguments: [otherVaultSessionID, firstSegmentID]
+                    arguments: [otherWorkspaceSessionID, firstSegmentID]
                 )
             }
         }
@@ -2083,7 +2087,7 @@ import ImageIO
             try manager.dbQueue.write { db in
                 try db.execute(
                     sql: "UPDATE meeting_attachments SET sessionId = ? WHERE id = ?",
-                    arguments: [otherVaultSessionID, firstScreenshotID]
+                    arguments: [otherWorkspaceSessionID, firstScreenshotID]
                 )
             }
         }

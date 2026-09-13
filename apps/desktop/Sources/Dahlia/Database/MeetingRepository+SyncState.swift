@@ -43,35 +43,35 @@ extension MeetingRepository {
         in db: Database
     ) throws -> MeetingSyncSnapshot? {
         guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId),
-              let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId) else { return nil }
+              let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId) else { return nil }
         let archiveStates = try String.fetchAll(db, sql: """
         SELECT a.state FROM recording_archives a JOIN recording_sessions s ON s.id = a.sessionId
         WHERE a.meetingId = ? AND a.connectionId IS ? AND s.endedAt IS NOT NULL AND a.state <> 'expired'
-        """, arguments: [meetingId, vault.accountConnectionId])
+        """, arguments: [meetingId, workspace.accountConnectionId])
         let archiveState: String? = archiveStates.isEmpty ? nil : archiveStates.contains("failed") ? "failed"
             : archiveStates.allSatisfy { ["saved", "remote"].contains($0) } ? "saved" : "pending"
-        guard let connectionId = vault.accountConnectionId else {
+        guard let connectionId = workspace.accountConnectionId else {
             return MeetingSyncSnapshot(connectionId: nil, state: .local, revisions: [], recordingArchiveState: archiveState)
         }
-        let state = try fetchVaultSyncState(vault, in: db)
+        let state = try fetchWorkspaceSyncState(workspace, in: db)
         let revisions = try MeetingSyncSnapshot.Revision.fetchAll(
             db,
             sql: """
             SELECT entity, entityId, confirmedRevision FROM sync_entity_state
-            WHERE vaultId = ? AND (
+            WHERE workspace_id = ? AND (
                 (entity IN ('meeting', 'summary', 'transcript') AND entityId = ?)
                 OR (entity = 'meeting_attachment' AND entityId IN (SELECT id FROM meeting_attachments WHERE meetingId = ?))
                 OR (entity = 'file' AND entityId IN (SELECT fileId FROM meeting_attachments WHERE meetingId = ?))
             ) ORDER BY entity, entityId
             """,
-            arguments: [vault.id, meetingId, meetingId, meetingId]
+            arguments: [workspace.id, meetingId, meetingId, meetingId]
         )
         let content = try MeetingSyncSnapshot.Content.fetchAll(db, sql: """
         SELECT entity, entityId, residentRevision, complete, present, contentCount, fetchError FROM sync_content_state
-        WHERE vaultId = ? AND (entityId = ? AND entity IN ('summary', 'transcript')
+        WHERE workspace_id = ? AND (entityId = ? AND entity IN ('summary', 'transcript')
           OR entity = 'file' AND entityId IN (SELECT fileId FROM meeting_attachments WHERE meetingId = ?))
         ORDER BY entity, entityId
-        """, arguments: [vault.id, meetingId, meetingId])
+        """, arguments: [workspace.id, meetingId, meetingId])
         return MeetingSyncSnapshot(
             connectionId: connectionId,
             state: state,
@@ -81,23 +81,23 @@ extension MeetingRepository {
         )
     }
 
-    nonisolated static func fetchVaultSyncState(_ vault: VaultRecord, in db: Database) throws -> MeetingSyncState {
-        guard let connectionId = vault.accountConnectionId else { return .local }
+    nonisolated static func fetchWorkspaceSyncState(_ workspace: WorkspaceRecord, in db: Database) throws -> MeetingSyncState {
+        guard let connectionId = workspace.accountConnectionId else { return .local }
         let blocked = try String.fetchOne(
             db,
-            sql: "SELECT blockedReason FROM sync_transactions WHERE vaultId = ? AND blockedReason IS NOT NULL ORDER BY sequence LIMIT 1",
-            arguments: [vault.id]
+            sql: "SELECT blockedReason FROM sync_transactions WHERE workspace_id = ? AND blockedReason IS NOT NULL ORDER BY sequence LIMIT 1",
+            arguments: [workspace.id]
         ).flatMap(SyncBlockedReason.init(rawValue:))
-        let hasPending = try SyncTransactionQueue.hasPending(vaultId: vault.id, in: db)
+        let hasPending = try SyncTransactionQueue.hasPending(workspaceId: workspace.id, in: db)
         return if let blocked {
             .blocked(blocked)
-        } else if vault.syncRecoveryState == "transferBlocked" {
+        } else if workspace.syncRecoveryState == "transferBlocked" {
             .relocationPaused
-        } else if vault.syncRecoveryState == "updateRequired" {
+        } else if workspace.syncRecoveryState == "updateRequired" {
             .updateRequired
-        } else if vault.syncRecoveryState != nil {
+        } else if workspace.syncRecoveryState != nil {
             .recovering
-        } else if vault.syncConfirmedConnectionId != connectionId || vault.syncPullCursor == nil
+        } else if workspace.syncConfirmedConnectionId != connectionId || workspace.syncPullCursor == nil
             || hasPending {
             .pending
         } else {
@@ -106,11 +106,11 @@ extension MeetingRepository {
     }
 
     nonisolated static func fetchAccountSyncStates(in db: Database) throws -> [UUID: MeetingSyncState] {
-        let vaults = try VaultRecord.filter(Column("accountConnectionId") != nil).fetchAll(db)
+        let workspaces = try WorkspaceRecord.filter(Column("accountConnectionId") != nil).fetchAll(db)
         var states: [UUID: MeetingSyncState] = [:]
-        for vault in vaults {
-            guard let connectionId = vault.accountConnectionId else { continue }
-            let state = try fetchVaultSyncState(vault, in: db)
+        for workspace in workspaces {
+            guard let connectionId = workspace.accountConnectionId else { continue }
+            let state = try fetchWorkspaceSyncState(workspace, in: db)
             if states[connectionId].map({ $0.accountPriority < state.accountPriority }) ?? true {
                 states[connectionId] = state
             }
@@ -141,7 +141,7 @@ extension MeetingRepository {
             try db.execute(sql: """
             UPDATE recording_archives SET state = 'pending', retryAt = NULL, failureCode = NULL
             WHERE meetingId = ? AND state = 'failed'
-              AND EXISTS (SELECT 1 FROM vaults v WHERE v.id = recording_archives.vaultId
+              AND EXISTS (SELECT 1 FROM workspaces v WHERE v.id = recording_archives.workspace_id
                 AND v.accountConnectionId IS recording_archives.connectionId
                 AND (v.accountConnectionId IS NULL OR v.syncRole IN ('admin', 'editor')) AND v.syncRecoveryState IS NULL)
             """, arguments: [meetingId])

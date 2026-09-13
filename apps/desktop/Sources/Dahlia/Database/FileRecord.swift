@@ -36,7 +36,7 @@ struct FileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     static let databaseTableName = "files"
 
     var id: UUID
-    var vaultId: UUID
+    var workspaceId: UUID
     var uri: String?
     var offset: Int64 = 0
     var size: Int64
@@ -50,7 +50,8 @@ struct FileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     var remoteReference: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, vaultId, uri, offset, size, checksum, name, metadata, createdAt, updatedAt, localReference, remoteReference
+        case workspaceId = "workspace_id"
+        case id, uri, offset, size, checksum, name, metadata, createdAt, updatedAt, localReference, remoteReference
         case contentType = "content_type"
     }
 
@@ -58,7 +59,7 @@ struct FileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
 
     static func applyCanonical(
         id: UUID,
-        vaultId: UUID,
+        workspaceId: UUID,
         value: SyncCanonicalPayload,
         preserveTextBody: Bool = false,
         in db: Database
@@ -70,9 +71,9 @@ struct FileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
               let metadata = value.metadata, let sourceType = FileMetadata.Source(rawValue: metadata.source.rawValue), let name = value.name,
               let createdAt = value.createdAt, let updatedAt = value.updatedAt,
               let row = try Row.fetchOne(db, sql: """
-              SELECT c.id, c.origin FROM vaults v JOIN dahlia_account_connections c ON c.id = v.accountConnectionId
+              SELECT c.id, c.origin FROM workspaces v JOIN dahlia_account_connections c ON c.id = v.accountConnectionId
               WHERE v.id = ?
-              """, arguments: [vaultId]) else { throw SyncTransactionQueueError.invalidReceipt }
+              """, arguments: [workspaceId]) else { throw SyncTransactionQueueError.invalidReceipt }
         let existing = try Self.fetchOne(db, key: id)
         let source = ScreenshotRemoteReference(
             origin: row["origin"],
@@ -82,7 +83,7 @@ struct FileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
         )
         try Self(
             id: id,
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             uri: existing?.uri,
             size: size,
             contentType: type,

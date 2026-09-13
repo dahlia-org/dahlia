@@ -5,28 +5,28 @@ import GRDB
 enum ProjectAppearanceMigration {
     static func migrate(
         _ saved: [String: ProjectAppearance],
-        vaultId: UUID,
+        workspaceId: UUID,
         dbQueue: DatabaseQueue
     ) async throws -> Set<String> {
         try await dbQueue.write { db in
-            guard let vault = try VaultRecord.fetchOne(db, key: vaultId),
-                  vault.allowsCanonicalEdits, vault.syncRecoveryState == nil else { return [] }
-            let isRemote = vault.accountConnectionId != nil
-            if isRemote, !vault.allowsCanonicalEdits || vault.syncConfirmedConnectionId != vault.accountConnectionId { return [] }
+            guard let workspace = try WorkspaceRecord.fetchOne(db, key: workspaceId),
+                  workspace.allowsCanonicalEdits, workspace.syncRecoveryState == nil else { return [] }
+            let isRemote = workspace.accountConnectionId != nil
+            if isRemote, !workspace.allowsCanonicalEdits || workspace.syncConfirmedConnectionId != workspace.accountConnectionId { return [] }
             var completed: Set<String> = []
             for (key, appearance) in saved {
                 guard let id = UUID(uuidString: key),
-                      var project = try ProjectRecord.fetchOne(db, key: id), project.vaultId == vaultId else { continue }
+                      var project = try ProjectRecord.fetchOne(db, key: id), project.workspaceId == workspaceId else { continue }
                 let pending = try Bool.fetchOne(db, sql: """
                 SELECT EXISTS (SELECT 1 FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
-                WHERE t.vaultId = ? AND o.entity = 'project' AND o.entityId = ?)
-                """, arguments: [vaultId, id]) ?? false
+                WHERE t.workspace_id = ? AND o.entity = 'project' AND o.entityId = ?)
+                """, arguments: [workspaceId, id]) ?? false
                 if pending { continue }
                 if isRemote {
                     let revision = try Int.fetchOne(db, sql: """
                     SELECT confirmedRevision FROM sync_entity_state
-                    WHERE vaultId = ? AND entity = 'project' AND entityId = ?
-                    """, arguments: [vaultId, id])
+                    WHERE workspace_id = ? AND entity = 'project' AND entityId = ?
+                    """, arguments: [workspaceId, id])
                     guard revision != nil else { continue }
                 }
                 // Existing canonical appearance wins over this device's old preference.
@@ -43,7 +43,7 @@ enum ProjectAppearanceMigration {
                 project.revision += 1
                 try project.update(db)
                 let transaction = try SyncTransactionRecorder.record(
-                    vaultId: vaultId,
+                    workspaceId: workspaceId,
                     operations: [SyncInitialSnapshotBuilder.projectOperation(project, action: .update)],
                     in: db
                 )

@@ -61,10 +61,10 @@ final class MainWindowNavigation {
         }
     }
 
-    private var pinnedProjectIDsByVault: [String: [String]]
-    private var canonicalProjectAppearancesByVault: [String: [String: ProjectAppearance]] = [:]
-    private var projectAppearancesByVault: [String: [String: ProjectAppearance]]
-    private var projectDetailDisplayModesByVault: [String: ProjectDetailDisplayMode]
+    private var pinnedProjectIDsByWorkspace: [String: [String]]
+    private var canonicalProjectAppearancesByWorkspace: [String: [String: ProjectAppearance]] = [:]
+    private var projectAppearancesByWorkspace: [String: [String: ProjectAppearance]]
+    private var projectDetailDisplayModesByWorkspace: [String: ProjectDetailDisplayMode]
     private var navigationGeneration = 0
     private var backHistory: [MainWindowLocation] = []
     private var forwardHistory: [MainWindowLocation] = []
@@ -109,9 +109,9 @@ final class MainWindowNavigation {
         #endif
         meetingSidebarDisplayMode = settingsDefaults.string(forKey: Self.meetingSidebarDisplayModeDefaultsKey)
             .flatMap(MeetingSidebarDisplayMode.init(rawValue:)) ?? .chronological
-        pinnedProjectIDsByVault = Self.loadPinnedProjectIDs(from: settingsDefaults)
-        projectAppearancesByVault = Self.loadProjectAppearances(from: settingsDefaults)
-        projectDetailDisplayModesByVault = Self.loadProjectDetailDisplayModes(from: settingsDefaults)
+        pinnedProjectIDsByWorkspace = Self.loadPinnedProjectIDs(from: settingsDefaults)
+        projectAppearancesByWorkspace = Self.loadProjectAppearances(from: settingsDefaults)
+        projectDetailDisplayModesByWorkspace = Self.loadProjectDetailDisplayModes(from: settingsDefaults)
     }
 
     func showMeetings() {
@@ -128,43 +128,43 @@ final class MainWindowNavigation {
         openMainWindow()
     }
 
-    func pinnedProjectIDs(vaultId: UUID?) -> [UUID] {
-        guard let vaultId else { return [] }
-        return pinnedProjectIDsByVault[vaultId.uuidString, default: []].compactMap(UUID.init(uuidString:))
+    func pinnedProjectIDs(workspaceId: UUID?) -> [UUID] {
+        guard let workspaceId else { return [] }
+        return pinnedProjectIDsByWorkspace[workspaceId.uuidString, default: []].compactMap(UUID.init(uuidString:))
     }
 
-    func toggleProjectPin(_ projectId: UUID, vaultId: UUID?) {
-        guard let vaultId else { return }
-        let vaultKey = vaultId.uuidString
-        var ids = pinnedProjectIDsByVault[vaultKey, default: []]
+    func toggleProjectPin(_ projectId: UUID, workspaceId: UUID?) {
+        guard let workspaceId else { return }
+        let workspaceKey = workspaceId.uuidString
+        var ids = pinnedProjectIDsByWorkspace[workspaceKey, default: []]
         let id = projectId.uuidString
         if let index = ids.firstIndex(of: id) {
             ids.remove(at: index)
         } else {
             ids.insert(id, at: 0)
         }
-        pinnedProjectIDsByVault[vaultKey] = ids
+        pinnedProjectIDsByWorkspace[workspaceKey] = ids
         savePinnedProjectIDs()
     }
 
-    func projectAppearance(projectId: UUID, vaultId: UUID?) -> ProjectAppearance {
-        guard let vaultId else { return .default }
-        return canonicalProjectAppearancesByVault[vaultId.uuidString]?[projectId.uuidString]
-            ?? projectAppearancesByVault[vaultId.uuidString]?[projectId.uuidString] ?? .default
+    func projectAppearance(projectId: UUID, workspaceId: UUID?) -> ProjectAppearance {
+        guard let workspaceId else { return .default }
+        return canonicalProjectAppearancesByWorkspace[workspaceId.uuidString]?[projectId.uuidString]
+            ?? projectAppearancesByWorkspace[workspaceId.uuidString]?[projectId.uuidString] ?? .default
     }
 
     func projectAppearance(
         for projectId: UUID,
         in projectsByID: [UUID: ProjectOverviewItem],
-        vaultId: UUID?
+        workspaceId: UUID?
     ) -> ProjectAppearance {
         guard let project = projectsByID[projectId] else { return .default }
         let ownerId = project.parentProjectId ?? project.projectId
-        return projectAppearance(projectId: ownerId, vaultId: vaultId)
+        return projectAppearance(projectId: ownerId, workspaceId: workspaceId)
     }
 
-    func updateProjectAppearances(_ projects: [ProjectOverviewItem], vaultId: UUID) {
-        canonicalProjectAppearancesByVault[vaultId.uuidString] = Dictionary(uniqueKeysWithValues: projects.map {
+    func updateProjectAppearances(_ projects: [ProjectOverviewItem], workspaceId: UUID) {
+        canonicalProjectAppearancesByWorkspace[workspaceId.uuidString] = Dictionary(uniqueKeysWithValues: projects.map {
             ($0.projectId.uuidString, ProjectAppearance(
                 icon: $0.icon.flatMap(ProjectIcon.init(rawValue:)) ?? .folder,
                 color: $0.color.flatMap(ProjectThemeColor.init(rawValue:)) ?? .neutral
@@ -172,23 +172,23 @@ final class MainWindowNavigation {
         })
     }
 
-    func migrateProjectAppearances(vaultId: UUID, dbQueue: DatabaseQueue) async throws {
-        guard let saved = projectAppearancesByVault[vaultId.uuidString], !saved.isEmpty else { return }
-        let completed = try await ProjectAppearanceMigration.migrate(saved, vaultId: vaultId, dbQueue: dbQueue)
-        for id in completed where projectAppearancesByVault[vaultId.uuidString]?[id] == saved[id] {
-            projectAppearancesByVault[vaultId.uuidString]?.removeValue(forKey: id)
+    func migrateProjectAppearances(workspaceId: UUID, dbQueue: DatabaseQueue) async throws {
+        guard let saved = projectAppearancesByWorkspace[workspaceId.uuidString], !saved.isEmpty else { return }
+        let completed = try await ProjectAppearanceMigration.migrate(saved, workspaceId: workspaceId, dbQueue: dbQueue)
+        for id in completed where projectAppearancesByWorkspace[workspaceId.uuidString]?[id] == saved[id] {
+            projectAppearancesByWorkspace[workspaceId.uuidString]?.removeValue(forKey: id)
         }
         if !completed.isEmpty { saveProjectAppearances() }
     }
 
-    func projectDetailDisplayMode(vaultId: UUID?) -> ProjectDetailDisplayMode {
-        guard let vaultId else { return .list }
-        return projectDetailDisplayModesByVault[vaultId.uuidString] ?? .list
+    func projectDetailDisplayMode(workspaceId: UUID?) -> ProjectDetailDisplayMode {
+        guard let workspaceId else { return .list }
+        return projectDetailDisplayModesByWorkspace[workspaceId.uuidString] ?? .list
     }
 
-    func setProjectDetailDisplayMode(_ mode: ProjectDetailDisplayMode, vaultId: UUID?) {
-        guard let vaultId else { return }
-        projectDetailDisplayModesByVault[vaultId.uuidString] = mode
+    func setProjectDetailDisplayMode(_ mode: ProjectDetailDisplayMode, workspaceId: UUID?) {
+        guard let workspaceId else { return }
+        projectDetailDisplayModesByWorkspace[workspaceId.uuidString] = mode
         saveProjectDetailDisplayModes()
     }
 
@@ -275,7 +275,7 @@ final class MainWindowNavigation {
     }
 
     private func savePinnedProjectIDs() {
-        guard let data = try? JSONEncoder().encode(pinnedProjectIDsByVault) else { return }
+        guard let data = try? JSONEncoder().encode(pinnedProjectIDsByWorkspace) else { return }
         settingsDefaults.set(data, forKey: Self.pinnedProjectIDsDefaultsKey)
     }
 
@@ -286,7 +286,7 @@ final class MainWindowNavigation {
     }
 
     private func saveProjectAppearances() {
-        guard let data = try? JSONEncoder().encode(projectAppearancesByVault) else { return }
+        guard let data = try? JSONEncoder().encode(projectAppearancesByWorkspace) else { return }
         settingsDefaults.set(data, forKey: Self.projectAppearancesDefaultsKey)
     }
 
@@ -297,7 +297,7 @@ final class MainWindowNavigation {
     }
 
     private func saveProjectDetailDisplayModes() {
-        guard let data = try? JSONEncoder().encode(projectDetailDisplayModesByVault) else { return }
+        guard let data = try? JSONEncoder().encode(projectDetailDisplayModesByWorkspace) else { return }
         settingsDefaults.set(data, forKey: Self.projectDetailDisplayModesDefaultsKey)
     }
 
@@ -375,7 +375,7 @@ final class MainWindowNavigation {
         resetNavigationHistory(to: location)
     }
 
-    func changeVault(to _: UUID?) {
+    func changeWorkspace(to _: UUID?) {
         let location: MainWindowLocation = if section == .chat {
             .chat
         } else if section == .projects {

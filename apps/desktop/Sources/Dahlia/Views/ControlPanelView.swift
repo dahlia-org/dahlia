@@ -91,7 +91,7 @@ struct ControlPanelView: View {
                 MeetingDetailNavigationBar(
                     selection: $selectedTab,
                     viewModel: viewModel,
-                    canEdit: sidebarViewModel.canEditCurrentVault,
+                    canEdit: sidebarViewModel.canEditCurrentWorkspace,
                     onRename: beginMeetingRename,
                     onDelete: requestCurrentMeetingDeletion
                 )
@@ -150,7 +150,7 @@ struct ControlPanelView: View {
                         systemImage: archiveState == "saved" ? "checkmark.circle" : "waveform"
                     )
                     Spacer()
-                    if archiveState == "failed", sidebarViewModel.canEditCurrentVault {
+                    if archiveState == "failed", sidebarViewModel.canEditCurrentWorkspace {
                         Button(L10n.retry, action: viewModel.retryRecordingArchive)
                     }
                 }
@@ -317,7 +317,7 @@ struct ControlPanelView: View {
             isSelecting: $isSelectingScreenshots,
             selectedScreenshotIDs: $selectedScreenshotIds,
             referencedScreenshotIDs: referencedScreenshotIds,
-            isDeletionDisabled: !sidebarViewModel.canEditCurrentVault
+            isDeletionDisabled: !sidebarViewModel.canEditCurrentWorkspace
                 || viewModel.isSummaryGenerating || viewModel.isDeletingScreenshots,
             open: { openScreenshot($0, previewImage: $1, scope: .allScreenshots) },
             download: viewModel.downloadScreenshot,
@@ -360,12 +360,12 @@ struct ControlPanelView: View {
     }
 
     private func deleteSelectedScreenshots() {
-        guard sidebarViewModel.canEditCurrentVault else { return }
+        guard sidebarViewModel.canEditCurrentWorkspace else { return }
         isConfirmingScreenshotDeletion = true
     }
 
     private func confirmDeleteSelectedScreenshots() {
-        guard sidebarViewModel.canEditCurrentVault else { return }
+        guard sidebarViewModel.canEditCurrentWorkspace else { return }
         viewModel.deleteScreenshots(ids: selectedScreenshotIds)
         selectedScreenshotIds.removeAll()
         isSelectingScreenshots = false
@@ -468,7 +468,7 @@ struct ControlPanelView: View {
     }
 
     private func beginMeetingRename() {
-        guard sidebarViewModel.canEditCurrentVault else { return }
+        guard sidebarViewModel.canEditCurrentWorkspace else { return }
         editingMeetingName = displayedMeetingTitle ?? ""
         isEditingMeetingName = true
         didTapInsideMeetingNameEditor = false
@@ -498,7 +498,7 @@ struct ControlPanelView: View {
     }
 
     private func requestCurrentMeetingDeletion() {
-        guard sidebarViewModel.canEditCurrentVault else { return }
+        guard sidebarViewModel.canEditCurrentWorkspace else { return }
         guard let meetingId = viewModel.currentMeetingId else { return }
         pendingMeetingDeletion = MeetingDeletionRequest(
             meetingIds: [meetingId],

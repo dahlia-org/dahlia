@@ -4,7 +4,7 @@ import GRDB
 /// 選択中のミーティング詳細に必要なメタデータだけを保持する軽量 projection。
 struct MeetingDetailItem: Equatable, FetchableRecord, Identifiable {
     var meetingId: UUID
-    var vaultId: UUID
+    var workspaceId: UUID
     var projectId: UUID?
     var projectName: String?
     var meetingName: String
@@ -28,7 +28,7 @@ struct MeetingDetailItem: Equatable, FetchableRecord, Identifiable {
 
     init(row: Row) throws {
         meetingId = row["meetingId"]
-        vaultId = row["vaultId"]
+        workspaceId = row["workspace_id"]
         projectId = row["projectId"]
         projectName = row["projectName"]
         meetingName = row["meetingName"]

@@ -6,7 +6,7 @@ import OSLog
 
 let sidebarViewModelLogger = Logger(subsystem: "com.dahlia", category: "SidebarViewModel")
 
-/// サイドバーの状態管理。Vault 内のミーティング一覧と設定画面で使う補助データを監視する。
+/// サイドバーの状態管理。Workspace 内のミーティング一覧と設定画面で使う補助データを監視する。
 @Observable
 @MainActor
 final class SidebarViewModel {
@@ -15,13 +15,13 @@ final class SidebarViewModel {
     nonisolated static let meetingPageSize = 50
     nonisolated static let maximumVisibleMeetings = 500
 
-    var canEditCurrentVault: Bool {
-        currentVault?.allowsCanonicalEdits == true
+    var canEditCurrentWorkspace: Bool {
+        currentWorkspace?.allowsCanonicalEdits == true
     }
 
     // MARK: - Observed State
 
-    /// 現在の vault に属する全 project のフラット一覧。
+    /// 現在の workspace に属する全 project のフラット一覧。
     var flatProjects: [FlatProjectRow] = []
     private(set) var areSearchProjectsLoaded = false
     /// SwiftUI の `List(selection:)` と直結するミーティング選択。
@@ -32,7 +32,7 @@ final class SidebarViewModel {
         }
     }
 
-    /// 別プロセスが同じ Vault を変更するたびに増える。
+    /// 別プロセスが同じ Workspace を変更するたびに増える。
     /// GRDB の `ValueObservation` は他プロセスの書き込みを検知しないため、これが跨プロセス更新の合図になる。
     private(set) var workspaceChangeToken: UInt64 = 0
     private(set) var searchIndexRevision = 0
@@ -65,7 +65,7 @@ final class SidebarViewModel {
     var selectedMeetingDetailLoadError: String?
     var meetingReferences: [CodexChatMeetingReference] = []
     var isMeetingCatalogLoaded = false
-    /// 現在の vault に属する全 project の集約一覧。
+    /// 現在の workspace に属する全 project の集約一覧。
     var allProjectItems: [ProjectOverviewItem] = [] {
         didSet {
             projectItemsByID = Dictionary(uniqueKeysWithValues: allProjectItems.map { ($0.projectId, $0) })
@@ -75,9 +75,9 @@ final class SidebarViewModel {
     @ObservationIgnored private(set) var projectItemsByID: [UUID: ProjectOverviewItem] = [:]
     private(set) var isProjectCatalogLoaded = false
     private(set) var projectCatalogLoadFailed = false
-    /// 現在の vault に属する全 instructions の一覧。
+    /// 現在の workspace に属する全 instructions の一覧。
     var allInstructions: [InstructionRecord] = []
-    var allVaults: [VaultRecord] = []
+    var allWorkspaces: [WorkspaceRecord] = []
     var allTags: [TagRecord] = []
     private(set) var areSearchTagsLoaded = false
     private(set) var allAvailableTags: [TagInfo] = []
@@ -91,12 +91,12 @@ final class SidebarViewModel {
         selectedMeetingIds.count == 1 ? selectedMeetingIds.first : nil
     }
 
-    // MARK: - Active Database & Vault
+    // MARK: - Active Database & Workspace
 
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let unprocessedRecordingDiscarder: UnprocessedRecordingDiscarder
     @ObservationIgnored private(set) var appDatabase: AppDatabaseManager?
-    var currentVault: VaultRecord? { settings.currentVault }
+    var currentWorkspace: WorkspaceRecord? { settings.currentWorkspace }
     var dbQueue: DatabaseQueue? { appDatabase?.dbQueue }
     var searchDBQueue: DatabaseQueue? { appDatabase?.searchDBQueue }
 
@@ -114,11 +114,11 @@ final class SidebarViewModel {
     @ObservationIgnored private var unprocessedRecordingsRefreshGeneration: UInt64 = 0
     @ObservationIgnored private var instructionsObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var projectObservation: AnyDatabaseCancellable?
-    @ObservationIgnored private var vaultObservation: AnyDatabaseCancellable?
+    @ObservationIgnored private var workspaceObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var searchIndexObservation: AnyDatabaseCancellable?
     @ObservationIgnored private(set) var searchIndexRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var hasObservedSearchIndexRevision = false
-    @ObservationIgnored private var vaultSyncService: VaultSyncService?
+    @ObservationIgnored private var workspaceSyncService: WorkspaceSyncService?
     @ObservationIgnored private var workspaceChangeObserver: NSObjectProtocol?
     @ObservationIgnored var meetingSearchTask: Task<Void, Never>?
     @ObservationIgnored var meetingPageLoadTask: Task<Void, Never>?
@@ -143,10 +143,10 @@ final class SidebarViewModel {
 
     init(
         settings: AppSettings = .shared,
-        unprocessedRecordingDiscarder: @escaping UnprocessedRecordingDiscarder = { dbQueue, sessionId, vaultId in
+        unprocessedRecordingDiscarder: @escaping UnprocessedRecordingDiscarder = { dbQueue, sessionId, workspaceId in
             try await MeetingRepository(dbQueue: dbQueue).discardUnprocessedBatchSessionSafely(
                 id: sessionId,
-                expectedVaultId: vaultId
+                expectedWorkspaceId: workspaceId
             )
         }
     ) {
@@ -154,39 +154,39 @@ final class SidebarViewModel {
         self.unprocessedRecordingDiscarder = unprocessedRecordingDiscarder
     }
 
-    /// プロジェクト名から vault 内の URL を返す。
+    /// プロジェクト名から workspace 内の URL を返す。
     func projectURL(for name: String) -> URL? {
-        currentVault?.url?.appendingPathComponent(name, isDirectory: true)
+        currentWorkspace?.url?.appendingPathComponent(name, isDirectory: true)
     }
 
-    func refreshCurrentVaultFilesystemServices(_ vault: VaultRecord) {
-        guard currentVault?.id == vault.id,
+    func refreshCurrentWorkspaceFilesystemServices(_ workspace: WorkspaceRecord) {
+        guard currentWorkspace?.id == workspace.id,
               let dbQueue,
               let meetingRepository else { return }
-        projectWorkspaceService = ProjectWorkspaceService(repository: meetingRepository, vault: vault)
-        vaultSyncService?.stopMonitoring()
+        projectWorkspaceService = ProjectWorkspaceService(repository: meetingRepository, workspace: workspace)
+        workspaceSyncService?.stopMonitoring()
         fileWatcher?.stopMonitoring()
-        vaultSyncService = nil
+        workspaceSyncService = nil
         fileWatcher = nil
-        guard let vaultURL = vault.url else { return }
-        let syncService = VaultSyncService(vaultURL: vaultURL, dbQueue: dbQueue, vaultId: vault.id)
-        vaultSyncService = syncService
+        guard let workspaceURL = workspace.url else { return }
+        let syncService = WorkspaceSyncService(workspaceURL: workspaceURL, dbQueue: dbQueue, workspaceId: workspace.id)
+        workspaceSyncService = syncService
         syncService.startMonitoring()
-        let watcher = TranscriptFileWatcher(dbQueue: dbQueue, vaultURL: vaultURL)
+        let watcher = TranscriptFileWatcher(dbQueue: dbQueue, workspaceURL: workspaceURL)
         watcher.startMonitoring()
         fileWatcher = watcher
     }
 
-    /// アプリ起動時に AppDatabaseManager と保管庫を設定する。
-    /// 呼び出し前に設定の currentVault を設定しておくこと。
+    /// アプリ起動時に AppDatabaseManager とワークスペースを設定する。
+    /// 呼び出し前に設定の currentWorkspace を設定しておくこと。
     func setAppDatabase(_ database: AppDatabaseManager?) {
         appDatabase = database
         meetingRepository = database.map { MeetingRepository(dbQueue: $0.dbQueue) }
         projectWorkspaceService = nil
 
-        vaultSyncService?.stopMonitoring()
+        workspaceSyncService?.stopMonitoring()
         projectObservation?.cancel()
-        vaultObservation?.cancel()
+        workspaceObservation?.cancel()
         searchIndexObservation?.cancel()
         searchIndexRefreshTask?.cancel()
         meetingListObservation?.cancel()
@@ -208,7 +208,7 @@ final class SidebarViewModel {
             self.workspaceChangeObserver = nil
         }
 
-        vaultSyncService = nil
+        workspaceSyncService = nil
         fileWatcher = nil
         searchIndexRevision = 0
         hasObservedSearchIndexRevision = false
@@ -273,64 +273,64 @@ final class SidebarViewModel {
         clearMeetingSelection()
 
         guard let dbQueue = database?.dbQueue else {
-            allVaults.removeAll()
+            allWorkspaces.removeAll()
             settings.selectedInstructionID = nil
             return
         }
 
-        startVaultObservation(dbQueue: dbQueue)
+        startWorkspaceObservation(dbQueue: dbQueue)
         startSearchIndexObservation(dbQueue: dbQueue)
 
-        guard let vault = currentVault else {
+        guard let workspace = currentWorkspace else {
             settings.selectedInstructionID = nil
             return
         }
 
-        let vaultId = vault.id
+        let workspaceId = workspace.id
         if let meetingRepository {
-            projectWorkspaceService = ProjectWorkspaceService(repository: meetingRepository, vault: vault)
+            projectWorkspaceService = ProjectWorkspaceService(repository: meetingRepository, workspace: workspace)
         }
 
-        if let vaultURL = vault.url {
-            let syncService = VaultSyncService(vaultURL: vaultURL, dbQueue: dbQueue, vaultId: vaultId)
-            vaultSyncService = syncService
+        if let workspaceURL = workspace.url {
+            let syncService = WorkspaceSyncService(workspaceURL: workspaceURL, dbQueue: dbQueue, workspaceId: workspaceId)
+            workspaceSyncService = syncService
             syncService.startMonitoring()
 
-            let watcher = TranscriptFileWatcher(dbQueue: dbQueue, vaultURL: vaultURL)
+            let watcher = TranscriptFileWatcher(dbQueue: dbQueue, workspaceURL: workspaceURL)
             watcher.startMonitoring()
             fileWatcher = watcher
         }
 
-        startProjectObservation(dbQueue: dbQueue, vaultId: vaultId)
-        startMeetingListObservation(dbQueue: dbQueue, vaultId: vaultId)
+        startProjectObservation(dbQueue: dbQueue, workspaceId: workspaceId)
+        startMeetingListObservation(dbQueue: dbQueue, workspaceId: workspaceId)
         if isProjectMeetingProjectionRequested {
-            startProjectMeetingObservation(dbQueue: dbQueue, vaultId: vaultId)
+            startProjectMeetingObservation(dbQueue: dbQueue, workspaceId: workspaceId)
         }
         startTagsObservation(dbQueue: dbQueue)
-        startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vaultId)
-        startInstructionsObservation(dbQueue: dbQueue, vaultId: vaultId)
+        startProjectOverviewObservation(dbQueue: dbQueue, workspaceId: workspaceId)
+        startInstructionsObservation(dbQueue: dbQueue, workspaceId: workspaceId)
         Task { await refreshUnprocessedRecordings() }
         workspaceChangeObserver = DistributedNotificationCenter.default().addObserver(
-            forName: DahliaWorkspaceChangeNotification.name(vaultID: vaultId),
+            forName: DahliaWorkspaceChangeNotification.name(workspaceID: workspaceId),
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       let dbQueue = self.dbQueue else { return }
-                self.startProjectObservation(dbQueue: dbQueue, vaultId: vaultId)
+                self.startProjectObservation(dbQueue: dbQueue, workspaceId: workspaceId)
                 self.resetMeetingListPagination()
-                self.startMeetingListObservation(dbQueue: dbQueue, vaultId: vaultId)
+                self.startMeetingListObservation(dbQueue: dbQueue, workspaceId: workspaceId)
                 if self.isProjectMeetingProjectionRequested {
-                    self.startProjectMeetingObservation(dbQueue: dbQueue, vaultId: vaultId)
+                    self.startProjectMeetingObservation(dbQueue: dbQueue, workspaceId: workspaceId)
                 }
                 if self.isMeetingCatalogRequested {
-                    self.startMeetingReferencesObservation(dbQueue: dbQueue, vaultId: vaultId)
+                    self.startMeetingReferencesObservation(dbQueue: dbQueue, workspaceId: workspaceId)
                 }
-                self.restartMeetingSearchIfNeeded(dbQueue: dbQueue, vaultId: vaultId)
+                self.restartMeetingSearchIfNeeded(dbQueue: dbQueue, workspaceId: workspaceId)
                 self.startSelectedMeetingObservationIfNeeded()
-                self.startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vaultId)
+                self.startProjectOverviewObservation(dbQueue: dbQueue, workspaceId: workspaceId)
                 await self.refreshUnprocessedRecordings()
                 self.workspaceChangeToken &+= 1
             }
@@ -372,7 +372,7 @@ final class SidebarViewModel {
     }
 
     func refreshUnprocessedRecordings() async {
-        guard let dbQueue, let vaultId = currentVault?.id else {
+        guard let dbQueue, let workspaceId = currentWorkspace?.id else {
             unprocessedRecordingItems = []
             unprocessedRecordingsError = nil
             isLoadingUnprocessedRecordings = false
@@ -382,70 +382,70 @@ final class SidebarViewModel {
         let generation = unprocessedRecordingsRefreshGeneration
         isLoadingUnprocessedRecordings = true
         do {
-            let items = try await BackupService(dbQueue: dbQueue).preflightItems(vaultId: vaultId)
-            guard isCurrentUnprocessedRecordingsRefresh(generation, vaultId: vaultId) else { return }
+            let items = try await BackupService(dbQueue: dbQueue).preflightItems(workspaceId: workspaceId)
+            guard isCurrentUnprocessedRecordingsRefresh(generation, workspaceId: workspaceId) else { return }
             unprocessedRecordingItems = items
             unprocessedRecordingsError = nil
             isLoadingUnprocessedRecordings = false
         } catch {
-            guard isCurrentUnprocessedRecordingsRefresh(generation, vaultId: vaultId) else { return }
+            guard isCurrentUnprocessedRecordingsRefresh(generation, workspaceId: workspaceId) else { return }
             unprocessedRecordingsError = error.localizedDescription
             isLoadingUnprocessedRecordings = false
         }
     }
 
-    private func isCurrentUnprocessedRecordingsRefresh(_ generation: UInt64, vaultId: UUID) -> Bool {
-        generation == unprocessedRecordingsRefreshGeneration && currentVault?.id == vaultId
+    private func isCurrentUnprocessedRecordingsRefresh(_ generation: UInt64, workspaceId: UUID) -> Bool {
+        generation == unprocessedRecordingsRefreshGeneration && currentWorkspace?.id == workspaceId
     }
 
     func discardUnprocessedRecording(_ item: BackupPreflightItem) async {
-        guard let dbQueue, let vaultId = currentVault?.id, item.vaultId == vaultId else { return }
+        guard let dbQueue, let workspaceId = currentWorkspace?.id, item.workspaceId == workspaceId else { return }
         let contextGeneration = unprocessedRecordingsContextGeneration
         unprocessedRecordingsError = nil
         do {
-            _ = try await unprocessedRecordingDiscarder(dbQueue, item.sessionId, item.vaultId)
-            guard isCurrentUnprocessedRecordingsContext(contextGeneration, vaultId: vaultId) else { return }
+            _ = try await unprocessedRecordingDiscarder(dbQueue, item.sessionId, item.workspaceId)
+            guard isCurrentUnprocessedRecordingsContext(contextGeneration, workspaceId: workspaceId) else { return }
             await refreshUnprocessedRecordings()
         } catch {
-            guard isCurrentUnprocessedRecordingsContext(contextGeneration, vaultId: vaultId) else { return }
+            guard isCurrentUnprocessedRecordingsContext(contextGeneration, workspaceId: workspaceId) else { return }
             unprocessedRecordingsError = error.localizedDescription
         }
     }
 
-    private func isCurrentUnprocessedRecordingsContext(_ generation: UInt64, vaultId: UUID) -> Bool {
-        generation == unprocessedRecordingsContextGeneration && currentVault?.id == vaultId
+    private func isCurrentUnprocessedRecordingsContext(_ generation: UInt64, workspaceId: UUID) -> Bool {
+        generation == unprocessedRecordingsContextGeneration && currentWorkspace?.id == workspaceId
     }
 
-    private func startVaultObservation(dbQueue: DatabaseQueue) {
+    private func startWorkspaceObservation(dbQueue: DatabaseQueue) {
         let observation = ValueObservation.tracking { db in
-            try VaultRecord.order(Column("lastOpenedAt").desc).fetchAll(db)
+            try WorkspaceRecord.order(Column("lastOpenedAt").desc).fetchAll(db)
         }
-        vaultObservation = observation.start(
+        workspaceObservation = observation.start(
             in: dbQueue,
             onError: { _ in },
-            onChange: { [weak self] vaults in
+            onChange: { [weak self] workspaces in
                 Task { @MainActor in
-                    guard let self, self.allVaults != vaults else { return }
-                    self.allVaults = vaults
+                    guard let self, self.allWorkspaces != workspaces else { return }
+                    self.allWorkspaces = workspaces
                 }
             }
         )
     }
 
-    private func startProjectObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
+    private func startProjectObservation(dbQueue: DatabaseQueue, workspaceId: UUID) {
         projectObservation?.cancel()
         projectObservationGeneration &+= 1
         let generation = projectObservationGeneration
         areSearchProjectsLoaded = false
         let observation = ValueObservation.tracking { db in
-            try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
+            try ProjectRecord.fetchResolvedAll(workspaceId: workspaceId, in: db)
         }
         projectObservation = observation.start(
             in: dbQueue,
             onError: { [weak self] _ in
                 Task { @MainActor in
                     guard let self,
-                          self.currentVault?.id == vaultId,
+                          self.currentWorkspace?.id == workspaceId,
                           self.projectObservationGeneration == generation else { return }
                     self.areSearchProjectsLoaded = true
                 }
@@ -453,7 +453,7 @@ final class SidebarViewModel {
             onChange: { [weak self] records in
                 Task { @MainActor in
                     guard let self,
-                          self.currentVault?.id == vaultId,
+                          self.currentWorkspace?.id == workspaceId,
                           self.projectObservationGeneration == generation else { return }
                     let rows = FlatProjectRow.buildRows(fromRecords: records)
                     if self.flatProjects != rows {
@@ -494,13 +494,13 @@ final class SidebarViewModel {
         )
     }
 
-    private func startProjectOverviewObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
+    private func startProjectOverviewObservation(dbQueue: DatabaseQueue, workspaceId: UUID) {
         allProjectsObservation?.cancel()
         let observationGeneration = projectCatalogObservationTracker.beginObservation()
         isProjectCatalogLoaded = false
         projectCatalogLoadFailed = false
         let observation = ValueObservation.tracking { db in
-            let projectRecords = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
+            let projectRecords = try ProjectRecord.fetchResolvedAll(workspaceId: workspaceId, in: db)
             let aggregateRows = try Row.fetchAll(
                 db,
                 sql: """
@@ -510,10 +510,10 @@ final class SidebarViewModel {
                     MAX(COALESCE(meetings.recordingStartedAt, meetings.createdAt)) AS latestMeetingDate
                 FROM projects
                 LEFT JOIN meetings ON meetings.projectId = projects.id
-                WHERE projects.vaultId = ?
+                WHERE projects.workspace_id = ?
                 GROUP BY projects.id
                 """,
-                arguments: [vaultId]
+                arguments: [workspaceId]
             )
             let aggregates = Dictionary(uniqueKeysWithValues: aggregateRows.map { row -> (UUID, (Int, Date?)) in
                 let id: UUID = row["projectId"]
@@ -548,7 +548,7 @@ final class SidebarViewModel {
                 ErrorReportingService.capture(error, context: ["source": "projectCatalogObservation"])
                 Task { @MainActor in
                     guard let self,
-                          self.currentVault?.id == vaultId,
+                          self.currentWorkspace?.id == workspaceId,
                           self.projectCatalogObservationTracker.isCurrent(observationGeneration) else { return }
                     self.isProjectCatalogLoaded = true
                     self.projectCatalogLoadFailed = true
@@ -557,14 +557,14 @@ final class SidebarViewModel {
             onChange: { [weak self] projects in
                 Task { @MainActor in
                     guard let self,
-                          self.currentVault?.id == vaultId,
+                          self.currentWorkspace?.id == workspaceId,
                           self.projectCatalogObservationTracker.isCurrent(observationGeneration) else { return }
-                    MainWindowNavigation.shared.updateProjectAppearances(projects, vaultId: vaultId)
+                    MainWindowNavigation.shared.updateProjectAppearances(projects, workspaceId: workspaceId)
                     self.allProjectItems = projects
                     self.isProjectCatalogLoaded = true
                     self.projectCatalogLoadFailed = false
                     do {
-                        try await MainWindowNavigation.shared.migrateProjectAppearances(vaultId: vaultId, dbQueue: dbQueue)
+                        try await MainWindowNavigation.shared.migrateProjectAppearances(workspaceId: workspaceId, dbQueue: dbQueue)
                     } catch {
                         sidebarViewModelLogger.error("Project appearance migration failed; retained legacy settings")
                     }
@@ -573,10 +573,10 @@ final class SidebarViewModel {
         )
     }
 
-    private func startInstructionsObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
+    private func startInstructionsObservation(dbQueue: DatabaseQueue, workspaceId: UUID) {
         let observation = ValueObservation.tracking { db in
             try InstructionRecord
-                .filter(Column("vaultId") == vaultId)
+                .filter(Column("workspace_id") == workspaceId)
                 .order(Column("name").asc)
                 .fetchAll(db)
         }
@@ -631,12 +631,12 @@ final class SidebarViewModel {
     }
 
     func createInstruction() -> InstructionRecord? {
-        guard let vault = currentVault,
+        guard let workspace = currentWorkspace,
               let meetingRepository else { return nil }
 
         do {
             let instruction = try meetingRepository.createInstruction(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 name: nextInstructionName(),
                 content: AppSettings.defaultSummaryPrompt
             )
@@ -689,8 +689,8 @@ final class SidebarViewModel {
     // MARK: - Project Helpers
 
     func retryProjectCatalogLoading() {
-        guard let dbQueue, let vault = currentVault else { return }
-        startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vault.id)
+        guard let dbQueue, let workspace = currentWorkspace else { return }
+        startProjectOverviewObservation(dbQueue: dbQueue, workspaceId: workspace.id)
     }
 
     func createProject(
@@ -700,7 +700,7 @@ final class SidebarViewModel {
         description: String = "",
         appearance: ProjectAppearance? = nil
     ) -> ProjectRecord? {
-        guard canEditCurrentVault, let projectWorkspaceService else { return nil }
+        guard canEditCurrentWorkspace, let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.createProject(
                 name: name,
@@ -722,7 +722,7 @@ final class SidebarViewModel {
         newName: String,
         expectedRevision: Int? = nil
     ) -> ProjectRecord? {
-        guard canEditCurrentVault, let projectWorkspaceService else { return nil }
+        guard canEditCurrentWorkspace, let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.renameProject(
                 id: id,
@@ -742,7 +742,7 @@ final class SidebarViewModel {
         parentProjectId: UUID?,
         expectedRevision: Int? = nil
     ) -> ProjectRecord? {
-        guard canEditCurrentVault, let projectWorkspaceService else { return nil }
+        guard canEditCurrentWorkspace, let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.reparentProject(
                 id: id,
@@ -762,7 +762,7 @@ final class SidebarViewModel {
         projectType: ProjectType,
         expectedRevision: Int? = nil
     ) -> ProjectRecord? {
-        guard canEditCurrentVault, let projectWorkspaceService else { return nil }
+        guard canEditCurrentWorkspace, let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.updateRootProjectType(
                 id: id,
@@ -786,7 +786,7 @@ final class SidebarViewModel {
         expectedRevision: Int,
         appearance: ProjectAppearance? = nil
     ) async -> ProjectRecord? {
-        guard canEditCurrentVault, let projectWorkspaceService else { return nil }
+        guard canEditCurrentWorkspace, let projectWorkspaceService else { return nil }
         do {
             let project = try await Task.detached(priority: .userInitiated) {
                 try projectWorkspaceService.updateProject(
@@ -813,7 +813,7 @@ final class SidebarViewModel {
         meetingDisposition: ProjectMeetingDisposition,
         deletesSummaryFiles: Bool = false
     ) async -> Bool {
-        guard canEditCurrentVault, let projectWorkspaceService else { return false }
+        guard canEditCurrentWorkspace, let projectWorkspaceService else { return false }
         do {
             try await projectWorkspaceService.deleteProjectHierarchy(
                 id: id,
@@ -830,13 +830,13 @@ final class SidebarViewModel {
 
     /// プロジェクトを取得または作成し、派生する Summary 書き出し先 URL を返す。
     func fetchOrCreateProject(name: String) -> (record: ProjectRecord, url: URL?)? {
-        guard canEditCurrentVault,
-              let vault = currentVault,
+        guard canEditCurrentWorkspace,
+              let workspace = currentWorkspace,
               let projectWorkspaceService else { return nil }
 
         do {
             let record = try projectWorkspaceService.fetchOrCreateRootProject(name: name)
-            let projectURL = vault.url?.appending(path: record.path, directoryHint: .isDirectory)
+            let projectURL = workspace.url?.appending(path: record.path, directoryHint: .isDirectory)
             return (record, projectURL)
         } catch {
             lastError = error.localizedDescription

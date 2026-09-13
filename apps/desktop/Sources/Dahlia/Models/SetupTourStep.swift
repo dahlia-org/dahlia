@@ -1,5 +1,5 @@
 enum SetupTourStep: Int, CaseIterable, Identifiable {
-    case vault
+    case workspace
     case workingLanguages
     case permissions
     case modelProvider
@@ -9,7 +9,7 @@ enum SetupTourStep: Int, CaseIterable, Identifiable {
 
     static let allCases: [Self] = [
         .account,
-        .vault,
+        .workspace,
         .workingLanguages,
         .permissions,
         .modelProvider,
@@ -22,7 +22,7 @@ enum SetupTourStep: Int, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .account: L10n.dahliaAccount
-        case .vault: L10n.vault
+        case .workspace: L10n.workspace
         case .workingLanguages: L10n.workingLanguages
         case .permissions: L10n.permissions
         case .modelProvider: L10n.modelProvider
@@ -34,7 +34,7 @@ enum SetupTourStep: Int, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .account: L10n.dahliaSignInDescription
-        case .vault: L10n.vaultSetupDescription
+        case .workspace: L10n.workspaceSetupDescription
         case .workingLanguages: L10n.workingLanguagesSetupDescription
         case .permissions: L10n.audioPermissionSetupDescription
         case .modelProvider: L10n.modelProviderSetupDescription

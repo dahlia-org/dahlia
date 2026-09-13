@@ -6,7 +6,7 @@ struct SummaryExportRecord: Codable, FetchableRecord, PersistableRecord, Equatab
 
     var meetingId: UUID
     var type: SummaryExportType
-    /// `vault` は Vault 相対 URL、それ以外は完全な URL。
+    /// `workspace` は Workspace 相対 URL、それ以外は完全な URL。
     var url: String
     var createdAt: Date
     var updatedAt: Date
@@ -22,22 +22,22 @@ struct SummaryExportRecord: Codable, FetchableRecord, PersistableRecord, Equatab
         return components[components.index(after: documentMarkerIndex)].nilIfBlank
     }
 
-    var vaultRelativePath: String? {
-        guard type == .vault,
+    var workspaceRelativePath: String? {
+        guard type == .workspace,
               let components = URLComponents(string: url),
-              components.scheme?.lowercased() == SummaryExportType.vault.rawValue,
+              components.scheme?.lowercased() == SummaryExportType.workspace.rawValue,
               components.host?.nilIfBlank == nil
         else { return nil }
         return String(components.path.drop(while: { $0 == "/" })).nilIfBlank
     }
 
-    static func vaultURL(relativePath: String) -> String? {
+    static func workspaceURL(relativePath: String) -> String? {
         guard let relativePath = relativePath.nilIfBlank else { return nil }
         let normalizedPath = String(relativePath.drop(while: { $0 == "/" }))
         guard !normalizedPath.isEmpty else { return nil }
 
         var components = URLComponents()
-        components.scheme = SummaryExportType.vault.rawValue
+        components.scheme = SummaryExportType.workspace.rawValue
         components.host = ""
         components.path = "/" + normalizedPath
         return components.string
@@ -83,10 +83,10 @@ struct SummaryExportRecord: Codable, FetchableRecord, PersistableRecord, Equatab
         ).save(db)
     }
 
-    static func renameVaultPathsByPrefix(
+    static func renameWorkspacePathsByPrefix(
         oldPrefix: String,
         newPrefix: String,
-        vaultId: UUID,
+        workspaceId: UUID,
         in db: Database
     ) throws {
         let records = try fetchAll(
@@ -95,15 +95,15 @@ struct SummaryExportRecord: Codable, FetchableRecord, PersistableRecord, Equatab
             SELECT summary_exports.*
             FROM summary_exports
             JOIN meetings ON meetings.id = summary_exports.meetingId
-            WHERE summary_exports.type = ? AND meetings.vaultId = ?
+            WHERE summary_exports.type = ? AND meetings.workspace_id = ?
             """,
-            arguments: [SummaryExportType.vault, vaultId]
+            arguments: [SummaryExportType.workspace, workspaceId]
         )
 
         for var record in records {
-            guard let relativePath = record.vaultRelativePath,
+            guard let relativePath = record.workspaceRelativePath,
                   relativePath == oldPrefix || relativePath.hasPrefix(oldPrefix + "/"),
-                  let newURL = vaultURL(relativePath: newPrefix + relativePath.dropFirst(oldPrefix.count))
+                  let newURL = workspaceURL(relativePath: newPrefix + relativePath.dropFirst(oldPrefix.count))
             else { continue }
             record.url = newURL
             record.updatedAt = Date.now
@@ -111,36 +111,36 @@ struct SummaryExportRecord: Codable, FetchableRecord, PersistableRecord, Equatab
         }
     }
 
-    static func renameVaultPath(
+    static func renameWorkspacePath(
         from oldPath: String,
         to newPath: String,
-        vaultId: UUID,
+        workspaceId: UUID,
         in db: Database
     ) throws {
-        guard let oldURL = vaultURL(relativePath: oldPath),
-              let newURL = vaultURL(relativePath: newPath) else { return }
+        guard let oldURL = workspaceURL(relativePath: oldPath),
+              let newURL = workspaceURL(relativePath: newPath) else { return }
         try db.execute(
             sql: """
             UPDATE summary_exports
             SET url = ?, updatedAt = ?
             WHERE type = ?
               AND url = ?
-              AND meetingId IN (SELECT id FROM meetings WHERE vaultId = ?)
+              AND meetingId IN (SELECT id FROM meetings WHERE workspace_id = ?)
             """,
-            arguments: [newURL, Date.now, SummaryExportType.vault, oldURL, vaultId]
+            arguments: [newURL, Date.now, SummaryExportType.workspace, oldURL, workspaceId]
         )
     }
 
-    static func clearVaultPath(_ relativePath: String, vaultId: UUID, in db: Database) throws {
-        guard let url = vaultURL(relativePath: relativePath) else { return }
+    static func clearWorkspacePath(_ relativePath: String, workspaceId: UUID, in db: Database) throws {
+        guard let url = workspaceURL(relativePath: relativePath) else { return }
         try db.execute(
             sql: """
             DELETE FROM summary_exports
             WHERE type = ?
               AND url = ?
-              AND meetingId IN (SELECT id FROM meetings WHERE vaultId = ?)
+              AND meetingId IN (SELECT id FROM meetings WHERE workspace_id = ?)
             """,
-            arguments: [SummaryExportType.vault, url, vaultId]
+            arguments: [SummaryExportType.workspace, url, workspaceId]
         )
     }
 

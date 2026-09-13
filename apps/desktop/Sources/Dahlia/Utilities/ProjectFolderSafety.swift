@@ -1,14 +1,14 @@
 import Foundation
 
 enum ProjectFolderSafety {
-    static func status(of url: URL, inside vaultURL: URL) -> ProjectFolderStatus {
+    static func status(of url: URL, inside workspaceURL: URL) -> ProjectFolderStatus {
         let fileManager = FileManager.default
-        let vault = vaultURL.standardizedFileURL
+        let workspace = workspaceURL.standardizedFileURL
         let candidate = url.standardizedFileURL
-        guard candidate.pathComponents.starts(with: vault.pathComponents) else { return .unsafe }
+        guard candidate.pathComponents.starts(with: workspace.pathComponents) else { return .unsafe }
 
-        var current = vault
-        for component in candidate.pathComponents.dropFirst(vault.pathComponents.count) {
+        var current = workspace
+        for component in candidate.pathComponents.dropFirst(workspace.pathComponents.count) {
             current.append(path: component, directoryHint: .isDirectory)
             var isDirectory: ObjCBool = false
             guard fileManager.fileExists(atPath: current.path, isDirectory: &isDirectory) else {
@@ -21,12 +21,12 @@ enum ProjectFolderSafety {
             }
         }
 
-        let vaultPath = vault.resolvingSymlinksInPath().standardizedFileURL.path
+        let workspacePath = workspace.resolvingSymlinksInPath().standardizedFileURL.path
         let candidatePath = candidate.resolvingSymlinksInPath().standardizedFileURL.path
-        return candidatePath.hasPrefix(vaultPath + "/") ? .available : .unsafe
+        return candidatePath.hasPrefix(workspacePath + "/") ? .available : .unsafe
     }
 
-    static func isSafeDirectory(_ url: URL, inside vaultURL: URL) -> Bool {
-        status(of: url, inside: vaultURL) == .available
+    static func isSafeDirectory(_ url: URL, inside workspaceURL: URL) -> Bool {
+        status(of: url, inside: workspaceURL) == .available
     }
 }

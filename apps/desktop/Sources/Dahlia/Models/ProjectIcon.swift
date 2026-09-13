@@ -1,7 +1,7 @@
 import Foundation
 
 enum ProjectIcon: String, CaseIterable, Codable, Sendable {
-    case vault
+    case workspace
     case folder
     case finance = "dollarsign.circle"
     case book = "book.closed"
@@ -40,7 +40,7 @@ enum ProjectIcon: String, CaseIterable, Codable, Sendable {
     case nature = "leaf"
 
     static let allCases: [Self] = [
-        .vault, .folder, .finance, .book, .education, .writing, .tag,
+        .workspace, .folder, .finance, .book, .education, .writing, .tag,
         .code, .terminal, .music, .entertainment, .painting, .art,
         .medical, .spark, .wellness, .work, .analytics, .award,
         .fitness, .notes, .balance, .globalWorkspace, .travel, .global,
@@ -49,7 +49,7 @@ enum ProjectIcon: String, CaseIterable, Codable, Sendable {
 
     var systemImageName: String {
         switch self {
-        case .vault: "externaldrive"
+        case .workspace: "externaldrive"
         case .notes: "note.text"
         case .balance: "scalemass"
         case .plant: "leaf"
@@ -59,7 +59,7 @@ enum ProjectIcon: String, CaseIterable, Codable, Sendable {
 
     var localizedName: String {
         switch self {
-        case .vault: L10n.vaultName
+        case .workspace: L10n.workspaceName
         case .folder: L10n.projectIconFolder
         case .finance: L10n.projectIconFinance
         case .book: L10n.projectIconBook

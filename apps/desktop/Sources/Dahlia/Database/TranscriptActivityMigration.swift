@@ -25,19 +25,23 @@ enum TranscriptActivityMigration {
         }
         try db.execute(sql: "CREATE INDEX IF NOT EXISTS transcript_segments_on_meetingId_createdAt ON transcript_segments(meetingId, createdAt)")
         try finishLegacyRealtimeSessions(in: db)
-        for meeting in try MeetingRecord.fetchAll(db) {
-            let sessions = try RecordingSessionRecord.filter(Column("meetingId") == meeting.id).fetchAll(db)
+        // Read the v41 columns directly; current Record coding keys describe the final schema.
+        for meeting in try Row.fetchAll(db, sql: "SELECT id, duration, COALESCE(recordingStartedAt, createdAt) AS startedAt FROM meetings") {
+            let meetingID: UUID = meeting["id"]
+            let duration: TimeInterval? = meeting["duration"]
+            let startedAt: Date = meeting["startedAt"]
+            let sessions = try RecordingSessionRecord.filter(Column("meetingId") == meetingID).fetchAll(db)
             let endedAt: Date? = if sessions.contains(where: { $0.endedAt == nil }) {
                 nil
             } else if let end = sessions.compactMap(\.endedAt).max() {
                 end
             } else {
-                meeting.duration.map { meeting.effectiveRecordingStartedAt.addingTimeInterval($0) }
+                duration.map { startedAt.addingTimeInterval($0) }
             }
             guard let endedAt else { continue }
             try db.execute(
                 sql: "UPDATE transcript_segments SET createdAt = ? WHERE meetingId = ? AND createdAt IS NULL",
-                arguments: [endedAt, meeting.id]
+                arguments: [endedAt, meetingID]
             )
         }
     }

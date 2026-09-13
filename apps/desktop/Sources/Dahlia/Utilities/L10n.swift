@@ -412,7 +412,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var newProject: String { String(localized: "New Project", bundle: bundle) }
     static var createProject: String { String(localized: "Create Project", bundle: bundle) }
     static var newSubproject: String { String(localized: "New Subproject", bundle: bundle) }
-    static var newTopLevelProject: String { String(localized: "New Project at Vault Top", bundle: bundle) }
+    static var newTopLevelProject: String { String(localized: "New Project at Workspace Top", bundle: bundle) }
 
     static var projectCreationFailedDescription: String {
         String(localized: "The project could not be created.", bundle: bundle)
@@ -475,7 +475,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var projectIconIdeas: String { String(localized: "Ideas", bundle: bundle) }
     static var projectIconFavorite: String { String(localized: "Favorite", bundle: bundle) }
     static var parentProject: String { String(localized: "Parent Project", bundle: bundle) }
-    static var vaultRoot: String { String(localized: "Vault Root", bundle: bundle) }
+    static var workspaceRoot: String { String(localized: "Workspace Root", bundle: bundle) }
     static var projectType: String { String(localized: "Project Type", bundle: bundle) }
     static var projectHierarchyAndType: String { String(localized: "Hierarchy and Type", bundle: bundle) }
     static var moveProject: String { String(localized: "Move Project", bundle: bundle) }
@@ -534,7 +534,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var closeSearch: String { String(localized: "Close search", bundle: bundle) }
     static var removeSearchFilter: String { String(localized: "Remove search filter", bundle: bundle) }
     static var searchUnavailable: String { String(localized: "Search unavailable", bundle: bundle) }
-    static var searchRequiresVault: String { String(localized: "Select a Vault to search.", bundle: bundle) }
+    static var searchRequiresWorkspace: String { String(localized: "Select a Workspace to search.", bundle: bundle) }
     static var recentMeetings: String { String(localized: "Recent Meetings", bundle: bundle) }
     static var recentProjects: String { String(localized: "Recent Projects", bundle: bundle) }
     static var searchingMeetings: String { String(localized: "Searching…", bundle: bundle) }
@@ -738,7 +738,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var localSummaryFolder: String { String(localized: "Local Summary Folder", bundle: bundle) }
     static var invalidSummaryOutputDestination: String { String(
-        localized: "The Summary output destination must resolve inside the Vault without symlink or file path components.",
+        localized: "The Summary output destination must resolve inside the Workspace without symlink or file path components.",
         bundle: bundle
     ) }
     static var summaryOutputFolderNotCreated: String { String(
@@ -850,8 +850,8 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Projects support one level of subprojects. Choose a root Project as the parent.",
         bundle: bundle
     ) }
-    static var projectVaultBusy: String { String(
-        localized: "Another Project operation is already running for this Vault.",
+    static var projectWorkspaceBusy: String { String(
+        localized: "Another Project operation is already running for this Workspace.",
         bundle: bundle
     ) }
     static var summaryTrashLocationUnavailable: String { String(
@@ -882,8 +882,8 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Select a project to manage summary destinations and instructions.",
         bundle: bundle
     ) }
-    static var projectManagementNoVaultDescription: String { String(
-        localized: "Open a vault before managing project settings.",
+    static var projectManagementNoWorkspaceDescription: String { String(
+        localized: "Open a workspace before managing project settings.",
         bundle: bundle
     ) }
 
@@ -1135,12 +1135,12 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Each selected meeting is regenerated independently. Existing summaries are replaced only after generation succeeds.",
         bundle: bundle
     ) }
-    static var exportBatchSummaryToVault: String { String(
-        localized: "Export Summary to Vault",
+    static var exportBatchSummaryToWorkspace: String { String(
+        localized: "Export Summary to Workspace",
         bundle: bundle
     ) }
-    static var exportBatchSummaryToVaultDescription: String { String(
-        localized: "Write the generated summary and related files to the current Vault.",
+    static var exportBatchSummaryToWorkspaceDescription: String { String(
+        localized: "Write the generated summary and related files to the current Workspace.",
         bundle: bundle
     ) }
     static var exportBatchSummaryToGoogleDocs: String { String(
@@ -1280,30 +1280,30 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Open Privacy & Security in System Settings and choose the relevant permission manually.",
         bundle: bundle
     ) }
-    static var backupDeselectAll: String { String(localized: "Deselect All Vaults", bundle: bundle) }
-    static var backupSkipVault: String { String(localized: "Do Not Restore", bundle: bundle) }
-    static func backupVaultCount(_ count: Int) -> String {
-        String(format: String(localized: "Vaults: %d", bundle: bundle), count)
+    static var backupDeselectAll: String { String(localized: "Deselect All Workspaces", bundle: bundle) }
+    static var backupSkipWorkspace: String { String(localized: "Do Not Restore", bundle: bundle) }
+    static func backupWorkspaceCount(_ count: Int) -> String {
+        String(format: String(localized: "Workspaces: %d", bundle: bundle), count)
     }
 
-    static var vaultBackup: String { String(localized: "Vault Backup", bundle: bundle) }
-    static var backupLocalVaultsOnly: String { String(localized: "Only vaults in the Local Account can be backed up.", bundle: bundle) }
-    static var vaultBackupDescription: String { String(
-        localized: "Back up the selected vaults together, including screenshots. Audio, external files, and account credentials are excluded.",
+    static var workspaceBackup: String { String(localized: "Workspace Backup", bundle: bundle) }
+    static var backupLocalWorkspacesOnly: String { String(localized: "Only workspaces in the Local Account can be backed up.", bundle: bundle) }
+    static var workspaceBackupDescription: String { String(
+        localized: "Back up the selected workspaces together, including screenshots. Audio, external files, and account credentials are excluded.",
         bundle: bundle
     ) }
     static var backupRestoreMode: String { String(localized: "Restore Method", bundle: bundle) }
-    static var backupRestoreAsNewVault: String { String(localized: "Restore as a New Local Vault", bundle: bundle) }
-    static var backupOverwriteOriginalVault: String { String(localized: "Overwrite the Original Local Vault", bundle: bundle) }
+    static var backupRestoreAsNewWorkspace: String { String(localized: "Restore as a New Local Workspace", bundle: bundle) }
+    static var backupOverwriteOriginalWorkspace: String { String(localized: "Overwrite the Original Local Workspace", bundle: bundle) }
     static var backupRestoreTargetUnavailable: String { String(
-        localized: "Overwrite requires the original local vault with no unprocessed recordings. Synced vaults cannot be overwritten.",
+        localized: "Overwrite requires the original local workspace with no unprocessed recordings. Synced workspaces cannot be overwritten.",
         bundle: bundle
     ) }
-    static var vaultBackupRestoreDescription: String { String(
-        localized: "Restore selected vaults after a restart. Back up and restore each vault independently; failed vaults stay unchanged. Audio and external files are excluded.",
+    static var workspaceBackupRestoreDescription: String { String(
+        localized: "Restore selected workspaces after a restart. Back up and restore each workspace independently; failed workspaces stay unchanged. Audio and external files are excluded.",
         bundle: bundle
     ) }
-    static func restoredVaultName(_ name: String) -> String {
+    static func restoredWorkspaceName(_ name: String) -> String {
         String(format: String(localized: "%@ (Restored)", bundle: bundle), name)
     }
 
@@ -1320,13 +1320,13 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var deleteBackup: String { String(localized: "Delete Backup", bundle: bundle) }
     static var backupGenerations: String { String(localized: "Backup Generations", bundle: bundle) }
     static var noBackups: String { String(localized: "No Backups", bundle: bundle) }
-    static var noBackupsDescription: String { String(localized: "Create a backup to preserve the selected vault.", bundle: bundle) }
+    static var noBackupsDescription: String { String(localized: "Create a backup to preserve the selected workspace.", bundle: bundle) }
     static var backupCreated: String { String(localized: "Backup created.", bundle: bundle) }
     static var backupImported: String { String(localized: "Backup imported.", bundle: bundle) }
     static var backupExported: String { String(localized: "Backup exported.", bundle: bundle) }
     static var backupDeleted: String { String(localized: "Backup deleted.", bundle: bundle) }
     static var selectedBackupInvalid: String { String(localized: "The selected file is not a valid Dahlia backup.", bundle: bundle) }
-    static var backupRestoreAlreadyPending: String { String(localized: "Another vault restore is already pending.", bundle: bundle) }
+    static var backupRestoreAlreadyPending: String { String(localized: "Another workspace restore is already pending.", bundle: bundle) }
     static var backupGenerationMissing: String { String(localized: "The selected backup generation no longer exists.", bundle: bundle) }
     static var untitledMeeting: String { String(localized: "Untitled Meeting", bundle: bundle) }
 
@@ -1357,21 +1357,21 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(format: String(localized: "The backup failed its integrity check: %@", bundle: bundle), message)
     }
 
-    static func backupVaultRestored(_ name: String, sourceVaultId: UUID) -> String {
-        String(format: String(localized: "%@ (Source: %@): Restored.", bundle: bundle), name, String(sourceVaultId.uuidString.suffix(8)))
+    static func backupWorkspaceRestored(_ name: String, sourceWorkspaceId: UUID) -> String {
+        String(format: String(localized: "%@ (Source: %@): Restored.", bundle: bundle), name, String(sourceWorkspaceId.uuidString.suffix(8)))
     }
 
-    static func backupVaultRestoreFailed(_ name: String, sourceVaultId: UUID, reason: String) -> String {
+    static func backupWorkspaceRestoreFailed(_ name: String, sourceWorkspaceId: UUID, reason: String) -> String {
         String(
             format: String(localized: "%@ (Source: %@): Restore failed — %@", bundle: bundle),
             name,
-            String(sourceVaultId.uuidString.suffix(8)),
+            String(sourceWorkspaceId.uuidString.suffix(8)),
             reason
         )
     }
 
     static func backupRestoreFailed(_ reason: String) -> String {
-        String(format: String(localized: "Could not restore the vault: %@", bundle: bundle), reason)
+        String(format: String(localized: "Could not restore the workspace: %@", bundle: bundle), reason)
     }
 
     static var invalidBackup: String { String(localized: "Invalid backup", bundle: bundle) }
@@ -1388,8 +1388,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var unprocessedRecordings: String { String(localized: "Unprocessed Recordings", bundle: bundle) }
     static var viewUnprocessedRecordings: String { String(localized: "Open Unprocessed Recordings", bundle: bundle) }
-    static var finishRecordingBeforeOpeningAnotherVault: String { String(
-        localized: "Finish the current recording before opening unprocessed recordings in another vault.",
+    static var finishRecordingBeforeOpeningAnotherWorkspace: String { String(
+        localized: "Finish the current recording before opening unprocessed recordings in another workspace.",
         bundle: bundle
     ) }
     static var unprocessedRecordingsDescription: String { String(
@@ -1446,8 +1446,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var setupComplete: String { String(localized: "Setup Complete", bundle: bundle) }
     static var continueAction: String { String(localized: "Continue", bundle: bundle) }
     static var startDahlia: String { String(localized: "Start Dahlia", bundle: bundle) }
-    static var vaultSetupDescription: String { String(
-        localized: "Dahlia stores meeting data and generated files in a local Vault.",
+    static var workspaceSetupDescription: String { String(
+        localized: "Dahlia stores meeting data and generated files in a local Workspace.",
         bundle: bundle
     ) }
     static var workingLanguagesSetupDescription: String { String(
@@ -1477,7 +1477,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var setupCompletionDescription: String { String(
-        localized: "Review your choices, then create or open the selected Vault.",
+        localized: "Review your choices, then create or open the selected Workspace.",
         bundle: bundle
     ) }
     static var setupSummary: String { String(localized: "Setup Summary", bundle: bundle) }
@@ -1486,8 +1486,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var calendar: String { String(localized: "Calendar", bundle: bundle) }
     static var cloudStorage: String { String(localized: "Cloud Storage", bundle: bundle) }
     static var developerSettings: String { String(localized: "Developer Settings", bundle: bundle) }
-    static var vault: String { String(localized: "Vault", bundle: bundle) }
-    static var currentVault: String { String(localized: "Current Vault", bundle: bundle) }
+    static var workspace: String { String(localized: "Workspace", bundle: bundle) }
+    static var currentWorkspace: String { String(localized: "Current Workspace", bundle: bundle) }
     static var mcp: String { String(localized: "MCP", bundle: bundle) }
     static var copyCommand: String { String(localized: "Copy Command", bundle: bundle) }
     static var copyMeetingID: String { String(localized: "Copy meeting_id", bundle: bundle) }
@@ -1497,7 +1497,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var codexCLI: String { String(localized: "Codex CLI", bundle: bundle) }
     static var claudeCode: String { String(localized: "Claude Code", bundle: bundle) }
     static var mcpPreview: String { String(localized: "Command Preview", bundle: bundle) }
-    static var mcpAllVaults: String { String(localized: "mcp.allVaults", bundle: bundle) }
+    static var mcpAllWorkspaces: String { String(localized: "mcp.allWorkspaces", bundle: bundle) }
     static var mcpClient: String { String(localized: "Client", bundle: bundle) }
     static var mcpAllowWriteAccess: String { String(localized: "Allow Write Access", bundle: bundle) }
     static var mcpConfigurationOutput: String { String(localized: "Configuration", bundle: bundle) }
@@ -1517,18 +1517,18 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(format: String(localized: "%@ registration command", bundle: bundle), name)
     }
 
-    static var currentVaultDescription: String { String(localized: "Choose the vault used for recordings and sync.", bundle: bundle) }
-    static var accountAndVaultMenuDescription: String { String(localized: "Open the account and vault menu.", bundle: bundle) }
-    static var noVaultSelected: String { String(localized: "No vault selected", bundle: bundle) }
-    static var accountsAndVaults: String { String(localized: "Accounts and Vaults", bundle: bundle) }
+    static var currentWorkspaceDescription: String { String(localized: "Choose the workspace used for recordings and sync.", bundle: bundle) }
+    static var accountAndWorkspaceMenuDescription: String { String(localized: "Open the account and workspace menu.", bundle: bundle) }
+    static var noWorkspaceSelected: String { String(localized: "No workspace selected", bundle: bundle) }
+    static var accountsAndWorkspaces: String { String(localized: "Accounts and Workspaces", bundle: bundle) }
     static var dahliaAccount: String { String(localized: "Dahlia Account", bundle: bundle) }
     static var localAccount: String { String(localized: "Local Account", bundle: bundle) }
     static var continueWithLocalAccount: String { String(localized: "Continue with Local Account", bundle: bundle) }
     static var orContinueWithoutSigningIn: String { String(localized: "Or continue without signing in", bundle: bundle) }
     static var connected: String { String(localized: "Connected", bundle: bundle) }
     static var switchingAIAccount: String { String(localized: "Switching AI account…", bundle: bundle) }
-    static var vaultAIAccountDescription: String { String(
-        localized: "Choose the AI account used by this Vault.",
+    static var workspaceAIAccountDescription: String { String(
+        localized: "Choose the AI account used by this Workspace.",
         bundle: bundle
     ) }
     static var dahliaCloud: String { String(localized: "Dahlia Cloud", bundle: bundle) }
@@ -1567,11 +1567,11 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var dahliaAccountPendingServerDeletion: String { String(
-        localized: "Resolve this connection's Server Vaults before removing it.",
+        localized: "Resolve this connection's Server Workspaces before removing it.",
         bundle: bundle
     ) }
-    static var dahliaAccountVaultDispositionRequired: String { String(
-        localized: "Choose what to do with this account's local Vaults before signing out.",
+    static var dahliaAccountWorkspaceDispositionRequired: String { String(
+        localized: "Choose what to do with this account's local Workspaces before signing out.",
         bundle: bundle
     ) }
     static var dahliaAccountsDescription: String { String(
@@ -1589,48 +1589,48 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(format: String(localized: "Sign out of %@?", bundle: bundle), name)
     }
 
-    static func removeDahliaConnectionDescription(vaultCount: Int) -> String {
+    static func removeDahliaConnectionDescription(workspaceCount: Int) -> String {
         String(
             format: String(
-                localized: "This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex and Google Drive connection data will be deleted.",
+                localized: "This account is used by %lld Workspaces. Those Workspaces will use the Local Account, and this account's Codex and Google Drive connection data will be deleted.",
                 bundle: bundle
             ),
-            vaultCount
+            workspaceCount
         )
     }
 
-    static var moveVaultsToLocalAndSignOut: String { String(
-        localized: "Move Vaults to Local Account and Sign Out",
+    static var moveWorkspacesToLocalAndSignOut: String { String(
+        localized: "Move Workspaces to Local Account and Sign Out",
         bundle: bundle
     ) }
-    static var deleteLocalVaultsAndSignOut: String { String(
-        localized: "Delete Local Vaults and Sign Out",
+    static var deleteLocalWorkspacesAndSignOut: String { String(
+        localized: "Delete Local Workspaces and Sign Out",
         bundle: bundle
     ) }
-    static var signOutVaultDispositionDescription: String { String(
-        localized: "The Server Vaults will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac.",
+    static var signOutWorkspaceDispositionDescription: String { String(
+        localized: "The Server Workspaces will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac.",
         bundle: bundle
     ) }
-    static var moveVaultToServer: String { String(localized: "Move to Server", bundle: bundle) }
-    static var reconnectServerVault: String { String(localized: "Reconnect Server Vault", bundle: bundle) }
+    static var moveWorkspaceToServer: String { String(localized: "Move to Server", bundle: bundle) }
+    static var reconnectServerWorkspace: String { String(localized: "Reconnect Server Workspace", bundle: bundle) }
     static var keepLocalAccount: String { String(localized: "Keep in Local Account", bundle: bundle) }
 
-    static func adoptVaultOnServerTitle(_ name: String, serverVaultExists: Bool) -> String {
-        if serverVaultExists {
+    static func adoptWorkspaceOnServerTitle(_ name: String, serverWorkspaceExists: Bool) -> String {
+        if serverWorkspaceExists {
             return String(format: String(localized: "Reconnect %@ to this Server?", bundle: bundle), name)
         }
         return String(format: String(localized: "Move %@ to this Server?", bundle: bundle), name)
     }
 
-    static func adoptVaultOnServerDescription(serverVaultExists: Bool) -> String {
-        if serverVaultExists {
+    static func adoptWorkspaceOnServerDescription(serverWorkspaceExists: Bool) -> String {
+        if serverWorkspaceExists {
             return String(
-                localized: "A Vault with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict.",
+                localized: "A Workspace with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict.",
                 bundle: bundle
             )
         }
         return String(
-            localized: "This Vault will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac.",
+            localized: "This Workspace will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac.",
             bundle: bundle
         )
     }
@@ -1674,17 +1674,17 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var startupQuit: String { String(localized: "Quit Dahlia", bundle: bundle) }
 
-    static var loadingVaults: String { String(localized: "Loading Vaults…", bundle: bundle) }
-    static var removingVault: String { String(localized: "Removing Vault…", bundle: bundle) }
-    static var vaultSyncConflict: String { String(localized: "Sync conflict", bundle: bundle) }
-    static var vaultSyncRecovering: String { String(localized: "Retrieving latest data…", bundle: bundle) }
-    static var vaultSyncRecoveryPending: String { String(localized: "Waiting to retrieve latest data", bundle: bundle) }
-    static var vaultInitialSyncPending: String { String(localized: "Waiting for initial sync", bundle: bundle) }
-    static var vaultInitialSyncPendingDescription: String { String(
+    static var loadingWorkspaces: String { String(localized: "Loading Workspaces…", bundle: bundle) }
+    static var removingWorkspace: String { String(localized: "Removing Workspace…", bundle: bundle) }
+    static var workspaceSyncConflict: String { String(localized: "Sync conflict", bundle: bundle) }
+    static var workspaceSyncRecovering: String { String(localized: "Retrieving latest data…", bundle: bundle) }
+    static var workspaceSyncRecoveryPending: String { String(localized: "Waiting to retrieve latest data", bundle: bundle) }
+    static var workspaceInitialSyncPending: String { String(localized: "Waiting for initial sync", bundle: bundle) }
+    static var workspaceInitialSyncPendingDescription: String { String(
         localized: "Server meetings will appear after sync. An internet connection and sign-in are required.",
         bundle: bundle
     ) }
-    static var vaultSyncUpdateRequired: String { String(localized: "Update Dahlia and the Server to resume sync", bundle: bundle) }
+    static var workspaceSyncUpdateRequired: String { String(localized: "Update Dahlia and the Server to resume sync", bundle: bundle) }
     static var retrySync: String { String(localized: "Retry Sync", bundle: bundle) }
     static var useServerVersion: String { String(localized: "Use Server Version", bundle: bundle) }
     static var reapplyLocalVersion: String { String(localized: "Reapply Local Version", bundle: bundle) }
@@ -2127,46 +2127,46 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
 
-    // MARK: - Vault Picker
+    // MARK: - Workspace Picker
 
-    static var createNewVault: String { String(localized: "Create New Vault", bundle: bundle) }
-    static var createNewVaultDescription: String { String(localized: "Create a vault without a local export folder.", bundle: bundle) }
-    static var addVault: String { String(localized: "Add Vault", bundle: bundle) }
-    static var registeredVaults: String { String(localized: "Registered Vaults", bundle: bundle) }
-    static var openFolderAsVault: String { String(localized: "Open Folder as Vault", bundle: bundle) }
-    static var openFolderAsVaultDescription: String { String(localized: "Select an existing folder to use as a vault.", bundle: bundle) }
-    static var removeVault: String { String(localized: "Remove Vault", bundle: bundle) }
-    static var currentVaultRemoveDescription: String { String(
-        localized: "Open a different vault before removing this one.",
+    static var createNewWorkspace: String { String(localized: "Create New Workspace", bundle: bundle) }
+    static var createNewWorkspaceDescription: String { String(localized: "Create a workspace without a local export folder.", bundle: bundle) }
+    static var addWorkspace: String { String(localized: "Add Workspace", bundle: bundle) }
+    static var registeredWorkspaces: String { String(localized: "Registered Workspaces", bundle: bundle) }
+    static var openFolderAsWorkspace: String { String(localized: "Open Folder as Workspace", bundle: bundle) }
+    static var openFolderAsWorkspaceDescription: String { String(localized: "Select an existing folder to use as a workspace.", bundle: bundle) }
+    static var removeWorkspace: String { String(localized: "Remove Workspace", bundle: bundle) }
+    static var currentWorkspaceRemoveDescription: String { String(
+        localized: "Open a different workspace before removing this one.",
         bundle: bundle
     ) }
-    static func removeVaultConfirmation(_ name: String) -> String { String(localized: "Remove \(name)?", bundle: bundle) }
-    static var removeVaultConfirmationDescription: String { String(
+    static func removeWorkspaceConfirmation(_ name: String) -> String { String(localized: "Remove \(name)?", bundle: bundle) }
+    static var removeWorkspaceConfirmationDescription: String { String(
         localized: """
-        Dahlia will remove this vault and its meeting history from the app. \
-        Audio files managed outside the vault folder will also be deleted. \
-        Files inside the vault folder are not changed.
+        Dahlia will remove this workspace and its meeting history from the app. \
+        Audio files managed outside the workspace folder will also be deleted. \
+        Files inside the workspace folder are not changed.
         """,
         bundle: bundle
     ) }
-    static var vaultDetails: String { String(localized: "Vault Details", bundle: bundle) }
-    static var vaultName: String { String(localized: "Vault Name", bundle: bundle) }
-    static var vaultNameDescription: String { String(localized: "Enter a name for the new vault.", bundle: bundle) }
-    static func renameVault(_ name: String) -> String { String(localized: "Rename \(name)", bundle: bundle) }
-    static var openVault: String { String(localized: "Open Vault", bundle: bundle) }
-    static var openVaultDescription: String { String(localized: "Use this vault for recordings and sync.", bundle: bundle) }
-    static var selectVaultDescription: String { String(localized: "Select a vault to view its details.", bundle: bundle) }
-    static var noVaults: String { String(localized: "No Vaults", bundle: bundle) }
-    static var noVaultsDescription: String { String(
+    static var workspaceDetails: String { String(localized: "Workspace Details", bundle: bundle) }
+    static var workspaceName: String { String(localized: "Workspace Name", bundle: bundle) }
+    static var workspaceNameDescription: String { String(localized: "Enter a name for the new workspace.", bundle: bundle) }
+    static func renameWorkspace(_ name: String) -> String { String(localized: "Rename \(name)", bundle: bundle) }
+    static var openWorkspace: String { String(localized: "Open Workspace", bundle: bundle) }
+    static var openWorkspaceDescription: String { String(localized: "Use this workspace for recordings and sync.", bundle: bundle) }
+    static var selectWorkspaceDescription: String { String(localized: "Select a workspace to view its details.", bundle: bundle) }
+    static var noWorkspaces: String { String(localized: "No Workspaces", bundle: bundle) }
+    static var noWorkspacesDescription: String { String(
         localized: "Add a folder to start recording and syncing meetings.",
         bundle: bundle
     ) }
-    static var vaultOperationFailed: String { String(localized: "Vault Operation Failed", bundle: bundle) }
-    static var vaultFolderSelectionFailed: String { String(localized: "Could not select the vault folder.", bundle: bundle) }
-    static var vaultLoadFailed: String { String(localized: "Could not load vaults.", bundle: bundle) }
-    static var vaultAddFailed: String { String(localized: "Could not add the vault.", bundle: bundle) }
-    static var vaultRenameFailed: String { String(localized: "Could not rename the vault.", bundle: bundle) }
-    static var vaultRemoveFailed: String { String(localized: "Could not remove the vault.", bundle: bundle) }
+    static var workspaceOperationFailed: String { String(localized: "Workspace Operation Failed", bundle: bundle) }
+    static var workspaceFolderSelectionFailed: String { String(localized: "Could not select the workspace folder.", bundle: bundle) }
+    static var workspaceLoadFailed: String { String(localized: "Could not load workspaces.", bundle: bundle) }
+    static var workspaceAddFailed: String { String(localized: "Could not add the workspace.", bundle: bundle) }
+    static var workspaceRenameFailed: String { String(localized: "Could not rename the workspace.", bundle: bundle) }
+    static var workspaceRemoveFailed: String { String(localized: "Could not remove the workspace.", bundle: bundle) }
     static var open: String { String(localized: "Open", bundle: bundle) }
     static var loadingLanguages: String { String(localized: "Loading supported languages...", bundle: bundle) }
     static var searchLanguages: String { String(localized: "Search languages...", bundle: bundle) }
@@ -2220,7 +2220,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var codexNotLoggedIn: String { String(
-        localized: "Codex is not signed in. Open Accounts and Vaults in Settings and sign in, then try again.",
+        localized: "Codex is not signed in. Open Accounts and Workspaces in Settings and sign in, then try again.",
         bundle: bundle
     ) }
     static func codexLoginFailed(_ detail: String) -> String { String(
@@ -2269,7 +2269,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var aiAccountSettingsDescription: String { String(
-        localized: "This setting is shared by all Local Account vaults. Dahlia Server and Cloud use hosted models automatically.",
+        localized: "This setting is shared by all Local Account workspaces. Dahlia Server and Cloud use hosted models automatically.",
         bundle: bundle
     ) }
 
@@ -2319,7 +2319,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var databricksConfigured: String { String(localized: "Codex is configured for Databricks", bundle: bundle) }
     static var codexAccountConfigurationNotReady: String { String(
-        localized: "The selected AI account is not ready. Open Accounts and Vaults in Settings and finish its configuration.",
+        localized: "The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration.",
         bundle: bundle
     ) }
     static func codexChatProviderChanged(_ provider: String) -> String { String(
@@ -2599,9 +2599,9 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     // MARK: - Sidebar Footer
 
-    static var switchVault: String { String(localized: "Switch Vault", bundle: bundle) }
+    static var switchWorkspace: String { String(localized: "Switch Workspace", bundle: bundle) }
     static var mcpSettings: String { String(localized: "MCP Settings", bundle: bundle) }
-    static var manageVaults: String { String(localized: "Manage Vaults", bundle: bundle) }
+    static var manageWorkspaces: String { String(localized: "Manage Workspaces", bundle: bundle) }
     static var manageProjects: String { String(localized: "Manage Projects...", bundle: bundle) }
     static var settings: String { String(localized: "Settings", bundle: bundle) }
     static var help: String { String(localized: "Help", bundle: bundle) }
@@ -2838,7 +2838,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(localized: "This request asks for permissions outside the allowed workspace and cannot be approved.", bundle: bundle)
     }
 
-    static var openAISettings: String { String(localized: "Open Accounts and Vaults Settings", bundle: bundle) }
+    static var openAISettings: String { String(localized: "Open Accounts and Workspaces Settings", bundle: bundle) }
     static var chatModelLoading: String { String(localized: "Loading models…", bundle: bundle) }
     static var chatThreadRunning: String { String(localized: "Chat is running", bundle: bundle) }
     static var chatThreadWaitingForUser: String {
@@ -3153,28 +3153,30 @@ extension L10n {
         localized: "Enter your workspace URL and sign in again to replace the old CLI connection.",
         bundle: bundle
     ) }
-    static var vaultAdmin: String { String(localized: "Vault Admin", bundle: bundle) }
-    static var vaultEditor: String { String(localized: "Vault Editor", bundle: bundle) }
-    static var vaultImportUnavailable: String { String(
-        localized: "Finish recording and pending sync, then choose a writable Server Vault.",
+    static var workspaceAdmin: String { String(localized: "Workspace Admin", bundle: bundle) }
+    static var workspaceEditor: String { String(localized: "Workspace Editor", bundle: bundle) }
+    static var workspaceImportUnavailable: String { String(
+        localized: "Finish recording and pending sync, then choose a writable Server Workspace.",
         bundle: bundle
     ) }
-    static var vaultImportChanged: String { String(
-        localized: "The Vault changed during preparation. Your data is preserved. Try again.",
+    static var workspaceImportChanged: String { String(
+        localized: "The Workspace changed during preparation. Your data is preserved. Try again.",
         bundle: bundle
     ) }
-    static var vaultImportCollision: String { String(localized: "Some IDs already exist on the Server. No local data was moved.", bundle: bundle) }
-    static var vaultImportDestination: String { String(localized: "Import destination", bundle: bundle) }
-    static var vaultImportExisting: String { String(localized: "Existing Server Vault", bundle: bundle) }
-    static var vaultImportNew: String { String(localized: "New Server Vault", bundle: bundle) }
-    static var vaultImportOrganization: String { String(localized: "Organization", bundle: bundle) }
-    static var vaultImportCreateOrganization: String { String(localized: "Create Organization", bundle: bundle) }
-    static var vaultImportRefresh: String { String(localized: "Reload destinations", bundle: bundle) }
-    static var vaultImportDescription: String { String(
-        localized: "A backup is saved before importing. Existing Vault settings stay unchanged. The original Local Vault remains available.",
+    static var workspaceImportCollision: String { String(localized: "Some IDs already exist on the Server. No local data was moved.", bundle: bundle)
+    }
+
+    static var workspaceImportDestination: String { String(localized: "Import destination", bundle: bundle) }
+    static var workspaceImportExisting: String { String(localized: "Existing Server Workspace", bundle: bundle) }
+    static var workspaceImportNew: String { String(localized: "New Server Workspace", bundle: bundle) }
+    static var workspaceImportOrganization: String { String(localized: "Organization", bundle: bundle) }
+    static var workspaceImportCreateOrganization: String { String(localized: "Create Organization", bundle: bundle) }
+    static var workspaceImportRefresh: String { String(localized: "Reload destinations", bundle: bundle) }
+    static var workspaceImportDescription: String { String(
+        localized: "A backup is saved before importing. Existing Workspace settings stay unchanged. The original Local Workspace remains available.",
         bundle: bundle
     ) }
-    static var vaultImportStart: String { String(localized: "Import", bundle: bundle) }
-    static var vaultImportName: String { String(localized: "Organization name", bundle: bundle) }
+    static var workspaceImportStart: String { String(localized: "Import", bundle: bundle) }
+    static var workspaceImportName: String { String(localized: "Organization name", bundle: bundle) }
 
 }

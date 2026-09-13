@@ -9,10 +9,10 @@ import GRDB
     struct CalendarSeriesProjectAssignmentTests {
         @Test
         func newMeetingInheritsProjectFromMostRecentEarlierOccurrence() async throws {
-            let (database, vault) = try makeDatabase()
-            let olderProject = project(named: "Older project", vaultId: vault.id)
-            let recentProject = project(named: "Recent project", vaultId: vault.id)
-            let futureProject = project(named: "Future project", vaultId: vault.id)
+            let (database, workspace) = try makeDatabase()
+            let olderProject = project(named: "Older project", workspaceId: workspace.id)
+            let recentProject = project(named: "Recent project", workspaceId: workspace.id)
+            let futureProject = project(named: "Future project", workspaceId: workspace.id)
             let olderStart = Date(timeIntervalSince1970: 1_776_200_000)
             let recentStart = Date(timeIntervalSince1970: 1_776_300_000)
             let currentStart = Date(timeIntervalSince1970: 1_776_400_000)
@@ -25,21 +25,21 @@ import GRDB
                 try insertSeriesMeeting(
                     event: seriesEvent(startDate: olderStart, recurrenceId: "20260414T090000Z"),
                     projectId: olderProject.id,
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     createdAt: recentStart.addingTimeInterval(100),
                     in: db
                 )
                 try insertSeriesMeeting(
                     event: seriesEvent(startDate: recentStart, recurrenceId: "20260415T090000Z"),
                     projectId: recentProject.id,
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     createdAt: olderStart,
                     in: db
                 )
                 try insertSeriesMeeting(
                     event: seriesEvent(startDate: futureStart, recurrenceId: "20260417T090000Z"),
                     projectId: futureProject.id,
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     createdAt: futureStart,
                     in: db
                 )
@@ -48,7 +48,7 @@ import GRDB
             let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: nil,
                 initialName: "Current occurrence",
                 calendarEvent: seriesEvent(startDate: currentStart, recurrenceId: "20260416T090000Z")
@@ -62,11 +62,11 @@ import GRDB
 
         @Test
         func inheritedSubprojectUsesResolvedLogicalPath() async throws {
-            let (database, vault) = try makeDatabase()
-            let root = project(named: "Acme", vaultId: vault.id)
+            let (database, workspace) = try makeDatabase()
+            let root = project(named: "Acme", workspaceId: workspace.id)
             let child = ProjectRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: root.id,
                 name: "Platform",
                 createdAt: .now,
@@ -81,7 +81,7 @@ import GRDB
                 try insertSeriesMeeting(
                     event: seriesEvent(startDate: previousStart, recurrenceId: "20260415T090000Z"),
                     projectId: child.id,
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     createdAt: previousStart,
                     in: db
                 )
@@ -90,7 +90,7 @@ import GRDB
             let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: nil,
                 initialName: "Current occurrence",
                 calendarEvent: seriesEvent(startDate: currentStart, recurrenceId: "20260416T090000Z")
@@ -103,9 +103,9 @@ import GRDB
 
         @Test
         func explicitlySelectedProjectOverridesSeriesProject() async throws {
-            let (database, vault) = try makeDatabase()
-            let seriesProject = project(named: "Series project", vaultId: vault.id)
-            let selectedProject = project(named: "Selected project", vaultId: vault.id)
+            let (database, workspace) = try makeDatabase()
+            let seriesProject = project(named: "Series project", workspaceId: workspace.id)
+            let selectedProject = project(named: "Selected project", workspaceId: workspace.id)
             let previousStart = Date(timeIntervalSince1970: 1_776_300_000)
             let currentStart = Date(timeIntervalSince1970: 1_776_400_000)
 
@@ -115,7 +115,7 @@ import GRDB
                 try insertSeriesMeeting(
                     event: seriesEvent(startDate: previousStart, recurrenceId: "20260415T090000Z"),
                     projectId: seriesProject.id,
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     createdAt: previousStart,
                     in: db
                 )
@@ -124,7 +124,7 @@ import GRDB
             let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: selectedProject.id,
                 initialName: "Current occurrence",
                 calendarEvent: seriesEvent(startDate: currentStart, recurrenceId: "20260416T090000Z")
@@ -138,8 +138,8 @@ import GRDB
 
         @Test
         func explicitNoProjectPreventsSeriesInheritanceWhenRecordingStarts() async throws {
-            let (database, vault) = try makeDatabase()
-            let inheritedProject = project(named: "Planning", vaultId: vault.id)
+            let (database, workspace) = try makeDatabase()
+            let inheritedProject = project(named: "Planning", workspaceId: workspace.id)
             let previousStart = Date(timeIntervalSince1970: 1_776_300_000)
             let currentStart = Date(timeIntervalSince1970: 1_776_400_000)
 
@@ -148,7 +148,7 @@ import GRDB
                 try insertSeriesMeeting(
                     event: seriesEvent(startDate: previousStart, recurrenceId: "20260415T090000Z"),
                     projectId: inheritedProject.id,
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     createdAt: previousStart,
                     in: db
                 )
@@ -157,7 +157,7 @@ import GRDB
             let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: nil,
                 initialName: "Current occurrence",
                 allowsCalendarSeriesProjectInheritance: false,
@@ -172,8 +172,8 @@ import GRDB
 
         @Test
         func materializedDraftInheritsProjectAndUpdatesViewModelContext() throws {
-            let (database, vault) = try makeDatabase()
-            let inheritedProject = project(named: "Planning", vaultId: vault.id)
+            let (database, workspace) = try makeDatabase()
+            let inheritedProject = project(named: "Planning", workspaceId: workspace.id)
             let previousStart = Date(timeIntervalSince1970: 1_776_300_000)
             let currentStart = Date(timeIntervalSince1970: 1_776_400_000)
 
@@ -182,21 +182,21 @@ import GRDB
                 try insertSeriesMeeting(
                     event: seriesEvent(startDate: previousStart, recurrenceId: "20260415T090000Z"),
                     projectId: inheritedProject.id,
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     createdAt: previousStart,
                     in: db
                 )
             }
 
-            let previousVault = AppSettings.shared.currentVault
-            AppSettings.shared.currentVault = vault
-            defer { AppSettings.shared.currentVault = previousVault }
+            let previousWorkspace = AppSettings.shared.currentWorkspace
+            AppSettings.shared.currentWorkspace = workspace
+            defer { AppSettings.shared.currentWorkspace = previousWorkspace }
 
             let viewModel = CaptionViewModel()
             viewModel.beginDraftMeeting(
                 from: seriesEvent(startDate: currentStart, recurrenceId: "20260416T090000Z"),
                 dbQueue: database.dbQueue,
-                vaultURL: vault.url
+                workspaceURL: workspace.url
             )
 
             let meetingId = try #require(
@@ -209,14 +209,14 @@ import GRDB
             #expect(viewModel.currentProjectName == inheritedProject.name)
             #expect(
                 viewModel.currentProjectURL
-                    == vault.url?.appending(path: inheritedProject.name, directoryHint: .isDirectory)
+                    == workspace.url?.appending(path: inheritedProject.name, directoryHint: .isDirectory)
             )
         }
 
         @Test
         func materializedDraftPreservesExplicitNoProjectSelection() throws {
-            let (database, vault) = try makeDatabase()
-            let inheritedProject = project(named: "Planning", vaultId: vault.id)
+            let (database, workspace) = try makeDatabase()
+            let inheritedProject = project(named: "Planning", workspaceId: workspace.id)
             let previousStart = Date(timeIntervalSince1970: 1_776_300_000)
             let currentStart = Date(timeIntervalSince1970: 1_776_400_000)
 
@@ -225,21 +225,21 @@ import GRDB
                 try insertSeriesMeeting(
                     event: seriesEvent(startDate: previousStart, recurrenceId: "20260415T090000Z"),
                     projectId: inheritedProject.id,
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     createdAt: previousStart,
                     in: db
                 )
             }
 
-            let previousVault = AppSettings.shared.currentVault
-            AppSettings.shared.currentVault = vault
-            defer { AppSettings.shared.currentVault = previousVault }
+            let previousWorkspace = AppSettings.shared.currentWorkspace
+            AppSettings.shared.currentWorkspace = workspace
+            defer { AppSettings.shared.currentWorkspace = previousWorkspace }
 
             let viewModel = CaptionViewModel()
             viewModel.beginDraftMeeting(
                 from: seriesEvent(startDate: currentStart, recurrenceId: "20260416T090000Z"),
                 dbQueue: database.dbQueue,
-                vaultURL: vault.url
+                workspaceURL: workspace.url
             )
             viewModel.setExplicitProjectContext(projectURL: nil, projectId: nil, projectName: nil)
 
@@ -255,25 +255,25 @@ import GRDB
         }
     }
 
-    private func makeDatabase() throws -> (database: AppDatabaseManager, vault: VaultRecord) {
+    private func makeDatabase() throws -> (database: AppDatabaseManager, workspace: WorkspaceRecord) {
         let database = try AppDatabaseManager(path: ":memory:")
-        let vault = VaultRecord(
+        let workspace = WorkspaceRecord(
             id: .v7(),
             path: URL.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory).path,
-            name: "Test Vault",
+            name: "Test Workspace",
             createdAt: .now,
             lastOpenedAt: .now
         )
         try database.dbQueue.write { db in
-            try vault.insert(db)
+            try workspace.insert(db)
         }
-        return (database, vault)
+        return (database, workspace)
     }
 
-    private func project(named name: String, vaultId: UUID) -> ProjectRecord {
+    private func project(named name: String, workspaceId: UUID) -> ProjectRecord {
         ProjectRecord(
             id: .v7(),
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             path: name,
             createdAt: .now
         )
@@ -282,7 +282,7 @@ import GRDB
     private func insertSeriesMeeting(
         event: CalendarEvent,
         projectId: UUID,
-        vaultId: UUID,
+        workspaceId: UUID,
         createdAt: Date,
         in db: Database
     ) throws {
@@ -290,7 +290,7 @@ import GRDB
         try CalendarEventRecord.upsert(event: event, now: createdAt, in: db)
         try MeetingRecord(
             id: .v7(),
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             projectId: projectId,
             name: event.title,
             createdAt: createdAt,

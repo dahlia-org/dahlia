@@ -98,7 +98,7 @@ struct SyncAPIMiddleware: ClientMiddleware {
             request.headerFields[field] = try PublicIDWire.transform(value, shape: shape, direction: .encode) as? String
         }
         request.headerFields[.authorization] = "Bearer \(token)"
-        request.headerFields[.init("X-Dahlia-Vault-Transfers")!] = "1"
+        request.headerFields[.init("X-Dahlia-Workspace-Transfers")!] = "1"
         if requireCompleteRecordings {
             request.headerFields[.init("X-Dahlia-Require-Complete-Recordings")!] = "1"
         }

@@ -2,10 +2,10 @@ import SwiftUI
 
 struct MCPPreviewOptionsView: View {
     @Binding var selectedClient: MCPClient
-    @Binding var selectedVaultID: UUID?
+    @Binding var selectedWorkspaceID: UUID?
     @Binding var isWriteEnabled: Bool
 
-    let availableVaults: [VaultRecord]
+    let availableWorkspaces: [WorkspaceRecord]
 
     var body: some View {
         HStack(alignment: .top) {
@@ -25,15 +25,15 @@ struct MCPPreviewOptionsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .leading) {
-                Text(L10n.vault)
+                Text(L10n.workspace)
                     .font(.subheadline)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
 
-                Picker(L10n.vault, selection: $selectedVaultID) {
-                    Text(L10n.mcpAllVaults).tag(nil as UUID?)
-                    ForEach(availableVaults) { vault in
-                        Text(MCPVaultDisplayName.resolve(for: vault, among: availableVaults))
-                            .tag(Optional(vault.id))
+                Picker(L10n.workspace, selection: $selectedWorkspaceID) {
+                    Text(L10n.mcpAllWorkspaces).tag(nil as UUID?)
+                    ForEach(availableWorkspaces) { workspace in
+                        Text(MCPWorkspaceDisplayName.resolve(for: workspace, among: availableWorkspaces))
+                            .tag(Optional(workspace.id))
                     }
                 }
                 .labelsHidden()

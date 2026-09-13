@@ -31,8 +31,8 @@ export async function processSearchIndexBatch(
     batchBytes += bytes;
     documents.push(document);
   }
-  const handled = new Set(loadedDocuments.map(({ vaultId, documentId }) => `${vaultId}\0${documentId}`));
-  await Promise.all(jobs.filter(({ vaultId, documentId }) => !handled.has(`${vaultId}\0${documentId}`))
+  const handled = new Set(loadedDocuments.map(({ workspaceId, documentId }) => `${workspaceId}\0${documentId}`));
+  await Promise.all(jobs.filter(({ workspaceId, documentId }) => !handled.has(`${workspaceId}\0${documentId}`))
     .map((job) => store.discard(job)));
   if (documents.length === 0) return jobs.length;
   let vectors: number[][];
@@ -48,7 +48,7 @@ export async function processSearchIndexBatch(
     return jobs.length;
   }
   const saved = await store.saveMany(documents, embedder.model, embedder.dimensions, vectors);
-  await Promise.all(documents.filter(({ vaultId, documentId }) => !saved.has(`${vaultId}\0${documentId}`))
+  await Promise.all(documents.filter(({ workspaceId, documentId }) => !saved.has(`${workspaceId}\0${documentId}`))
     .map((document) => store.retry(document, "stale_content", new Date())));
   return jobs.length;
 }

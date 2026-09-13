@@ -13,10 +13,10 @@ import GRDB
         @Test
         func migrationCreatesProjectionWithoutSegmentQueue() throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
-            let meeting = Self.makeMeeting(vaultID: vault.id)
+            let workspace = Self.makeWorkspace()
+            let meeting = Self.makeMeeting(workspaceID: workspace.id)
             try database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 for index in 0 ..< 3 {
                     try Self.makeSegment(
@@ -58,16 +58,16 @@ import GRDB
         @Test
         func fullDetailPreservesBM25TermFrequency() throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
+            let workspace = Self.makeWorkspace()
             try database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 for title in ["検索", "検索 検索 検索"] {
                     let id = UUID.v7()
                     try upsertDocument(
                         SearchDocumentProjection(
                             kind: "project",
                             sourceID: id,
-                            vaultID: vault.id,
+                            workspaceID: workspace.id,
                             meetingID: nil,
                             projectID: id,
                             fields: SearchDocumentFields(
@@ -93,10 +93,10 @@ import GRDB
         @Test
         func transcriptSegmentsAreNotIndexedOrSearched() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
-            let meeting = Self.makeMeeting(vaultID: vault.id)
+            let workspace = Self.makeWorkspace()
+            let meeting = Self.makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 try Self.makeSegment(meetingID: meeting.id, text: "検索について話します", offset: 10).insert(db)
                 try Self.makeSegment(meetingID: meeting.id, text: "精度を改善します", offset: 20).insert(db)
@@ -110,7 +110,7 @@ import GRDB
 
             await database.searchIndexer.drain()
             let page = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: "検索精度",
                 limit: 20,
                 dbQueue: database.dbQueue
@@ -126,10 +126,10 @@ import GRDB
         @Test
         func summaryBodyIsIndexedUpdatedAndDeleted() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
-            let meeting = Self.makeMeeting(vaultID: vault.id)
+            let workspace = Self.makeWorkspace()
+            let meeting = Self.makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 try SummaryContent(
                     meetingId: meeting.id,
@@ -141,7 +141,7 @@ import GRDB
             await database.searchIndexer.drain()
 
             let advanced = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: "要約固有語",
                 limit: 20,
                 dbQueue: database.dbQueue
@@ -157,13 +157,13 @@ import GRDB
             }
             await database.searchIndexer.drain()
             let oldResult = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: "要約固有語",
                 limit: 20,
                 dbQueue: database.dbQueue
             )
             let updatedResult = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: "更新後要約語",
                 limit: 20,
                 dbQueue: database.dbQueue
@@ -176,7 +176,7 @@ import GRDB
             }
             await database.searchIndexer.drain()
             let deletedResult = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: "更新後要約語",
                 limit: 20,
                 dbQueue: database.dbQueue
@@ -187,14 +187,14 @@ import GRDB
         @Test
         func invalidSummaryDocumentDoesNotFailMetadataIndexing() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
+            let workspace = Self.makeWorkspace()
             let meeting = {
-                var value = Self.makeMeeting(vaultID: vault.id)
+                var value = Self.makeMeeting(workspaceID: workspace.id)
                 value.name = "壊れても検索可能"
                 return value
             }()
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 try SummaryContent(meetingId: meeting.id, title: "Invalid", document: "{}", createdAt: .now).insert(db)
             }
@@ -205,7 +205,7 @@ import GRDB
                 try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
             }
             let result = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: "検索可能",
                 limit: 20,
                 dbQueue: database.dbQueue
@@ -217,12 +217,12 @@ import GRDB
         @Test
         func rareTermNarrowsACommonTermBeforeTheSearchDeadline() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
+            let workspace = Self.makeWorkspace()
             let targetID = UUID.v7()
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 for index in 0 ... 2000 {
-                    var meeting = Self.makeMeeting(vaultID: vault.id)
+                    var meeting = Self.makeMeeting(workspaceID: workspace.id)
                     meeting.id = index == 0 ? targetID : .v7()
                     meeting.name = index == 0 ? "会議 固有顧客名" : "会議"
                     try meeting.insert(db)
@@ -230,7 +230,7 @@ import GRDB
                         SearchDocumentProjection(
                             kind: "meeting",
                             sourceID: meeting.id,
-                            vaultID: vault.id,
+                            workspaceID: workspace.id,
                             meetingID: meeting.id,
                             projectID: nil,
                             fields: SearchDocumentFields(
@@ -250,7 +250,7 @@ import GRDB
             }
 
             let page = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: "会議 固有顧客名",
                 limit: 20,
                 dbQueue: database.dbQueue
@@ -262,10 +262,10 @@ import GRDB
         @Test
         func projectSearchBoundsCommonMatchesAndRetainsTheRareResult() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
+            let workspace = Self.makeWorkspace()
             let targetID = UUID.v7()
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 for index in 0 ... 2000 {
                     let projectID = index == 0 ? targetID : UUID.v7()
                     let title = index == 0 ? "会議 固有顧客名" : "会議"
@@ -273,7 +273,7 @@ import GRDB
                         SearchDocumentProjection(
                             kind: "project",
                             sourceID: projectID,
-                            vaultID: vault.id,
+                            workspaceID: workspace.id,
                             meetingID: nil,
                             projectID: projectID,
                             fields: SearchDocumentFields(
@@ -293,13 +293,13 @@ import GRDB
             }
 
             let common = try await MeetingRepository.searchProjectIDs(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 query: "会議",
                 limit: 20,
                 dbQueue: database.dbQueue
             )
             let narrowed = try await MeetingRepository.searchProjectIDs(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 query: "会議 固有顧客名",
                 limit: 20,
                 dbQueue: database.dbQueue
@@ -312,10 +312,10 @@ import GRDB
         @Test
         func deletingMeetingRemovesItsRegistryAndFTSRows() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
-            let meeting = Self.makeMeeting(vaultID: vault.id)
+            let workspace = Self.makeWorkspace()
+            let meeting = Self.makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 try Self.makeSegment(meetingID: meeting.id, text: "削除対象の本文", offset: 10).insert(db)
             }
@@ -343,10 +343,10 @@ import GRDB
         @Test
         func failedIndexStillDrainsDeletionJobs() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
-            let meeting = Self.makeMeeting(vaultID: vault.id)
+            let workspace = Self.makeWorkspace()
+            let meeting = Self.makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 try Self.makeSegment(meetingID: meeting.id, text: "失敗後に消す本文", offset: 10).insert(db)
             }
@@ -375,21 +375,21 @@ import GRDB
         }
 
         @Test
-        func deletingVaultRemovesEveryProjectedDocument() async throws {
+        func deletingWorkspaceRemovesEveryProjectedDocument() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
+            let workspace = Self.makeWorkspace()
             let project = ProjectRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 path: "削除対象プロジェクト",
                 createdAt: .now
             )
-            var configuredMeeting = Self.makeMeeting(vaultID: vault.id)
+            var configuredMeeting = Self.makeMeeting(workspaceID: workspace.id)
             configuredMeeting.projectId = project.id
             let meeting = configuredMeeting
             let segment = Self.makeSegment(meetingID: meeting.id, text: "削除対象の発話", offset: 10)
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try project.insert(db)
                 try meeting.insert(db)
                 try segment.insert(db)
@@ -397,7 +397,7 @@ import GRDB
             await database.searchIndexer.drain()
 
             try await database.dbQueue.write { db in
-                _ = try VaultRecord.deleteOne(db, key: vault.id)
+                _ = try WorkspaceRecord.deleteOne(db, key: workspace.id)
             }
             await database.searchIndexer.drain()
 
@@ -414,10 +414,10 @@ import GRDB
         @Test
         func missingFTSRowTriggersARepairingRebuild() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
-            let meeting = Self.makeMeeting(vaultID: vault.id)
+            let workspace = Self.makeWorkspace()
+            let meeting = Self.makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
             }
             await database.searchIndexer.drain()
@@ -434,7 +434,7 @@ import GRDB
             await database.searchIndexer.drain()
 
             let result = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: "検索会議",
                 limit: 20,
                 dbQueue: database.dbQueue
@@ -445,18 +445,18 @@ import GRDB
         @Test
         func sourceMutationInvalidatesRelevanceCursorBeforeIndexingCompletes() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
-            let first = Self.makeMeeting(vaultID: vault.id)
-            let second = Self.makeMeeting(vaultID: vault.id)
+            let workspace = Self.makeWorkspace()
+            let first = Self.makeMeeting(workspaceID: workspace.id)
+            let second = Self.makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try first.insert(db)
                 try second.insert(db)
             }
             await database.searchIndexer.drain()
 
             let firstPage = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: "検索会議",
                 limit: 1,
                 dbQueue: database.dbQueue
@@ -468,7 +468,7 @@ import GRDB
             }
 
             let refreshedPage = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: "検索会議",
                 after: cursor,
                 limit: 1,
@@ -482,10 +482,10 @@ import GRDB
         @Test
         func explicitRebuildRetokenizesRowsWithUnchangedSourceHashes() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
-            let meeting = Self.makeMeeting(vaultID: vault.id)
+            let workspace = Self.makeWorkspace()
+            let meeting = Self.makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
             }
             await database.searchIndexer.drain()
@@ -510,7 +510,7 @@ import GRDB
 
             try await database.searchIndexer.requestRebuild()
             let result = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: "検索会議",
                 limit: 20,
                 dbQueue: database.dbQueue
@@ -521,10 +521,10 @@ import GRDB
         @Test
         func failedIndexWaitsForAnExplicitRebuildRequest() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
-            let meeting = Self.makeMeeting(vaultID: vault.id)
+            let workspace = Self.makeWorkspace()
+            let meeting = Self.makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 try db.execute(
                     sql: "UPDATE search_index_state SET phase = 'failed' WHERE indexKind = 'fts'"
@@ -602,8 +602,8 @@ import GRDB
         @Test
         func transcriptIsNotIndexedOrRequeued() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
-            let meeting = Self.makeMeeting(vaultID: vault.id)
+            let workspace = Self.makeWorkspace()
+            let meeting = Self.makeMeeting(workspaceID: workspace.id)
             let segment = Self.makeSegment(
                 meetingID: meeting.id,
                 text: "原文だけの検索語",
@@ -611,14 +611,14 @@ import GRDB
                 offset: 10
             )
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 try segment.insert(db)
             }
             await database.searchIndexer.drain()
 
             let result = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: "品質保証",
                 limit: 20,
                 dbQueue: database.dbQueue
@@ -626,7 +626,7 @@ import GRDB
             #expect(result.items.isEmpty)
 
             let original = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: "原文検索語",
                 limit: 20,
                 dbQueue: database.dbQueue
@@ -655,17 +655,17 @@ import GRDB
         @Test
         func calendarUpdateQueuesOnlyReferencingMeetings() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
+            let workspace = Self.makeWorkspace()
             let event = Self.makeCalendarEvent()
             let linkedMeeting = {
-                var meeting = Self.makeMeeting(vaultID: vault.id)
+                var meeting = Self.makeMeeting(workspaceID: workspace.id)
                 meeting.calendarEventIcalUid = event.icalUid
                 meeting.calendarEventRecurrenceId = event.recurrenceId
                 return meeting
             }()
-            let unrelatedMeeting = Self.makeMeeting(vaultID: vault.id)
+            let unrelatedMeeting = Self.makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try CalendarEventRecord.upsert(event: event, now: .now, in: db)
                 try linkedMeeting.insert(db)
                 try unrelatedMeeting.insert(db)
@@ -691,10 +691,10 @@ import GRDB
         @Test
         func projectUpdatesQueueOnlyTheChangedContentOrHierarchy() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
+            let workspace = Self.makeWorkspace()
             let firstRoot = ProjectRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: nil,
                 name: "First",
                 createdAt: .now,
@@ -702,7 +702,7 @@ import GRDB
             )
             let child = ProjectRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: firstRoot.id,
                 name: "Child",
                 createdAt: .now,
@@ -710,14 +710,14 @@ import GRDB
             )
             let unrelated = ProjectRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: nil,
                 name: "Unrelated",
                 createdAt: .now,
                 projectType: .internal
             )
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try firstRoot.insert(db)
                 try child.insert(db)
                 try unrelated.insert(db)
@@ -773,7 +773,7 @@ import GRDB
                 )
             }
             let projectIDs = try await MeetingRepository.searchProjectIDs(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 query: "Renamed Child",
                 limit: 20,
                 dbQueue: database.dbQueue
@@ -786,19 +786,19 @@ import GRDB
         func migrationFromV34PreservesExistingSearchSources() throws {
             let queue = try DatabaseQueue()
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v34_meetingRecordingStartedAt")
-            let vault = Self.makeVault()
+            let workspace = Self.makeWorkspace()
             let project = ProjectRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 path: "既存プロジェクト",
                 createdAt: .now,
                 description: "移行前の説明"
             )
-            var meeting = Self.makeMeeting(vaultID: vault.id)
+            var meeting = Self.makeMeeting(workspaceID: workspace.id)
             meeting.projectId = project.id
             let segment = Self.makeSegment(meetingID: meeting.id, text: "移行前の文字起こし", offset: 10)
             try queue.write { db in
-                try insertLegacyVault(vault, in: db)
+                try insertLegacyWorkspace(workspace, in: db)
                 try db.execute(
                     sql: """
                     INSERT INTO projects (
@@ -809,10 +809,10 @@ import GRDB
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     arguments: [
-                        project.id, project.vaultId, project.parentProjectId, project.name,
+                        project.id, project.workspaceId, project.parentProjectId, project.name,
                         project.nameKey, project.createdAt, project.description,
                         project.projectType, project.revision,
-                        meeting.id, meeting.vaultId, meeting.projectId, meeting.name,
+                        meeting.id, meeting.workspaceId, meeting.projectId, meeting.name,
                         meeting.status, meeting.duration, meeting.createdAt, meeting.updatedAt,
                     ]
                 )
@@ -853,10 +853,10 @@ import GRDB
         func migrationFromV35PreservesSourcesAndRebuildsSummaryIndex() async throws {
             let queue = try DatabaseQueue()
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v35_searchDocuments")
-            let vault = Self.makeVault()
-            let meeting = Self.makeMeeting(vaultID: vault.id)
+            let workspace = Self.makeWorkspace()
+            let meeting = Self.makeMeeting(workspaceID: workspace.id)
             try await queue.write { db in
-                try insertLegacyVault(vault, in: db)
+                try insertLegacyWorkspace(workspace, in: db)
                 try db.execute(
                     sql: """
                     INSERT INTO meetings (id, vaultId, projectId, name, status, duration, createdAt, updatedAt)
@@ -865,7 +865,7 @@ import GRDB
                     VALUES (?, 'Preserved', ?, ?)
                     """,
                     arguments: [
-                        meeting.id, meeting.vaultId, meeting.projectId, meeting.name,
+                        meeting.id, meeting.workspaceId, meeting.projectId, meeting.name,
                         meeting.status, meeting.duration, meeting.createdAt, meeting.updatedAt,
                         meeting.id, Self.summaryDocument(body: "移行後検索対象").databaseJSONString(), Date.now,
                     ]
@@ -877,7 +877,7 @@ import GRDB
                         sourceContentHash, indexGeneration, updatedAt
                     ) VALUES('meeting', ?, ?, ?, NULL, 'v35-hash', 1, ?)
                     """,
-                    arguments: [meeting.id, vault.id, meeting.id, Date.now]
+                    arguments: [meeting.id, workspace.id, meeting.id, Date.now]
                 )
                 try db.execute(
                     sql: """
@@ -909,7 +909,7 @@ import GRDB
             let indexer = SearchIndexer(dbQueue: queue)
             await indexer.drain()
             let result = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: "移行後検索対象",
                 limit: 20,
                 dbQueue: queue
@@ -951,10 +951,10 @@ import GRDB
             #expect(shadows.contains("search_documents_fts_data"))
         }
 
-        private nonisolated static func makeVault() -> VaultRecord {
-            VaultRecord(
+        private nonisolated static func makeWorkspace() -> WorkspaceRecord {
+            WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/search-index-vault",
+                path: "/tmp/search-index-workspace",
                 name: "Search",
                 createdAt: .now,
                 lastOpenedAt: .now
@@ -971,10 +971,10 @@ import GRDB
             )
         }
 
-        private nonisolated static func makeMeeting(vaultID: UUID) -> MeetingRecord {
+        private nonisolated static func makeMeeting(workspaceID: UUID) -> MeetingRecord {
             MeetingRecord(
                 id: .v7(),
-                vaultId: vaultID,
+                workspaceId: workspaceID,
                 projectId: nil,
                 name: "検索会議",
                 createdAt: .now,

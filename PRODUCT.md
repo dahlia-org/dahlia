@@ -18,7 +18,7 @@ tenet は個別の機能仕様ではなく、仕様を決めるときの判断�
 ## Positioning
 
 Dahlia は、会議の音声を取りこぼさずに記録し、その記録から必要な文脈を AI に組み立てさせる、
-個人の録音を中核とする macOS ネイティブアプリである。Server AccountではOrganizationのVaultを複数人で利用できる。
+個人の録音を中核とする macOS ネイティブアプリである。Server AccountではOrganizationのWorkspaceを複数人で利用できる。
 
 - 主な利用者: 顧客との会議を継続的に持ち、発言と経緯を自分の判断材料にしたい個人
 - 中心となる仕事: 録る → 失わずに残す → 後から根拠付きで辿れる形にする → 整理・要約・分析は AI に任せる
@@ -67,7 +67,7 @@ Dahlia でないもの:
 **設計上の判断**:
 
 - CRM や SFA への同期、書き戻し、ID マッピングを実装しない。
-- Calendar参加者はemailと表示名だけをCalendar Eventに保存し、Vaultや人物レコードへ関連付けない。
+- Calendar参加者はemailと表示名だけをCalendar Eventに保存し、Workspaceや人物レコードへ関連付けない。
 - 参加者からOrganizationや人物関係を推定せず、企業の組織図を再現しない。
 - 会議の整理軸にはProjectを使うが、ProjectをCRMの顧客レコードとして扱わない。
 
@@ -106,7 +106,7 @@ OS やストレージ自体の障害は現時点の保証対象外であり、�
 
 ### T4. 他サービスへの連携を Dahlia に実装せず、MCP で外部の AI とツールに任せる
 
-**主張**: Dahlia から外部サービスを操作する機能を増やさない。代わりに Vault 単位で安全に読める interface を
+**主張**: Dahlia から外部サービスを操作する機能を増やさない。代わりに Workspace 単位で安全に読める interface を
 提供し、統合は外部の AI とツールに行わせる。
 
 **根拠**: 連携先ごとの認証、レート制限、スキーマ変更、権限モデルを Dahlia が抱えると、アプリの中核が外部サービスの
@@ -115,8 +115,8 @@ OS やストレージ自体の障害は現時点の保証対象外であり、�
 **設計上の判断**:
 
 - 新しい外部サービス連携の要求は、まず MCP tool として外部エージェントが実現できないかを検討する。
-- MCP は Vault UUID を認可境界とし、既定は read-only、書き込みは明示的な `--write` に限定する
-  ([Vault 境界](docs/adr/desktop/local-mcp-and-projects.md#vault-境界), [Project の正本](docs/adr/desktop/local-mcp-and-projects.md#project-の正本))。
+- MCP は Workspace UUID を認可境界とし、既定は read-only、書き込みは明示的な `--write` に限定する
+  ([Workspace 境界](docs/adr/desktop/local-mcp-and-projects.md#workspace-境界), [Project の正本](docs/adr/desktop/local-mcp-and-projects.md#project-の正本))。
 - MCP が返す内容は untrusted data として扱い、指示として実行しない。
 - 連携先が増えるほど価値が上がる、という前提を採らない。連携数ではなく、一次データの質と辿りやすさで価値を測る。
 
@@ -140,10 +140,10 @@ Dahlia の scope 外であり、妨げない。
 **設計上の判断**:
 
 - 既定の文字起こしはリアルタイムもバッチも Apple Speech の `SpeechTranscriber` が on-device で行う。Server Accountで利用者がリモート処理を明示選択した保存済み録音だけは、[処理場所のADR](docs/adr/shared/transcription-summary-processing.md) に従いServerで文字起こしできる。WhisperKit は付加機能であるバッチ自動言語判定で言語を選ぶためだけに使い、文字起こし自体は行わない。
-- ローカルアカウントの会議データと端末固有ファイルはローカルの SQLite と file system だけで完結する。一方、ServerアカウントのVault／ProjectはNotionやAsanaと同様にDesktopとWebが共有するServer canonical recordであり、Desktopからクラウドへ転送するコピーではない。SQLite は即時反映できるoffline working copyとし、
-  Vault 名、Project の名前・説明・階層、meeting metadata、summary、transcript 原文、screenshot、OCR、AI caption を双方向同期する。翻訳文は同期しない。新規バッチ録音の結合音声は [音声保管契約](docs/adr/shared/recording-audio-archive.md) に従う
-  ([正本とアカウント境界](docs/adr/shared/sync.md#正本とアカウント境界), [同期対象とモデル](docs/adr/shared/sync.md#同期対象とモデル), [Transaction と競合](docs/adr/shared/sync.md#transaction-と競合))。Server VaultはOrganizationが所有し、明示したuser / organization / teamのadmin・editor・viewer権限で共同利用する。Organization所属だけでは内容へのアクセスを与えない。Header認証では設定されたメールヘッダーのドメインに対応するOrganizationへ初回登録時だけ自動参加する
-  ([共有境界](docs/adr/server/sharing-and-administration.md#共有境界))。サインインだけではローカルVaultをServerアカウントへ移さず、ユーザーがVault単位で明示的に移行する。ServerアカウントのVaultは常時同期し、サインアウト時はServer recordを残したままローカルworking copyを削除するかローカルアカウントへ移す。
+- ローカルアカウントの会議データと端末固有ファイルはローカルの SQLite と file system だけで完結する。一方、ServerアカウントのWorkspace／ProjectはNotionやAsanaと同様にDesktopとWebが共有するServer canonical recordであり、Desktopからクラウドへ転送するコピーではない。SQLite は即時反映できるoffline working copyとし、
+  Workspace 名、Project の名前・説明・階層、meeting metadata、summary、transcript 原文、screenshot、OCR、AI caption を双方向同期する。翻訳文は同期しない。新規バッチ録音の結合音声は [音声保管契約](docs/adr/shared/recording-audio-archive.md) に従う
+  ([正本とアカウント境界](docs/adr/shared/sync.md#正本とアカウント境界), [同期対象とモデル](docs/adr/shared/sync.md#同期対象とモデル), [Transaction と競合](docs/adr/shared/sync.md#transaction-と競合))。Server WorkspaceはOrganizationが所有し、明示したuser / organization / teamのadmin・editor・viewer権限で共同利用する。Organization所属だけでは内容へのアクセスを与えない。Header認証では設定されたメールヘッダーのドメインに対応するOrganizationへ初回登録時だけ自動参加する
+  ([共有境界](docs/adr/server/sharing-and-administration.md#共有境界))。サインインだけではローカルWorkspaceをServerアカウントへ移さず、ユーザーがWorkspace単位で明示的に移行する。ServerアカウントのWorkspaceは常時同期し、サインアウト時はServer recordを残したままローカルworking copyを削除するかローカルアカウントへ移す。
 - Server の任意 Hybrid 検索は同期済み summary、OCR、AI caption と検索時の query 原文を設定済み embedding
   provider へ送信できる。Dahlia は query 原文を保存・ログ出力しない。
   vector は再生成可能な projection とし、未設定、再構築中、障害時も全文検索へ縮退してローカルの中核機能を妨げない
@@ -196,7 +196,7 @@ Drive への書き出し、Codex による要約生成、Sparkle の更新確認
 - CRM や SFA との双方向同期
 - Local Accountまたはローカル選択時のクラウド音声処理（Server Accountの明示的なリモート処理だけは[承認済みの例外](docs/adr/shared/transcription-summary-processing.md)）
 - 汎用の統合ハブ、ワークフロー自動化
-- Vault 横断または全社の人物 identity 解決
+- Workspace 横断または全社の人物 identity 解決
 
 これらは永久禁止ではない。採用が必要になった場合は、tenet を更新する ADR を先に追加し、この文書と
 `ARCHITECTURE.md` の保証範囲を同時に見直す。

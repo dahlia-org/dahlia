@@ -26,14 +26,14 @@ enum PublicMCPIDs {
     static func result(_ value: [String: Any], tool: String, arguments: [String: Any]) throws -> [String: Any] {
         guard let original = value["structuredContent"] as? [String: Any] else { return value }
         let shape = switch tool {
-        case "list_vaults": "mcpVaultList"
+        case "list_workspaces": "mcpWorkspaceList"
         default: "mcpResult"
         }
         guard var body = try PublicIDWire.transform(original, shape: shape, direction: .encode) as? [String: Any] else { return value }
-        if tool != "list_vaults", let groups = original["vaults"] as? [[String: Any]] {
-            body["vaults"] = try groups.map { group in
+        if tool != "list_workspaces", let groups = original["workspaces"] as? [[String: Any]] {
+            body["workspaces"] = try groups.map { group in
                 var converted = group
-                if let id = group["vault_id"] { converted["vault_id"] = try PublicIDWire.id(id, kind: .vault, direction: .encode) }
+                if let id = group["workspace_id"] { converted["workspace_id"] = try PublicIDWire.id(id, kind: .workspace, direction: .encode) }
                 if let nested = group["result"] as? [String: Any] {
                     converted["result"] = try Self.result(["structuredContent": nested], tool: tool, arguments: arguments)["structuredContent"]
                 }
@@ -66,7 +66,7 @@ enum PublicMCPIDs {
         guard let data = Data(base64Encoded: value), var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw TypeID.Failure.invalidID
         }
-        let fields: [String: TypeID.Kind] = ["vaultID": .vault, "meetingID": .meeting, "segmentID": .segment, "screenshotID": .attachment]
+        let fields: [String: TypeID.Kind] = ["workspaceID": .workspace, "meetingID": .meeting, "segmentID": .segment, "screenshotID": .attachment]
         for (key, kind) in fields {
             if let value = object[key] { object[key] = try cursorID(value, kind: kind, direction: direction) }
         }

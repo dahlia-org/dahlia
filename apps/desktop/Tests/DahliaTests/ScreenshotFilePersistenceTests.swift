@@ -84,7 +84,7 @@
                 #expect(image.imageData == nil)
                 #expect(image.remoteSource == fixture.source)
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations") == 0)
-                #expect(try VaultRecord.fetchOne(db, key: fixture.vault.id)?.syncPullCursor == "cursor")
+                #expect(try WorkspaceRecord.fetchOne(db, key: fixture.workspace.id)?.syncPullCursor == "cursor")
             }
         }
 
@@ -148,7 +148,7 @@
             try await fixture.provider.persistCapture(fixture.image, dbQueue: fixture.database.dbQueue)
             let files = try ScreenshotFileStore(directory: fixture.directory, readOnly: true)
             let helper = try MeetingAccessStore(
-                databaseURL: fixture.databaseURL, vaultID: fixture.vault.id, screenshotCache: files,
+                databaseURL: fixture.databaseURL, workspaceID: fixture.workspace.id, screenshotCache: files,
                 imageResolver: { _, _, _ in throw ScreenshotContentError.unavailable }
             )
             #expect(try helper.screenshot(meetingID: fixture.image.meetingId, screenshotID: fixture.image.id, originalSize: true).imageData == fixture
@@ -170,20 +170,20 @@
             #expect(try await queue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_operations") } == 0)
             try await queue.write { db in
                 try db.execute(sql: """
-                CREATE TRIGGER reject_adoption BEFORE UPDATE OF accountConnectionId ON vaults
+                CREATE TRIGGER reject_adoption BEFORE UPDATE OF accountConnectionId ON workspaces
                 WHEN NEW.accountConnectionId IS NOT NULL BEGIN SELECT RAISE(ABORT, 'injected adoption failure'); END
                 """)
             }
             let repository = MeetingRepository(dbQueue: queue)
             await #expect(throws: (any Error).self) {
-                try await repository.adoptVaultForServerSync(
-                    id: fixture.vault.id,
+                try await repository.adoptWorkspaceForServerSync(
+                    id: fixture.workspace.id,
                     connectionID: fixture.connection.id,
-                    serverVault: .init(
-                        vaultId: fixture.vault.id,
+                    serverWorkspace: .init(
+                        workspaceId: fixture.workspace.id,
                         connectionId: fixture.connection.id,
                         organizationId: .v7(),
-                        name: fixture.vault.name,
+                        name: fixture.workspace.name,
                         createdAt: .now,
                         revision: 1,
                         role: "admin"
@@ -193,19 +193,19 @@
                 )
             }
             try await queue.read { db throws in
-                #expect(try VaultRecord.fetchOne(db, key: fixture.vault.id)?.accountConnectionId == nil)
+                #expect(try WorkspaceRecord.fetchOne(db, key: fixture.workspace.id)?.accountConnectionId == nil)
                 #expect(try MeetingScreenshotRecord.fetchOne(db, key: fixture.image.id)?.imageData == nil)
                 #expect(try MeetingScreenshotRecord.fetchOne(db, key: fixture.image.id)?.localReference == fixture.source.jsonString())
             }
             try await queue.write { try $0.execute(sql: "DROP TRIGGER reject_adoption") }
-            _ = try await repository.adoptVaultForServerSync(
-                id: fixture.vault.id,
+            _ = try await repository.adoptWorkspaceForServerSync(
+                id: fixture.workspace.id,
                 connectionID: fixture.connection.id,
-                serverVault: .init(
-                    vaultId: fixture.vault.id,
+                serverWorkspace: .init(
+                    workspaceId: fixture.workspace.id,
                     connectionId: fixture.connection.id,
                     organizationId: .v7(),
-                    name: fixture.vault.name,
+                    name: fixture.workspace.name,
                     createdAt: .now,
                     revision: 1,
                     role: "admin"
@@ -232,11 +232,11 @@
             try FileManager.default.createDirectory(at: fixture.imageURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try Data([99]).write(to: fixture.imageURL)
             await #expect(throws: ScreenshotContentError.integrityFailure) {
-                try await fixture.provider.migrateLegacyImages(vaultId: fixture.vault.id, dbQueue: queue)
+                try await fixture.provider.migrateLegacyImages(workspaceId: fixture.workspace.id, dbQueue: queue)
             }
             #expect(try await queue.read { try MeetingScreenshotRecord.fetchOne($0, key: fixture.image.id)?.imageData } == fixture.bytes)
             try FileManager.default.removeItem(at: fixture.imageURL)
-            try await fixture.provider.migrateLegacyImages(vaultId: fixture.vault.id, dbQueue: queue)
+            try await fixture.provider.migrateLegacyImages(workspaceId: fixture.workspace.id, dbQueue: queue)
             #expect(try await queue.read { try MeetingScreenshotRecord.fetchOne($0, key: fixture.image.id)?.imageData } == nil)
             #expect(try fixture.files.read(fixture.source, variant: .original)?.data == fixture.bytes)
         }
@@ -249,7 +249,7 @@
             let files: ScreenshotFileStore
             let provider: ScreenshotContentProvider
             let connection: DahliaAccountConnectionRecord
-            let vault: VaultRecord
+            let workspace: WorkspaceRecord
             let image: MeetingScreenshotRecord
             let bytes: Data
             let source: ScreenshotRemoteReference
@@ -270,16 +270,16 @@
                     clientID: "test",
                     createdAt: .now
                 )
-                var vault = VaultRecord(id: .v7(), path: nil, name: "Files", createdAt: .now, lastOpenedAt: .now)
+                var workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Files", createdAt: .now, lastOpenedAt: .now)
                 if !local {
-                    vault.accountConnectionId = connection.id
-                    if vault.syncRole == nil { vault.syncRole = "admin" }
-                    if vault.organizationId == nil { vault.organizationId = .v7() }
-                    vault.syncConfirmedConnectionId = connection.id
-                    vault.syncPullCursor = "cursor"
+                    workspace.accountConnectionId = connection.id
+                    if workspace.syncRole == nil { workspace.syncRole = "admin" }
+                    if workspace.organizationId == nil { workspace.organizationId = .v7() }
+                    workspace.syncConfirmedConnectionId = connection.id
+                    workspace.syncPullCursor = "cursor"
                 }
-                self.vault = vault
-                let meeting = MeetingRecord(id: .v7(), vaultId: vault.id, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now)
+                self.workspace = workspace
+                let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now)
                 bytes = try #require(TestScreenshotImageFixture.data(using: .png))
                 image = MeetingScreenshotRecord(id: .v7(), meetingId: meeting.id, capturedAt: .now, imageData: bytes, mimeType: "image/png")
                 source = ScreenshotRemoteReference(
@@ -290,7 +290,7 @@
                 )
                 try database.dbQueue.write { db in
                     try connection.insert(db)
-                    try vault.insert(db)
+                    try workspace.insert(db)
                     try meeting.insert(db)
                 }
             }

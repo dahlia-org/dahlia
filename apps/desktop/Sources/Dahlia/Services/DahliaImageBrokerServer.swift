@@ -28,14 +28,14 @@ final class DahliaImageBrokerServer: Sendable {
     convenience init(dbQueue: DatabaseQueue, helperURL: URL = DahliaMCPBundle.expectedExecutableURL()) {
         self.init(helperURL: helperURL) { request in
             if let text = request.text {
-                return try await MeetingContentProvider.shared.resolve(text, vaultId: request.vaultId, dbQueue: dbQueue)
+                return try await MeetingContentProvider.shared.resolve(text, workspaceId: request.workspaceId, dbQueue: dbQueue)
             }
             guard let screenshotId = request.screenshotId else { throw ScreenshotContentError.deleted }
             let matches = try await dbQueue.read { db in
                 try Bool.fetchOne(db, sql: """
                 SELECT EXISTS(SELECT 1 FROM meeting_images s JOIN meetings m ON m.id = s.meetingId
-                WHERE s.id = ? AND s.meetingId = ? AND m.vaultId = ?)
-                """, arguments: [screenshotId, request.meetingId, request.vaultId]) ?? false
+                WHERE s.id = ? AND s.meetingId = ? AND m.workspace_id = ?)
+                """, arguments: [screenshotId, request.meetingId, request.workspaceId]) ?? false
             }
             guard matches else { throw ScreenshotContentError.deleted }
             return try await ScreenshotContentProvider.shared.content(id: screenshotId, dbQueue: dbQueue).data

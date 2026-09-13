@@ -7,26 +7,26 @@ extension MeetingContentProvider {
         let source: SearchSource
         let cursor: String
 
-        static func read(vaultId: UUID, in db: Database) throws -> Self? {
-            guard let source = try SearchSource.read(vaultId: vaultId, in: db),
-                  let cursor = try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults WHERE id = ?", arguments: [vaultId])
+        static func read(workspaceId: UUID, in db: Database) throws -> Self? {
+            guard let source = try SearchSource.read(workspaceId: workspaceId, in: db),
+                  let cursor = try String.fetchOne(db, sql: "SELECT syncPullCursor FROM workspaces WHERE id = ?", arguments: [workspaceId])
             else { return nil }
             return Self(source: source, cursor: cursor)
         }
     }
 
-    func prepareAccountTransfer(vaultIds: [UUID], connectionId: UUID, dbQueue: DatabaseQueue) async throws -> [UUID: TransferSource] {
-        for vaultId in vaultIds {
-            retainVault(vaultId, dbQueue: dbQueue)
+    func prepareAccountTransfer(workspaceIds: [UUID], connectionId: UUID, dbQueue: DatabaseQueue) async throws -> [UUID: TransferSource] {
+        for workspaceId in workspaceIds {
+            retainWorkspace(workspaceId, dbQueue: dbQueue)
         }
         do {
             var sources: [UUID: TransferSource] = [:]
             let worker = SyncWorker(dbQueue: dbQueue, session: client.session, apiClient: client)
-            for vaultId in vaultIds {
-                try await worker.synchronizeForTransfer(vaultId: vaultId, connectionId: connectionId)
-                guard let source = try await dbQueue.read({ try TransferSource.read(vaultId: vaultId, in: $0) }),
+            for workspaceId in workspaceIds {
+                try await worker.synchronizeForTransfer(workspaceId: workspaceId, connectionId: connectionId)
+                guard let source = try await dbQueue.read({ try TransferSource.read(workspaceId: workspaceId, in: $0) }),
                       source.source.connectionId == connectionId else { throw TextContentError.changed }
-                sources[vaultId] = source
+                sources[workspaceId] = source
                 for (table, entities) in [("meetings", [TextContentEntity.summary, .transcript]), ("files", [.file])] {
                     var cursor: UUID?
                     while true {
@@ -34,8 +34,8 @@ extension MeetingContentProvider {
                         let ids = try await dbQueue.read { db in
                             try UUID.fetchAll(
                                 db,
-                                sql: "SELECT id FROM \(table) WHERE vaultId = ? \(after == nil ? "" : "AND id > ?") ORDER BY id LIMIT 100",
-                                arguments: StatementArguments([vaultId] + (after.map { [$0] } ?? []))
+                                sql: "SELECT id FROM \(table) WHERE workspace_id = ? \(after == nil ? "" : "AND id > ?") ORDER BY id LIMIT 100",
+                                arguments: StatementArguments([workspaceId] + (after.map { [$0] } ?? []))
                             )
                         }
                         guard !ids.isEmpty else { break }
@@ -48,28 +48,28 @@ extension MeetingContentProvider {
                     }
                 }
                 try await dbQueue.read { db in
-                    guard try TransferSource.read(vaultId: vaultId, in: db) == source else { throw TextContentError.changed }
-                    try TextContentStore.requireVaultComplete(vaultId: vaultId, in: db)
+                    guard try TransferSource.read(workspaceId: workspaceId, in: db) == source else { throw TextContentError.changed }
+                    try TextContentStore.requireWorkspaceComplete(workspaceId: workspaceId, in: db)
                 }
             }
             return sources
         } catch {
-            releaseAccountTransfer(vaultIds: vaultIds, dbQueue: dbQueue)
+            releaseAccountTransfer(workspaceIds: workspaceIds, dbQueue: dbQueue)
             throw error
         }
     }
 
     func validateAccountTransfer(_ sources: [UUID: TransferSource], dbQueue: DatabaseQueue) async throws {
         let worker = SyncWorker(dbQueue: dbQueue, session: client.session, apiClient: client)
-        for (vaultId, source) in sources {
-            try await worker.validateTransferCursor(vaultId: vaultId, connectionId: source.source.connectionId, cursor: source.cursor)
+        for (workspaceId, source) in sources {
+            try await worker.validateTransferCursor(workspaceId: workspaceId, connectionId: source.source.connectionId, cursor: source.cursor)
         }
         try Task.checkCancellation()
     }
 
-    func releaseAccountTransfer(vaultIds: [UUID], dbQueue: DatabaseQueue) {
-        for vaultId in vaultIds {
-            releaseVault(vaultId, dbQueue: dbQueue)
+    func releaseAccountTransfer(workspaceIds: [UUID], dbQueue: DatabaseQueue) {
+        for workspaceId in workspaceIds {
+            releaseWorkspace(workspaceId, dbQueue: dbQueue)
         }
     }
 }

@@ -1,8 +1,8 @@
 // Open /tests/browser/sharing.html with pnpm dev:client. All requests are mocked.
 import { createRoot } from "react-dom/client";
 import { SidebarProvider, useSidebar } from "../../src/client/Sidebar";
-import { VaultSharing } from "../../src/client/VaultSharing";
-import type { SyncedVaultInfo } from "../../src/client/api";
+import { WorkspaceSharing } from "../../src/client/WorkspaceSharing";
+import type { SyncedWorkspaceInfo } from "../../src/client/api";
 import "../../src/client/styles.css";
 
 const targets = [
@@ -20,7 +20,7 @@ window.fetch = async (input, init) => {
     { id: "personal-org", name: "Personal", kind: "personal", slug: "personal-me" },
     { id: "org", name: "Example Org", kind: "team", slug: "example" },
   ]));
-  if (url.pathname === "/api/v1/vaults") return Promise.resolve(Response.json({ items: [] }));
+  if (url.pathname === "/api/v1/workspaces") return Promise.resolve(Response.json({ items: [] }));
   if (url.pathname.endsWith("/permission-targets")) {
     const q = (url.searchParams.get("q") ?? "").toLowerCase();
     const offset = Number(url.searchParams.get("cursor") ?? 0);
@@ -48,18 +48,18 @@ const choose = (picker: HTMLSelectElement, role: string) => {
 };
 function ScopeProbe() {
   const { organizationId, select } = useSidebar();
-  return <><output id="scope">{organizationId}</output><button id="all-vaults" onClick={() => select("")}>All Vaults</button></>;
+  return <><output id="scope">{organizationId}</output><button id="all-workspaces" onClick={() => select("")}>All Workspaces</button></>;
 }
 async function run() {
-  const vault: SyncedVaultInfo = { vaultId: "vault", organizationId: "org", name: "Shared", role: "admin", revision: 1,
+  const workspace: SyncedWorkspaceInfo = { workspaceId: "workspace", organizationId: "org", name: "Shared", role: "admin", revision: 1,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   sessionStorage.removeItem("dahlia:sidebar:me:organization");
-  const fixture = <SidebarProvider session={{ user: { id: "me" }, workspace: { id: "me", type: "personal" },
-    capabilities: { admin: false, sessions: false, sharing: true, sync: true } }}><ScopeProbe /><VaultSharing vault={vault} /></SidebarProvider>;
+  const fixture = <SidebarProvider session={{ user: { id: "me" },
+    capabilities: { admin: false, sessions: false, sharing: true, sync: true } }}><ScopeProbe /><WorkspaceSharing workspace={workspace} /></SidebarProvider>;
   let root = createRoot(document.getElementById("root")!);
   root.render(fixture);
   await until(() => document.getElementById("scope")?.textContent === "personal-org");
-  document.getElementById("all-vaults")!.click();
+  document.getElementById("all-workspaces")!.click();
   await until(() => document.getElementById("scope")?.textContent === "");
   root.unmount(); root = createRoot(document.getElementById("root")!); root.render(fixture);
   await until(() => document.getElementById("scope")?.textContent === "");
@@ -101,6 +101,6 @@ async function run() {
   document.querySelector<HTMLButtonElement>(".dialog-footer button")!.click();
   await until(() => !document.querySelector("dialog")?.open);
   assert(document.activeElement === opener, "Closing restores focus");
-  document.getElementById("result")!.textContent = "PASS: initial Personal, saved all-Vault scope, modal, focus, org/team/user search, 51 identical targets, all three roles, revoke beyond first page, failed revoke/retry";
+  document.getElementById("result")!.textContent = "PASS: initial Personal, saved all-Workspace scope, modal, focus, org/team/user search, 51 identical targets, all three roles, revoke beyond first page, failed revoke/retry";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });

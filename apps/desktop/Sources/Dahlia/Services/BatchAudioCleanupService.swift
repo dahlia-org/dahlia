@@ -16,13 +16,13 @@ enum BatchAudioCleanupService {
     static func deletionTargets(
         meetingIds: Set<UUID>,
         dbQueue: DatabaseQueue,
-        includeVaultAudio: Bool = true
+        includeWorkspaceAudio: Bool = true
     ) throws -> [DeletionTarget] {
         guard !meetingIds.isEmpty else { return [] }
         return try dbQueue.read { db in
             var arguments = StatementArguments(meetingIds)
             let storageCondition: String
-            if includeVaultAudio {
+            if includeWorkspaceAudio {
                 storageCondition = ""
             } else {
                 storageCondition = "AND recording_audio_files.storageLocation = ?"
@@ -31,13 +31,13 @@ enum BatchAudioCleanupService {
             let rows = try Row.fetchAll(
                 db,
                 sql: """
-                SELECT coalesce(recording_audio_files.originalVaultPath, vaults.path) AS vaultPath,
+                SELECT coalesce(recording_audio_files.original_workspace_path, workspaces.path) AS workspacePath,
                        recording_audio_files.storageLocation AS storageLocation,
                        recording_audio_files.relativePath AS relativePath
                 FROM recording_audio_files
                 JOIN recording_sessions ON recording_sessions.id = recording_audio_files.recordingSessionId
                 JOIN meetings ON meetings.id = recording_sessions.meetingId
-                JOIN vaults ON vaults.id = meetings.vaultId
+                JOIN workspaces ON workspaces.id = meetings.workspace_id
                 WHERE meetings.id IN (\(meetingIds.map { _ in "?" }.joined(separator: ",")))
                 \(storageCondition)
                 """,
@@ -49,9 +49,9 @@ enum BatchAudioCleanupService {
                 switch location {
                 case .managed:
                     baseURL = BatchAudioStorage.managedRootURL
-                case .vault:
-                    guard let vaultPath: String = row["vaultPath"] else { return nil }
-                    baseURL = URL(fileURLWithPath: vaultPath)
+                case .workspace:
+                    guard let workspacePath: String = row["workspacePath"] else { return nil }
+                    baseURL = URL(fileURLWithPath: workspacePath)
                 }
                 return DeletionTarget(
                     baseURL: baseURL,
@@ -67,21 +67,21 @@ enum BatchAudioCleanupService {
     }
 
     static func deletionTargets(
-        vaultId: UUID,
+        workspaceId: UUID,
         dbQueue: DatabaseQueue
     ) throws -> [DeletionTarget] {
         let meetingIds = try dbQueue.read { db in
             try UUID.fetchAll(
                 db,
-                sql: "SELECT id FROM meetings WHERE vaultId = ?",
-                arguments: [vaultId]
+                sql: "SELECT id FROM meetings WHERE workspace_id = ?",
+                arguments: [workspaceId]
             )
         }
-        // Vault登録解除ではユーザーが明示的に保持したVault内ファイルを削除しない。
+        // Workspace登録解除ではユーザーが明示的に保持したWorkspace内ファイルを削除しない。
         return try deletionTargets(
             meetingIds: Set(meetingIds),
             dbQueue: dbQueue,
-            includeVaultAudio: false
+            includeWorkspaceAudio: false
         )
     }
 

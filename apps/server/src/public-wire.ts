@@ -15,7 +15,7 @@ export interface PublicRoute {
 }
 const routes = contract.routes as PublicRoute[];
 export const entityKinds: Record<string, IDKind> = {
-  vault: "vault", project: "project", meeting: "meeting", summary: "meeting", transcript: "meeting",
+  workspace: "workspace", project: "project", meeting: "meeting", summary: "meeting", transcript: "meeting",
   file: "file", meeting_attachment: "attachment", meeting_event: "event", recording: "recording",
 };
 export const recordShapes: Record<string, string> = {
@@ -50,10 +50,6 @@ export function wireValue(value: unknown, shape: string, direction: WireDirectio
   if (shape === "teamList" && typeof value === "string") return value.split(",").map((id) => wireID(id, "team", direction)).join(",");
   if (shape === "teamChoice") return Array.isArray(value) ? value.map((id) => wireID(id, "team", direction)) : wireID(value, "team", direction);
   if (shape === "document") return wireDocument(value, direction);
-  if (shape === "personalWorkspace") {
-    if (typeof value !== "string" || !value.startsWith("personal:")) throw new Error("invalid_workspace_id");
-    return `personal:${String(wireID(value.slice(9), "user", direction))}`;
-  }
   if (shape === "memberOrEmail") return typeof value === "string" && value.includes("@") ? value : wireID(value, "organizationMember", direction);
   if (shape === "resourceID") {
     const resourceType = parent.resource_type ?? parent.resourceType;
@@ -82,7 +78,7 @@ export function wireValue(value: unknown, shape: string, direction: WireDirectio
     for (const key of ["id", "entityId"]) if (key in result) {
       result[key] = wireID(result[key], key === "id" && shape === "operation" ? "operation" : kind, direction);
     }
-    for (const [key, type] of Object.entries({ vaultId: "vault", transactionId: "transaction", operationId: "operation" } as const)) {
+    for (const [key, type] of Object.entries({ workspaceId: "workspace", transactionId: "transaction", operationId: "operation" } as const)) {
       if (key in result) result[key] = wireID(result[key], type, direction);
     }
     for (const key of ["data", "record"]) if (key in result) result[key] = wireValue(result[key], recordShapes[entity]!, direction);
@@ -92,7 +88,7 @@ export function wireValue(value: unknown, shape: string, direction: WireDirectio
     const result = { ...value };
     const kind = { user: "user", organization: "organization", team: "team" }[String(value.principalType)] as IDKind | undefined;
     if (kind && "principalId" in value) result.principalId = wireID(value.principalId, kind, direction);
-    for (const [key, kind] of Object.entries({ vaultId: "vault", grantedByUserId: "user" } as const)) {
+    for (const [key, kind] of Object.entries({ workspaceId: "workspace", grantedByUserId: "user" } as const)) {
       if (key in result) result[key] = wireID(result[key], kind, direction);
     }
     return result;
@@ -127,7 +123,7 @@ export function wireCursor(value: unknown, kind: string, direction: WireDirectio
   if (kind === "textSearch") {
     const parts: unknown = JSON.parse(value);
     if (!Array.isArray(parts) || parts.length !== 5) throw new Error("invalid_cursor");
-    parts[0] = wireID(parts[0], "vault", direction);
+    parts[0] = wireID(parts[0], "workspace", direction);
     return JSON.stringify(parts);
   }
   if (kind === "file" || kind === "attachment") return wireID(value, kind, direction);

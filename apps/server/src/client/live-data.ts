@@ -36,7 +36,7 @@ export function retainEqual<T>(previous: T | undefined, next: T): T {
     const identity = (value: unknown, index: number) => {
       if (value && typeof value === "object") {
         const row = value as Record<string, unknown>;
-        return row.id ?? row.meetingId ?? row.projectId ?? row.vaultId ?? row.segmentId ?? index;
+        return row.id ?? row.meetingId ?? row.projectId ?? row.workspaceId ?? row.segmentId ?? index;
       }
       return index;
     };

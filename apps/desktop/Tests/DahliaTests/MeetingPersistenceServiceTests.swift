@@ -24,7 +24,7 @@ import os
             let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
-                vaultId: testVault.id,
+                workspaceId: testWorkspace.id,
                 projectId: nil,
                 initialName: "Runtime status meeting"
             )
@@ -50,7 +50,7 @@ import os
             try await database.dbQueue.write { db in
                 try MeetingRecord(
                     id: meetingId,
-                    vaultId: testVault.id,
+                    workspaceId: testWorkspace.id,
                     projectId: nil,
                     name: "Edited before recording",
                     createdAt: editedAt,
@@ -87,7 +87,7 @@ import os
             try await database.dbQueue.write { db in
                 try MeetingRecord(
                     id: meetingId,
-                    vaultId: testVault.id,
+                    workspaceId: testWorkspace.id,
                     projectId: nil,
                     name: "Recorded meeting",
                     createdAt: createdAt,
@@ -127,7 +127,7 @@ import os
             try await database.dbQueue.write { db in
                 try MeetingRecord(
                     id: meetingId,
-                    vaultId: testVault.id,
+                    workspaceId: testWorkspace.id,
                     projectId: nil,
                     name: "Legacy unrecorded meeting",
                     createdAt: createdAt,
@@ -214,7 +214,7 @@ import os
                 let service = try await MeetingPersistenceService.createNew(
                     store: TranscriptStore(),
                     dbQueue: database.dbQueue,
-                    vaultId: testVault.id,
+                    workspaceId: testWorkspace.id,
                     projectId: nil,
                     initialName: "Delayed transaction"
                 )
@@ -244,7 +244,7 @@ import os
             let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
-                vaultId: testVault.id,
+                workspaceId: testWorkspace.id,
                 projectId: nil,
                 initialName: "Batch meeting",
                 transcriptionMode: .batch,
@@ -282,7 +282,7 @@ import os
             let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
-                vaultId: testVault.id,
+                workspaceId: testWorkspace.id,
                 projectId: nil,
                 initialName: "Failed batch meeting",
                 transcriptionMode: .batch,
@@ -322,7 +322,7 @@ import os
             try await database.dbQueue.write { db in
                 try MeetingRecord(
                     id: meetingId,
-                    vaultId: testVault.id,
+                    workspaceId: testWorkspace.id,
                     projectId: nil,
                     name: "Existing meeting",
                     status: .transcriptNotFound,
@@ -360,7 +360,7 @@ import os
             try await database.dbQueue.write { db in
                 try MeetingRecord(
                     id: meetingId,
-                    vaultId: testVault.id,
+                    workspaceId: testWorkspace.id,
                     projectId: nil,
                     name: "Existing meeting",
                     status: .ready,
@@ -405,7 +405,7 @@ import os
             try await database.dbQueue.write { db in
                 try MeetingRecord(
                     id: meetingId,
-                    vaultId: testVault.id,
+                    workspaceId: testWorkspace.id,
                     projectId: nil,
                     name: "Existing meeting",
                     status: .ready,
@@ -472,7 +472,7 @@ import os
             try await database.dbQueue.write { db in
                 try MeetingRecord(
                     id: meetingId,
-                    vaultId: testVault.id,
+                    workspaceId: testWorkspace.id,
                     projectId: nil,
                     name: "Existing meeting",
                     status: .ready,
@@ -534,7 +534,7 @@ import os
             let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
-                vaultId: testVault.id,
+                workspaceId: testWorkspace.id,
                 projectId: nil,
                 initialName: "Design review",
                 calendarEvent: fixtureEvent(startDate: startDate)
@@ -577,7 +577,7 @@ import os
             let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
-                vaultId: testVault.id,
+                workspaceId: testWorkspace.id,
                 projectId: nil,
                 initialName: "Mac event review",
                 calendarEvent: fixtureMacCalendarEvent(startDate: startDate)
@@ -622,7 +622,7 @@ import os
             let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
-                vaultId: testVault.id,
+                workspaceId: testWorkspace.id,
                 projectId: nil,
                 initialName: event.title,
                 calendarEvent: event
@@ -654,7 +654,7 @@ import os
                 try CalendarEventRecord.upsert(event: event, now: createdAt, in: db)
                 try MeetingRecord(
                     id: meetingId,
-                    vaultId: testVault.id,
+                    workspaceId: testWorkspace.id,
                     projectId: nil,
                     name: "Existing meeting",
                     status: .ready,
@@ -693,7 +693,7 @@ import os
                 try CalendarEventRecord.upsert(event: event, now: createdAt, in: db)
                 try MeetingRecord(
                     id: firstMeetingId,
-                    vaultId: testVault.id,
+                    workspaceId: testWorkspace.id,
                     projectId: nil,
                     name: "First",
                     status: .ready,
@@ -705,7 +705,7 @@ import os
                 ).insert(db)
                 try MeetingRecord(
                     id: secondMeetingId,
-                    vaultId: testVault.id,
+                    workspaceId: testWorkspace.id,
                     projectId: nil,
                     name: "Second",
                     status: .ready,
@@ -729,7 +729,7 @@ import os
             #expect(
                 try repository.resolveMeetingIdForCalendarEvent(
                     event,
-                    vaultId: testVault.id
+                    workspaceId: testWorkspace.id
                 ) == secondMeetingId
             )
 
@@ -771,7 +771,7 @@ import os
                 try CalendarEventRecord.upsert(event: event, now: createdAt, in: db)
                 try MeetingRecord(
                     id: meetingId,
-                    vaultId: testVault.id,
+                    workspaceId: testWorkspace.id,
                     projectId: nil,
                     name: "Existing meeting",
                     status: .ready,
@@ -786,7 +786,7 @@ import os
             let repository = MeetingRepository(dbQueue: database.dbQueue)
             let resolvedMeetingId = try repository.resolveMeetingIdForCalendarEvent(
                 event,
-                vaultId: testVault.id
+                workspaceId: testWorkspace.id
             )
 
             #expect(resolvedMeetingId == meetingId)
@@ -802,7 +802,7 @@ import os
             let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
-                vaultId: testVault.id,
+                workspaceId: testWorkspace.id,
                 projectId: nil,
                 initialName: "Translated meeting"
             )
@@ -835,7 +835,7 @@ import os
             let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
-                vaultId: testVault.id,
+                workspaceId: testWorkspace.id,
                 projectId: nil,
                 initialName: "Independent persistence"
             )
@@ -877,7 +877,7 @@ import os
             let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
-                vaultId: testVault.id,
+                workspaceId: testWorkspace.id,
                 projectId: nil,
                 initialName: "Translated meeting"
             )
@@ -918,7 +918,7 @@ import os
             let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
-                vaultId: testVault.id,
+                workspaceId: testWorkspace.id,
                 projectId: nil,
                 initialName: "Preview meeting"
             )
@@ -951,7 +951,7 @@ import os
             let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
-                vaultId: testVault.id,
+                workspaceId: testWorkspace.id,
                 projectId: nil,
                 initialName: "Preview translation"
             )
@@ -981,10 +981,10 @@ import os
 
 #endif
 
-private let testVault = VaultRecord(
+private let testWorkspace = WorkspaceRecord(
     id: .v7(),
     path: URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).path,
-    name: "Test Vault",
+    name: "Test Workspace",
     createdAt: Date(timeIntervalSince1970: 1_776_380_000),
     lastOpenedAt: Date(timeIntervalSince1970: 1_776_380_000)
 )
@@ -992,7 +992,7 @@ private let testVault = VaultRecord(
 private func makeDatabase() throws -> AppDatabaseManager {
     let database = try AppDatabaseManager(path: ":memory:")
     try database.dbQueue.write { db in
-        try testVault.insert(db)
+        try testWorkspace.insert(db)
     }
     return database
 }

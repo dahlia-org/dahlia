@@ -10,8 +10,8 @@ struct ContentView: View {
     var chatCoordinator: CodexChatCoordinator
     @Bindable var mainWindowNavigation: MainWindowNavigation
     let appDatabase: AppDatabaseManager?
-    var vaultManagementModel: VaultManagementModel
-    var onSelectVault: (VaultRecord) -> Void = { _ in }
+    var workspaceManagementModel: WorkspaceManagementModel
+    var onSelectWorkspace: (WorkspaceRecord) -> Void = { _ in }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openWindow) private var openWindow
@@ -50,7 +50,7 @@ struct ContentView: View {
                         recordingCoordinator: recordingCoordinator,
                         mainWindowNavigation: mainWindowNavigation,
                         appDatabase: appDatabase,
-                        vaultManagementModel: vaultManagementModel,
+                        workspaceManagementModel: workspaceManagementModel,
                         onShowUpcomingSchedule: returnToCalendarSchedule,
                         onShowChat: showFullScreenChat,
                         onShowUnprocessedRecordings: showUnprocessedRecordings,
@@ -61,7 +61,7 @@ struct ContentView: View {
                         onEditProject: presentProjectEditor,
                         onRequestProjectDeletion: { projectPendingDeletion = $0 },
                         onOpenSidebarProject: handleMeetingSidebarProjectAction,
-                        onSelectVault: onSelectVault
+                        onSelectWorkspace: onSelectWorkspace
                     )
                 } else {
                     MainSidebarSplitView(
@@ -89,15 +89,15 @@ struct ContentView: View {
                                 onShowUnprocessedRecordings: showUnprocessedRecordings,
                                 onCreateProject: presentProjectCreation,
                                 onOpenProject: handleMeetingSidebarProjectAction,
-                                onSelectVault: onSelectVault
+                                onSelectWorkspace: onSelectWorkspace
                             )
                         } settingsContent: {
                             SettingsSidebarView(
                                 selection: $mainWindowNavigation.settingsCategory,
-                                vaults: vaultManagementModel.vaults,
-                                currentVault: sidebarViewModel.currentVault,
+                                workspaces: workspaceManagementModel.workspaces,
+                                currentWorkspace: sidebarViewModel.currentWorkspace,
                                 updateController: updateController,
-                                onSelectVault: onSelectVault,
+                                onSelectWorkspace: onSelectWorkspace,
                                 onReturnToApp: mainWindowNavigation.dismissSettings
                             )
                         }
@@ -124,7 +124,7 @@ struct ContentView: View {
                                 captionViewModel: viewModel,
                                 sidebarViewModel: sidebarViewModel,
                                 appDatabase: appDatabase,
-                                vaultManagementModel: vaultManagementModel,
+                                workspaceManagementModel: workspaceManagementModel,
                                 onShowUnprocessedRecordings: openUnprocessedRecordingsFromSettings
                             )
                         }
@@ -152,7 +152,7 @@ struct ContentView: View {
                 onOpenProject: openProjectDetail,
                 onEditProject: { handleMeetingSidebarProjectAction($0, .edit) },
                 onToggleProjectPin: {
-                    mainWindowNavigation.toggleProjectPin($0, vaultId: sidebarViewModel.currentVault?.id)
+                    mainWindowNavigation.toggleProjectPin($0, workspaceId: sidebarViewModel.currentWorkspace?.id)
                 }
             )
             .mainSidebarHelpOverlay(isVisible: !isShowingSettings)
@@ -250,13 +250,13 @@ struct ContentView: View {
             viewModel: viewModel,
             sidebarViewModel: sidebarViewModel
         )
-        .task(id: sidebarViewModel.currentVault?.id) {
+        .task(id: sidebarViewModel.currentWorkspace?.id) {
             await sidebarViewModel.refreshUnprocessedRecordings()
         }
-        .onChange(of: sidebarViewModel.currentVault?.id) {
+        .onChange(of: sidebarViewModel.currentWorkspace?.id) {
             isShowingChatHistory = false
             dismissChatConfiguration()
-            searchModel.resetForVaultChange(using: sidebarViewModel)
+            searchModel.resetForWorkspaceChange(using: sidebarViewModel)
             syncChatContext()
         }
         .onChange(of: viewModel.batchTranscriptionState) { _, state in
@@ -383,7 +383,7 @@ private extension ContentView {
 
     private func restoreFullScreenChatPresentation() {
         isSidebarVisible = true
-        chatCoordinator.enterFullScreen(vaultID: sidebarViewModel.currentVault?.id)
+        chatCoordinator.enterFullScreen(workspaceID: sidebarViewModel.currentWorkspace?.id)
         sidebarViewModel.clearMeetingSelection()
     }
 
@@ -434,13 +434,13 @@ private extension ContentView {
 
     private func syncChatContext() {
         if isShowingFullScreenChat {
-            chatCoordinator.enterFullScreen(vaultID: sidebarViewModel.currentVault?.id)
+            chatCoordinator.enterFullScreen(workspaceID: sidebarViewModel.currentWorkspace?.id)
             return
         }
         if mainWindowNavigation.section == .projects {
             let projectID: UUID? = if case let .project(id) = mainWindowNavigation.currentLocation { id } else { nil }
             chatCoordinator.updateCurrentContext(
-                vaultID: sidebarViewModel.currentVault?.id,
+                workspaceID: sidebarViewModel.currentWorkspace?.id,
                 meetingID: nil,
                 projectID: projectID,
                 draftMeeting: nil,
@@ -450,7 +450,7 @@ private extension ContentView {
         }
         guard sidebarViewModel.selectedMeetingIds.count <= 1 else {
             chatCoordinator.updateCurrentContext(
-                vaultID: sidebarViewModel.currentVault?.id,
+                workspaceID: sidebarViewModel.currentWorkspace?.id,
                 meetingID: nil,
                 draftMeeting: nil,
                 dbQueue: sidebarViewModel.dbQueue
@@ -460,7 +460,7 @@ private extension ContentView {
 
         let draftMeeting = viewModel.draftMeeting
         chatCoordinator.updateCurrentContext(
-            vaultID: sidebarViewModel.currentVault?.id,
+            workspaceID: sidebarViewModel.currentWorkspace?.id,
             meetingID: draftMeeting == nil
                 ? sidebarViewModel.selectedMeetingId ?? viewModel.currentMeetingId
                 : nil,
@@ -562,11 +562,11 @@ private extension ContentView {
         displayUnprocessedRecordings()
     }
 
-    private func openUnprocessedRecordingsFromSettings(vaultID: UUID) {
-        if sidebarViewModel.currentVault?.id != vaultID {
-            guard let vault = vaultManagementModel.vaults.first(where: { $0.id == vaultID }) else { return }
-            onSelectVault(vault)
-            guard sidebarViewModel.currentVault?.id == vaultID else { return }
+    private func openUnprocessedRecordingsFromSettings(workspaceID: UUID) {
+        if sidebarViewModel.currentWorkspace?.id != workspaceID {
+            guard let workspace = workspaceManagementModel.workspaces.first(where: { $0.id == workspaceID }) else { return }
+            onSelectWorkspace(workspace)
+            guard sidebarViewModel.currentWorkspace?.id == workspaceID else { return }
         }
         mainWindowNavigation.openUnprocessedRecordingsFromSettings()
         displayUnprocessedRecordings()
@@ -605,7 +605,7 @@ private extension ContentView {
     }
 
     private func presentProjectCreation() {
-        guard sidebarViewModel.canEditCurrentVault else { return }
+        guard sidebarViewModel.canEditCurrentWorkspace else { return }
         projectEditorRequest = .create
     }
 
@@ -713,7 +713,7 @@ private extension ContentView {
         mainWindowNavigation.projectAppearance(
             for: project.projectId,
             in: sidebarViewModel.projectItemsByID,
-            vaultId: sidebarViewModel.currentVault?.id
+            workspaceId: sidebarViewModel.currentWorkspace?.id
         )
     }
 
@@ -721,7 +721,7 @@ private extension ContentView {
         mainWindowNavigation.projectAppearance(
             for: projectId,
             in: sidebarViewModel.projectItemsByID,
-            vaultId: sidebarViewModel.currentVault?.id
+            workspaceId: sidebarViewModel.currentWorkspace?.id
         )
     }
 
@@ -820,7 +820,7 @@ private extension ContentView {
             }
             return exists
         case .meetingDraft:
-            return sidebarViewModel.dbQueue != nil && sidebarViewModel.currentVault != nil
+            return sidebarViewModel.dbQueue != nil && sidebarViewModel.currentWorkspace != nil
         case .projects:
             return true
         case let .project(projectID):
@@ -840,7 +840,7 @@ private extension ContentView {
             sidebarViewModel.selectMeeting(meetingID)
         case let .meetingDraft(draftMeeting, noteText):
             guard let dbQueue = sidebarViewModel.dbQueue,
-                  let vault = sidebarViewModel.currentVault else { return }
+                  let workspace = sidebarViewModel.currentWorkspace else { return }
             mainWindowNavigation.showMeetings()
             isShowingUnprocessedRecordings = false
             guard viewModel.draftMeeting?.id != draftMeeting.id else { return }
@@ -849,7 +849,7 @@ private extension ContentView {
                 draftMeeting,
                 noteText: noteText,
                 dbQueue: dbQueue,
-                vaultURL: vault.url
+                workspaceURL: workspace.url
             )
         case .projects:
             mainWindowNavigation.showProjects()
@@ -879,19 +879,19 @@ private extension ContentView {
 
     private func handleMeetingSelection(_ detail: MeetingDetailItem) {
         guard let dbQueue = sidebarViewModel.dbQueue,
-              let vault = sidebarViewModel.currentVault,
+              let workspace = sidebarViewModel.currentWorkspace,
               sidebarViewModel.selectedMeetingId == detail.meetingId,
-              detail.vaultId == vault.id else { return }
+              detail.workspaceId == workspace.id else { return }
 
         viewModel.loadMeeting(
             detail.meetingId,
             dbQueue: dbQueue,
             projectURL: detail.projectName.flatMap { projectName in
-                vault.url?.appending(path: projectName, directoryHint: .isDirectory)
+                workspace.url?.appending(path: projectName, directoryHint: .isDirectory)
             },
             projectId: detail.projectId,
             projectName: detail.projectName,
-            vaultURL: vault.url
+            workspaceURL: workspace.url
         )
     }
 

@@ -35,7 +35,7 @@ import GRDB
             #expect(schema.3)
             #expect(!schema.4.contains("source_event_url"))
             #expect(schema.5 == [
-                "vaultId",
+                "workspace_id",
                 "calendar_event_ical_uid",
                 "calendar_event_recurrence_id",
                 "createdAt",
@@ -46,7 +46,7 @@ import GRDB
         @Test
         func meetingCalendarReferenceRejectsIncompleteAndMissingKeys() throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/calendar-reference-test",
                 name: "Calendar Reference Test",
@@ -54,13 +54,13 @@ import GRDB
                 lastOpenedAt: .now
             )
             try database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
             }
 
             #expect(throws: Error.self) {
                 try insertMeeting(
                     named: "Incomplete",
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     calendarUID: "event@example.com",
                     recurrenceId: nil,
                     in: database.dbQueue
@@ -69,7 +69,7 @@ import GRDB
             #expect(throws: Error.self) {
                 try insertMeeting(
                     named: "Missing",
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     calendarUID: "missing@example.com",
                     recurrenceId: "",
                     in: database.dbQueue
@@ -154,19 +154,19 @@ import GRDB
         }
 
         @Test
-        func meetingLookupIsScopedToTheActiveVault() throws {
+        func meetingLookupIsScopedToTheActiveWorkspace() throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let activeVault = VaultRecord(
+            let activeWorkspace = WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/calendar-active-vault",
-                name: "Active Vault",
+                path: "/tmp/calendar-active-workspace",
+                name: "Active Workspace",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
-            let otherVault = VaultRecord(
+            let otherWorkspace = WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/calendar-other-vault",
-                name: "Other Vault",
+                path: "/tmp/calendar-other-workspace",
+                name: "Other Workspace",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
@@ -178,21 +178,21 @@ import GRDB
             let createdAt = Date(timeIntervalSince1970: 1_776_384_000)
 
             try database.dbQueue.write { db in
-                try activeVault.insert(db)
-                try otherVault.insert(db)
+                try activeWorkspace.insert(db)
+                try otherWorkspace.insert(db)
                 try CalendarEventRecord.upsert(event: event, now: createdAt, in: db)
                 try insertCalendarMeeting(
                     id: activeMeetingId,
-                    named: "Active vault meeting",
-                    vaultId: activeVault.id,
+                    named: "Active workspace meeting",
+                    workspaceId: activeWorkspace.id,
                     createdAt: createdAt,
                     key: key,
                     in: db
                 )
                 try insertCalendarMeeting(
                     id: otherMeetingId,
-                    named: "Newer meeting in another vault",
-                    vaultId: otherVault.id,
+                    named: "Newer meeting in another workspace",
+                    workspaceId: otherWorkspace.id,
                     createdAt: createdAt.addingTimeInterval(60),
                     key: key,
                     in: db
@@ -200,7 +200,7 @@ import GRDB
                 try insertCalendarMeeting(
                     id: tiedActiveMeetingId,
                     named: "Deterministic tie winner",
-                    vaultId: activeVault.id,
+                    workspaceId: activeWorkspace.id,
                     createdAt: createdAt,
                     key: key,
                     in: db
@@ -211,14 +211,14 @@ import GRDB
             #expect(
                 try repository.resolveMeetingIdForCalendarEvent(
                     event,
-                    vaultId: activeVault.id
+                    workspaceId: activeWorkspace.id
                 )
                     == tiedActiveMeetingId
             )
             #expect(
                 try repository.resolveMeetingIdForCalendarEvent(
                     event,
-                    vaultId: otherVault.id
+                    workspaceId: otherWorkspace.id
                 )
                     == otherMeetingId
             )
@@ -282,7 +282,7 @@ import GRDB
 
     private func insertMeeting(
         named name: String,
-        vaultId: UUID,
+        workspaceId: UUID,
         calendarUID: String?,
         recurrenceId: String?,
         in dbQueue: DatabaseQueue
@@ -290,7 +290,7 @@ import GRDB
         try dbQueue.write { db in
             try MeetingRecord(
                 id: .v7(),
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 projectId: nil,
                 name: name,
                 createdAt: .now,
@@ -304,14 +304,14 @@ import GRDB
     private func insertCalendarMeeting(
         id: UUID,
         named name: String,
-        vaultId: UUID,
+        workspaceId: UUID,
         createdAt: Date,
         key: CalendarEventKey,
         in db: Database
     ) throws {
         try MeetingRecord(
             id: id,
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             projectId: nil,
             name: name,
             createdAt: createdAt,

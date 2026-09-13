@@ -494,7 +494,7 @@
         override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
         override func startLoading() {
             let handle = Self.handler.withLock { $0! }
-            let task = Task {
+            let task = Task { @Sendable [self] in
                 do {
                     let (status, body) = try await handle(request)
                     try Task.checkCancellation()

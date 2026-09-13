@@ -16,18 +16,18 @@ import os
         func collectionAppearanceMigrationPreservesExistingRows() throws {
             let queue = try DatabaseQueue()
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             try queue.write { db in
                 try db.execute(
                     sql: "INSERT INTO vaults (id, path, name, createdAt, lastOpenedAt) VALUES (?, '/tmp/preserved', ?, ?, ?)",
-                    arguments: [vaultID, "Preserved", Date.now, Date.now]
+                    arguments: [workspaceID, "Preserved", Date.now, Date.now]
                 )
             }
             try AppDatabaseManager.migrator.migrate(queue)
             try queue.read { db in
-                let vault = try #require(try VaultRecord.fetchOne(db, key: vaultID))
-                #expect(vault.name == "Preserved")
-                #expect(vault.appearance == nil)
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: workspaceID))
+                #expect(workspace.name == "Preserved")
+                #expect(workspace.appearance == nil)
                 #expect(try db.columns(in: "projects").contains { $0.name == "icon" })
             }
         }
@@ -124,7 +124,7 @@ import os
             }
 
             #expect(columns == [
-                "id", "vaultId", "parentProjectId", "name", "nameKey",
+                "id", "workspace_id", "parentProjectId", "name", "nameKey",
                 "createdAt", "description", "projectType", "revision", "legacyAppearanceMigrated", "icon", "color",
             ])
         }
@@ -136,29 +136,28 @@ import os
                 .appendingPathExtension("sqlite")
             defer { try? FileManager.default.removeItem(at: databaseURL) }
 
-            let manager = try AppDatabaseManager(path: databaseURL.path)
-            let vault = VaultRecord(
+            let queue = try DatabaseQueue(path: databaseURL.path)
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v25_customerIntelligence")
+            let workspace = WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/sidebar-index-vault",
-                name: "Vault",
+                path: "/tmp/sidebar-index-workspace",
+                name: "Workspace",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
             let meeting = MeetingRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: nil,
                 name: "Preserved",
                 createdAt: .now,
                 updatedAt: .now
             )
-            try manager.dbQueue.write { db in
-                try insertLegacyVault(vault, in: db)
-                try meeting.insert(db)
-                try db.execute(sql: "DROP INDEX meetings_on_vaultId_createdAt_id")
+            try queue.write { db in
+                try insertLegacyWorkspace(workspace, in: db)
                 try db.execute(
-                    sql: "DELETE FROM grdb_migrations WHERE identifier = ?",
-                    arguments: ["v26_meetingSidebarPagingIndex"]
+                    sql: "INSERT INTO meetings (id, vaultId, name, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)",
+                    arguments: [meeting.id, meeting.workspaceId, meeting.name, meeting.createdAt, meeting.updatedAt]
                 )
             }
 
@@ -168,7 +167,7 @@ import os
                     db,
                     sql: """
                     SELECT name
-                    FROM pragma_index_info('meetings_on_vaultId_createdAt_id')
+                    FROM pragma_index_info('meetings_on_workspace_id_createdAt_id')
                     ORDER BY seqno
                     """
                 )
@@ -176,9 +175,9 @@ import os
                 return (columns, preserved)
             }
 
-            #expect(result.0 == ["vaultId", "createdAt", "id"])
+            #expect(result.0 == ["workspace_id", "createdAt", "id"])
             #expect(result.1?.id == meeting.id)
-            #expect(result.1?.vaultId == meeting.vaultId)
+            #expect(result.1?.workspaceId == meeting.workspaceId)
             #expect(result.1?.name == meeting.name)
         }
 
@@ -186,7 +185,7 @@ import os
         func meetingRecordingStartedAtMigrationBackfillsEarliestSessionAndAddsIndex() throws {
             let queue = try DatabaseQueue()
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v33_sharedOrganizationDomains")
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             let meetingID = UUID.v7()
             let unrecordedMeetingID = UUID.v7()
             let placeholderSessionID = UUID.v7()
@@ -195,22 +194,22 @@ import os
             let secondRecordingStartedAt = createdAt.addingTimeInterval(120)
 
             try queue.write { db in
-                let vault = VaultRecord(
-                    id: vaultID,
+                let workspace = WorkspaceRecord(
+                    id: workspaceID,
                     path: "/tmp/recording-start-migration",
-                    name: "Vault",
+                    name: "Workspace",
                     createdAt: createdAt,
                     lastOpenedAt: createdAt
                 )
-                try insertLegacyVault(vault, in: db)
+                try insertLegacyWorkspace(workspace, in: db)
                 try db.execute(
                     sql: """
                     INSERT INTO meetings (id, vaultId, name, createdAt, updatedAt)
                     VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)
                     """,
                     arguments: [
-                        meetingID, vaultID, "Migrated", createdAt, createdAt,
-                        unrecordedMeetingID, vaultID, "Unrecorded", createdAt, createdAt,
+                        meetingID, workspaceID, "Migrated", createdAt, createdAt,
+                        unrecordedMeetingID, workspaceID, "Unrecorded", createdAt, createdAt,
                     ]
                 )
                 for startedAt in [secondRecordingStartedAt, firstRecordingStartedAt] {
@@ -247,7 +246,7 @@ import os
                 let indexSQL = try String.fetchOne(
                     db,
                     sql: "SELECT sql FROM sqlite_master WHERE name = ?",
-                    arguments: ["meetings_on_vaultId_recordingStartedAt_createdAt_id"]
+                    arguments: ["meetings_on_workspace_id_recordingStartedAt_createdAt_id"]
                 )
                 let projectIndexSQL = try String.fetchOne(
                     db,
@@ -272,7 +271,7 @@ import os
         @Test
         func projectHierarchyMigrationPreservesUUIDsAndSynthesizesIntermediateProjects() throws {
             let queue = try DatabaseQueue()
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             let childID = UUID.v7()
             let existingSiblingID = UUID.v7()
             let meetingID = UUID.v7()
@@ -304,7 +303,7 @@ import os
                 """)
                 try db.execute(
                     sql: "INSERT INTO vaults VALUES (?, ?, ?, ?, ?)",
-                    arguments: [vaultID, "/tmp/vault", "Vault", Date.now, Date.now]
+                    arguments: [workspaceID, "/tmp/workspace", "Workspace", Date.now, Date.now]
                 )
                 try db.execute(
                     sql: """
@@ -314,7 +313,7 @@ import os
                     )
                     VALUES (?, ?, ?, ?, ?, 0, ?, 1)
                     """,
-                    arguments: [childID, vaultID, "Acme/Platform/API", Date.now, "drive-id", "Preserved"]
+                    arguments: [childID, workspaceID, "Acme/Platform/API", Date.now, "drive-id", "Preserved"]
                 )
                 try db.execute(
                     sql: """
@@ -324,21 +323,22 @@ import os
                     )
                     VALUES (?, ?, ?, ?, NULL, 0, '', 1)
                     """,
-                    arguments: [existingSiblingID, vaultID, "Acme/API", Date.now]
+                    arguments: [existingSiblingID, workspaceID, "Acme/API", Date.now]
                 )
                 try db.execute(
                     sql: "INSERT INTO meetings (id, vaultId, projectId) VALUES (?, ?, ?)",
-                    arguments: [meetingID, vaultID, childID]
+                    arguments: [meetingID, workspaceID, childID]
                 )
 
                 try ProjectHierarchyMigration.migrate(in: db)
+                try WorkspaceNamingMigration.migrate(in: db)
                 // Decode this historical migration's result with the current record model.
                 try db.execute(sql: "ALTER TABLE projects ADD COLUMN legacyAppearanceMigrated BOOLEAN NOT NULL DEFAULT 0")
             }
 
             let result = try queue.read { db in
                 try (
-                    ProjectRecord.fetchResolvedAll(vaultId: vaultID, in: db),
+                    ProjectRecord.fetchResolvedAll(workspaceId: workspaceID, in: db),
                     UUID.fetchOne(db, sql: "SELECT projectId FROM meetings WHERE id = ?", arguments: [meetingID])
                 )
             }
@@ -357,19 +357,19 @@ import os
         @Test
         func projectHierarchyMigrationPreservesLegacyCaseCollisions() throws {
             let queue = try DatabaseQueue()
-            let vaultURL = URL.temporaryDirectory
+            let workspaceURL = URL.temporaryDirectory
                 .appending(path: "dahlia-project-migration-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             let firstID = UUID.v7()
             let secondID = UUID.v7()
             let meetingID = UUID.v7()
-            defer { try? FileManager.default.removeItem(at: vaultURL) }
+            defer { try? FileManager.default.removeItem(at: workspaceURL) }
             try FileManager.default.createDirectory(
-                at: vaultURL.appending(path: "acme", directoryHint: .isDirectory),
+                at: workspaceURL.appending(path: "acme", directoryHint: .isDirectory),
                 withIntermediateDirectories: true
             )
             try Data("Legacy Summary".utf8).write(
-                to: vaultURL.appending(path: "acme/Note.md"),
+                to: workspaceURL.appending(path: "acme/Note.md"),
                 options: .atomic
             )
             try queue.write { db in
@@ -408,7 +408,7 @@ import os
                 """)
                 try db.execute(
                     sql: "INSERT INTO vaults VALUES (?, ?, ?, ?, ?)",
-                    arguments: [vaultID, vaultURL.path, "Vault", Date.now, Date.now]
+                    arguments: [workspaceID, workspaceURL.path, "Workspace", Date.now, Date.now]
                 )
                 for (id, name) in [(firstID, "Acme"), (secondID, "acme")] {
                     try db.execute(
@@ -419,72 +419,73 @@ import os
                         )
                         VALUES (?, ?, ?, ?, NULL, 0, '', 1)
                         """,
-                        arguments: [id, vaultID, name, Date.now]
+                        arguments: [id, workspaceID, name, Date.now]
                     )
                 }
                 try db.execute(
                     sql: "INSERT INTO meetings VALUES (?, ?, ?)",
-                    arguments: [meetingID, vaultID, secondID]
+                    arguments: [meetingID, workspaceID, secondID]
                 )
                 try SummaryExportRecord(
                     meetingId: meetingID,
-                    type: .vault,
+                    type: .workspace,
                     url: "vault:///acme/Note.md",
                     createdAt: .now,
                     updatedAt: .now
                 ).insert(db)
 
                 try ProjectHierarchyMigration.migrate(in: db)
+                try WorkspaceNamingMigration.migrate(in: db)
                 // Decode this historical migration's result with the current record model.
                 try db.execute(sql: "ALTER TABLE projects ADD COLUMN legacyAppearanceMigrated BOOLEAN NOT NULL DEFAULT 0")
             }
 
             let result = try queue.read { db in
                 try (
-                    ProjectRecord.fetchResolvedAll(vaultId: vaultID, in: db),
-                    SummaryExportRecord.fetchOne(meetingId: meetingID, type: .vault, in: db)
+                    ProjectRecord.fetchResolvedAll(workspaceId: workspaceID, in: db),
+                    SummaryExportRecord.fetchOne(meetingId: meetingID, type: .workspace, in: db)
                 )
             }
             let projects = result.0
             #expect(Set(projects.map(\.id)) == [firstID, secondID])
             #expect(Set(projects.map(\.nameKey)).count == 2)
-            #expect(result.1?.vaultRelativePath == "acme/Note.md")
-            #expect(FileManager.default.fileExists(atPath: vaultURL.appending(path: "acme/Note.md").path))
+            #expect(result.1?.workspaceRelativePath == "acme/Note.md")
+            #expect(FileManager.default.fileExists(atPath: workspaceURL.appending(path: "acme/Note.md").path))
         }
 
         @Test
-        func deletingVaultCascadesThroughNestedProjects() throws {
+        func deletingWorkspaceCascadesThroughNestedProjects() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/nested-project-vault",
+                path: "/tmp/nested-project-workspace",
                 name: "Nested",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
-            try repository.insertVault(vault)
+            try repository.insertWorkspace(workspace)
             let root = try repository.createProject(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: nil,
                 name: "Root",
                 description: "",
                 projectType: .customer
             )
             _ = try repository.createProject(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: root.id,
                 name: "Child",
                 description: "",
                 projectType: nil
             )
 
-            try repository.deleteVault(id: vault.id)
+            try repository.deleteWorkspace(id: workspace.id)
 
             let counts = try database.dbQueue.read { db in
                 try (
-                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM vaults WHERE id = ?", arguments: [vault.id]) ?? -1,
-                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects WHERE vaultId = ?", arguments: [vault.id]) ?? -1
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM workspaces WHERE id = ?", arguments: [workspace.id]) ?? -1,
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects WHERE workspace_id = ?", arguments: [workspace.id]) ?? -1
                 )
             }
             #expect(counts.0 == 0)
@@ -495,23 +496,23 @@ import os
         func databaseBoundaryEnforcesOneSubprojectLevel() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/project-depth-boundary",
                 name: "Depth",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
-            try repository.insertVault(vault)
+            try repository.insertWorkspace(workspace)
             let root = try repository.createProject(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: nil,
                 name: "Root",
                 description: "",
                 projectType: .customer
             )
             let child = try repository.createProject(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: root.id,
                 name: "Child",
                 description: "",
@@ -519,7 +520,7 @@ import os
             )
             #expect(throws: ProjectWorkspaceError.typeOwnedByRoot) {
                 try repository.createProject(
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     parentProjectId: root.id,
                     name: "Typed child",
                     description: "",
@@ -527,7 +528,7 @@ import os
                 )
             }
             let destination = try repository.createProject(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: nil,
                 name: "Destination",
                 description: "",
@@ -538,7 +539,7 @@ import os
                 try database.dbQueue.write { db in
                     try ProjectRecord(
                         id: .v7(),
-                        vaultId: vault.id,
+                        workspaceId: workspace.id,
                         parentProjectId: child.id,
                         name: "Grandchild",
                         createdAt: .now,
@@ -555,7 +556,7 @@ import os
                 }
             }
             let childlessRoot = try repository.createProject(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: nil,
                 name: "Childless",
                 description: "",
@@ -574,31 +575,31 @@ import os
         func databaseBoundaryRejectsInvalidProjectParentsAndAllowsDuplicateRoots() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let firstVault = VaultRecord(
+            let firstWorkspace = WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/project-parent-boundary",
                 name: "First",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
-            let secondVault = VaultRecord(
+            let secondWorkspace = WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/project-parent-boundary-other",
                 name: "Other",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
-            try repository.insertVault(firstVault)
-            try repository.insertVault(secondVault)
+            try repository.insertWorkspace(firstWorkspace)
+            try repository.insertWorkspace(secondWorkspace)
             let root = try repository.createProject(
-                vaultId: firstVault.id,
+                workspaceId: firstWorkspace.id,
                 parentProjectId: nil,
                 name: "Root",
                 description: "",
                 projectType: .customer
             )
             let otherRoot = try repository.createProject(
-                vaultId: secondVault.id,
+                workspaceId: secondWorkspace.id,
                 parentProjectId: nil,
                 name: "Other root",
                 description: "",
@@ -622,7 +623,7 @@ import os
                 }
             }
             let duplicate = try repository.createProject(
-                vaultId: firstVault.id,
+                workspaceId: firstWorkspace.id,
                 parentProjectId: nil,
                 name: "root",
                 description: "",
@@ -634,10 +635,10 @@ import os
         @Test
         func rootProjectRequiresExplicitTypeAtDatabaseBoundary() throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             try database.dbQueue.write { db in
-                try VaultRecord(
-                    id: vaultID,
+                try WorkspaceRecord(
+                    id: workspaceID,
                     path: "/tmp/project-type-constraint",
                     name: "Type constraint",
                     createdAt: .now,
@@ -650,14 +651,14 @@ import os
                     try db.execute(
                         sql: """
                         INSERT INTO projects (
-                            id, vaultId, parentProjectId, name, nameKey, createdAt,
+                            id, workspace_id, parentProjectId, name, nameKey, createdAt,
                             description, projectType, revision
                         )
                         VALUES (?, ?, NULL, ?, ?, ?, '', NULL, 1)
                         """,
                         arguments: [
                             UUID.v7(),
-                            vaultID,
+                            workspaceID,
                             "Invalid root",
                             DahliaProjectName.siblingKey("Invalid root"),
                             Date.now,
@@ -670,10 +671,10 @@ import os
         @Test
         func projectNameConstraintsRejectInvalidDirectWrites() throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             try database.dbQueue.write { db in
-                try VaultRecord(
-                    id: vaultID,
+                try WorkspaceRecord(
+                    id: workspaceID,
                     path: "/tmp/project-leaf-constraint",
                     name: "Leaf constraint",
                     createdAt: .now,
@@ -691,12 +692,12 @@ import os
                         try db.execute(
                             sql: """
                             INSERT INTO projects (
-                                id, vaultId, parentProjectId, name, nameKey, createdAt,
+                                id, workspace_id, parentProjectId, name, nameKey, createdAt,
                                 description, projectType, revision
                             )
                             VALUES (?, ?, NULL, ?, ?, ?, '', 'undefined', 1)
                             """,
-                            arguments: [UUID.v7(), vaultID, invalidName, "invalid-key", Date.now]
+                            arguments: [UUID.v7(), workspaceID, invalidName, "invalid-key", Date.now]
                         )
                     }
                 }
@@ -704,10 +705,10 @@ import os
         }
 
         @Test
-        func hierarchyMigrationDropsCrossVaultMeetingMembership() throws {
+        func hierarchyMigrationDropsCrossWorkspaceMeetingMembership() throws {
             let queue = try DatabaseQueue()
-            let firstVaultID = UUID.v7()
-            let secondVaultID = UUID.v7()
+            let firstWorkspaceID = UUID.v7()
+            let secondWorkspaceID = UUID.v7()
             let projectID = UUID.v7()
             let meetingID = UUID.v7()
             try queue.write { db in
@@ -735,7 +736,7 @@ import os
                     projectId BLOB
                 );
                 """)
-                for (id, path) in [(firstVaultID, "/tmp/first"), (secondVaultID, "/tmp/second")] {
+                for (id, path) in [(firstWorkspaceID, "/tmp/first"), (secondWorkspaceID, "/tmp/second")] {
                     try db.execute(
                         sql: "INSERT INTO vaults VALUES (?, ?, ?, ?, ?)",
                         arguments: [id, path, path, Date.now, Date.now]
@@ -743,14 +744,15 @@ import os
                 }
                 try db.execute(
                     sql: "INSERT INTO projects VALUES (?, ?, ?, ?, NULL, 0, '', 1)",
-                    arguments: [projectID, secondVaultID, "Other", Date.now]
+                    arguments: [projectID, secondWorkspaceID, "Other", Date.now]
                 )
                 try db.execute(
                     sql: "INSERT INTO meetings VALUES (?, ?, ?)",
-                    arguments: [meetingID, firstVaultID, projectID]
+                    arguments: [meetingID, firstWorkspaceID, projectID]
                 )
 
                 try ProjectHierarchyMigration.migrate(in: db)
+                try WorkspaceNamingMigration.migrate(in: db)
                 // Decode this historical migration's result with the current record model.
                 try db.execute(sql: "ALTER TABLE projects ADD COLUMN legacyAppearanceMigrated BOOLEAN NOT NULL DEFAULT 0")
             }
@@ -767,7 +769,7 @@ import os
                 .appending(path: UUID().uuidString)
                 .appendingPathExtension("sqlite")
             let projectId = UUID.v7()
-            let vaultId = UUID.v7()
+            let workspaceId = UUID.v7()
             defer { try? FileManager.default.removeItem(at: databaseURL) }
 
             let legacyQueue = try DatabaseQueue(path: databaseURL.path)
@@ -794,7 +796,7 @@ import os
                 )
                 try db.execute(
                     sql: "INSERT INTO vaults VALUES (?, ?, ?, ?, ?)",
-                    arguments: [vaultId, "/tmp/existing-project-vault", "Existing", Date.now, Date.now]
+                    arguments: [workspaceId, "/tmp/existing-project-workspace", "Existing", Date.now, Date.now]
                 )
                 try db.create(table: "grdb_migrations") { table in
                     table.column("identifier", .text).primaryKey()
@@ -819,7 +821,7 @@ import os
                     INSERT INTO projects (id, vaultId, name, createdAt, googleDriveFolderId, missingOnDisk)
                     VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    arguments: [projectId, vaultId, "Existing Project", Date.now, "folder-123", false]
+                    arguments: [projectId, workspaceId, "Existing Project", Date.now, "folder-123", false]
                 )
             }
 
@@ -1043,7 +1045,7 @@ import os
                 .appendingPathComponent(UUID().uuidString)
                 .appendingPathExtension("sqlite")
             let meetingID = UUID.v7()
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             let segmentID = UUID.v7()
             let screenshotID = UUID.v7()
             let meetingStart = Date(timeIntervalSince1970: 1_776_384_000)
@@ -1060,7 +1062,7 @@ import os
                     )
                 try db.execute(
                     sql: "INSERT INTO vaults VALUES (?, ?, ?, ?, ?)",
-                    arguments: [vaultID, "/tmp/legacy", "Legacy", meetingStart, meetingStart]
+                    arguments: [workspaceID, "/tmp/legacy", "Legacy", meetingStart, meetingStart]
                 )
                 try db.execute(
                     sql: """
@@ -1118,7 +1120,7 @@ import os
                     INSERT INTO meetings (id, vaultId, name, status, duration, createdAt, updatedAt)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    arguments: [meetingID, vaultID, "Legacy", MeetingStatus.ready.rawValue, nil as TimeInterval?, meetingStart, meetingStart]
+                    arguments: [meetingID, workspaceID, "Legacy", MeetingStatus.ready.rawValue, nil as TimeInterval?, meetingStart, meetingStart]
                 )
                 try db.execute(
                     sql: """
@@ -1163,19 +1165,19 @@ import os
         func repositoryUpdatesProjectDescription() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/test-vault",
-                name: "Test Vault",
+                path: "/tmp/test-workspace",
+                name: "Test Workspace",
                 createdAt: Date(),
                 lastOpenedAt: Date()
             )
-            try repository.insertVault(vault)
+            try repository.insertWorkspace(workspace)
 
-            let project = try repository.fetchOrCreateProject(name: "Project A", vaultId: vault.id)
+            let project = try repository.fetchOrCreateProject(name: "Project A", workspaceId: workspace.id)
             try repository.updateProjectDescription(
                 id: project.id,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 description: "Customer rollout"
             )
 
@@ -1202,13 +1204,13 @@ import os
                         JOIN pragma_index_info(il.name) AS ii
                         WHERE il."unique" = 1
                         GROUP BY il.name
-                        HAVING group_concat(ii.name, ',') = 'vaultId,name'
+                        HAVING group_concat(ii.name, ',') = 'workspace_id,name'
                     )
                     """
                 )
             }
 
-            #expect(columnNames.contains("vaultId"))
+            #expect(columnNames.contains("workspace_id"))
             #expect(columnNames.contains("name"))
             #expect(columnNames.contains("content"))
             #expect(hasCompositeUniqueIndex == 1)
@@ -1253,7 +1255,7 @@ import os
             let databaseURL = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent(UUID().uuidString)
                 .appendingPathExtension("sqlite")
-            let legacyVaultID = UUID.v7()
+            let legacyWorkspaceID = UUID.v7()
             let createdAt = Date.now
 
             defer { try? FileManager.default.removeItem(at: databaseURL) }
@@ -1275,7 +1277,7 @@ import os
                     INSERT INTO vaults (id, path, name, createdAt, lastOpenedAt)
                     VALUES (?, ?, ?, ?, ?)
                     """,
-                    arguments: [legacyVaultID, "/tmp/legacy-vault", "Legacy Vault", createdAt, createdAt]
+                    arguments: [legacyWorkspaceID, "/tmp/legacy-workspace", "Legacy Workspace", createdAt, createdAt]
                 )
                 try db.execute(
                     sql: "INSERT INTO grdb_migrations (identifier) VALUES (?)",
@@ -1284,17 +1286,17 @@ import os
             }
 
             let migrated = try AppDatabaseManager(path: databaseURL.path)
-            let migratedVault = try migrated.dbQueue.read { db in
+            let migratedWorkspace = try migrated.dbQueue.read { db in
                 try Row.fetchOne(
                     db,
-                    sql: "SELECT id, path, name FROM vaults WHERE id = ?",
-                    arguments: [legacyVaultID]
+                    sql: "SELECT id, path, name FROM workspaces WHERE id = ?",
+                    arguments: [legacyWorkspaceID]
                 )
             }
 
-            #expect(migratedVault != nil)
-            #expect(migratedVault?["path"] == "/tmp/legacy-vault")
-            #expect(migratedVault?["name"] == "Legacy Vault")
+            #expect(migratedWorkspace != nil)
+            #expect(migratedWorkspace?["path"] == "/tmp/legacy-workspace")
+            #expect(migratedWorkspace?["name"] == "Legacy Workspace")
         }
 
         @Test

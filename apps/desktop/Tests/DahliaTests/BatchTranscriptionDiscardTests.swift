@@ -50,7 +50,7 @@ import GRDB
             let discarded = try await MeetingRepository(dbQueue: fixture.database.dbQueue)
                 .discardUnprocessedBatchSessionSafely(
                     id: fixture.session.id,
-                    expectedVaultId: fixture.meeting.vaultId,
+                    expectedWorkspaceId: fixture.meeting.workspaceId,
                     managedRootURL: fixture.managedRootURL
                 )
 
@@ -68,9 +68,9 @@ import GRDB
         }
 
         @Test
-        func discardRejectsSessionFromAnotherVault() async throws {
+        func discardRejectsSessionFromAnotherWorkspace() async throws {
             let fixture = try BatchAudioTestFixture(
-                name: "DiscardVaultMismatch",
+                name: "DiscardWorkspaceMismatch",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_010),
                 duration: 10
             )
@@ -80,7 +80,7 @@ import GRDB
             let discarded = try await MeetingRepository(dbQueue: fixture.database.dbQueue)
                 .discardUnprocessedBatchSessionSafely(
                     id: fixture.session.id,
-                    expectedVaultId: .v7(),
+                    expectedWorkspaceId: .v7(),
                     managedRootURL: fixture.managedRootURL
                 )
 
@@ -234,7 +234,7 @@ import GRDB
             async let enqueue: Void = coordinator.enqueue(sessionId: fixture.session.id)
             async let discard = repository.discardUnprocessedBatchSessionSafely(
                 id: fixture.session.id,
-                expectedVaultId: fixture.meeting.vaultId,
+                expectedWorkspaceId: fixture.meeting.workspaceId,
                 managedRootURL: fixture.managedRootURL
             )
             await enqueue

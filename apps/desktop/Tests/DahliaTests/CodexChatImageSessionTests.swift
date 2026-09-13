@@ -223,9 +223,9 @@ import Foundation
 
         private func makeSession(service: ImageChatService) -> CodexChatSessionModel {
             let settings = AppSettings()
-            settings.currentVault = VaultRecord(
+            settings.currentWorkspace = WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/chat-image-test-vault",
+                path: "/tmp/chat-image-test-workspace",
                 name: "Chat Image Test",
                 createdAt: .now,
                 lastOpenedAt: .now
@@ -311,7 +311,7 @@ import Foundation
             ]
         }
 
-        func listThreads(cursor _: String?, vaultID _: UUID) async throws -> CodexChatThreadPage {
+        func listThreads(cursor _: String?, workspaceID _: UUID) async throws -> CodexChatThreadPage {
             CodexChatThreadPage(threads: [], nextCursor: nil)
         }
 
@@ -319,11 +319,11 @@ import Foundation
             CodexChatThread(id: id, title: L10n.chatImage, messages: [], model: nil, reasoningEffort: nil)
         }
 
-        func resumeThread(id: String, vaultID _: UUID) async throws -> CodexChatThread {
+        func resumeThread(id: String, workspaceID _: UUID) async throws -> CodexChatThread {
             try await loadThread(id: id)
         }
 
-        func startThread(model _: String?, effort: String, vaultID _: UUID) async throws -> CodexChatThread {
+        func startThread(model _: String?, effort: String, workspaceID _: UUID) async throws -> CodexChatThread {
             CodexChatThread(
                 id: "thread-image",
                 title: "",

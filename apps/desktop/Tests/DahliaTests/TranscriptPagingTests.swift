@@ -87,11 +87,11 @@
             let otherMeetingId = UUID.v7()
             let unconfirmedId = UUID.v7()
             try fixture.database.dbQueue.write { db in
-                let vaultId = try #require(VaultRecord.fetchOne(db)?.id)
+                let workspaceId = try #require(WorkspaceRecord.fetchOne(db)?.id)
                 let timestamp = Date(timeIntervalSince1970: 1_776_384_000)
                 try MeetingRecord(
                     id: otherMeetingId,
-                    vaultId: vaultId,
+                    workspaceId: workspaceId,
                     projectId: nil,
                     name: "Other",
                     createdAt: timestamp,
@@ -544,7 +544,7 @@
     @MainActor
     private func makePagingFixture(segmentCount: Int) throws -> PagingFixture {
         let database = try AppDatabaseManager(path: ":memory:")
-        let vault = VaultRecord(
+        let workspace = WorkspaceRecord(
             id: .v7(),
             path: URL.temporaryDirectory.path,
             name: "Paging Test",
@@ -556,10 +556,10 @@
         let orderedIds = (0 ..< segmentCount).map(deterministicUUID)
 
         try database.dbQueue.write { db in
-            try vault.insert(db)
+            try workspace.insert(db)
             try MeetingRecord(
                 id: meetingId,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: nil,
                 name: "Large transcript",
                 createdAt: timestamp,

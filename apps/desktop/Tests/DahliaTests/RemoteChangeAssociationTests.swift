@@ -7,21 +7,21 @@
     @MainActor
     struct RemoteChangeAssociationTests {
         @Test(arguments: ["admin", "viewer"])
-        func missingVaultOnlyDeletesMemberAudio(role: String) async throws {
-            let (database, originalVault) = try await syncedDatabase()
-            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("missing-vault-\(UUID().uuidString)")
+        func missingWorkspaceOnlyDeletesMemberAudio(role: String) async throws {
+            let (database, originalWorkspace) = try await syncedDatabase()
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("missing-workspace-\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: directory) }
             let audioURL = directory.appendingPathComponent("audio.caf")
             let bytes = Data([1, 2, 3, 4])
             try bytes.write(to: audioURL)
-            var changedVault = originalVault
-            changedVault.path = directory.path
-            changedVault.syncRole = role
-            changedVault.syncRecoveryState = "pending"
-            let vault = changedVault
-            let connection = try #require(vault.syncConfirmedConnectionId)
-            let meeting = MeetingRecord(id: .v7(), vaultId: vault.id, projectId: nil, name: "Recorded", createdAt: .now, updatedAt: .now)
+            var changedWorkspace = originalWorkspace
+            changedWorkspace.path = directory.path
+            changedWorkspace.syncRole = role
+            changedWorkspace.syncRecoveryState = "pending"
+            let workspace = changedWorkspace
+            let connection = try #require(workspace.syncConfirmedConnectionId)
+            let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, projectId: nil, name: "Recorded", createdAt: .now, updatedAt: .now)
             let session = RecordingSessionRecord(
                 id: .v7(),
                 meetingId: meeting.id,
@@ -33,7 +33,7 @@
                 updatedAt: .now
             )
             try await database.dbQueue.write { db in
-                try vault.update(db)
+                try workspace.update(db)
                 try meeting.insert(db)
                 try session.insert(db)
                 try db.execute(sql: """
@@ -42,19 +42,19 @@
                 """, arguments: [UUID.v7(), session.id, Date.now, Date.now])
             }
             if role == "admin" {
-                #expect(try await !RemoteChangeApplier.removeRevokedMemberVault(
-                    vaultId: vault.id,
+                #expect(try await !RemoteChangeApplier.removeRevokedMemberWorkspace(
+                    workspaceId: workspace.id,
                     expectedConnectionId: connection,
                     dbQueue: database.dbQueue
                 ))
                 #expect(try Data(contentsOf: audioURL) == bytes)
             }
-            #expect(try await RemoteChangeApplier.reconcileMissingVault(
-                vaultId: vault.id,
+            #expect(try await RemoteChangeApplier.reconcileMissingWorkspace(
+                workspaceId: workspace.id,
                 expectedConnectionId: connection,
                 dbQueue: database.dbQueue
             ))
-            let saved = try await database.dbQueue.read { db in try VaultRecord.fetchOne(db, key: vault.id) }
+            let saved = try await database.dbQueue.read { db in try WorkspaceRecord.fetchOne(db, key: workspace.id) }
             if role == "admin" {
                 #expect(saved?.accountConnectionId == connection)
                 #expect(saved?.syncConfirmedConnectionId == nil)
@@ -68,11 +68,11 @@
         }
 
         @Test(arguments: ["pending", "recording", "detached", "reconnected"])
-        func missingOwnerVaultDefersRecoveryWhenLocalStateChanged(state: String) async throws {
-            let (database, vault) = try await syncedDatabase()
-            let connection = try #require(vault.syncConfirmedConnectionId)
+        func missingOwnerWorkspaceDefersRecoveryWhenLocalStateChanged(state: String) async throws {
+            let (database, workspace) = try await syncedDatabase()
+            let connection = try #require(workspace.syncConfirmedConnectionId)
             let generation = try #require(try await RemoteChangeApplier.recoveryGeneration(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 expectedConnectionId: connection,
                 dbQueue: database.dbQueue
             ))
@@ -80,12 +80,19 @@
                 switch state {
                 case "pending":
                     try SyncTransactionRecorder.record(
-                        vaultId: vault.id,
-                        operations: [SyncInitialSnapshotBuilder.vaultOperation(vault, action: .update)],
+                        workspaceId: workspace.id,
+                        operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
                         in: db
                     )
                 case "recording":
-                    let meeting = MeetingRecord(id: .v7(), vaultId: vault.id, projectId: nil, name: "Recording", createdAt: .now, updatedAt: .now)
+                    let meeting = MeetingRecord(
+                        id: .v7(),
+                        workspaceId: workspace.id,
+                        projectId: nil,
+                        name: "Recording",
+                        createdAt: .now,
+                        updatedAt: .now
+                    )
                     try meeting.insert(db)
                     try RecordingSessionRecord(
                         id: .v7(),
@@ -98,55 +105,60 @@
                         updatedAt: .now
                     ).insert(db)
                 case "reconnected":
-                    try db.execute(sql: "UPDATE vaults SET syncConfirmedConnectionId = NULL WHERE id = ?", arguments: [vault.id])
-                    try db.execute(sql: "UPDATE vaults SET syncConfirmedConnectionId = ? WHERE id = ?", arguments: [connection, vault.id])
+                    try db.execute(sql: "UPDATE workspaces SET syncConfirmedConnectionId = NULL WHERE id = ?", arguments: [workspace.id])
+                    try db.execute(sql: "UPDATE workspaces SET syncConfirmedConnectionId = ? WHERE id = ?", arguments: [connection, workspace.id])
                 default:
-                    try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?", arguments: [vault.id])
+                    try db.execute(
+                        sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?",
+                        arguments: [workspace.id]
+                    )
                 }
             }
-            #expect(try await !RemoteChangeApplier.reconcileMissingVault(
-                vaultId: vault.id,
+            #expect(try await !RemoteChangeApplier.reconcileMissingWorkspace(
+                workspaceId: workspace.id,
                 expectedConnectionId: connection,
                 dbQueue: database.dbQueue,
                 expectedMutationGeneration: generation
             ))
-            #expect(try await database.dbQueue.read { db in try VaultRecord.fetchOne(db, key: vault.id)?.syncConfirmedConnectionId } == connection)
+            #expect(try await database.dbQueue.read { db in
+                try WorkspaceRecord.fetchOne(db, key: workspace.id)?.syncConfirmedConnectionId
+            } == connection)
         }
 
         @Test
-        func revokedMemberVaultIsRemovedFromTheWorkingCopy() async throws {
-            let (database, originalVault) = try await syncedDatabase()
-            var memberVault = originalVault
-            memberVault.syncRole = "viewer"
-            let vault = memberVault
+        func revokedMemberWorkspaceIsRemovedFromTheWorkingCopy() async throws {
+            let (database, originalWorkspace) = try await syncedDatabase()
+            var memberWorkspace = originalWorkspace
+            memberWorkspace.syncRole = "viewer"
+            let workspace = memberWorkspace
             let meeting = MeetingRecord(
-                id: .v7(), vaultId: vault.id, projectId: nil, name: "Shared",
+                id: .v7(), workspaceId: workspace.id, projectId: nil, name: "Shared",
                 createdAt: .now, updatedAt: .now
             )
             try await database.dbQueue.write { db in
-                try vault.update(db)
+                try workspace.update(db)
                 try meeting.insert(db)
             }
 
-            #expect(try await RemoteChangeApplier.removeRevokedMemberVault(
-                vaultId: vault.id,
-                expectedConnectionId: #require(vault.syncConfirmedConnectionId),
+            #expect(try await RemoteChangeApplier.removeRevokedMemberWorkspace(
+                workspaceId: workspace.id,
+                expectedConnectionId: #require(workspace.syncConfirmedConnectionId),
                 dbQueue: database.dbQueue
             ))
-            #expect(try await database.dbQueue.read { db in try VaultRecord.fetchOne(db, key: vault.id) } == nil)
+            #expect(try await database.dbQueue.read { db in try WorkspaceRecord.fetchOne(db, key: workspace.id) } == nil)
             #expect(try await database.dbQueue.read { db in try MeetingRecord.fetchOne(db, key: meeting.id) } == nil)
         }
 
         @Test
-        func delayedRemoteResultsCannotCrossVaultConnectionChanges() async throws {
-            let (database, vault) = try await syncedDatabase()
-            let oldConnectionId = try #require(vault.syncConfirmedConnectionId)
+        func delayedRemoteResultsCannotCrossWorkspaceConnectionChanges() async throws {
+            let (database, workspace) = try await syncedDatabase()
+            let oldConnectionId = try #require(workspace.syncConfirmedConnectionId)
             let project = ProjectRecord(
-                id: .v7(), vaultId: vault.id, parentProjectId: nil,
+                id: .v7(), workspaceId: workspace.id, parentProjectId: nil,
                 name: "Local project", createdAt: .now, projectType: .undefined
             )
             let meeting = MeetingRecord(
-                id: .v7(), vaultId: vault.id, projectId: project.id,
+                id: .v7(), workspaceId: workspace.id, projectId: project.id,
                 name: "Local meeting", createdAt: .now, updatedAt: .now
             )
             let screenshotId = UUID.v7()
@@ -156,7 +168,7 @@
             }
             #expect(try await RemoteChangeApplier.beginTranscript(
                 meetingId: meeting.id,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 expectedConnectionId: oldConnectionId,
                 dbQueue: database.dbQueue
             ))
@@ -164,14 +176,14 @@
             let repository = MeetingRepository(dbQueue: database.dbQueue)
             // Model the completed transfer; its network/completeness boundary is covered by TextContentTests.
             try await database.dbQueue.write { db in
-                try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vault.id])
-                try db.execute(sql: "DELETE FROM sync_content_state WHERE vaultId = ?", arguments: [vault.id])
+                try db.execute(sql: "DELETE FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspace.id])
+                try db.execute(sql: "DELETE FROM sync_content_state WHERE workspace_id = ?", arguments: [workspace.id])
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL, syncConfirmedConnectionId = NULL, syncPullCursor = NULL WHERE id = ?",
-                    arguments: [vault.id]
+                    sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL, syncConfirmedConnectionId = NULL, syncPullCursor = NULL WHERE id = ?",
+                    arguments: [workspace.id]
                 )
             }
-            _ = try await repository.updateVaultName(id: vault.id, name: "Local after sign out")
+            _ = try await repository.updateWorkspaceName(id: workspace.id, name: "Local after sign out")
 
             let remoteProject = SyncProjectSnapshot(
                 projectId: project.id,
@@ -204,29 +216,29 @@
             )
 
             #expect(try await !RemoteChangeApplier.reconcileProjectSnapshot(
-                [remoteProject], vaultId: vault.id, expectedConnectionId: oldConnectionId,
+                [remoteProject], workspaceId: workspace.id, expectedConnectionId: oldConnectionId,
                 dbQueue: database.dbQueue
             ))
             #expect(try await !RemoteChangeApplier.apply(
                 changes, screenshots: [screenshotId: Data([1, 2, 3])], transcripts: [:], cursor: "late-cursor",
-                vaultId: vault.id, expectedConnectionId: oldConnectionId, dbQueue: database.dbQueue
+                workspaceId: workspace.id, expectedConnectionId: oldConnectionId, dbQueue: database.dbQueue
             ))
             #expect(try await !RemoteChangeApplier.applyTranscriptPage(
-                [transcript], meetingId: meeting.id, vaultId: vault.id,
+                [transcript], meetingId: meeting.id, workspaceId: workspace.id,
                 expectedConnectionId: oldConnectionId, dbQueue: database.dbQueue
             ))
             #expect(try await !RemoteChangeApplier.finishReset(
-                SyncResetSnapshot(canonicalChanges: []), cursor: "late-reset-cursor", vaultId: vault.id,
+                SyncResetSnapshot(canonicalChanges: []), cursor: "late-reset-cursor", workspaceId: workspace.id,
                 expectedConnectionId: oldConnectionId, dbQueue: database.dbQueue
             ))
             #expect(try await !RemoteChangeApplier.advancePullCursor(
-                "late-empty-page-cursor", vaultId: vault.id,
+                "late-empty-page-cursor", workspaceId: workspace.id,
                 expectedConnectionId: oldConnectionId, dbQueue: database.dbQueue
             ))
 
             let detachedState = try await database.dbQueue.read { db in
                 try (
-                    VaultRecord.fetchOne(db, key: vault.id),
+                    WorkspaceRecord.fetchOne(db, key: workspace.id),
                     ProjectRecord.fetchOne(db, key: project.id),
                     MeetingRecord.fetchOne(db, key: meeting.id),
                     MeetingScreenshotRecord.fetchOne(db, key: screenshotId),
@@ -251,23 +263,23 @@
             try await database.dbQueue.write { db in
                 try newConnection.insert(db)
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncConfirmedConnectionId = ?, syncRole = 'viewer' WHERE id = ?",
-                    arguments: [newConnection.id, newConnection.id, vault.id]
+                    sql: "UPDATE workspaces SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncConfirmedConnectionId = ?, syncRole = 'viewer' WHERE id = ?",
+                    arguments: [newConnection.id, newConnection.id, workspace.id]
                 )
             }
-            #expect(try await !RemoteChangeApplier.removeRevokedMemberVault(
-                vaultId: vault.id,
+            #expect(try await !RemoteChangeApplier.removeRevokedMemberWorkspace(
+                workspaceId: workspace.id,
                 expectedConnectionId: oldConnectionId,
                 dbQueue: database.dbQueue
             ))
-            #expect(try await database.dbQueue.read { db in try VaultRecord.fetchOne(db, key: vault.id) } != nil)
+            #expect(try await database.dbQueue.read { db in try WorkspaceRecord.fetchOne(db, key: workspace.id) } != nil)
             #expect(try await !RemoteChangeApplier.apply(
                 changes, screenshots: [screenshotId: Data([1, 2, 3])], transcripts: [:], cursor: "old-server-cursor",
-                vaultId: vault.id, expectedConnectionId: oldConnectionId, dbQueue: database.dbQueue
+                workspaceId: workspace.id, expectedConnectionId: oldConnectionId, dbQueue: database.dbQueue
             ))
             #expect(try await RemoteChangeApplier.apply(
                 changes, screenshots: [screenshotId: Data([1, 2, 3])], transcripts: [:], cursor: "new-server-cursor",
-                vaultId: vault.id, expectedConnectionId: newConnection.id, dbQueue: database.dbQueue
+                workspaceId: workspace.id, expectedConnectionId: newConnection.id, dbQueue: database.dbQueue
             ))
             #expect(try await database.dbQueue.read { db in
                 try (
@@ -275,31 +287,31 @@
                     MeetingScreenshotRecord.fetchOne(db, key: screenshotId) != nil,
                     String.fetchOne(
                         db,
-                        sql: "SELECT syncPullCursor FROM vaults WHERE id = ?",
-                        arguments: [vault.id]
+                        sql: "SELECT syncPullCursor FROM workspaces WHERE id = ?",
+                        arguments: [workspace.id]
                     )
                 )
             } == ("Late meeting", true, "new-server-cursor"))
         }
 
-        private func syncedDatabase() async throws -> (AppDatabaseManager, VaultRecord) {
+        private func syncedDatabase() async throws -> (AppDatabaseManager, WorkspaceRecord) {
             let database = try AppDatabaseManager(path: ":memory:")
             let connection = DahliaAccountConnectionRecord(
                 id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
             )
-            var vault = VaultRecord(
+            var workspace = WorkspaceRecord(
                 id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now
             )
-            vault.accountConnectionId = connection.id
-            if vault.syncRole == nil { vault.syncRole = "admin" }
-            if vault.organizationId == nil { vault.organizationId = .v7() }
-            vault.syncConfirmedConnectionId = connection.id
-            let savedVault = vault
+            workspace.accountConnectionId = connection.id
+            if workspace.syncRole == nil { workspace.syncRole = "admin" }
+            if workspace.organizationId == nil { workspace.organizationId = .v7() }
+            workspace.syncConfirmedConnectionId = connection.id
+            let savedWorkspace = workspace
             try await database.dbQueue.write { db in
                 try connection.insert(db)
-                try savedVault.insert(db)
+                try savedWorkspace.insert(db)
             }
-            return (database, savedVault)
+            return (database, savedWorkspace)
         }
     }
 #endif

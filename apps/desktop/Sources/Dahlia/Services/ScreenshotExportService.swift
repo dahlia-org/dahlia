@@ -1,10 +1,10 @@
 import DahliaRuntimeSupport
 import Foundation
 
-/// スクリーンショットを Vault の `_dahlia/screenshots/` フォルダに書き出すサービス。
+/// スクリーンショットを Workspace の `_dahlia/screenshots/` フォルダに書き出すサービス。
 enum ScreenshotExportService {
-    static func screenshotsDirectoryURL(in vaultURL: URL) -> URL {
-        vaultURL
+    static func screenshotsDirectoryURL(in workspaceURL: URL) -> URL {
+        workspaceURL
             .appendingPathComponent("_dahlia", isDirectory: true)
             .appendingPathComponent("screenshots", isDirectory: true)
     }
@@ -17,16 +17,16 @@ enum ScreenshotExportService {
         )
     }
 
-    /// スクリーンショットを `<vault>/_dahlia/screenshots/<screenshotId>.<ext>` に書き出す。
+    /// スクリーンショットを `<workspace>/_dahlia/screenshots/<screenshotId>.<ext>` に書き出す。
     /// DB の `imageData` をそのまま書き出す。
-    /// - Returns: vault 相対パスの配列
+    /// - Returns: workspace 相対パスの配列
     static func exportScreenshots(
-        vaultURL: URL,
+        workspaceURL: URL,
         screenshots: [MeetingScreenshotRecord]
     ) throws -> [String] {
         guard !screenshots.isEmpty else { return [] }
 
-        let dir = screenshotsDirectoryURL(in: vaultURL)
+        let dir = screenshotsDirectoryURL(in: workspaceURL)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         var relativePaths: [String] = []
@@ -34,7 +34,7 @@ enum ScreenshotExportService {
         for screenshot in screenshots {
             let filename = filename(for: screenshot)
             let relativePath = "_dahlia/screenshots/\(filename)"
-            let fileURL = vaultURL.appendingPathComponent(relativePath)
+            let fileURL = workspaceURL.appendingPathComponent(relativePath)
             guard let bytes = screenshot.imageData else { throw ScreenshotContentError.unavailable }
             try bytes.write(to: fileURL, options: .atomic)
             relativePaths.append(relativePath)
@@ -44,10 +44,10 @@ enum ScreenshotExportService {
     }
 
     static func deleteExportedScreenshots(
-        vaultURL: URL,
+        workspaceURL: URL,
         screenshots: [MeetingScreenshotRecord]
     ) throws {
-        let directoryURL = screenshotsDirectoryURL(in: vaultURL)
+        let directoryURL = screenshotsDirectoryURL(in: workspaceURL)
         for screenshot in screenshots {
             let fileURL = directoryURL.appending(path: filename(for: screenshot))
             guard FileManager.default.fileExists(atPath: fileURL.path) else { continue }

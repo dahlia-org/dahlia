@@ -1,7 +1,7 @@
 import * as authSchema from "./db/auth-schema";
-import { vaultPermissions } from "./auth/vault-permissions";
+import { workspacePermissions } from "./auth/workspace-permissions";
 import { and, asc, gt, inArray } from "drizzle-orm";
-import { syncedVaultPermission } from "./db/auth-schema";
+import { syncedWorkspacePermission } from "./db/auth-schema";
 import { createSummaryJobStore } from "./summary/store";
 import { createImageAnalysisStore } from "./image-analysis/store";
 import { createPostgresSearchIndexStore } from "./search/index-store";
@@ -88,7 +88,7 @@ function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): Applic
     : config.databaseType === "postgres" ? config.databaseUrl : undefined;
   if (!url) throw new Error("Worker storage supports DAHLIA_DATABASE_TYPE=hyperdrive or postgres");
   const connection = connectPostgresUrl(url, 5);
-  const permissions = syncedVaultPermission;
+  const permissions = syncedWorkspacePermission;
   return { ...createPostgresApplicationStore(connection.db, "postgres", config.searchEmbedding, config.encryption, config.authProviderId, config.localSingleUser), close: connection.close,
     jobs: {
       summaryJobs: createSummaryJobStore(connection.db, true, config.encryption),
@@ -99,10 +99,10 @@ function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): Applic
           return (await connection.db.select({ id: authSchema.user.id }).from(authSchema.user)
             .where(after ? gt(authSchema.user.id, after) : undefined).orderBy(asc(authSchema.user.id)).limit(100)).map((row) => row.id);
         }
-        const rows = await connection.db.selectDistinct({ id: permissions.vaultId }).from(permissions)
-          .where(and(after ? gt(permissions.vaultId, after) : undefined,
-            userId ? and(vaultPermissions(connection.db, authSchema, userId).matchingPrincipal(), inArray(permissions.role, ["admin", "editor"])) : undefined))
-          .orderBy(asc(permissions.vaultId)).limit(100);
+        const rows = await connection.db.selectDistinct({ id: permissions.workspaceId }).from(permissions)
+          .where(and(after ? gt(permissions.workspaceId, after) : undefined,
+            userId ? and(workspacePermissions(connection.db, authSchema, userId).matchingPrincipal(), inArray(permissions.role, ["admin", "editor"])) : undefined))
+          .orderBy(asc(permissions.workspaceId)).limit(100);
         return rows.map((row) => row.id);
       },
     },

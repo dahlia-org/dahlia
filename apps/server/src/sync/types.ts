@@ -30,25 +30,25 @@ export interface SyncTranscriptCursor {
   segmentId: string;
 }
 
-export interface SyncVaultRecord {
+export interface SyncWorkspaceRecord {
   organizationId: string;
   encryption?: "none" | "server";
   hasResources?: boolean;
   icon?: string | null;
   color?: string | null;
-  vaultId: string;
+  workspaceId: string;
   name: string;
   revision?: number;
   createdAt: Date;
   updatedAt: Date;
-  role: VaultRole;
+  role: WorkspaceRole;
 }
 
 export interface SyncProjectRecord {
   icon?: string | null;
   color?: string | null;
   projectId: string;
-  vaultId: string;
+  workspaceId: string;
   parentProjectId: string | null;
   name: string;
   description: string;
@@ -66,9 +66,9 @@ export interface SyncProjectView extends SyncProjectRecord {
   subtreeMeetingCount: number;
 }
 
-export type VaultRole = "admin" | "editor" | "viewer";
-export type VaultPrincipalType = "user" | "organization" | "team";
-export type SyncEntity = "vault" | "project" | "meeting" | "summary" | "transcript" | "file" | "meeting_attachment" | "meeting_event" | "recording";
+export type WorkspaceRole = "admin" | "editor" | "viewer";
+export type WorkspacePrincipalType = "user" | "organization" | "team";
+export type SyncEntity = "workspace" | "project" | "meeting" | "summary" | "transcript" | "file" | "meeting_attachment" | "meeting_event" | "recording";
 export type SyncAction = "create" | "update" | "delete" | "upsert" | "patch" | "reset";
 
 export interface SyncTransactionOperation {
@@ -83,7 +83,7 @@ export interface SyncTransactionOperation {
 export interface SyncTransaction {
   schemaVersion: 3;
   id: string;
-  vaultId: string;
+  workspaceId: string;
   createdAt: Date;
   requestHash: string;
   operations: SyncTransactionOperation[];
@@ -115,7 +115,7 @@ export interface SyncRetentionResult {
 }
 
 export interface SyncHistoryTarget {
-  vaultId: string;
+  workspaceId: string;
 }
 
 export interface SyncRevisionConflict {
@@ -128,7 +128,7 @@ export interface SyncRevisionConflict {
 
 export interface SyncChangeRecord {
   sequence: number;
-  vaultId: string;
+  workspaceId: string;
   entity: SyncEntity;
   entityId: string;
   action: "upsert" | "delete" | "reset";
@@ -137,17 +137,17 @@ export interface SyncChangeRecord {
   record: Record<string, unknown> | null;
 }
 
-export interface VaultPermissionRecord {
-  vaultId: string;
-  principalType: VaultPrincipalType;
+export interface WorkspacePermissionRecord {
+  workspaceId: string;
+  principalType: WorkspacePrincipalType;
   principalId: string;
-  role: VaultRole;
+  role: WorkspaceRole;
   createdAt: Date;
 }
 
 export interface SyncMeetingRecord {
   meetingId: string;
-  vaultId: string;
+  workspaceId: string;
   projectId: string | null;
   name: string;
   description: string;
@@ -181,7 +181,7 @@ export interface SyncScreenshotCursor {
 export interface SyncScreenshotRecord {
   fileId: string;
   screenshotId: string;
-  vaultId: string;
+  workspaceId: string;
   meetingId: string;
   capturedAt: Date;
   contentType: string;
@@ -213,14 +213,14 @@ export interface SyncSearchQuery {
   };
 }
 
-export interface VaultRelocations {
-  vaults: SyncVaultRecord[];
-  items: { entity: "project" | "meeting" | "file"; id: string; vaultId: string }[];
+export interface WorkspaceRelocations {
+  workspaces: SyncWorkspaceRecord[];
+  items: { entity: "project" | "meeting" | "file"; id: string; workspaceId: string }[];
 }
 
-export interface VaultTransferRequest {
-  sourceVaultId: string;
-  destinationVaultId: string;
+export interface WorkspaceTransferRequest {
+  sourceWorkspaceId: string;
+  destinationWorkspaceId: string;
   sourceRevision: number;
   destinationRevision: number;
   audienceHash: string;
@@ -228,58 +228,58 @@ export interface VaultTransferRequest {
   requestHash: string;
 }
 
-export interface VaultTransferRecord {
+export interface WorkspaceTransferRecord {
   sequence: number;
   id: string;
-  sourceVaultId: string;
-  destinationVaultId: string;
+  sourceWorkspaceId: string;
+  destinationWorkspaceId: string;
   manifest: { projects: string[]; meetings: string[]; files: string[] };
 }
 
-export interface GovernanceVault { vaultId: string; name: string; revision: number; creatorId: string }
+export interface GovernanceWorkspace { workspaceId: string; name: string; revision: number; creatorId: string }
 
 export interface IdentitySyncStore {
-  listGovernanceVaults(organizationId: string, after?: string): Promise<{ items: GovernanceVault[]; nextCursor: string | null }>;
-  confirmVaultDeletion(organizationId: string, vaultId: string): Promise<GovernanceVault & { changeCursor: string }>;
-  forceDeleteVault(organizationId: string, transaction: SyncTransaction, revision: number, changeCursor: string): Promise<SyncTransactionResponse>;
+  listGovernanceWorkspaces(organizationId: string, after?: string): Promise<{ items: GovernanceWorkspace[]; nextCursor: string | null }>;
+  confirmWorkspaceDeletion(organizationId: string, workspaceId: string): Promise<GovernanceWorkspace & { changeCursor: string }>;
+  forceDeleteWorkspace(organizationId: string, transaction: SyncTransaction, revision: number, changeCursor: string): Promise<SyncTransactionResponse>;
 
 
-  vaultTransferAudience(sourceVaultId: string, destinationVaultId: string): Promise<{ audienceHash: string; removed: { id: string; name: string; email: string }[]; added: { id: string; name: string; email: string }[] }>;
-  transferVault(request: VaultTransferRequest): Promise<VaultTransferRecord>;
-  getVaultRelocations(vaultId: string): Promise<VaultRelocations>;
-  listSummaryVersions(vaultId: string, meetingId: string, limit: number, before?: number): Promise<Omit<SummaryVersion, "document">[]>;
-  getSummaryVersion(vaultId: string, meetingId: string, version?: number): Promise<SummaryVersion | null>;
-  getSummaryJob(vaultId: string, meetingId: string, id?: string): Promise<SummaryJob | null>;
+  workspaceTransferAudience(sourceWorkspaceId: string, destinationWorkspaceId: string): Promise<{ audienceHash: string; removed: { id: string; name: string; email: string }[]; added: { id: string; name: string; email: string }[] }>;
+  transferWorkspace(request: WorkspaceTransferRequest): Promise<WorkspaceTransferRecord>;
+  getWorkspaceRelocations(workspaceId: string): Promise<WorkspaceRelocations>;
+  listSummaryVersions(workspaceId: string, meetingId: string, limit: number, before?: number): Promise<Omit<SummaryVersion, "document">[]>;
+  getSummaryVersion(workspaceId: string, meetingId: string, version?: number): Promise<SummaryVersion | null>;
+  getSummaryJob(workspaceId: string, meetingId: string, id?: string): Promise<SummaryJob | null>;
   insertSummaryJob(job: SummaryJob): Promise<void>;
-  cancelSummaryJob(vaultId: string, meetingId: string, id: string): Promise<SummaryJob | null>;
+  cancelSummaryJob(workspaceId: string, meetingId: string, id: string): Promise<SummaryJob | null>;
   completeSummaryTranscript(job: SummaryJob, transaction: SyncTransaction, transcriptId: string): Promise<TranscriptVersion | null>;
   completeSummaryJob(job: SummaryJob, transaction: SyncTransaction): Promise<boolean>;
   loadImageAnalysis(claim: ImageAnalysisClaim): Promise<ImageAnalysisInput | null>;
   completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction): Promise<boolean>;
-  reserveRecording(vaultId: string, meetingId: string, sessionId: string, source: RecordingSource): Promise<RecordingRecord>;
+  reserveRecording(workspaceId: string, meetingId: string, sessionId: string, source: RecordingSource): Promise<RecordingRecord>;
   getRecording(meetingId: string, number: number, ownerOnly?: boolean): Promise<RecordingRecord | null>;
   markRecordingUploaded(sessionId: string, source: RecordingSource, generation: string, size: number, checksum: string): Promise<RecordingRecord | null>;
   hasPendingRecordings(meetingId: string): Promise<boolean>;
   listRecordings(meetingId: string, after: number, limit: number): Promise<RecordingRecord[]>;
-  expireRecordingUploads(vaultId: string, before: Date): Promise<void>;
+  expireRecordingUploads(workspaceId: string, before: Date): Promise<void>;
 
-  getTranscript(vaultId: string, meetingId: string, revision?: number): Promise<TranscriptVersion | null>;
-  listTranscriptVersions(vaultId: string, meetingId: string, limit: number, before?: number): Promise<TranscriptVersion[]>;
-  listTranscriptAnalytics(vaultId: string, meetingId: string, version: number): Promise<TranscriptAnalyticsSegment[]>;
-  countTranscript(vaultId: string, meetingId: string): Promise<number>;
-  searchTextPage(vaultId: string, query: SyncSearchQuery, kind: "meeting" | "screenshot", offset: number, limit: number): Promise<{
+  getTranscript(workspaceId: string, meetingId: string, revision?: number): Promise<TranscriptVersion | null>;
+  listTranscriptVersions(workspaceId: string, meetingId: string, limit: number, before?: number): Promise<TranscriptVersion[]>;
+  listTranscriptAnalytics(workspaceId: string, meetingId: string, version: number): Promise<TranscriptAnalyticsSegment[]>;
+  countTranscript(workspaceId: string, meetingId: string): Promise<number>;
+  searchTextPage(workspaceId: string, query: SyncSearchQuery, kind: "meeting" | "screenshot", offset: number, limit: number): Promise<{
     id: string; meetingId: string; snippet: string;
   }[]>;
-  lockVault(vaultId: string): Promise<void>;
+  lockWorkspace(workspaceId: string): Promise<void>;
   commitTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse>;
   resolveTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse | null>;
-  assertCursorAvailable(vaultId: string, after: number): Promise<void>;
-  listSnapshot(vaultId: string, after: SyncSnapshotPosition | undefined, limit: number): Promise<{ items: SyncCanonicalRecord[]; hasMore: boolean }>;
-  listChanges(vaultId: string, after: number, through: number, limit: number): Promise<SyncChangeRecord[]>;
-  latestChangeSequence(vaultId?: string): Promise<number>;
-  ensureUploadTarget(vaultId: string, meetingId: string): Promise<boolean>;
+  assertCursorAvailable(workspaceId: string, after: number): Promise<void>;
+  listSnapshot(workspaceId: string, after: SyncSnapshotPosition | undefined, limit: number): Promise<{ items: SyncCanonicalRecord[]; hasMore: boolean }>;
+  listChanges(workspaceId: string, after: number, through: number, limit: number): Promise<SyncChangeRecord[]>;
+  latestChangeSequence(workspaceId?: string): Promise<number>;
+  ensureUploadTarget(workspaceId: string, meetingId: string): Promise<boolean>;
   putTranscriptChunk(
-    vaultId: string,
+    workspaceId: string,
     meetingId: string,
     patchId: string,
     chunkIndex: number,
@@ -287,9 +287,9 @@ export interface IdentitySyncStore {
     segments: SyncTranscriptSegment[],
     deletions: string[],
   ): Promise<boolean>;
-  deleteTranscriptPatch(vaultId: string, meetingId: string, patchId: string): Promise<void>;
+  deleteTranscriptPatch(workspaceId: string, meetingId: string, patchId: string): Promise<void>;
   getScreenshot(
-    vaultId: string,
+    workspaceId: string,
     meetingId: string,
     screenshotId: string,
     activeOnly?: boolean,
@@ -297,18 +297,18 @@ export interface IdentitySyncStore {
   getFile(fileId: string, activeOnly?: boolean): Promise<FileRecord | null>;
   reserveFile(input: FileRecord): Promise<FileRecord | null>;
   markFileUploaded(file: FileRecord, size: number, checksum: string): Promise<FileRecord | null>;
-  expireFileUploads(vaultId: string, before: Date): Promise<void>;
-  listFiles(vaultId: string, after: string | undefined, limit: number): Promise<FileRecord[]>;
-  listMeetingAttachments(vaultId: string, meetingId: string, after: string | undefined, limit: number): Promise<(MeetingAttachmentRecord & { file: FileRecord })[]>;
+  expireFileUploads(workspaceId: string, before: Date): Promise<void>;
+  listFiles(workspaceId: string, after: string | undefined, limit: number): Promise<FileRecord[]>;
+  listMeetingAttachments(workspaceId: string, meetingId: string, after: string | undefined, limit: number): Promise<(MeetingAttachmentRecord & { file: FileRecord })[]>;
   listOrganizations(): Promise<{ id: string; name: string; slug: string; kind: string }[]>;
-  listVaults(organizationId?: string): Promise<SyncVaultRecord[]>;
-  getVault(vaultId: string): Promise<SyncVaultRecord | null>;
-  listProjects(vaultId: string): Promise<SyncProjectView[]>;
-  searchProjectActivity(vaultId: string, filters: SyncSearchFilters): Promise<{ projectId: string | null; updatedAt: string }[]>;
-  resolveEntityVault(entity: "meeting" | "project", id: string): Promise<string | null>;
-  getProject(vaultId: string, projectId: string): Promise<SyncProjectView | null>;
+  listWorkspaces(organizationId?: string): Promise<SyncWorkspaceRecord[]>;
+  getWorkspace(workspaceId: string): Promise<SyncWorkspaceRecord | null>;
+  listProjects(workspaceId: string): Promise<SyncProjectView[]>;
+  searchProjectActivity(workspaceId: string, filters: SyncSearchFilters): Promise<{ projectId: string | null; updatedAt: string }[]>;
+  resolveEntityWorkspace(entity: "meeting" | "project", id: string): Promise<string | null>;
+  getProject(workspaceId: string, projectId: string): Promise<SyncProjectView | null>;
   listMeetings(
-    vaultId: string,
+    workspaceId: string,
     query: SyncSearchQuery | undefined,
     limit: number,
     projectId?: string,
@@ -316,30 +316,30 @@ export interface IdentitySyncStore {
     projectScope?: "direct" | "unassigned",
     filters?: SyncSearchFilters,
   ): Promise<SyncMeetingRecord[]>;
-  getMeeting(vaultId: string, meetingId: string): Promise<SyncMeetingRecord | null>;
+  getMeeting(workspaceId: string, meetingId: string): Promise<SyncMeetingRecord | null>;
   listTranscript(
-    vaultId: string,
+    workspaceId: string,
     meetingId: string,
     limit: number | undefined,
     cursor?: SyncTranscriptCursor,
     version?: number,
   ): Promise<SyncTranscriptSegment[]>;
   listScreenshots(
-    vaultId: string,
+    workspaceId: string,
     meetingId: string | undefined,
     query: SyncSearchQuery | undefined,
     limit: number,
     cursor?: SyncScreenshotCursor,
     filters?: SyncSearchFilters,
   ): Promise<SyncScreenshotRecord[]>;
-  searchPermissionTargets(vaultId: string, query: string, offset: number): Promise<{ items: Array<{ principalType: VaultPrincipalType; principalId: string; name: string; detail: string }>; nextCursor: string | null } | null>;
-  listPermissions(vaultId: string): Promise<VaultPermissionRecord[] | null>;
-  putPermission(vaultId: string, principalType: VaultPrincipalType, principalId: string, role: VaultRole): Promise<boolean>;
-  deletePermission(vaultId: string, principalType: VaultPrincipalType, principalId: string): Promise<boolean>;
+  searchPermissionTargets(workspaceId: string, query: string, offset: number): Promise<{ items: Array<{ principalType: WorkspacePrincipalType; principalId: string; name: string; detail: string }>; nextCursor: string | null } | null>;
+  listPermissions(workspaceId: string): Promise<WorkspacePermissionRecord[] | null>;
+  putPermission(workspaceId: string, principalType: WorkspacePrincipalType, principalId: string, role: WorkspaceRole): Promise<boolean>;
+  deletePermission(workspaceId: string, principalType: WorkspacePrincipalType, principalId: string): Promise<boolean>;
 }
 
 export interface MeetingSyncStore {
-  expireRecordingUploads(vaultId: string, before: Date): Promise<void>;
+  expireRecordingUploads(workspaceId: string, before: Date): Promise<void>;
   isAvailable(): Promise<boolean>;
   listHistoryTargets(after?: SyncHistoryTarget): Promise<SyncHistoryTarget[]>;
   pruneHistoryBatch(target: SyncHistoryTarget): Promise<SyncRetentionResult>;

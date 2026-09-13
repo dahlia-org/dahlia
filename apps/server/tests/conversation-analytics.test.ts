@@ -17,8 +17,8 @@ import { testStore } from "./test-store";
 import { testUserID } from "./public-test-client";
 import { createWorkerHandler } from "../src/worker";
 
-const identity: Identity = { userId: "owner", workspaceId: "personal:owner", source: "header" };
-const vaultId = "019d3f46-7e0d-7d21-98d9-f1456c0bfb58";
+const identity: Identity = { userId: "owner",  source: "header" };
+const workspaceId = "019d3f46-7e0d-7d21-98d9-f1456c0bfb58";
 const meetingId = "019d3f46-8b72-77f1-b232-93726eec3e9e";
 const base = new Date("2026-09-11T00:00:00.000Z");
 const at = (seconds: number) => new Date(base.getTime() + seconds * 1000);
@@ -33,7 +33,7 @@ function recording(number: number, start: number, end: number, enabled: Recordin
     size: 1,
     checksum: `SHA-256:${"a".repeat(64)}`,
   }]));
-  return { sessionId: `019d3f46-8c00-7000-8000-${String(number).padStart(12, "0")}`, vaultId, meetingId, number, startedAt: at(start), endedAt: at(end), audio,
+  return { sessionId: `019d3f46-8c00-7000-8000-${String(number).padStart(12, "0")}`, workspaceId, meetingId, number, startedAt: at(start), endedAt: at(end), audio,
     revision: 1, createdAt: at(start), updatedAt: at(end) };
 }
 
@@ -63,9 +63,9 @@ function service(options: {
   const versions = options.versions ?? [1];
   const recordings = options.recordings ?? [];
   const scoped = {
-    getVault: async () => ({ role: options.role ?? "admin" }),
+    getWorkspace: async () => ({ role: options.role ?? "admin" }),
     getMeeting: async () => ({ meetingId }),
-    getTranscript: async (_vaultId: string, _meetingId: string, version?: number) => {
+    getTranscript: async (_workspaceId: string, _meetingId: string, version?: number) => {
       const selectedVersion = version ?? Math.max(...versions);
       if (!versions.includes(selectedVersion)) return null;
       const metadata = options.metadata && selectedVersion in options.metadata
@@ -76,7 +76,7 @@ function service(options: {
     },
     listRecordings: async (_meetingId: string, after: number, limit: number) =>
       recordings.filter((value) => value.number > after).slice(0, limit),
-    listTranscriptAnalytics: async (_vaultId: string, _meetingId: string, version: number) =>
+    listTranscriptAnalytics: async (_workspaceId: string, _meetingId: string, version: number) =>
       options.segments?.[version] ?? [],
   } as unknown as IdentitySyncStore;
   const store = { withIdentity: async <T>(_identity: Identity, action: (value: IdentitySyncStore) => Promise<T>) => action(scoped) } as MeetingSyncStore;
@@ -108,7 +108,7 @@ describe("conversation analytics", () => {
       },
     });
 
-    const first = await analytics.get(identity, vaultId, meetingId, 1);
+    const first = await analytics.get(identity, workspaceId, meetingId, 1);
     expect(first).toMatchObject({ status: "ready", transcriptVersion: 1, recordingDuration: 20,
       unionSpeechDuration: 10, overlapDuration: 2, conversationOccupancyRatio: 0.5, overlapRatio: 0.2 });
     if (first.status !== "ready") throw new Error("expected ready analytics");
@@ -120,7 +120,7 @@ describe("conversation analytics", () => {
     ]);
     expect(first.longestMonologue).toMatchObject({ source: "mic", start: 1, end: 5 });
     expect(first.overlapIntervals).toEqual([{ start: 3, end: 5 }]);
-    expect((await analytics.get(identity, vaultId, meetingId, 2))).toMatchObject({
+    expect((await analytics.get(identity, workspaceId, meetingId, 2))).toMatchObject({
       status: "ready", transcriptVersion: 2, unionSpeechDuration: 2,
     });
   });
@@ -131,7 +131,7 @@ describe("conversation analytics", () => {
       audioSource: "mic", normalizedCharacterCount: 1,
     }));
     const ready = await service({ recordings: [recording(1, 0, 3600, ["mic"])], segments: { 1: longSegments } })
-      .get(identity, vaultId, meetingId, 1);
+      .get(identity, workspaceId, meetingId, 1);
     expect(ready).toMatchObject({ status: "ready", isTimelineCondensed: true });
     if (ready.status !== "ready") throw new Error("expected ready analytics");
     expect(ready.timelineIntervals.length).toBeLessThanOrEqual(512);
@@ -139,15 +139,15 @@ describe("conversation analytics", () => {
 
     const missing = await service({ recordings: [recording(1, 0, 10, ["system"])], segments: { 1: [
       { segmentId: "mic", startedAt: at(1), endedAt: at(2), audioSource: "mic", normalizedCharacterCount: 1 },
-    ] } }).get(identity, vaultId, meetingId, 1);
+    ] } }).get(identity, workspaceId, meetingId, 1);
     expect(missing).toEqual({ status: "unavailable", transcriptId: transcript(1).id,
       transcriptVersion: 1, reason: "recording_audio_missing" });
-    await expect(service({ activeVersions: [1] }).get(identity, vaultId, meetingId, 1))
+    await expect(service({ activeVersions: [1] }).get(identity, workspaceId, meetingId, 1))
       .rejects.toMatchObject({ status: 409, code: "transcript_version_not_finalized" });
     await expect(service({ recordings: [recording(1, 0, 10)], versions: [1, 2], activeVersions: [1] })
-      .get(identity, vaultId, meetingId, 1)).resolves.toMatchObject({ status: "ready", transcriptVersion: 1 });
-    await expect(service({ role: "viewer" }).get(identity, vaultId, meetingId, 1)).rejects.toMatchObject({ status: 404 });
-    await expect(service({ versions: [] }).get(identity, vaultId, meetingId, 1)).rejects.toMatchObject({ status: 404 });
+      .get(identity, workspaceId, meetingId, 1)).resolves.toMatchObject({ status: "ready", transcriptVersion: 1 });
+    await expect(service({ role: "viewer" }).get(identity, workspaceId, meetingId, 1)).rejects.toMatchObject({ status: 404 });
+    await expect(service({ versions: [] }).get(identity, workspaceId, meetingId, 1)).rejects.toMatchObject({ status: 404 });
   });
 
   it("binds each transcript version to its metadata recording inputs", async () => {
@@ -170,10 +170,10 @@ describe("conversation analytics", () => {
       },
     });
 
-    await expect(analytics.get(identity, vaultId, meetingId, 1)).resolves.toMatchObject({ status: "ready", recordingDuration: 10 });
-    await expect(analytics.get(identity, vaultId, meetingId, 2)).resolves.toMatchObject({ status: "ready", recordingDuration: 10 });
+    await expect(analytics.get(identity, workspaceId, meetingId, 1)).resolves.toMatchObject({ status: "ready", recordingDuration: 10 });
+    await expect(analytics.get(identity, workspaceId, meetingId, 2)).resolves.toMatchObject({ status: "ready", recordingDuration: 10 });
     for (const version of [3, 4, 5]) {
-      await expect(analytics.get(identity, vaultId, meetingId, version)).resolves.toMatchObject({
+      await expect(analytics.get(identity, workspaceId, meetingId, version)).resolves.toMatchObject({
         status: "unavailable", transcriptVersion: version, reason: "recording_audio_missing",
       });
     }
@@ -186,9 +186,9 @@ describe("conversation analytics", () => {
       { segmentId: "mic", startedAt: at(1), endedAt: at(3), audioSource: "mic", normalizedCharacterCount: 2 },
     ] };
 
-    await expect(service({ recordings: [partiallyCommitted], segments }).get(identity, vaultId, meetingId, 1))
+    await expect(service({ recordings: [partiallyCommitted], segments }).get(identity, workspaceId, meetingId, 1))
       .resolves.toMatchObject({ status: "unavailable", reason: "recording_audio_missing" });
-    await expect(service({ recordings: [recording(1, 0, 10)], segments }).get(identity, vaultId, meetingId, 1))
+    await expect(service({ recordings: [recording(1, 0, 10)], segments }).get(identity, workspaceId, meetingId, 1))
       .resolves.toMatchObject({ status: "ready" });
   });
 
@@ -199,10 +199,10 @@ describe("conversation analytics", () => {
       ...baseStore.sync,
       isAvailable: () => Promise.resolve(true),
       withIdentity: async <T>(requestIdentity: Identity, action: (value: IdentitySyncStore) => Promise<T>) => action({
-        resolveEntityVault: async () => vaultId,
-        getVault: async () => ({ role: requestIdentity.userId === ownerId ? "admin" : "viewer" }),
+        resolveEntityWorkspace: async () => workspaceId,
+        getWorkspace: async () => ({ role: requestIdentity.userId === ownerId ? "admin" : "viewer" }),
         getMeeting: async () => ({ meetingId }),
-        getTranscript: async (_vaultId: string, _meetingId: string, version: number) => version === 1 ? transcript(1) : null,
+        getTranscript: async (_workspaceId: string, _meetingId: string, version: number) => version === 1 ? transcript(1) : null,
         listRecordings: async () => [],
         listTranscriptAnalytics: async () => [],
       } as unknown as IdentitySyncStore),

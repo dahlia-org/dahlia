@@ -24,7 +24,7 @@ describe("server extensions", () => {
       registerRoutes(app, services) {
         app.get("/api/extension", async (context) => {
           const identity = await services.browserIdentity(context.req.raw, context);
-          return context.json({ workspaceId: identity.workspaceId });
+          return context.json({ userId: identity.userId });
         });
       },
       sessionCapabilities: () => ({ extension: true }),

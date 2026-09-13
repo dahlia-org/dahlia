@@ -36,11 +36,11 @@
             defer { fixture.close() }
             let unrelatedAttachmentId = UUID.v7()
             try await fixture.queue.write { db in
-                let vaultId = UUID.v7(), meetingId = UUID.v7(), fileId = UUID.v7()
-                try VaultRecord(id: vaultId, path: nil, name: "Other", createdAt: .now, lastOpenedAt: .now).insert(db)
-                try MeetingRecord(id: meetingId, vaultId: vaultId, projectId: nil, name: "Other", createdAt: .now, updatedAt: .now).insert(db)
+                let workspaceId = UUID.v7(), meetingId = UUID.v7(), fileId = UUID.v7()
+                try WorkspaceRecord(id: workspaceId, path: nil, name: "Other", createdAt: .now, lastOpenedAt: .now).insert(db)
+                try MeetingRecord(id: meetingId, workspaceId: workspaceId, projectId: nil, name: "Other", createdAt: .now, updatedAt: .now).insert(db)
                 try FileRecord(
-                    id: fileId, vaultId: vaultId, size: 0, contentType: "image/png", checksum: "SHA-256:" + String(repeating: "0", count: 64),
+                    id: fileId, workspaceId: workspaceId, size: 0, contentType: "image/png", checksum: "SHA-256:" + String(repeating: "0", count: 64),
                     name: "other.png", metadata: .init(source: .upload), createdAt: .now, updatedAt: .now
                 ).insert(db)
                 try MeetingAttachmentRecord(
@@ -55,7 +55,7 @@
             }
             try await fixture.queue.write { db in
                 try db.execute(sql: "DELETE FROM sync_entity_state")
-                try db.execute(sql: "UPDATE vaults SET syncConfirmedConnectionId = NULL, syncPullCursor = NULL")
+                try db.execute(sql: "UPDATE workspaces SET syncConfirmedConnectionId = NULL, syncPullCursor = NULL")
             }
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: fixture.queue)
             let entities = try await fixture.queue.read { db in
@@ -158,25 +158,25 @@
             switch boundary {
             case "expiredCursor": await fixture.server.expirePullCursor()
             case "compactReceipt": await fixture.server.useCompactReceipts()
-            default: try await fixture.queue.write { try $0.execute(sql: "UPDATE vaults SET syncRecoveryState = 'recovering'") }
+            default: try await fixture.queue.write { try $0.execute(sql: "UPDATE workspaces SET syncRecoveryState = 'recovering'") }
             }
             #expect(try await RemoteChangeApplier.recoveryGeneration(
-                vaultId: fixture.vaultId, expectedConnectionId: fixture.connectionId, dbQueue: fixture.queue
+                workspaceId: fixture.workspaceId, expectedConnectionId: fixture.connectionId, dbQueue: fixture.queue
             ) == nil)
             let worker = fixture.worker()
             await worker.drain()
             let deadline = ContinuousClock.now.advanced(by: .seconds(10))
             while ContinuousClock.now < deadline {
-                if try await fixture.queue.read({ try !SyncTransactionQueue.hasPending(vaultId: fixture.vaultId, in: $0) }) { break }
+                if try await fixture.queue.read({ try !SyncTransactionQueue.hasPending(workspaceId: fixture.workspaceId, in: $0) }) { break }
                 try await Task.sleep(for: .milliseconds(10))
             }
             await worker.stop()
             #expect(await fixture.server.commitIds.count == 2)
-            #expect(try await fixture.queue.read { try !SyncTransactionQueue.hasPending(vaultId: fixture.vaultId, in: $0) })
+            #expect(try await fixture.queue.read { try !SyncTransactionQueue.hasPending(workspaceId: fixture.workspaceId, in: $0) })
             #expect(try await RemoteChangeApplier.recoveryGeneration(
-                vaultId: fixture.vaultId, expectedConnectionId: fixture.connectionId, dbQueue: fixture.queue
+                workspaceId: fixture.workspaceId, expectedConnectionId: fixture.connectionId, dbQueue: fixture.queue
             ) != nil)
-            #expect(try await fixture.queue.read { try String.fetchOne($0, sql: "SELECT syncRecoveryState FROM vaults") } != nil)
+            #expect(try await fixture.queue.read { try String.fetchOne($0, sql: "SELECT syncRecoveryState FROM workspaces") } != nil)
         }
 
         @Test(.timeLimit(.minutes(1)), arguments: ["disconnect", "discard", "stop", "authorization", "relocation", "updateRequired"])
@@ -201,14 +201,14 @@
             } else {
                 try await fixture.queue.write { db in
                     switch boundary {
-                    case "disconnect": try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL")
-                    case "discard": try SyncTransactionQueue.discard(vaultId: fixture.vaultId, in: db)
+                    case "disconnect": try db.execute(sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL")
+                    case "discard": try SyncTransactionQueue.discard(workspaceId: fixture.workspaceId, in: db)
                     case "authorization": try db.execute(
                             sql: "UPDATE sync_transactions SET blockedReason = 'authorization' WHERE id = ?",
                             arguments: [first.id]
                         )
-                    case "relocation": try db.execute(sql: "UPDATE vaults SET syncRecoveryState = 'transferBlocked'")
-                    default: try db.execute(sql: "UPDATE vaults SET syncRecoveryState = 'updateRequired'")
+                    case "relocation": try db.execute(sql: "UPDATE workspaces SET syncRecoveryState = 'transferBlocked'")
+                    default: try db.execute(sql: "UPDATE workspaces SET syncRecoveryState = 'updateRequired'")
                     }
                 }
                 for await count in fixture.server.uploadCancellations where count == 4 {
@@ -229,7 +229,7 @@
             defer { fixture.close() }
             _ = try await fixture.queue.write { db in
                 try SyncTransactionRecorder.record(
-                    vaultId: fixture.vaultId,
+                    workspaceId: fixture.workspaceId,
                     operations: [.init(entity: .meeting, action: .delete, entityId: .v7())],
                     in: db
                 )
@@ -245,7 +245,7 @@
                 break
             }
             try await fixture.queue.write { db in
-                try db.execute(sql: "UPDATE vaults SET syncRecoveryState = 'transferBlocked'")
+                try db.execute(sql: "UPDATE workspaces SET syncRecoveryState = 'transferBlocked'")
             }
             await fixture.server.releaseResolve()
             await #expect(throws: CancellationError.self) {
@@ -253,11 +253,11 @@
             }
             await worker.stop()
             #expect(await fixture.server.commitIds.isEmpty)
-            #expect(try await fixture.queue.read { try SyncTransactionQueue.hasPending(vaultId: fixture.vaultId, in: $0) })
+            #expect(try await fixture.queue.read { try SyncTransactionQueue.hasPending(workspaceId: fixture.workspaceId, in: $0) })
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func boundedStagingReducesFixedLatencyTransferTime() async throws {
+        func boundedStagingOverlapsUploadsAndCompletesEveryFile() async throws {
             let serial = try SyncTransferFixture(), parallel = try SyncTransferFixture()
             defer { serial.close()
                 parallel.close()
@@ -266,27 +266,31 @@
                 for _ in 0 ..< 8 {
                     _ = try await fixture.addFile()
                 }
-                await fixture.server.setUploadDelay(.milliseconds(200))
             }
-            func measure(_ fixture: SyncTransferFixture, prefetch: Bool) async throws -> Duration {
+            func stage(_ fixture: SyncTransferFixture, prefetch: Bool) async throws {
                 let worker = fixture.worker()
                 let head = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue))
                 let candidates = try await fixture.queue.read { try SyncTransactionQueue.fileUploads(for: head, origin: fixture.origin, in: $0) }
-                let start = ContinuousClock.now
-                if prefetch { try await worker.prepareFileUploads(for: head, origin: fixture.origin) }
+                if prefetch {
+                    await fixture.server.holdUploads()
+                    try await worker.prepareFileUploads(for: head, origin: fixture.origin)
+                    for await count in fixture.server.uploadStarts where count == 4 {
+                        break
+                    }
+                    #expect(await fixture.server.maximumUploads == 4)
+                    await fixture.server.releaseUploads()
+                }
                 for candidate in candidates {
                     try await worker.stageFileUpload(candidate)
                 }
-                let duration = start.duration(to: .now)
                 await worker.stop()
-                return duration
+                #expect(await fixture.server.uploadCount == 8)
+                #expect(await fixture.server.cancelledUploads == 0)
             }
-            let serialTime = try await measure(serial, prefetch: false)
-            let parallelTime = try await measure(parallel, prefetch: true)
+            try await stage(serial, prefetch: false)
+            try await stage(parallel, prefetch: true)
             #expect(await serial.server.maximumUploads == 1)
             #expect(await parallel.server.maximumUploads == 4)
-            #expect(parallelTime < serialTime)
-            print("Sync upload benchmark (8 files, 200 ms/request): serial=\(serialTime), parallel=\(parallelTime)")
         }
 
         @Test(.timeLimit(.minutes(1)), arguments: [429, 503, 403, 409])
@@ -338,7 +342,7 @@
             #expect(await fixture.server.commitIds == [first.id])
         }
 
-        @Test(.timeLimit(.minutes(1)), arguments: ["delete", "reset", "vault", "retry", "blocked", "sameFile"])
+        @Test(.timeLimit(.minutes(1)), arguments: ["delete", "reset", "workspace", "retry", "blocked", "sameFile"])
         func lookaheadStopsAtBarriersAndDoesNotStageTheSameFileTwice(boundary: String) async throws {
             let fixture = try SyncTransferFixture()
             defer { fixture.close() }
@@ -354,11 +358,11 @@
             } else {
                 _ = try await fixture.queue.write { db in
                     try SyncTransactionRecorder.record(
-                        vaultId: fixture.vaultId,
+                        workspaceId: fixture.workspaceId,
                         operations: [.init(
-                            entity: boundary == "delete" ? .meeting : .vault,
-                            action: boundary == "vault" ? .create : boundary == "reset" ? .reset : .delete,
-                            entityId: boundary == "delete" ? .v7() : fixture.vaultId
+                            entity: boundary == "delete" ? .meeting : .workspace,
+                            action: boundary == "workspace" ? .create : boundary == "reset" ? .reset : .delete,
+                            entityId: boundary == "delete" ? .v7() : fixture.workspaceId
                         )], in: db
                     )
                 }
@@ -423,7 +427,7 @@
     @MainActor
     private struct SyncTransferFixture {
         let queue: DatabaseQueue
-        let vaultId = UUID.v7()
+        let workspaceId = UUID.v7()
         let connectionId = UUID.v7()
         let origin = URL(string: "https://sync-\(UUID().uuidString.lowercased()).invalid")!
         let server = SyncTransferServer()
@@ -433,8 +437,8 @@
             queue = try AppDatabaseManager(path: ":memory:").dbQueue
             try queue.write { db in
                 try DahliaAccountConnectionRecord(id: connectionId, origin: origin.absoluteString, clientID: "test", createdAt: .now).insert(db)
-                try VaultRecord(
-                    id: vaultId,
+                try WorkspaceRecord(
+                    id: workspaceId,
                     path: nil,
                     name: "Sync",
                     createdAt: .now,
@@ -445,14 +449,14 @@
                     syncConfirmedConnectionId: connectionId,
                     syncPullCursor: "before"
                 ).insert(db)
-                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'vault', ?, 1)", arguments: [vaultId, vaultId])
+                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'workspace', ?, 1)", arguments: [workspaceId, workspaceId])
             }
         }
 
         func addMeeting() async throws -> UUID {
             let id = UUID.v7()
             try await queue.write { db in
-                try MeetingRecord(id: id, vaultId: vaultId, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now).insert(db)
+                try MeetingRecord(id: id, workspaceId: workspaceId, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now).insert(db)
                 try SummaryContent(meetingId: id, title: "Summary", document: "Text", createdAt: .now).save(db)
                 try TranscriptContent(id: .v7(), meetingId: id, startTime: .now, text: "Speech", isConfirmed: true).insert(db)
             }
@@ -469,7 +473,7 @@
             )
             let file = try FileRecord(
                 id: id,
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 size: Int64(bytes.count),
                 contentType: "image/png",
                 checksum: "SHA-256:" + source.contentHash,
@@ -484,7 +488,7 @@
             try await queue.write { db in
                 try file.insert(db)
                 try FileTextBodyRecord(fileId: id, ocrText: nil, caption: nil).insert(db)
-                try TextContentStore.registerLocal(entity: .file, id: id, vaultId: vaultId, in: db)
+                try TextContentStore.registerLocal(entity: .file, id: id, workspaceId: workspaceId, in: db)
                 if let meetingId {
                     try MeetingAttachmentRecord(id: .v7(), meetingId: meetingId, fileId: id, capturedAt: .now, createdAt: .now).insert(db)
                 }
@@ -498,7 +502,7 @@
             let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(#require(file.localReference).utf8))
             _ = try await queue.write { db in
                 let operation = try SyncInitialSnapshotBuilder.fileOperation(file, in: db)
-                try SyncTransactionRecorder.record(vaultId: vaultId, operations: [operation], screenshotAttachments: [
+                try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [operation], screenshotAttachments: [
                     operation.id: .init(mimeType: file.contentType, source: source),
                 ], in: db)
             }
@@ -543,6 +547,8 @@
         var maximumUploads = 0
         private var activeUploads = 0
         private var uploadDelay = Duration.zero
+        private var uploadsHeld = false
+        private var uploadReleases: [AsyncStream<Void>.Continuation] = []
         private var commitFailure: Bool?
         private var expiredPullCursor = false
         private var compactReceipts = false
@@ -561,6 +567,12 @@
 
         func register(_ file: FileRecord) { files[file.id.uuidString.lowercased()] = file }
         func setUploadDelay(_ delay: Duration) { uploadDelay = delay }
+        func holdUploads() { uploadsHeld = true }
+        func releaseUploads() {
+            uploadsHeld = false
+            for release in uploadReleases { release.finish() }
+            uploadReleases.removeAll()
+        }
         func failNextCommit(afterSaving: Bool) { commitFailure = afterSaving }
         func failUpload(_ id: UUID, status: Int) { uploadFailures[id.uuidString.lowercased()] = status }
         func expirePullCursor() { expiredPullCursor = true }
@@ -591,6 +603,12 @@
                 started.yield(uploadCount)
                 defer { activeUploads -= 1 }
                 do {
+                    if uploadsHeld {
+                        let (release, continuation) = AsyncStream<Void>.makeStream()
+                        uploadReleases.append(continuation)
+                        for await _ in release {}
+                        try Task.checkCancellation()
+                    }
                     // Deliberate server latency, not a completion barrier for the test.
                     try await Task.sleep(for: uploadDelay)
                 } catch {
@@ -650,7 +668,7 @@
         private func fileResponse(_ id: String) throws -> Data {
             let file = try #require(files[id])
             return try JSONSerialization.data(withJSONObject: [
-                "id": id, "vaultId": file.vaultId.uuidString, "size": file.size, "checksum": file.checksum,
+                "id": id, "workspaceId": file.workspaceId.uuidString, "size": file.size, "checksum": file.checksum,
                 "uri": "/files/\(id)", "offset": 0, "contentType": file.contentType, "name": file.name,
                 "metadata": ["source": "screenshot"], "revision": 1,
                 "createdAt": "2026-09-11T00:00:00Z", "updatedAt": "2026-09-11T00:00:00Z",
@@ -661,7 +679,7 @@
             let file = try #require(files[id])
             let data = try #require(operation["data"] as? [String: Any])
             return try [
-                "id": id, "vaultId": file.vaultId.uuidString.lowercased(), "revision": 1,
+                "id": id, "workspaceId": file.workspaceId.uuidString.lowercased(), "revision": 1,
                 "size": file.size, "contentType": file.contentType, "checksum": file.checksum, "name": file.name,
                 "metadata": #require(data["metadata"]),
                 "createdAt": "2026-09-11T00:00:00Z", "updatedAt": "2026-09-11T00:00:00Z",

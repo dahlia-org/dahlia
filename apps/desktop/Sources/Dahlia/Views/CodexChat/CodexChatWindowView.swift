@@ -23,7 +23,7 @@ struct CodexChatWindowView: View {
                     session: session,
                     coordinator: coordinator,
                     meetingReferences: sidebarViewModel.meetingReferences,
-                    meetingCatalogVaultID: sidebarViewModel.currentVault?.id,
+                    meetingCatalogWorkspaceID: sidebarViewModel.currentWorkspace?.id,
                     isMeetingCatalogLoaded: sidebarViewModel.isMeetingCatalogLoaded,
                     showsHistory: $showsHistory,
                     configurationPresentation: nil,
@@ -48,7 +48,7 @@ struct CodexChatWindowView: View {
             }
         }
         .frame(minWidth: 420, minHeight: 360)
-        .task(id: sidebarViewModel.currentVault?.id) {
+        .task(id: sidebarViewModel.currentWorkspace?.id) {
             sidebarViewModel.loadMeetingReferencesIfNeeded()
         }
         .onDisappear {

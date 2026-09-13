@@ -21,7 +21,7 @@ import Foundation
         }
 
         @Test
-        func restorePreviousSessionLoadsCalendarsAndEvents() async throws {
+        func restorePreviousSessionLoadsCalendarsAndEvents() async {
             let defaults = isolatedUserDefaults()
             seedSelectedCalendars(["primary"], defaults: defaults)
 
@@ -533,8 +533,8 @@ import Foundation
             #expect(event.recurrenceId.isEmpty)
             #expect(!event.isAllDay)
 
-            let intervalEnd = Calendar.current.date(byAdding: .day, value: 7, to: fixtureNow)!
-            let filtered = GoogleCalendarAPIClient.sortAndFilter(
+            let intervalEnd = try #require(Calendar.current.date(byAdding: .day, value: 7, to: fixtureNow))
+            let filtered = try GoogleCalendarAPIClient.sortAndFilter(
                 [
                     event,
                     CalendarEvent(
@@ -546,8 +546,8 @@ import Foundation
                         title: "Outside window",
                         description: "",
                         icalUid: nil,
-                        startDate: Calendar.current.date(byAdding: .day, value: 9, to: fixtureNow)!,
-                        endDate: Calendar.current.date(byAdding: .day, value: 9, to: fixtureNow)!,
+                        startDate: #require(Calendar.current.date(byAdding: .day, value: 9, to: fixtureNow)),
+                        endDate: #require(Calendar.current.date(byAdding: .day, value: 9, to: fixtureNow)),
                         isAllDay: true,
                         conferenceURI: nil
                     ),

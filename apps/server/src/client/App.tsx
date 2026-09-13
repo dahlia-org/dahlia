@@ -1,4 +1,4 @@
-import { VaultSharing } from "./VaultSharing";
+import { WorkspaceSharing } from "./WorkspaceSharing";
 import { apiUrls } from "./generated-operations";
 import { DEFAULT_SEARCH_SETTINGS, SEARCH_FIELDS, searchSettingsSchema, type SearchSettings } from "../search/settings-model";
 import { encodeId } from "../typeid";
@@ -27,7 +27,7 @@ import {
   type DashboardCapabilities,
 } from "./routes";
 import { dashboardNavigationEvent, dashboardNavigationPath, navigateDashboard } from "./navigation";
-import { canWriteVault, vaultRoleLabel, clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedProjectInfo } from "./api";
+import { canWriteWorkspace, workspaceRoleLabel, clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedWorkspaceInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedProjectInfo } from "./api";
 import { DetailTabs, MeetingTabs, parseSummary, SummaryTags } from "./MeetingContent";
 import { FileDialog, FileLink, FileViewer } from "./FileViewer";
 import { MenuIcon, Sidebar, SidebarProvider, useSidebar } from "./Sidebar";
@@ -35,7 +35,6 @@ import { MenuIcon, Sidebar, SidebarProvider, useSidebar } from "./Sidebar";
 export interface SessionInfo {
   capabilities: DashboardCapabilities;
   user: { id: string; email?: string; name?: string };
-  workspace: { id: string; type: "personal" };
 }
 
 export interface DashboardBrand {
@@ -136,13 +135,13 @@ type SyncedScreenshotInfo = operations["listMeetingFiles"]["responses"][200]["co
 type WithoutOperationId<T> = T extends unknown ? Omit<T, "id"> : never;
 type SyncOperation = WithoutOperationId<components["schemas"]["Transaction"]["operations"][number]>;
 
-export async function commitSyncTransaction(vaultId: string, operations: SyncOperation[], onRecovery: (active: boolean) => void = () => {}) {
+export async function commitSyncTransaction(workspaceId: string, operations: SyncOperation[], onRecovery: (active: boolean) => void = () => {}) {
   const transactionId = encodeId("transaction", uuidV7());
   const request = {
     body: {
       schemaVersion: 3 as const,
       id: transactionId,
-      vaultId,
+      workspaceId,
       createdAt: new Date().toISOString(),
       operations: operations.map((operation) => ({ ...operation, id: encodeId("operation", uuidV7()) })),
     },
@@ -243,7 +242,7 @@ function SignIn({ brand }: { brand: DashboardBrand }) {
         <div className="auth-copy">
           <span className="eyebrow">{uiText("Your meeting library", "ミーティングライブラリ")}</span>
           <h1>{uiText("Every conversation,\nwithin reach.", "会話の記録を、\nいつでも手元に。")}</h1>
-          <p>{uiText("Find the decisions, details and next steps in your meetings. Sign in to access the Vaults you sync with Dahlia for macOS.", "ミーティングで決まったこと、話した内容、次のアクションをすぐに確認。macOS 版 Dahlia と同期した保管庫にアクセスできます。")}</p>
+          <p>{uiText("Find the decisions, details and next steps in your meetings. Sign in to access the Workspaces you sync with Dahlia for macOS.", "ミーティングで決まったこと、話した内容、次のアクションをすぐに確認。macOS 版 Dahlia と同期したワークスペースにアクセスできます。")}</p>
         </div>
         <button className="primary full" disabled={pending} onClick={() => void signIn()}>
           {pending ? uiText("Signing in…", "サインイン中…") : uiText("Continue with Google", "Google で続ける")}
@@ -302,7 +301,7 @@ function Shell({
   session,
   path,
   navigate,
-  routeVaultId,
+  routeWorkspaceId,
 }: {
   brand: DashboardBrand;
   children: ReactNode;
@@ -310,7 +309,7 @@ function Shell({
   session: SessionInfo;
   path: string;
   navigate: (path: string) => void;
-  routeVaultId?: string;
+  routeWorkspaceId?: string;
 }) {
   const main = useRef<HTMLElement>(null);
   const navigation = useRef<HTMLDialogElement>(null);
@@ -363,7 +362,7 @@ function Shell({
         <dialog ref={attachNavigation} id="primary-navigation" className="sidebar-container" aria-label={compact ? uiText("Navigation", "ナビゲーション") : undefined} role={compact ? "dialog" : "presentation"}
           onClick={(event) => { if (event.target === event.currentTarget && compact) event.currentTarget.close(); }}>
         <button className="icon-button navigation-close" aria-label={uiText("Close navigation", "ナビゲーションを閉じる")} onClick={() => navigation.current?.close()}>×</button>
-        <Sidebar brand={<Brand brand={brand} />} session={session} routeVaultId={routeVaultId}
+        <Sidebar brand={<Brand brand={brand} />} session={session} routeWorkspaceId={routeWorkspaceId}
           serverLinks={extensions.flatMap((extension) => extension.navigation ?? []).filter(isServerNavigation).map((item) =>
             (!item.capability || session.capabilities[item.capability]) && <a key={item.path} href={item.path}><MenuIcon name="settings" />{item.label}</a>)}>
           <nav aria-label={uiText("Account navigation", "アカウント")}>
@@ -384,7 +383,7 @@ function PageHeader({ title, description, actions }: { title: string; descriptio
 }
 
 function Overview({ session }: { session: SessionInfo }) {
-  if (session.capabilities.sync) return <Vaults home />;
+  if (session.capabilities.sync) return <Workspaces home />;
   return (
     <>
       <PageHeader title="Overview" />
@@ -427,7 +426,7 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
   return (
     <>
       {dialog}
-      <PageHeader title={uiText("Account settings", "アカウント設定")} description={uiText("Applies to every vault in this account and syncs across your devices.", "このアカウントのすべての保管庫に適用され、ほかの端末にも同期されます。")} />
+      <PageHeader title={uiText("Account settings", "アカウント設定")} description={uiText("Applies to every workspace in this account and syncs across your devices.", "このアカウントのすべてのワークスペースに適用され、ほかの端末にも同期されます。")} />
       <section className="section-block settings-section">
         <h2 className="section-label">{uiText("Account", "アカウント")}</h2>
         <div className="panel account-card"><dl className="account-details">
@@ -465,95 +464,95 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
   );
 }
 
-export function Vaults({ home = false }: { home?: boolean }) {
+export function Workspaces({ home = false }: { home?: boolean }) {
   const { dialog, openDialog } = useActionDialog();
-  const { vaults, error: loadError, reload, organizationId, select, organizations } = useSidebar();
+  const { workspaces, error: loadError, reload, organizationId, select, organizations } = useSidebar();
   const teamOrganizations = organizations?.filter((organization) => organization.kind === "team") ?? [];
-  const [recentVaultId, setRecentVaultId] = useState("");
-  const recentVault = vaults?.find((vault) => vault.vaultId === recentVaultId) ?? vaults?.[0];
+  const [recentWorkspaceId, setRecentWorkspaceId] = useState("");
+  const recentWorkspace = workspaces?.find((workspace) => workspace.workspaceId === recentWorkspaceId) ?? workspaces?.[0];
   useEffect(() => {
-    if (recentVault) setRecentVaultId(recentVault.vaultId);
-  }, [recentVault]);
-  const recent = useLiveJSON<{ items: SyncedMeetingInfo[] }>(home && recentVault ? apiQuery("listMeetings", { params: { path: { vaultId: recentVault.vaultId } } }) : undefined);
+    if (recentWorkspace) setRecentWorkspaceId(recentWorkspace.workspaceId);
+  }, [recentWorkspace]);
+  const recent = useLiveJSON<{ items: SyncedMeetingInfo[] }>(home && recentWorkspace ? apiQuery("listMeetings", { params: { path: { workspaceId: recentWorkspace.workspaceId } } }) : undefined);
   const [recovering, setRecovering] = useState(false);
 
-  const { data: encryptionCapabilities } = useLiveJSON<{ vaultEncryption?: { version: number } }>(apiQuery("getCapabilities", {}));
-  const createVault = () => openDialog({
-    title: uiText("New Vault", "保管庫を作成"),
-    description: uiText("Choose the Team Organization that will own this Vault. Sharing is configured after creation.", "保管庫を所有するTeam組織を選んでください。共有は作成後に設定できます。"),
-    confirmLabel: uiText("Create Vault", "保管庫を作成"),
+  const { data: encryptionCapabilities } = useLiveJSON<{ workspaceEncryption?: { version: number } }>(apiQuery("getCapabilities", {}));
+  const createWorkspace = () => openDialog({
+    title: uiText("New Workspace", "ワークスペースを作成"),
+    description: uiText("Choose the Team Organization that will own this Workspace. Sharing is configured after creation.", "ワークスペースを所有するTeam組織を選んでください。共有は作成後に設定できます。"),
+    confirmLabel: uiText("Create Workspace", "ワークスペースを作成"),
     fields: [{ name: "organizationId", label: uiText("Organization", "組織"), required: true,
       value: teamOrganizations.some((organization) => organization.id === organizationId) ? organizationId : teamOrganizations[0]?.id,
       options: teamOrganizations.map((organization) => ({ value: organization.id, label: organization.name })) },
-      { name: "name", label: uiText("Vault name", "保管庫名"), required: true },
-      ...(encryptionCapabilities?.vaultEncryption ? [{ name: "encryption", label: uiText("Database encryption", "DB 内データの暗号化"), value: "none", options: [
+      { name: "name", label: uiText("Workspace name", "ワークスペース名"), required: true },
+      ...(encryptionCapabilities?.workspaceEncryption ? [{ name: "encryption", label: uiText("Database encryption", "DB 内データの暗号化"), value: "none", options: [
         { value: "none", label: uiText("None", "暗号化しない") }, { value: "server", label: uiText("Server encryption (excluding search)", "Server 暗号化（検索データを除く）") },
       ] }] : [])],
     onSubmit: async ({ name, encryption, organizationId: targetOrganizationId }) => {
-      const id = encodeId("vault", uuidV7());
-      await commitSyncTransaction(id, [{ entity: "vault", action: "create", entityId: id, baseRevision: null,
+      const id = encodeId("workspace", uuidV7());
+      await commitSyncTransaction(id, [{ entity: "workspace", action: "create", entityId: id, baseRevision: null,
         data: { organizationId: targetOrganizationId!, name: name!.trim(), ...(encryption === "server" ? { encryption: "server" as const } : {}), createdAt: new Date().toISOString() } }], setRecovering);
       select(targetOrganizationId!);
-      navigateDashboard(`/vaults/${id}`);
+      navigateDashboard(`/workspaces/${id}`);
     },
   });
   return <>
     {dialog}
-    <PageHeader title={home ? uiText("Home", "ホーム") : uiText("Vaults", "保管庫")}
-      description={home ? uiText("Pick up where your last conversation left off.", "前回の会話の続きから、始めましょう。") : uiText("Your meetings, organized in one place.", "ミーティングとその記録を、保管庫ごとに整理します。")}
-      actions={<button className="primary" disabled={teamOrganizations.length === 0} onClick={createVault}><MenuIcon name="plus" />{uiText("New Vault", "保管庫を作成")}</button>} />
+    <PageHeader title={home ? uiText("Home", "ホーム") : uiText("Workspaces", "ワークスペース")}
+      description={home ? uiText("Pick up where your last conversation left off.", "前回の会話の続きから、始めましょう。") : uiText("Your meetings, organized in one place.", "ミーティングとその記録を、ワークスペースごとに整理します。")}
+      actions={<button className="primary" disabled={teamOrganizations.length === 0} onClick={createWorkspace}><MenuIcon name="plus" />{uiText("New Workspace", "ワークスペースを作成")}</button>} />
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
     <section className="section-block">
-      <div className="collection-heading"><h2>{uiText("Your Vaults", "保管庫一覧")}</h2>{vaults && <span className="muted">{vaults.length}</span>}</div>
-      {!vaults && !loadError && <p className="content-empty" role="status">{uiText("Loading Vaults…", "保管庫を読み込み中…")}</p>}
+      <div className="collection-heading"><h2>{uiText("Your Workspaces", "ワークスペース一覧")}</h2>{workspaces && <span className="muted">{workspaces.length}</span>}</div>
+      {!workspaces && !loadError && <p className="content-empty" role="status">{uiText("Loading Workspaces…", "ワークスペースを読み込み中…")}</p>}
       {loadError && <p className="error" role="alert">{loadError} <button className="secondary" onClick={reload}>{uiText("Retry", "再試行")}</button></p>}
-      {vaults?.length === 0 && <div className="welcome-empty">
-        <span className="empty-symbol"><MenuIcon name="vault" /></span>
+      {workspaces?.length === 0 && <div className="welcome-empty">
+        <span className="empty-symbol"><MenuIcon name="workspace" /></span>
         <h2>{uiText("A home for your meetings", "ミーティングの記録を、ひとつの場所に")}</h2>
-        <p>{organizationId ? uiText("Accessible Vaults owned by this organization will appear here.", "この組織が所有する、アクセス可能な保管庫がここに表示されます。") : uiText("Create a Vault, then connect it in Dahlia for macOS to bring your meeting notes, transcripts and screenshots here.", "保管庫を作成して macOS 版 Dahlia で接続すると、ミーティングの要約・文字起こし・スクリーンショットをここで閲覧できます。")}</p>
+        <p>{organizationId ? uiText("Accessible Workspaces owned by this organization will appear here.", "この組織が所有する、アクセス可能なワークスペースがここに表示されます。") : uiText("Create a Workspace, then connect it in Dahlia for macOS to bring your meeting notes, transcripts and screenshots here.", "ワークスペースを作成して macOS 版 Dahlia で接続すると、ミーティングの要約・文字起こし・スクリーンショットをここで閲覧できます。")}</p>
       </div>}
-      <div className="vault-grid">{vaults?.map((vault) => <a className="vault-card" href={`/vaults/${vault.vaultId}`} key={vault.vaultId}>
-        <div className="vault-card-top"><span className="vault-symbol"><AppearanceIcon appearance={collectionAppearance(vault, "vault")} size={22} /></span><span className={`status${vault.role === "admin" ? "" : " shared"}`}>{vaultRoleLabel(vault.role)}</span></div>
-        <h3>{vault.name}</h3>
-        <div className="vault-card-bottom"><span>{uiText("Updated", "更新日")} {new Date(vault.updatedAt ?? vault.createdAt).toLocaleDateString()}</span><MenuIcon name="arrow" /></div>
+      <div className="workspace-grid">{workspaces?.map((workspace) => <a className="workspace-card" href={`/workspaces/${workspace.workspaceId}`} key={workspace.workspaceId}>
+        <div className="workspace-card-top"><span className="workspace-symbol"><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} size={22} /></span><span className={`status${workspace.role === "admin" ? "" : " shared"}`}>{workspaceRoleLabel(workspace.role)}</span></div>
+        <h3>{workspace.name}</h3>
+        <div className="workspace-card-bottom"><span>{uiText("Updated", "更新日")} {new Date(workspace.updatedAt ?? workspace.createdAt).toLocaleDateString()}</span><MenuIcon name="arrow" /></div>
       </a>)}</div>
     </section>
-    {home && recentVault && <section className="section-block recent-meetings">
+    {home && recentWorkspace && <section className="section-block recent-meetings">
       <div className="collection-heading"><h2>{uiText("Recent meetings", "最近のミーティング")}</h2>
-        <Select aria-label={uiText("Vault for recent meetings", "最近のミーティングの保管庫")} value={recentVault.vaultId} onValueChange={(value) => setRecentVaultId(value)}>
-          {vaults?.map((vault) => <option value={vault.vaultId} key={vault.vaultId}><AppearanceIcon appearance={collectionAppearance(vault, "vault")} /><span>{vault.name}</span></option>)}
+        <Select aria-label={uiText("Workspace for recent meetings", "最近のミーティングのワークスペース")} value={recentWorkspace.workspaceId} onValueChange={(value) => setRecentWorkspaceId(value)}>
+          {workspaces?.map((workspace) => <option value={workspace.workspaceId} key={workspace.workspaceId}><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><span>{workspace.name}</span></option>)}
         </Select>
       </div>
       <DataError error={recent.error} retry={recent.reload} />
       <MeetingList meetings={recent.data?.items.slice(0, 10)} loading={recent.loading} />
-      <a className="text-link" href={`/vaults/${recentVault.vaultId}`}>{uiText("View all meetings", "すべてのミーティングを見る")} <MenuIcon name="arrow" /></a>
+      <a className="text-link" href={`/workspaces/${recentWorkspace.workspaceId}`}>{uiText("View all meetings", "すべてのミーティングを見る")} <MenuIcon name="arrow" /></a>
     </section>}
   </>;
 }
 
 
-function VaultTransfer({ vault }: { vault: SyncedVaultInfo }) {
+function WorkspaceTransfer({ workspace }: { workspace: SyncedWorkspaceInfo }) {
   const { dialog, openDialog } = useActionDialog();
-  const targets = useLiveJSON<{ items: SyncedVaultInfo[] }>(apiQuery("listVaults", {}));
+  const targets = useLiveJSON<{ items: SyncedWorkspaceInfo[] }>(apiQuery("listWorkspaces", {}));
   const [destinationId, setDestinationId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const available = targets.data?.items.filter((item) => item.role === "admin" && item.vaultId !== vault.vaultId) ?? [];
-  const destination = available.find((item) => item.vaultId === destinationId);
+  const available = targets.data?.items.filter((item) => item.role === "admin" && item.workspaceId !== workspace.workspaceId) ?? [];
+  const destination = available.find((item) => item.workspaceId === destinationId);
   async function confirm() {
     if (!destination || loading) return;
     setLoading(true);
     setError(undefined);
     try {
       const [source, target, audience] = await Promise.all([
-        api.getVault({ params: { path: { vaultId: vault.vaultId } } }),
-        api.getVault({ params: { path: { vaultId: destination.vaultId } } }),
-        api.getTransferAudience({ params: { path: { vaultId: vault.vaultId }, query: { destinationVaultId: destination.vaultId } } }),
+        api.getWorkspace({ params: { path: { workspaceId: workspace.workspaceId } } }),
+        api.getWorkspace({ params: { path: { workspaceId: destination.workspaceId } } }),
+        api.getTransferAudience({ params: { path: { workspaceId: workspace.workspaceId }, query: { destinationWorkspaceId: destination.workspaceId } } }),
       ]);
       const people = (items: { name: string; email: string }[]) => items.map((person) => `${person.name} (${person.email})`).join(", ");
       const description = [
-        uiText(`Move all Server-saved content from “${source.name}” to “${target.name}”. The source Vault will remain empty.`,
-          `「${source.name}」のServer保存済みの全内容を「${target.name}」へ移管します。元の保管庫は空で残ります。`),
+        uiText(`Move all Server-saved content from “${source.name}” to “${target.name}”. The source Workspace will remain empty.`,
+          `「${source.name}」のServer保存済みの全内容を「${target.name}」へ移管します。元のワークスペースは空で残ります。`),
         audience.removed.length ? uiText(`Will lose access: ${people(audience.removed)}.`, `閲覧できなくなる人：${people(audience.removed)}。`) : "",
         audience.added.length ? uiText(`Will gain access: ${people(audience.added)}.`, `新しく閲覧できる人：${people(audience.added)}。`) : "",
         !audience.removed.length && !audience.added.length ? uiText("No change to the current readers.", "現在の閲覧者に変更はありません。") : "",
@@ -561,25 +560,25 @@ function VaultTransfer({ vault }: { vault: SyncedVaultInfo }) {
           "移管先を閲覧できない端末はローカルデータを保持して同期を停止します。未同期データは移管されません。"),
       ].filter(Boolean).join("\n\n");
       const key = encodeId("transaction", uuidV7());
-      const body = { destinationVaultId: target.vaultId, sourceRevision: source.revision, destinationRevision: target.revision, audienceHash: audience.audienceHash };
+      const body = { destinationWorkspaceId: target.workspaceId, sourceRevision: source.revision, destinationRevision: target.revision, audienceHash: audience.audienceHash };
       openDialog({ title: uiText("Transfer content", "内容を移管"), description,
         confirmLabel: uiText("Transfer", "移管する"), destructive: true,
         onSubmit: async () => {
-          await api.transferVault({ params: { path: { vaultId: source.vaultId }, header: { "idempotency-key": key } }, body });
-          window.location.assign(`/vaults/${target.vaultId}`);
+          await api.transferWorkspace({ params: { path: { workspaceId: source.workspaceId }, header: { "idempotency-key": key } }, body });
+          window.location.assign(`/workspaces/${target.workspaceId}`);
         },
       });
     } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); }
     finally { setLoading(false); }
   }
-  return <section className="vault-settings"><h2>{uiText("Transfer content", "内容を移管")}</h2>
-    <p>{uiText("Move all saved content to another Vault you administer.", "保存済みの全内容を、管理権限のある別の保管庫へ移します。")}</p>
-    <div className="collection-heading"><Select aria-label={uiText("Destination Vault", "移管先の保管庫")} placeholder={uiText("Choose a Vault", "保管庫を選択")} menuLabel={uiText("Vaults", "保管庫")} value={destinationId} disabled={loading}
+  return <section className="workspace-settings"><h2>{uiText("Transfer content", "内容を移管")}</h2>
+    <p>{uiText("Move all saved content to another Workspace you administer.", "保存済みの全内容を、管理権限のある別のワークスペースへ移します。")}</p>
+    <div className="collection-heading"><Select aria-label={uiText("Destination Workspace", "移管先のワークスペース")} placeholder={uiText("Choose a Workspace", "ワークスペースを選択")} menuLabel={uiText("Workspaces", "ワークスペース")} value={destinationId} disabled={loading}
       onValueChange={(value) => setDestinationId(value)}>
-      {available.map((item) => <option key={item.vaultId} value={item.vaultId}><AppearanceIcon appearance={collectionAppearance(item, "vault")} /><span>{item.name}</span></option>)}
-    </Select><button className="secondary" disabled={!destination || loading || vault.hasResources !== true} onClick={() => void confirm()}>
+      {available.map((item) => <option key={item.workspaceId} value={item.workspaceId}><AppearanceIcon appearance={collectionAppearance(item, "workspace")} /><span>{item.name}</span></option>)}
+    </Select><button className="secondary" disabled={!destination || loading || workspace.hasResources !== true} onClick={() => void confirm()}>
       {loading ? uiText("Checking…", "確認中…") : uiText("Transfer content", "内容を移管")}</button></div>
-    {targets.data && !available.length && <p className="muted">{uiText("Create another Vault to transfer content.", "移管先となる別の保管庫を作成してください。")}</p>}
+    {targets.data && !available.length && <p className="muted">{uiText("Create another Workspace to transfer content.", "移管先となる別のワークスペースを作成してください。")}</p>}
     <DataError error={targets.error} retry={targets.reload} />{error && <p className="error" role="alert">{error}</p>}{dialog}
   </section>;
 }
@@ -609,15 +608,15 @@ export function MeetingList({ meetings, loading, filtered = false, onClear }: { 
   </div>;
 }
 
-function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: string }) {
+function WorkspaceMeetings({ session, workspaceId }: { session: SessionInfo; workspaceId: string }) {
   const { dialog, openDialog } = useActionDialog();
-  const vaultQuery = useLiveJSON<SyncedVaultInfo>(apiQuery("getVault", { params: { path: { vaultId: vaultId } } }));
-  const vault = vaultQuery.data;
+  const workspaceQuery = useLiveJSON<SyncedWorkspaceInfo>(apiQuery("getWorkspace", { params: { path: { workspaceId: workspaceId } } }));
+  const workspace = workspaceQuery.data;
   const { organizations } = useSidebar();
-  const personal = organizations?.some((organization) => organization.id === vault?.organizationId && organization.kind === "personal");
+  const personal = organizations?.some((organization) => organization.id === workspace?.organizationId && organization.kind === "personal");
   const [recovering, setRecovering] = useState(false);
-  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { vaultId: vaultId } } }));
-  const projects = vault ? projectsQuery.data?.items ?? [] : [];
+  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { workspaceId: workspaceId } } }));
+  const projects = workspace ? projectsQuery.data?.items ?? [] : [];
   const [query, setQuery] = useState("");
   const [projectId, setProjectId] = useState("");
   useEffect(() => {
@@ -629,38 +628,38 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
     return () => clearTimeout(timer);
   }, [query]);
   const meetingFilters = { query: search || undefined, projectId: projectId || undefined };
-  const meetingsQuery = useLivePage<SyncedMeetingInfo>(apiQuery("listMeetings", { params: { path: { vaultId }, query: meetingFilters } }));
-  const meetings = vault ? meetingsQuery.data?.items : undefined;
+  const meetingsQuery = useLivePage<SyncedMeetingInfo>(apiQuery("listMeetings", { params: { path: { workspaceId }, query: meetingFilters } }));
+  const meetings = workspace ? meetingsQuery.data?.items : undefined;
   const nextCursor = meetingsQuery.data?.nextCursor;
   const loadingMore = meetingsQuery.loadingMore;
-  const renameVault = () => {
-    if (!vault) return;
+  const renameWorkspace = () => {
+    if (!workspace) return;
     openDialog({
-      title: uiText("Edit Vault", "保管庫を編集"), confirmLabel: uiText("Save changes", "変更を保存"),
-      fields: [{ name: "name", label: uiText("Vault name", "保管庫名"), value: vault.name, required: true },
-        { name: "appearance", label: uiText("Appearance", "見た目"), appearance: "editable", value: JSON.stringify(collectionAppearance(vault, "vault")) }],
+      title: uiText("Edit Workspace", "ワークスペースを編集"), confirmLabel: uiText("Save changes", "変更を保存"),
+      fields: [{ name: "name", label: uiText("Workspace name", "ワークスペース名"), value: workspace.name, required: true },
+        { name: "appearance", label: uiText("Appearance", "見た目"), appearance: "editable", value: JSON.stringify(collectionAppearance(workspace, "workspace")) }],
       onSubmit: async ({ name, appearance }) => {
-        await commitSyncTransaction(vaultId, [{ entity: "vault", action: "update", entityId: vaultId,
-          baseRevision: vault.revision, data: { name: name!.trim(), ...(JSON.parse(appearance!) as Appearance) } }], setRecovering);
+        await commitSyncTransaction(workspaceId, [{ entity: "workspace", action: "update", entityId: workspaceId,
+          baseRevision: workspace.revision, data: { name: name!.trim(), ...(JSON.parse(appearance!) as Appearance) } }], setRecovering);
       },
     });
   };
-  const deleteVault = () => {
-    if (!vault || vault.role !== "admin") return;
+  const deleteWorkspace = () => {
+    if (!workspace || workspace.role !== "admin") return;
     openDialog({
-      title: uiText("Delete Vault?", "保管庫を削除しますか？"),
-      description: uiText(`Delete the empty Vault “${vault.name}”? This cannot be undone.`, `空の保管庫「${vault.name}」を削除します。この操作は取り消せません。`),
-      confirmLabel: uiText("Delete Vault", "保管庫を削除"), destructive: true,
+      title: uiText("Delete Workspace?", "ワークスペースを削除しますか？"),
+      description: uiText(`Delete the empty Workspace “${workspace.name}”? This cannot be undone.`, `空のワークスペース「${workspace.name}」を削除します。この操作は取り消せません。`),
+      confirmLabel: uiText("Delete Workspace", "ワークスペースを削除"), destructive: true,
       onSubmit: async () => {
-        await commitSyncTransaction(vaultId, [{ entity: "vault", action: "reset", entityId: vaultId,
-          baseRevision: vault.revision, data: { preservePermissions: false } }], setRecovering);
-        navigateDashboard("/vaults");
+        await commitSyncTransaction(workspaceId, [{ entity: "workspace", action: "reset", entityId: workspaceId,
+          baseRevision: workspace.revision, data: { preservePermissions: false } }], setRecovering);
+        navigateDashboard("/workspaces");
       },
     });
   };
   const createProject = () => openDialog({
     title: uiText("New Project", "プロジェクトを作成"),
-    description: uiText(`Organize meetings in ${vault?.name ?? "this Vault"}.`, `「${vault?.name ?? "この保管庫"}」のミーティングを整理します。`),
+    description: uiText(`Organize meetings in ${workspace?.name ?? "this Workspace"}.`, `「${workspace?.name ?? "このワークスペース"}」のミーティングを整理します。`),
     confirmLabel: uiText("Create Project", "プロジェクトを作成"),
     fields: [
       { name: "name", label: uiText("Project name", "プロジェクト名"), required: true },
@@ -668,21 +667,21 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
     ],
     onSubmit: async ({ name, description }) => {
       const id = encodeId("project", uuidV7());
-      await commitSyncTransaction(vaultId, [{ entity: "project", action: "create", entityId: id, baseRevision: null,
+      await commitSyncTransaction(workspaceId, [{ entity: "project", action: "create", entityId: id, baseRevision: null,
         data: { parentProjectId: null, name: name!.trim(), description: description ?? "", projectType: "undefined", createdAt: new Date().toISOString() } }], setRecovering);
       navigateDashboard(`/projects/${id}`);
     },
   });
   return <article className="meeting-detail collection-detail">
     <header className="meeting-header">
-      <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}><a href="/vaults">{uiText("All Vaults", "保管庫一覧")}</a></nav>
-      <h1><AppearanceIcon appearance={collectionAppearance(vault, "vault")} size={28} />{vault?.name ?? uiText("Vault", "保管庫")}</h1>
-      {vault && <div className="meeting-metadata"><span className="metadata-chip">{vaultRoleLabel(vault.role)}</span></div>}
+      <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}><a href="/workspaces">{uiText("All Workspaces", "ワークスペース一覧")}</a></nav>
+      <h1><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} size={28} />{workspace?.name ?? uiText("Workspace", "ワークスペース")}</h1>
+      {workspace && <div className="meeting-metadata"><span className="metadata-chip">{workspaceRoleLabel(workspace.role)}</span></div>}
     </header>
     {dialog}
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
-    <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
-    <DetailTabs label={uiText("Vault content", "保管庫の内容")} tabs={[
+    <DataError error={workspaceQuery.error} retry={workspaceQuery.reload} />
+    <DetailTabs label={uiText("Workspace content", "ワークスペースの内容")} tabs={[
       { id: "meetings", label: uiText("Meetings", "ミーティング"), content: <>
         <div className="collection-filters">
           <input type="search" className="model-search" aria-label={uiText("Search meetings", "ミーティングを検索")} placeholder={uiText("Search meetings", "ミーティングを検索")} value={query} onChange={(event) => setQuery(event.target.value)} />
@@ -697,7 +696,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
         {nextCursor && <button className="secondary load-more" disabled={loadingMore} onClick={meetingsQuery.loadMore}>{loadingMore ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}</button>}
       </> },
       { id: "projects", label: uiText("Projects", "プロジェクト"), content: <>
-        <div className="collection-heading"><h2>{uiText("Projects", "プロジェクト")}</h2>{canWriteVault(vault?.role) && <button className="secondary" onClick={createProject}>{uiText("New Project", "プロジェクトを作成")}</button>}</div>
+        <div className="collection-heading"><h2>{uiText("Projects", "プロジェクト")}</h2>{canWriteWorkspace(workspace?.role) && <button className="secondary" onClick={createProject}>{uiText("New Project", "プロジェクトを作成")}</button>}</div>
         <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
         {projectsQuery.loading && !projectsQuery.data && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
         {projectsQuery.data && projects.length === 0 && <p className="content-empty">{uiText("No projects yet", "プロジェクトはまだありません")}</p>}
@@ -705,29 +704,29 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
           <span className="collection-project-name"><AppearanceIcon appearance={projectAppearance(project, projects.find((parent) => parent.projectId === project.parentProjectId))} /><strong>{project.path}</strong></span><span className="muted">{meetingCount(project.subtreeMeetingCount ?? 0)}</span>
         </a>)}</div>
       </> },
-      ...(session.capabilities.sharing && vault ? [{ id: "permissions", label: uiText("Permissions", "権限"), content: <VaultSharing vault={vault} /> }] : []),
+      ...(session.capabilities.sharing && workspace ? [{ id: "permissions", label: uiText("Permissions", "権限"), content: <WorkspaceSharing workspace={workspace} /> }] : []),
       { id: "settings", label: uiText("Settings", "設定"), content: <>
-        <section className="vault-settings"><h2>{uiText("Vault details", "保管庫の詳細")}</h2><div className="collection-heading"><span>{vault?.name}</span>{vault?.role === "admin" && <button className="secondary" onClick={renameVault}>{uiText("Edit Vault", "保管庫を編集")}</button>}</div></section>
-        {vault?.role === "admin" && <VaultTransfer vault={vault} />}
-        {vault?.role === "admin" && !personal && <section className="vault-settings"><h2>{uiText("Delete Vault", "保管庫を削除")}</h2>
-          <div className="collection-heading"><p>{uiText("Only empty Vaults can be deleted. Transfer or delete all resources first.", "空の保管庫のみ削除できます。リソースが残っている場合は、先に移管または削除してください。")}</p>
-          <button className="secondary danger-button" disabled={vault.hasResources !== false} onClick={deleteVault}>{uiText("Delete Vault", "保管庫を削除")}</button></div>
+        <section className="workspace-settings"><h2>{uiText("Workspace details", "ワークスペースの詳細")}</h2><div className="collection-heading"><span>{workspace?.name}</span>{workspace?.role === "admin" && <button className="secondary" onClick={renameWorkspace}>{uiText("Edit Workspace", "ワークスペースを編集")}</button>}</div></section>
+        {workspace?.role === "admin" && <WorkspaceTransfer workspace={workspace} />}
+        {workspace?.role === "admin" && !personal && <section className="workspace-settings"><h2>{uiText("Delete Workspace", "ワークスペースを削除")}</h2>
+          <div className="collection-heading"><p>{uiText("Only empty Workspaces can be deleted. Transfer or delete all resources first.", "空のワークスペースのみ削除できます。リソースが残っている場合は、先に移管または削除してください。")}</p>
+          <button className="secondary danger-button" disabled={workspace.hasResources !== false} onClick={deleteWorkspace}>{uiText("Delete Workspace", "ワークスペースを削除")}</button></div>
         </section>}
       </> },
     ]} />
   </article>;
 }
 
-function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: string }) {
+function SyncedProject({ workspaceId, projectId }: { workspaceId: string; projectId: string }) {
   const { dialog, openDialog } = useActionDialog();
-  const vaultQuery = useLiveJSON<SyncedVaultInfo>(apiQuery("getVault", { params: { path: { vaultId: vaultId } } }));
-  const vault = vaultQuery.data;
+  const workspaceQuery = useLiveJSON<SyncedWorkspaceInfo>(apiQuery("getWorkspace", { params: { path: { workspaceId: workspaceId } } }));
+  const workspace = workspaceQuery.data;
   const [recovering, setRecovering] = useState(false);
   const projectQuery = useLiveJSON<SyncedProjectInfo>(apiQuery("getProject", { params: { path: { projectId: projectId } } }));
-  const project = vault ? projectQuery.data : undefined;
+  const project = workspace ? projectQuery.data : undefined;
   const parentQuery = useLiveJSON<SyncedProjectInfo>(project?.parentProjectId ? apiQuery("getProject", { params: { path: { projectId: project.parentProjectId } } }) : undefined);
   const meetingFilters = { projectId };
-  const meetingsQuery = useLivePage<SyncedMeetingInfo>(apiQuery("listMeetings", { params: { path: { vaultId }, query: meetingFilters } }));
+  const meetingsQuery = useLivePage<SyncedMeetingInfo>(apiQuery("listMeetings", { params: { path: { workspaceId }, query: meetingFilters } }));
   const meetings = project ? meetingsQuery.data?.items : undefined;
   const nextCursor = meetingsQuery.data?.nextCursor;
   const loadingMore = meetingsQuery.loadingMore;
@@ -741,7 +740,7 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
         { name: "appearance", label: uiText("Appearance", "見た目"), appearance: project.parentProjectId ? "inherited" : "editable", value: JSON.stringify(projectAppearance(project, parentQuery.data)) },
       ],
       onSubmit: async ({ name, description, appearance }) => {
-        await commitSyncTransaction(vaultId, [{ entity: "project", action: "update", entityId: projectId, baseRevision: project.revision,
+        await commitSyncTransaction(workspaceId, [{ entity: "project", action: "update", entityId: projectId, baseRevision: project.revision,
           data: { ...(!project.parentProjectId ? JSON.parse(appearance!) as Appearance : {}), parentProjectId: project.parentProjectId ?? null, name: name!.trim(), description: description ?? "",
             projectType: project.parentProjectId ? null : project.projectType ?? "undefined" } }], setRecovering);
       },
@@ -754,16 +753,16 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
       description: uiText(`“${project.path}” will be permanently deleted. Only empty projects can be deleted.`, `「${project.path}」を完全に削除します。削除できるのは空のプロジェクトのみです。`),
       confirmLabel: uiText("Delete Project", "プロジェクトを削除"), destructive: true,
       onSubmit: async () => {
-        await commitSyncTransaction(vaultId, [{ entity: "project", action: "delete", entityId: projectId,
+        await commitSyncTransaction(workspaceId, [{ entity: "project", action: "delete", entityId: projectId,
           baseRevision: project.revision, data: {} }], setRecovering);
-        navigateDashboard(`/vaults/${vaultId}`);
+        navigateDashboard(`/workspaces/${workspaceId}`);
       },
     });
   };
   return <article className="meeting-detail collection-detail">
     <header className="meeting-header">
       <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}>
-        <a href={`/vaults/${vaultId}`}>{vault?.name ?? uiText("Vault", "保管庫")}</a>
+        <a href={`/workspaces/${workspaceId}`}>{workspace?.name ?? uiText("Workspace", "ワークスペース")}</a>
         {project?.parentProjectId && <><span aria-hidden="true">/</span><a href={`/projects/${project.parentProjectId}`}>{parentQuery.data?.name ?? uiText("Parent Project", "親プロジェクト")}</a></>}
       </nav>
       <h1><AppearanceIcon appearance={projectAppearance(project, parentQuery.data)} size={28} />{project?.name ?? uiText("Project", "プロジェクト")}</h1>
@@ -772,7 +771,7 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
     </header>
     {dialog}
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
-    <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
+    <DataError error={workspaceQuery.error} retry={workspaceQuery.reload} />
     <DataError error={projectQuery.error} retry={projectQuery.reload} />
     <DetailTabs label={uiText("Project content", "プロジェクトの内容")} tabs={[
       { id: "meetings", label: uiText("Meetings", "ミーティング"), content: <>
@@ -781,13 +780,13 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
         {nextCursor && <button className="secondary load-more" disabled={loadingMore} onClick={meetingsQuery.loadMore}>{loadingMore ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}</button>}
       </> },
       { id: "settings", label: uiText("Settings", "設定"), content: <>
-        <section className="vault-settings">
+        <section className="workspace-settings">
           <h2>{uiText("Project details", "プロジェクトの詳細")}</h2>
           <div className="collection-heading"><span>{project?.name}</span>
-            {project && canWriteVault(vault?.role) && <button className="secondary" onClick={editProject}>{uiText("Edit Project", "プロジェクトを編集")}</button>}
+            {project && canWriteWorkspace(workspace?.role) && <button className="secondary" onClick={editProject}>{uiText("Edit Project", "プロジェクトを編集")}</button>}
           </div>
         </section>
-        {project && canWriteVault(vault?.role) && <section className="vault-settings">
+        {project && canWriteWorkspace(workspace?.role) && <section className="workspace-settings">
           <h2>{uiText("Delete Project", "プロジェクトを削除")}</h2>
           <div className="collection-heading">
             <p>{uiText("Only empty projects can be deleted.", "削除できるのは空のプロジェクトのみです。")}</p>
@@ -799,14 +798,14 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
   </article>;
 }
 
-export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: string }) {
+export function SyncedMeeting({ workspaceId, meetingId }: { workspaceId: string; meetingId: string }) {
   const { dialog, openDialog } = useActionDialog();
   const meetingQuery = useLiveJSON(apiQuery("getMeeting", { params: { path: { meetingId } } }));
-  const vaultQuery = useLiveJSON<SyncedVaultInfo>(apiQuery("getVault", { params: { path: { vaultId: vaultId } } }));
-  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { vaultId: vaultId } } }));
+  const workspaceQuery = useLiveJSON<SyncedWorkspaceInfo>(apiQuery("getWorkspace", { params: { path: { workspaceId: workspaceId } } }));
+  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { workspaceId: workspaceId } } }));
   const screenshotsQuery = useLivePage<SyncedScreenshotInfo>(apiQuery("listMeetingFiles", { params: { path: { meetingId } } }));
-  const meeting = vaultQuery.data ? meetingQuery.data : undefined;
-  const vault = vaultQuery.data;
+  const meeting = workspaceQuery.data ? meetingQuery.data : undefined;
+  const workspace = workspaceQuery.data;
   const screenshots = screenshotsQuery.data?.items;
   const screenshotCursor = screenshotsQuery.data?.nextCursor;
   const loadingScreenshots = screenshotsQuery.loadingMore;
@@ -829,7 +828,7 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
         { name: "description", label: uiText("Description", "説明"), value: meeting.description, multiline: true },
       ],
       onSubmit: async ({ name, description }) => {
-        await commitSyncTransaction(vaultId, [{ entity: "meeting", action: "update", entityId: meetingId, baseRevision: meeting.revision,
+        await commitSyncTransaction(workspaceId, [{ entity: "meeting", action: "update", entityId: meetingId, baseRevision: meeting.revision,
           data: { projectId: meeting.projectId ?? null, name: name!.trim(), description: description ?? "", status: meeting.status,
             duration: meeting.duration ?? null, recordingStartedAt: meeting.recordingStartedAt ?? null, updatedAt: new Date().toISOString() } }], setRecovering);
       },
@@ -865,10 +864,10 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
     returnFocus?.focus({ preventScroll: true });
   };
   return (
-    <article className="meeting-detail" aria-busy={!meeting && (meetingQuery.loading || vaultQuery.loading)}>
+    <article className="meeting-detail" aria-busy={!meeting && (meetingQuery.loading || workspaceQuery.loading)}>
       {meeting && <header className="meeting-header">
         <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}>
-          <a href={`/vaults/${vaultId}`}><AppearanceIcon appearance={collectionAppearance(vault, "vault")} />{vault?.name ?? uiText("Vault", "保管庫")}</a>
+          <a href={`/workspaces/${workspaceId}`}><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} />{workspace?.name ?? uiText("Workspace", "ワークスペース")}</a>
           {project && <><span aria-hidden="true">/</span><a href={`/projects/${project.projectId}`}>{project.path}</a></>}
         </nav>
         <h1>{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</h1>
@@ -893,11 +892,11 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
         } : undefined} />}
       {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
       <DataError error={meetingQuery.error} retry={meetingQuery.reload} />
-      <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
+      <DataError error={workspaceQuery.error} retry={workspaceQuery.reload} />
       <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
-      {meeting && canWriteVault(vault?.role) && <ServerSummaryGeneration key={meetingId} meetingId={meetingId} />}
+      {meeting && canWriteWorkspace(workspace?.role) && <ServerSummaryGeneration key={meetingId} meetingId={meetingId} />}
       {meeting && <MeetingTabs
-        actions={canWriteVault(vault?.role) && <div className="meeting-actions">
+        actions={canWriteWorkspace(workspace?.role) && <div className="meeting-actions">
           <button className="action-trigger" aria-label={uiText("Meeting actions", "ミーティングの操作")} popoverTarget="meeting-actions"><span aria-hidden="true">⋯</span>{" "}<span className="action-label">{uiText("Actions", "操作")}</span></button>
           <div id="meeting-actions" popover="auto" className="action-menu">
             <button onClick={editMeeting}>{uiText("Edit Meeting", "ミーティングを編集")}</button>
@@ -953,32 +952,32 @@ export function ScreenshotFigure({ file, capturedAt, onOpen }: {
   </figure>;
 }
 
-function OrganizationVaults({ organization }: { organization: OrganizationInfo }) {
-  const query = useLivePage<import("./generated-api").components["schemas"]["GovernanceVault"]>(apiQuery("listGovernanceVaults", { params: { path: { organizationId: organization.id } } }));
+function OrganizationWorkspaces({ organization }: { organization: OrganizationInfo }) {
+  const query = useLivePage<import("./generated-api").components["schemas"]["GovernanceWorkspace"]>(apiQuery("listGovernanceWorkspaces", { params: { path: { organizationId: organization.id } } }));
   const { dialog, openDialog } = useActionDialog();
   const [error, setError] = useState<string>();
-  async function confirm(vaultId: string) {
+  async function confirm(workspaceId: string) {
     setError(undefined);
     try {
-      const current = await api.confirmVaultDeletion({ params: { path: { organizationId: organization.id, vaultId } } });
+      const current = await api.confirmWorkspaceDeletion({ params: { path: { organizationId: organization.id, workspaceId } } });
       const id = encodeId("transaction", uuidV7());
-      openDialog({ title: uiText("Delete Vault and all content?", "保管庫とすべての内容を削除しますか？"),
+      openDialog({ title: uiText("Delete Workspace and all content?", "ワークスペースとすべての内容を削除しますか？"),
         description: uiText(`Permanently delete “${current.name}” and all its meetings, files and recordings. This cannot be undone.`, `「${current.name}」と、配下のすべての会議・ファイル・録音を削除します。この操作は取り消せません。`),
         confirmLabel: uiText("Delete all content", "すべて削除"), destructive: true,
         onSubmit: async () => {
-          await api.forceDeleteVault({ params: { path: { organizationId: organization.id, vaultId } }, body: { id, revision: current.revision, changeCursor: current.changeCursor } });
+          await api.forceDeleteWorkspace({ params: { path: { organizationId: organization.id, workspaceId } }, body: { id, revision: current.revision, changeCursor: current.changeCursor } });
           query.reload();
         },
       });
     } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); }
   }
   return <section>{dialog}
-    <p>{uiText("Organization governance shows Vault metadata. Content requires a separate Vault permission.", "組織の管理用情報を表示しています。内容の閲覧には保管庫のアクセス権が必要です。")}</p>
-    {query.data?.items.map((vault) => <div className="row" key={vault.vaultId}>
-      <div><strong>{vault.name}</strong><span>{vault.vaultId}</span><small>{uiText("Creator", "作成者")}: {vault.creatorId} · revision {vault.revision}</small></div>
-      {organization.kind === "team" && <button className="secondary danger-button" onClick={() => void confirm(vault.vaultId)}>{uiText("Delete", "削除")}</button>}
+    <p>{uiText("Organization governance shows Workspace metadata. Content requires a separate Workspace permission.", "組織の管理用情報を表示しています。内容の閲覧にはワークスペースのアクセス権が必要です。")}</p>
+    {query.data?.items.map((workspace) => <div className="row" key={workspace.workspaceId}>
+      <div><strong>{workspace.name}</strong><span>{workspace.workspaceId}</span><small>{uiText("Creator", "作成者")}: {workspace.creatorId} · revision {workspace.revision}</small></div>
+      {organization.kind === "team" && <button className="secondary danger-button" onClick={() => void confirm(workspace.workspaceId)}>{uiText("Delete", "削除")}</button>}
     </div>)}
-    {query.data?.items.length === 0 && <p>{uiText("No Vaults", "保管庫がありません")}</p>}
+    {query.data?.items.length === 0 && <p>{uiText("No Workspaces", "ワークスペースがありません")}</p>}
     {query.data?.nextCursor && <button onClick={query.loadMore}>{uiText("Show more", "さらに表示")}</button>}
     <DataError error={query.error} retry={query.reload} />{error && <p role="alert">{error}</p>}
   </section>;
@@ -1119,7 +1118,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
   function deleteOrganization() {
     openDialog({
       title: uiText("Delete organization?", "組織を削除しますか？"),
-      description: uiText(`“${organization.name}” and its teams will be deleted. Members will lose access to Vaults shared through this organization. All owned Vaults must be deleted first.`, `「${organization.name}」とそのチームを削除します。この組織を通じて共有している保管庫へのアクセスは失われますが、事前に配下の保管庫をすべて削除する必要があります。`),
+      description: uiText(`“${organization.name}” and its teams will be deleted. Members will lose access to Workspaces shared through this organization. All owned Workspaces must be deleted first.`, `「${organization.name}」とそのチームを削除します。この組織を通じて共有しているワークスペースへのアクセスは失われますが、事前に配下のワークスペースをすべて削除する必要があります。`),
       confirmLabel: uiText("Delete organization", "組織を削除"), destructive: true,
       onSubmit: async () => {
         await json("/api/auth/organization/delete", { method: "POST", body: JSON.stringify({ organizationId: organization.id }) });
@@ -1131,7 +1130,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
   function createTeam() {
     openDialog({
       title: uiText("Create team", "チームを作成"),
-      description: uiText("Group members to share Vaults with a team. You can manage members after creating it.", "保管庫の共有先となるチームを作成します。作成後にメンバーを設定できます。"),
+      description: uiText("Group members to share Workspaces with a team. You can manage members after creating it.", "ワークスペースの共有先となるチームを作成します。作成後にメンバーを設定できます。"),
       confirmLabel: uiText("Create team", "チームを作成"),
       fields: [{ name: "name", label: uiText("Team name", "チーム名"), required: true }],
       onSubmit: async ({ name }) => {
@@ -1160,7 +1159,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
   function deleteTeam(team: TeamInfo) {
     openDialog({
       title: uiText("Delete team?", "チームを削除しますか？"),
-      description: uiText(`“${team.name}” will be deleted. Members will lose access to Vaults shared through this team.`, `「${team.name}」を削除し、このチームを通じた保管庫へのアクセスを解除します。`),
+      description: uiText(`“${team.name}” will be deleted. Members will lose access to Workspaces shared through this team.`, `「${team.name}」を削除し、このチームを通じたワークスペースへのアクセスを解除します。`),
       confirmLabel: uiText("Delete team", "チームを削除"), destructive: true,
       onSubmit: async () => {
         await json("/api/auth/organization/remove-team", {
@@ -1200,7 +1199,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
       {dialog}
       <fieldset className="organization-controls" disabled={pending}>
       <DetailTabs label={uiText("Organization content", "組織の内容")} tabs={[
-        ...(canGovern ? [{ id: "vaults", label: uiText("Vault governance", "保管庫管理"), content: <OrganizationVaults organization={organization} /> }] : []),
+        ...(canGovern ? [{ id: "workspaces", label: uiText("Workspace governance", "ワークスペース管理"), content: <OrganizationWorkspaces organization={organization} /> }] : []),
         { id: "members", label: <>{uiText("Members", "メンバー")}{members && <> <span className="org-count">{members.length}</span></>}</>, content: <>
           <div className="org-section-header org-member-toolbar">
             {members && members.length > 0 && <input className="org-search" type="search" aria-label={uiText("Find members", "メンバーを検索")} placeholder={uiText("Search by name or email", "名前・メールアドレスで検索")} value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} />}
@@ -1238,7 +1237,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
           )}
         </> },
         { id: "teams", label: <>{uiText("Teams", "チーム")}{invitations && <> <span className="org-count">{teams.length}</span></>}</>, content: <>
-          <div className="org-section-header"><div><p>{uiText("Share Vaults with a smaller group. Open a team to see its members.", "チーム単位で保管庫を共有できます。チームを開いてメンバーを確認します。")}</p></div>
+          <div className="org-section-header"><div><p>{uiText("Share Workspaces with a smaller group. Open a team to see its members.", "チーム単位でワークスペースを共有できます。チームを開いてメンバーを確認します。")}</p></div>
             {canManage && <button className="primary" onClick={createTeam}><MenuIcon name="plus" />{uiText("Create team", "チームを作成")}</button>}</div>
           {invitations && teams.length === 0 && <div className="empty-state"><strong>{uiText("No teams yet", "チームはまだありません")}</strong><span>{uiText("Create a team for the people you share with regularly.", "よく共有するメンバーをチームにまとめられます。")}</span></div>}
           {teams.map((team) => (
@@ -1279,7 +1278,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
           </section>
           {!personal && <button className="secondary" onClick={leaveOrganization}>{uiText("Leave organization", "組織から脱退")}</button>}
           {!personal && organization.slug !== "external" && currentRole === "owner" && <section className="org-danger-zone">
-            <div><h3>{uiText("Delete organization", "組織を削除")}</h3><p>{uiText("Permanently delete this organization and its teams. Delete the organization only after removing its Vaults.", "所属する保管庫をすべて削除した後に、組織とチームを削除できます。この操作は取り消せません。")}</p></div>
+            <div><h3>{uiText("Delete organization", "組織を削除")}</h3><p>{uiText("Permanently delete this organization and its teams. Delete the organization only after removing its Workspaces.", "所属するワークスペースをすべて削除した後に、組織とチームを削除できます。この操作は取り消せません。")}</p></div>
             <button className="secondary danger-button" onClick={deleteOrganization}>{uiText("Delete organization", "組織を削除")}</button>
           </section>}
         </> },
@@ -1680,11 +1679,11 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   }, [needsSession, unauthorized, userId, syncEnabled]);
 
   const detailPath = path.match(/^\/(meetings|projects|files)\/([^/]+)$/);
-  const detailQuery = useLiveJSON<{ vaultId: string }>(!session?.capabilities.sync || !detailPath ? undefined
+  const detailQuery = useLiveJSON<{ workspaceId: string }>(!session?.capabilities.sync || !detailPath ? undefined
     : detailPath[1] === "meetings" ? apiQuery("getMeeting", { params: { path: { meetingId: decodeURIComponent(detailPath[2]!) } } })
       : detailPath[1] === "projects" ? apiQuery("getProject", { params: { path: { projectId: decodeURIComponent(detailPath[2]!) } } })
         : apiQuery("getFile", { params: { path: { fileId: decodeURIComponent(detailPath[2]!) } } }));
-  const detailVaultId = detailQuery.data?.vaultId;
+  const detailWorkspaceId = detailQuery.data?.workspaceId;
 
   if (path === "/sign-in") return <SignIn brand={brand} />;
   if (path === "/oauth/consent") return <Consent brand={brand} />;
@@ -1712,19 +1711,19 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   else if (route.page === "admin-organization") page = <AdminOrganization key={route.organizationId} organizationId={route.organizationId!} session={session} />;
   else if (route.page === "admin-organizations") page = <AdminDirectory kind="organizations" />;
   else if (route.page === "admin-settings") page = <AdminSearchSettings />;
-  else if (route.page === "vaults") page = <Vaults />;
-  else if (route.page === "vault") page = <VaultMeetings session={session} vaultId={route.vaultId!} />;
-  else if (route.page === "meeting") page = detailVaultId ? <SyncedMeeting vaultId={detailVaultId} meetingId={route.meetingId!} /> : null;
-  else if (route.page === "project") page = detailVaultId ? <SyncedProject vaultId={detailVaultId} projectId={route.projectId!} /> : null;
+  else if (route.page === "workspaces") page = <Workspaces />;
+  else if (route.page === "workspace") page = <WorkspaceMeetings session={session} workspaceId={route.workspaceId!} />;
+  else if (route.page === "meeting") page = detailWorkspaceId ? <SyncedMeeting workspaceId={detailWorkspaceId} meetingId={route.meetingId!} /> : null;
+  else if (route.page === "project") page = detailWorkspaceId ? <SyncedProject workspaceId={detailWorkspaceId} projectId={route.projectId!} /> : null;
   else if (route.page === "file") page = <FileViewer fileId={route.fileId!} />;
   else if (route.page === "organizations") page = <Organizations session={session} />;
   else if (route.page === "organization") page = <Organization session={session} slug={route.organizationSlug!} />;
   else if (route.page === "invitation") page = <Invitation invitationId={route.invitationId!} />;
   else if (route.page === "settings") page = <Settings session={session} extensions={extensions} />;
   else page = <Overview session={session} />;
-  return <Shell brand={brand} extensions={extensions} session={session} path={path} navigate={navigateDashboard} routeVaultId={detailVaultId ?? route.vaultId}>
+  return <Shell brand={brand} extensions={extensions} session={session} path={path} navigate={navigateDashboard} routeWorkspaceId={detailWorkspaceId ?? route.workspaceId}>
     <DataError error={sessionError ? new Error(sessionError) : undefined} retry={() => setSessionAttempt((attempt) => attempt + 1)} />
-    {detailPath && !detailVaultId && route.page !== "file" && <>
+    {detailPath && !detailWorkspaceId && route.page !== "file" && <>
       <DataError error={detailQuery.error} retry={detailQuery.reload} />
       {!detailQuery.error && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
     </>}

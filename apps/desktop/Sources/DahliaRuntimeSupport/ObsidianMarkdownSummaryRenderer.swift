@@ -26,7 +26,7 @@ public struct SummaryMarkdownRenderContext: Sendable {
     }
 }
 
-/// Vault に書き出すスクリーンショットのファイル名規則。アプリと MCP ヘルパーで共有する。
+/// Workspace に書き出すスクリーンショットのファイル名規則。アプリと MCP ヘルパーで共有する。
 public enum SummaryScreenshotFilename {
     /// mime type だけで拡張子が決まる場合のファイル名。決まらない場合は nil。
     public static func filename(id: UUID, mimeType: String) -> String? {

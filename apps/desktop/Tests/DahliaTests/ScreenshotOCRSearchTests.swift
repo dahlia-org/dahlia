@@ -16,28 +16,28 @@ import Synchronization
             let connection = DahliaAccountConnectionRecord(
                 id: .v7(), origin: "https://capability-\(UUID().uuidString.lowercased()).invalid", clientID: "test", createdAt: .now
             )
-            var vault = makeVault()
-            vault.accountConnectionId = connection.id
-            vault.organizationId = vault.accountConnectionId == nil ? nil : (vault.organizationId ?? .v7())
-            let meeting = makeMeeting(vaultID: vault.id)
+            var workspace = makeWorkspace()
+            workspace.accountConnectionId = connection.id
+            workspace.organizationId = workspace.accountConnectionId == nil ? nil : (workspace.organizationId ?? .v7())
+            let meeting = makeMeeting(workspaceID: workspace.id)
             let screenshot = MeetingScreenshotRecord(
                 id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now, imageData: Data([1]), mimeType: "image/png"
             )
-            try await database.dbQueue.write { [vault] db in
+            try await database.dbQueue.write { [workspace] db in
                 try connection.insert(db)
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 try screenshot.insertLegacyForTesting(db)
             }
             let unavailable = Mutex(capability == "unavailable")
-            ImageURLProtocol.register(origin: connection.origin) { [queue = database.dbQueue, vaultID = vault.id] request in
+            ImageURLProtocol.register(origin: connection.origin) { [queue = database.dbQueue, workspaceID = workspace.id] request in
                 #expect(request.url?.path == "/api/v1/capabilities")
                 if capability == "detached" {
                     do {
                         try queue.write { db in
                             try db.execute(
-                                sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?",
-                                arguments: [vaultID]
+                                sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?",
+                                arguments: [workspaceID]
                             )
                         }
                     } catch { Issue.record(error) }
@@ -80,12 +80,12 @@ import Synchronization
         }
 
         @Test
-        func discardsInFlightAnalysisAfterVaultMovesToServer() async throws {
+        func discardsInFlightAnalysisAfterWorkspaceMovesToServer() async throws {
             let analyzer = ConcurrentScreenshotAnalyzer()
             let database = try makeDatabase(screenshotAnalyzer: analyzer)
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://server.example.test", clientID: "test", createdAt: .now)
-            let vault = makeVault()
-            let meeting = makeMeeting(vaultID: vault.id)
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
             let screenshot = MeetingScreenshotRecord(
                 id: .v7(),
                 meetingId: meeting.id,
@@ -95,7 +95,7 @@ import Synchronization
                 mimeType: "image/png"
             )
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 try screenshot.insertLegacyForTesting(db)
                 try connection.insert(db)
@@ -104,8 +104,8 @@ import Synchronization
             let started = await pollUntil { await analyzer.callSizes.count == 1 }
             try await database.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id) WHERE id = ?",
-                    arguments: [connection.id, vault.id]
+                    sql: "UPDATE workspaces SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id) WHERE id = ?",
+                    arguments: [connection.id, workspace.id]
                 )
             }
             await analyzer.releaseFirstWave()
@@ -125,13 +125,13 @@ import Synchronization
                 screenshotRuntimeProviderResolver: { .databricks(profile: "WORK") },
                 localAccountSettingsResolver: { .init(provider: .databricks, databricksProfile: "WORK") }
             )
-            let vault = {
-                var vault = makeVault()
-                vault.localProvider = .databricks
-                vault.databricksProfile = "WORK"
-                return vault
+            let workspace = {
+                var workspace = makeWorkspace()
+                workspace.localProvider = .databricks
+                workspace.databricksProfile = "WORK"
+                return workspace
             }()
-            let meeting = makeMeeting(vaultID: vault.id)
+            let meeting = makeMeeting(workspaceID: workspace.id)
             let screenshot = MeetingScreenshotRecord(
                 id: .v7(),
                 meetingId: meeting.id,
@@ -140,13 +140,13 @@ import Synchronization
                 imageData: Data([1, 2, 3]),
                 mimeType: "image/png"
             )
-            let localVault = {
-                var vault = makeVault()
-                vault.path = "/tmp/screenshot-ocr-search-local-vault"
-                vault.name = "Local Search"
-                return vault
+            let localWorkspace = {
+                var workspace = makeWorkspace()
+                workspace.path = "/tmp/screenshot-ocr-search-local-workspace"
+                workspace.name = "Local Search"
+                return workspace
             }()
-            let localMeeting = makeMeeting(vaultID: localVault.id)
+            let localMeeting = makeMeeting(workspaceID: localWorkspace.id)
             let localScreenshot = MeetingScreenshotRecord(
                 id: .v7(),
                 meetingId: localMeeting.id,
@@ -158,27 +158,27 @@ import Synchronization
             let connection = DahliaAccountConnectionRecord(
                 id: .v7(), origin: "https://server.example.com", clientID: "test", createdAt: .now
             )
-            let hostedVault = {
-                var vault = makeVault()
-                vault.path = nil
-                vault.accountConnectionId = connection.id
-                vault.organizationId = vault.accountConnectionId == nil ? nil : (vault.organizationId ?? .v7())
-                return vault
+            let hostedWorkspace = {
+                var workspace = makeWorkspace()
+                workspace.path = nil
+                workspace.accountConnectionId = connection.id
+                workspace.organizationId = workspace.accountConnectionId == nil ? nil : (workspace.organizationId ?? .v7())
+                return workspace
             }()
-            let hostedMeeting = makeMeeting(vaultID: hostedVault.id)
+            let hostedMeeting = makeMeeting(workspaceID: hostedWorkspace.id)
             let hostedScreenshot = MeetingScreenshotRecord(
                 id: .v7(), meetingId: hostedMeeting.id, sessionId: nil, capturedAt: .now,
                 imageData: Data([7, 8, 9]), mimeType: "image/png"
             )
             try await database.dbQueue.write { db in
                 try connection.insert(db)
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 try screenshot.insertLegacyForTesting(db)
-                try localVault.insert(db)
+                try localWorkspace.insert(db)
                 try localMeeting.insert(db)
                 try localScreenshot.insertLegacyForTesting(db)
-                try hostedVault.insert(db)
+                try hostedWorkspace.insert(db)
                 try hostedMeeting.insert(db)
                 try hostedScreenshot.insertLegacyForTesting(db)
             }
@@ -207,19 +207,19 @@ import Synchronization
                 )
             }
             let screenshotPage = try await MeetingRepository.searchScreenshotPage(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 criteria: MeetingSearchCriteria(text: "固有検索語"),
                 limit: 20,
                 dbQueue: database.dbQueue
             )
             let captionPage = try await MeetingRepository.searchScreenshotPage(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 criteria: MeetingSearchCriteria(text: "画像の説明"),
                 limit: 20,
                 dbQueue: database.dbQueue
             )
             let meetingPage = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: "固有検索語",
                 limit: 20,
                 dbQueue: database.dbQueue
@@ -243,10 +243,10 @@ import Synchronization
             let ocrMatchID = UUID.v7()
             let captionMatchID = UUID.v7()
             let database = try makeDatabase(screenshotAnalyzer: FieldTargetedScreenshotAnalyzer(ocrMatchID: ocrMatchID))
-            let vault = makeVault()
-            let meeting = makeMeeting(vaultID: vault.id)
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 // caption マッチ側を新しくし、BM25 が同点なら capturedAt DESC で先頭に来る配置にする
                 for (id, second) in [(ocrMatchID, 0), (captionMatchID, 1)] {
@@ -264,7 +264,7 @@ import Synchronization
             await database.searchIndexer.drain()
 
             let page = try await MeetingRepository.searchScreenshotPage(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 criteria: MeetingSearchCriteria(text: "重み検証語"),
                 limit: 20,
                 dbQueue: database.dbQueue
@@ -281,10 +281,10 @@ import Synchronization
         @Test
         func recordingPauseLeavesOCRQueuedUntilRestart() async throws {
             let database = try makeDatabase(screenshotAnalyzer: StubScreenshotAnalyzer(text: "録音終了後"))
-            let vault = makeVault()
-            let meeting = makeMeeting(vaultID: vault.id)
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
             }
             await database.searchIndexer.drain()
@@ -326,10 +326,10 @@ import Synchronization
         func recordingPauseCancelsAllInFlightOCRAndRequeuesIt() async throws {
             let analyzer = CancellableScreenshotAnalyzer()
             let database = try makeDatabase(screenshotAnalyzer: analyzer)
-            let vault = makeVault()
-            let meeting = makeMeeting(vaultID: vault.id)
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
             }
             await database.searchIndexer.drain()
@@ -377,10 +377,10 @@ import Synchronization
         func recordingPauseCancelsExplicitRebuildOCRAndRequeuesIt() async throws {
             let analyzer = CancellableScreenshotAnalyzer()
             let database = try makeDatabase(screenshotAnalyzer: analyzer)
-            let vault = makeVault()
-            let meeting = makeMeeting(vaultID: vault.id)
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 for index in 0 ..< 8 {
                     try MeetingScreenshotRecord(
@@ -418,10 +418,10 @@ import Synchronization
         @Test
         func staleScreenshotCursorReplacesResults() async throws {
             let database = try makeDatabase(screenshotAnalyzer: StubScreenshotAnalyzer(text: "cursor needle"))
-            let vault = makeVault()
-            let meeting = makeMeeting(vaultID: vault.id)
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 for second in 0 ... 1 {
                     try MeetingScreenshotRecord(
@@ -436,7 +436,7 @@ import Synchronization
             }
             await database.searchIndexer.drain()
             let first = try await MeetingRepository.searchScreenshotPage(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 criteria: MeetingSearchCriteria(text: "cursor needle"),
                 limit: 1,
                 dbQueue: database.dbQueue
@@ -449,7 +449,7 @@ import Synchronization
             }
 
             let refreshed = try await MeetingRepository.searchScreenshotPage(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 criteria: MeetingSearchCriteria(text: "cursor needle"),
                 after: cursor,
                 limit: 1,
@@ -463,8 +463,8 @@ import Synchronization
         func analyzesSingleScreenshotsUpToEightConcurrently() async throws {
             let analyzer = ConcurrentScreenshotAnalyzer()
             let database = try makeDatabase(screenshotAnalyzer: analyzer)
-            let vault = makeVault()
-            let meeting = makeMeeting(vaultID: vault.id)
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
             let screenshots = (0 ..< 9).map { index in
                 MeetingScreenshotRecord(
                     id: .v7(),
@@ -476,7 +476,7 @@ import Synchronization
                 )
             }
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 for screenshot in screenshots {
                     try screenshot.insertLegacyForTesting(db)
@@ -506,11 +506,11 @@ import Synchronization
             let failingID = UUID.v7()
             let analyzer = FailingOneScreenshotAnalyzer(failingID: failingID)
             let database = try makeDatabase(screenshotAnalyzer: analyzer)
-            let vault = makeVault()
-            let meeting = makeMeeting(vaultID: vault.id)
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
             let screenshots = [failingID] + (0 ..< 7).map { _ in UUID.v7() }
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 for id in screenshots {
                     try MeetingScreenshotRecord(
@@ -551,11 +551,11 @@ import Synchronization
             let failingID = UUID.v7()
             let analyzer = StubScreenshotAnalyzer(text: "stored text")
             let database = try makeDatabase(screenshotAnalyzer: analyzer)
-            let vault = makeVault()
-            let meeting = makeMeeting(vaultID: vault.id)
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
             let screenshotIDs = [failingID] + (0 ..< 7).map { _ in UUID.v7() }
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 for id in screenshotIDs {
                     try MeetingScreenshotRecord(
@@ -613,8 +613,8 @@ import Synchronization
             let failingID = try #require(UUID(uuidString: "00000000-0000-7000-8000-000000000000"))
             let analyzer = PrerequisiteRetryAnalyzer(failingID: failingID)
             let database = try makeDatabase(screenshotAnalyzer: analyzer)
-            let vault = makeVault()
-            let meeting = makeMeeting(vaultID: vault.id)
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
             let screenshots = ([failingID] + (0 ..< 8).map { _ in UUID.v7() }).enumerated().map { index, id in
                 MeetingScreenshotRecord(
                     id: id,
@@ -626,7 +626,7 @@ import Synchronization
                 )
             }
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 for screenshot in screenshots {
                     try screenshot.insertLegacyForTesting(db)
@@ -676,8 +676,8 @@ import Synchronization
         @Test
         func exhaustedOCRJobIsTerminalUntilExplicitRebuild() async throws {
             let database = try makeDatabase(screenshotAnalyzer: FailingScreenshotAnalyzer())
-            let vault = makeVault()
-            let meeting = makeMeeting(vaultID: vault.id)
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
             let screenshot = MeetingScreenshotRecord(
                 id: .v7(),
                 meetingId: meeting.id,
@@ -687,7 +687,7 @@ import Synchronization
                 mimeType: "image/png"
             )
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
             }
             await database.searchIndexer.drain()
@@ -733,8 +733,8 @@ import Synchronization
         func migrationFromV37PreservesScreenshotsAndQueuesOCR() throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v37_vectorSearch")
-            let vault = makeVault()
-            let meeting = makeMeeting(vaultID: vault.id)
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
             let screenshot = MeetingScreenshotRecord(
                 id: .v7(),
                 meetingId: meeting.id,
@@ -744,14 +744,14 @@ import Synchronization
                 mimeType: "image/png"
             )
             try queue.write { db in
-                try insertLegacyVault(vault, in: db)
+                try insertLegacyWorkspace(workspace, in: db)
                 try db.execute(
                     sql: """
                     INSERT INTO meetings (id, vaultId, projectId, name, status, duration, createdAt, updatedAt)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     arguments: [
-                        meeting.id, meeting.vaultId, meeting.projectId, meeting.name,
+                        meeting.id, meeting.workspaceId, meeting.projectId, meeting.name,
                         meeting.status, meeting.duration, meeting.createdAt, meeting.updatedAt,
                     ]
                 )
@@ -842,8 +842,8 @@ import Synchronization
         func reappliesUnreleasedV38ForDevelopmentDatabases() throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
-            let vault = makeVault()
-            let meeting = makeMeeting(vaultID: vault.id)
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
             let screenshot = MeetingScreenshotRecord(
                 id: .v7(),
                 meetingId: meeting.id,
@@ -855,8 +855,19 @@ import Synchronization
                 caption: "old caption"
             )
             try queue.write { db in
-                try insertLegacyVault(vault, in: db)
-                try meeting.insert(db)
+                try insertLegacyWorkspace(workspace, in: db)
+                try db.execute(
+                    sql: "INSERT INTO meetings(id, vaultId, name, status, duration, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    arguments: [
+                        meeting.id,
+                        meeting.workspaceId,
+                        meeting.name,
+                        meeting.status.rawValue,
+                        meeting.duration,
+                        meeting.createdAt,
+                        meeting.updatedAt,
+                    ]
+                )
                 try db.execute(
                     sql: "INSERT INTO screenshots(id, meetingId, capturedAt, imageData, mimeType, ocrText, caption) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     arguments: [
@@ -905,20 +916,20 @@ import Synchronization
             )
         }
 
-        private func makeVault() -> VaultRecord {
-            VaultRecord(
+        private func makeWorkspace() -> WorkspaceRecord {
+            WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/screenshot-ocr-search-vault",
+                path: "/tmp/screenshot-ocr-search-workspace",
                 name: "Search",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
         }
 
-        private func makeMeeting(vaultID: UUID) -> MeetingRecord {
+        private func makeMeeting(workspaceID: UUID) -> MeetingRecord {
             MeetingRecord(
                 id: .v7(),
-                vaultId: vaultID,
+                workspaceId: workspaceID,
                 projectId: nil,
                 name: "検索会議",
                 description: "検索対象のミーティング説明",

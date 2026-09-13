@@ -10,7 +10,7 @@ import Foundation
         func standaloneThinkingHandsOffToActiveResponse() async {
             let service = TestCodexChatService(mode: .blockBeforeOutput)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let contextProvider = TestCodexChatContextProvider(shouldBlock: true)
             let session = CodexChatSessionModel(
                 modelID: "default-model",
@@ -87,7 +87,7 @@ import Foundation
         func repeatedManualSubmitWhilePreparingIsIgnored() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let contextProvider = TestCodexChatContextProvider(shouldBlock: true)
             let session = CodexChatSessionModel(
                 modelID: "default-model",
@@ -115,7 +115,7 @@ import Foundation
         func replacementWaitsForCancelledSendCleanup() async {
             let service = TestCodexChatService(mode: .delayFirstSendIgnoringCancellation)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let contextProvider = TestCodexChatContextProvider()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
@@ -157,7 +157,7 @@ import Foundation
         func completedReasoningDoesNotShowThinkingWhileResponseStreams() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -194,7 +194,7 @@ import Foundation
         func completedResponseShowsThinkingDuringReconciliation() async {
             let service = TestCodexChatService(mode: .complete, delaysLoad: true)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -216,8 +216,8 @@ import Foundation
             #expect(!session.showsStandaloneThinking)
         }
 
-        private static func testVault() -> VaultRecord {
-            VaultRecord(
+        private static func testWorkspace() -> WorkspaceRecord {
+            WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/chat-thinking-presentation-tests",
                 name: "Chat Thinking Presentation Tests",

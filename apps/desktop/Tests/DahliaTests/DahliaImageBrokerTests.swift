@@ -21,7 +21,7 @@
             let root = URL(filePath: "/tmp/dahlia-image-\(UUID().uuidString)")
             defer { try? FileManager.default.removeItem(at: root) }
             let socket = root.appending(path: "image.sock")
-            let request = DahliaImageBrokerProtocol.Request(vaultId: .v7(), meetingId: .v7(), screenshotId: .v7())
+            let request = DahliaImageBrokerProtocol.Request(workspaceId: .v7(), meetingId: .v7(), screenshotId: .v7())
             let bytes = Data(repeating: 0xAB, count: 128 * 1024)
             let broker = DahliaImageBrokerServer(helperURL: executableURL()) { _ in bytes }
             try broker.start(socketURL: socket)
@@ -48,16 +48,16 @@
         }
 
         @Test
-        func databaseResolverRejectsCrossVaultRequests() async throws {
+        func databaseResolverRejectsCrossWorkspaceRequests() async throws {
             let root = URL(filePath: "/tmp/dahlia-image-\(UUID().uuidString)")
             defer { try? FileManager.default.removeItem(at: root) }
             let socket = root.appending(path: "image.sock")
             let db = try AppDatabaseManager(path: ":memory:")
-            let vault = VaultRecord(id: .v7(), path: nil, name: "Fixture", createdAt: .now, lastOpenedAt: .now)
-            let meeting = MeetingRecord(id: .v7(), vaultId: vault.id, projectId: nil, name: "Fixture", createdAt: .now, updatedAt: .now)
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Fixture", createdAt: .now, lastOpenedAt: .now)
+            let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, projectId: nil, name: "Fixture", createdAt: .now, updatedAt: .now)
             let imageId = UUID.v7()
             try await db.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 try MeetingScreenshotRecord(
                     id: imageId,
@@ -70,9 +70,9 @@
             let broker = DahliaImageBrokerServer(dbQueue: db.dbQueue, helperURL: executableURL())
             try broker.start(socketURL: socket)
             defer { broker.stop() }
-            let valid = DahliaImageBrokerProtocol.Request(vaultId: vault.id, meetingId: meeting.id, screenshotId: imageId)
+            let valid = DahliaImageBrokerProtocol.Request(workspaceId: workspace.id, meetingId: meeting.id, screenshotId: imageId)
             #expect(try await withBrokerClientThread { try DahliaImageBrokerProtocol.requestImage(valid, socketURL: socket) } == Data([1, 2, 3]))
-            let invalid = DahliaImageBrokerProtocol.Request(vaultId: .v7(), meetingId: meeting.id, screenshotId: imageId)
+            let invalid = DahliaImageBrokerProtocol.Request(workspaceId: .v7(), meetingId: meeting.id, screenshotId: imageId)
             await #expect(throws: (any Error).self) {
                 try await withBrokerClientThread { try DahliaImageBrokerProtocol.requestImage(invalid, socketURL: socket) }
             }
@@ -94,7 +94,7 @@
             }
             try broker.start(socketURL: socket)
             defer { broker.stop() }
-            let request = DahliaImageBrokerProtocol.Request(vaultId: .v7(), text: .init(operation: .transcript, meetingId: .v7()))
+            let request = DahliaImageBrokerProtocol.Request(workspaceId: .v7(), text: .init(operation: .transcript, meetingId: .v7()))
             let data = try await withBrokerClientThread { try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket) }
             #expect(data == Data("complete transcript".utf8))
             #expect(pages.withLock { $0 } == 3)
@@ -119,8 +119,8 @@
             }
             try broker.start(socketURL: socket)
             let request = text
-                ? DahliaImageBrokerProtocol.Request(vaultId: .v7(), text: .init(operation: .transcript, meetingId: .v7()))
-                : DahliaImageBrokerProtocol.Request(vaultId: .v7(), meetingId: .v7(), screenshotId: .v7())
+                ? DahliaImageBrokerProtocol.Request(workspaceId: .v7(), text: .init(operation: .transcript, meetingId: .v7()))
+                : DahliaImageBrokerProtocol.Request(workspaceId: .v7(), meetingId: .v7(), screenshotId: .v7())
             let client = Task { try await withBrokerClientThread { try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket) } }
             var iterator = events.makeAsyncIterator()
             #expect(await iterator.next() == "started")
@@ -142,7 +142,7 @@
                 throw TextContentError.incomplete
             }
             try broker.start(socketURL: socket)
-            let request = DahliaImageBrokerProtocol.Request(vaultId: .v7(), text: .init(operation: .transcript, meetingId: .v7()))
+            let request = DahliaImageBrokerProtocol.Request(workspaceId: .v7(), text: .init(operation: .transcript, meetingId: .v7()))
             let expected =
                 try #require(TextContentError(rawValue: ["noCredential", "expiredRefresh"].contains(code) ? "authorizationRequired" : code))
             await #expect(throws: expected) {

@@ -22,13 +22,13 @@ struct RecordingSessionRecord: Codable, FetchableRecord, PersistableRecord, Equa
     )
     """
 
-    static func hasActiveRecording(vaultId: UUID, in db: Database) throws -> Bool {
+    static func hasActiveRecording(workspaceId: UUID, in db: Database) throws -> Bool {
         try Bool.fetchOne(db, sql: """
         SELECT EXISTS (
             SELECT 1 FROM recording_sessions s JOIN meetings m ON m.id = s.meetingId
-            WHERE m.vaultId = ? AND s.endedAt IS NULL
+            WHERE m.workspace_id = ? AND s.endedAt IS NULL
         )
-        """, arguments: [vaultId]) ?? false
+        """, arguments: [workspaceId]) ?? false
     }
 
     var id: UUID

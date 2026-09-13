@@ -31,9 +31,10 @@
                 return (503, [:], Data())
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
-            let connectionId = try await fixture.queue.read { try #require(try VaultRecord.fetchOne($0, key: fixture.vaultId)?.accountConnectionId) }
+            let connectionId = try await fixture.queue
+                .read { try #require(try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.accountConnectionId) }
             let worker = await SyncWorker(dbQueue: fixture.queue, apiClient: failedProvider.client)
-            try await worker.synchronizeForTransfer(vaultId: fixture.vaultId, connectionId: connectionId)
+            try await worker.synchronizeForTransfer(workspaceId: fixture.workspaceId, connectionId: connectionId)
             await #expect(throws: TextContentError.unavailable) {
                 try await failedProvider.ensure(entity: .file, id: file.id, dbQueue: fixture.queue, refresh: resident)
             }
@@ -42,7 +43,7 @@
             let reopened = try AppDatabaseManager(path: path).dbQueue
             defer { try? reopened.close() }
             try await reopened.read { db throws in
-                #expect(try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults") == "after")
+                #expect(try String.fetchOne(db, sql: "SELECT syncPullCursor FROM workspaces") == "after")
                 #expect(try TextContentAccess.cachedFileText(fileId: file.id, in: db)?.caption == (resident ? "old" : nil))
                 #expect(try TextContentAccess.availability(entity: .file, id: file.id, in: db).revision == (resident ? 1 : nil))
                 #expect(try String.fetchOne(db, sql: "SELECT fetchError FROM sync_content_state WHERE entity = 'file'") == "unavailable")
@@ -61,7 +62,7 @@
             try await reopened.read { db throws in
                 #expect(try TextContentAccess.fileText(fileId: file.id, in: db)?.caption == "new")
                 #expect(try TextContentAccess.availability(entity: .file, id: file.id, in: db).revision == 2)
-                #expect(try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults") == "after")
+                #expect(try String.fetchOne(db, sql: "SELECT syncPullCursor FROM workspaces") == "after")
             }
         }
 
@@ -97,7 +98,7 @@
             }
         }
 
-        @Test(arguments: ["edit", "missing-field", "wrong-id", "wrong-vault", "checksum"])
+        @Test(arguments: ["edit", "missing-field", "wrong-id", "wrong-workspace", "checksum"])
         func fileMetadataRejectsInvalidOrLocallySupersededBodies(scenario: String) async throws {
             let fixture = try textFixture()
             let file = try await fileMetadataFixture(fixture)
@@ -105,7 +106,7 @@
             json["metadata"] = ["ocrText": "", "caption": "new"]
             if scenario == "missing-field" { json["metadata"] = ["ocrText": ""] }
             if scenario == "wrong-id" { json["id"] = UUID.v7().uuidString }
-            if scenario == "wrong-vault" { json["vaultId"] = UUID.v7().uuidString }
+            if scenario == "wrong-workspace" { json["workspaceId"] = UUID.v7().uuidString }
             if scenario == "checksum" { json["checksum"] = "SHA-256:" + String(repeating: "b", count: 64) }
             let body = try JSONSerialization.data(withJSONObject: json)
             let provider = provider(fixture) { request in
@@ -120,7 +121,7 @@
                         try fixture.queue.write { db in
                             try FileTextBodyRecord(fileId: file.id, ocrText: nil, caption: "local edit").save(db)
                             try SyncTransactionRecorder.record(
-                                vaultId: fixture.vaultId,
+                                workspaceId: fixture.workspaceId,
                                 operations: [.init(entity: .file, action: .upsert, entityId: file.id)],
                                 in: db
                             )
@@ -138,20 +139,20 @@
             }
             try await fixture.queue.read { db throws in
                 #expect(try TextContentAccess.cachedFileText(fileId: file.id, in: db)?.caption == (scenario == "edit" ? "local edit" : "old"))
-                #expect(try SyncTransactionQueue.hasPending(vaultId: fixture.vaultId, in: db) == (scenario == "edit"))
+                #expect(try SyncTransactionQueue.hasPending(workspaceId: fixture.workspaceId, in: db) == (scenario == "edit"))
                 #expect(try TextContentStore.source(entity: .file, id: file.id, in: db)?.revision == 1)
             }
         }
 
         private struct FileMetadataFixture: Sendable {
             let id: UUID
-            let vaultId: UUID
+            let workspaceId: UUID
             let checksum = "SHA-256:" + String(repeating: "a", count: 64)
 
             func record(revision: Int) -> [String: Any] {
                 [
                     "id": id.uuidString,
-                    "vaultId": vaultId.uuidString,
+                    "workspaceId": workspaceId.uuidString,
                     "revision": revision,
                     "uri": "/Volumes/test/app/file",
                     "offset": 0,
@@ -178,7 +179,7 @@
                 return try JSONSerialization.data(withJSONObject: [
                     "items": [[
                         "sequence": revision,
-                        "vaultId": vaultId.uuidString,
+                        "workspaceId": workspaceId.uuidString,
                         "transactionId": UUID.v7().uuidString,
                         "entity": "file",
                         "entityId": id.uuidString,
@@ -192,11 +193,11 @@
         }
 
         private func fileMetadataFixture(_ fixture: TextFixture) async throws -> FileMetadataFixture {
-            let file = FileMetadataFixture(id: .v7(), vaultId: fixture.vaultId)
+            let file = FileMetadataFixture(id: .v7(), workspaceId: fixture.workspaceId)
             try await fixture.queue.write { db in
                 try FileRecord(
                     id: file.id,
-                    vaultId: fixture.vaultId,
+                    workspaceId: fixture.workspaceId,
                     size: 1,
                     contentType: "image/png",
                     checksum: file.checksum,
@@ -207,12 +208,12 @@
                 )
                 .insert(db)
                 try FileTextBodyRecord(fileId: file.id, ocrText: nil, caption: "old").save(db)
-                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'file', ?, 1)", arguments: [fixture.vaultId, file.id])
+                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'file', ?, 1)", arguments: [fixture.workspaceId, file.id])
                 try db.execute(
-                    sql: "INSERT INTO sync_content_state(vaultId, entity, entityId, residentRevision, complete) VALUES (?, 'file', ?, 1, 1)",
-                    arguments: [fixture.vaultId, file.id]
+                    sql: "INSERT INTO sync_content_state(workspace_id, entity, entityId, residentRevision, complete) VALUES (?, 'file', ?, 1, 1)",
+                    arguments: [fixture.workspaceId, file.id]
                 )
-                try db.execute(sql: "UPDATE vaults SET syncPullCursor = 'before'")
+                try db.execute(sql: "UPDATE workspaces SET syncPullCursor = 'before'")
             }
             return file
         }

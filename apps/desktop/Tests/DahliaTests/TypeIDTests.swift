@@ -22,12 +22,12 @@
 
         @Test func invalidIDs() throws {
             for value in [
-                "vlt_" + String(repeating: "0", count: 25),
-                "vlt_8" + String(repeating: "0", count: 25),
+                "ws_" + String(repeating: "0", count: 25),
+                "ws_8" + String(repeating: "0", count: 25),
                 "mtg_" + String(repeating: "0", count: 26),
                 "00000000-0000-0000-0000-000000000000",
             ] {
-                #expect(throws: TypeID.Failure.self) { try TypeID.decode(value, as: .vault) }
+                #expect(throws: TypeID.Failure.self) { try TypeID.decode(value, as: .workspace) }
             }
         }
 

@@ -4,7 +4,7 @@
 
 This file applies to `apps/server`. The repository-root `AGENTS.md` still applies; this file adds only Server-specific guidance.
 
-Dahlia Server is the SaaS backend and canonical data service for Server accounts, with a Private Web client, authentication, Vault sharing, search, an AI Gateway, and object storage. Desktop and Web update the same Server records; Desktop SQLite is an offline working copy, as in Notion. Preserve tenant isolation, durable data, public APIs, and runtime portability. Local accounts remain standalone, and recording and finalized-transcript persistence must never wait for network access.
+Dahlia Server is the SaaS backend and canonical data service for Server accounts, with a Private Web client, authentication, Workspace sharing, search, an AI Gateway, and object storage. Desktop and Web update the same Server records; Desktop SQLite is an offline working copy, as in Notion. Preserve tenant isolation, durable data, public APIs, and runtime portability. Local accounts remain standalone, and recording and finalized-transcript persistence must never wait for network access.
 
 ## Reference Routing
 
@@ -17,7 +17,7 @@ Use progressive disclosure. Read the closest implementation first, then only the
 | Account authentication and API access | [`README.md` API contract](README.md#api-contract), then the affected `src/auth` implementation |
 | Gateway upstream relay | [Gateway 境界](../../docs/adr/server/gateway.md#gateway-境界) |
 | Canonical data, remote mutations, conflicts, or catch-up | [Transaction と競合](../../docs/adr/shared/sync.md#transaction-と競合), then `src/sync` and the affected Desktop sync path |
-| Vault ownership and sharing | [`README.md` Vault sharing](README.md#meeting-sync-and-vault-sharing) |
+| Workspace ownership and sharing | [`README.md` Workspace sharing](README.md#meeting-sync-and-workspace-sharing) |
 | Public package exports or extension hooks | [配布と拡張](../../docs/adr/server/gateway.md#配布と拡張) |
 | Application database, identity, or migrations | [Schema と migration](../../docs/adr/server/database-and-identity.md#schema-と-migration) |
 | Databricks deployment or Lakebase setup | [`deploy/databricks/README.md`](../../deploy/databricks/README.md) |
@@ -39,13 +39,13 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 
 ## Canonical Data and Client Synchronization
 
-- Server-account Vaults, Projects, meeting metadata, summaries, original transcripts, screenshots, OCR, and captions are canonical Server data. Store them durably through the supported application database and object-storage paths. Recording audio, translated transcripts, SQLite files, and device-local export paths are not part of meeting sync.
-- Desktop and Private Web mutations use `POST /api/v1/transactions`: one Vault per atomic transaction, UUIDv7 idempotency keys, stored receipts, and rejection of a reused ID with different content. Preserve revision checks and `409` conflicts with the canonical record; never silently replace them with last-write-wins.
-- Authorize every read, staged upload, and committed mutation against current Vault permissions. Desktop is a remote client, not a trusted database writer. Validate IDs, relationships, payload limits, and content hashes at the Server boundary; staging alone must not publish data.
+- Server-account Workspaces, Projects, meeting metadata, summaries, original transcripts, screenshots, OCR, and captions are canonical Server data. Store them durably through the supported application database and object-storage paths. Recording audio, translated transcripts, SQLite files, and device-local export paths are not part of meeting sync.
+- Desktop and Private Web mutations use `POST /api/v1/transactions`: one Workspace per atomic transaction, UUIDv7 idempotency keys, stored receipts, and rejection of a reused ID with different content. Preserve revision checks and `409` conflicts with the canonical record; never silently replace them with last-write-wins.
+- Authorize every read, staged upload, and committed mutation against current Workspace permissions. Desktop is a remote client, not a trusted database writer. Validate IDs, relationships, payload limits, and content hashes at the Server boundary; staging alone must not publish data.
 - Preserve the durable cursor delta feed and its high-water pagination boundary. SSE sends invalidations and cursors only; clients recover from missed events through canonical reads. A commit receipt cursor must not advance a client's separate delta pull checkpoint.
 - Desktop records local edits and retryable operations atomically, applies receipts without losing newer local edits, and applies remote records without enqueueing echoes. Keep authorization, validation, revision conflicts, and retryable transport failures distinct. Validate both client and Server paths when changing this wire contract.
-- Signing in does not implicitly migrate a Local Account Vault. Removing a local working copy or signing out does not delete Server records. Keep deletion of canonical data explicit and authorized.
-- Organizations own Vaults. Vault admin manages sharing and the Vault; admin/editor can mutate content and viewer can read. Organization membership alone grants no Vault access. Server MCP remains read-only. Follow docs/adr/shared/organization-vaults.md.
+- Signing in does not implicitly migrate a Local Account Workspace. Removing a local working copy or signing out does not delete Server records. Keep deletion of canonical data explicit and authorized.
+- Organizations own Workspaces. Workspace admin manages sharing and the Workspace; admin/editor can mutate content and viewer can read. Organization membership alone grants no Workspace access. Server MCP remains read-only. Follow docs/adr/shared/organization-vaults.md.
 
 ## Model Catalog Maintenance
 
@@ -61,8 +61,8 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 - Enforce request byte limits before parsing or buffering. Stream Responses and file/audio bodies without buffering the complete payload.
 - Header authentication is safe only behind a proxy that strips client-supplied identity headers, writes verified values, and prevents direct Server access. Do not weaken that deployment requirement with trust-by-header fallback logic.
 - With the Databricks backend, use `X-Forwarded-Access-Token` only for the current Responses request. Do not store, log, cache, return, or forward that header by name. Model discovery uses the App service principal and must not use the forwarded token.
-- Personal workspace claims and Personal Organizations are distinct. Evaluate current user/organization/team permissions with admin > editor > viewer, and require current parent-organization membership for Team access. Keep at least one effective Vault admin.
-- Files and recording reads require current Vault access before storage access or conditional responses. Preserve streaming, the file CSP sandbox, and non-disclosure of storage credentials. Artifact publishing is retired.
+- Identity claims identify users; Personal Organizations represent ownership. Evaluate current user/organization/team permissions with admin > editor > viewer, and require current parent-organization membership for Team access. Keep at least one effective Workspace admin.
+- Files and recording reads require current Workspace access before storage access or conditional responses. Preserve streaming, the file CSP sandbox, and non-disclosure of storage credentials. Artifact publishing is retired.
 
 ## Database and Migrations
 

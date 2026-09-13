@@ -136,7 +136,7 @@ struct MeetingDetailHeader: View {
                     title: title,
                     meetingID: viewModel.currentMeetingId,
                     syncState: viewModel.meetingSyncState,
-                    canEdit: sidebarViewModel.canEditCurrentVault,
+                    canEdit: sidebarViewModel.canEditCurrentWorkspace,
                     isEditing: $isEditing,
                     editingName: $editingName,
                     isFocused: $isFocused,

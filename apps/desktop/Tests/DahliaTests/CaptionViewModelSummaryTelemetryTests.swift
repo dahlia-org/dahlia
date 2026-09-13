@@ -24,7 +24,7 @@ import GRDB
                 usageTelemetryReporter: { events.append($0) }
             )
             let options = SummaryGenerationOptions(
-                exportOptions: .init(exportsToVault: false, exportsToGoogleDocs: false)
+                exportOptions: .init(exportsToWorkspace: false, exportsToGoogleDocs: false)
             )
 
             await fixture.select(fixture.first, in: viewModel, note: "note")
@@ -38,7 +38,7 @@ import GRDB
         }
 
         @Test
-        func persistenceFailureDoesNotStartVaultExport() async throws {
+        func persistenceFailureDoesNotStartWorkspaceExport() async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
             let runner = BlockingSummaryRunner()
@@ -48,7 +48,7 @@ import GRDB
                 usageTelemetryReporter: { events.append($0) }
             )
             let options = SummaryGenerationOptions(
-                exportOptions: .init(exportsToVault: true, exportsToGoogleDocs: false)
+                exportOptions: .init(exportsToWorkspace: true, exportsToGoogleDocs: false)
             )
 
             await fixture.select(fixture.first, in: viewModel, note: "note")

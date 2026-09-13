@@ -58,7 +58,7 @@ import Foundation
         func replacingDockedChatKeepsGeneratingSessionAndReusesItFromHistory() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
-            settings.currentVault = Self.vault(name: "Background")
+            settings.currentWorkspace = Self.workspace(name: "Background")
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
             let backgroundSession = coordinator.dockedSession
 
@@ -87,7 +87,7 @@ import Foundation
         func closingDetachedWindowKeepsGeneratingSessionUntilCompletion() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
-            settings.currentVault = Self.vault(name: "Detached Background")
+            settings.currentWorkspace = Self.workspace(name: "Detached Background")
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
             let backgroundSession = coordinator.dockedSession
 
@@ -114,7 +114,7 @@ import Foundation
         func hiddenSessionKeepsFollowUpWhenOriginalTurnFinishesDuringSteer() async {
             let service = CoordinatorTestCodexChatService(blocksTurn: true, delaysSteer: true)
             let settings = AppSettings()
-            settings.currentVault = Self.vault(name: "Background Follow-up")
+            settings.currentWorkspace = Self.workspace(name: "Background Follow-up")
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
             let backgroundSession = coordinator.dockedSession
 
@@ -147,7 +147,7 @@ import Foundation
         func hiddenStoppedSessionIsRemovedAfterStopCleanupCompletes() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
-            settings.currentVault = Self.vault(name: "Stopped Background")
+            settings.currentWorkspace = Self.workspace(name: "Stopped Background")
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
             let backgroundSession = coordinator.dockedSession
 
@@ -171,7 +171,7 @@ import Foundation
         func failedPreThreadHiddenSessionIsRemovedWhenQueuedInputCannotResume() async {
             let service = CoordinatorTestCodexChatService(delaysAndFailsThreadStart: true)
             let settings = AppSettings()
-            settings.currentVault = Self.vault(name: "Failed Background")
+            settings.currentWorkspace = Self.workspace(name: "Failed Background")
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
             let backgroundSession = coordinator.dockedSession
 
@@ -193,14 +193,14 @@ import Foundation
         }
 
         @Test
-        func vaultSwitchStopsGeneratingSession() async {
+        func workspaceSwitchStopsGeneratingSession() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
-            settings.currentVault = Self.vault(name: "Old Background")
+            settings.currentWorkspace = Self.workspace(name: "Old Background")
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
             let backgroundSession = coordinator.dockedSession
 
-            backgroundSession.draft = "Old vault question"
+            backgroundSession.draft = "Old workspace question"
             backgroundSession.sendDraft()
             await waitUntil {
                 await MainActor.run {
@@ -208,9 +208,9 @@ import Foundation
                 }
             }
 
-            let newVault = Self.vault(name: "New Background")
-            settings.currentVault = newVault
-            coordinator.activateVault(newVault.id)
+            let newWorkspace = Self.workspace(name: "New Background")
+            settings.currentWorkspace = newWorkspace
+            coordinator.activateWorkspace(newWorkspace.id)
 
             await waitUntil { await MainActor.run { !backgroundSession.isGenerating } }
             await waitUntil { await service.interruptCount == 1 }
@@ -265,7 +265,7 @@ import Foundation
         func closingDetachedThreadRemovesSessionAndUnsubscribes() async {
             let service = CoordinatorTestCodexChatService()
             let settings = AppSettings()
-            settings.currentVault = Self.vault(name: "Lease")
+            settings.currentWorkspace = Self.workspace(name: "Lease")
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
             let selectedID = await coordinator.openHistoryThreadInDetachedWindow(Self.threadSummary(id: "history-thread"))
 
@@ -290,7 +290,7 @@ import Foundation
         func threadActivityTracksRunningAndUserWaitStates() async throws {
             let service = CoordinatorTestCodexChatService(blocksTurn: true)
             let settings = AppSettings()
-            settings.currentVault = Self.vault(name: "Activity")
+            settings.currentWorkspace = Self.workspace(name: "Activity")
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
             let session = coordinator.dockedSession
 
@@ -332,7 +332,7 @@ import Foundation
                 listsStartedThread: true
             )
             let settings = AppSettings()
-            settings.currentVault = Self.vault(name: "Delayed Thread")
+            settings.currentWorkspace = Self.workspace(name: "Delayed Thread")
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
             let backgroundSession = coordinator.dockedSession
 
@@ -360,7 +360,7 @@ import Foundation
         func currentThreadStartDoesNotRefreshHiddenHistory() async {
             let service = CoordinatorTestCodexChatService(blocksTurn: true)
             let settings = AppSettings()
-            settings.currentVault = Self.vault(name: "Current Thread")
+            settings.currentWorkspace = Self.workspace(name: "Current Thread")
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
             let session = coordinator.dockedSession
 
@@ -382,7 +382,7 @@ import Foundation
                 listsStartedThread: true
             )
             let settings = AppSettings()
-            settings.currentVault = Self.vault(name: "Detached Thread")
+            settings.currentWorkspace = Self.workspace(name: "Detached Thread")
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
             let sessionID = coordinator.newDetachedChat()
             let session = try #require(coordinator.session(for: sessionID))
@@ -407,16 +407,16 @@ import Foundation
             let service = CoordinatorTestCodexChatService(failFirstHistoryRequest: true)
             let settings = AppSettings()
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/coordinator-test-vault",
+                path: "/tmp/coordinator-test-workspace",
                 name: "Coordinator Test",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
-            settings.currentVault = vault
+            settings.currentWorkspace = workspace
             coordinator.hideDocked()
-            coordinator.activateVault(vault.id)
+            coordinator.activateWorkspace(workspace.id)
 
             await coordinator.refreshHistory()
             #expect(coordinator.historyError != nil)
@@ -427,35 +427,35 @@ import Foundation
         }
 
         @Test
-        func vaultSwitchDiscardsDelayedHistoryFromPreviousVault() async {
+        func workspaceSwitchDiscardsDelayedHistoryFromPreviousWorkspace() async {
             let service = DelayedHistoryCodexChatService()
             let settings = AppSettings()
-            let oldVault = Self.vault(name: "Old")
-            let newVault = Self.vault(name: "New")
-            settings.currentVault = oldVault
+            let oldWorkspace = Self.workspace(name: "Old")
+            let newWorkspace = Self.workspace(name: "New")
+            settings.currentWorkspace = oldWorkspace
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
 
             let oldRefresh = Task { await coordinator.refreshHistory() }
             await waitUntil { await service.hasBlockedRequest }
-            settings.currentVault = newVault
-            coordinator.activateVault(newVault.id)
+            settings.currentWorkspace = newWorkspace
+            coordinator.activateWorkspace(newWorkspace.id)
             await coordinator.refreshHistory()
             await service.releaseBlockedRequest()
             await oldRefresh.value
 
-            #expect(coordinator.history.map(\.id) == ["history-\(newVault.id.uuidString)"])
+            #expect(coordinator.history.map(\.id) == ["history-\(newWorkspace.id.uuidString)"])
         }
 
         @Test
         func dockedAndDetachedSessionsShareLatestScreenContext() async throws {
             let service = CoordinatorTestCodexChatService()
             let settings = AppSettings()
-            let vault = Self.vault(name: "Shared Context")
-            settings.currentVault = vault
+            let workspace = Self.workspace(name: "Shared Context")
+            settings.currentWorkspace = workspace
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
             let firstDraft = DraftMeeting(id: UUID.v7(), title: "First draft")
             coordinator.updateCurrentContext(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 meetingID: nil,
                 draftMeeting: firstDraft,
                 dbQueue: nil
@@ -468,7 +468,7 @@ import Foundation
             let detachedID = coordinator.newDetachedChat()
             let detachedSession = try #require(coordinator.session(for: detachedID))
             coordinator.updateCurrentContext(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 meetingID: nil,
                 draftMeeting: DraftMeeting(id: UUID.v7(), title: "Second draft"),
                 dbQueue: nil
@@ -480,7 +480,7 @@ import Foundation
             let historyID = await coordinator.openHistoryThreadInDetachedWindow(Self.threadSummary(id: "history"))
             let historySession = try #require(coordinator.session(for: historyID))
             coordinator.updateCurrentContext(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 meetingID: nil,
                 draftMeeting: DraftMeeting(id: UUID.v7(), title: "History draft"),
                 dbQueue: nil
@@ -499,11 +499,11 @@ import Foundation
         func enteringFullScreenClearsImplicitContextFromSharedSession() async {
             let service = CoordinatorTestCodexChatService()
             let settings = AppSettings()
-            let vault = Self.vault(name: "Cleared Context")
-            settings.currentVault = vault
+            let workspace = Self.workspace(name: "Cleared Context")
+            settings.currentWorkspace = workspace
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
             coordinator.updateCurrentContext(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 meetingID: nil,
                 draftMeeting: DraftMeeting(id: UUID.v7(), title: "Previous meeting"),
                 dbQueue: nil
@@ -515,7 +515,7 @@ import Foundation
 
             coordinator.showDocked()
             #expect(coordinator.isDockedVisible)
-            coordinator.enterFullScreen(vaultID: vault.id)
+            coordinator.enterFullScreen(workspaceID: workspace.id)
             coordinator.dockedSession.draft = "Full-screen question"
             coordinator.dockedSession.sendDraft()
             await waitUntil { await MainActor.run { !coordinator.dockedSession.isGenerating } }
@@ -546,8 +546,8 @@ import Foundation
             ])
         }
 
-        private static func vault(name: String) -> VaultRecord {
-            VaultRecord(
+        private static func workspace(name: String) -> WorkspaceRecord {
+            WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/coordinator-\(name)",
                 name: name,
@@ -572,24 +572,24 @@ import Foundation
 
         func models(forceRefresh _: Bool) async throws -> [CodexModel] { [] }
 
-        func listThreads(cursor _: String?, vaultID: UUID) async throws -> CodexChatThreadPage {
+        func listThreads(cursor _: String?, workspaceID: UUID) async throws -> CodexChatThreadPage {
             if !didBlock {
                 didBlock = true
                 return await withCheckedContinuation { continuation in
                     blockedContinuation = continuation
                 }
             }
-            return Self.page(vaultID: vaultID)
+            return Self.page(workspaceID: workspaceID)
         }
 
         func releaseBlockedRequest() {
-            blockedContinuation?.resume(returning: Self.page(vaultID: .v7()))
+            blockedContinuation?.resume(returning: Self.page(workspaceID: .v7()))
             blockedContinuation = nil
         }
 
         func loadThread(id: String) async throws -> CodexChatThread { Self.thread(id: id) }
-        func resumeThread(id: String, vaultID _: UUID) async throws -> CodexChatThread { Self.thread(id: id) }
-        func startThread(model _: String?, effort _: String, vaultID _: UUID) async throws -> CodexChatThread {
+        func resumeThread(id: String, workspaceID _: UUID) async throws -> CodexChatThread { Self.thread(id: id) }
+        func startThread(model _: String?, effort _: String, workspaceID _: UUID) async throws -> CodexChatThread {
             Self.thread(id: "new")
         }
 
@@ -609,9 +609,9 @@ import Foundation
         func interrupt(threadID _: String, turnID _: String) async {}
         func unsubscribe(threadID _: String) async {}
 
-        private static func page(vaultID: UUID) -> CodexChatThreadPage {
+        private static func page(workspaceID: UUID) -> CodexChatThreadPage {
             let thread = CodexChatThreadSummary(
-                id: "history-\(vaultID.uuidString)",
+                id: "history-\(workspaceID.uuidString)",
                 title: "History",
                 updatedAt: .now
             )
@@ -664,7 +664,7 @@ import Foundation
             [Self.model]
         }
 
-        func listThreads(cursor _: String?, vaultID _: UUID) async throws -> CodexChatThreadPage {
+        func listThreads(cursor _: String?, workspaceID _: UUID) async throws -> CodexChatThreadPage {
             historyRequestCount += 1
             if failFirstHistoryRequest, historyRequestCount == 1 {
                 throw CodexAppServerError.processExited(nil)
@@ -681,11 +681,11 @@ import Foundation
             Self.thread(id: id)
         }
 
-        func resumeThread(id: String, vaultID _: UUID) async throws -> CodexChatThread {
+        func resumeThread(id: String, workspaceID _: UUID) async throws -> CodexChatThread {
             Self.thread(id: id)
         }
 
-        func startThread(model _: String?, effort: String, vaultID _: UUID) async throws -> CodexChatThread {
+        func startThread(model _: String?, effort: String, workspaceID _: UUID) async throws -> CodexChatThread {
             if delaysThreadStart || delaysAndFailsThreadStart {
                 await withCheckedContinuation { delayedThreadStartContinuation = $0 }
             }

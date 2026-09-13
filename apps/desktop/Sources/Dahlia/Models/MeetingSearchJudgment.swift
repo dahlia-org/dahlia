@@ -20,7 +20,7 @@ struct MeetingSearchJudgment: Codable, Equatable, Sendable {
 
 /// ユーザーの実データから生成した正解データ一式。
 struct MeetingSearchJudgmentList: Codable, Equatable, Sendable {
-    let vaultID: UUID
+    let workspaceID: UUID
     let generatedAt: Date
     /// 生成時に対象とした meeting 件数。結果の信頼度を UI に示すために保持する。
     let sampledMeetingCount: Int

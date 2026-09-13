@@ -54,11 +54,11 @@ final class SummaryGenerationJob: Identifiable {
     }
 
     func configureExports(_ options: SummaryExportOptions) {
-        progress.vaultExport = options.exportsToVault ? .pending : .skipped
+        progress.workspaceExport = options.exportsToWorkspace ? .pending : .skipped
         progress.googleDocsExport = options.exportsToGoogleDocs ? .pending : .skipped
     }
 
     private var stepStatuses: [SummaryProgressState.StepStatus] {
-        [progress.transcription, progress.summaryGeneration, progress.vaultExport, progress.googleDocsExport]
+        [progress.transcription, progress.summaryGeneration, progress.workspaceExport, progress.googleDocsExport]
     }
 }

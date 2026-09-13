@@ -37,7 +37,7 @@ final class AppDatabaseManager: Sendable {
             CodexRuntimeContextStore.shared.provider
         },
         localAccountSettingsResolver: @escaping SearchIndexer.LocalAccountSettingsResolver = {
-            VaultAISettingsModel.shared.localAccountSettings
+            WorkspaceAISettingsModel.shared.localAccountSettings
         }
     ) throws {
         if path != ":memory:" {
@@ -294,6 +294,7 @@ final class AppDatabaseManager: Sendable {
             try addColumnIfNeeded(in: db, table: "recording_sessions", column: "processingJSON", type: .text)
             try addColumnIfNeeded(in: db, table: "meetings", column: "calendarSyncMetadata", type: .blob)
             try CustomerIntelligenceRemovalMigration.migrate(in: db)
+            try WorkspaceNamingMigration.migrate(in: db)
         }
 
         return migrator
@@ -1391,7 +1392,7 @@ final class AppDatabaseManager: Sendable {
         try db.alter(table: "recording_audio_files") { table in
             table.add(column: "storageLocation", .text)
                 .notNull()
-                .defaults(to: RecordingAudioStorageLocation.vault.rawValue)
+                .defaults(to: "vault")
         }
     }
 

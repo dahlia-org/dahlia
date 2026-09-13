@@ -14,7 +14,7 @@ Object.defineProperty(navigator, "language", { value: previewMode && new URLSear
 const ja = navigator.language.startsWith("ja");
 sessionStorage.removeItem("dahlia:sidebar:browser-fixture:organization");
 
-const base = "/api/v1/vaults/v1";
+const base = "/api/v1/workspaces/v1";
 const route = "/meetings/m1";
 const sources: EventTarget[] = [];
 const requests: string[] = [];
@@ -28,15 +28,15 @@ let omittedFile: number | undefined;
 const filePageSize = navigationTest ? 2 : 12;
 let sharingEnabled = false;
 let meetingName = previewMode ? (ja ? "新しいオンボーディング体験のデザインレビュー" : "Design review: a better first-run experience") : "Recording meeting";
-const vault = { vaultId: "v1", name: previewMode ? (ja ? "プロダクト開発" : "Product & design") : "Test Vault", role: "owner", hasResources: true, revision: 1, createdAt: "2026-09-07T00:00:00Z" };
-const vaults = [vault];
-const projects = Array.from({ length: previewMode ? 4 : 40 }, (_, index) => ({ projectId: `p${index}`, vaultId: "v1", name: previewMode ? [ja ? "デザインレビュー" : "Design reviews", ja ? "リサーチ" : "Research", ja ? "リリース計画" : "Release planning", ja ? "チーム定例" : "Team meetings"][index]! : `Project ${index}`, path: previewMode ? [ja ? "デザインレビュー" : "Design reviews", ja ? "リサーチ" : "Research", ja ? "リリース計画" : "Release planning", ja ? "チーム定例" : "Team meetings"][index]! : `Project ${index}`, revision: 1, directMeetingCount: 0, subtreeMeetingCount: 0 }));
+const workspace = { workspaceId: "v1", name: previewMode ? (ja ? "プロダクト開発" : "Product & design") : "Test Workspace", role: "owner", hasResources: true, revision: 1, createdAt: "2026-09-07T00:00:00Z" };
+const workspaces = [workspace];
+const projects = Array.from({ length: previewMode ? 4 : 40 }, (_, index) => ({ projectId: `p${index}`, workspaceId: "v1", name: previewMode ? [ja ? "デザインレビュー" : "Design reviews", ja ? "リサーチ" : "Research", ja ? "リリース計画" : "Release planning", ja ? "チーム定例" : "Team meetings"][index]! : `Project ${index}`, path: previewMode ? [ja ? "デザインレビュー" : "Design reviews", ja ? "リサーチ" : "Research", ja ? "リリース計画" : "Release planning", ja ? "チーム定例" : "Team meetings"][index]! : `Project ${index}`, revision: 1, directMeetingCount: 0, subtreeMeetingCount: 0 }));
 const previewSummary = {
   schemaVersion: 3, title: ja ? "初回体験を、もっとシンプルに" : "A simpler first impression", description: ja ? "初めてのユーザーが迷わず最初のミーティングにたどり着くために、案内と操作を見直しました。" : "We reviewed how new users find their first meeting and agreed on a clearer, more focused onboarding flow.",
   tags: ["design", "onboarding"],
   sections: [
     { id: "section-1", heading: ja ? "決まったこと" : "Decisions", blocks: [{ id: "block-1", type: "bulleted_list", items: [
-      { text: ja ? "初回は「保管庫を選ぶ」「ミーティングを開く」の2つに操作を絞る。" : "Focus the first visit on two actions: choose a Vault and open a meeting." },
+      { text: ja ? "初回は「ワークスペースを選ぶ」「ミーティングを開く」の2つに操作を絞る。" : "Focus the first visit on two actions: choose a Workspace and open a meeting." },
       { text: ja ? "設定は後から変更できるため、初回のフローから外す。" : "Move optional configuration out of the first-run experience." },
       { text: ja ? "空の画面には、次に何をすればよいかを具体的に示す。" : "Give empty screens a clear explanation of what happens next." },
     ] }] },
@@ -47,9 +47,9 @@ const previewSummary = {
     ] }] },
   ], actionItems: [],
 };
-const meeting = (id: string) => ({ meetingId: id, vaultId: "v1", projectId: "p0", name: id === "m1" ? meetingName : previewMode ? (ja ? "9月のリリース計画と優先順位" : "September release planning & priorities") : "Other meeting", description: previewMode ? (ja ? "プロダクト・デザインチームの週次レビュー" : "Weekly product and design team review") : "", duration: previewMode ? 2540 : undefined, status: "recording", revision: 1, summaryRevision: 1, createdAt: vault.createdAt, summaryDocument: JSON.stringify(previewMode ? previewSummary : { sections: [{ heading: summary, blocks: [] }] }) });
+const meeting = (id: string) => ({ meetingId: id, workspaceId: "v1", projectId: "p0", name: id === "m1" ? meetingName : previewMode ? (ja ? "9月のリリース計画と優先順位" : "September release planning & priorities") : "Other meeting", description: previewMode ? (ja ? "プロダクト・デザインチームの週次レビュー" : "Weekly product and design team review") : "", duration: previewMode ? 2540 : undefined, status: "recording", revision: 1, summaryRevision: 1, createdAt: workspace.createdAt, summaryDocument: JSON.stringify(previewMode ? previewSummary : { sections: [{ heading: summary, blocks: [] }] }) });
 const image = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#aaa"/></svg>');
-const file = (index: number) => ({ id: `f${index}`, capturedAt: vault.createdAt, file: { id: `f${index}`, vaultId: "v1", name: `Screenshot ${index}.png`, contentType: "image/png", variants: { thumb_480: image, thumb_1568: image }, metadata: { source: navigationTest && (index === 2 || index === 3) ? "upload" : "screenshot", caption: index === 0 ? caption : `Screenshot ${index}` } } });
+const file = (index: number) => ({ id: `f${index}`, capturedAt: workspace.createdAt, file: { id: `f${index}`, workspaceId: "v1", name: `Screenshot ${index}.png`, contentType: "image/png", variants: { thumb_480: image, thumb_1568: image }, metadata: { source: navigationTest && (index === 2 || index === 3) ? "upload" : "screenshot", caption: index === 0 ? caption : `Screenshot ${index}` } } });
 window.EventSource = class extends EventTarget {
   constructor() { super(); sources.push(this); queueMicrotask(() => this.dispatchEvent(new Event("open"))); }
   close() { sources.splice(sources.indexOf(this), 1); }
@@ -63,16 +63,16 @@ window.fetch = async (input, init) => {
   if (failure) return Response.json({ code: `fixture_${failure}` }, { status: failure });
   if (url.pathname === `${base}/search`) return Response.json({
     meetings: [{ id: "m1", kind: "meeting", title: meeting("m1").name, projectPath: "", date: meeting("m1").createdAt, snippet: "" }],
-    projects: [{ id: "p0", kind: "project", title: projects[0]!.name, projectPath: projects[0]!.path, date: vault.createdAt, snippet: "" }],
+    projects: [{ id: "p0", kind: "project", title: projects[0]!.name, projectPath: projects[0]!.path, date: workspace.createdAt, snippet: "" }],
     screenshots: [], limited: { meetings: false, projects: false, screenshots: false },
   });
   if (url.pathname === "/api/v1/account/settings") return Response.json({ settings: null });
   if (url.pathname === "/api/v1/models") return Response.json({ data: [{ id: "gpt-5.4", display_name: "GPT-5.4" }], models: [{ slug: "gpt-5.4", supported_reasoning_levels: [{ effort: "medium" }], default_reasoning_level: "medium" }] });
   if (url.pathname === "/api/v1/capabilities") return Response.json(previewMode ? { meetingSummaryGeneration: { version: 1, sources: ["transcript"] } } : {});
-  if (url.pathname === "/api/v1/session") return Response.json({ user: { id: "browser-fixture", name: previewMode ? "Yuki Tanaka" : "Tester", email: "yuki@example.com" }, workspace: { id: "w1", type: "personal" }, capabilities: { sync: true, sharing: true, sessions: false, admin: false } });
+  if (url.pathname === "/api/v1/session") return Response.json({ user: { id: "browser-fixture", name: previewMode ? "Yuki Tanaka" : "Tester", email: "yuki@example.com" },  capabilities: { sync: true, sharing: true, sessions: false, admin: false } });
   if (url.pathname === "/api/v1/organizations") return Response.json({ items: [{ id: "o1", name: "Test Organization" }], nextCursor: null });
-  if (url.pathname === "/api/v1/vaults") return Response.json({ items: vaults });
-  if (url.pathname === "/api/v1/vaults/v2/meetings") return Response.json({ items: [] });
+  if (url.pathname === "/api/v1/workspaces") return Response.json({ items: workspaces });
+  if (url.pathname === "/api/v1/workspaces/v2/meetings") return Response.json({ items: [] });
   if (url.pathname === "/api/v1/organizations/o1/teams") return Response.json({ items: [], nextCursor: null });
   if (url.pathname === `${base}/permission-targets`) return Response.json({ items: [{ principalType: "organization", principalId: "o1", name: "Example organization", detail: "example" }] });
   if (url.pathname === `${base}/permissions`) return Response.json({ items: sharingEnabled ? [{ principalType: "organization", principalId: "o1", role: "member" }] : [] });
@@ -80,7 +80,7 @@ window.fetch = async (input, init) => {
     sharingEnabled = request.method === "PUT";
     return new Response(null, { status: 204 });
   }
-  if (url.pathname === base) return Response.json(vault);
+  if (url.pathname === base) return Response.json(workspace);
   if (url.pathname.startsWith("/api/v1/projects/")) {
     const project = projects.find((p) => p.projectId === url.pathname.split("/").at(-1));
     return project ? Response.json(project) : Response.json({ error: "project_not_found" }, { status: 404 });
@@ -90,7 +90,7 @@ window.fetch = async (input, init) => {
   if (url.pathname === `${base}/projects`) return Response.json({ items: projects });
   if (url.pathname.startsWith(`${base}/projects/`)) return Response.json(projects.find((p) => p.projectId === url.pathname.split("/").at(-1)));
   if (url.pathname === `${base}/meetings`) return Response.json({ items: (url.searchParams.get("projectId") === "p0" && projects.some((project) => project.projectId === "p0")) || (!url.searchParams.has("projectId") && !url.searchParams.has("projectScope")) ? [meeting("m1"), meeting("m2")] : [] });
-  if (url.pathname.endsWith("/transcripts/latest")) return Response.json({ version: 1, syncRevision: 1, transcript: null, items: [{ segmentId: "s1", startedAt: vault.createdAt, text: transcript }], nextCursor: null });
+  if (url.pathname.endsWith("/transcripts/latest")) return Response.json({ version: 1, syncRevision: 1, transcript: null, items: [{ segmentId: "s1", startedAt: workspace.createdAt, text: transcript }], nextCursor: null });
   if (url.pathname.endsWith("/transcripts")) return Response.json({ items: [] });
   if (url.pathname.endsWith("/summary-jobs/latest")) return Response.json({ job: null });
   if (url.pathname.endsWith("/summaries/latest")) return Response.json({ version: 1, revision: 1, present: true, record: { title: previewMode ? previewSummary.title : "Summary", document: meeting("m1").summaryDocument } });
@@ -105,10 +105,10 @@ window.fetch = async (input, init) => {
   if (url.pathname === "/api/v1/transactions") {
     const body: { id: string; operations: { entity: string; action: string; entityId: string; baseRevision?: number; data: { name?: string; preservePermissions?: boolean; icon?: string; color?: string } }[] } = await request.json();
     for (const op of body.operations) {
-      if (op.entity === "vault" && op.action === "update") Object.assign(vault, op.data);
-      if (op.entity === "vault" && op.action === "reset") {
-        assert(op.baseRevision === vault.revision && op.data.preservePermissions === false, "Vault deletion must check revision and remove permissions");
-        vaults.splice(vaults.findIndex((v) => v.vaultId === op.entityId), 1);
+      if (op.entity === "workspace" && op.action === "update") Object.assign(workspace, op.data);
+      if (op.entity === "workspace" && op.action === "reset") {
+        assert(op.baseRevision === workspace.revision && op.data.preservePermissions === false, "Workspace deletion must check revision and remove permissions");
+        workspaces.splice(workspaces.findIndex((v) => v.workspaceId === op.entityId), 1);
       }
       if (op.entity === "meeting") meetingName = op.data.name!;
       if (op.entity === "project" && op.action === "create") projects.push({ ...projects[0]!, projectId: op.entityId, ...op.data, name: op.data.name!, path: op.data.name! });
@@ -212,7 +212,7 @@ async function run() {
   if (!previewMode && !navigationTest) await verifyTabSelection();
   if (navigationTest) {
     history.replaceState(null, "", route);
-    createRoot(document.getElementById("root")!).render(<StrictMode><SyncedMeeting vaultId="v1" meetingId="m1" /></StrictMode>);
+    createRoot(document.getElementById("root")!).render(<StrictMode><SyncedMeeting workspaceId="v1" meetingId="m1" /></StrictMode>);
     await until(() => document.querySelector('[role="tab"]'));
     button("Screenshots").click();
     await until(() => document.querySelectorAll(".screenshot-grid figure").length === filePageSize);
@@ -224,56 +224,56 @@ async function run() {
     console.log("PASS: meeting image navigation survives live list updates");
     return;
   }
-  history.replaceState(null, "", "/vaults/v1/meetings/m1");
+  history.replaceState(null, "", "/workspaces/v1/meetings/m1");
   createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
   await until(() => document.querySelector('[role="tab"]') && document.querySelector('.meeting-row a[href="/meetings/m2"]') && ![...document.querySelectorAll(".sidebar-status")].some((node) => node.textContent?.includes("Loading")));
   await document.fonts.ready;
   if (previewMode) {
     const { navigateDashboard } = await import("../../src/client/navigation");
     if (previewPage === "home") navigateDashboard("/dashboard");
-    if (previewPage === "vault") navigateDashboard("/vaults/v1");
+    if (previewPage === "workspace") navigateDashboard("/workspaces/v1");
     if (previewPage === "settings") navigateDashboard("/dashboard/settings");
     return;
   }
   assert(document.querySelector('.unassigned-meetings h2')?.textContent === "Unassigned" && !document.querySelector('.unassigned-meetings .folder-icon'), "Unassigned meetings must have a separate section without a folder icon");
-  assert(!document.querySelector('#account-menu a[href^="/vaults"]') && document.querySelector('.primary-navigation a[href="/vaults"]'), "Vault navigation belongs in the sidebar, not the account menu");
-  assert(document.querySelector('.identity-copy small')?.textContent === "No organization selected", "Account identity must show the account context instead of the selected Vault");
+  assert(!document.querySelector('#account-menu a[href^="/workspaces"]') && document.querySelector('.primary-navigation a[href="/workspaces"]'), "Workspace navigation belongs in the sidebar, not the account menu");
+  assert(document.querySelector('.identity-copy small')?.textContent === "No organization selected", "Account identity must show the account context instead of the selected Workspace");
   const library = document.querySelector(".primary-navigation")!;
-  assert(library.querySelector('a[aria-label="Home"] svg') && library.querySelector('a[aria-label="Vaults"] svg') && library.querySelector('button[aria-label="Search"]'), "Library icons and search must remain accessible together");
+  assert(library.querySelector('a[aria-label="Home"] svg') && library.querySelector('a[aria-label="Workspaces"] svg') && library.querySelector('button[aria-label="Search"]'), "Library icons and search must remain accessible together");
   const homeLink = library.querySelector<HTMLAnchorElement>('a[aria-label="Home"]')!;
   homeLink.focus();
   const help = document.getElementById(homeLink.getAttribute("aria-describedby")!)!;
   assert(getComputedStyle(help).visibility === "visible", "Keyboard focus must show navigation help");
   homeLink.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   await until(() => getComputedStyle(help).visibility === "hidden");
-  const vaultMenu = document.querySelector<HTMLElement>("#vault-menu")!;
-  document.querySelector<HTMLButtonElement>(".vault-switcher-trigger")!.click();
-  assert(vaultMenu.matches(":popover-open") && vaultMenu.querySelector('a[aria-current="true"]'), "Vault chooser must open with the current selection");
-  vaultMenu.hidePopover();
+  const workspaceMenu = document.querySelector<HTMLElement>("#workspace-menu")!;
+  document.querySelector<HTMLButtonElement>(".workspace-switcher-trigger")!.click();
+  assert(workspaceMenu.matches(":popover-open") && workspaceMenu.querySelector('a[aria-current="true"]'), "Workspace chooser must open with the current selection");
+  workspaceMenu.hidePopover();
   const { navigateDashboard } = await import("../../src/client/navigation");
   navigateDashboard("/dashboard");
   await until(() => document.querySelector('.recent-meetings a[href="/meetings/m1"]'));
   const recentSelector = () => document.querySelector(".recent-meetings")!.querySelector<HTMLButtonElement>('[role="combobox"]')!;
   const recentRow = document.querySelector('.recent-meetings a[href="/meetings/m1"]');
-  const otherVault = { ...vault, vaultId: "v2", name: "Another Vault" };
-  vaults.unshift(otherVault); notify();
+  const otherWorkspace = { ...workspace, workspaceId: "v2", name: "Another Workspace" };
+  workspaces.unshift(otherWorkspace); notify();
   await until(() => options(recentSelector()).length === 2);
-  assert(recentSelector().value === "v1", "New Vault changed the initial Home selection");
-  assert(document.querySelector('.recent-meetings a[href="/meetings/m1"]') === recentRow, "Vault reorder replaced recent meeting rows");
+  assert(recentSelector().value === "v1", "New Workspace changed the initial Home selection");
+  assert(document.querySelector('.recent-meetings a[href="/meetings/m1"]') === recentRow, "Workspace reorder replaced recent meeting rows");
   choose(recentSelector(), "v2");
   await until(() => document.querySelector(".recent-meetings .welcome-empty"));
-  vaults.reverse(); notify();
+  workspaces.reverse(); notify();
   await until(() => options(recentSelector())[0]?.value === "v1");
-  assert(recentSelector().value === "v2", "Vault reorder changed an explicit Home selection");
-  vaults.splice(vaults.indexOf(otherVault), 1); notify();
+  assert(recentSelector().value === "v2", "Workspace reorder changed an explicit Home selection");
+  workspaces.splice(workspaces.indexOf(otherWorkspace), 1); notify();
   await until(() => options(recentSelector()).length === 1 && recentSelector().value === "v1");
-  vaults.unshift(otherVault); notify();
+  workspaces.unshift(otherWorkspace); notify();
   await until(() => options(recentSelector()).length === 2);
-  assert(recentSelector().value === "v1", "Returning Vault replaced the fallback Home selection");
-  failures.set("/api/v1/vaults", 503); notify();
+  assert(recentSelector().value === "v1", "Returning Workspace replaced the fallback Home selection");
+  failures.set("/api/v1/workspaces", 503); notify();
   await until(() => document.querySelector('.workspace [role="alert"]'));
-  assert(recentSelector().value === "v1", "Transient Vault failure reset the Home selection");
-  failures.clear(); vaults.splice(0, vaults.length, vault); notify();
+  assert(recentSelector().value === "v1", "Transient Workspace failure reset the Home selection");
+  failures.clear(); workspaces.splice(0, workspaces.length, workspace); notify();
   await until(() => !document.querySelector('.workspace [role="alert"]'));
   navigateDashboard("/meetings/m1");
   await until(() => document.querySelector('[role="tab"]'));
@@ -391,7 +391,7 @@ async function run() {
   fileCount = 13; caption = "After deletion"; notify();
   await until(() => document.querySelectorAll(".screenshot-grid figure").length === 13);
   assert(![...document.querySelectorAll("button")].some((b) => b.textContent === "Load more"), "Deleted tail left a stale cursor");
-  failures.set("/api/v1/vaults", 503);
+  failures.set("/api/v1/workspaces", 503);
   failures.set("/api/v1/meetings/m1", 503); notify();
   await until(() => document.querySelector('[role="alert"]')?.textContent?.includes("fixture_503"));
   assert(selectedTab() === "Screenshots", "Transient failure unmounted tabs");
@@ -437,7 +437,7 @@ async function run() {
   await until(() => document.querySelector(".meeting-header h1")?.textContent === "Edited meeting");
   history.forward();
   await until(() => document.querySelector(".meeting-header h1")?.textContent === "Other meeting");
-  document.querySelector<HTMLAnchorElement>('a[href="/vaults/v1"]')!.click();
+  document.querySelector<HTMLAnchorElement>('a[href="/workspaces/v1"]')!.click();
   await until(() => document.querySelector('input[aria-label="Search meetings"]'));
   button("Permissions").click();
   await until(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Manage sharing"));
@@ -495,10 +495,10 @@ async function run() {
   button("Delete Project").click();
   await until(() => document.querySelector('.action-dialog [data-confirm]'));
   document.querySelector<HTMLButtonElement>('.action-dialog [data-confirm]')!.click();
-  await until(() => location.pathname === "/vaults/v1");
+  await until(() => location.pathname === "/workspaces/v1");
   document.querySelector<HTMLButtonElement>('[popoverTarget="account-menu"]')!.click();
   button("Test Organization").click();
-  await until(() => location.pathname === "/vaults" && requests.some((url) => url === "/api/v1/vaults"));
+  await until(() => location.pathname === "/workspaces" && requests.some((url) => url === "/api/v1/workspaces"));
   assert(documentNode === document.documentElement, "Organization switch reloaded document");
   document.querySelector<HTMLAnchorElement>('a[href="/meetings/m1"]')?.click();
   // Use the existing internal navigation helper when the newly scoped tree is still loading.
@@ -517,7 +517,7 @@ async function run() {
   await until(() => !document.querySelector('[role="tab"]'));
   assert(document.querySelector('[role="alert"]')?.textContent?.includes("fixture_404"), "Deleted meeting remained visible");
   failures.clear();
-  navigateDashboard("/vaults/v1");
+  navigateDashboard("/workspaces/v1");
   await until(() => [...document.querySelectorAll('[role="tab"]')].some((tab) => tab.textContent === "Settings"));
   button("Projects").click();
   await until(() => document.querySelector('.collection-project-name'));
@@ -525,8 +525,8 @@ async function run() {
   const projectIcon = document.querySelector('.collection-project-name .appearance-icon')!.getBoundingClientRect();
   assert(projectLabel.left - projectIcon.right <= 12, "Project name separated from its icon");
   button("Settings").click();
-  await until(() => [...document.querySelectorAll("button")].some((b) => b.textContent === "Delete Vault"));
-  button("Edit Vault").click();
+  await until(() => [...document.querySelectorAll("button")].some((b) => b.textContent === "Delete Workspace"));
+  button("Edit Workspace").click();
   await until(() => document.querySelector('.appearance-trigger'));
   const titleBounds = document.querySelector('.dialog-header h2')!.getBoundingClientRect();
   const symbolBounds = document.querySelector('.dialog-symbol')!.getBoundingClientRect();
@@ -543,8 +543,8 @@ async function run() {
   document.querySelector<HTMLElement>('.appearance-popover')!.hidePopover();
   document.querySelector<HTMLButtonElement>('.action-dialog [data-confirm]')!.click();
   await until(() => !document.querySelector('.action-dialog') && document.querySelector('h1 .appearance-icon')?.getAttribute("style")?.includes("34, 197, 94"));
-  const sidebarIcon = document.querySelector('.vault-switcher-trigger .appearance-icon')!;
-  assert(sidebarIcon.getBoundingClientRect().width === 18, "Vault icon expanded into the label space");
+  const sidebarIcon = document.querySelector('.workspace-switcher-trigger .appearance-icon')!;
+  assert(sidebarIcon.getBoundingClientRect().width === 18, "Workspace icon expanded into the label space");
   assert(getComputedStyle(document.querySelector('h1 .appearance-icon svg')!).color === getComputedStyle(sidebarIcon).color, "Heading and sidebar icon colors differ");
   const child = { ...projects[1]!, parentProjectId: projects[0]!.projectId, icon: "heart", color: "red" };
   Object.assign(projects[0]!, { icon: "book.closed", color: "green" });
@@ -558,24 +558,24 @@ async function run() {
   assert(document.querySelector('.action-dialog .appearance-trigger')?.tagName === "SPAN" && !document.querySelector('.appearance-popover'), "Child Project exposed an editable appearance");
   await editDialog("Renamed child");
   await until(() => !document.querySelector('.action-dialog'));
-  navigateDashboard("/vaults/v1");
+  navigateDashboard("/workspaces/v1");
   await until(() => [...document.querySelectorAll('[role="tab"]')].some((tab) => tab.textContent === "Settings"));
   button("Settings").click();
-  await until(() => [...document.querySelectorAll("button")].some((b) => b.textContent === "Delete Vault"));
-  assert(button("Delete Vault").disabled, "Nonempty Vault allowed deletion");
-  vault.hasResources = false;
+  await until(() => [...document.querySelectorAll("button")].some((b) => b.textContent === "Delete Workspace"));
+  assert(button("Delete Workspace").disabled, "Nonempty Workspace allowed deletion");
+  workspace.hasResources = false;
   notify();
-  await until(() => !button("Delete Vault").disabled);
-  button("Delete Vault").click();
+  await until(() => !button("Delete Workspace").disabled);
+  button("Delete Workspace").click();
   await until(() => document.querySelector('.action-dialog [data-confirm]'));
-  assert(vaults.some((v) => v.vaultId === "v1"), "Opening confirmation deleted the Vault");
+  assert(workspaces.some((v) => v.workspaceId === "v1"), "Opening confirmation deleted the Workspace");
   failures.set("/api/v1/transactions", 409);
   document.querySelector<HTMLButtonElement>('.action-dialog [data-confirm]')!.click();
   await until(() => document.querySelector('.action-dialog .dialog-error'));
-  assert(String(location.pathname) === "/vaults/v1" && vaults.some((v) => v.vaultId === "v1"), "Failed deletion left the Vault page");
+  assert(String(location.pathname) === "/workspaces/v1" && workspaces.some((v) => v.workspaceId === "v1"), "Failed deletion left the Workspace page");
   failures.clear();
   document.querySelector<HTMLButtonElement>('.action-dialog [data-confirm]')!.click();
-  await until(() => location.pathname === "/vaults" && !vaults.some((v) => v.vaultId === "v1"));
+  await until(() => location.pathname === "/workspaces" && !workspaces.some((v) => v.workspaceId === "v1"));
   document.body.dataset.testResult = "passed";
   console.log("PASS: live data, DOM identity, scroll, paging, retries, edits, canonical URLs, modal, standalone file, history, create/delete, organization, access revocation");
 }

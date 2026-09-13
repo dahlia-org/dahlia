@@ -3,7 +3,7 @@ import { codePointLimitedString, fileMetadataLimits, type FileRecord } from "../
 
 export interface ImageAnalysisClaim {
   fileId: string;
-  vaultId: string;
+  workspaceId: string;
   ownerUserId: string;
   model: string;
   attempts: number;

@@ -16,7 +16,7 @@ struct MeetingListSidebarView: View {
     let onShowUnprocessedRecordings: () -> Void
     let onCreateProject: () -> Void
     let onOpenProject: (UUID, ProjectNavigationIntent) -> Void
-    let onSelectVault: (VaultRecord) -> Void
+    let onSelectWorkspace: (WorkspaceRecord) -> Void
 
     @State private var renderedMeetingSelection: Set<UUID> = []
     @State private var editingMeetingId: UUID?
@@ -30,7 +30,7 @@ struct MeetingListSidebarView: View {
     @State private var isRecentSectionExpanded = true
     @FocusState private var isRenameFieldFocused: Bool
 
-    private var canEdit: Bool { sidebarViewModel.canEditCurrentVault }
+    private var canEdit: Bool { sidebarViewModel.canEditCurrentWorkspace }
 
     private var meetingSelection: Binding<Set<UUID>> {
         Binding(
@@ -165,11 +165,12 @@ struct MeetingListSidebarView: View {
                 if !hasExpandedContent {
                     EmptyView()
                 } else if sidebarViewModel.displayedMeetingItems.isEmpty, sidebarViewModel.projectMeetingGroups.isEmpty,
-                          sidebarViewModel.allVaults.first(where: { $0.id == sidebarViewModel.currentVault?.id })?.isAwaitingInitialSync == true {
+                          sidebarViewModel.allWorkspaces.first(where: { $0.id == sidebarViewModel.currentWorkspace?.id })?
+                          .isAwaitingInitialSync == true {
                     ContentUnavailableView {
-                        Label(L10n.vaultInitialSyncPending, systemImage: "arrow.triangle.2.circlepath")
+                        Label(L10n.workspaceInitialSyncPending, systemImage: "arrow.triangle.2.circlepath")
                     } description: {
-                        Text(L10n.vaultInitialSyncPendingDescription)
+                        Text(L10n.workspaceInitialSyncPendingDescription)
                     }
                 } else if mainWindowNavigation.meetingSidebarDisplayMode == .chronological {
                     MeetingListStatusOverlay(
@@ -206,7 +207,7 @@ struct MeetingListSidebarView: View {
                 sidebarViewModel: sidebarViewModel,
                 recordingCoordinator: recordingCoordinator,
                 updateController: updateController,
-                onSelectVault: onSelectVault
+                onSelectWorkspace: onSelectWorkspace
             )
         }
         .font(.callout)
@@ -237,7 +238,7 @@ struct MeetingListSidebarView: View {
 
     private var needsProjectMeetingProjection: Bool {
         mainWindowNavigation.meetingSidebarDisplayMode == .byProject
-            || !mainWindowNavigation.pinnedProjectIDs(vaultId: sidebarViewModel.currentVault?.id).isEmpty
+            || !mainWindowNavigation.pinnedProjectIDs(workspaceId: sidebarViewModel.currentWorkspace?.id).isEmpty
     }
 
     private var primarySectionExpanded: Bool {
@@ -264,7 +265,7 @@ struct MeetingListSidebarView: View {
         let groups = Dictionary(uniqueKeysWithValues: sidebarViewModel.projectMeetingGroups.compactMap { group in
             group.project.map { ($0.projectId, group) }
         })
-        let pinnedGroups = mainWindowNavigation.pinnedProjectIDs(vaultId: sidebarViewModel.currentVault?.id).compactMap { groups[$0] }
+        let pinnedGroups = mainWindowNavigation.pinnedProjectIDs(workspaceId: sidebarViewModel.currentWorkspace?.id).compactMap { groups[$0] }
         guard mainWindowNavigation.meetingSidebarDisplayMode == .chronological else { return pinnedGroups }
         return Self.limitMeetingCount(
             in: pinnedGroups,
@@ -300,7 +301,7 @@ struct MeetingListSidebarView: View {
     }
 
     private var unpinnedProjectGroups: [MeetingProjectGroup] {
-        let pinnedIDs = Set(mainWindowNavigation.pinnedProjectIDs(vaultId: sidebarViewModel.currentVault?.id))
+        let pinnedIDs = Set(mainWindowNavigation.pinnedProjectIDs(workspaceId: sidebarViewModel.currentWorkspace?.id))
         return sidebarViewModel.projectMeetingGroups.filter { group in
             group.project.map { !pinnedIDs.contains($0.projectId) } ?? false
         }
@@ -380,7 +381,7 @@ struct MeetingListSidebarView: View {
                 || mainWindowNavigation.meetingSidebarDisplayMode == .byProject,
             onSelectMeeting: selectMeeting,
             onOpenProject: onOpenProject,
-            onTogglePin: { mainWindowNavigation.toggleProjectPin($0, vaultId: sidebarViewModel.currentVault?.id) },
+            onTogglePin: { mainWindowNavigation.toggleProjectPin($0, workspaceId: sidebarViewModel.currentWorkspace?.id) },
             onCreateMeeting: recordingCoordinator.createDraftMeeting,
             onLoadMore: sidebarViewModel.loadMoreProjectMeetings
         )
@@ -390,7 +391,7 @@ struct MeetingListSidebarView: View {
         mainWindowNavigation.projectAppearance(
             for: projectId,
             in: sidebarViewModel.projectItemsByID,
-            vaultId: sidebarViewModel.currentVault?.id
+            workspaceId: sidebarViewModel.currentWorkspace?.id
         )
     }
 

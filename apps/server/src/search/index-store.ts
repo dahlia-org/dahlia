@@ -12,7 +12,7 @@ type SearchDatabase = NodePgDatabase;
 const RECONCILE_BATCH_SIZE = 500;
 
 export interface SearchIndexJobRecord {
-  vaultId: string;
+  workspaceId: string;
   documentId: string;
   generation: number;
   attempts: number;
@@ -24,7 +24,7 @@ export interface SearchIndexDocumentRecord extends SearchIndexJobRecord {
   contentHash: string;
 }
 
-export type SearchIndexReference = Pick<SearchIndexJobRecord, "vaultId" | "documentId" | "generation">;
+export type SearchIndexReference = Pick<SearchIndexJobRecord, "workspaceId" | "documentId" | "generation">;
 
 export interface SearchIndexStore {
   reconcile(model: string, dimensions: number): Promise<void>;
@@ -44,8 +44,8 @@ export interface SearchIndexStore {
 }
 
 export interface SearchIndexQueueStore extends SearchIndexStore {
-  reconcilePage(model: string, dimensions: number, vaultId: string, after?: string): Promise<string | undefined>;
-  due(model: string, dimensions: number, vaultId: string, after?: string): Promise<SearchIndexReference[]>;
+  reconcilePage(model: string, dimensions: number, workspaceId: string, after?: string): Promise<string | undefined>;
+  due(model: string, dimensions: number, workspaceId: string, after?: string): Promise<SearchIndexReference[]>;
 }
 
 export function createPostgresSearchIndexStore(db: PostgresDatabase): SearchIndexQueueStore {
@@ -65,25 +65,25 @@ function createSearchIndexStore(
   schema: SearchSchema,
   isPostgres: boolean,
 ): SearchIndexQueueStore {
-  const withVault = <T>(vaultId: string, action: (transaction: SearchDatabase) => Promise<T>) =>
+  const withWorkspace = <T>(workspaceId: string, action: (transaction: SearchDatabase) => Promise<T>) =>
     db.transaction(async (transaction) => {
-      if (isPostgres) await transaction.execute(sql`select set_config('app.maintenance', 'search', true), set_config('app.maintenance_vault_id', ${vaultId}, true)`);
+      if (isPostgres) await transaction.execute(sql`select set_config('app.maintenance', 'search', true), set_config('app.maintenance_workspace_id', ${workspaceId}, true)`);
       return action(transaction);
     });
   const jobKey = (job: SearchIndexJobRecord) => and(
-    eq(schema.searchIndexJob.vaultId, job.vaultId),
+    eq(schema.searchIndexJob.workspaceId, job.workspaceId),
     eq(schema.searchIndexJob.documentId, job.documentId),
     eq(schema.searchIndexJob.generation, job.generation),
     eq(schema.searchIndexJob.claimedAt, job.claimedAt),
   );
-  const documentKey = ({ vaultId, documentId }: Pick<SearchIndexJobRecord, "vaultId" | "documentId">) =>
-    `${vaultId}\0${documentId}`;
-  const groupByVault = <T extends SearchIndexJobRecord>(items: T[]) => {
+  const documentKey = ({ workspaceId, documentId }: Pick<SearchIndexJobRecord, "workspaceId" | "documentId">) =>
+    `${workspaceId}\0${documentId}`;
+  const groupByWorkspace = <T extends SearchIndexJobRecord>(items: T[]) => {
     const groups = new Map<string, T[]>();
     for (const item of items) {
-      const group = groups.get(item.vaultId);
+      const group = groups.get(item.workspaceId);
       if (group) group.push(item);
-      else groups.set(item.vaultId, [item]);
+      else groups.set(item.workspaceId, [item]);
     }
     return groups;
   };
@@ -91,34 +91,34 @@ function createSearchIndexStore(
   function liveDocumentParentFilters(transaction: SearchDatabase) {
     return [
       exists(transaction.select({ value: sql`1` }).from(schema.syncedMeeting).where(and(
-        eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
+        eq(schema.syncedMeeting.workspaceId, schema.searchDocument.workspaceId),
         eq(schema.syncedMeeting.meetingId, schema.searchDocument.meetingId),
         isNull(schema.syncedMeeting.deletingAt),
       ))),
-      exists(transaction.select({ value: sql`1` }).from(schema.syncedVault).where(and(
-        eq(schema.syncedVault.vaultId, schema.searchDocument.vaultId),
-        isNull(schema.syncedVault.deletingAt),
+      exists(transaction.select({ value: sql`1` }).from(schema.syncedWorkspace).where(and(
+        eq(schema.syncedWorkspace.workspaceId, schema.searchDocument.workspaceId),
+        isNull(schema.syncedWorkspace.deletingAt),
       ))),
     ];
   }
 
   async function loadMany(jobs: SearchIndexJobRecord[]): Promise<SearchIndexDocumentRecord[]> {
-    const groups = groupByVault(jobs);
-    const results = await Promise.all([...groups].map(([vaultId, vaultJobs]) => withVault(vaultId, async (transaction) => {
+    const groups = groupByWorkspace(jobs);
+    const results = await Promise.all([...groups].map(([workspaceId, workspaceJobs]) => withWorkspace(workspaceId, async (transaction) => {
       const rows = await transaction.select({
-        vaultId: schema.searchDocument.vaultId,
+        workspaceId: schema.searchDocument.workspaceId,
         documentId: schema.searchDocument.documentId,
         embeddingText: schema.searchDocument.searchText,
         contentHash: schema.searchDocument.embeddingContentHash,
       }).from(schema.searchDocument).where(and(
-        eq(schema.searchDocument.vaultId, vaultId),
-        or(...vaultJobs.map((job) => and(
-          eq(schema.searchDocument.vaultId, job.vaultId),
+        eq(schema.searchDocument.workspaceId, workspaceId),
+        or(...workspaceJobs.map((job) => and(
+          eq(schema.searchDocument.workspaceId, job.workspaceId),
           eq(schema.searchDocument.documentId, job.documentId),
         ))),
         ...liveDocumentParentFilters(transaction),
       ));
-      const jobsByKey = new Map(vaultJobs.map((job) => [documentKey(job), job]));
+      const jobsByKey = new Map(workspaceJobs.map((job) => [documentKey(job), job]));
       const documents: SearchIndexDocumentRecord[] = [];
       for (const row of rows) {
         const job = jobsByKey.get(documentKey(row));
@@ -143,24 +143,24 @@ function createSearchIndexStore(
       throw new Error("embedding_dimensions_invalid");
     }
     const embeddingByKey = new Map(documents.map((document, index) => [documentKey(document), embeddings[index]!]));
-    const savedGroups = await Promise.all([...groupByVault(documents)].map(([vaultId, vaultDocuments]) =>
-      withVault(vaultId, async (transaction) => {
+    const savedGroups = await Promise.all([...groupByWorkspace(documents)].map(([workspaceId, workspaceDocuments]) =>
+      withWorkspace(workspaceId, async (transaction) => {
         const saved = new Set<string>();
-        for (const document of vaultDocuments) {
+        for (const document of workspaceDocuments) {
           const embedding = embeddingByKey.get(documentKey(document))!;
           if (isPostgres) {
             // Serialize result writes before checking the job in a fresh statement snapshot.
             await transaction.select({ documentId: schema.searchDocument.documentId }).from(schema.searchDocument)
-              .where(and(eq(schema.searchDocument.vaultId, document.vaultId),
-                eq(schema.searchDocument.documentId, document.documentId), eq(schema.searchDocument.vaultId, vaultId)))
+              .where(and(eq(schema.searchDocument.workspaceId, document.workspaceId),
+                eq(schema.searchDocument.documentId, document.documentId), eq(schema.searchDocument.workspaceId, workspaceId)))
               .for("update");
           }
           const rows = await transaction.update(schema.searchDocument).set({
             embedding: (isPostgres ? embedding : encodeFloat32(embedding)) as never,
             embeddingModel: model,
           }).where(and(
-            eq(schema.searchDocument.vaultId, vaultId),
-            eq(schema.searchDocument.vaultId, document.vaultId),
+            eq(schema.searchDocument.workspaceId, workspaceId),
+            eq(schema.searchDocument.workspaceId, document.workspaceId),
             eq(schema.searchDocument.documentId, document.documentId),
             eq(schema.searchDocument.embeddingContentHash, document.contentHash),
             exists(transaction.select({ value: sql`1` }).from(schema.searchIndexJob).where(and(
@@ -179,34 +179,34 @@ function createSearchIndexStore(
     return new Set(savedGroups.flatMap((keys) => [...keys]));
   }
 
-  function afterDocument(documentId: AnyColumn, vaultId: AnyColumn, after?: string) {
+  function afterDocument(documentId: AnyColumn, workspaceId: AnyColumn, after?: string) {
     if (!after) return undefined;
-    const [id, vault] = after.split("/");
-    return or(gt(documentId, id!), and(eq(documentId, id!), gt(vaultId, vault!)));
+    const [id, workspace] = after.split("/");
+    return or(gt(documentId, id!), and(eq(documentId, id!), gt(workspaceId, workspace!)));
   }
-  async function reconcilePage(model: string, dimensions: number, vaultId: string, after?: string, batchSize = 100): Promise<string | undefined> {
-    return withVault(vaultId, async (transaction) => {
+  async function reconcilePage(model: string, dimensions: number, workspaceId: string, after?: string, batchSize = 100): Promise<string | undefined> {
+    return withWorkspace(workspaceId, async (transaction) => {
       const documents = await transaction.select({
-        vaultId: schema.searchDocument.vaultId,
+        workspaceId: schema.searchDocument.workspaceId,
         documentId: schema.searchDocument.documentId,
       }).from(schema.searchDocument)
         .leftJoin(schema.searchIndexJob, and(
-          eq(schema.searchIndexJob.vaultId, schema.searchDocument.vaultId),
+          eq(schema.searchIndexJob.workspaceId, schema.searchDocument.workspaceId),
           eq(schema.searchIndexJob.documentId, schema.searchDocument.documentId),
         ))
         .where(and(
-          eq(schema.searchDocument.vaultId, vaultId),
+          eq(schema.searchDocument.workspaceId, workspaceId),
           isNotNull(schema.searchDocument.embeddingContentHash),
           or(isNull(schema.searchDocument.embedding), isNull(schema.searchDocument.embeddingModel),
             ne(schema.searchDocument.embeddingModel, model),
             sql`${isPostgres ? sql`cardinality(${schema.searchDocument.embedding})` : sql`length(${schema.searchDocument.embedding}) / 4`} <> ${dimensions}`),
-          afterDocument(schema.searchDocument.documentId, schema.searchDocument.vaultId, after),
+          afterDocument(schema.searchDocument.documentId, schema.searchDocument.workspaceId, after),
           or(
             isNull(schema.searchIndexJob.documentId),
             ne(schema.searchIndexJob.model, model),
             ne(schema.searchIndexJob.dimensions, dimensions),
           ),
-        )).orderBy(asc(schema.searchDocument.documentId), asc(schema.searchDocument.vaultId)).limit(batchSize);
+        )).orderBy(asc(schema.searchDocument.documentId), asc(schema.searchDocument.workspaceId)).limit(batchSize);
       if (documents.length === 0) return undefined;
       const now = new Date();
       await transaction.insert(schema.searchIndexJob).values(documents.map((document) => ({
@@ -216,7 +216,7 @@ function createSearchIndexStore(
         availableAt: now,
         updatedAt: now,
       }))).onConflictDoUpdate({
-        target: [schema.searchIndexJob.vaultId, schema.searchIndexJob.documentId],
+        target: [schema.searchIndexJob.workspaceId, schema.searchIndexJob.documentId],
         set: {
           model,
           dimensions,
@@ -232,25 +232,25 @@ function createSearchIndexStore(
       });
       if (documents.length < batchSize) return undefined;
       const last = documents.at(-1)!;
-      return `${last.documentId}/${last.vaultId}`;
+      return `${last.documentId}/${last.workspaceId}`;
     });
   }
   return {
     reconcilePage,
-    due(model, dimensions, vaultId, after) {
+    due(model, dimensions, workspaceId, after) {
       const jobs = schema.searchIndexJob;
-      return db.select({ vaultId: jobs.vaultId, documentId: jobs.documentId, generation: jobs.generation })
-        .from(jobs).where(and(eq(jobs.model, model), eq(jobs.dimensions, dimensions), eq(jobs.vaultId, vaultId),
-          afterDocument(jobs.documentId, jobs.vaultId, after), lte(jobs.availableAt, new Date()),
+      return db.select({ workspaceId: jobs.workspaceId, documentId: jobs.documentId, generation: jobs.generation })
+        .from(jobs).where(and(eq(jobs.model, model), eq(jobs.dimensions, dimensions), eq(jobs.workspaceId, workspaceId),
+          afterDocument(jobs.documentId, jobs.workspaceId, after), lte(jobs.availableAt, new Date()),
           or(eq(jobs.status, "pending"), and(eq(jobs.status, "processing"), lte(jobs.leaseExpiresAt, new Date())))))
-        .orderBy(asc(jobs.documentId), asc(jobs.vaultId)).limit(100);
+        .orderBy(asc(jobs.documentId), asc(jobs.workspaceId)).limit(100);
     },
     async reconcile(model, dimensions) {
-      const vaults = await db.selectDistinct({ vaultId: schema.syncedVaultPermission.vaultId }).from(schema.syncedVaultPermission);
-      for (const { vaultId } of vaults) {
+      const workspaces = await db.selectDistinct({ workspaceId: schema.syncedWorkspacePermission.workspaceId }).from(schema.syncedWorkspacePermission);
+      for (const { workspaceId } of workspaces) {
         let after: string | undefined;
         while (true) {
-          const next = await reconcilePage(model, dimensions, vaultId, after, RECONCILE_BATCH_SIZE);
+          const next = await reconcilePage(model, dimensions, workspaceId, after, RECONCILE_BATCH_SIZE);
           if (!next) break;
           after = next;
         }
@@ -262,7 +262,7 @@ function createSearchIndexStore(
         const now = new Date();
         const filter = and(
           references ? or(...references.map((ref) => and(
-            eq(schema.searchIndexJob.vaultId, ref.vaultId), eq(schema.searchIndexJob.documentId, ref.documentId),
+            eq(schema.searchIndexJob.workspaceId, ref.workspaceId), eq(schema.searchIndexJob.documentId, ref.documentId),
             eq(schema.searchIndexJob.generation, ref.generation),
           ))) : undefined,
           eq(schema.searchIndexJob.model, model),
@@ -284,13 +284,13 @@ function createSearchIndexStore(
             leaseExpiresAt,
             updatedAt: now,
           }).where(and(
-            eq(schema.searchIndexJob.vaultId, row.vaultId),
+            eq(schema.searchIndexJob.workspaceId, row.workspaceId),
             eq(schema.searchIndexJob.documentId, row.documentId),
             eq(schema.searchIndexJob.generation, row.generation),
           ));
         }
         return rows.map((row) => ({
-          vaultId: row.vaultId,
+          workspaceId: row.workspaceId,
           documentId: row.documentId,
           generation: row.generation,
           attempts: row.attempts,

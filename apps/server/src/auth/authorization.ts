@@ -7,15 +7,15 @@ export const authorizationConflict = (message: string): never => { throw new API
 
 export async function readAuthorization(db: NodePgDatabase, schema: typeof Schema) {
   // ponytail: scan authorization metadata under one lock; scope snapshots if organization count becomes large.
-  const [organizations, members, teams, teamMembers, permissions, vaults, invitations, administrators] = await Promise.all([
+  const [organizations, members, teams, teamMembers, permissions, workspaces, invitations, administrators] = await Promise.all([
     db.select().from(schema.organization), db.select().from(schema.member), db.select().from(schema.team),
-    db.select().from(schema.teamMember), db.select().from(schema.syncedVaultPermission),
-    db.select({ vaultId: schema.syncedVault.vaultId, organizationId: schema.syncedVault.organizationId }).from(schema.syncedVault),
+    db.select().from(schema.teamMember), db.select().from(schema.syncedWorkspacePermission),
+    db.select({ workspaceId: schema.syncedWorkspace.workspaceId, organizationId: schema.syncedWorkspace.organizationId }).from(schema.syncedWorkspace),
     db.select({ organizationId: schema.invitation.organizationId }).from(schema.invitation),
     db.select({ id: schema.user.id }).from(schema.user)
       .where(sql`(',' || coalesce(${schema.user.role}, 'user') || ',') like '%,admin,%'`).limit(1),
   ]);
-  return { organizations, members, teams, teamMembers, permissions, vaults, invitations, administrators };
+  return { organizations, members, teams, teamMembers, permissions, workspaces, invitations, administrators };
 }
 export type AuthorizationState = Awaited<ReturnType<typeof readAuthorization>>;
 
@@ -36,7 +36,7 @@ export function validateAuthorization(state: AuthorizationState, before?: Author
     if (!["personal", "team"].includes(org.kind)) authorizationConflict("invalid_organization_kind");
     if (org.kind === "personal" && state.invitations.some((i) => i.organizationId === org.id)) authorizationConflict("personal_organization_immutable");
     if (org.kind === "team" && org.slug.toLowerCase().startsWith("personal-")) authorizationConflict("reserved_organization_slug");
-    if (org.kind === "personal" && (org.slug !== `personal-${org.id}` || state.vaults.filter((v) => v.organizationId === org.id).length !== 1)) authorizationConflict("personal_organization_immutable");
+    if (org.kind === "personal" && (org.slug !== `personal-${org.id}` || state.workspaces.filter((v) => v.organizationId === org.id).length !== 1)) authorizationConflict("personal_organization_immutable");
   }
   const memberOf = (userId: string, organizationId: string) => state.members.some((m) => m.userId === userId && m.organizationId === organizationId);
   for (const organization of state.organizations) {
@@ -50,8 +50,8 @@ export function validateAuthorization(state: AuthorizationState, before?: Author
     if (!members.some((m) => memberOf(m.userId, team.organizationId))) authorizationConflict("last_team_member");
     if (members.some((m) => !memberOf(m.userId, team.organizationId))) authorizationConflict("team_requires_organization_member");
   }
-  for (const vault of state.vaults) {
-    const permissions = state.permissions.filter((p) => p.vaultId === vault.vaultId);
+  for (const workspace of state.workspaces) {
+    const permissions = state.permissions.filter((p) => p.workspaceId === workspace.workspaceId);
     if (permissions.some((p) => p.principalType === "organization" && state.organizations.some((o) => o.id === p.principalId && o.kind === "personal"))) authorizationConflict("personal_organization_principal_forbidden");
     const effectiveAdmin = permissions.some((permission) => {
       if (permission.role !== "admin") return false;
@@ -67,10 +67,10 @@ export function validateAuthorization(state: AuthorizationState, before?: Author
           return false;
       }
     });
-    if (!effectiveAdmin) authorizationConflict("last_vault_admin");
-    if (state.organizations.some((o) => o.id === vault.organizationId && o.kind === "personal")
-      && (vault.vaultId !== vault.organizationId || permissions.length !== 1 || permissions[0]!.principalType !== "user"
-        || permissions[0]!.principalId !== vault.organizationId || permissions[0]!.role !== "admin")) authorizationConflict("personal_vault_immutable");
+    if (!effectiveAdmin) authorizationConflict("last_workspace_admin");
+    if (state.organizations.some((o) => o.id === workspace.organizationId && o.kind === "personal")
+      && (workspace.workspaceId !== workspace.organizationId || permissions.length !== 1 || permissions[0]!.principalType !== "user"
+        || permissions[0]!.principalId !== workspace.organizationId || permissions[0]!.role !== "admin")) authorizationConflict("personal_workspace_immutable");
   }
 }
 

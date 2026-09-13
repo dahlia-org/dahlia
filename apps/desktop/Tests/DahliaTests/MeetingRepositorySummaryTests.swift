@@ -24,7 +24,7 @@ import GRDB
                     try SyncTransactionQueue.applyCanonical(
                         .summary,
                         id: context.meeting.id,
-                        vaultId: context.meeting.vaultId,
+                        workspaceId: context.meeting.workspaceId,
                         value: payload,
                         in: db
                     )
@@ -33,7 +33,13 @@ import GRDB
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM meeting_tags") == 2)
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == transactions)
                 try db.execute(sql: "DELETE FROM meeting_tags WHERE tagId IN (SELECT id FROM tags WHERE name = 'team')")
-                try SyncTransactionQueue.applyCanonical(.summary, id: context.meeting.id, vaultId: context.meeting.vaultId, value: payload, in: db)
+                try SyncTransactionQueue.applyCanonical(
+                    .summary,
+                    id: context.meeting.id,
+                    workspaceId: context.meeting.workspaceId,
+                    value: payload,
+                    in: db
+                )
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM meeting_tags") == 1)
             }
         }
@@ -116,8 +122,8 @@ import GRDB
                     in: db
                 )
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'summary', ?, 1)",
-                    arguments: [context.vault.id, context.meeting.id]
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'summary', ?, 1)",
+                    arguments: [context.workspace.id, context.meeting.id]
                 )
                 var payload: [String: Any] = ["title": "Remote", "createdAt": "2026-01-01T00:00:00Z"]
                 if omitsBody {
@@ -130,7 +136,7 @@ import GRDB
                 try SyncTransactionQueue.applyCanonical(
                     .summary,
                     id: context.meeting.id,
-                    vaultId: context.vault.id,
+                    workspaceId: context.workspace.id,
                     value: value,
                     remoteRevision: revision,
                     in: db
@@ -153,7 +159,7 @@ import GRDB
                     createdAt: .now
                 )
             )
-            try context.repo.updateSummaryVaultRelativePath(
+            try context.repo.updateSummaryWorkspaceRelativePath(
                 forMeetingId: context.meeting.id,
                 relativePath: "Acme/Existing.md"
             )
@@ -176,7 +182,7 @@ import GRDB
 
             #expect(try context.repo.fetchSummaryExport(
                 forMeetingId: context.meeting.id,
-                type: .vault
+                type: .workspace
             ) == nil)
             #expect(try context.repo.fetchSummaryExport(
                 forMeetingId: context.meeting.id,
@@ -185,7 +191,7 @@ import GRDB
         }
 
         @Test
-        func storesVaultAndGoogleDocsExportsIndependently() throws {
+        func storesWorkspaceAndGoogleDocsExportsIndependently() throws {
             let context = try makeRepositoryContext()
             let document = try SummaryDocument(title: "Summary", sections: []).databaseJSONString()
             try context.repo.upsertSummary(
@@ -197,7 +203,7 @@ import GRDB
                 )
             )
 
-            try context.repo.updateSummaryVaultRelativePath(
+            try context.repo.updateSummaryWorkspaceRelativePath(
                 forMeetingId: context.meeting.id,
                 relativePath: "Acme/Summary.md"
             )
@@ -207,27 +213,27 @@ import GRDB
                 expectedDocument: document
             ))
 
-            let vault = try context.repo.fetchSummaryExport(
+            let workspace = try context.repo.fetchSummaryExport(
                 forMeetingId: context.meeting.id,
-                type: .vault
+                type: .workspace
             )
             let googleDocs = try context.repo.fetchSummaryExport(
                 forMeetingId: context.meeting.id,
                 type: .googleDocs
             )
 
-            #expect(vault?.url == "vault:///Acme/Summary.md")
-            #expect(vault?.vaultRelativePath == "Acme/Summary.md")
+            #expect(workspace?.url == "vault:///Acme/Summary.md")
+            #expect(workspace?.workspaceRelativePath == "Acme/Summary.md")
             #expect(googleDocs?.url == "https://docs.google.com/document/d/google-123/edit")
 
-            try context.repo.updateSummaryVaultRelativePath(
+            try context.repo.updateSummaryWorkspaceRelativePath(
                 forMeetingId: context.meeting.id,
                 relativePath: nil
             )
 
             #expect(try context.repo.fetchSummaryExport(
                 forMeetingId: context.meeting.id,
-                type: .vault
+                type: .workspace
             ) == nil)
             #expect(try context.repo.fetchSummaryExport(
                 forMeetingId: context.meeting.id,
@@ -375,20 +381,20 @@ import GRDB
             let manager = try AppDatabaseManager(path: ":memory:")
             let repo = MeetingRepository(dbQueue: manager.dbQueue)
 
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/test-vault",
-                name: "Test Vault",
+                path: "/tmp/test-workspace",
+                name: "Test Workspace",
                 createdAt: Date(),
                 lastOpenedAt: Date()
             )
-            try repo.insertVault(vault)
+            try repo.insertWorkspace(workspace)
 
-            let project = try repo.fetchOrCreateProject(name: "Acme", vaultId: vault.id)
+            let project = try repo.fetchOrCreateProject(name: "Acme", workspaceId: workspace.id)
 
             let meeting = MeetingRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: project.id,
                 name: "Weekly sync",
                 createdAt: Date(),
@@ -398,13 +404,13 @@ import GRDB
                 try meeting.insert(db)
             }
 
-            return RepositoryContext(manager: manager, repo: repo, vault: vault, project: project, meeting: meeting)
+            return RepositoryContext(manager: manager, repo: repo, workspace: workspace, project: project, meeting: meeting)
         }
 
         private struct RepositoryContext {
             let manager: AppDatabaseManager
             let repo: MeetingRepository
-            let vault: VaultRecord
+            let workspace: WorkspaceRecord
             let project: ProjectRecord
             let meeting: MeetingRecord
         }

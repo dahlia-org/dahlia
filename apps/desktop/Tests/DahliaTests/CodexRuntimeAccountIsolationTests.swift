@@ -9,7 +9,7 @@ struct CodexRuntimeAccountIsolationTests {
     func prepareNormalizesEffortAfterFallingBackToAnAvailableModel() async {
         let service = TestCodexChatService(mode: .complete)
         let settings = AppSettings()
-        settings.currentVault = VaultRecord(
+        settings.currentWorkspace = WorkspaceRecord(
             id: .v7(),
             path: "/tmp/model-fallback",
             name: "Model Fallback",
@@ -34,7 +34,7 @@ struct CodexRuntimeAccountIsolationTests {
         let service = TestCodexChatService(mode: .complete)
         let provider = Mutex(CodexRuntimeProvider.chatGPTSubscription)
         let settings = AppSettings()
-        settings.currentVault = VaultRecord(
+        settings.currentWorkspace = WorkspaceRecord(
             id: .v7(),
             path: "/tmp/provider-change",
             name: "Provider Change",
@@ -119,17 +119,17 @@ struct CodexRuntimeAccountIsolationTests {
             service: service,
             contextStore: contextStore
         )
-        let localVault = VaultRecord(
+        let localWorkspace = WorkspaceRecord(
             id: .v7(),
             path: "/tmp/local-context",
             name: "Local",
             createdAt: .now,
             lastOpenedAt: .now
         )
-        var databricksVault = localVault
-        databricksVault.id = .v7()
-        databricksVault.localProvider = .databricks
-        databricksVault.databricksProfile = connection.id.uuidString
+        var databricksWorkspace = localWorkspace
+        databricksWorkspace.id = .v7()
+        databricksWorkspace.localProvider = .databricks
+        databricksWorkspace.databricksProfile = connection.id.uuidString
         let generation = Task {
             try await service.generate(.init(
                 model: nil,
@@ -140,8 +140,8 @@ struct CodexRuntimeAccountIsolationTests {
         }
         await service.waitUntilActiveTurnForTesting()
         let databricksActivation = Task {
-            try await coordinator.activate(VaultAISettingsSnapshot(
-                vault: databricksVault,
+            try await coordinator.activate(WorkspaceAISettingsSnapshot(
+                workspace: databricksWorkspace,
                 localAccountSettings: .init(provider: .databricks, databricksProfile: connection.id.uuidString)
             ))
         }
@@ -150,8 +150,8 @@ struct CodexRuntimeAccountIsolationTests {
         databricksActivation.cancel()
         await #expect(throws: CancellationError.self) { try await databricksActivation.value }
         let localActivation = Task {
-            try await coordinator.activate(VaultAISettingsSnapshot(
-                vault: localVault,
+            try await coordinator.activate(WorkspaceAISettingsSnapshot(
+                workspace: localWorkspace,
                 localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
             ))
         }

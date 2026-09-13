@@ -40,13 +40,13 @@ describe("local single-user header mode", () => {
 
       const response = await app.request("/api/v1/session");
       expect(response.status).toBe(200);
-      const session = await response.json<{ user: { id: string; email: string; name: string }; workspace: { id: string } }>();
+      const session = await response.json<{ user: { id: string; email: string; name: string }; workspace?: never }>();
       expect(session.user.email).toBe("local@example.com");
       // No preferred-username header, so the identity itself becomes the display name.
       expect(session.user.name).toBe("local@example.com");
       // The substituted email is projected onto an internal user exactly as a proxied identity is.
       expect(session.user.id).not.toBe("local@example.com");
-      expect(session.workspace.id).toBe(`personal:${session.user.id}`);
+      expect(session).not.toHaveProperty("workspace");
       // The first user is promoted to administrator and stores the substituted email.
       expect(await store.listAdminUsers()).toMatchObject([{ email: "local@example.com", name: "local@example.com" }]);
       // Better Auth Header sign-in runs on the same substituted identity, so a cookie is issued.

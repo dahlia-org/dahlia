@@ -593,16 +593,16 @@
                 .appending(path: "dahlia-ui-sink-suspension-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
             let now = Date(timeIntervalSince1970: 1_776_384_000)
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
-                path: rootURL.appending(path: "Vault", directoryHint: .isDirectory).path,
+                path: rootURL.appending(path: "Workspace", directoryHint: .isDirectory).path,
                 name: "Stall",
                 createdAt: now,
                 lastOpenedAt: now
             )
             let meeting = MeetingRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: nil,
                 name: "Stall",
                 status: .ready,
@@ -620,7 +620,7 @@
                 updatedAt: now
             )
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 try session.insert(db)
             }

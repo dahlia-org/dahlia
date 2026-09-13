@@ -18,7 +18,7 @@ struct MenuBarRecordingControls: View {
             .disabled(
                 !state.isListening
                     && (!state.canBeginRecording || !recordingCoordinator.canStartNewMeeting)
-                    && AppSettings.shared.currentVault != nil
+                    && AppSettings.shared.currentWorkspace != nil
             )
 
             Toggle(isOn: $liveSubtitleOverlayEnabled) {
@@ -174,7 +174,7 @@ struct MenuBarRecordingControls: View {
     private func toggleRecording() {
         if state.isListening {
             recordingCoordinator.stopRecording()
-        } else if AppSettings.shared.currentVault == nil {
+        } else if AppSettings.shared.currentWorkspace == nil {
             MainWindowOpener.shared.openMainWindow()
         } else {
             recordingCoordinator.startQuickRecording()

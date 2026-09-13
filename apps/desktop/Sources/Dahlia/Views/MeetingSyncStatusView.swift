@@ -26,10 +26,10 @@ extension MeetingSyncState {
         case .local: L10n.meetingSyncLocalSaved
         case .pending: L10n.meetingSyncPending
         case .synced: L10n.meetingSyncSynced
-        case .recovering: L10n.vaultSyncRecovering
-        case .updateRequired: L10n.vaultSyncUpdateRequired
+        case .recovering: L10n.workspaceSyncRecovering
+        case .updateRequired: L10n.workspaceSyncUpdateRequired
         case .relocationPaused: L10n.meetingSyncRelocationPaused
-        case .blocked(.conflict): L10n.vaultSyncConflict
+        case .blocked(.conflict): L10n.workspaceSyncConflict
         case .blocked(.authorization): L10n.meetingSyncAuthorization
         case .blocked(.validation): L10n.meetingSyncValidation
         }

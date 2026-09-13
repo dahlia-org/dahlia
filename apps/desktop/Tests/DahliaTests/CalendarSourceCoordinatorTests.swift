@@ -78,14 +78,14 @@ import GRDB
             let connection = DahliaAccountConnectionRecord(
                 id: .v7(), origin: "https://server.example.com", clientID: "desktop", createdAt: .now
             )
-            var ownerRecord = VaultRecord(id: .v7(), path: nil, name: "Owner", createdAt: .now, lastOpenedAt: .now)
+            var ownerRecord = WorkspaceRecord(id: .v7(), path: nil, name: "Owner", createdAt: .now, lastOpenedAt: .now)
             ownerRecord.accountConnectionId = connection.id
             if ownerRecord.syncRole == nil { ownerRecord.syncRole = "admin" }
             if ownerRecord.organizationId == nil { ownerRecord.organizationId = .v7() }
             ownerRecord.syncConfirmedConnectionId = connection.id
             let owner = ownerRecord
-            let local = VaultRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
-            var memberRecord = VaultRecord(id: .v7(), path: nil, name: "Member", createdAt: .now, lastOpenedAt: .now)
+            let local = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
+            var memberRecord = WorkspaceRecord(id: .v7(), path: nil, name: "Member", createdAt: .now, lastOpenedAt: .now)
             memberRecord.accountConnectionId = connection.id
             if memberRecord.syncRole == nil { memberRecord.syncRole = "admin" }
             if memberRecord.organizationId == nil { memberRecord.organizationId = .v7() }
@@ -108,11 +108,11 @@ import GRDB
                 try local.insert(db)
                 try member.insert(db)
                 try CalendarEventRecord.upsert(event: original, now: .now, in: db)
-                for (id, vault) in [(ownerMeeting, owner), (localMeeting, local), (memberMeeting, member)] {
+                for (id, workspace) in [(ownerMeeting, owner), (localMeeting, local), (memberMeeting, member)] {
                     try MeetingRecord(
                         id: id,
-                        vaultId: vault.id,
-                        name: vault.name,
+                        workspaceId: workspace.id,
+                        name: workspace.name,
                         createdAt: .now,
                         updatedAt: .now,
                         calendarEventIcalUid: "linked",
@@ -181,7 +181,7 @@ import GRDB
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == 1)
             }
             let queued = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
-            #expect(queued.vaultId == owner.id)
+            #expect(queued.workspaceId == owner.id)
             #expect(queued.operations.map(\.entityId) == [ownerMeeting])
         }
 

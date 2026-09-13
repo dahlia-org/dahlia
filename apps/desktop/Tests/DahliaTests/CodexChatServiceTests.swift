@@ -18,9 +18,9 @@ import Foundation
                 workspaceLocator: TestCodexChatWorkspaceLocator(url: workspace),
                 mcpExecutableURL: URL(filePath: "/tmp/dahlia-mcp")
             )
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
 
-            let thread = try await service.startThread(model: "default-model", effort: "medium", vaultID: vaultID)
+            let thread = try await service.startThread(model: "default-model", effort: "medium", workspaceID: workspaceID)
             let stream = try await service.send(
                 threadID: thread.id,
                 inputs: [.text("Meeting context"), .text("Hi")],
@@ -50,9 +50,9 @@ import Foundation
             #expect(threadParams["ephemeral"] == .bool(false))
             #expect(threadParams["approvalPolicy"] == .string("on-request"))
             #expect(threadParams["sandbox"] == .string("workspace-write"))
-            #expect(threadParams["cwd"] == .string(workspace.appending(path: vaultID.uuidString.lowercased()).path))
+            #expect(threadParams["cwd"] == .string(workspace.appending(path: workspaceID.uuidString.lowercased()).path))
             let config = try #require(threadParams["config"]?.objectValue)
-            expectChatConfiguration(config, vaultID: vaultID)
+            expectChatConfiguration(config, workspaceID: workspaceID)
             expectDeveloperInstructions(threadParams["developerInstructions"]?.stringValue)
 
             let turnParams = try #require(messages.first {
@@ -196,7 +196,7 @@ import Foundation
                 mcpExecutableURL: URL(filePath: "/tmp/dahlia-mcp")
             )
 
-            let thread = try await service.resumeThread(id: "thread-history", vaultID: UUID.v7())
+            let thread = try await service.resumeThread(id: "thread-history", workspaceID: UUID.v7())
 
             #expect(thread.approvalMethod == nil)
             await appServer.shutdown()
@@ -395,11 +395,11 @@ import Foundation
                 workspaceLocator: TestCodexChatWorkspaceLocator(url: workspace),
                 mcpExecutableURL: URL(filePath: "/tmp/dahlia-mcp")
             )
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
 
-            let page = try await service.listThreads(vaultID: vaultID)
+            let page = try await service.listThreads(workspaceID: workspaceID)
             let loaded = try await service.loadThread(id: "thread-history")
-            let resumed = try await service.resumeThread(id: "thread-history", vaultID: vaultID)
+            let resumed = try await service.resumeThread(id: "thread-history", workspaceID: workspaceID)
 
             #expect(page.threads.map(\.id) == ["thread-history"])
             #expect(page.nextCursor == "next-page")
@@ -421,7 +421,7 @@ import Foundation
                 $0.objectValue?["method"]?.stringValue == "thread/list"
             }?.objectValue?["params"]?.objectValue)
             #expect(listParams["cwd"] == .array([
-                .string(workspace.appending(path: vaultID.uuidString.lowercased()).path),
+                .string(workspace.appending(path: workspaceID.uuidString.lowercased()).path),
             ]))
             #expect(listParams["sourceKinds"] == .array([.string("vscode")]))
             #expect(listParams["sortKey"] == .string("recency_at"))
@@ -735,7 +735,7 @@ import Foundation
             return events
         }
 
-        private func expectChatConfiguration(_ config: [String: JSONValue], vaultID: UUID) {
+        private func expectChatConfiguration(_ config: [String: JSONValue], workspaceID: UUID) {
             #expect(config["features.apps"] == .bool(false))
             #expect(config["features.codex_hooks"] == .bool(false))
             #expect(config["features.memory_tool"] == .bool(false))
@@ -751,8 +751,8 @@ import Foundation
             #expect(config["mcp_servers"] == .object([
                 "dahlia": .object([
                     "args": .array([
-                        .string("--vault-id"),
-                        .string(TypeID.encode(vaultID, as: .vault)),
+                        .string("--workspace-id"),
+                        .string(TypeID.encode(workspaceID, as: .workspace)),
                         .string("--write"),
                         .string("--telemetry-origin"),
                         .string("codexChat"),
@@ -786,8 +786,8 @@ import Foundation
     private struct TestCodexChatWorkspaceLocator: CodexChatWorkspaceLocating {
         let url: URL
 
-        func workspaceURL(vaultID: UUID) throws -> URL {
-            url.appending(path: vaultID.uuidString.lowercased())
+        func workspaceURL(workspaceID: UUID) throws -> URL {
+            url.appending(path: workspaceID.uuidString.lowercased())
         }
     }
 #endif

@@ -89,7 +89,7 @@ final class MeetingSidebarHoverController {
             visibleMeetingProjectAppearance = projectAppearance
             visibleRowFrame = rowFrame
             presentationTask = Task { [weak self] in
-                let loadedDescription = await loadDescription(item.meetingId, item.vaultId)
+                let loadedDescription = await loadDescription(item.meetingId, item.workspaceId)
                 guard !Task.isCancelled,
                       let self,
                       hoveredMeetingID == item.meetingId,
@@ -103,7 +103,7 @@ final class MeetingSidebarHoverController {
         let displayDelay = displayDelay
         let sleep = sleep
         presentationTask = Task { [weak self] in
-            async let description = loadDescription(item.meetingId, item.vaultId)
+            async let description = loadDescription(item.meetingId, item.workspaceId)
             do {
                 try await sleep(displayDelay)
             } catch {

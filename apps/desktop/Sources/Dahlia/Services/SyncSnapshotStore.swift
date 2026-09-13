@@ -14,7 +14,7 @@ struct SyncSnapshotPage: Decodable {
     let nextCursor: String?
 }
 
-/// Rebuildable recovery data. Canonical content is never accumulated for an entire Vault in memory.
+/// Rebuildable recovery data. Canonical content is never accumulated for an entire Workspace in memory.
 final class SyncSnapshotStore: Sendable {
     private let directory: URL
     private let database: DatabaseQueue
@@ -45,7 +45,7 @@ final class SyncSnapshotStore: Sendable {
     func merge(_ changes: [SyncChangePage.Change]) async throws {
         try await database.write { db in
             for change in changes {
-                if change.entity == .vault, change.action == "reset" {
+                if change.entity == .workspace, change.action == "reset" {
                     try db.execute(sql: "DELETE FROM changes")
                     guard change.record != nil else { continue }
                 }
@@ -112,7 +112,7 @@ final class SyncSnapshotStore: Sendable {
 
     func revisionChanges() async throws -> [SyncChangePage.Change] {
         try await database.read { db in
-            try Row.fetchAll(db, sql: "SELECT entity, entityId, revision, CASE WHEN entity = 'vault' THEN payload END AS payload FROM changes")
+            try Row.fetchAll(db, sql: "SELECT entity, entityId, revision, CASE WHEN entity = 'workspace' THEN payload END AS payload FROM changes")
                 .map { row in
                     if let payload: Data = row["payload"] {
                         return try SyncJSON.decoder.decode(SyncChangePage.Change.self, from: payload)
@@ -140,7 +140,7 @@ final class SyncSnapshotStore: Sendable {
 
     private static func phase(_ change: SyncChangePage.Change) -> Int {
         switch change.entity {
-        case .vault: 0
+        case .workspace: 0
         case .project: change.record?.parentProjectId == nil ? 1 : 2
         case .meeting: 3
         case .summary: 4

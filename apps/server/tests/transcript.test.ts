@@ -24,8 +24,8 @@ it("ships the same activity policy as Desktop without a runtime dependency on it
 
 const directories: string[] = [];
 afterEach(() => { vi.useRealTimers(); for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true }); });
-const owner: Identity = { userId: testUserID("owner"), workspaceId: `personal:${testUserID("owner")}`, source: "header" };
-const member: Identity = { userId: testUserID("reader"), workspaceId: `personal:${testUserID("reader")}`, source: "header" };
+const owner: Identity = { userId: testUserID("owner"),  source: "header" };
+const member: Identity = { userId: testUserID("reader"),  source: "header" };
 const metadata = (model = "apple-speech-live") => ({ provider: "apple", request: { model },
   runs: [{ generatedBy: "desktop", inputTypes: ["audio"], startedAt: null, completedAt: null }] });
 
@@ -38,10 +38,10 @@ async function setup() {
   const store = createNodeApplicationStore(config);
   await store.migrate(); await seedHeaderIdentity(store, databasePath, owner); await seedHeaderIdentity(store, databasePath, member);
   const sync = new MeetingSyncService(store.sync);
-  const vaultId = uuidV7(); const meetingId = uuidV7(); const now = new Date().toISOString();
-  const body = (operations: unknown[]) => ({ schemaVersion: 3, id: uuidV7(), vaultId, createdAt: now, operations });
+  const workspaceId = uuidV7(); const meetingId = uuidV7(); const now = new Date().toISOString();
+  const body = (operations: unknown[]) => ({ schemaVersion: 3, id: uuidV7(), workspaceId, createdAt: now, operations });
   await sync.commitTransaction(owner, body([
-    { id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Vault", createdAt: now } },
+    { id: uuidV7(), entity: "workspace", action: "create", entityId: workspaceId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Workspace", createdAt: now } },
     { id: uuidV7(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
       data: { name: "Meeting", status: "READY", projectId: null, duration: null, recordingStartedAt: null, createdAt: now, updatedAt: now } },
   ]));
@@ -66,12 +66,12 @@ async function setup() {
     const receipt = await sync.commitTransaction(owner, transaction);
     return { transaction, receipt };
   };
-  return { store, sync, config, databasePath, vaultId, meetingId, body, stage, write };
+  return { store, sync, config, databasePath, workspaceId, meetingId, body, stage, write };
 }
 
 describe("transcript versions", () => {
   it("stores, updates, copies, and backfills normalized character counts without a metrics version", async () => {
-    const { store, sync, vaultId, meetingId, body, databasePath } = await setup();
+    const { store, sync, workspaceId, meetingId, body, databasePath } = await setup();
     const transcriptId = uuidV7();
     const segmentIds = [uuidV7(), uuidV7()];
     const write = async (segmentId: string, text: string, baseRevision: number) => {
@@ -99,7 +99,7 @@ describe("transcript versions", () => {
       expect(storedCounts(transcriptId)).toEqual([2, 5]);
       expect(storedCounts(copiedId)).toEqual([2, 5]);
       db.prepare("UPDATE transcript_segments SET normalized_character_count = NULL WHERE transcript_id = ?").run(copiedId);
-      expect((await store.sync.withIdentity(owner, (scoped) => scoped.listTranscriptAnalytics(vaultId, meetingId, 2)))
+      expect((await store.sync.withIdentity(owner, (scoped) => scoped.listTranscriptAnalytics(workspaceId, meetingId, 2)))
         .map((row) => row.normalizedCharacterCount).sort()).toEqual([2, 5]);
       expect(storedCounts(copiedId)).toEqual([2, 5]);
       const columns = db.prepare("PRAGMA table_info(transcript_segments)").all().map((row) => row.name);
@@ -109,14 +109,14 @@ describe("transcript versions", () => {
   });
 
   it("backfills normalized character counts across bounded update batches", async () => {
-    const { store, vaultId, meetingId, databasePath, write } = await setup();
+    const { store, workspaceId, meetingId, databasePath, write } = await setup();
     const transcriptId = uuidV7();
     try {
       const texts = Array.from({ length: 201 }, (_, index) => index % 2 ? "一" : "two");
       await write(transcriptId, 0, "completed", "replace", texts);
       const db = new DatabaseSync(databasePath);
       db.prepare("UPDATE transcript_segments SET normalized_character_count = NULL WHERE transcript_id = ?").run(transcriptId);
-      const counts = (await store.sync.withIdentity(owner, (scoped) => scoped.listTranscriptAnalytics(vaultId, meetingId, 1)))
+      const counts = (await store.sync.withIdentity(owner, (scoped) => scoped.listTranscriptAnalytics(workspaceId, meetingId, 1)))
         .map((row) => row.normalizedCharacterCount);
       expect(counts).toHaveLength(201);
       expect(counts.filter((count) => count === 1)).toHaveLength(100);
@@ -128,16 +128,16 @@ describe("transcript versions", () => {
   });
 
   it("counts only the latest authorized transcript and preserves its snapshot header", async () => {
-    const { store, sync, vaultId, meetingId, write } = await setup();
+    const { store, sync, workspaceId, meetingId, write } = await setup();
     try {
-      expect(await store.sync.withIdentity(owner, (scoped) => scoped.countTranscript(vaultId, meetingId))).toBe(0);
+      expect(await store.sync.withIdentity(owner, (scoped) => scoped.countTranscript(workspaceId, meetingId))).toBe(0);
       await write(uuidV7(), 0, "completed", "replace", ["old", "old second"]);
       const latestId = uuidV7();
       await write(latestId, 1, "completed", "replace", ["current"]);
-      expect(await store.sync.withIdentity(owner, (scoped) => scoped.countTranscript(vaultId, meetingId))).toBe(1);
-      expect(await store.sync.withIdentity(member, (scoped) => scoped.countTranscript(vaultId, meetingId))).toBe(0);
+      expect(await store.sync.withIdentity(owner, (scoped) => scoped.countTranscript(workspaceId, meetingId))).toBe(1);
+      expect(await store.sync.withIdentity(member, (scoped) => scoped.countTranscript(workspaceId, meetingId))).toBe(0);
       expect(await store.sync.withIdentity(owner, (scoped) => scoped.countTranscript(uuidV7(), meetingId))).toBe(0);
-      const page = await sync.listSnapshot(owner, vaultId);
+      const page = await sync.listSnapshot(owner, workspaceId);
       expect(page.items.find((item) => item.entity === "transcript")?.record).toMatchObject({
         contentOmitted: true, contentCount: 1, transcript: { id: latestId, version: 2 },
       });
@@ -145,7 +145,7 @@ describe("transcript versions", () => {
   });
 
   it("publishes large snapshots atomically and replays them without another version", async () => {
-    const { store, sync, vaultId, meetingId, databasePath, stage, write } = await setup();
+    const { store, sync, workspaceId, meetingId, databasePath, stage, write } = await setup();
     try {
       await write(uuidV7(), 0, "completed", "replace", ["previous version"]);
       const texts = Array.from({ length: 50_001 }, (_, index) => `segment ${index}`);
@@ -155,15 +155,15 @@ describe("transcript versions", () => {
         .run(JSON.stringify({ segments: [], deletions: [] }));
       db.close();
       await expect(sync.commitTransaction(owner, failed)).rejects.toMatchObject({ code: "transcript_patch_count_mismatch" });
-      expect((await sync.transcriptVersions(owner, vaultId, meetingId)).items).toHaveLength(1);
-      expect((await sync.transcriptContent(owner, vaultId, meetingId, "latest")).items).toMatchObject([{ text: "previous version" }]);
+      expect((await sync.transcriptVersions(owner, workspaceId, meetingId)).items).toHaveLength(1);
+      expect((await sync.transcriptContent(owner, workspaceId, meetingId, "latest")).items).toMatchObject([{ text: "previous version" }]);
 
       const { transaction, receipt } = await write(uuidV7(), 1, "completed", "replace", texts);
       expect(await sync.commitTransaction(owner, transaction)).toEqual(receipt);
-      expect(await sync.transcriptContent(owner, vaultId, meetingId, "latest", "1"))
+      expect(await sync.transcriptContent(owner, workspaceId, meetingId, "latest", "1"))
         .toMatchObject({ version: 2, count: 50_001, syncRevision: 2 });
-      expect((await sync.transcriptVersions(owner, vaultId, meetingId)).items).toHaveLength(2);
-      expect((await sync.transcriptContent(owner, vaultId, meetingId, "1")).items).toMatchObject([{ text: "previous version" }]);
+      expect((await sync.transcriptVersions(owner, workspaceId, meetingId)).items).toHaveLength(2);
+      expect((await sync.transcriptContent(owner, workspaceId, meetingId, "1")).items).toMatchObject([{ text: "previous version" }]);
     } finally { await store.close?.(); }
   }, 60_000);
 
@@ -179,26 +179,26 @@ describe("transcript versions", () => {
   it("preserves offline creation times and initial Server save time across retry and copy, without stored status", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-09-08T10:00:00.000Z"));
-    const { store, sync, vaultId, meetingId, write, databasePath } = await setup();
+    const { store, sync, workspaceId, meetingId, write, databasePath } = await setup();
     try {
       const firstId = uuidV7();
       await write(firstId, 0, "live", "append");
-      expect(await sync.transcriptContent(owner, vaultId, meetingId, "latest")).toMatchObject({ transcript: { status: "unknown" } });
+      expect(await sync.transcriptContent(owner, workspaceId, meetingId, "latest")).toMatchObject({ transcript: { status: "unknown" } });
       vi.setSystemTime(new Date("2026-09-08T10:10:00.000Z"));
       const { transaction, receipt } = await write(firstId, 1, "live", "append", ["generated offline"]);
       expect(await sync.commitTransaction(owner, transaction)).toEqual(receipt);
-      const first = await sync.transcriptContent(owner, vaultId, meetingId, "latest");
+      const first = await sync.transcriptContent(owner, workspaceId, meetingId, "latest");
       expect(first).toMatchObject({ transcript: { createdAt: new Date("2026-09-08T10:00:00.000Z"), status: "inactive", endedAt: null } });
       expect(first.items?.[0]?.createdAt).toEqual(new Date("2026-09-08T10:00:00.000Z"));
       await write(uuidV7(), 2, "live", "append");
-      const copied = await sync.transcriptContent(owner, vaultId, meetingId, "latest");
+      const copied = await sync.transcriptContent(owner, workspaceId, meetingId, "latest");
       expect(copied.items).toEqual(first.items);
       expect(copied).toMatchObject({ transcript: { createdAt: new Date("2026-09-08T10:10:00.000Z"), status: "inactive" } });
-      expect((await sync.transcriptContent(owner, vaultId, meetingId, "1")).items).toEqual(first.items);
+      expect((await sync.transcriptContent(owner, workspaceId, meetingId, "1")).items).toEqual(first.items);
       const db = new DatabaseSync(databasePath);
       const parent = db.prepare("pragma table_info(transcripts)").all().map((row) => row.name);
       const child = db.prepare("pragma table_info(transcript_segments)").all().map((row) => row.name);
-      expect(parent).not.toContain("status"); expect(parent).not.toContain("vault_id");
+      expect(parent).not.toContain("status"); expect(parent).not.toContain("workspace_id");
       expect(child).toEqual(expect.arrayContaining(["started_at", "ended_at", "created_at"]));
       expect(child).not.toContain("is_confirmed"); expect(child).not.toContain("start_time");
       db.close();
@@ -206,38 +206,38 @@ describe("transcript versions", () => {
   });
 
   it("keeps a single live version, copies once on append, and never mutates a completed version", async () => {
-    const { store, sync, vaultId, meetingId, write } = await setup();
+    const { store, sync, workspaceId, meetingId, write } = await setup();
     try {
       const firstId = uuidV7();
       await write(firstId, 0, "live", "append");
       await write(firstId, 1, "live", "append", ["first"]);
       await write(firstId, 2, "completed", "append");
-      const first = await sync.transcriptContent(owner, vaultId, meetingId, "1");
+      const first = await sync.transcriptContent(owner, workspaceId, meetingId, "1");
       expect(first).toMatchObject({ version: 1, syncRevision: 3, transcript: { id: firstId, status: "ended" }, items: [{ text: "first" }] });
       expect(first).not.toHaveProperty("revision");
       const secondId = uuidV7();
       const { transaction, receipt } = await write(secondId, 3, "live", "append", ["second"]);
       expect(await sync.commitTransaction(owner, transaction)).toEqual(receipt);
-      expect((await sync.transcriptVersions(owner, vaultId, meetingId)).items).toHaveLength(2);
+      expect((await sync.transcriptVersions(owner, workspaceId, meetingId)).items).toHaveLength(2);
       await write(secondId, 4, "completed", "append");
-      expect((await sync.transcriptContent(owner, vaultId, meetingId, "latest")).items?.map((row) => row.text)).toEqual(["first", "second"]);
-      expect(await sync.transcriptContent(owner, vaultId, meetingId, "1")).toEqual(first);
+      expect((await sync.transcriptContent(owner, workspaceId, meetingId, "latest")).items?.map((row) => row.text)).toEqual(["first", "second"]);
+      expect(await sync.transcriptContent(owner, workspaceId, meetingId, "1")).toEqual(first);
       await expect(write(firstId, 5, "live", "append", ["overwrite"])).rejects.toMatchObject({ status: 409 });
       await expect(write(secondId, 5, "completed", "append", ["overwrite"])).rejects.toMatchObject({ status: 409 });
       await expect(write(uuidV7(), 5, "live", "append", [], metadata("apple-speech"))).rejects.toMatchObject({ code: "transcript_model_changed" });
-      expect(await sync.transcriptContent(owner, vaultId, meetingId, "1")).toEqual(first);
+      expect(await sync.transcriptContent(owner, workspaceId, meetingId, "1")).toEqual(first);
     } finally { await store.close?.(); }
   });
 
   it("publishes full replacements atomically, including empty results and Server provenance", async () => {
-    const { store, sync, vaultId, meetingId, write, body } = await setup();
+    const { store, sync, workspaceId, meetingId, write, body } = await setup();
     try {
       await write(uuidV7(), 0, "completed", "replace", ["old"]);
       const serverMetadata = { provider: "google", request: { model: "test-gemini-model" }, runs: [{ generatedBy: "server", inputTypes: ["audio"],
         startedAt: null, completedAt: null, response: { id: "response-1", model: "resolved-test-model", usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 } } }] };
       const latestId = uuidV7();
       await write(latestId, 1, "completed", "replace", ["new"], serverMetadata);
-      expect((await sync.transcriptContent(owner, vaultId, meetingId, "latest"))).toMatchObject({ version: 2,
+      expect((await sync.transcriptContent(owner, workspaceId, meetingId, "latest"))).toMatchObject({ version: 2,
         transcript: { metadata: serverMetadata }, items: [{ text: "new" }] });
       const patchId = uuidV7();
       await expect(sync.commitTransaction(owner, body([
@@ -245,18 +245,18 @@ describe("transcript versions", () => {
           data: { patchId, mode: "replace", transcript: { id: uuidV7(), endedAt: null, metadata: null }, segmentCount: 0, deletionCount: 0, chunks: [] } },
         { id: uuidV7(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 999, data: {} },
       ]))).rejects.toMatchObject({ status: 409 });
-      expect((await sync.transcriptVersions(owner, vaultId, meetingId)).items).toHaveLength(2);
+      expect((await sync.transcriptVersions(owner, workspaceId, meetingId)).items).toHaveLength(2);
       await write(uuidV7(), 2, "completed", "replace", []);
-      expect(await sync.transcriptContent(owner, vaultId, meetingId, "latest")).toMatchObject({ version: 3, present: true, items: [] });
-      expect((await sync.transcriptContent(owner, vaultId, meetingId, "1")).items).toMatchObject([{ text: "old" }]);
-      expect((await sync.transcriptVersions(owner, vaultId, meetingId, undefined, "2")).nextCursor).toBe("2");
-      expect((await sync.transcriptVersions(owner, vaultId, meetingId, "2")).items.map((row) => row.version)).toEqual([1]);
+      expect(await sync.transcriptContent(owner, workspaceId, meetingId, "latest")).toMatchObject({ version: 3, present: true, items: [] });
+      expect((await sync.transcriptContent(owner, workspaceId, meetingId, "1")).items).toMatchObject([{ text: "old" }]);
+      expect((await sync.transcriptVersions(owner, workspaceId, meetingId, undefined, "2")).nextCursor).toBe("2");
+      expect((await sync.transcriptVersions(owner, workspaceId, meetingId, "2")).items.map((row) => row.version)).toEqual([1]);
       expect(transcriptMetadataSchema.safeParse({ ...serverMetadata, prompt: "must not store" }).success).toBe(false);
     } finally { await store.close?.(); }
   });
 
   it.each(["node", "worker"])("pages bodies, reauthorizes history, and deletes all versions through %s", async (runtime) => {
-    const { store, sync, config, databasePath, vaultId, meetingId, write, body } = await setup();
+    const { store, sync, config, databasePath, workspaceId, meetingId, write, body } = await setup();
     try {
       await write(uuidV7(), 0, "completed", "replace", Array.from({ length: 501 }, (_, index) => `text ${index}`));
       const app = createApp({ config, authStore: store });
@@ -271,14 +271,14 @@ describe("transcript versions", () => {
       };
       expect((await send("/1")).status).toBe(404);
       const grantDb = new DatabaseSync(databasePath);
-      grantDb.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', ?, 'viewer', ?, ?)").run(vaultId, member.userId, owner.userId, Date.now());
+      grantDb.prepare("INSERT INTO workspace_permissions(workspace_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', ?, 'viewer', ?, ?)").run(workspaceId, member.userId, owner.userId, Date.now());
       grantDb.close();
       const page = z.object({ items: z.array(z.unknown()), nextCursor: z.string() }).parse(await (await send("/1")).json());
       expect(page.items).toHaveLength(500);
       expect(await (await send(`/1?cursor=${encodeURIComponent(page.nextCursor)}`)).json()).toMatchObject({ items: [expect.any(Object)] });
       expect(await (await send("/latest?manifest=1")).json()).toMatchObject({ count: 501, version: 1 });
       const revokeDb = new DatabaseSync(databasePath);
-      revokeDb.prepare("DELETE FROM vault_permissions WHERE vault_id = ? AND principal_id = ?").run(vaultId, member.userId);
+      revokeDb.prepare("DELETE FROM workspace_permissions WHERE workspace_id = ? AND principal_id = ?").run(workspaceId, member.userId);
       revokeDb.close();
       expect((await send("/1")).status).toBe(404);
       await sync.commitTransaction(owner, body([{ id: uuidV7(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }]));
@@ -286,7 +286,7 @@ describe("transcript versions", () => {
       const db = new DatabaseSync(databasePath);
       expect(db.prepare("SELECT count(*) AS count FROM transcripts").get()).toMatchObject({ count: 0 });
       expect(db.prepare("SELECT count(*) AS count FROM transcript_segments").get()).toMatchObject({ count: 0 });
-      expect(db.prepare("pragma table_info(transcript_segments)").all().map((row) => row.name)).not.toContain("vault_id");
+      expect(db.prepare("pragma table_info(transcript_segments)").all().map((row) => row.name)).not.toContain("workspace_id");
       expect(db.prepare("pragma table_info(transcript_segments)").all().map((row) => row.name)).not.toContain("meeting_id");
       db.close();
     } finally { await store.close?.(); }

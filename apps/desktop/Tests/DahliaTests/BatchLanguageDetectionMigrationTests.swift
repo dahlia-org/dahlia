@@ -69,10 +69,10 @@ import GRDB
 
         private func insertExistingSession(into queue: DatabaseQueue) throws -> RecordingSessionRecord {
             let now = Date(timeIntervalSince1970: 1_776_384_000)
-            let vault = VaultRecord(id: .v7(), path: "/tmp/vault", name: "Vault", createdAt: now, lastOpenedAt: now)
+            let workspace = WorkspaceRecord(id: .v7(), path: "/tmp/workspace", name: "Workspace", createdAt: now, lastOpenedAt: now)
             let meeting = MeetingRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: nil,
                 name: "Existing",
                 status: .transcriptNotFound,
@@ -92,7 +92,7 @@ import GRDB
                 transcriptionMode: .batch
             )
             try queue.write { db in
-                try insertLegacyVault(vault, in: db)
+                try insertLegacyWorkspace(workspace, in: db)
                 try insertLegacyMeeting(meeting, into: db)
                 try insertLegacySession(session, into: db)
                 try insertLegacyAudioRanges(for: session, at: now, into: db)
@@ -143,7 +143,7 @@ import GRDB
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: [
-                    meeting.id, meeting.vaultId, meeting.projectId, meeting.name, meeting.status,
+                    meeting.id, meeting.workspaceId, meeting.projectId, meeting.name, meeting.status,
                     meeting.duration, meeting.createdAt, meeting.updatedAt,
                 ]
             )

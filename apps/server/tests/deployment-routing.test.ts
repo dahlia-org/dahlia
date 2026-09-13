@@ -278,6 +278,7 @@ describe("deployment routing", () => {
     const postgres = serverMigrationManifest.postgres.files.filter((file) => file.startsWith("drizzle/postgres/")).map((file) => readText(`../${file}`)).join("\n");
     for (const migration of [sqlite, `${auth}\n${postgres}`]) {
       expect(migration).not.toContain("model_alias");
+      expect(migration).not.toContain("vault");
       expect(migration).not.toContain("platform_admin");
       expect(migration).not.toContain("artifact_reservation");
       expect(migration).toContain("storage_key");
@@ -300,7 +301,7 @@ describe("deployment routing", () => {
     expect(postgres).not.toContain('CREATE TABLE "app"."user"');
     expect(postgres).toContain("ROW LEVEL SECURITY");
     expect(postgres).toContain("CREATE POLICY");
-    expect(postgres).toContain('"current_identity_can_read_vault"');
+    expect(postgres).toContain('"current_identity_can_read_workspace"');
     expect(readFileSync(new URL("../drizzle/postgres/20260912180000_runtime_support/migration.sql", import.meta.url), "utf8")).toContain("FROM auth.team_member");
     expect(postgres).not.toContain("header_deployment");
     expect(sqlite).toContain("team_member_user_team_idx");

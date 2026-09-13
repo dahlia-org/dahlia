@@ -70,7 +70,7 @@ struct AppStartupView: View {
         case .preparing: L10n.startupPreparing
         case .restoring: L10n.startupRestoring
         case .updating: L10n.startupUpdating
-        case .loadingVaults: L10n.loadingVaults
+        case .loadingWorkspaces: L10n.loadingWorkspaces
         }
     }
 }
@@ -90,8 +90,8 @@ struct AppStartupView: View {
         .frame(width: 720, height: 520)
 }
 
-#Preview("Loading Vaults") {
-    AppStartupView(state: .working(.loadingVaults), onContinue: {}, onQuit: {})
+#Preview("Loading Workspaces") {
+    AppStartupView(state: .working(.loadingWorkspaces), onContinue: {}, onQuit: {})
         .frame(width: 720, height: 520)
 }
 

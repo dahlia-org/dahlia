@@ -10,7 +10,7 @@ import GRDB
         @Test
         func newerReloadReplacesAnInFlightListLoad() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/project-detail-view-model-tests",
                 name: "Test",
@@ -20,11 +20,11 @@ import GRDB
             let firstProjectID = UUID.v7()
             let secondProjectID = UUID.v7()
             try await database.dbQueue.write { db in
-                try vault.insert(db)
-                try Self.project(id: firstProjectID, vaultID: vault.id, name: "First").insert(db)
-                try Self.project(id: secondProjectID, vaultID: vault.id, name: "Second").insert(db)
-                try Self.meeting(vaultID: vault.id, projectID: firstProjectID, name: "First meeting").insert(db)
-                try Self.meeting(vaultID: vault.id, projectID: secondProjectID, name: "Second meeting").insert(db)
+                try workspace.insert(db)
+                try Self.project(id: firstProjectID, workspaceID: workspace.id, name: "First").insert(db)
+                try Self.project(id: secondProjectID, workspaceID: workspace.id, name: "Second").insert(db)
+                try Self.meeting(workspaceID: workspace.id, projectID: firstProjectID, name: "First meeting").insert(db)
+                try Self.meeting(workspaceID: workspace.id, projectID: secondProjectID, name: "Second meeting").insert(db)
             }
 
             let databaseAccessStarted = AsyncStream<Void>.makeStream()
@@ -42,11 +42,11 @@ import GRDB
 
             let model = ProjectDetailViewModel()
             let firstLoad = Task {
-                await model.reload(projectIDs: [firstProjectID], vaultID: vault.id, dbQueue: database.dbQueue)
+                await model.reload(projectIDs: [firstProjectID], workspaceID: workspace.id, dbQueue: database.dbQueue)
             }
             #expect(await pollUntil { model.isLoadingList })
             let secondLoad = Task {
-                await model.reload(projectIDs: [secondProjectID], vaultID: vault.id, dbQueue: database.dbQueue)
+                await model.reload(projectIDs: [secondProjectID], workspaceID: workspace.id, dbQueue: database.dbQueue)
             }
             #expect(await pollUntil { model.isLoadingList && model.listItems.isEmpty })
 
@@ -62,7 +62,7 @@ import GRDB
         @Test
         func calendarReplacementClearsOldItemsAndReportsTheCurrentError() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/project-detail-calendar-tests",
                 name: "Test",
@@ -72,10 +72,10 @@ import GRDB
             let projectID = UUID.v7()
             let meetingDate = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 8, day: 10)))
             try await database.dbQueue.write { db in
-                try vault.insert(db)
-                try Self.project(id: projectID, vaultID: vault.id, name: "Project").insert(db)
+                try workspace.insert(db)
+                try Self.project(id: projectID, workspaceID: workspace.id, name: "Project").insert(db)
                 try Self.meeting(
-                    vaultID: vault.id,
+                    workspaceID: workspace.id,
                     projectID: projectID,
                     name: "August meeting",
                     createdAt: meetingDate
@@ -86,7 +86,7 @@ import GRDB
             await model.loadCalendar(
                 containing: meetingDate,
                 projectIDs: [projectID],
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 dbQueue: database.dbQueue
             )
             #expect(model.calendarItems.map(\.meetingName) == ["August meeting"])
@@ -95,7 +95,7 @@ import GRDB
             await model.loadCalendar(
                 containing: meetingDate.addingTimeInterval(32 * 24 * 60 * 60),
                 projectIDs: [projectID],
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 dbQueue: invalidDatabase
             )
 
@@ -104,10 +104,10 @@ import GRDB
             #expect(!model.isCalendarLimited)
         }
 
-        private nonisolated static func project(id: UUID, vaultID: UUID, name: String) -> ProjectRecord {
+        private nonisolated static func project(id: UUID, workspaceID: UUID, name: String) -> ProjectRecord {
             ProjectRecord(
                 id: id,
-                vaultId: vaultID,
+                workspaceId: workspaceID,
                 parentProjectId: nil,
                 name: name,
                 createdAt: .now,
@@ -116,14 +116,14 @@ import GRDB
         }
 
         private nonisolated static func meeting(
-            vaultID: UUID,
+            workspaceID: UUID,
             projectID: UUID,
             name: String,
             createdAt: Date = .now
         ) -> MeetingRecord {
             MeetingRecord(
                 id: .v7(),
-                vaultId: vaultID,
+                workspaceId: workspaceID,
                 projectId: projectID,
                 name: name,
                 description: "",

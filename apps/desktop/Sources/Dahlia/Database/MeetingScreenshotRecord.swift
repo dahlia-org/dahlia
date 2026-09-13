@@ -53,13 +53,13 @@ struct MeetingScreenshotRecord: Codable, FetchableRecord, PersistableRecord, Sen
     func insert(_ db: Database) throws {
         guard imageData == nil, localReference != nil || remoteReference != nil,
               let contentHash, let contentLength,
-              let vaultId = try MeetingRecord.fetchOne(db, key: meetingId)?.vaultId else {
+              let workspaceId = try MeetingRecord.fetchOne(db, key: meetingId)?.workspaceId else {
             throw ScreenshotContentError.unavailable
         }
         if try FileRecord.fetchOne(db, key: originalFileId) == nil {
             try FileRecord(
                 id: originalFileId,
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 size: Int64(contentLength),
                 contentType: mimeType,
                 checksum: "SHA-256:" + contentHash,

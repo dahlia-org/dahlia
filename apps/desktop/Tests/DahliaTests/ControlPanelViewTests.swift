@@ -23,7 +23,7 @@
             let state = ControlPanelViewFixtureState()
             viewModel.beginDraftMeeting(
                 dbQueue: database.dbQueue,
-                vaultURL: FileManager.default.temporaryDirectory
+                workspaceURL: FileManager.default.temporaryDirectory
             )
             let hostingView = NSHostingView(rootView: ControlPanelViewFixture(
                 state: state,
@@ -41,7 +41,7 @@
             viewModel.clearCurrentMeeting()
             viewModel.beginDraftMeeting(
                 dbQueue: database.dbQueue,
-                vaultURL: FileManager.default.temporaryDirectory
+                workspaceURL: FileManager.default.temporaryDirectory
             )
             state.showsControlPanel = true
 

@@ -8,7 +8,7 @@ import { useLiveJSON, useLivePage } from "./live-data";
 import { navigateDashboard } from "./navigation";
 import { createContext, Fragment, useContext, useEffect, useState, type ReactNode } from "react";
 import type { SessionInfo } from "./App";
-import type { OrganizationInfo, SyncedMeetingInfo, SyncedProjectInfo, SyncedVaultInfo } from "./api";
+import type { OrganizationInfo, SyncedMeetingInfo, SyncedProjectInfo, SyncedWorkspaceInfo } from "./api";
 import { json, RequestError, uiText } from "./api";
 
 
@@ -22,9 +22,9 @@ export function projectAncestors(projects: SyncedProjectInfo[], projectId?: stri
   return result;
 }
 
-export function selectedSidebarVault(vaults: SyncedVaultInfo[] | undefined, routeVaultId?: string, savedVaultId?: string): SyncedVaultInfo | undefined {
-  const selected = vaults?.find(({ vaultId }) => vaultId === (routeVaultId ?? savedVaultId));
-  return selected ?? (routeVaultId ? undefined : vaults?.[0]);
+export function selectedSidebarWorkspace(workspaces: SyncedWorkspaceInfo[] | undefined, routeWorkspaceId?: string, savedWorkspaceId?: string): SyncedWorkspaceInfo | undefined {
+  const selected = workspaces?.find(({ workspaceId }) => workspaceId === (routeWorkspaceId ?? savedWorkspaceId));
+  return selected ?? (routeWorkspaceId ? undefined : workspaces?.[0]);
 }
 
 function readSelection(key: string, fallback = ""): string {
@@ -41,7 +41,7 @@ interface SidebarState {
   organizationId: string;
   organizations?: OrganizationInfo[];
   organizationError?: string;
-  vaults?: SyncedVaultInfo[];
+  workspaces?: SyncedWorkspaceInfo[];
   error?: string;
   select: (id: string) => void;
   reload: () => void;
@@ -63,28 +63,28 @@ export function SidebarProvider({ session, children }: { session: SessionInfo; c
     ? organizations?.find((organization) => organization.kind === "personal")?.id ?? "personal"
     : selectedOrganizationId;
   const organizationAllowed = !organizationId || organizations?.some(({ id }) => id === organizationId);
-  const vaultsQuery = useLiveJSON<{ items: SyncedVaultInfo[] }>(session.capabilities.sync && organizationAllowed
-    ? apiQuery("listVaults", { params: { query: organizationId ? { organizationId } : {} } }) : undefined);
+  const workspacesQuery = useLiveJSON<{ items: SyncedWorkspaceInfo[] }>(session.capabilities.sync && organizationAllowed
+    ? apiQuery("listWorkspaces", { params: { query: organizationId ? { organizationId } : {} } }) : undefined);
   const select = (id: string) => {
     save(`dahlia:sidebar:${session.user.id}:organization`, id);
     setOrganizationId(id);
     document.getElementById("account-menu")?.hidePopover();
-    navigateDashboard("/vaults");
+    navigateDashboard("/workspaces");
   };
   useEffect(() => {
     if (!organizationId || organizationId === "personal") return;
     const membershipRemoved = organizations && !organizationAllowed;
-    const accessDenied = vaultsQuery.error instanceof RequestError && vaultsQuery.error.status === 403;
+    const accessDenied = workspacesQuery.error instanceof RequestError && workspacesQuery.error.status === 403;
     if (!membershipRemoved && !accessDenied) return;
     save(`dahlia:sidebar:${session.user.id}:organization`, "personal");
     setOrganizationId("personal");
-    navigateDashboard("/vaults", true);
-  }, [organizationId, organizations, organizationAllowed, vaultsQuery.error, session.user.id]);
-  const reload = () => { organizationsQuery.reload(); vaultsQuery.reload(); };
+    navigateDashboard("/workspaces", true);
+  }, [organizationId, organizations, organizationAllowed, workspacesQuery.error, session.user.id]);
+  const reload = () => { organizationsQuery.reload(); workspacesQuery.reload(); };
   const organizationError = organizationsQuery.error?.message;
-  const vaultError = vaultsQuery.error?.message ?? (organizationId && !organizations ? organizationError : undefined);
+  const workspaceError = workspacesQuery.error?.message ?? (organizationId && !organizations ? organizationError : undefined);
   return <SidebarContext.Provider value={{ userId: session.user.id, organizationId, organizations,
-    organizationError, vaults: vaultsQuery.data?.items, error: vaultError, select, reload }}>
+    organizationError, workspaces: workspacesQuery.data?.items, error: workspaceError, select, reload }}>
     <Fragment key={selectedOrganizationId}>{children}</Fragment>
   </SidebarContext.Provider>;
 }
@@ -102,7 +102,7 @@ function Failure({ message, retry }: { message: string; retry: () => void }) {
 const menuIconPaths = {
   folder: "M3 5h7l2 3h9v12H3V5Z",
   account: "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2Z",
-  vault: "M5 5h14l3 10v4H2v-4L5 5ZM2 15h20M10 17h4",
+  workspace: "M5 5h14l3 10v4H2v-4L5 5ZM2 15h20M10 17h4",
   organization: "M4 21V3h12v18M16 9h4v12M2 21h20M8 7h4M8 11h4M8 15h4M9 21v-3h2v3",
   settings: "m10 2 4 0 1 3 3 1 3-1 2 4-2 2v3l2 2-2 4-3-1-3 1-1 3h-4l-1-3-3-1-3 1-2-4 2-2v-3L1 9l2-4 3 1 3-1 1-3ZM16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
   document: "M5 3h9l5 5v13H5V3ZM14 3v6h5M8 13h8M8 17h6",
@@ -146,49 +146,49 @@ function SignOutButton() {
   </>;
 }
 
-export function Sidebar({ brand, session, children, serverLinks, routeVaultId: resolvedVaultId }: { brand: ReactNode; session: SessionInfo; children: ReactNode; serverLinks?: ReactNode; routeVaultId?: string }) {
+export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceId: resolvedWorkspaceId }: { brand: ReactNode; session: SessionInfo; children: ReactNode; serverLinks?: ReactNode; routeWorkspaceId?: string }) {
   const state = useSidebar();
   const identity = session.user.name || session.user.email || session.user.id;
   const current = state.organizationId
     ? state.organizations?.find(({ id }) => id === state.organizationId)?.name ?? "Organization"
-    : uiText("All accessible Vaults", "アクセス可能なすべての保管庫");
-  const routeVaultId = resolvedVaultId ?? (typeof window === "undefined" ? undefined : window.location.pathname.match(/^\/vaults\/([^/]+)/)?.[1]);
-  const selectionKey = `dahlia:sidebar:${session.user.id}:${state.organizationId || "personal"}:vault`;
-  const routedVault = useLiveJSON<SyncedVaultInfo>(resolvedVaultId ? apiQuery("getVault", { params: { path: { vaultId: resolvedVaultId } } }) : undefined);
-  const selectedVault = selectedSidebarVault(state.vaults, routeVaultId, readSelection(selectionKey)) ?? routedVault.data;
-  const selectedVaultId = selectedVault?.vaultId;
-  const selectableVaults = selectedVault && !state.vaults?.some((vault) => vault.vaultId === selectedVaultId)
-    ? [selectedVault, ...(state.vaults ?? [])] : state.vaults ?? [];
+    : uiText("All accessible Workspaces", "アクセス可能なすべてのワークスペース");
+  const routeWorkspaceId = resolvedWorkspaceId ?? (typeof window === "undefined" ? undefined : window.location.pathname.match(/^\/workspaces\/([^/]+)/)?.[1]);
+  const selectionKey = `dahlia:sidebar:${session.user.id}:${state.organizationId || "personal"}:workspace`;
+  const routedWorkspace = useLiveJSON<SyncedWorkspaceInfo>(resolvedWorkspaceId ? apiQuery("getWorkspace", { params: { path: { workspaceId: resolvedWorkspaceId } } }) : undefined);
+  const selectedWorkspace = selectedSidebarWorkspace(state.workspaces, routeWorkspaceId, readSelection(selectionKey)) ?? routedWorkspace.data;
+  const selectedWorkspaceId = selectedWorkspace?.workspaceId;
+  const selectableWorkspaces = selectedWorkspace && !state.workspaces?.some((workspace) => workspace.workspaceId === selectedWorkspaceId)
+    ? [selectedWorkspace, ...(state.workspaces ?? [])] : state.workspaces ?? [];
   useEffect(() => {
-    if (selectedVaultId) save(selectionKey, selectedVaultId);
-  }, [selectionKey, selectedVaultId]);
+    if (selectedWorkspaceId) save(selectionKey, selectedWorkspaceId);
+  }, [selectionKey, selectedWorkspaceId]);
   return <aside className="sidebar">
     <div className="sidebar-brand">{brand}</div>
     <nav className="primary-navigation" aria-label={uiText("Library navigation", "ライブラリ")}>
       <Tooltip label={uiText("Home", "ホーム")}><a href="/dashboard" aria-label={uiText("Home", "ホーム")} aria-current={typeof window !== "undefined" && window.location.pathname === "/dashboard" ? "page" : undefined}><MenuIcon name="home" /><span className="navigation-label">{uiText("Home", "ホーム")}</span></a></Tooltip>
-      {session.capabilities.sync && <Tooltip label={uiText("Vaults", "保管庫")}><a href="/vaults" aria-label={uiText("Vaults", "保管庫")} aria-current={typeof window !== "undefined" && window.location.pathname === "/vaults" ? "page" : undefined}><MenuIcon name="vault" /><span className="navigation-label">{uiText("Vaults", "保管庫")}</span></a></Tooltip>}
-      {session.capabilities.sync && selectedVaultId && <Search key={`${selectionKey}:${selectedVaultId}`} vaultId={selectedVaultId} />}
+      {session.capabilities.sync && <Tooltip label={uiText("Workspaces", "ワークスペース")}><a href="/workspaces" aria-label={uiText("Workspaces", "ワークスペース")} aria-current={typeof window !== "undefined" && window.location.pathname === "/workspaces" ? "page" : undefined}><MenuIcon name="workspace" /><span className="navigation-label">{uiText("Workspaces", "ワークスペース")}</span></a></Tooltip>}
+      {session.capabilities.sync && selectedWorkspaceId && <Search key={`${selectionKey}:${selectedWorkspaceId}`} workspaceId={selectedWorkspaceId} />}
     </nav>
-    {session.capabilities.sync && selectedVault && <div className="vault-switcher">
-      <span>{uiText("Current Vault", "現在の保管庫")}</span>
-      <button className="dropdown-trigger vault-switcher-trigger" popoverTarget="vault-menu" aria-label={uiText(`Current Vault: ${selectedVault.name}`, `現在の保管庫: ${selectedVault.name}`)}>
-        <AppearanceIcon appearance={collectionAppearance(selectedVault, "vault")} /><span>{selectedVault.name}</span><Chevron expanded />
+    {session.capabilities.sync && selectedWorkspace && <div className="workspace-switcher">
+      <span>{uiText("Current Workspace", "現在のワークスペース")}</span>
+      <button className="dropdown-trigger workspace-switcher-trigger" popoverTarget="workspace-menu" aria-label={uiText(`Current Workspace: ${selectedWorkspace.name}`, `現在のワークスペース: ${selectedWorkspace.name}`)}>
+        <AppearanceIcon appearance={collectionAppearance(selectedWorkspace, "workspace")} /><span>{selectedWorkspace.name}</span><Chevron expanded />
       </button>
-      <nav id="vault-menu" popover="auto" className="dropdown-menu vault-picker" aria-label={uiText("Choose a Vault", "保管庫を選択")}>
-        <strong>{uiText("Vaults", "保管庫")}</strong>
-        {selectableVaults.map((vault) => <a className="dropdown-option" key={vault.vaultId} href={`/vaults/${vault.vaultId}`} aria-current={selectedVaultId === vault.vaultId ? "true" : undefined}>
-          <AppearanceIcon appearance={collectionAppearance(vault, "vault")} /><span>{vault.name}</span>{selectedVaultId === vault.vaultId && <MenuIcon name="check" />}
+      <nav id="workspace-menu" popover="auto" className="dropdown-menu workspace-picker" aria-label={uiText("Choose a Workspace", "ワークスペースを選択")}>
+        <strong>{uiText("Workspaces", "ワークスペース")}</strong>
+        {selectableWorkspaces.map((workspace) => <a className="dropdown-option" key={workspace.workspaceId} href={`/workspaces/${workspace.workspaceId}`} aria-current={selectedWorkspaceId === workspace.workspaceId ? "true" : undefined}>
+          <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><span>{workspace.name}</span>{selectedWorkspaceId === workspace.workspaceId && <MenuIcon name="check" />}
         </a>)}
       </nav>
     </div>}
     <div className="sidebar-scroll">
-      {session.capabilities.sync && <nav className="vault-navigation" aria-label={uiText("Project navigation", "プロジェクト")}>
-        <h2 className="vault-heading">{uiText("Projects", "プロジェクト")}</h2>
+      {session.capabilities.sync && <nav className="workspace-navigation" aria-label={uiText("Project navigation", "プロジェクト")}>
+        <h2 className="workspace-heading">{uiText("Projects", "プロジェクト")}</h2>
         {state.error && <Failure message={state.error} retry={state.reload} />}
-        {!state.vaults && !state.error && <p className="sidebar-status">{state.organizationError ? uiText("Clear the organization selection or retry loading organizations.", "組織の選択を解除するか、組織の読み込みを再試行してください。") : "Loading Vaults…"}</p>}
-        {state.vaults?.length === 0 && <p className="sidebar-status">{uiText("No Vaults", "保管庫がありません")}</p>}
-        {selectedVault && <VaultChildren key={`${state.organizationId}:${selectedVault.vaultId}`} vaultId={selectedVault.vaultId} />}
-        {Boolean(state.vaults?.length) && !selectedVault && <p className="sidebar-status">{uiText("Choose a Vault from Vaults", "保管庫から表示する保管庫を選択してください")}</p>}
+        {!state.workspaces && !state.error && <p className="sidebar-status">{state.organizationError ? uiText("Clear the organization selection or retry loading organizations.", "組織の選択を解除するか、組織の読み込みを再試行してください。") : "Loading Workspaces…"}</p>}
+        {state.workspaces?.length === 0 && <p className="sidebar-status">{uiText("No Workspaces", "ワークスペースがありません")}</p>}
+        {selectedWorkspace && <WorkspaceChildren key={`${state.organizationId}:${selectedWorkspace.workspaceId}`} workspaceId={selectedWorkspace.workspaceId} />}
+        {Boolean(state.workspaces?.length) && !selectedWorkspace && <p className="sidebar-status">{uiText("Choose a Workspace from Workspaces", "ワークスペースから表示するワークスペースを選択してください")}</p>}
       </nav>}
       {session.capabilities.admin ? <nav className="server-navigation" aria-label={uiText("Server settings", "サーバー設定")}>
         <h2 className="section-label">{uiText("Server settings", "サーバー設定")}</h2>
@@ -214,7 +214,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeVaultId: r
         {session.capabilities.sharing && <>
           <span className="nav-divider" />
           <strong>{uiText("Organizations", "組織")}</strong>
-          <button onClick={() => state.select("")} aria-pressed={!state.organizationId}><MenuIcon name="account" /><span>{uiText("All accessible Vaults", "アクセス可能なすべての保管庫")}</span>{!state.organizationId && <MenuIcon name="check" />}</button>
+          <button onClick={() => state.select("")} aria-pressed={!state.organizationId}><MenuIcon name="account" /><span>{uiText("All accessible Workspaces", "アクセス可能なすべてのワークスペース")}</span>{!state.organizationId && <MenuIcon name="check" />}</button>
           {state.organizations?.map((organization) => <button key={organization.id} onClick={() => state.select(organization.id)} aria-pressed={state.organizationId === organization.id}>
             <MenuIcon name="organization" /><span>{organization.name}</span>{state.organizationId === organization.id && <MenuIcon name="check" />}
           </button>)}
@@ -259,11 +259,11 @@ function TreeNode({ id, name, href, initialOpen, children, appearance, project }
   </li>;
 }
 
-function VaultChildren({ vaultId }: { vaultId: string }) {
+function WorkspaceChildren({ workspaceId }: { workspaceId: string }) {
   const route = window.location.pathname;
   const meetingId = route.match(/^\/meetings\/([^/]+)$/)?.[1];
   const projectId = route.match(/^\/projects\/([^/]+)$/)?.[1];
-  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { vaultId: vaultId } } }));
+  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { workspaceId: workspaceId } } }));
   const meetingQuery = useLiveJSON<SyncedMeetingInfo>(meetingId ? apiQuery("getMeeting", { params: { path: { meetingId: meetingId } } }) : undefined);
   const projects = projectsQuery.data?.items;
   const selectedMeeting = meetingQuery.data;
@@ -280,10 +280,10 @@ function VaultChildren({ vaultId }: { vaultId: string }) {
   }
   const projectsUnder = (parentId?: string): ReactNode => (childrenByParent.get(parentId) ?? []).map((project) => {
     const appearance = projectAppearance(project, projects.find((parent) => parent.projectId === project.parentProjectId));
-    return <TreeNode project={project} key={project.projectId} id={`${vaultId}:${project.projectId}`} name={project.name} appearance={appearance} href={`/projects/${project.projectId}`} initialOpen={ancestors.has(project.projectId)}>
+    return <TreeNode project={project} key={project.projectId} id={`${workspaceId}:${project.projectId}`} name={project.name} appearance={appearance} href={`/projects/${project.projectId}`} initialOpen={ancestors.has(project.projectId)}>
       <ul className="sidebar-tree">
         {projectsUnder(project.projectId)}
-        <Meetings vaultId={vaultId} projectId={project.projectId} projectName={project.name} appearance={appearance} selectedMeeting={selectedMeeting} />
+        <Meetings workspaceId={workspaceId} projectId={project.projectId} projectName={project.name} appearance={appearance} selectedMeeting={selectedMeeting} />
       </ul>
     </TreeNode>;
   });
@@ -294,15 +294,15 @@ function VaultChildren({ vaultId }: { vaultId: string }) {
       {projectsUnder()}
     </ul>
     <section className="unassigned-meetings" aria-labelledby="unassigned-heading">
-      <h2 id="unassigned-heading" className="vault-heading">{uiText("Unassigned", "未分類")}</h2>
-      <ul className="sidebar-tree"><Meetings vaultId={vaultId} selectedMeeting={selectedMeeting} /></ul>
+      <h2 id="unassigned-heading" className="workspace-heading">{uiText("Unassigned", "未分類")}</h2>
+      <ul className="sidebar-tree"><Meetings workspaceId={workspaceId} selectedMeeting={selectedMeeting} /></ul>
     </section>
   </>;
 }
 
-function Meetings({ vaultId, projectId, projectName, appearance, selectedMeeting }: { vaultId: string; projectId?: string; projectName?: string; appearance?: Appearance; selectedMeeting?: SyncedMeetingInfo }) {
+function Meetings({ workspaceId, projectId, projectName, appearance, selectedMeeting }: { workspaceId: string; projectId?: string; projectName?: string; appearance?: Appearance; selectedMeeting?: SyncedMeetingInfo }) {
   const filters = projectId ? { projectId, projectScope: "direct" as const } : { projectScope: "unassigned" as const };
-  const query = useLivePage<SyncedMeetingInfo>(apiQuery("listMeetings", { params: { path: { vaultId }, query: filters } }));
+  const query = useLivePage<SyncedMeetingInfo>(apiQuery("listMeetings", { params: { path: { workspaceId }, query: filters } }));
   const items = query.data?.items ?? [];
   const nextCursor = query.data?.nextCursor;
   const loading = query.loading;

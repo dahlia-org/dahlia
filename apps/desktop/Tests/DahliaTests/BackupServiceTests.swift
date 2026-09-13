@@ -23,9 +23,9 @@ import GRDB
                 try String.fetchOne(db, sql: "PRAGMA journal_mode")
             }
 
-            let vault = makeVault(name: "WAL", path: rootURL.appending(path: "Vault").path)
-            try await live.dbQueue.write { try vault.insert($0) }
-            _ = try await service.createGeneration(vaultIds: [vault.id])
+            let workspace = makeWorkspace(name: "WAL", path: rootURL.appending(path: "Workspace").path)
+            try await live.dbQueue.write { try workspace.insert($0) }
+            _ = try await service.createGeneration(workspaceIds: [workspace.id])
 
             #expect(journalMode?.lowercased() == "wal")
             #expect(try await service.listGenerations().first?.isValid == true)
@@ -97,7 +97,7 @@ import GRDB
                 appVersion: "1.2.3",
                 appBuild: "45"
             )
-            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
+            let generation = try await service.createGeneration(workspaceIds: [fixture.meeting.workspaceId])
             let metadata = try #require(generation.metadata)
             #expect(metadata.schemaVersion == AppDatabaseManager.currentSchemaVersion)
             #expect(metadata.migrationIdentifier == AppDatabaseManager.currentMigrationIdentifier)
@@ -157,7 +157,7 @@ import GRDB
             #expect(items.first?.hasUnavailableAudio == true)
             #expect(items.first?.statusDescription == L10n.batchRecordingAudioUnavailable)
             await #expect(throws: BackupServiceError.unresolvedAudio(1)) {
-                try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
+                try await service.createGeneration(workspaceIds: [fixture.meeting.workspaceId])
             }
         }
 
@@ -180,7 +180,7 @@ import GRDB
                     arguments: [
                         UUID.v7(), fixture.session.id, RecordingAudioSource.microphone.rawValue,
                         "legacy/microphone.caf", 16000, 1, fixture.now, 160,
-                        fixture.now, fixture.now, RecordingAudioStorageLocation.vault.rawValue,
+                        fixture.now, fixture.now, RecordingAudioStorageLocation.workspace.rawValue,
                     ]
                 )
             }
@@ -190,7 +190,7 @@ import GRDB
             )
 
             #expect(try await service.preflightItems().isEmpty)
-            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
+            let generation = try await service.createGeneration(workspaceIds: [fixture.meeting.workspaceId])
             let backup = try DatabaseQueue(path: extractedBackupDatabase(generation.fileURL).path)
             let legacyCount = try await backup.read { db in
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM recording_audio_files")
@@ -199,7 +199,7 @@ import GRDB
         }
 
         @Test
-        func restorePreparationStagesVaultAndDefersSafetyBackupUntilStartup() async throws {
+        func restorePreparationStagesWorkspaceAndDefersSafetyBackupUntilStartup() async throws {
             let fixture = try BatchAudioTestFixture(
                 name: "BackupRestorePreparation",
                 meetingStatus: .ready,
@@ -214,10 +214,10 @@ import GRDB
                 appVersion: "1.2.3",
                 appBuild: "45"
             )
-            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
+            let generation = try await service.createGeneration(workspaceIds: [fixture.meeting.workspaceId])
 
-            let marker = try await service.prepareRestore(from: generation, requests: [VaultBackupRestoreRequest(
-                sourceVaultId: fixture.meeting.vaultId, targetVaultId: fixture.meeting.vaultId, mode: .overwrite, name: "Test"
+            let marker = try await service.prepareRestore(from: generation, requests: [WorkspaceBackupRestoreRequest(
+                sourceWorkspaceId: fixture.meeting.workspaceId, targetWorkspaceId: fixture.meeting.workspaceId, mode: .overwrite, name: "Test"
             )])
             let generations = try await service.listGenerations()
             #expect(generations.count == 1)
@@ -252,7 +252,7 @@ import GRDB
                 dbQueue: fixture.database.dbQueue,
                 applicationSupportURL: fixture.testRootURL
             )
-            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
+            let generation = try await service.createGeneration(workspaceIds: [fixture.meeting.workspaceId])
             let editedURL = fixture.testRootURL.appending(path: "future.sqlite")
             try FileManager.default.copyItem(at: generation.fileURL, to: editedURL)
             try editBackupDatabase(editedURL) { db in
@@ -279,59 +279,59 @@ import GRDB
                 dbQueue: fixture.database.dbQueue,
                 applicationSupportURL: fixture.testRootURL
             )
-            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
+            let generation = try await service.createGeneration(workspaceIds: [fixture.meeting.workspaceId])
             try editBackupDatabase(generation.fileURL) { db in
                 try db.execute(
                     sql: """
                     CREATE TRIGGER malicious_audio_delete
                     AFTER DELETE ON recording_audio_segments
                     BEGIN
-                        DELETE FROM vaults;
+                        DELETE FROM workspaces;
                     END
                     """
                 )
             }
 
             await #expect(throws: BackupServiceError.invalidBackup) {
-                try await service.prepareRestore(from: generation, requests: [VaultBackupRestoreRequest(
-                    sourceVaultId: fixture.meeting.vaultId, targetVaultId: fixture.meeting.vaultId, mode: .overwrite, name: "Test"
+                try await service.prepareRestore(from: generation, requests: [WorkspaceBackupRestoreRequest(
+                    sourceWorkspaceId: fixture.meeting.workspaceId, targetWorkspaceId: fixture.meeting.workspaceId, mode: .overwrite, name: "Test"
                 )])
             }
-            let vaultCount = try await fixture.database.dbQueue.read { db in try VaultRecord.fetchCount(db) }
-            #expect(vaultCount == 1)
+            let workspaceCount = try await fixture.database.dbQueue.read { db in try WorkspaceRecord.fetchCount(db) }
+            #expect(workspaceCount == 1)
         }
 
-        @Test
-        func importRejectsLegacyFormat() async throws {
+        @Test(arguments: [1, 2, 3, 4])
+        func importRejectsLegacyFormat(format: Int) async throws {
             let fixture = try BatchAudioTestFixture(name: "LegacyBackup")
             defer { fixture.removeFiles() }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
-            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
+            let generation = try await service.createGeneration(workspaceIds: [fixture.meeting.workspaceId])
             try editBackupDatabase(generation.fileURL) { db in
-                try db.execute(sql: "UPDATE dahlia_backup_metadata SET formatVersion = 1")
+                try db.execute(sql: "UPDATE dahlia_backup_metadata SET formatVersion = ?", arguments: [format])
             }
 
-            await #expect(throws: BackupServiceError.incompatibleFormat(1)) {
+            await #expect(throws: BackupServiceError.incompatibleFormat(format)) {
                 try await service.importGeneration(from: generation.fileURL)
             }
         }
 
         @Test
-        func unprocessedAudioInAnotherVaultDoesNotBlockBackup() async throws {
+        func unprocessedAudioInAnotherWorkspaceDoesNotBlockBackup() async throws {
             let fixture = try BatchAudioTestFixture(name: "ScopedPreflight", endedAt: .now)
             defer { fixture.removeFiles() }
-            let other = makeVault(name: "Other", path: fixture.testRootURL.appending(path: "Other").path)
+            let other = makeWorkspace(name: "Other", path: fixture.testRootURL.appending(path: "Other").path)
             let segment = makeAudioSegment(fixture: fixture)
             try await fixture.database.dbQueue.write { db in
                 try segment.insert(db)
                 try other.insert(db)
             }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
-            #expect(try await service.preflightItems(vaultId: other.id).isEmpty)
-            let generation = try await service.createGeneration(vaultIds: [other.id])
-            #expect(generation.metadata?.vaults.first?.id == other.id)
+            #expect(try await service.preflightItems(workspaceId: other.id).isEmpty)
+            let generation = try await service.createGeneration(workspaceIds: [other.id])
+            #expect(generation.metadata?.workspaces.first?.id == other.id)
             await #expect(throws: BackupServiceError.unresolvedAudio(1)) {
-                try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
+                try await service.createGeneration(workspaceIds: [fixture.meeting.workspaceId])
             }
         }
 
@@ -340,7 +340,7 @@ import GRDB
             let fixture = try BatchAudioTestFixture(name: "RetranscriptionBackup", endedAt: .now, batchCompletedAt: .now)
             defer { fixture.removeFiles() }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
-            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
+            let generation = try await service.createGeneration(workspaceIds: [fixture.meeting.workspaceId])
             let segment = makeAudioSegment(fixture: fixture)
             try await fixture.database.dbQueue.write { db in
                 try segment.insert(db)
@@ -351,8 +351,8 @@ import GRDB
             }
             #expect(try await service.hasProcessingAudio())
             await #expect(throws: BackupServiceError.unresolvedAudio(1)) {
-                try await service.prepareRestore(from: generation, requests: [VaultBackupRestoreRequest(
-                    sourceVaultId: fixture.meeting.vaultId, targetVaultId: .v7(), mode: .newVault, name: "New"
+                try await service.prepareRestore(from: generation, requests: [WorkspaceBackupRestoreRequest(
+                    sourceWorkspaceId: fixture.meeting.workspaceId, targetWorkspaceId: .v7(), mode: .newWorkspace, name: "New"
                 )])
             }
         }
@@ -362,7 +362,7 @@ import GRDB
             let fixture = try BatchAudioTestFixture(name: "MalformedBackup")
             defer { fixture.removeFiles() }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
-            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
+            let generation = try await service.createGeneration(workspaceIds: [fixture.meeting.workspaceId])
             try editBackupDatabase(generation.fileURL) { db in
                 try db
                     .execute(
@@ -404,8 +404,8 @@ import GRDB
             )
         }
 
-        private func makeVault(name: String, path: String) -> VaultRecord {
-            VaultRecord(id: .v7(), path: path, name: name, createdAt: .now, lastOpenedAt: .now)
+        private func makeWorkspace(name: String, path: String) -> WorkspaceRecord {
+            WorkspaceRecord(id: .v7(), path: path, name: name, createdAt: .now, lastOpenedAt: .now)
         }
     }
 #endif

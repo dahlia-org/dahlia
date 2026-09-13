@@ -42,7 +42,7 @@ actor RecordingArchiveService {
             let row = try Row.fetchOne(db, sql: """
             SELECT a.*, c.origin FROM recording_archives a
             JOIN recording_sessions s ON s.id = a.sessionId
-            JOIN vaults v ON v.id = a.vaultId
+            JOIN workspaces v ON v.id = a.workspace_id
             LEFT JOIN dahlia_account_connections c ON c.id = a.connectionId
             WHERE (a.state IN ('pending', 'failed', 'syncing')
                    OR a.state = 'saved' AND EXISTS (SELECT 1 FROM recording_audio_segments
@@ -54,7 +54,7 @@ actor RecordingArchiveService {
               AND v.syncRecoveryState IS NULL AND (v.accountConnectionId IS NULL OR v.syncRole IN ('admin', 'editor'))
               AND s.endedAt IS NOT NULL AND s.batchDiscardedAt IS NULL
               AND NOT EXISTS (SELECT 1 FROM recording_audio_segments WHERE recordingSessionId = a.sessionId AND state NOT IN ('ready', 'purgePending', 'purged'))
-              AND NOT EXISTS (SELECT 1 FROM sync_transactions WHERE vaultId = a.vaultId)
+              AND NOT EXISTS (SELECT 1 FROM sync_transactions WHERE workspace_id = a.workspace_id)
               AND NOT EXISTS (SELECT 1 FROM recording_audio_segments WHERE state IN ('recording', 'finalizing'))
               AND NOT EXISTS (SELECT 1 FROM recording_sessions WHERE batchLastAttemptAt > COALESCE(batchCompletedAt, 0)
                               AND batchLastError IS NULL AND batchDiscardedAt IS NULL)
@@ -169,7 +169,7 @@ actor RecordingArchiveService {
             try await dbQueue.write { db in
                 try Self.checkTarget(archive, in: db)
                 for payload in payloads {
-                    try SyncTransactionRecorder.record(vaultId: archive.vaultId, operations: [
+                    try SyncTransactionRecorder.record(workspaceId: archive.workspaceId, operations: [
                         SyncOperationDraft(entity: .recording, action: .upsert, entityId: archive.sessionId, payloadJSON: payload),
                     ], in: db)
                 }
@@ -271,9 +271,9 @@ actor RecordingArchiveService {
 
     private static func checkTarget(_ archive: RecordingArchiveRecord, in db: Database) throws {
         guard let current = try RecordingArchiveRecord.fetchOne(db, key: archive.sessionId), current.connectionId == archive.connectionId,
-              let vault = try VaultRecord.fetchOne(db, key: archive.vaultId), vault.accountConnectionId == archive.connectionId,
-              archive.connectionId == nil || vault.syncConfirmedConnectionId == archive.connectionId, vault.syncRecoveryState == nil,
-              vault.allowsCanonicalEdits else { throw CancellationError() }
+              let workspace = try WorkspaceRecord.fetchOne(db, key: archive.workspaceId), workspace.accountConnectionId == archive.connectionId,
+              archive.connectionId == nil || workspace.syncConfirmedConnectionId == archive.connectionId, workspace.syncRecoveryState == nil,
+              workspace.allowsCanonicalEdits else { throw CancellationError() }
     }
 
     func withArchivedSegments<T: Sendable>(

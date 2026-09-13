@@ -125,7 +125,7 @@ import Foundation
             )
             let transcription = UsageTelemetryEvent.transcription(.failed(.persistence), mode: .realtime)
             let summary = UsageTelemetryEvent.summary(.failed(.generation), trigger: .automaticAfterBatch)
-            let export = UsageTelemetryEvent.export(.failed(.export), destination: .vault, trigger: .summaryGeneration)
+            let export = UsageTelemetryEvent.export(.failed(.export), destination: .workspace, trigger: .summaryGeneration)
 
             #expect(recording.signalName == "Dahlia.Recording.failed")
             #expect(recording.parameters["stage"] == "capture")

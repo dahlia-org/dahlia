@@ -6,7 +6,7 @@ import Foundation
 import GRDB
 
 enum SyncEntity: String, Codable, DatabaseValueConvertible, Sendable {
-    case vault
+    case workspace
     case project
     case meeting
     case summary
@@ -128,7 +128,7 @@ struct SyncQueuedOperation: Equatable, Sendable {
 struct SyncQueuedTransaction: Sendable {
     let sequence: Int64
     let id: UUID
-    let vaultId: UUID
+    let workspaceId: UUID
     let connectionId: UUID
     let createdAt: Date
     let attempts: Int
@@ -233,7 +233,7 @@ enum SyncTransactionRecorder {
     private static let maximumPayloadBytesPerTransaction = 6 * 1024 * 1024
 
     static func recordBatches(
-        vaultId: UUID,
+        workspaceId: UUID,
         operations: [SyncOperationDraft],
         allowAfterReset: Bool = false,
         connectionIdOverride: UUID? = nil,
@@ -247,7 +247,7 @@ enum SyncTransactionRecorder {
                payloadBytes + operationBytes > maximumPayloadBytesPerTransaction
                || batch.count == maximumOperationsPerTransaction {
                 try record(
-                    vaultId: vaultId,
+                    workspaceId: workspaceId,
                     operations: batch,
                     allowAfterReset: allowAfterReset,
                     connectionIdOverride: connectionIdOverride,
@@ -261,7 +261,7 @@ enum SyncTransactionRecorder {
         }
         if !batch.isEmpty {
             try record(
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 operations: batch,
                 allowAfterReset: allowAfterReset,
                 connectionIdOverride: connectionIdOverride,
@@ -270,32 +270,32 @@ enum SyncTransactionRecorder {
         }
     }
 
-    private static func contentRevision(for operation: SyncOperationDraft, vaultId: UUID, in db: Database) throws -> Int? {
+    private static func contentRevision(for operation: SyncOperationDraft, workspaceId: UUID, in db: Database) throws -> Int? {
         let contentEntity = TextContentEntity(rawValue: operation.entity.rawValue)
         if operation.action != .delete {
             if let contentEntity {
-                try TextContentStore.registerLocal(entity: contentEntity, id: operation.entityId, vaultId: vaultId, in: db)
+                try TextContentStore.registerLocal(entity: contentEntity, id: operation.entityId, workspaceId: workspaceId, in: db)
                 if operation.action != .create, contentEntity != .transcript {
                     try TextContentAccess.requireComplete(entity: contentEntity, id: operation.entityId, in: db)
                 }
             } else if operation.entity == .meeting, operation.action == .create {
                 for entity in [TextContentEntity.summary, .transcript] {
-                    try TextContentStore.registerLocal(entity: entity, id: operation.entityId, vaultId: vaultId, in: db)
+                    try TextContentStore.registerLocal(entity: entity, id: operation.entityId, workspaceId: workspaceId, in: db)
                 }
             }
         }
         guard let contentEntity else { return nil }
         return try Int.fetchOne(
             db,
-            sql: "SELECT residentRevision FROM sync_content_state WHERE vaultId = ? AND entity = ? AND entityId = ?",
-            arguments: [vaultId, contentEntity.rawValue, operation.entityId]
+            sql: "SELECT residentRevision FROM sync_content_state WHERE workspace_id = ? AND entity = ? AND entityId = ?",
+            arguments: [workspaceId, contentEntity.rawValue, operation.entityId]
         )
     }
 
-    /// Records an immutable domain transaction. A Vault without a confirmed remote target stays local-only.
+    /// Records an immutable domain transaction. A Workspace without a confirmed remote target stays local-only.
     @discardableResult
     static func record(
-        vaultId: UUID,
+        workspaceId: UUID,
         operations requestedOperations: [SyncOperationDraft],
         transcriptSegments: [UUID: [SyncTranscriptPatchSegment]] = [:],
         transcriptDeletions: [UUID: [UUID]] = [:],
@@ -316,41 +316,41 @@ enum SyncTransactionRecorder {
         guard Set(operations.map { "\($0.entity.rawValue):\($0.entityId.uuidString)" }).count == operations.count else {
             throw DatabaseError(message: "duplicate sync entity in transaction")
         }
-        guard let vault = try VaultRecord.fetchOne(db, key: vaultId),
-              let targetConnectionId = vault.accountConnectionId else { return nil }
+        guard let workspace = try WorkspaceRecord.fetchOne(db, key: workspaceId),
+              let targetConnectionId = workspace.accountConnectionId else { return nil }
         let connectionId: UUID
         if let connectionIdOverride {
             guard connectionIdOverride == targetConnectionId,
-                  vault.syncConfirmedConnectionId == nil else { return nil }
+                  workspace.syncConfirmedConnectionId == nil else { return nil }
             connectionId = connectionIdOverride
         } else {
-            guard let confirmedConnectionId = vault.syncConfirmedConnectionId,
+            guard let confirmedConnectionId = workspace.syncConfirmedConnectionId,
                   confirmedConnectionId == targetConnectionId else {
                 // A local mutation invalidates a bounded initial snapshot before it can be sent.
-                try SyncTransactionQueue.discardPartialSnapshot(vaultId: vaultId, in: db)
+                try SyncTransactionQueue.discardPartialSnapshot(workspaceId: workspaceId, in: db)
                 return nil
             }
             connectionId = confirmedConnectionId
         }
-        guard operations.contains(where: { $0.entity == .vault }) ? vault.allowsVaultManagement : vault.allowsCanonicalEdits
-        else { throw SyncTransactionQueueError.readOnlyVault }
+        guard operations.contains(where: { $0.entity == .workspace }) ? workspace.allowsWorkspaceManagement : workspace.allowsCanonicalEdits
+        else { throw SyncTransactionQueueError.readOnlyWorkspace }
         for operation in operations where (operation.entity == .meeting && operation.action == .delete)
-            || (operation.entity == .vault && operation.action == .reset) {
+            || (operation.entity == .workspace && operation.action == .reset) {
             // An explicit later deletion supersedes imported audio; retain the original ID until the deletion is acknowledged.
             try db.execute(sql: """
-            UPDATE local_vault_import_operations SET replacementOperationId = ?
+            UPDATE local_workspace_import_operations SET replacementOperationId = ?
             WHERE completedAt IS NULL AND operationId IN (
                 SELECT o.id FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
                 JOIN recording_archives a ON a.sessionId = o.entityId
-                WHERE t.vaultId = ? AND o.entity = 'recording' AND (? = 'vault' OR a.meetingId = ?))
-            """, arguments: [operation.id, vaultId, operation.entity.rawValue, operation.entityId])
+                WHERE t.workspace_id = ? AND o.entity = 'recording' AND (? = 'workspace' OR a.meetingId = ?))
+            """, arguments: [operation.id, workspaceId, operation.entity.rawValue, operation.entityId])
             // Parent deletion also abandons its derived audio uploads, including an unacknowledged commit.
             try db.execute(sql: """
-            DELETE FROM sync_transactions WHERE vaultId = ? AND id IN (
+            DELETE FROM sync_transactions WHERE workspace_id = ? AND id IN (
                 SELECT o.transactionId FROM sync_operations o JOIN recording_archives a ON a.sessionId = o.entityId
-                WHERE o.entity = 'recording' AND (? = 'vault' OR a.meetingId = ?)
+                WHERE o.entity = 'recording' AND (? = 'workspace' OR a.meetingId = ?)
             ) AND NOT EXISTS (SELECT 1 FROM sync_operations o WHERE o.transactionId = sync_transactions.id AND o.entity <> 'recording')
-            """, arguments: [vaultId, operation.entity.rawValue, operation.entityId])
+            """, arguments: [workspaceId, operation.entity.rawValue, operation.entityId])
         }
         if !allowAfterReset {
             let resetIsLast = try Bool.fetchOne(
@@ -360,17 +360,17 @@ enum SyncTransactionRecorder {
                     SELECT 1 FROM sync_operations reset_operation
                     JOIN sync_transactions reset_transaction
                       ON reset_transaction.id = reset_operation.transactionId
-                    WHERE reset_transaction.vaultId = ?
-                      AND reset_operation.entity = 'vault'
+                    WHERE reset_transaction.workspace_id = ?
+                      AND reset_operation.entity = 'workspace'
                       AND reset_operation.action = 'reset'
                       AND NOT EXISTS (
                         SELECT 1 FROM sync_transactions later
-                        WHERE later.vaultId = reset_transaction.vaultId
+                        WHERE later.workspace_id = reset_transaction.workspace_id
                           AND later.sequence > reset_transaction.sequence
                       )
                 )
                 """,
-                arguments: [vaultId]
+                arguments: [workspaceId]
             ) ?? false
             if resetIsLast { return nil }
         }
@@ -379,14 +379,14 @@ enum SyncTransactionRecorder {
         let now = Date()
         try db.execute(
             sql: """
-            INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt)
+            INSERT INTO sync_transactions(id, workspace_id, connectionId, createdAt, availableAt)
             VALUES (?, ?, ?, ?, ?)
             """,
-            arguments: [transactionId, vaultId, connectionId, now, now]
+            arguments: [transactionId, workspaceId, connectionId, now, now]
         )
 
         for (position, operation) in operations.enumerated() {
-            let residentRevision = try contentRevision(for: operation, vaultId: vaultId, in: db)
+            let residentRevision = try contentRevision(for: operation, workspaceId: workspaceId, in: db)
             let attachment = screenshotAttachments[operation.id]
             if let attachment {
                 guard operation.entity == .file, attachment.source.fileId == operation.entityId,
@@ -399,19 +399,19 @@ enum SyncTransactionRecorder {
                 db,
                 sql: """
                 SELECT confirmedRevision FROM sync_entity_state
-                WHERE vaultId = ? AND entity = ? AND entityId = ?
+                WHERE workspace_id = ? AND entity = ? AND entityId = ?
                 """,
-                arguments: [vaultId, operation.entity, operation.entityId]
+                arguments: [workspaceId, operation.entity, operation.entityId]
             )
             let preceding = try Row.fetchOne(
                 db,
                 sql: """
                 SELECT o.action, o.baseRevision FROM sync_operations o
                 JOIN sync_transactions t ON t.id = o.transactionId
-                WHERE t.vaultId = ? AND o.entity = ? AND o.entityId = ?
+                WHERE t.workspace_id = ? AND o.entity = ? AND o.entityId = ?
                 ORDER BY t.sequence DESC, o.position DESC LIMIT 1
                 """,
-                arguments: [vaultId, operation.entity, operation.entityId]
+                arguments: [workspaceId, operation.entity, operation.entityId]
             )
             let precedingAction = (preceding?["action"] as String?).flatMap(SyncAction.init(rawValue:))
             let precedingBase: Int? = preceding?["baseRevision"]
@@ -479,33 +479,33 @@ enum SyncTransactionRecorder {
 
 enum SyncTransactionQueue {
     static let leaseDuration: TimeInterval = 120
-    private static let sendableVaultPredicate = """
+    private static let sendableWorkspacePredicate = """
     v.accountConnectionId = t.connectionId
       AND v.syncConfirmedConnectionId = t.connectionId
       AND v.syncRole IN ('admin', 'editor')
       AND (v.syncRole = 'admin' OR NOT EXISTS (
-        SELECT 1 FROM sync_operations o WHERE o.transactionId = t.id AND o.entity = 'vault'))
+        SELECT 1 FROM sync_operations o WHERE o.transactionId = t.id AND o.entity = 'workspace'))
       AND (v.syncRecoveryState IS NULL OR v.syncRecoveryState IN ('pending', 'recovering'))
     """
 
-    static func discardPartialSnapshot(vaultId: UUID, in db: Database) throws {
+    static func discardPartialSnapshot(workspaceId: UUID, in db: Database) throws {
         let resetSequence = try Int64.fetchOne(
             db,
             sql: """
             SELECT t.sequence FROM sync_transactions t
             JOIN sync_operations o ON o.transactionId = t.id
-            WHERE t.vaultId = ? AND o.entity = 'vault' AND o.action = 'reset'
+            WHERE t.workspace_id = ? AND o.entity = 'workspace' AND o.action = 'reset'
             ORDER BY t.sequence LIMIT 1
             """,
-            arguments: [vaultId]
+            arguments: [workspaceId]
         )
         if let resetSequence {
             try db.execute(
-                sql: "DELETE FROM sync_transactions WHERE vaultId = ? AND sequence > ?",
-                arguments: [vaultId, resetSequence]
+                sql: "DELETE FROM sync_transactions WHERE workspace_id = ? AND sequence > ?",
+                arguments: [workspaceId, resetSequence]
             )
         } else {
-            try db.execute(sql: "DELETE FROM sync_transactions WHERE vaultId = ?", arguments: [vaultId])
+            try db.execute(sql: "DELETE FROM sync_transactions WHERE workspace_id = ?", arguments: [workspaceId])
         }
     }
 
@@ -515,13 +515,13 @@ enum SyncTransactionQueue {
             guard let row = try Row.fetchOne(
                 db,
                 sql: """
-                SELECT t.sequence, t.id, t.vaultId, t.connectionId, t.createdAt, t.attempts
+                SELECT t.sequence, t.id, t.workspace_id, t.connectionId, t.createdAt, t.attempts
                 FROM sync_transactions t
-                JOIN vaults v ON v.id = t.vaultId
-                WHERE \(sendableVaultPredicate)
+                JOIN workspaces v ON v.id = t.workspace_id
+                WHERE \(sendableWorkspacePredicate)
                   AND NOT EXISTS (
                     SELECT 1 FROM sync_entity_state s
-                    WHERE s.vaultId = t.vaultId AND s.entity = 'vault' AND s.entityId = t.vaultId
+                    WHERE s.workspace_id = t.workspace_id AND s.entity = 'workspace' AND s.entityId = t.workspace_id
                       AND s.confirmedRevision IS NULL
                   )
                   AND t.blockedReason IS NULL
@@ -529,7 +529,7 @@ enum SyncTransactionQueue {
                   AND (t.leaseExpiresAt IS NULL OR t.leaseExpiresAt < ?)
                   AND NOT EXISTS (
                     SELECT 1 FROM sync_transactions earlier
-                    WHERE earlier.vaultId = t.vaultId AND earlier.sequence < t.sequence
+                    WHERE earlier.workspace_id = t.workspace_id AND earlier.sequence < t.sequence
                   )
                 ORDER BY t.sequence
                 LIMIT 1
@@ -564,7 +564,7 @@ enum SyncTransactionQueue {
             return SyncQueuedTransaction(
                 sequence: row["sequence"],
                 id: transactionId,
-                vaultId: row["vaultId"],
+                workspaceId: row["workspace_id"],
                 connectionId: row["connectionId"],
                 createdAt: row["createdAt"],
                 attempts: (row["attempts"] as Int) + 1,
@@ -618,7 +618,7 @@ enum SyncTransactionQueue {
         }
         try await dbQueue.write { db in
             guard try matchesExpectedConnection(
-                vaultId: transaction.vaultId,
+                workspaceId: transaction.workspaceId,
                 connectionId: transaction.connectionId,
                 in: db
             ) else { return }
@@ -627,19 +627,19 @@ enum SyncTransactionQueue {
                 sql: """
                 SELECT EXISTS (
                     SELECT 1 FROM sync_transactions
-                    WHERE id = ? AND vaultId = ? AND connectionId = ?
+                    WHERE id = ? AND workspace_id = ? AND connectionId = ?
                 )
                 """,
-                arguments: [transaction.id, transaction.vaultId, transaction.connectionId]
+                arguments: [transaction.id, transaction.workspaceId, transaction.connectionId]
             ) ?? false
             guard transactionStillExists else { return }
             let resetOperation = transaction.operations.contains {
-                $0.entity == .vault && $0.action == .reset
+                $0.entity == .workspace && $0.action == .reset
             }
             let hasLaterTransaction = try Bool.fetchOne(
                 db,
-                sql: "SELECT EXISTS(SELECT 1 FROM sync_transactions WHERE vaultId = ? AND sequence > ?)",
-                arguments: [transaction.vaultId, transaction.sequence]
+                sql: "SELECT EXISTS(SELECT 1 FROM sync_transactions WHERE workspace_id = ? AND sequence > ?)",
+                arguments: [transaction.workspaceId, transaction.sequence]
             ) ?? false
             for record in response.records {
                 // Events are acknowledged uploads, never local canonical/runtime records.
@@ -650,10 +650,10 @@ enum SyncTransactionQueue {
                     SELECT EXISTS(
                         SELECT 1 FROM sync_operations o
                         JOIN sync_transactions t ON t.id = o.transactionId
-                        WHERE t.vaultId = ? AND t.sequence > ? AND o.entity = ? AND o.entityId = ?
+                        WHERE t.workspace_id = ? AND t.sequence > ? AND o.entity = ? AND o.entityId = ?
                     )
                     """,
-                    arguments: [transaction.vaultId, transaction.sequence, record.entity, record.id]
+                    arguments: [transaction.workspaceId, transaction.sequence, record.entity, record.id]
                 ) ?? false
                 if response.receipt != "compact", !hasLaterOperation, let value = record.record {
                     let canonical = try SyncJSON.decoder.decode(
@@ -668,15 +668,15 @@ enum SyncTransactionQueue {
                     let parentDeletedLater = try Bool.fetchOne(db, sql: """
                     SELECT EXISTS(
                         SELECT 1 FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
-                        WHERE t.vaultId = ? AND t.sequence > ? AND o.entity = 'meeting'
+                        WHERE t.workspace_id = ? AND t.sequence > ? AND o.entity = 'meeting'
                             AND o.entityId = ? AND o.action = 'delete'
                     )
-                    """, arguments: [transaction.vaultId, transaction.sequence, parentMeetingId]) ?? false
+                    """, arguments: [transaction.workspaceId, transaction.sequence, parentMeetingId]) ?? false
                     if !parentDeletedLater {
                         try applyCanonical(
                             record.entity,
                             id: record.id,
-                            vaultId: transaction.vaultId,
+                            workspaceId: transaction.workspaceId,
                             value: canonical,
                             preserveLocalFileText: true,
                             in: db
@@ -685,12 +685,12 @@ enum SyncTransactionQueue {
                 }
                 try db.execute(
                     sql: """
-                    INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
+                    INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision)
                     VALUES (?, ?, ?, ?)
-                    ON CONFLICT(vaultId, entity, entityId) DO UPDATE SET
+                    ON CONFLICT(workspace_id, entity, entityId) DO UPDATE SET
                         confirmedRevision = excluded.confirmedRevision
                     """,
-                    arguments: [transaction.vaultId, record.entity, record.id, record.revision]
+                    arguments: [transaction.workspaceId, record.entity, record.id, record.revision]
                 )
                 if record.entity == .transcript,
                    let operation = transaction.operations.first(where: { $0.entity == .transcript && $0.entityId == record.id }) {
@@ -699,55 +699,55 @@ enum SyncTransactionQueue {
                     try db.execute(
                         sql: """
                         UPDATE sync_content_state SET residentRevision = ?, verifiedHash = NULL
-                        WHERE vaultId = ? AND entity = 'transcript' AND entityId = ? AND complete = 1
+                        WHERE workspace_id = ? AND entity = 'transcript' AND entityId = ? AND complete = 1
                           AND coalesce(residentRevision, 0) = ?
                         """,
-                        arguments: [record.revision, transaction.vaultId, record.id, operation.baseRevision]
+                        arguments: [record.revision, transaction.workspaceId, record.id, operation.baseRevision]
                     )
                 } else if TextContentEntity(rawValue: record.entity.rawValue) != nil, !hasLaterOperation {
                     try db.execute(
-                        sql: "UPDATE sync_content_state SET residentRevision = ?, verifiedHash = NULL WHERE vaultId = ? AND entity = ? AND entityId = ? AND complete = 1",
-                        arguments: [record.revision, transaction.vaultId, record.entity, record.id]
+                        sql: "UPDATE sync_content_state SET residentRevision = ?, verifiedHash = NULL WHERE workspace_id = ? AND entity = ? AND entityId = ? AND complete = 1",
+                        arguments: [record.revision, transaction.workspaceId, record.entity, record.id]
                     )
                 }
-                if record.entity == .vault,
-                   transaction.operations.contains(where: { $0.entity == .vault && $0.action == .create }) {
+                if record.entity == .workspace,
+                   transaction.operations.contains(where: { $0.entity == .workspace && $0.action == .create }) {
                     try db.execute(
-                        sql: "UPDATE vaults SET syncRole = 'admin' WHERE id = ? AND syncRole IS NULL",
-                        arguments: [transaction.vaultId]
+                        sql: "UPDATE workspaces SET syncRole = 'admin' WHERE id = ? AND syncRole IS NULL",
+                        arguments: [transaction.workspaceId]
                     )
                 }
             }
             try db.execute(
                 // An ACK can remove the operation protecting a record while a remote read is in flight.
-                sql: "UPDATE vaults SET syncLastCommittedCursor = ?, syncMutationGeneration = syncMutationGeneration + 1 WHERE id = ?",
-                arguments: [response.cursor, transaction.vaultId]
+                sql: "UPDATE workspaces SET syncLastCommittedCursor = ?, syncMutationGeneration = syncMutationGeneration + 1 WHERE id = ?",
+                arguments: [response.cursor, transaction.workspaceId]
             )
             if response.receipt == "compact" {
                 try db.execute(
-                    sql: "UPDATE vaults SET syncPullCursor = NULL, syncRecoveryState = 'pending' WHERE id = ?",
-                    arguments: [transaction.vaultId]
+                    sql: "UPDATE workspaces SET syncPullCursor = NULL, syncRecoveryState = 'pending' WHERE id = ?",
+                    arguments: [transaction.workspaceId]
                 )
             } else if resetOperation {
                 try db.execute(
-                    sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?",
-                    arguments: [response.cursor, transaction.vaultId]
+                    sql: "UPDATE workspaces SET syncPullCursor = ? WHERE id = ?",
+                    arguments: [response.cursor, transaction.workspaceId]
                 )
             }
-            try LocalVaultImportRecord.acknowledge(transactionId: transaction.id, in: db)
+            try LocalWorkspaceImportRecord.acknowledge(transactionId: transaction.id, in: db)
             try db.execute(sql: "DELETE FROM sync_transactions WHERE id = ?", arguments: [transaction.id])
             if resetOperation, !hasLaterTransaction {
                 try db.execute(
                     sql: """
-                    UPDATE vaults SET syncConfirmedConnectionId = NULL,
+                    UPDATE workspaces SET syncConfirmedConnectionId = NULL,
                         syncPullCursor = NULL, syncLastCommittedCursor = NULL
                     WHERE id = ?
                     """,
-                    arguments: [transaction.vaultId]
+                    arguments: [transaction.workspaceId]
                 )
                 try db.execute(
-                    sql: "DELETE FROM sync_entity_state WHERE vaultId = ?",
-                    arguments: [transaction.vaultId]
+                    sql: "DELETE FROM sync_entity_state WHERE workspace_id = ?",
+                    arguments: [transaction.workspaceId]
                 )
             }
         }
@@ -756,7 +756,7 @@ enum SyncTransactionQueue {
     static func applyCanonical(
         _ entity: SyncEntity,
         id: UUID,
-        vaultId: UUID,
+        workspaceId: UUID,
         value: SyncCanonicalPayload,
         remoteRevision: Int? = nil,
         preserveLocalFileText: Bool = false,
@@ -767,29 +767,29 @@ enum SyncTransactionQueue {
         if entity == .summary, let remoteRevision,
            let previousRevision = try Int.fetchOne(
                db,
-               sql: "SELECT confirmedRevision FROM sync_entity_state WHERE vaultId = ? AND entity = 'summary' AND entityId = ?",
-               arguments: [vaultId, id]
+               sql: "SELECT confirmedRevision FROM sync_entity_state WHERE workspace_id = ? AND entity = 'summary' AND entityId = ?",
+               arguments: [workspaceId, id]
            ), remoteRevision > previousRevision {
             try SummaryExportRecord.filter(Column("meetingId") == id).deleteAll(db)
         }
-        if try TextContentStore.observe(entity: entity, id: id, vaultId: vaultId, value: value, in: db) { return }
+        if try TextContentStore.observe(entity: entity, id: id, workspaceId: workspaceId, value: value, in: db) { return }
         switch entity {
-        case .vault:
+        case .workspace:
             if let organizationId = value.organizationId,
-               try VaultRecord.fetchOne(db, key: vaultId)?.organizationId != organizationId {
+               try WorkspaceRecord.fetchOne(db, key: workspaceId)?.organizationId != organizationId {
                 throw SyncTransactionQueueError.invalidReceipt
             }
             if let name = value.name {
                 try db.execute(
-                    sql: "UPDATE vaults SET name = ?, icon = ?, color = ? WHERE id = ?",
-                    arguments: [name, value.icon, value.color, vaultId]
+                    sql: "UPDATE workspaces SET name = ?, icon = ?, color = ? WHERE id = ?",
+                    arguments: [name, value.icon, value.color, workspaceId]
                 )
             }
         case .project:
             guard let name = value.name, let createdAt = value.createdAt else { return }
             try ProjectRecord.applyCanonical(
                 id: id,
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 parentProjectId: value.parentProjectId,
                 name: name,
                 createdAt: createdAt,
@@ -803,7 +803,7 @@ enum SyncTransactionQueue {
                   let createdAt = value.createdAt, let updatedAt = value.updatedAt else { return }
             try db.execute(sql: """
             INSERT INTO meetings(
-                id, vaultId, projectId, name, description, status, duration,
+                id, workspace_id, projectId, name, description, status, duration,
                 createdAt, updatedAt, recordingStartedAt
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET projectId = excluded.projectId, name = excluded.name,
@@ -811,7 +811,7 @@ enum SyncTransactionQueue {
                 createdAt = excluded.createdAt, updatedAt = excluded.updatedAt,
                 recordingStartedAt = excluded.recordingStartedAt
             """, arguments: [
-                id, vaultId, value.projectId, name, value.description ?? "", status,
+                id, workspaceId, value.projectId, name, value.description ?? "", status,
                 value.duration, createdAt, updatedAt, value.recordingStartedAt,
             ])
             try MeetingCalendarSync(
@@ -823,9 +823,9 @@ enum SyncTransactionQueue {
                     ("transcript", true, value.transcriptRevision == 0),
                 ] {
                     try db.execute(sql: """
-                    INSERT INTO sync_content_state(vaultId, entity, entityId, present, complete)
+                    INSERT INTO sync_content_state(workspace_id, entity, entityId, present, complete)
                     VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING
-                    """, arguments: [vaultId, entity, id, present, complete])
+                    """, arguments: [workspaceId, entity, id, present, complete])
                 }
             }
         case .summary:
@@ -835,17 +835,17 @@ enum SyncTransactionQueue {
                 try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [id])
             }
         case .recording:
-            try RecordingArchiveRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
+            try RecordingArchiveRecord.applyCanonical(id: id, workspaceId: workspaceId, value: value, in: db)
         case .file:
             try FileRecord.applyCanonical(
                 id: id,
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 value: value,
                 preserveTextBody: preserveLocalFileText,
                 in: db
             )
         case .meetingAttachment:
-            try MeetingAttachmentRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
+            try MeetingAttachmentRecord.applyCanonical(id: id, workspaceId: workspaceId, value: value, in: db)
         case .transcript:
             if let info = value.transcript {
                 try TranscriptRecord.applyCanonical(meetingId: id, info: info, in: db)
@@ -855,35 +855,35 @@ enum SyncTransactionQueue {
         }
     }
 
-    static func hasPending(vaultId: UUID, in db: Database) throws -> Bool {
+    static func hasPending(workspaceId: UUID, in db: Database) throws -> Bool {
         try Bool.fetchOne(
             db,
-            sql: "SELECT EXISTS(SELECT 1 FROM sync_transactions WHERE vaultId = ?)",
-            arguments: [vaultId]
+            sql: "SELECT EXISTS(SELECT 1 FROM sync_transactions WHERE workspace_id = ?)",
+            arguments: [workspaceId]
         ) ?? false
     }
 
-    static func hasPending(vaultId: UUID, dbQueue: DatabaseQueue) async throws -> Bool {
+    static func hasPending(workspaceId: UUID, dbQueue: DatabaseQueue) async throws -> Bool {
         try await dbQueue.read { db in
-            try hasPending(vaultId: vaultId, in: db)
+            try hasPending(workspaceId: workspaceId, in: db)
         }
     }
 
     static func reconcileRevisions(
         _ changes: [SyncChangePage.Change],
-        vaultId: UUID,
+        workspaceId: UUID,
         connectionId: UUID,
         dbQueue: DatabaseQueue
     ) async throws {
         try await dbQueue.write { db in
-            guard try matchesExpectedConnection(vaultId: vaultId, connectionId: connectionId, in: db),
+            guard try matchesExpectedConnection(workspaceId: workspaceId, connectionId: connectionId, in: db),
                   try Bool.fetchOne(
                       db,
-                      sql: "SELECT EXISTS(SELECT 1 FROM sync_entity_state WHERE vaultId = ? AND entity = 'vault' AND entityId = ? AND confirmedRevision IS NULL)",
-                      arguments: [vaultId, vaultId]
+                      sql: "SELECT EXISTS(SELECT 1 FROM sync_entity_state WHERE workspace_id = ? AND entity = 'workspace' AND entityId = ? AND confirmedRevision IS NULL)",
+                      arguments: [workspaceId, workspaceId]
                   ) == true else { return }
             guard changes.contains(where: {
-                $0.entity == .vault && $0.entityId == vaultId && $0.record != nil && $0.revision != nil
+                $0.entity == .workspace && $0.entityId == workspaceId && $0.record != nil && $0.revision != nil
             }) else { throw SyncTransactionQueueError.invalidReceipt }
 
             // These revisions permit queued edits to resume; the cursor stays nil until canonical data is applied.
@@ -891,11 +891,11 @@ enum SyncTransactionQueue {
             for change in changes {
                 try db.execute(
                     sql: """
-                    INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
+                    INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision)
                     VALUES (?, ?, ?, ?)
-                    ON CONFLICT(vaultId, entity, entityId) DO UPDATE SET confirmedRevision = excluded.confirmedRevision
+                    ON CONFLICT(workspace_id, entity, entityId) DO UPDATE SET confirmedRevision = excluded.confirmedRevision
                     """,
-                    arguments: [vaultId, change.entity, change.entityId, change.revision]
+                    arguments: [workspaceId, change.entity, change.entityId, change.revision]
                 )
                 if let revision = change.revision {
                     revisions["\(change.entity.rawValue):\(change.entityId)"] = revision
@@ -906,9 +906,9 @@ enum SyncTransactionQueue {
                 sql: """
                 SELECT o.id, o.entity, o.entityId, o.action, o.baseRevision, t.attempts FROM sync_operations o
                 JOIN sync_transactions t ON t.id = o.transactionId
-                WHERE t.vaultId = ? ORDER BY t.sequence, o.position
+                WHERE t.workspace_id = ? ORDER BY t.sequence, o.position
                 """,
-                arguments: [vaultId]
+                arguments: [workspaceId]
             )
             for operation in operations {
                 let id: UUID = operation["id"]
@@ -924,8 +924,8 @@ enum SyncTransactionQueue {
                 } else if TextContentEntity(rawValue: entity.rawValue) != nil,
                           try Int.fetchOne(
                               db,
-                              sql: "SELECT residentRevision FROM sync_content_state WHERE vaultId = ? AND entity = ? AND entityId = ?",
-                              arguments: [vaultId, entity, entityId]
+                              sql: "SELECT residentRevision FROM sync_content_state WHERE workspace_id = ? AND entity = ? AND entityId = ?",
+                              arguments: [workspaceId, entity, entityId]
                           ) != nil {
                     operation["baseRevision"]
                 } else if let revision = revisions[key] {
@@ -944,16 +944,16 @@ enum SyncTransactionQueue {
         }
     }
 
-    static func matchesExpectedConnection(vaultId: UUID, connectionId: UUID, in db: Database) throws -> Bool {
+    static func matchesExpectedConnection(workspaceId: UUID, connectionId: UUID, in db: Database) throws -> Bool {
         try Bool.fetchOne(
             db,
             sql: """
             SELECT EXISTS (
-                SELECT 1 FROM vaults
+                SELECT 1 FROM workspaces
                 WHERE id = ? AND accountConnectionId = ? AND syncConfirmedConnectionId = ?
             )
             """,
-            arguments: [vaultId, connectionId, connectionId]
+            arguments: [workspaceId, connectionId, connectionId]
         ) ?? false
     }
 
@@ -963,17 +963,17 @@ enum SyncTransactionQueue {
             sql: """
             SELECT EXISTS (
                 SELECT 1 FROM sync_transactions t
-                JOIN vaults v ON v.id = t.vaultId
-                WHERE t.id = ? AND t.vaultId = ? AND t.connectionId = ?
-                  AND \(sendableVaultPredicate)
+                JOIN workspaces v ON v.id = t.workspace_id
+                WHERE t.id = ? AND t.workspace_id = ? AND t.connectionId = ?
+                  AND \(sendableWorkspacePredicate)
             )
             """,
-            arguments: [transaction.id, transaction.vaultId, transaction.connectionId]
+            arguments: [transaction.id, transaction.workspaceId, transaction.connectionId]
         ) ?? false
     }
 
     static func isConfirmed(
-        vaultId: UUID,
+        workspaceId: UUID,
         entity: SyncEntity,
         entityId: UUID,
         revision: Int?,
@@ -985,11 +985,11 @@ enum SyncTransactionQueue {
                 sql: """
                 SELECT EXISTS (
                     SELECT 1 FROM sync_entity_state
-                    WHERE vaultId = ? AND entity = ? AND entityId = ?
+                    WHERE workspace_id = ? AND entity = ? AND entityId = ?
                       AND confirmedRevision IS ?
                 )
                 """,
-                arguments: [vaultId, entity, entityId, revision]
+                arguments: [workspaceId, entity, entityId, revision]
             ) ?? false
         }
     }
@@ -1010,35 +1010,35 @@ enum SyncTransactionQueue {
         try await screenshotContent.attachment(operationId: operationId, dbQueue: dbQueue)
     }
 
-    static func discard(vaultId: UUID, fromSequence: Int64 = 0, in db: Database) throws {
+    static func discard(workspaceId: UUID, fromSequence: Int64 = 0, in db: Database) throws {
         try db.execute(
-            sql: "DELETE FROM sync_transactions WHERE vaultId = ? AND sequence >= ?",
-            arguments: [vaultId, fromSequence]
+            sql: "DELETE FROM sync_transactions WHERE workspace_id = ? AND sequence >= ?",
+            arguments: [workspaceId, fromSequence]
         )
         if db.changesCount > 0 {
-            try db.execute(sql: "UPDATE vaults SET syncMutationGeneration = syncMutationGeneration + 1 WHERE id = ?", arguments: [vaultId])
+            try db.execute(sql: "UPDATE workspaces SET syncMutationGeneration = syncMutationGeneration + 1 WHERE id = ?", arguments: [workspaceId])
         }
     }
 
-    static func acceptServerVersion(vaultId: UUID, dbQueue: DatabaseQueue) async throws {
-        _ = try await discardBlocked(vaultId: vaultId, reason: .conflict, dbQueue: dbQueue)
+    static func acceptServerVersion(workspaceId: UUID, dbQueue: DatabaseQueue) async throws {
+        _ = try await discardBlocked(workspaceId: workspaceId, reason: .conflict, dbQueue: dbQueue)
     }
 
-    static func discardInvalidTransaction(vaultId: UUID, dbQueue: DatabaseQueue) async throws {
-        if try await discardBlocked(vaultId: vaultId, reason: .validation, dbQueue: dbQueue) {
+    static func discardInvalidTransaction(workspaceId: UUID, dbQueue: DatabaseQueue) async throws {
+        if try await discardBlocked(workspaceId: workspaceId, reason: .validation, dbQueue: dbQueue) {
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: dbQueue)
         }
     }
 
-    static func retryInvalidTransaction(vaultId: UUID, dbQueue: DatabaseQueue) async throws {
+    static func retryInvalidTransaction(workspaceId: UUID, dbQueue: DatabaseQueue) async throws {
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
                 UPDATE sync_transactions SET blockedReason = NULL, serverResponseJSON = NULL,
                     availableAt = ?, leaseExpiresAt = NULL
-                WHERE vaultId = ? AND blockedReason = 'validation'
+                WHERE workspace_id = ? AND blockedReason = 'validation'
                 """,
-                arguments: [Date(), vaultId]
+                arguments: [Date(), workspaceId]
             )
         }
     }
@@ -1057,7 +1057,7 @@ enum SyncTransactionQueue {
     }
 
     private static func discardBlocked(
-        vaultId: UUID,
+        workspaceId: UUID,
         reason: SyncBlockedReason,
         dbQueue: DatabaseQueue
     ) async throws -> Bool {
@@ -1066,90 +1066,90 @@ enum SyncTransactionQueue {
                 db,
                 sql: """
                 SELECT sequence FROM sync_transactions
-                WHERE vaultId = ? AND blockedReason = ? ORDER BY sequence LIMIT 1
+                WHERE workspace_id = ? AND blockedReason = ? ORDER BY sequence LIMIT 1
                 """,
-                arguments: [vaultId, reason]
+                arguments: [workspaceId, reason]
             ) else { return false }
-            let hasConfirmedVault = try Bool.fetchOne(
+            let hasConfirmedWorkspace = try Bool.fetchOne(
                 db,
-                sql: "SELECT EXISTS(SELECT 1 FROM sync_entity_state WHERE vaultId = ? AND entity = 'vault' AND entityId = ?)",
-                arguments: [vaultId, vaultId]
+                sql: "SELECT EXISTS(SELECT 1 FROM sync_entity_state WHERE workspace_id = ? AND entity = 'workspace' AND entityId = ?)",
+                arguments: [workspaceId, workspaceId]
             ) ?? false
-            let rebuildInitialSnapshot = reason == .validation && !hasConfirmedVault
+            let rebuildInitialSnapshot = reason == .validation && !hasConfirmedWorkspace
             let sequence: Int64 = blocked["sequence"]
             if !rebuildInitialSnapshot {
                 let abandoned = try Row.fetchAll(db, sql: """
                 SELECT DISTINCT c.entity, c.entityId FROM sync_content_state c
                 JOIN sync_operations o ON o.entity = c.entity AND o.entityId = c.entityId
-                JOIN sync_transactions t ON t.id = o.transactionId AND t.vaultId = c.vaultId
-                WHERE c.vaultId = ? AND t.sequence >= ?
-                """, arguments: [vaultId, sequence])
+                JOIN sync_transactions t ON t.id = o.transactionId AND t.workspace_id = c.workspace_id
+                WHERE c.workspace_id = ? AND t.sequence >= ?
+                """, arguments: [workspaceId, sequence])
                 for row in abandoned {
                     guard let entity = TextContentEntity(rawValue: row["entity"]) else { throw TextContentError.integrityFailure }
                     let id: UUID = row["entityId"]
                     try TextContentStore.releaseBody(entity: entity, id: id, in: db)
                     try db.execute(
-                        sql: "UPDATE sync_content_state SET present = 1, residentRevision = NULL WHERE vaultId = ? AND entity = ? AND entityId = ?",
-                        arguments: [vaultId, entity.rawValue, id]
+                        sql: "UPDATE sync_content_state SET present = 1, residentRevision = NULL WHERE workspace_id = ? AND entity = ? AND entityId = ?",
+                        arguments: [workspaceId, entity.rawValue, id]
                     )
                 }
             }
-            try discard(vaultId: vaultId, fromSequence: sequence, in: db)
-            try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
+            try discard(workspaceId: workspaceId, fromSequence: sequence, in: db)
+            try db.execute(sql: "DELETE FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspaceId])
             if !rebuildInitialSnapshot {
                 // Keep the pull target distinct from an interrupted initial upload until reconciliation completes.
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, NULL)",
-                    arguments: [vaultId, vaultId]
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, NULL)",
+                    arguments: [workspaceId, workspaceId]
                 )
             }
             try db.execute(
                 sql: """
-                UPDATE vaults SET
+                UPDATE workspaces SET
                     syncConfirmedConnectionId = CASE WHEN ? THEN NULL ELSE syncConfirmedConnectionId END,
                     syncPullCursor = NULL
                 WHERE id = ?
                 """,
-                arguments: [rebuildInitialSnapshot, vaultId]
+                arguments: [rebuildInitialSnapshot, workspaceId]
             )
             return rebuildInitialSnapshot
         }
     }
 
     static func reapplyLocalVersion(
-        vaultId: UUID,
+        workspaceId: UUID,
         dbQueue: DatabaseQueue,
         screenshotContent: ScreenshotContentProvider = .shared
     ) async throws {
         let screenshotIds = try await dbQueue.read { db in
-            try screenshotIdsRequiringReupload(vaultId: vaultId, in: db)
+            try screenshotIdsRequiringReupload(workspaceId: workspaceId, in: db)
         }
-        screenshotContent.retainOriginals(vaultIds: [vaultId], dbQueue: dbQueue)
-        defer { screenshotContent.releaseOriginals(vaultIds: [vaultId], dbQueue: dbQueue) }
-        try await screenshotContent.prepareOriginals(vaultId: vaultId, dbQueue: dbQueue, screenshotIds: screenshotIds)
-        let rebuildVault = try await dbQueue.write { db -> Bool in
+        screenshotContent.retainOriginals(workspaceIds: [workspaceId], dbQueue: dbQueue)
+        defer { screenshotContent.releaseOriginals(workspaceIds: [workspaceId], dbQueue: dbQueue) }
+        try await screenshotContent.prepareOriginals(workspaceId: workspaceId, dbQueue: dbQueue, screenshotIds: screenshotIds)
+        let rebuildWorkspace = try await dbQueue.write { db -> Bool in
             guard let first = try Row.fetchOne(
                 db,
                 sql: """
                 SELECT sequence, serverResponseJSON FROM sync_transactions
-                WHERE vaultId = ? AND blockedReason = 'conflict' ORDER BY sequence LIMIT 1
+                WHERE workspace_id = ? AND blockedReason = 'conflict' ORDER BY sequence LIMIT 1
                 """,
-                arguments: [vaultId]
+                arguments: [workspaceId]
             ) else { return false }
             let sequence: Int64 = first["sequence"]
             let response: String? = first["serverResponseJSON"]
             let directMissingEntities = missingConflictEntities(response)
             let existingEntities = existingConflictEntities(response)
-            if directMissingEntities.contains(.init(entity: .vault, id: vaultId)) {
-                try discard(vaultId: vaultId, in: db)
-                try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
+            if directMissingEntities.contains(.init(entity: .workspace, id: workspaceId)) {
+                try discard(workspaceId: workspaceId, in: db)
+                try db.execute(sql: "DELETE FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspaceId])
                 try db.execute(
                     sql: """
-                    UPDATE vaults SET syncConfirmedConnectionId = NULL,
+                    UPDATE workspaces SET syncConfirmedConnectionId = NULL,
                         syncPullCursor = NULL, syncLastCommittedCursor = NULL
                     WHERE id = ?
                     """,
-                    arguments: [vaultId]
+                    arguments: [workspaceId]
                 )
                 return true
             }
@@ -1165,22 +1165,22 @@ enum SyncTransactionQueue {
             let missingEntities = directMissingEntities.union(missingMeetings)
             for missing in missingEntities {
                 try db.execute(
-                    sql: "DELETE FROM sync_entity_state WHERE vaultId = ? AND entity = ? AND entityId = ?",
-                    arguments: [vaultId, missing.entity, missing.id]
+                    sql: "DELETE FROM sync_entity_state WHERE workspace_id = ? AND entity = ? AND entityId = ?",
+                    arguments: [workspaceId, missing.entity, missing.id]
                 )
             }
-            applyConflictRevision(response, vaultId: vaultId, in: db)
+            applyConflictRevision(response, workspaceId: workspaceId, in: db)
             let transactionIds = try UUID.fetchAll(
                 db,
-                sql: "SELECT id FROM sync_transactions WHERE vaultId = ? AND sequence >= ? ORDER BY sequence",
-                arguments: [vaultId, sequence]
+                sql: "SELECT id FROM sync_transactions WHERE workspace_id = ? AND sequence >= ? ORDER BY sequence",
+                arguments: [workspaceId, sequence]
             )
             var queued: [RequeuedTransaction] = []
             let transcriptMeetings = try UUID.fetchAll(db, sql: """
             SELECT DISTINCT o.entityId FROM sync_operations o
             JOIN sync_transactions t ON t.id = o.transactionId JOIN meetings m ON m.id = o.entityId
-            WHERE t.vaultId = ? AND t.sequence >= ? AND o.entity = 'transcript' ORDER BY o.entityId
-            """, arguments: [vaultId, sequence])
+            WHERE t.workspace_id = ? AND t.sequence >= ? AND o.entity = 'transcript' ORDER BY o.entityId
+            """, arguments: [workspaceId, sequence])
             let projectOperations = try missingProjectOperations(missingProjects, in: db)
             if !projectOperations.isEmpty {
                 queued.append(.init(operations: projectOperations, segments: [:], deletions: [:], attachments: [:]))
@@ -1263,10 +1263,10 @@ enum SyncTransactionQueue {
                     ))
                 }
             }
-            try discard(vaultId: vaultId, fromSequence: sequence, in: db)
+            try discard(workspaceId: workspaceId, fromSequence: sequence, in: db)
             for transaction in queued {
                 try SyncTransactionRecorder.record(
-                    vaultId: vaultId,
+                    workspaceId: workspaceId,
                     operations: transaction.operations,
                     transcriptSegments: transaction.segments,
                     transcriptDeletions: transaction.deletions,
@@ -1278,24 +1278,24 @@ enum SyncTransactionQueue {
             try TranscriptRecord.reapplySnapshots(meetingIds: transcriptMeetings, in: db)
             return false
         }
-        if rebuildVault {
+        if rebuildWorkspace {
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: dbQueue, screenshotContent: screenshotContent)
         }
     }
 
-    /// A missing Vault requires a complete snapshot; otherwise only recreated screenshots need originals.
-    private static func screenshotIdsRequiringReupload(vaultId: UUID, in db: Database) throws -> [UUID]? {
+    /// A missing Workspace requires a complete snapshot; otherwise only recreated screenshots need originals.
+    private static func screenshotIdsRequiringReupload(workspaceId: UUID, in db: Database) throws -> [UUID]? {
         guard let blocked = try Row.fetchOne(db, sql: """
         SELECT sequence, serverResponseJSON FROM sync_transactions
-        WHERE vaultId = ? AND blockedReason = 'conflict' ORDER BY sequence LIMIT 1
-        """, arguments: [vaultId]) else { return [] }
+        WHERE workspace_id = ? AND blockedReason = 'conflict' ORDER BY sequence LIMIT 1
+        """, arguments: [workspaceId]) else { return [] }
         let missing = missingConflictEntities(blocked["serverResponseJSON"])
-        if missing.contains(.init(entity: .vault, id: vaultId)) { return nil }
+        if missing.contains(.init(entity: .workspace, id: workspaceId)) { return nil }
         let sequence: Int64 = blocked["sequence"]
         return try UUID.fetchAll(db, sql: """
         SELECT DISTINCT o.entityId FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
-        WHERE t.vaultId = ? AND t.sequence >= ? AND o.entity = 'file' AND o.action != 'delete'
-        """, arguments: [vaultId, sequence]).filter { missing.contains(.init(entity: .file, id: $0)) }
+        WHERE t.workspace_id = ? AND t.sequence >= ? AND o.entity = 'file' AND o.action != 'delete'
+        """, arguments: [workspaceId, sequence]).filter { missing.contains(.init(entity: .file, id: $0)) }
     }
 
     private static func missingProjectOperations(
@@ -1342,7 +1342,7 @@ enum SyncTransactionQueue {
         return .init(segments: segments, deletions: deletions)
     }
 
-    private static func applyConflictRevision(_ response: String?, vaultId: UUID, in db: Database) {
+    private static func applyConflictRevision(_ response: String?, workspaceId: UUID, in db: Database) {
         guard let response, let data = response.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let conflicts = object["conflicts"] as? [[String: Any]] else { return }
@@ -1352,11 +1352,11 @@ enum SyncTransactionQueue {
             let revision = conflict["serverRevision"] as? Int
             try? db.execute(
                 sql: """
-                INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
+                INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision)
                 VALUES (?, ?, ?, ?)
-                ON CONFLICT(vaultId, entity, entityId) DO UPDATE SET confirmedRevision = excluded.confirmedRevision
+                ON CONFLICT(workspace_id, entity, entityId) DO UPDATE SET confirmedRevision = excluded.confirmedRevision
                 """,
-                arguments: [vaultId, entity, id, revision]
+                arguments: [workspaceId, entity, id, revision]
             )
         }
     }
@@ -1415,7 +1415,7 @@ enum SyncTransactionQueue {
             return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         }
         let createdAt: Date? = switch entity {
-        case .vault: try VaultRecord.fetchOne(db, key: entityId)?.createdAt
+        case .workspace: try WorkspaceRecord.fetchOne(db, key: entityId)?.createdAt
         case .project: try ProjectRecord.fetchOne(db, key: entityId)?.createdAt
         case .meeting: try MeetingRecord.fetchOne(db, key: entityId)?.createdAt
         default: nil
@@ -1435,7 +1435,7 @@ enum SyncTransactionQueueError: Error {
     case invalidReceipt
     case pendingTransactions
     case serverCopyExists
-    case readOnlyVault
+    case readOnlyWorkspace
 }
 
 private extension SyncTranscriptPatchSegment {

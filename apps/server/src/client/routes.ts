@@ -15,7 +15,7 @@ const coreDashboardPaths = new Set([
   "/sessions",
   "/dashboard",
   "/dashboard/settings",
-  "/vaults",
+  "/workspaces",
   "/organizations",
   "/admin",
   "/admin/models",
@@ -28,16 +28,16 @@ const coreDashboardPaths = new Set([
 export function isCoreDashboardPath(path: string): boolean {
   return coreDashboardPaths.has(path)
     || /^\/(?:meetings|projects|files|organizations)\/[^/]+$/.test(path)
-    || /^\/vaults\/[^/]+(?:\/(?:meetings|projects)\/[^/]+)?$/.test(path)
+    || /^\/workspaces\/[^/]+(?:\/(?:meetings|projects)\/[^/]+)?$/.test(path)
     || /^\/admin\/organizations\/[^/]+$/.test(path)
     || /^\/accept-invitation\/[^/]+$/.test(path);
 }
 
 export type DashboardRoute = {
-  page?: "file" | "overview" | "settings" | "vaults" | "vault" | "meeting" | "project" | "organizations" | "organization" | "invitation" | "admin-users" | "admin-organizations" | "admin-organization" | "admin-settings";
+  page?: "file" | "overview" | "settings" | "workspaces" | "workspace" | "meeting" | "project" | "organizations" | "organization" | "invitation" | "admin-users" | "admin-organizations" | "admin-organization" | "admin-settings";
   redirect?: string;
   fileId?: string;
-  vaultId?: string;
+  workspaceId?: string;
   meetingId?: string;
   projectId?: string;
   invitationId?: string;
@@ -67,7 +67,7 @@ export function resolveDashboardRoute(
       ? { page: "invitation", invitationId: invitation[1] }
       : { redirect: "/dashboard" };
   }
-  if (path === "/vaults") return capabilities.sync ? { page: "vaults" } : { redirect: "/dashboard" };
+  if (path === "/workspaces") return capabilities.sync ? { page: "workspaces" } : { redirect: "/dashboard" };
   const detail = path.match(/^\/(meetings|projects|files)\/([^/]+)$/);
   if (detail && validID(({ meetings: "meeting", projects: "project", files: "file" } as const)[detail[1] as "meetings" | "projects" | "files"], detail[2])) {
     if (!capabilities.sync) return { redirect: "/dashboard" };
@@ -75,8 +75,8 @@ export function resolveDashboardRoute(
     if (detail[1] === "projects") return { page: "project", projectId: detail[2] };
     return { page: "file", fileId: detail[2] };
   }
-  const vault = path.match(/^\/vaults\/([^/]+)$/);
-  if (vault && validID("vault", vault[1])) return capabilities.sync ? { page: "vault", vaultId: vault[1] } : { redirect: "/dashboard" };
+  const workspace = path.match(/^\/workspaces\/([^/]+)$/);
+  if (workspace && validID("workspace", workspace[1])) return capabilities.sync ? { page: "workspace", workspaceId: workspace[1] } : { redirect: "/dashboard" };
   if (path === "/dashboard/settings") {
     return { page: "settings" };
   }

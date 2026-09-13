@@ -11,7 +11,7 @@ import GRDB
         let database: AppDatabaseManager
         let testRootURL: URL
         let managedRootURL: URL
-        let vaultURL: URL
+        let workspaceURL: URL
         let now: Date
         let meeting: MeetingRecord
         let session: RecordingSessionRecord
@@ -27,13 +27,13 @@ import GRDB
             testRootURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-\(name)-test-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
             managedRootURL = testRootURL.appending(path: "Managed", directoryHint: .isDirectory)
-            vaultURL = testRootURL.appending(path: "Vault", directoryHint: .isDirectory)
+            workspaceURL = testRootURL.appending(path: "Workspace", directoryHint: .isDirectory)
             now = Date(timeIntervalSince1970: 1_776_384_000)
 
-            let vault = VaultRecord(id: .v7(), path: vaultURL.path, name: "Test", createdAt: now, lastOpenedAt: now)
+            let workspace = WorkspaceRecord(id: .v7(), path: workspaceURL.path, name: "Test", createdAt: now, lastOpenedAt: now)
             meeting = MeetingRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: nil,
                 name: name,
                 status: meetingStatus,
@@ -54,7 +54,7 @@ import GRDB
                 batchCompletedAt: batchCompletedAt
             )
             try database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 try session.insert(db)
             }

@@ -18,7 +18,7 @@ import { fileMetadataLimits } from "../src/files/model";
 
 const config = { authProvider: "header" as const, authHeader: "X-Forwarded-Email", databaseType: "sqlite" as const,
   baseUrl: "http://localhost:5173", storageBackend: "databricks" as const, storageDatabricksVolumePath: "/Volumes/test/app/files", oauthRedirectUris: [], maxRequestBytes: 8 * 1024 * 1024 };
-const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner", "x-dahlia-vault-transfers": "1" };
+const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner", "x-dahlia-workspace-transfers": "1" };
 const id = () => crypto.randomUUID().replace(/^(.{14})./, "$17");
 const date = "2026-09-09T00:00:00.000Z";
 type PublishedResponse = { $ref?: string; headers?: unknown; content?: Record<string, { schema?: unknown; example?: unknown }> };
@@ -40,7 +40,7 @@ it("covers every Dahlia route exactly once and publishes the generated contract"
     expect(owned.has(`${route.method} ${route.path}`), `${route.method} ${route.path}`).toBe(true);
   }
   expect(await (await app.request("/openapi.json")).json()).toEqual(spec);
-  const meetingScope = spec.paths!["/api/v1/vaults/{vaultId}/meetings"]!.get!.parameters!
+  const meetingScope = spec.paths!["/api/v1/workspaces/{workspaceId}/meetings"]!.get!.parameters!
     .find((parameter) => !("$ref" in parameter) && parameter.name === "projectScope");
   expect(meetingScope).toMatchObject({ schema: { enum: ["direct", "unassigned"] } });
 });
@@ -63,16 +63,16 @@ describe("generated Web client against the real SQLite Server", () => {
     const store = createNodeApplicationStore({ ...config, databaseUrl: `file:${join(directory, "server.sqlite")}` });
     try {
       await store.migrate();
-      await seedHeaderIdentity(store, join(directory, "server.sqlite"), { userId: testUserID("owner"), email: "owner@example.com", source: "header", workspaceId: `personal:${testUserID("owner")}` });
+      await seedHeaderIdentity(store, join(directory, "server.sqlite"), { userId: testUserID("owner"), email: "owner@example.com", source: "header", });
       const app = createApp({ config, authStore: store, objectStorage: new LocalObjectStorage(join(directory, "objects")) });
       const client = createClient<paths>({ baseUrl: config.baseUrl, headers, fetch: async (request: Request) => {
         const response = await app.request(request);
         await validate(request, response);
         return response;
       } });
-      const vaultId = id(), meetingId = id(), fileId = id();
-      const transaction = { schemaVersion: 3 as const, id: id(), vaultId, createdAt: date, operations: [
-        { id: id(), entity: "vault" as const, action: "create" as const, entityId: vaultId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Vault", createdAt: date } },
+      const workspaceId = id(), meetingId = id(), fileId = id();
+      const transaction = { schemaVersion: 3 as const, id: id(), workspaceId, createdAt: date, operations: [
+        { id: id(), entity: "workspace" as const, action: "create" as const, entityId: workspaceId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Workspace", createdAt: date } },
         { id: id(), entity: "meeting" as const, action: "create" as const, entityId: meetingId, baseRevision: null,
           data: { name: "Meeting", description: "", status: "READY" as const, projectId: null, duration: null, recordingStartedAt: null, createdAt: date, updatedAt: date } },
       ] };
@@ -85,33 +85,33 @@ describe("generated Web client against the real SQLite Server", () => {
       await client.GET("/api/v1/capabilities");
       await client.GET("/api/v1/account/settings");
       await client.PATCH("/api/v1/account/settings", { body: { outputLanguage: "ja" } });
-      await client.GET("/api/v1/vaults");
+      await client.GET("/api/v1/workspaces");
       await client.GET("/api/v1/organizations");
-      await client.GET("/api/v1/vaults/{vaultId}", { params: { path: { vaultId } } });
-      await client.GET("/api/v1/vaults/{vaultId}/projects", { params: { path: { vaultId } } });
-      await client.GET("/api/v1/vaults/{vaultId}/meetings", { params: { path: { vaultId } } });
-      await client.GET("/api/v1/vaults/{vaultId}/snapshot", { params: { path: { vaultId } } });
-      await client.GET("/api/v1/vaults/{vaultId}/changes", { params: { path: { vaultId } } });
+      await client.GET("/api/v1/workspaces/{workspaceId}", { params: { path: { workspaceId } } });
+      await client.GET("/api/v1/workspaces/{workspaceId}/projects", { params: { path: { workspaceId } } });
+      await client.GET("/api/v1/workspaces/{workspaceId}/meetings", { params: { path: { workspaceId } } });
+      await client.GET("/api/v1/workspaces/{workspaceId}/snapshot", { params: { path: { workspaceId } } });
+      await client.GET("/api/v1/workspaces/{workspaceId}/changes", { params: { path: { workspaceId } } });
       await client.GET("/api/v1/meetings/{meetingId}", { params: { path: { meetingId } } });
       await client.GET("/api/v1/meetings/{meetingId}/summaries/latest", { params: { path: { meetingId } } });
       await client.GET("/api/v1/meetings/{meetingId}/transcripts/latest", { params: { path: { meetingId } } });
       await client.GET("/api/v1/meetings/{meetingId}/summaries", { params: { path: { meetingId } } });
       await client.GET("/api/v1/meetings/{meetingId}/transcripts", { params: { path: { meetingId } } });
       await client.GET("/api/v1/meetings/{meetingId}/recordings", { params: { path: { meetingId } } });
-      const reservationBody = { id: fileId.toUpperCase(), vaultId: vaultId.toUpperCase(), name: "sample.txt", contentType: "text/plain", metadata: { source: "upload" as const } };
+      const reservationBody = { id: fileId.toUpperCase(), workspaceId: workspaceId.toUpperCase(), name: "sample.txt", contentType: "text/plain", metadata: { source: "upload" as const } };
       const reservation = await client.POST("/api/v1/file-uploads", { body: reservationBody });
       expect(reservation.response.status).toBe(201);
       expect(reservation.response.headers.get("location")).toBe(`/api/v1/file-uploads/${fileId}/content`);
-      const replay = await client.POST("/api/v1/file-uploads", { body: { ...reservationBody, id: fileId, vaultId } });
+      const replay = await client.POST("/api/v1/file-uploads", { body: { ...reservationBody, id: fileId, workspaceId } });
       expect(replay.data).toEqual(reservation.data);
       const upload = await client.PUT("/api/v1/file-uploads/{fileId}/content", { params: { path: { fileId }, header: { "content-type": "application/octet-stream", "content-length": "5" } },
         body: "hello", bodySerializer: (body) => body });
       expect(upload.response.status).toBe(201);
-      const activation = await client.POST("/api/v1/transactions", { body: { schemaVersion: 3, id: id(), vaultId, createdAt: date,
+      const activation = await client.POST("/api/v1/transactions", { body: { schemaVersion: 3, id: id(), workspaceId, createdAt: date,
         operations: [{ id: id(), entity: "file", action: "upsert", entityId: fileId, baseRevision: null, data: { checksum: upload.data!.checksum, metadata: {} } }] } });
       expect(activation.response.status, JSON.stringify(activation.error)).toBe(200);
       await client.GET("/api/v1/files/{fileId}", { params: { path: { fileId } } });
-      await client.GET("/api/v1/vaults/{vaultId}/files", { params: { path: { vaultId } } });
+      await client.GET("/api/v1/workspaces/{workspaceId}/files", { params: { path: { workspaceId } } });
       const chunk = { segments: [], deletions: [] };
       const chunkHash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(chunk))))]
         .map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -119,14 +119,14 @@ describe("generated Web client against the real SQLite Server", () => {
       const stage = () => client.PUT("/api/v1/meetings/{meetingId}/transcript-uploads/{patchId}/chunks/{chunkIndex}", { params: chunkParams, body: chunk });
       expect((await stage()).response.status).toBe(204);
       expect((await stage()).response.status).toBe(204);
-      const deletion = await client.POST("/api/v1/transactions", { body: { schemaVersion: 3, id: id(), vaultId, createdAt: date,
+      const deletion = await client.POST("/api/v1/transactions", { body: { schemaVersion: 3, id: id(), workspaceId, createdAt: date,
         operations: [{ id: id(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }] } });
       expect(deletion.response.status).toBe(200);
       const missing = await stage();
       expect(missing.response.status).toBe(409);
       expect(missing.error).toMatchObject({ code: "revision_conflict", conflicts: [{ entity: "meeting", id: meetingId,
         clientBaseRevision: null, serverRevision: null, record: null }] });
-      const restore = await client.POST("/api/v1/transactions", { body: { schemaVersion: 3, id: id(), vaultId, createdAt: date,
+      const restore = await client.POST("/api/v1/transactions", { body: { schemaVersion: 3, id: id(), workspaceId, createdAt: date,
         operations: [{ ...transaction.operations[1]!, id: id() }] } });
       expect(restore.response.status).toBe(200);
       expect((await stage()).response.status).toBe(204);
@@ -135,7 +135,7 @@ describe("generated Web client against the real SQLite Server", () => {
       });
       expect(foreign.response.status).toBe(409);
       expect(foreign.error).toMatchObject({ conflicts: [{ record: null, serverRevision: null }] });
-      const invalid = new Request(`${config.baseUrl}/api/v1/vaults?organizationId=a&organizationId=b`, { headers });
+      const invalid = new Request(`${config.baseUrl}/api/v1/workspaces?organizationId=a&organizationId=b`, { headers });
       const rejected = await app.request(invalid);
       await validate(invalid, rejected);
       expect(rejected.status).toBe(400);
@@ -182,7 +182,7 @@ it("shares metadata and authentication while retaining public and browser-only o
   expect(spec.paths!["/healthz"]!.get!.security).toEqual([]);
   expect(spec.paths!["/openapi.json"]!.get!.security).toEqual([]);
   expect(spec.paths!["/api/v1/session"]!.get!.security).toEqual([{ browserSession: [] }, { trustedProxy: [] }]);
-  expect(spec.paths!["/api/v1/vaults"]!.get!.security).toBeUndefined();
+  expect(spec.paths!["/api/v1/workspaces"]!.get!.security).toBeUndefined();
   const schemas = spec.components!.schemas!;
   for (const name of ["Transcript", "NullableTranscript"]) {
     expect(schemas[name]).toMatchObject({ properties: { metadata: { $ref: "#/components/schemas/NullableTranscriptMetadata" } } });
@@ -216,10 +216,10 @@ it("shares error responses and nullable record DTOs without losing their contrac
   }>;
   for (const name of ["CanonicalRecord", "RevisionConflict", "Changes"]) {
     const variants = name === "Changes" ? schemas[name]!.properties.items!.items.anyOf : schemas[name]!.anyOf!;
-    const vault = variants.find((variant) => (variant.properties.entity as { enum: string[] }).enum[0] === "vault")!;
-    expect(vault.properties.record).toEqual({ $ref: "#/components/schemas/NullableVaultRecord" });
-    expect(schemas.NullableVaultRecord!.type).toEqual(["object", "null"]);
-    expect(vault.required.includes("record")).toBe(name !== "CanonicalRecord");
+    const workspace = variants.find((variant) => (variant.properties.entity as { enum: string[] }).enum[0] === "workspace")!;
+    expect(workspace.properties.record).toEqual({ $ref: "#/components/schemas/NullableWorkspaceRecord" });
+    expect(schemas.NullableWorkspaceRecord!.type).toEqual(["object", "null"]);
+    expect(workspace.required.includes("record")).toBe(name !== "CanonicalRecord");
   }
   for (const name of ["NullableTranscriptRecord", "TranscriptContent"]) {
     expect(schemas[name]!.properties.transcript).toEqual({ $ref: "#/components/schemas/NullableTranscript" });
@@ -256,7 +256,7 @@ it("preserves UUIDv7 version and variant constraints in public input IDs", () =>
     ["paths|/api/v1/file-uploads|post|requestBody|content|application/json|schema|properties|id", "file"],
     [`paths|${contracts.startSummaryJob.path}|post|requestBody|content|application/json|schema|anyOf|0|properties|id`, "summaryJob"],
     [`paths|${contracts.retrySummaryJob.path}|post|requestBody|content|application/json|schema|properties|id`, "summaryJob"],
-    [`paths|${contracts.transferVault.path}|post|parameters|1|schema`, "transaction"],
+    [`paths|${contracts.transferWorkspace.path}|post|parameters|1|schema`, "transaction"],
   ];
   for (const [path, kind] of paths) {
     let schema: unknown = spec;
