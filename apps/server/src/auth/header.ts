@@ -12,7 +12,7 @@ const MAX_IDENTITY_LENGTH = 320;
 
 export interface HeaderIdentitySource {
   email: string;
-  name?: string;
+  name: string;
 }
 
 /** Validates and normalizes a proxy-supplied email; the only accepted form outside local single-user mode. */
@@ -49,7 +49,9 @@ export function headerIdentitySource(
   config: Pick<AppConfig, "authHeader" | "localSingleUser">,
   headers: Headers | undefined,
 ): HeaderIdentitySource | null {
-  const value = headerIdentityValue(config, headers?.get(config.authHeader));
-  if (value) return { email: value, name: headers?.get("X-Forwarded-Preferred-Username")?.trim() || undefined };
-  return config.localSingleUser ? { email: LOCAL_SINGLE_USER_EMAIL } : null;
+  const email = headerIdentityValue(config, headers?.get(config.authHeader))
+    ?? (config.localSingleUser ? LOCAL_SINGLE_USER_EMAIL : null);
+  if (!email) return null;
+  // The proxy's preferred username is supplementary; the identity itself is the fallback label.
+  return { email, name: headers?.get("X-Forwarded-Preferred-Username")?.trim() || email };
 }

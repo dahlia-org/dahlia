@@ -40,8 +40,10 @@ describe("local single-user header mode", () => {
 
       const response = await app.request("/api/v1/session");
       expect(response.status).toBe(200);
-      const session = await response.json<{ user: { id: string; email: string }; workspace: { id: string } }>();
+      const session = await response.json<{ user: { id: string; email: string; name: string }; workspace: { id: string } }>();
       expect(session.user.email).toBe("local@example.com");
+      // No preferred-username header, so the identity itself becomes the display name.
+      expect(session.user.name).toBe("local@example.com");
       // The substituted email is projected onto an internal user exactly as a proxied identity is.
       expect(session.user.id).not.toBe("local@example.com");
       expect(session.workspace.id).toBe(`personal:${session.user.id}`);
@@ -60,6 +62,11 @@ describe("local single-user header mode", () => {
       // Dropping the header returns to the local user, so the fallback is additive.
       expect(await (await app.request("/api/v1/session")).json())
         .toMatchObject({ user: { id: session.user.id, email: "local@example.com" } });
+
+      // A supplied preferred username still wins over that fallback.
+      expect(await (await app.request("/api/v1/session", {
+        headers: { "X-Forwarded-Email": "person@example.com", "X-Forwarded-Preferred-Username": " Dahlia User " },
+      })).json()).toMatchObject({ user: { id: other.user.id, name: "Dahlia User" } });
     } finally {
       await store.close?.();
     }

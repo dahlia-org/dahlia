@@ -44,6 +44,7 @@ describe("proxy identity boundary", () => {
     expect(identity).toEqual({
       userId: "user@example.com",
       email: "user@example.com",
+      name: "user@example.com",
       workspaceId: "personal:user@example.com",
       source: "header",
     });
@@ -94,7 +95,7 @@ describe("local single-user identity", () => {
     expect(identity).toEqual({
       userId: "local@example.com",
       email: "local@example.com",
-      name: undefined,
+      name: "local@example.com",
       workspaceId: "personal:local@example.com",
       source: "header",
     });
@@ -118,7 +119,7 @@ describe("local single-user identity", () => {
       headers: { "X-Forwarded-Email": " Garbage " },
     }));
 
-    expect(identity).toMatchObject({ userId: "garbage", email: "garbage" });
+    expect(identity).toMatchObject({ userId: "garbage", email: "garbage", name: "garbage" });
   });
 
   it("falls back to the local identity for a blank header", async () => {
@@ -127,7 +128,7 @@ describe("local single-user identity", () => {
       headers: { "X-Forwarded-Email": "   " },
     }));
 
-    expect(identity).toMatchObject({ userId: "local@example.com", email: "local@example.com" });
+    expect(identity).toMatchObject({ userId: "local@example.com", email: "local@example.com", name: "local@example.com" });
   });
 
   it("still projects the local identity and fails closed when projection is refused", async () => {
