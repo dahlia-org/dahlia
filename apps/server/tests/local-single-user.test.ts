@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 describe("local single-user header mode", () => {
-  it("authenticates every request as the fixed local user without a proxy header", async () => {
+  it("falls back to the fixed local user only when no proxy header is supplied", async () => {
     const config = localConfig(true);
     const store = createNodeAuthStore(config);
     try {
@@ -50,10 +50,40 @@ describe("local single-user header mode", () => {
       // Better Auth Header sign-in runs on the same substituted identity, so a cookie is issued.
       expect(response.headers.getSetCookie().length).toBeGreaterThan(0);
 
-      // A client-supplied identity header cannot select another user.
-      const repeated = await app.request("/api/v1/session", { headers: { "X-Forwarded-Email": "attacker@example.com" } });
-      expect(repeated.status).toBe(200);
-      expect(await repeated.json()).toMatchObject({ user: { id: session.user.id, email: "local@example.com" } });
+      // A supplied identity header still wins and resolves to its own user.
+      const proxied = await app.request("/api/v1/session", { headers: { "X-Forwarded-Email": "person@example.com" } });
+      expect(proxied.status).toBe(200);
+      const other = await proxied.json<{ user: { id: string; email: string } }>();
+      expect(other.user.email).toBe("person@example.com");
+      expect(other.user.id).not.toBe(session.user.id);
+
+      // Dropping the header returns to the local user, so the fallback is additive.
+      expect(await (await app.request("/api/v1/session")).json())
+        .toMatchObject({ user: { id: session.user.id, email: "local@example.com" } });
+    } finally {
+      await store.close?.();
+    }
+  });
+
+  it("accepts a non-email header value and skips domain Organization enrollment", async () => {
+    const config = localConfig(true);
+    const store = createNodeAuthStore(config);
+    try {
+      await store.migrate();
+      const app = createApp({ config, authStore: store, auth: await initializeDahliaAuth(config, store) });
+
+      const response = await app.request("/api/v1/session", { headers: { "X-Forwarded-Email": " Garbage " } });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ user: { email: "garbage" } });
+      expect(await store.listAdminUsers()).toMatchObject([{ email: "garbage", name: "garbage" }]);
+
+      // "garbage" carries no domain, so only the Personal Organization exists.
+      expect(await store.listServerOrganizations(10, 0)).toMatchObject([{ name: "Personal", kind: "personal" }]);
+
+      // An address with a domain still enrolls into its domain Organization.
+      expect((await app.request("/api/v1/session", { headers: { "X-Forwarded-Email": "person@example.com" } })).status).toBe(200);
+      expect(await store.listServerOrganizations(10, 0))
+        .toMatchObject([{ name: "Personal", kind: "personal" }, { name: "Personal", kind: "personal" }, { name: "example.com", kind: "team" }]);
     } finally {
       await store.close?.();
     }
@@ -67,6 +97,7 @@ describe("local single-user header mode", () => {
       const app = createApp({ config, authStore: store, auth: await initializeDahliaAuth(config, store) });
 
       expect((await app.request("/api/v1/session")).status).toBe(401);
+      expect((await app.request("/api/v1/session", { headers: { "X-Forwarded-Email": "garbage" } })).status).toBe(401);
       expect((await app.request("/api/v1/session", { headers: { "X-Forwarded-Email": "user@example.com" } })).status).toBe(200);
     } finally {
       await store.close?.();

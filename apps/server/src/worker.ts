@@ -89,7 +89,7 @@ function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): Applic
   if (!url) throw new Error("Worker storage supports DAHLIA_DATABASE_TYPE=hyperdrive or postgres");
   const connection = connectPostgresUrl(url, 5);
   const permissions = syncedVaultPermission;
-  return { ...createPostgresApplicationStore(connection.db, "postgres", config.searchEmbedding, config.encryption, config.authProviderId), close: connection.close,
+  return { ...createPostgresApplicationStore(connection.db, "postgres", config.searchEmbedding, config.encryption, config.authProviderId, config.localSingleUser), close: connection.close,
     jobs: {
       summaryJobs: createSummaryJobStore(connection.db, true, config.encryption),
       imageAnalysis: createImageAnalysisStore(connection.db, true, config.encryption),

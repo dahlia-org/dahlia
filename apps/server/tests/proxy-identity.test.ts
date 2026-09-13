@@ -100,16 +100,34 @@ describe("local single-user identity", () => {
     });
   });
 
-  it("ignores client-supplied identity and display-name headers", async () => {
+  it("prefers the identity header over the local fallback", async () => {
     const config = headerConfig("X-Forwarded-Email", true);
     const identity = await new IdentityService(config).fromBrowser(new Request("https://dahlia.example/api/v1/session", {
       headers: {
-        "X-Forwarded-Email": "attacker@example.com",
-        "X-Forwarded-Preferred-Username": "Attacker",
+        "X-Forwarded-Email": " Person@Example.com ",
+        "X-Forwarded-Preferred-Username": " Dahlia User ",
       },
     }));
 
-    expect(identity).toMatchObject({ userId: "local@example.com", email: "local@example.com", name: undefined });
+    expect(identity).toMatchObject({ userId: "person@example.com", email: "person@example.com", name: "Dahlia User" });
+  });
+
+  it("accepts a header value that is not an email", async () => {
+    const config = headerConfig("X-Forwarded-Email", true);
+    const identity = await new IdentityService(config).fromBrowser(new Request("https://dahlia.example/api/v1/session", {
+      headers: { "X-Forwarded-Email": " Garbage " },
+    }));
+
+    expect(identity).toMatchObject({ userId: "garbage", email: "garbage" });
+  });
+
+  it("falls back to the local identity for a blank header", async () => {
+    const config = headerConfig("X-Forwarded-Email", true);
+    const identity = await new IdentityService(config).fromBrowser(new Request("https://dahlia.example/api/v1/session", {
+      headers: { "X-Forwarded-Email": "   " },
+    }));
+
+    expect(identity).toMatchObject({ userId: "local@example.com", email: "local@example.com" });
   });
 
   it("still projects the local identity and fails closed when projection is refused", async () => {
@@ -126,8 +144,13 @@ describe("local single-user identity", () => {
       .rejects.toThrow("identity_projection_failed");
   });
 
-  it("keeps rejecting a missing header while it is disabled", async () => {
-    await expect(new IdentityService(headerConfig("X-Forwarded-Email")).fromBrowser(new Request("https://dahlia.example/api/v1/session")))
+  it("keeps rejecting missing and invalid headers while it is disabled", async () => {
+    const identities = new IdentityService(headerConfig("X-Forwarded-Email"));
+
+    await expect(identities.fromBrowser(new Request("https://dahlia.example/api/v1/session")))
       .rejects.toThrow("X-Forwarded-Email must contain a valid email");
+    await expect(identities.fromBrowser(new Request("https://dahlia.example/api/v1/session", {
+      headers: { "X-Forwarded-Email": "garbage" },
+    }))).rejects.toThrow("X-Forwarded-Email must contain a valid email");
   });
 });
