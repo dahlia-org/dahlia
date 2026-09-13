@@ -60,7 +60,6 @@ export interface AppConfig {
   googleClientId?: string;
   googleClientSecret?: string;
   betterAuthSecret?: string;
-  databricksAuthSecret?: string;
   oauthRedirectUris: string[];
   maxRequestBytes: number;
   codexAutoReviewModel?: string;
@@ -231,7 +230,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   } : undefined;
   const databricksWorkspace = databricksWorkspaceConfig(
     env,
-    storageBackend === "databricks" || aiBackend === "databricks" || !!env.DAHLIA_AUTH_SECRET_DATABRICKS?.trim(),
+    storageBackend === "databricks" || aiBackend === "databricks",
   );
   const storageDatabricksVolumePath = storageBackend === "databricks"
     ? required(env, "DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH").replace(/\/$/, "")
@@ -297,13 +296,6 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
 
   const secret = env.DAHLIA_AUTH_SECRET;
   config.betterAuthSecret = secret ? validateAuthSecret(secret) : undefined;
-  const databricksSecret = env.DAHLIA_AUTH_SECRET_DATABRICKS?.trim();
-  if (databricksSecret) {
-    if (!/^[^.\s/]+\.[^.\s/]+\.[^.\s/]+$/.test(databricksSecret)) {
-      throw new Error("DAHLIA_AUTH_SECRET_DATABRICKS must be a catalog.schema.secret name");
-    }
-    config.databricksAuthSecret = databricksSecret;
-  }
   if (authProvider === "accounts") {
     config.googleClientId = required(env, "GOOGLE_CLIENT_ID");
     config.googleClientSecret = required(env, "GOOGLE_CLIENT_SECRET");

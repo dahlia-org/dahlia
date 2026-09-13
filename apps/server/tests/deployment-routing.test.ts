@@ -235,18 +235,10 @@ describe("deployment routing", () => {
     expect(resource).not.toContain("resources.apps.dahlia_server.url");
     expect(resource).toContain("value: databricks");
     expect(resource).toContain("value_from: postgres");
-    expect(resource).toContain("name: DAHLIA_AUTH_SECRET_DATABRICKS\n            value: ${var.catalog}.${resources.schemas.app_schema.name}.auth_secret");
-    expect(resource).toContain(`auth_secret:
-      catalog_name: \${var.catalog}
-      schema_name: \${resources.schemas.app_schema.name}
-      name: auth_secret
-      value: \${var.auth_secret_value}`);
-    expect(bundle).toContain("'${resources.apps.dahlia_server.name}' '${var.catalog}.${resources.schemas.app_schema.name}.auth_secret'");
-    expect(resource).not.toContain("value_from: auth-secret");
-    expect(bundle).toContain("auth_secret_value:");
-    expect(bundle).not.toContain("default: test-only-better-auth-secret-value");
-    expect(bundle).not.toContain("better_auth_secret_scope");
-    expect(bundle).not.toContain("better_auth_secret_key");
+    expect(resource).toContain("name: DAHLIA_AUTH_SECRET\n            value: test-only-better-auth-secret-value");
+    expect(resource).not.toContain("  secrets:");
+    expect(resource).not.toContain("DAHLIA_AUTH_SECRET_DATABRICKS");
+    expect(bundle).not.toContain("auth_secret_value:");
     expect(resource).not.toContain("openai_api_key");
     expect(resource).toContain("permission: CAN_CONNECT_AND_CREATE");
     expect(resource).toContain("volume_type: MANAGED");

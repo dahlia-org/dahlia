@@ -24,9 +24,7 @@ if (command === process.env.FAIL_COMMAND && (!process.env.FAIL_MODEL || args[3] 
   console.error("PERMISSION_DENIED: missing CREATE_SERVICE");
   process.exit(1);
 }
-if (args[0] === "apps" && command === "get") {
-  console.log(JSON.stringify({service_principal_client_id: "test-app-principal"}));
-} else if (command === "list-model-services") {
+if (command === "list-model-services") {
   console.log(JSON.stringify(names.map(name => ({name}))));
 } else if (command === "get-model-service") {
   const model = args[2].replace("model-services/", "models/");
@@ -47,7 +45,7 @@ if (args[0] === "apps" && command === "get") {
   console.log("{}");
 }
 `, { mode: 0o755 });
-  const run = (failCommand = "", failModel = "") => spawnSync("bash", [script, "test-profile", "test_catalog", "ai", "test-project", "test-app", "test_catalog.app.auth_secret"], {
+  const run = (failCommand = "", failModel = "") => spawnSync("bash", [script, "test-profile", "test_catalog", "ai", "test-project"], {
     encoding: "utf8",
     env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, STATE: state, CALLS: calls, FAIL_COMMAND: failCommand, FAIL_MODEL: failModel },
   });
@@ -63,9 +61,6 @@ if (args[0] === "apps" && command === "get") {
     writeFileSync(state, JSON.stringify([...JSON.parse(readFileSync(state, "utf8")), legacyEmbedding]));
     const resumed = run();
     assert.equal(resumed.status, 0, resumed.stderr);
-    const grant = readCalls().find(args => args[0] === "api" && args[1] === "patch");
-    assert.equal(grant[2], "/api/2.1/unity-catalog/permissions/secret/test_catalog.app.auth_secret");
-    assert.deepEqual(JSON.parse(grant[grant.indexOf("--json") + 1]), {changes: [{principal: "test-app-principal", add: ["READ_SECRET"]}]});
     assert.match(resumed.stdout, /Keeping existing model service: model-services\/test_catalog.ai.gpt-5-6-luna/);
     assert.equal(JSON.parse(readFileSync(state, "utf8")).length, 14);
     for (const [name, source] of [
@@ -93,11 +88,6 @@ if (args[0] === "apps" && command === "get") {
     const repeated = run();
     assert.equal(repeated.status, 0, repeated.stderr);
     assert.equal(readCalls().some(args => ["create-model-service", "get-model-service"].includes(args[1])), false);
-
-    writeFileSync(calls, "");
-    const grantDenied = run("patch");
-    assert.notEqual(grantDenied.status, 0);
-    assert.equal(readCalls().some(args => args[1] === "list-model-services"), false);
 
     writeFileSync(calls, "");
     const denied = run("list-model-services");

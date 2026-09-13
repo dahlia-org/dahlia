@@ -1,5 +1,4 @@
 import { resolveAuthSecret } from "./secret";
-import { readDatabricksAuthSecret } from "../databricks/secret";
 import { headerEmail } from "./header";
 import { uuidV7 } from "../id";
 import { oauthProvider } from "@better-auth/oauth-provider";
@@ -227,10 +226,7 @@ export async function initializeDahliaAuth(
   authStore: AuthStore,
   extensions: readonly DahliaAuthExtension[] = [],
 ): Promise<DahliaAuth> {
-  const configuredSecret = config.betterAuthSecret ?? (config.databricksAuthSecret
-    ? await readDatabricksAuthSecret(config.databricksWorkspace!, config.databricksAuthSecret)
-    : undefined);
-  const auth = createDahliaAuth({ ...config, betterAuthSecret: await resolveAuthSecret(configuredSecret) }, authStore, extensions);
+  const auth = createDahliaAuth({ ...config, betterAuthSecret: await resolveAuthSecret(config.betterAuthSecret) }, authStore, extensions);
   await auth.$context;
   if (config.authProvider === "accounts") await authStore.seedDahliaClient(config);
   return auth;

@@ -18,14 +18,6 @@ resources:
       name: ${var.app_schema}
       comment: Resources for Dahlia Server ${bundle.target}
 
-  secrets:
-    auth_secret:
-      catalog_name: ${var.catalog}
-      schema_name: ${resources.schemas.app_schema.name}
-      name: auth_secret
-      value: ${var.auth_secret_value}
-      comment: 'Dahlia authentication signing secret.'
-
   volumes:
     dahlia_storage:
       catalog_name: ${var.catalog}
@@ -56,8 +48,8 @@ resources:
             value: header
           - name: DAHLIA_AUTH_PROVIDER_ID
             value: databricks
-          - name: DAHLIA_AUTH_SECRET_DATABRICKS
-            value: ${var.catalog}.${resources.schemas.app_schema.name}.auth_secret
+          - name: DAHLIA_AUTH_SECRET
+            value: test-only-better-auth-secret-value
           - name: DAHLIA_AI_BACKEND
             value: databricks
           - name: DATABRICKS_MODEL_SCHEMA

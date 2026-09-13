@@ -11,7 +11,6 @@ import { createNodeAuthStore } from "../src/auth/node-store";
 const directories: string[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
-  vi.unstubAllGlobals();
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 function directory() {
@@ -89,27 +88,6 @@ describe("authentication secret", () => {
       store = createNodeAuthStore(config);
       const restarted = await initializeDahliaAuth(config, store);
       expect((await restarted.api.getSession({ headers }))?.session.id).toBe(original?.session.id);
-    } finally { await store.close?.(); }
-  });
-
-  it("does not fall back to a file when the configured UC secret cannot be read", async () => {
-    const { path } = directory();
-    const config = loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_DATABASE_URL: `file:${join(path, "auth.sqlite")}` });
-    config.databricksAuthSecret = "main.app.auth_secret";
-    config.databricksWorkspace = { host: "https://workspace.example.com", tokenUrl: "https://workspace.example.com/oidc/v1/token", clientId: "app", clientSecret: "credential" };
-    const transport = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json({ access_token: "app-token", expires_in: 3600 }))
-      .mockResolvedValueOnce(Response.json({}, { status: 403 }));
-    vi.stubGlobal("fetch", transport);
-    const store = createNodeAuthStore(config);
-    try {
-      await store.migrate();
-      await expect(initializeDahliaAuth(config, store)).rejects.toThrow("retrieval failed (403)");
-      expect(existsSync(join(path, "dahlia-auth-secret"))).toBe(false);
-      config.betterAuthSecret = "test-explicit-secret-at-least-32-characters";
-      await initializeDahliaAuth(config, store);
-      expect(transport).toHaveBeenCalledTimes(2);
-      expect(existsSync(join(path, "dahlia-auth-secret"))).toBe(false);
     } finally { await store.close?.(); }
   });
 });
