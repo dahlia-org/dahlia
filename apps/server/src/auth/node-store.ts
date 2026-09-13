@@ -45,6 +45,7 @@ export function createNodeApplicationStore(
         config.searchEmbedding,
         config.encryption,
         config.authProviderId,
+        config.localSingleUser,
       ),
       migrate: () => migrateApplicationDatabase(
         config,
@@ -106,6 +107,7 @@ export function createNodeApplicationStore(
     config.searchEmbedding,
     config.encryption,
     config.authProviderId,
+    config.localSingleUser,
   );
   const applyMigrationQueries = (queries: string[]) => {
     for (const query of queries) database.exec(query);

@@ -1,4 +1,4 @@
-import { headerEmail } from "./header";
+import { headerIdentitySource } from "./header";
 import { originalPublicRequest } from "../public-http";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 
@@ -175,14 +175,13 @@ export class IdentityService {
   }
 
   private async fromHeader(request: Request): Promise<Identity> {
-    const email = headerEmail(request.headers.get(this.config.authHeader));
-    if (!email) throw new AuthenticationError(`${this.config.authHeader} must contain a valid email`);
-    const userId = email;
-    const name = request.headers.get("X-Forwarded-Preferred-Username")?.trim() || undefined;
+    const source = headerIdentitySource(this.config, request.headers);
+    if (!source) throw new AuthenticationError(`${this.config.authHeader} must contain a valid email`);
+    const userId = source.email;
     const identity: Identity = {
       userId,
-      email,
-      name,
+      email: source.email,
+      name: source.name,
       workspaceId: personalWorkspaceId(userId),
       source: "header",
     };

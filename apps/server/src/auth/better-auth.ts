@@ -1,5 +1,5 @@
 import { resolveAuthSecret } from "./secret";
-import { headerEmail } from "./header";
+import { headerIdentitySource } from "./header";
 import { uuidV7 } from "../id";
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { oauthProviderResourceClient } from "@better-auth/oauth-provider/resource-client";
@@ -149,11 +149,11 @@ function buildDahliaAuth(
         endpoints: {
           signInHeader: createAuthEndpoint("/header/sign-in", { method: "POST", use: [formCsrfMiddleware] }, async (ctx) => {
             if (config.authProvider !== "header") throw new APIError("NOT_FOUND");
-            const email = headerEmail(ctx.headers?.get(config.authHeader));
-            if (!email) throw new APIError("UNAUTHORIZED", { message: "proxy_header_required" });
-            const externalId = email;
-            const userId = await authStore.resolveHeaderUser({ userId: externalId, email,
-              name: ctx.headers?.get("X-Forwarded-Preferred-Username")?.trim(), source: "header", workspaceId: personalWorkspaceId(externalId) });
+            const source = headerIdentitySource(config, ctx.headers);
+            if (!source) throw new APIError("UNAUTHORIZED", { message: "proxy_header_required" });
+            const externalId = source.email;
+            const userId = await authStore.resolveHeaderUser({ userId: externalId, email: source.email,
+              name: source.name, source: "header", workspaceId: personalWorkspaceId(externalId) });
             if (!userId) throw new APIError("UNAUTHORIZED");
             await authStore.organizations.initializeUser(userId);
             const current = await getSessionFromCtx(ctx);

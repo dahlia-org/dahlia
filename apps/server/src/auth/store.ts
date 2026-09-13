@@ -1,4 +1,4 @@
-import { headerEmail } from "./header";
+import { hasEmailDomain, headerIdentityValue } from "./header";
 import { lockAuthorization } from "./authorization";
 import { createOrganizationStore, type OrganizationStore } from "./organizations";
 import { HEADER_IDENTITY_ISSUER } from "./ids";
@@ -126,6 +126,7 @@ export function createPostgresApplicationStore(
   searchEmbedding?: AppConfig["searchEmbedding"],
   encryption?: AppConfig["encryption"],
   authProviderId = "external",
+  localSingleUser = false,
 ): ApplicationStore {
   const organizations = createOrganizationStore(db, true);
   return {
@@ -135,7 +136,7 @@ export function createPostgresApplicationStore(
     searchSettings: createSearchSettingsStore(db, true),
     sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding, encryption),
     async resolveHeaderUser(identity) {
-      const email = headerEmail(identity.email ?? identity.userId);
+      const email = headerIdentityValue({ localSingleUser }, identity.email ?? identity.userId);
       if (!email) return null;
       const find = async () => {
         const [account] = await db.select({ id: postgresAuthSchema.account.id, userId: postgresAuthSchema.account.userId, providerId: postgresAuthSchema.account.providerId }).from(postgresAuthSchema.account)
@@ -153,7 +154,8 @@ export function createPostgresApplicationStore(
           const userId = uuidV7();
           const now = new Date();
           await tx.insert(postgresAuthSchema.user).values({ id: userId, email,
-            name: identity.name ?? identity.email ?? identity.userId, registrationState: "domain", emailVerified: true, role: "user", createdAt: now, updatedAt: now });
+            name: identity.name ?? identity.email ?? identity.userId, registrationState: hasEmailDomain(email) ? "domain" : "personal",
+            emailVerified: true, role: "user", createdAt: now, updatedAt: now });
           await tx.insert(postgresAuthSchema.account).values({ id: uuidV7(), userId, issuer: HEADER_IDENTITY_ISSUER,
             providerId: authProviderId, accountId: email, createdAt: now, updatedAt: now });
           await createOrganizationStore(tx, true, true).initializeUser(userId);
@@ -343,6 +345,7 @@ export function createSqliteApplicationStore(
   searchEmbedding?: AppConfig["searchEmbedding"],
   encryption?: AppConfig["encryption"],
   authProviderId = "external",
+  localSingleUser = false,
 ): ApplicationStore {
   const organizations = createOrganizationStore(db, false);
   return {
@@ -352,7 +355,7 @@ export function createSqliteApplicationStore(
     searchSettings: createSearchSettingsStore(db, false),
     sync: createSqliteMeetingSyncStore(db, searchEmbedding, encryption),
     async resolveHeaderUser(identity) {
-      const email = headerEmail(identity.email ?? identity.userId);
+      const email = headerIdentityValue({ localSingleUser }, identity.email ?? identity.userId);
       if (!email) return null;
       const find = async () => {
         const [account] = await db.select({ id: sqliteAuthSchema.account.id, userId: sqliteAuthSchema.account.userId, providerId: sqliteAuthSchema.account.providerId }).from(sqliteAuthSchema.account)
@@ -370,7 +373,8 @@ export function createSqliteApplicationStore(
           const userId = uuidV7();
           const now = new Date();
           await tx.insert(sqliteAuthSchema.user).values({ id: userId, email,
-            name: identity.name ?? identity.email ?? identity.userId, registrationState: "domain", emailVerified: true, role: "user", createdAt: now, updatedAt: now });
+            name: identity.name ?? identity.email ?? identity.userId, registrationState: hasEmailDomain(email) ? "domain" : "personal",
+            emailVerified: true, role: "user", createdAt: now, updatedAt: now });
           await tx.insert(sqliteAuthSchema.account).values({ id: uuidV7(), userId, issuer: HEADER_IDENTITY_ISSUER,
             providerId: authProviderId, accountId: email, createdAt: now, updatedAt: now });
           await createOrganizationStore(tx, false, true).initializeUser(userId);
