@@ -15,7 +15,7 @@ const organizations = [{ id: "organization-id", name: "Alpha", slug: "alpha-team
 const member = { id: "member-id", userId: "owner", role: "owner", user: { name: "Owner", email: "owner@example.com" } };
 window.fetch = (input, init) => Promise.resolve((() => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.origin);
-  if (url.pathname === "/api/v1/session") return Response.json({ user: { id: "owner", name: "Owner" }, workspace: { id: "personal", type: "personal" },
+  if (url.pathname === "/api/v1/session") return Response.json({ user: { id: "owner", name: "Owner" },
     capabilities: { sessions: accounts, sharing: true, sync: false, admin: false } });
   if (url.pathname.endsWith("/invite-member")) {
     invites++;

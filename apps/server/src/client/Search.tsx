@@ -19,7 +19,7 @@ export function searchDate(value: string, end = false): string | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
-export function Search({ vaultId }: { vaultId: string }) {
+export function Search({ workspaceId }: { workspaceId: string }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     const key = (event: globalThis.KeyboardEvent) => {
@@ -36,11 +36,11 @@ export function Search({ vaultId }: { vaultId: string }) {
     <button className="sidebar-search icon-button" aria-label={uiText("Search", "検索")}
       onClick={() => setOpen(true)}><MenuIcon name="search" /></button>
     </Tooltip>
-    {open && createPortal(<SearchDialog vaultId={vaultId} onClose={() => setOpen(false)} />, document.body)}
+    {open && createPortal(<SearchDialog workspaceId={workspaceId} onClose={() => setOpen(false)} />, document.body)}
   </>;
 }
 
-function SearchDialog({ vaultId, onClose }: { vaultId: string; onClose: () => void }) {
+function SearchDialog({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const id = useId();
   const [previousFocus] = useState(() => document.activeElement);
@@ -56,7 +56,7 @@ function SearchDialog({ vaultId, onClose }: { vaultId: string; onClose: () => vo
   const [visible, setVisible] = useState(6);
   const [preview, setPreview] = useState<SearchHit>();
   const filterCount = [projectId, kind, from, to].filter(Boolean).length;
-  const projects = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { vaultId: vaultId } } }));
+  const projects = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { workspaceId: workspaceId } } }));
   useEffect(() => {
     const element = dialog.current;
     element?.showModal();
@@ -71,7 +71,7 @@ function SearchDialog({ vaultId, onClose }: { vaultId: string; onClose: () => vo
     from: searchDate(from), to: searchDate(to, true), limit: 100 };
   const current = !composing && query === text;
   const results = useLiveQuery<SearchResults>(current ? JSON.stringify(body) : undefined, (signal) =>
-    api.search({ params: { path: { vaultId } }, body, signal }));
+    api.search({ params: { path: { workspaceId } }, body, signal }));
   const groups = [
     { title: query ? uiText("Meetings", "ミーティング") : uiText("Recent meetings", "最近のミーティング"), items: results.data?.meetings ?? [] },
     { title: uiText("Screenshots", "スクリーンショット"), items: results.data?.screenshots ?? [] },
@@ -135,7 +135,7 @@ function SearchDialog({ vaultId, onClose }: { vaultId: string; onClose: () => vo
       <div className="search-results" aria-busy={results.loading || !current}>
         {(results.loading || !current) && <p role="status">{uiText("Searching…", "検索中…")}</p>}
         {results.error && <p role="alert">{uiText("Search failed.", "検索に失敗しました。 ")} <button className="secondary" onClick={results.reload}>{uiText("Retry", "再試行")}</button></p>}
-        {!results.loading && current && !results.error && !hits.length && <div className="welcome-empty compact-empty" role="status"><h2>{uiText("No results", "該当する項目はありません")}</h2><p>{uiText("Try another word or broaden your filters. Search includes meeting content, image text and projects in this Vault.", "検索語や絞り込み条件を変えてみてください。この保管庫のミーティング本文、画像内の文字、プロジェクトを検索します。")}</p></div>}
+        {!results.loading && current && !results.error && !hits.length && <div className="welcome-empty compact-empty" role="status"><h2>{uiText("No results", "該当する項目はありません")}</h2><p>{uiText("Try another word or broaden your filters. Search includes meeting content, image text and projects in this Workspace.", "検索語や絞り込み条件を変えてみてください。このワークスペースのミーティング本文、画像内の文字、プロジェクトを検索します。")}</p></div>}
         <div id={`${id}-results`} role="listbox" aria-label={uiText("Search results", "検索結果")}>
         {groups.filter((group) => group.items.length).map((group) => <section key={group.title} role="group" aria-label={group.title}>
           <h2>{group.title}</h2>
@@ -154,7 +154,7 @@ function SearchDialog({ vaultId, onClose }: { vaultId: string; onClose: () => vo
         {groups.some((group) => group.items.length > visible) && <button className="secondary load-more" onClick={() => setVisible(Math.min(100, visible + 20))}>{uiText("Load more", "さらに読み込む")}</button>}
         {results.data && Object.values(results.data.limited).some(Boolean) && <p className="muted">{uiText("Showing top results (up to 100 per type). Refine your search to find more.", "各種類の上位100件までを表示しています。検索語や条件を絞ってください。")}</p>}
       </div>
-      <footer className="search-footer"><span><kbd>↑</kbd> <kbd>↓</kbd> {uiText("Navigate", "選択")}</span><span><kbd>↵</kbd> {uiText("Open", "開く")}</span><span><kbd>esc</kbd> {uiText("Close", "閉じる")}</span><span>{uiText("Search within this Vault", "この保管庫内を検索")}</span></footer>
+      <footer className="search-footer"><span><kbd>↑</kbd> <kbd>↓</kbd> {uiText("Navigate", "選択")}</span><span><kbd>↵</kbd> {uiText("Open", "開く")}</span><span><kbd>esc</kbd> {uiText("Close", "閉じる")}</span><span>{uiText("Search within this Workspace", "このワークスペース内を検索")}</span></footer>
     </>}
   </dialog>;
 }

@@ -48,7 +48,7 @@ import os
         }
 
         @Test
-        func activatingChatGPTLoadsLocalStatusWithoutRequiringTheActiveVaultRuntime() async {
+        func activatingChatGPTLoadsLocalStatusWithoutRequiringTheActiveWorkspaceRuntime() async {
             let service = CodexAppServerService(
                 transportFactory: { TestCodexAppServerTransport(mode: .models) },
                 configurationReadiness: { false }
@@ -123,7 +123,9 @@ import os
                     let lastMethod = await transport.messages().last?.objectValue?["method"]?.stringValue
                     #expect(lastMethod == (signsIn ? "account/login/start" : "account/logout"))
                     reloadStarted.continuation.yield()
-                    for await _ in finishReload.stream { break }
+                    for await _ in finishReload.stream {
+                        break
+                    }
                     try Task.checkCancellation()
                     reloaded.withLock { $0 = true }
                 }
@@ -135,7 +137,9 @@ import os
                     await controller.signOut()
                 }
             }
-            for await _ in reloadStarted.stream { break }
+            for await _ in reloadStarted.stream {
+                break
+            }
 
             action.cancel()
             finishReload.continuation.yield()

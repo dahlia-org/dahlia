@@ -2,14 +2,14 @@ import Foundation
 
 /// 設定画面のカテゴリ。
 enum SettingsCategory: String, CaseIterable, Identifiable {
-    case accountsAndVaults
+    case accountsAndWorkspaces
     case accountPreferences
     case macInference
     case general
     case dahliaAccounts
     case language
     case appearance
-    case vault
+    case workspace
     case permissions
     case backups
     case search
@@ -30,14 +30,14 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .accountsAndVaults: L10n.accountsAndVaults
+        case .accountsAndWorkspaces: L10n.accountsAndWorkspaces
         case .accountPreferences: L10n.generationAndAnalysis
         case .macInference: L10n.macInferencePreferences
         case .general: L10n.general
         case .dahliaAccounts: L10n.dahliaAccount
         case .language: L10n.language
         case .appearance: L10n.appearance
-        case .vault: L10n.vault
+        case .workspace: L10n.workspace
         case .permissions: L10n.permissions
         case .backups: L10n.backups
         case .search: L10n.search
@@ -58,14 +58,14 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .accountsAndVaults: "person.2"
+        case .accountsAndWorkspaces: "person.2"
         case .accountPreferences: "text.badge.star"
         case .macInference: "sparkles"
         case .general: "gearshape"
         case .dahliaAccounts: "person.crop.circle"
         case .language: "globe"
         case .appearance: "sun.max"
-        case .vault: "externaldrive"
+        case .workspace: "externaldrive"
         case .permissions: "hand.raised"
         case .backups: "externaldrive.badge.timemachine"
         case .search: "magnifyingglass"
@@ -139,10 +139,10 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
             ["Google", L10n.macOSCalendar, L10n.calendarSources, L10n.menuBarCalendar, L10n.notifications]
         case .cloudStorage:
             ["Google", L10n.googleDrive, L10n.googleDriveExportFolder]
-        case .accountsAndVaults:
-            [L10n.account, L10n.vault, L10n.dahliaSignIn, L10n.dahliaServer, L10n.dahliaCloud]
+        case .accountsAndWorkspaces:
+            [L10n.account, L10n.workspace, L10n.dahliaSignIn, L10n.dahliaServer, L10n.dahliaCloud]
         case .backups:
-            [L10n.vault, L10n.createBackup, L10n.importBackup, L10n.restoreBackup]
+            [L10n.workspace, L10n.createBackup, L10n.importBackup, L10n.restoreBackup]
         case .search:
             [L10n.fullTextSearch, L10n.searchRanking, L10n.rebuildFullTextSearch]
         default: []

@@ -180,11 +180,11 @@ describe("PostgreSQL migrations", () => {
     expect(sql).not.toContain('CREATE TABLE "auth"."member"');
     expect(sql).not.toContain('model_alias');
     expect(sql).not.toContain('CREATE TABLE "app"."artifact"');
-    expect(sql).toContain('CREATE TABLE "app"."vaults"');
-    expect(sql).toContain('CREATE TABLE "app"."vault_permissions"');
+    expect(sql).toContain('CREATE TABLE "app"."workspaces"');
+    expect(sql).toContain('CREATE TABLE "app"."workspace_permissions"');
     expect(sql).toContain('"granted_by_user_id" uuid NOT NULL');
     expect(sql).not.toContain('"granted_by_principal_id"');
-    expect(sql).toContain('CONSTRAINT "vault_permission_granted_by_user_fk"');
+    expect(sql).toContain('CONSTRAINT "workspace_permission_granted_by_user_fk"');
     expect(sql).not.toContain('CONSTRAINT "search_index_job_owner_user_fk"');
     expect(sql).toContain('REFERENCES "auth"."user"("id")');
     expect(sql).toContain('CREATE TABLE "app"."meetings"');
@@ -196,7 +196,8 @@ describe("PostgreSQL migrations", () => {
     expect(sql).toContain('"search_text" text DEFAULT \'\' NOT NULL');
     expect(sql).toContain("tsvector GENERATED ALWAYS AS (to_tsvector('simple', search_text)) STORED");
     expect(sql).toContain('"embedding" real[]');
-    expect(sql).toContain('"vault_id" uuid');
+    expect(sql).toContain('"workspace_id" uuid');
+    expect(sql).not.toContain("vault");
     expect(sql).toContain('"meeting_id" uuid');
     expect(sql).toContain('"segment_id" uuid');
     expect(sql).not.toContain("artifact_reservation");
@@ -210,17 +211,17 @@ describe("PostgreSQL migrations", () => {
     expect(sql).not.toContain("dahlia.organization_ids");
     expect(sql).not.toContain("dahlia.deployment_principal_id");
     expect(sql).not.toContain("dahlia.sync_sharing_enabled");
-    expect(sql).not.toContain('CREATE UNIQUE INDEX "vault_permission_single_owner_idx"');
+    expect(sql).not.toContain('CREATE UNIQUE INDEX "workspace_permission_single_owner_idx"');
     expect(sql).toContain('CREATE UNIQUE INDEX "member_user_organization_idx" ON "auth"."member" ("user_id","organization_id")');
     expect(sql).toContain('CREATE UNIQUE INDEX "team_member_user_team_idx" ON "auth"."team_member" ("user_id","team_id")');
-    expect(sql).toContain('"app"."current_identity_can_read_vault"("app"."vaults"."vault_id")');
-    expect(sql).not.toContain('ALTER TABLE "app"."vault_permissions" ENABLE ROW LEVEL SECURITY');
+    expect(sql).toContain('"app"."current_identity_can_read_workspace"("app"."workspaces"."workspace_id")');
+    expect(sql).not.toContain('ALTER TABLE "app"."workspace_permissions" ENABLE ROW LEVEL SECURITY');
     expect(sql).toContain('ALTER TABLE "search"."documents" FORCE ROW LEVEL SECURITY');
     for (const policy of [
-      "vault_select",
-      "vault_insert",
-      "vault_update",
-      "vault_delete",
+      "workspace_select",
+      "workspace_insert",
+      "workspace_update",
+      "workspace_delete",
       "project_select",
       "project_insert",
       "project_update",

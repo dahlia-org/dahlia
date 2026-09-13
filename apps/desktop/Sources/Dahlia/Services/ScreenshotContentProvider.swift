@@ -19,7 +19,7 @@ actor ScreenshotContentProvider {
     private var activeReads = 0
     private var activeThumbnails = 0
     private var waiters: [(id: UUID, variant: ScreenshotVariant, continuation: CheckedContinuation<Bool, Never>)] = []
-    nonisolated let retainedVaults = Mutex<[ObjectIdentifier: [UUID: Int]]>([:])
+    nonisolated let retainedWorkspaces = Mutex<[ObjectIdentifier: [UUID: Int]]>([:])
 
     init(
         session: URLSession? = nil,
@@ -40,12 +40,12 @@ actor ScreenshotContentProvider {
     func configure(dbQueue: DatabaseQueue) async {
         database = dbQueue
         do {
-            let vaultIds = try await dbQueue.read { db in
-                try UUID.fetchAll(db, sql: "SELECT id FROM vaults")
+            let workspaceIds = try await dbQueue.read { db in
+                try UUID.fetchAll(db, sql: "SELECT id FROM workspaces")
             }
-            for vaultId in vaultIds {
+            for workspaceId in workspaceIds {
                 do {
-                    try await migrateLegacyImages(vaultId: vaultId, dbQueue: dbQueue)
+                    try await migrateLegacyImages(workspaceId: workspaceId, dbQueue: dbQueue)
                 } catch {
                     ErrorReportingService.capture(error, context: ["source": "screenshotFileMigration"])
                 }
@@ -99,7 +99,7 @@ actor ScreenshotContentProvider {
         guard let reference = file.localReference ?? file.remoteReference else { throw ScreenshotContentError.unavailable }
         let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
         guard source.fileId == id, source.contentHash == file.contentHash,
-              try await matchesCurrentSource(source, vaultId: file.vaultId, dbQueue: dbQueue) else {
+              try await matchesCurrentSource(source, workspaceId: file.workspaceId, dbQueue: dbQueue) else {
             throw ScreenshotContentError.authorizationRequired
         }
         let content: ScreenshotContent
@@ -116,14 +116,14 @@ actor ScreenshotContentProvider {
         try Task.checkCancellation()
         let current = try await dbQueue.read { try FileRecord.fetchOne($0, key: id) }
         guard current?.localReference == file.localReference, current?.remoteReference == file.remoteReference,
-              try await matchesCurrentSource(source, vaultId: file.vaultId, dbQueue: dbQueue) else { throw ScreenshotContentError.deleted }
+              try await matchesCurrentSource(source, workspaceId: file.workspaceId, dbQueue: dbQueue) else { throw ScreenshotContentError.deleted }
         return content
     }
 
-    private func matchesCurrentSource(_ source: ScreenshotRemoteReference, vaultId: UUID, dbQueue: DatabaseQueue) async throws -> Bool {
+    private func matchesCurrentSource(_ source: ScreenshotRemoteReference, workspaceId: UUID, dbQueue: DatabaseQueue) async throws -> Bool {
         try await dbQueue.read { db in
-            guard let vault = try VaultRecord.fetchOne(db, key: vaultId),
-                  vault.accountConnectionId == source.accountConnectionId else { return false }
+            guard let workspace = try WorkspaceRecord.fetchOne(db, key: workspaceId),
+                  workspace.accountConnectionId == source.accountConnectionId else { return false }
             guard let connectionId = source.accountConnectionId else { return source.origin.isEmpty }
             return try DahliaAccountConnectionRecord.fetchOne(db, key: connectionId)?.origin == source.origin
         }
@@ -147,20 +147,20 @@ actor ScreenshotContentProvider {
         return result
     }
 
-    nonisolated func retainOriginals(vaultIds: [UUID], dbQueue: DatabaseQueue) {
-        retainedVaults.withLock { counts in
-            for vaultId in vaultIds {
-                counts[ObjectIdentifier(dbQueue), default: [:]][vaultId, default: 0] += 1
+    nonisolated func retainOriginals(workspaceIds: [UUID], dbQueue: DatabaseQueue) {
+        retainedWorkspaces.withLock { counts in
+            for workspaceId in workspaceIds {
+                counts[ObjectIdentifier(dbQueue), default: [:]][workspaceId, default: 0] += 1
             }
         }
     }
 
-    nonisolated func releaseOriginals(vaultIds: [UUID], dbQueue: DatabaseQueue) {
+    nonisolated func releaseOriginals(workspaceIds: [UUID], dbQueue: DatabaseQueue) {
         let key = ObjectIdentifier(dbQueue)
-        retainedVaults.withLock { counts in
-            for vaultId in vaultIds {
-                guard let count = counts[key]?[vaultId] else { continue }
-                counts[key]?[vaultId] = count > 1 ? count - 1 : nil
+        retainedWorkspaces.withLock { counts in
+            for workspaceId in workspaceIds {
+                guard let count = counts[key]?[workspaceId] else { continue }
+                counts[key]?[workspaceId] = count > 1 ? count - 1 : nil
             }
             if counts[key]?.isEmpty == true { counts[key] = nil }
         }

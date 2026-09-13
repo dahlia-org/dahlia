@@ -2,7 +2,6 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { AppConfig } from "../config";
-import { personalWorkspaceId } from "../auth/workspace";
 import { createJobProvider } from "../ai-gateway/job-provider";
 import { geminiChatResponse, geminiPart } from "./gemini";
 import { DatabricksTokenError } from "../databricks/token";
@@ -24,9 +23,9 @@ interface AudioInput {
   size: number; checksum: string; manifest: RecordingManifest;
 }
 const MAX_AUDIO_SECONDS = 9.5 * 60 * 60;
-async function collectAudio(store: IdentitySyncStore, vaultId: string, meetingId: string, reference?: SummaryInput | null,
+async function collectAudio(store: IdentitySyncStore, workspaceId: string, meetingId: string, reference?: SummaryInput | null,
   requireCompleteMeeting = false) {
-  const context = await collectSummaryInput(store, vaultId, meetingId, false);
+  const context = await collectSummaryInput(store, workspaceId, meetingId, false);
   if (requireCompleteMeeting && await store.hasPendingRecordings(meetingId)) throw new SummaryError("summary_audio_pair_incomplete");
   const records: RecordingRecord[] = [];
   let after = 0;
@@ -118,8 +117,8 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
     async resolvePreferences(preferences, input) {
       return resolveSummaryPreferences(preferences, input, await backend.listModels({ signal: AbortSignal.timeout(30_000) }), normalizeModel);
     },
-    async version(scoped, vaultId, meetingId, input, options) {
-      return audioFingerprint(await collectAudio(scoped, vaultId, meetingId, input, options?.requireCompleteMeeting));
+    async version(scoped, workspaceId, meetingId, input, options) {
+      return audioFingerprint(await collectAudio(scoped, workspaceId, meetingId, input, options?.requireCompleteMeeting));
     },
     async validateSettings(settings, input) {
       if (!input && !cloudflare) return;
@@ -156,8 +155,8 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
   }> {
       let requestId: string | undefined;
       try {
-        const identity = { userId: job.ownerUserId, workspaceId: personalWorkspaceId(job.ownerUserId), source: "accounts" as const };
-        const input = await store.withIdentity(identity, (scoped) => collectAudio(scoped, job.vaultId, job.meetingId, job.input));
+        const identity = { userId: job.ownerUserId, source: "accounts" as const };
+        const input = await store.withIdentity(identity, (scoped) => collectAudio(scoped, job.workspaceId, job.meetingId, job.input));
         if (await audioFingerprint(input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
         const selectedModel = transcriptionOnly && job.input?.type === "recording" ? job.input.transcriptionModel! : job.settings.model;
         const configuredModel = normalizeModel(selectedModel);
@@ -231,7 +230,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
         endpoint.pathname = cloudflare ? `${endpoint.pathname.replace(/\/v1\/?$/, "")}/run`
           : `${endpoint.pathname.replace(/\/$/, "")}/chat/completions`;
         const headers = await executionHeaders(job.ownerUserId);
-        await store.withIdentity(identity, (scoped) => assertSummaryAccess(scoped, job.vaultId));
+        await store.withIdentity(identity, (scoped) => assertSummaryAccess(scoped, job.workspaceId));
         const iterator = requestBody();
         let sentBytes = 0;
         const encoder = new TextEncoder();

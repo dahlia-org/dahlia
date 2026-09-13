@@ -6,7 +6,7 @@ struct ProjectDetailView: View {
     let projects: [ProjectOverviewItem]
     let appearance: ProjectAppearance
     let appearanceForProject: (UUID) -> ProjectAppearance
-    let vaultID: UUID?
+    let workspaceID: UUID?
     let dbQueue: DatabaseQueue?
     let workspaceChangeToken: UInt64
     let displayMode: ProjectDetailDisplayMode
@@ -62,12 +62,12 @@ struct ProjectDetailView: View {
         .padding(.bottom, 24)
         .frame(maxWidth: DahliaDesign.mainContentMaxWidth, maxHeight: .infinity, alignment: .topLeading)
         .frame(maxWidth: .infinity, alignment: .top)
-        .task(id: ListLoadID(hierarchy: hierarchy, vaultID: vaultID, changeToken: workspaceChangeToken)) {
-            await model.reload(projectIDs: projectIDs, vaultID: vaultID, dbQueue: dbQueue)
+        .task(id: ListLoadID(hierarchy: hierarchy, workspaceID: workspaceID, changeToken: workspaceChangeToken)) {
+            await model.reload(projectIDs: projectIDs, workspaceID: workspaceID, dbQueue: dbQueue)
         }
         .task(id: CalendarLoadID(
             hierarchy: hierarchy,
-            vaultID: vaultID,
+            workspaceID: workspaceID,
             month: displayedMonth,
             changeToken: workspaceChangeToken,
             isVisible: displayMode == .calendar
@@ -116,7 +116,7 @@ struct ProjectDetailView: View {
         await model.loadCalendar(
             containing: displayedMonth,
             projectIDs: projectIDs,
-            vaultID: vaultID,
+            workspaceID: workspaceID,
             dbQueue: dbQueue
         )
     }
@@ -124,13 +124,13 @@ struct ProjectDetailView: View {
 
 private struct ListLoadID: Equatable {
     let hierarchy: [ProjectOverviewItem]
-    let vaultID: UUID?
+    let workspaceID: UUID?
     let changeToken: UInt64
 }
 
 private struct CalendarLoadID: Equatable {
     let hierarchy: [ProjectOverviewItem]
-    let vaultID: UUID?
+    let workspaceID: UUID?
     let month: Date
     let changeToken: UInt64
     let isVisible: Bool

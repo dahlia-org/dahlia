@@ -16,17 +16,17 @@ import DahliaRuntimeSupport
         @Test
         func availabilityPrefersMigratedTranscriptAndRequiresEveryAudioArchive() async throws {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             let transcriptMeetingID = UUID.v7()
             let localTranscriptMeetingID = UUID.v7()
             let audioMeetingID = UUID.v7()
             let sessionIDs = [UUID.v7(), UUID.v7()]
             try await queue.write { db in
-                try VaultRecord(id: vaultID, path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now).insert(db)
+                try WorkspaceRecord(id: workspaceID, path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now).insert(db)
                 for meetingID in [transcriptMeetingID, localTranscriptMeetingID, audioMeetingID] {
                     try MeetingRecord(
                         id: meetingID,
-                        vaultId: vaultID,
+                        workspaceId: workspaceID,
                         projectId: nil,
                         name: "Test",
                         createdAt: .now,
@@ -63,7 +63,7 @@ import DahliaRuntimeSupport
                     try RecordingArchiveRecord(
                         sessionId: sessionID,
                         meetingId: audioMeetingID,
-                        vaultId: vaultID,
+                        workspaceId: workspaceID,
                         connectionId: nil,
                         preparedJSON: sessionID == sessionIDs[0] ? #"{"mic":{}}"# : "{}",
                         state: "saved"
@@ -190,11 +190,11 @@ import DahliaRuntimeSupport
         @Test
         func localTranscriptRequiresNonWhitespaceText() async throws {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
-            let vaultID = UUID.v7(), meetingID = UUID.v7()
+            let workspaceID = UUID.v7(), meetingID = UUID.v7()
             try await queue.write { db in
-                try VaultRecord(id: vaultID, path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now).insert(db)
+                try WorkspaceRecord(id: workspaceID, path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now).insert(db)
                 try MeetingRecord(
-                    id: meetingID, vaultId: vaultID, projectId: nil, name: "Test", createdAt: .now, updatedAt: .now
+                    id: meetingID, workspaceId: workspaceID, projectId: nil, name: "Test", createdAt: .now, updatedAt: .now
                 ).insert(db)
                 try TranscriptRecord(
                     meetingId: meetingID,
@@ -229,7 +229,7 @@ import DahliaRuntimeSupport
         ) async throws {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
             let target = ServerSummaryService.Target(
-                vaultID: .v7(),
+                workspaceID: .v7(),
                 meetingID: .v7(),
                 connectionID: .v7(),
                 origin: "https://\(UUID().uuidString).example.test"
@@ -246,17 +246,15 @@ import DahliaRuntimeSupport
                     clientID: "test",
                     createdAt: .now
                 ).insert(db)
-                let vault = VaultRecord(id: target.vaultID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now,
-                                        accountConnectionId: target.connectionID, organizationId: .v7(), syncRole: "admin",
-                                        syncConfirmedConnectionId: target.connectionID, syncPullCursor: "ready")
-                try vault.insert(db)
+                let workspace = WorkspaceRecord(
+                    id: target.workspaceID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now,
+                    accountConnectionId: target.connectionID, organizationId: .v7(), syncRole: "admin",
+                    syncConfirmedConnectionId: target.connectionID, syncPullCursor: "ready"
+                )
+                try workspace.insert(db)
                 try MeetingRecord(
-                    id: target.meetingID,
-                    vaultId: target.vaultID,
-                    projectId: nil,
-                    name: "Test",
-                    createdAt: .now,
-                    updatedAt: .now
+                    id: target.meetingID, workspaceId: target.workspaceID, projectId: nil,
+                    name: "Test", createdAt: .now, updatedAt: .now
                 ).insert(db)
                 var transcript = TranscriptInfo(id: .v7(), startedAt: nil, endedAt: .now, metadata: nil)
                 transcript.version = 4
@@ -276,13 +274,8 @@ import DahliaRuntimeSupport
                     transcriptionMode: .batch
                 ).insert(db)
                 try RecordingArchiveRecord(
-                    sessionId: sessionID,
-                    meetingId: target.meetingID,
-                    vaultId: target.vaultID,
-                    connectionId: target.connectionID,
-                    number: 1,
-                    audioJSON: Self.archivedAudioJSON,
-                    state: "remote"
+                    sessionId: sessionID, meetingId: target.meetingID, workspaceId: target.workspaceID,
+                    connectionId: target.connectionID, number: 1, audioJSON: Self.archivedAudioJSON, state: "remote"
                 ).insert(db)
             }
             let settings = ServerAccountSettings(
@@ -298,7 +291,11 @@ import DahliaRuntimeSupport
             ImageURLProtocol.register(origin: target.origin) { request in
                 let path = request.url!.path
                 if path == "/api/v1/capabilities" {
-                    return (200, [:], Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],"completeRecordings":true}}"#.utf8))
+                    return (
+                        200,
+                        [:],
+                        Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],"completeRecordings":true}}"#.utf8)
+                    )
                 }
                 if path == "/api/v1/models" {
                     return (200, [:], Data("""
@@ -327,7 +324,8 @@ import DahliaRuntimeSupport
                         postRequests.withLock { $0.append(body) }
                     }
                     return (202, ["Content-Type": "application/json"], Data("""
-                    {"job":{"id":"\(jobID.uuidString.lowercased())","method":"\(source.rawValue)","settings":{"model":"gpt-text","detail":"high","reasoningEffort":"high"},
+                    {"job":{"id":"\(jobID.uuidString.lowercased())","method":"\(source
+                        .rawValue)","settings":{"model":"gpt-text","detail":"high","reasoningEffort":"high"},
                     "outputLanguage":"ja","attempts":1,"createdAt":"2026-09-09T00:00:00.000Z","updatedAt":"2026-09-09T00:00:00.000Z",
                     "status":"succeeded","error":null,"stage":"saving"}}
                     """.utf8))
@@ -360,7 +358,7 @@ import DahliaRuntimeSupport
                         try RecordingArchiveRecord(
                             sessionId: syncedSessionID,
                             meetingId: target.meetingID,
-                            vaultId: target.vaultID,
+                            workspaceId: target.workspaceID,
                             connectionId: target.connectionID,
                             number: 2,
                             audioJSON: Self.archivedAudioJSON,
@@ -389,7 +387,8 @@ import DahliaRuntimeSupport
             )
 
             try await assertUnavailableManualModelPreserved(
-                service: service, target: target, queue: queue, settings: settings, source: source, jobID: jobID)
+                service: service, target: target, queue: queue, settings: settings, source: source, jobID: jobID
+            )
 
             if source == .audio {
                 try await assertPendingAudioFailsBeforeStarting(
@@ -515,19 +514,21 @@ import DahliaRuntimeSupport
         func serverAvailabilityUsesLiveCapabilitiesAndCanonicalTranscriptUnlessItsMutationIsPending() async throws {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
             let target = ServerSummaryService.Target(
-                vaultID: .v7(), meetingID: .v7(), connectionID: .v7(),
+                workspaceID: .v7(), meetingID: .v7(), connectionID: .v7(),
                 origin: "https://\(UUID.v7().uuidString.lowercased()).example.test"
             )
             try await queue.write { db in
                 try DahliaAccountConnectionRecord(
                     id: target.connectionID, origin: target.origin, clientID: "test", createdAt: .now
                 ).insert(db)
-                let vault = VaultRecord(id: target.vaultID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now,
-                                        accountConnectionId: target.connectionID, organizationId: .v7(), syncRole: "admin",
-                                        syncConfirmedConnectionId: target.connectionID, syncPullCursor: "ready")
-                try vault.insert(db)
+                let workspace = WorkspaceRecord(
+                    id: target.workspaceID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now,
+                    accountConnectionId: target.connectionID, organizationId: .v7(), syncRole: "admin",
+                    syncConfirmedConnectionId: target.connectionID, syncPullCursor: "ready"
+                )
+                try workspace.insert(db)
                 try MeetingRecord(
-                    id: target.meetingID, vaultId: target.vaultID, projectId: nil, name: "Test",
+                    id: target.meetingID, workspaceId: target.workspaceID, projectId: nil, name: "Test",
                     createdAt: .now, updatedAt: .now
                 ).insert(db)
                 var info = TranscriptInfo(id: .v7(), startedAt: nil, endedAt: .now, metadata: nil)
@@ -607,8 +608,8 @@ import DahliaRuntimeSupport
                 let current = try TranscriptRecord.current(target.meetingID, in: db)
                 let info = try #require(current)
                 try SyncTransactionRecorder.record(
-                    vaultId: target.vaultID,
-                    operations: [try TranscriptRecord.mutation(meetingId: target.meetingID, info: info, mode: "append")],
+                    workspaceId: target.workspaceID,
+                    operations: [TranscriptRecord.mutation(meetingId: target.meetingID, info: info, mode: "append")],
                     in: db
                 )
             }

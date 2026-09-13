@@ -7,15 +7,15 @@ import Foundation
     struct ExportPathTests {
         @Test
         func transcriptExportWritesIntoDahliaTranscriptsDirectory() throws {
-            let vaultURL = FileManager.default.temporaryDirectory
+            let workspaceURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
-            defer { try? FileManager.default.removeItem(at: vaultURL) }
+            defer { try? FileManager.default.removeItem(at: workspaceURL) }
 
-            try FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
 
             let meetingId = UUID()
             let relativePath = try TranscriptExportService.exportTranscript(
-                vaultURL: vaultURL,
+                workspaceURL: workspaceURL,
                 meetingId: meetingId,
                 projectName: "Test Project",
                 createdAt: Date(timeIntervalSince1970: 0),
@@ -28,21 +28,21 @@ import Foundation
             )
 
             #expect(relativePath == "_dahlia/transcripts/\(meetingId.uuidString).md")
-            #expect(FileManager.default.fileExists(atPath: vaultURL.appendingPathComponent(relativePath).path))
+            #expect(FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(relativePath).path))
         }
 
         @Test
         func transcriptExportUsesCreatedAtRelativeTimestamps() throws {
-            let vaultURL = FileManager.default.temporaryDirectory
+            let workspaceURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
-            defer { try? FileManager.default.removeItem(at: vaultURL) }
+            defer { try? FileManager.default.removeItem(at: workspaceURL) }
 
-            try FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
 
             let meetingId = UUID()
             let createdAt = Date(timeIntervalSince1970: 1_776_384_000)
             let relativePath = try TranscriptExportService.exportTranscript(
-                vaultURL: vaultURL,
+                workspaceURL: workspaceURL,
                 meetingId: meetingId,
                 projectName: "Test Project",
                 createdAt: createdAt,
@@ -54,24 +54,24 @@ import Foundation
                 ]
             )
 
-            let markdown = try String(contentsOf: vaultURL.appendingPathComponent(relativePath), encoding: .utf8)
+            let markdown = try String(contentsOf: workspaceURL.appendingPathComponent(relativePath), encoding: .utf8)
             #expect(markdown.contains("###### 00:12:34\nhello"))
         }
 
         @Test
         func transcriptExportUsesRecordingSessionOffsetsAcrossPausedRecording() throws {
-            let vaultURL = FileManager.default.temporaryDirectory
+            let workspaceURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
-            defer { try? FileManager.default.removeItem(at: vaultURL) }
+            defer { try? FileManager.default.removeItem(at: workspaceURL) }
 
-            try FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
 
             let meetingId = UUID()
             let meetingStart = Date(timeIntervalSince1970: 1_776_384_000)
             let firstSessionId = UUID.v7()
             let secondSessionId = UUID.v7()
             let relativePath = try TranscriptExportService.exportTranscript(
-                vaultURL: vaultURL,
+                workspaceURL: workspaceURL,
                 meetingId: meetingId,
                 projectName: "Test Project",
                 createdAt: meetingStart,
@@ -103,18 +103,18 @@ import Foundation
                 ]
             )
 
-            let markdown = try String(contentsOf: vaultURL.appendingPathComponent(relativePath), encoding: .utf8)
+            let markdown = try String(contentsOf: workspaceURL.appendingPathComponent(relativePath), encoding: .utf8)
             #expect(markdown.contains("###### 00:00:05\nbefore"))
             #expect(markdown.contains("###### 00:00:13\nafter"))
         }
 
         @Test
         func screenshotExportWritesIntoDahliaScreenshotsDirectory() throws {
-            let vaultURL = FileManager.default.temporaryDirectory
+            let workspaceURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
-            defer { try? FileManager.default.removeItem(at: vaultURL) }
+            defer { try? FileManager.default.removeItem(at: workspaceURL) }
 
-            try FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
 
             let screenshot = MeetingScreenshotRecord(
                 id: UUID(),
@@ -125,12 +125,12 @@ import Foundation
             )
 
             let relativePaths = try ScreenshotExportService.exportScreenshots(
-                vaultURL: vaultURL,
+                workspaceURL: workspaceURL,
                 screenshots: [screenshot]
             )
 
             #expect(relativePaths == ["_dahlia/screenshots/\(screenshot.id.uuidString).png"])
-            #expect(FileManager.default.fileExists(atPath: vaultURL.appendingPathComponent(relativePaths[0]).path))
+            #expect(FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(relativePaths[0]).path))
         }
     }
 #endif

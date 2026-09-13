@@ -34,7 +34,7 @@ export interface RecordingAudio {
 }
 export interface RecordingRecord {
   sessionId: string;
-  vaultId: string;
+  workspaceId: string;
   meetingId: string;
   number: number;
   startedAt: Date;
@@ -58,7 +58,7 @@ export function recordingResponse(record: RecordingRecord, includeStaging = fals
 }
 export function recordingCanonical(record: RecordingRecord) {
   return { ...recordingResponse(record), recordingNumber: record.number, sessionId: record.sessionId, meetingId: record.meetingId,
-    vaultId: record.vaultId, revision: record.revision,
+    workspaceId: record.workspaceId, revision: record.revision,
     audio: Object.fromEntries(Object.entries(record.audio).filter(([, value]) => value.active).map(([source, value]) => [source, {
       contentType: value.content_type, size: value.size, checksum: value.checksum, manifest: value.manifest,
       contentUrl: recordingContentURL(record, source as RecordingSource),

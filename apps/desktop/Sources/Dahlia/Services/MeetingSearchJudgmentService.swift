@@ -11,10 +11,10 @@ enum MeetingSearchJudgmentService {
     private static let maximumQueryLength = 48
 
     static func generateJudgments(
-        vaultID: UUID,
+        workspaceID: UUID,
         dbQueue: DatabaseQueue
     ) async throws -> MeetingSearchJudgmentList {
-        let samples = try await sampledMeetings(vaultID: vaultID, dbQueue: dbQueue)
+        let samples = try await sampledMeetings(workspaceID: workspaceID, dbQueue: dbQueue)
         guard !samples.isEmpty else {
             throw MeetingSearchBenchmarkError.notEnoughMeetings
         }
@@ -23,7 +23,7 @@ enum MeetingSearchJudgmentService {
             throw MeetingSearchBenchmarkError.noJudgmentsGenerated
         }
         return MeetingSearchJudgmentList(
-            vaultID: vaultID,
+            workspaceID: workspaceID,
             generatedAt: .now,
             sampledMeetingCount: samples.count,
             judgments: judgments
@@ -56,7 +56,7 @@ enum MeetingSearchJudgmentService {
     }
 
     private static func sampledMeetings(
-        vaultID: UUID,
+        workspaceID: UUID,
         dbQueue: DatabaseQueue
     ) async throws -> [SampledMeeting] {
         try await dbQueue.read { db in
@@ -72,11 +72,11 @@ enum MeetingSearchJudgmentService {
                 LEFT JOIN calendar_events
                   ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
                  AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
-                WHERE meetings.vaultId = ?
+                WHERE meetings.workspace_id = ?
                 ORDER BY COALESCE(meetings.recordingStartedAt, meetings.createdAt) DESC, meetings.id DESC
                 LIMIT ?
                 """,
-                arguments: [vaultID, sampledMeetingLimit]
+                arguments: [workspaceID, sampledMeetingLimit]
             )
             return try rows.map { row in
                 let id: UUID = row["id"]

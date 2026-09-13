@@ -12,7 +12,8 @@ enum BatchTranscriptionPersistence {
         guard uncovered > 0 else { return }
         guard let metadata = try TranscriptRecord.current(meetingID, in: db)?.metadata, !metadata.runs.isEmpty,
               let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
-              let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId) else { throw TranscriptVersionError.fullTranscriptionUnavailable }
+              let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId)
+        else { throw TranscriptVersionError.fullTranscriptionUnavailable }
         let archives = try RecordingArchiveRecord.filter(Column("meetingId") == meetingID)
             .filter(ids.contains(Column("sessionId"))).fetchAll(db)
         for run in metadata.runs {
@@ -22,7 +23,7 @@ enum BatchTranscriptionPersistence {
             }
             for input in inputs {
                 guard let archive = archives.first(where: {
-                    $0.number == input.recordingNumber && $0.vaultId == vault.id && $0.connectionId == vault.accountConnectionId
+                    $0.number == input.recordingNumber && $0.workspaceId == workspace.id && $0.connectionId == workspace.accountConnectionId
                 }), try archive.audio[input.source]?.checksum == input.checksum else {
                     throw TranscriptVersionError.fullTranscriptionUnavailable
                 }
@@ -123,7 +124,7 @@ enum BatchTranscriptionPersistence {
             try TranscriptRecord.enqueueSnapshot(meetingId: meetingId, info: info, in: db)
             guard let updated = try MeetingRecord.fetchOne(db, key: meetingId) else { throw CocoaError(.fileNoSuchFile) }
             try SyncTransactionRecorder.record(
-                vaultId: meeting.vaultId,
+                workspaceId: meeting.workspaceId,
                 operations: [SyncInitialSnapshotBuilder.meetingOperation(updated, action: .update, in: db)],
                 in: db
             )

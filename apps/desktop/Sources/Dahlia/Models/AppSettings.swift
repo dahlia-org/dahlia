@@ -100,7 +100,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let automaticScreenshotSharedRegionCropKey =
         "automaticScreenshotCropToSharedRegion"
     nonisolated static let generateSummaryAfterBatchTranscriptionUserDefaultsKey = "generateSummaryAfterBatchTranscription"
-    nonisolated static let exportBatchSummaryToVaultUserDefaultsKey = "exportBatchSummaryToVault"
+    nonisolated static let exportBatchSummaryToWorkspaceUserDefaultsKey = "exportBatchSummaryToWorkspace"
     nonisolated static let exportBatchSummaryToGoogleDocsUserDefaultsKey = "exportBatchSummaryToGoogleDocs"
     nonisolated static let transcriptionLanguageScopeUserDefaultsKey = "transcriptionLanguageScope"
     nonisolated static let appLanguageScopeUserDefaultsKey = "appLanguageScope"
@@ -275,7 +275,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage(AppSettings.batchAudioRetentionPeriodUserDefaultsKey) private var batchAudioRetentionPeriodRawValue =
         BatchAudioRetentionPeriod.defaultValue.rawValue
     @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey) var generateSummaryAfterBatchTranscription = false
-    @AppStorage(AppSettings.exportBatchSummaryToVaultUserDefaultsKey) var exportBatchSummaryToVault = true
+    @AppStorage(AppSettings.exportBatchSummaryToWorkspaceUserDefaultsKey) var exportBatchSummaryToWorkspace = true
     @AppStorage(AppSettings.exportBatchSummaryToGoogleDocsUserDefaultsKey) var exportBatchSummaryToGoogleDocs = false
     @AppStorage(AppSettings.liveSubtitleTranslationEnabledKey) var liveSubtitleTranslationEnabled = true
     @AppStorage(AppSettings.liveSubtitleTranslationTargetLanguageKey) var liveSubtitleTranslationTargetLanguage =
@@ -306,7 +306,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     func batchSummaryGenerationOptions() -> SummaryGenerationOptions {
         SummaryGenerationOptions(
             exportOptions: SummaryExportOptions(
-                exportsToVault: exportBatchSummaryToVault,
+                exportsToWorkspace: exportBatchSummaryToWorkspace,
                 exportsToGoogleDocs: exportBatchSummaryToGoogleDocs
             ),
             detailLevel: summaryDetailLevel
@@ -508,14 +508,14 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         defaults.set(data, forKey: meetingSearchJudgmentsUserDefaultsKey)
     }
 
-    // MARK: - 保管庫（ランタイム状態）
+    // MARK: - ワークスペース（ランタイム状態）
 
-    /// 現在開いている保管庫。DB の `vaults` テーブルから選択される。
-    @Published var currentVault: VaultRecord?
+    /// 現在開いているワークスペース。DB の `workspaces` テーブルから選択される。
+    @Published var currentWorkspace: WorkspaceRecord?
 
-    /// 現在の保管庫の URL。保管庫未選択時は nil。
-    var vaultURL: URL? {
-        currentVault?.url
+    /// 現在のワークスペースの URL。ワークスペース未選択時は nil。
+    var workspaceURL: URL? {
+        currentWorkspace?.url
     }
 
     // MARK: - 会議検出設定

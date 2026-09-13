@@ -3,7 +3,7 @@ import GRDB
 
 struct SyncFileUpload: Equatable, Sendable {
     let transactionId: UUID
-    let vaultId: UUID
+    let workspaceId: UUID
     let connectionId: UUID
     let origin: URL
     let operation: SyncQueuedOperation
@@ -14,18 +14,18 @@ struct SyncFileUpload: Equatable, Sendable {
         SELECT EXISTS (
             SELECT 1 FROM sync_operations o
             JOIN sync_transactions t ON t.id = o.transactionId
-            JOIN vaults v ON v.id = t.vaultId
+            JOIN workspaces v ON v.id = t.workspace_id
             JOIN dahlia_account_connections c ON c.id = t.connectionId
-            WHERE o.id = ? AND t.id = ? AND t.vaultId = ? AND t.connectionId = ?
+            WHERE o.id = ? AND t.id = ? AND t.workspace_id = ? AND t.connectionId = ?
               AND c.origin = ? AND v.accountConnectionId = t.connectionId
               AND v.syncConfirmedConnectionId = t.connectionId
               AND v.syncRole IN ('admin', 'editor')
               AND (v.syncRecoveryState IS NULL OR v.syncRecoveryState IN ('pending', 'recovering'))
               AND t.blockedReason IS NULL
               AND NOT EXISTS (SELECT 1 FROM sync_transactions earlier
-                  WHERE earlier.vaultId = t.vaultId AND earlier.sequence < t.sequence AND earlier.blockedReason IS NOT NULL)
+                  WHERE earlier.workspace_id = t.workspace_id AND earlier.sequence < t.sequence AND earlier.blockedReason IS NOT NULL)
         )
-        """, arguments: [operation.id, transactionId, vaultId, connectionId, origin.absoluteString]) == true
+        """, arguments: [operation.id, transactionId, workspaceId, connectionId, origin.absoluteString]) == true
     }
 }
 
@@ -34,8 +34,8 @@ extension SyncTransactionQueue {
     static func fileUploads(for transaction: SyncQueuedTransaction, origin: URL, in db: Database) throws -> [SyncFileUpload] {
         let transactions = try Row.fetchAll(db, sql: """
         SELECT id, attempts, blockedReason FROM sync_transactions
-        WHERE vaultId = ? ORDER BY sequence LIMIT 8
-        """, arguments: [transaction.vaultId])
+        WHERE workspace_id = ? ORDER BY sequence LIMIT 8
+        """, arguments: [transaction.workspaceId])
         var uploads: [SyncFileUpload] = []
         var files = Set<UUID>()
         for row in transactions {
@@ -45,7 +45,7 @@ extension SyncTransactionQueue {
             if id != transaction.id, row["attempts"] as Int > 0 { break }
             let barrier = try Bool.fetchOne(db, sql: """
             SELECT EXISTS (SELECT 1 FROM sync_operations WHERE transactionId = ?
-                AND (action IN ('delete', 'reset') OR (entity = 'vault' AND action = 'create')))
+                AND (action IN ('delete', 'reset') OR (entity = 'workspace' AND action = 'create')))
             """, arguments: [id]) == true
             if barrier { break }
             let operations = try Row.fetchAll(db, sql: """
@@ -57,7 +57,7 @@ extension SyncTransactionQueue {
                 // Even a metadata-only operation must commit before another operation on this file stages.
                 guard files.insert(fileId).inserted, operation["hasAttachment"] as Bool else { continue }
                 let upload = SyncFileUpload(
-                    transactionId: id, vaultId: transaction.vaultId, connectionId: transaction.connectionId, origin: origin,
+                    transactionId: id, workspaceId: transaction.workspaceId, connectionId: transaction.connectionId, origin: origin,
                     operation: .init(
                         id: operation["id"], entity: .file, action: operation["action"], entityId: fileId,
                         baseRevision: operation["baseRevision"],

@@ -9,18 +9,18 @@ private func fail(_ message: String) -> Never {
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 
-var vaultID: UUID?
+var workspaceID: UUID?
 var allowsWrites = false
 var telemetryOrigin: MCPUsageTelemetryEvent.Origin?
 var argumentIndex = 0
 while argumentIndex < arguments.count {
     switch arguments[argumentIndex] {
-    case "--vault", "--vault-id":
-        guard vaultID == nil, argumentIndex + 1 < arguments.count,
-              let id = try? TypeID.decode(arguments[argumentIndex + 1], as: .vault) else {
-            fail("--vault must specify one valid vlt_ TypeID")
+    case "--workspace", "--workspace-id":
+        guard workspaceID == nil, argumentIndex + 1 < arguments.count,
+              let id = try? TypeID.decode(arguments[argumentIndex + 1], as: .workspace) else {
+            fail("--workspace must specify one valid ws_ TypeID")
         }
-        vaultID = id
+        workspaceID = id
         argumentIndex += 2
     case "--write":
         guard !allowsWrites else { fail("--write may only be specified once") }
@@ -35,11 +35,11 @@ while argumentIndex < arguments.count {
         telemetryOrigin = origin
         argumentIndex += 2
     default:
-        fail("Usage: dahlia-mcp [--vault <vlt_TypeID>] [--write]")
+        fail("Usage: dahlia-mcp [--workspace <ws_TypeID>] [--write]")
     }
 }
 
-let configuredVaultID = vaultID
+let configuredWorkspaceID = workspaceID
 let configuredAllowsWrites = allowsWrites
 let configuredTelemetryOrigin = telemetryOrigin
 let usageTelemetryClient: MCPUsageTelemetryClient? = if configuredTelemetryOrigin != nil {
@@ -51,8 +51,8 @@ let usageTelemetryClient: MCPUsageTelemetryClient? = if configuredTelemetryOrigi
 runMCPStandardIOWorker {
     do {
         let server: DahliaMCPServer
-        if let vaultID = configuredVaultID {
-            let store = try MeetingAccessStore(vaultID: vaultID, allowsWrites: configuredAllowsWrites)
+        if let workspaceID = configuredWorkspaceID {
+            let store = try MeetingAccessStore(workspaceID: workspaceID, allowsWrites: configuredAllowsWrites)
             server = DahliaMCPServer(
                 store: store,
                 telemetryOrigin: configuredTelemetryOrigin,

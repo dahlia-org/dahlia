@@ -5,19 +5,19 @@ struct MainSidebarBottomArea: View {
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
     var updateController: AppUpdateController
-    let onSelectVault: (VaultRecord) -> Void
+    let onSelectWorkspace: (WorkspaceRecord) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack(alignment: .bottom) {
             MainSidebarFooterView(
-                vaults: sidebarViewModel.allVaults,
-                currentVault: sidebarViewModel.currentVault,
+                workspaces: sidebarViewModel.allWorkspaces,
+                currentWorkspace: sidebarViewModel.currentWorkspace,
                 updateController: updateController,
-                onSelectVault: onSelectVault
+                onSelectWorkspace: onSelectWorkspace
             )
-            .disabled(!viewModel.canSwitchVault)
+            .disabled(!viewModel.canSwitchWorkspace)
             .accessibilityHidden(viewModel.isListening)
 
             if viewModel.isListening {

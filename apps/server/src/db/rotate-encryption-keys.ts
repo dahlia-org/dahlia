@@ -8,11 +8,11 @@ async function main() {
   try {
     const apply = args[0] === "--apply";
     const counts = await store.rotateEncryptionKeys(apply);
-    console.info(JSON.stringify({ event: "vault_key_rotation_completed", apply, ...counts }));
+    console.info(JSON.stringify({ event: "workspace_key_rotation_completed", apply, ...counts }));
   } finally { await store.close?.(); }
 }
 
 void main().catch(() => {
-  console.error(JSON.stringify({ event: "vault_key_rotation_failed" }));
+  console.error(JSON.stringify({ event: "workspace_key_rotation_failed" }));
   process.exitCode = 1;
 });

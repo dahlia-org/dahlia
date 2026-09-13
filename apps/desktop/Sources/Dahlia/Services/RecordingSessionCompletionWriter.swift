@@ -49,7 +49,7 @@ enum RecordingSessionCompletionWriter {
             meeting.updatedAt = request.updatedAt
             try meeting.update(db)
             try SyncTransactionRecorder.record(
-                vaultId: meeting.vaultId,
+                workspaceId: meeting.workspaceId,
                 operations: [SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update, in: db)],
                 in: db
             )

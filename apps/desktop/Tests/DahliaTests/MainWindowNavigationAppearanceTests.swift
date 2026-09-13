@@ -9,7 +9,7 @@
             let suiteName = "MainWindowNavigationTests-\(UUID.v7())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
-            let vault = UUID.v7()
+            let workspace = UUID.v7()
             var parent = ProjectOverviewItem(
                 projectId: .v7(),
                 projectName: "Parent",
@@ -32,39 +32,39 @@
             parent.color = parentAppearance.color.rawValue
             child.icon = ProjectIcon.code.rawValue
             child.color = ProjectThemeColor.blue.rawValue
-            navigation.updateProjectAppearances([parent, child], vaultId: vault)
+            navigation.updateProjectAppearances([parent, child], workspaceId: workspace)
             #expect(
-                navigation.projectAppearance(for: child.projectId, in: projectsByID, vaultId: vault) == parentAppearance
+                navigation.projectAppearance(for: child.projectId, in: projectsByID, workspaceId: workspace) == parentAppearance
             )
 
             let updatedAppearance = ProjectAppearance(icon: .work, color: .orange)
             parent.icon = updatedAppearance.icon.rawValue
             parent.color = updatedAppearance.color.rawValue
-            navigation.updateProjectAppearances([parent, child], vaultId: vault)
+            navigation.updateProjectAppearances([parent, child], workspaceId: workspace)
             #expect(
-                navigation.projectAppearance(for: child.projectId, in: projectsByID, vaultId: vault) == updatedAppearance
+                navigation.projectAppearance(for: child.projectId, in: projectsByID, workspaceId: workspace) == updatedAppearance
             )
 
             let canonicalParent = ProjectAppearance(icon: .book, color: .green)
             projectsByID[parent.projectId]?.icon = canonicalParent.icon.rawValue
             projectsByID[parent.projectId]?.color = canonicalParent.color.rawValue
-            navigation.updateProjectAppearances(Array(projectsByID.values), vaultId: vault)
-            #expect(navigation.projectAppearance(for: parent.projectId, in: projectsByID, vaultId: vault) == canonicalParent)
-            #expect(navigation.projectAppearance(for: child.projectId, in: projectsByID, vaultId: vault) == canonicalParent)
+            navigation.updateProjectAppearances(Array(projectsByID.values), workspaceId: workspace)
+            #expect(navigation.projectAppearance(for: parent.projectId, in: projectsByID, workspaceId: workspace) == canonicalParent)
+            #expect(navigation.projectAppearance(for: child.projectId, in: projectsByID, workspaceId: workspace) == canonicalParent)
 
             let explicitChild = ProjectAppearance(icon: .code, color: .pink)
             projectsByID[child.projectId]?.icon = explicitChild.icon.rawValue
             projectsByID[child.projectId]?.color = explicitChild.color.rawValue
-            navigation.updateProjectAppearances(Array(projectsByID.values), vaultId: vault)
-            #expect(navigation.projectAppearance(for: child.projectId, in: projectsByID, vaultId: vault) == canonicalParent)
+            navigation.updateProjectAppearances(Array(projectsByID.values), workspaceId: workspace)
+            #expect(navigation.projectAppearance(for: child.projectId, in: projectsByID, workspaceId: workspace) == canonicalParent)
             projectsByID[parent.projectId]?.icon = parentAppearance.icon.rawValue
             projectsByID[parent.projectId]?.color = parentAppearance.color.rawValue
-            navigation.updateProjectAppearances(Array(projectsByID.values), vaultId: vault)
-            #expect(navigation.projectAppearance(for: child.projectId, in: projectsByID, vaultId: vault) == parentAppearance)
+            navigation.updateProjectAppearances(Array(projectsByID.values), workspaceId: workspace)
+            #expect(navigation.projectAppearance(for: child.projectId, in: projectsByID, workspaceId: workspace) == parentAppearance)
             projectsByID[child.projectId]?.icon = nil
             projectsByID[child.projectId]?.color = nil
-            navigation.updateProjectAppearances(Array(projectsByID.values), vaultId: vault)
-            #expect(navigation.projectAppearance(for: child.projectId, in: projectsByID, vaultId: vault) == parentAppearance)
+            navigation.updateProjectAppearances(Array(projectsByID.values), workspaceId: workspace)
+            #expect(navigation.projectAppearance(for: child.projectId, in: projectsByID, workspaceId: workspace) == parentAppearance)
         }
     }
 #endif

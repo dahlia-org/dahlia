@@ -23,7 +23,7 @@ struct MultipleMeetingSelectionView: View {
                 )
                 .buttonStyle(.borderedProminent)
                 .disabled(
-                    !sidebarViewModel.canEditCurrentVault
+                    !sidebarViewModel.canEditCurrentWorkspace
                         || !viewModel.canRegenerateSummaries(meetingIds: sidebarViewModel.selectedMeetingIds)
                 )
 
@@ -45,7 +45,7 @@ struct MultipleMeetingSelectionView: View {
                 } label: {
                     Label(L10n.moveToProject, systemImage: "folder")
                 }
-                .disabled(!sidebarViewModel.canEditCurrentVault)
+                .disabled(!sidebarViewModel.canEditCurrentWorkspace)
 
                 Button(role: .destructive) {
                     pendingMeetingDeletion = MeetingDeletionRequest(
@@ -55,7 +55,7 @@ struct MultipleMeetingSelectionView: View {
                 } label: {
                     Label(L10n.deleteCount(sidebarViewModel.selectedMeetingIds.count), systemImage: "trash")
                 }
-                .disabled(!sidebarViewModel.canEditCurrentVault)
+                .disabled(!sidebarViewModel.canEditCurrentWorkspace)
 
                 Button(L10n.clear) {
                     sidebarViewModel.clearMeetingSelection()

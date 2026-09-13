@@ -5,7 +5,7 @@ import GRDB
 
 extension MeetingRepository {
     nonisolated static func searchScreenshotPage(
-        vaultID: UUID,
+        workspaceID: UUID,
         criteria: MeetingSearchCriteria,
         after cursor: ScreenshotSearchCursor? = nil,
         limit: Int,
@@ -31,13 +31,13 @@ extension MeetingRepository {
             ) ?? 0
             let replacesResults = cursor.map { $0.indexRevision != revision } ?? false
             let offset = replacesResults ? 0 : cursor?.offset ?? 0
-            let projects = try ProjectRecord.fetchResolvedAll(vaultId: vaultID, in: db)
+            let projects = try ProjectRecord.fetchResolvedAll(workspaceId: workspaceID, in: db)
             let includedProjectIDs = screenshotDescendantProjectIDs(
                 selectedIDs: criteria.projectIDs,
                 projects: projects
             )
             let filter = screenshotSearchFilter(criteria, includedProjectIDs: includedProjectIDs)
-            var arguments: StatementArguments = [vaultID]
+            var arguments: StatementArguments = [workspaceID]
             if let query { arguments += [query] }
             arguments += filter.arguments
             arguments += [limit + 1, offset]
@@ -51,7 +51,7 @@ extension MeetingRepository {
                 JOIN meetings ON meetings.id = meeting_images.meetingId
                 \(query == nil ? "" :
                     "JOIN search_documents ON search_documents.sourceId = meeting_images.id AND search_documents.kind = 'screenshot' JOIN search_documents_fts ON search_documents_fts.rowid = search_documents.id")
-                WHERE meetings.vaultId = ?
+                WHERE meetings.workspace_id = ?
                   \(query == nil ? "" : "AND search_documents_fts MATCH ?")
                   \(filter.condition)
                 ORDER BY \(query == nil ? "" : SearchFTS5Tokenizer.screenshotRankingSQL + ",") meeting_images.capturedAt DESC, meeting_images.id
@@ -74,20 +74,26 @@ extension MeetingRepository {
     }
 
     nonisolated static func remoteScreenshotPage(
-        vaultId: UUID, criteria: MeetingSearchCriteria, cursor: String?, dbQueue: DatabaseQueue, contentProvider: MeetingContentProvider = .shared
+        workspaceId: UUID, criteria: MeetingSearchCriteria, cursor: String?, dbQueue: DatabaseQueue, contentProvider: MeetingContentProvider = .shared
     ) async throws -> (items: [ScreenshotSearchResult], cursor: String?) {
         var position = cursor
         repeat {
-            let page = try await contentProvider.search(vaultId: vaultId, query: criteria.text, kind: .screenshot, cursor: position, dbQueue: dbQueue)
+            let page = try await contentProvider.search(
+                workspaceId: workspaceId,
+                query: criteria.text,
+                kind: .screenshot,
+                cursor: position,
+                dbQueue: dbQueue
+            )
             let items = try await dbQueue.read { db in
-                let allowed = try Set(filterRemoteSearchMeetingIDs(page.items.map(\.meetingId), vaultId: vaultId, criteria: criteria, in: db))
+                let allowed = try Set(filterRemoteSearchMeetingIDs(page.items.map(\.meetingId), workspaceId: workspaceId, criteria: criteria, in: db))
                 return try page.items.compactMap { hit -> ScreenshotSearchResult? in
                     guard allowed.contains(hit.meetingId) else { return nil }
                     guard let row = try Row.fetchOne(db, sql: """
                     SELECT s.id, s.meetingId, s.capturedAt, s.mimeType, m.name, m.description
                     FROM meeting_images s JOIN meetings m ON m.id = s.meetingId
-                    WHERE s.id = ? AND m.id = ? AND m.vaultId = ?
-                    """, arguments: [hit.id, hit.meetingId, vaultId]) else { throw TextContentError.changed }
+                    WHERE s.id = ? AND m.id = ? AND m.workspace_id = ?
+                    """, arguments: [hit.id, hit.meetingId, workspaceId]) else { throw TextContentError.changed }
                     return ScreenshotSearchResult(
                         id: hit.id,
                         meetingID: hit.meetingId,
@@ -107,7 +113,7 @@ extension MeetingRepository {
 
     nonisolated static func screenshotImageData(
         id: UUID,
-        vaultID: UUID,
+        workspaceID: UUID,
         dbQueue: DatabaseQueue
     ) async throws -> Data? {
         let exists = try await dbQueue.read { db in
@@ -117,9 +123,9 @@ extension MeetingRepository {
                 SELECT EXISTS(SELECT 1
                 FROM meeting_images
                 JOIN meetings ON meetings.id = meeting_images.meetingId
-                WHERE meeting_images.id = ? AND meetings.vaultId = ?)
+                WHERE meeting_images.id = ? AND meetings.workspace_id = ?)
                 """,
-                arguments: [id, vaultID]
+                arguments: [id, workspaceID]
             )
         }
         guard exists == true else { return nil }

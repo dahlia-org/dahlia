@@ -2,10 +2,10 @@ import Foundation
 
 protocol CodexChatServicing: Sendable {
     func models(forceRefresh: Bool) async throws -> [CodexModel]
-    func listThreads(cursor: String?, vaultID: UUID) async throws -> CodexChatThreadPage
+    func listThreads(cursor: String?, workspaceID: UUID) async throws -> CodexChatThreadPage
     func loadThread(id: String) async throws -> CodexChatThread
-    func resumeThread(id: String, vaultID: UUID) async throws -> CodexChatThread
-    func startThread(model: String?, effort: String, vaultID: UUID) async throws -> CodexChatThread
+    func resumeThread(id: String, workspaceID: UUID) async throws -> CodexChatThread
+    func startThread(model: String?, effort: String, workspaceID: UUID) async throws -> CodexChatThread
     func acquireThreadLease(threadID: String) async -> UUID
     func releaseThreadLease(threadID: String, leaseID: UUID) async
     func setThreadName(threadID: String, name: String) async

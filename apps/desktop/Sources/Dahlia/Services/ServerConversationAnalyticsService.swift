@@ -43,10 +43,10 @@ struct ServerConversationAnalyticsService: Sendable {
             transcript: TranscriptInfo?
         )? in
             guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
-                  let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId),
-                  vault.allowsCanonicalEdits,
-                  let connectionID = vault.accountConnectionId,
-                  vault.syncConfirmedConnectionId == connectionID,
+                  let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId),
+                  workspace.allowsCanonicalEdits,
+                  let connectionID = workspace.accountConnectionId,
+                  workspace.syncConfirmedConnectionId == connectionID,
                   let origin = try String.fetchOne(
                       db,
                       sql: "SELECT origin FROM dahlia_account_connections WHERE id = ?",

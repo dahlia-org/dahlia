@@ -5,16 +5,14 @@ import type { AuthInfo } from "@modelcontextprotocol/server";
 import { gatewayResource, mcpResource, type AppConfig } from "../config";
 import { createAccessTokenVerifier, type DahliaAuth } from "./better-auth";
 import { hasApiScope, type ApiScope } from "./scopes";
-import { personalWorkspaceId } from "./workspace";
 
 export interface Identity {
   userId: string;
   email?: string;
   name?: string;
-  workspaceId: string;
   source: "accounts" | "header";
   impersonated?: boolean;
-  syncClient?: { vaultTransfers: boolean };
+  syncClient?: { workspaceTransfers: boolean };
 }
 
 export class AuthenticationError extends Error {
@@ -51,7 +49,6 @@ export class IdentityService {
         userId: session.user.id,
         email: session.user.email,
         name: session.user.name,
-        workspaceId: personalWorkspaceId(session.user.id),
         source: "accounts",
         impersonated: Boolean(session.session.impersonatedBy),
       });
@@ -85,14 +82,13 @@ export class IdentityService {
     if (claims.impersonated === true) {
       throw new AuthenticationError("Impersonated sessions are read-only", true);
     }
-    if (typeof claims.sub !== "string" || typeof claims.workspace_id !== "string") {
+    if (typeof claims.sub !== "string") {
       throw new AuthenticationError("Access token is missing Dahlia identity claims", true);
     }
     const email = typeof claims.email === "string" ? claims.email : undefined;
     return this.project({
       userId: claims.sub,
       email,
-      workspaceId: claims.workspace_id,
       source: "accounts",
     });
   }
@@ -144,7 +140,7 @@ export class IdentityService {
       : typeof claims.azp === "string" ? claims.azp : undefined;
     if (
       typeof claims.sub !== "string"
-      || typeof claims.workspace_id !== "string"
+
       || !clientId
       || typeof claims.exp !== "number"
     ) {
@@ -159,7 +155,6 @@ export class IdentityService {
     const identity = await this.project({
       userId: claims.sub,
       email: typeof claims.email === "string" ? claims.email : undefined,
-      workspaceId: claims.workspace_id,
       source: "accounts",
     });
     return {
@@ -182,7 +177,6 @@ export class IdentityService {
       userId,
       email: source.email,
       name: source.name,
-      workspaceId: personalWorkspaceId(userId),
       source: "header",
     };
     return this.project(identity);
@@ -200,6 +194,5 @@ function isIdentity(value: unknown): value is Identity {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<Identity>;
   return typeof candidate.userId === "string"
-    && typeof candidate.workspaceId === "string"
     && (candidate.source === "accounts" || candidate.source === "header");
 }

@@ -13,7 +13,7 @@ import GRDB
                 .appending(path: UUID().uuidString)
                 .appendingPathExtension("sqlite")
             let meetingID = UUID.v7()
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             defer { try? FileManager.default.removeItem(at: databaseURL) }
 
             let legacyQueue = try DatabaseQueue(path: databaseURL.path)
@@ -21,7 +21,7 @@ import GRDB
                 try db.execute(sql: """
                 CREATE TABLE meetings (
                     id BLOB PRIMARY KEY,
-                    vaultId BLOB NOT NULL,
+                    workspace_id BLOB NOT NULL,
                     projectId BLOB,
                     name TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL DEFAULT 'TRANSCRIPT_NOT_FOUND',
@@ -41,10 +41,10 @@ import GRDB
                 }
                 try db.execute(
                     sql: """
-                    INSERT INTO meetings (id, vaultId, name, createdAt, updatedAt)
+                    INSERT INTO meetings (id, workspace_id, name, createdAt, updatedAt)
                     VALUES (?, ?, ?, ?, ?)
                     """,
-                    arguments: [meetingID, vaultID, "Existing name", Date.now, Date.now]
+                    arguments: [meetingID, workspaceID, "Existing name", Date.now, Date.now]
                 )
             }
 

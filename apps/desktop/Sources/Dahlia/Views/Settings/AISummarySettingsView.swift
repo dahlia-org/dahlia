@@ -3,7 +3,7 @@ import SwiftUI
 /// Device-local model preferences; output style and language belong to the selected account.
 struct LocalSummarySettingsSection: View {
     @ObservedObject private var settings = AppSettings.shared
-    @Bindable private var vaultSettings = VaultAISettingsModel.shared
+    @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
     @State private var catalog = CodexModelCatalog(service: .macInference)
     @State private var retryTask: Task<Void, Never>?
 
@@ -79,8 +79,8 @@ struct LocalSummarySettingsSection: View {
     private var modelCatalogContext: CodexRuntimeProvider {
         CodexRuntimeProvider(
             accountConnectionID: nil,
-            localProvider: vaultSettings.localProvider,
-            databricksProfile: vaultSettings.databricksProfile
+            localProvider: workspaceSettings.localProvider,
+            databricksProfile: workspaceSettings.databricksProfile
         )
     }
 }

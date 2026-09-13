@@ -18,40 +18,40 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
     const raw = new Client({ connectionString: databaseUrl });
     await raw.connect();
     const userId = crypto.randomUUID();
-    const identity: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
-    const vaultId = crypto.randomUUID();
+    const identity: Identity = { userId,  source: "header" };
+    const workspaceId = crypto.randomUUID();
     const meetingId = crypto.randomUUID();
     const meetingData = { projectId: null, name: "Meeting", description: "", status: "READY", duration: null,
       recordingStartedAt: null, createdAt: new Date(), updatedAt: new Date() };
     try {
       await seedPostgresIdentity(store, databaseUrl!, identity);
       const initial = await store.sync.withIdentity(identity, (sync) => sync.commitTransaction({
-        schemaVersion: 3, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "initial",
+        schemaVersion: 3, id: crypto.randomUUID(), workspaceId, createdAt: new Date(), requestHash: "initial",
         operations: [
-          { id: crypto.randomUUID(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Vault", createdAt: new Date() } },
+          { id: crypto.randomUUID(), entity: "workspace", action: "create", entityId: workspaceId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Workspace", createdAt: new Date() } },
           { id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: meetingData },
         ],
       }));
       await raw.query("BEGIN");
       await raw.query("SELECT set_config('app.user_id', $1, true)", [userId]);
-      await raw.query(`INSERT INTO app.files(file_id, vault_id, uri, size, content_type, checksum, name, metadata, active, uploaded_at, revision)
-        SELECT gen_random_uuid(), $1, '/Volumes/test/app/files/test', 1, 'image/png', 'SHA-256:' || repeat('a', 64), 'capture.png', '{"source":"screenshot"}', true, now(), 1 FROM generate_series(1, 105)`, [vaultId]);
-      await raw.query(`INSERT INTO app.meeting_attachments(id, vault_id, meeting_id, file_id, captured_at)
-        SELECT file_id, vault_id, $2, file_id, now() FROM app.files WHERE vault_id = $1`, [vaultId, meetingId]);
+      await raw.query(`INSERT INTO app.files(file_id, workspace_id, uri, size, content_type, checksum, name, metadata, active, uploaded_at, revision)
+        SELECT gen_random_uuid(), $1, '/Volumes/test/app/files/test', 1, 'image/png', 'SHA-256:' || repeat('a', 64), 'capture.png', '{"source":"screenshot"}', true, now(), 1 FROM generate_series(1, 105)`, [workspaceId]);
+      await raw.query(`INSERT INTO app.meeting_attachments(id, workspace_id, meeting_id, file_id, captured_at)
+        SELECT file_id, workspace_id, $2, file_id, now() FROM app.files WHERE workspace_id = $1`, [workspaceId, meetingId]);
       await raw.query("COMMIT");
       await store.sync.withIdentity(identity, (sync) => sync.commitTransaction({
-        schemaVersion: 3, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "delete",
+        schemaVersion: 3, id: crypto.randomUUID(), workspaceId, createdAt: new Date(), requestHash: "delete",
         operations: [{ id: crypto.randomUUID(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }],
       }));
       const recreated = await store.sync.withIdentity(identity, (sync) => sync.commitTransaction({
-        schemaVersion: 3, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "recreate",
+        schemaVersion: 3, id: crypto.randomUUID(), workspaceId, createdAt: new Date(), requestHash: "recreate",
         operations: [{ id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: meetingData }],
       }));
       const service = new MeetingSyncService(store.sync);
-      const first = await service.listChanges(identity, vaultId, initial.cursor);
+      const first = await service.listChanges(identity, workspaceId, initial.cursor);
       expect(first.items).toHaveLength(100);
       expect(first.hasMore).toBe(true);
-      const second = await service.listChanges(identity, vaultId, first.cursor, first.highWaterCursor);
+      const second = await service.listChanges(identity, workspaceId, first.cursor, first.highWaterCursor);
       expect(second.items).toHaveLength(8);
       expect(second.hasMore).toBe(false);
       expect(second.cursor).toBe(recreated.cursor);
@@ -76,50 +76,50 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
     const raw = new Client({ connectionString: databaseUrl });
     await raw.connect();
     const userId = crypto.randomUUID();
-    const owner: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
-    const vaultId = crypto.randomUUID();
+    const owner: Identity = { userId,  source: "header" };
+    const workspaceId = crypto.randomUUID();
     const transactionId = crypto.randomUUID();
-    const target = { ownerUserId: userId, vaultId };
+    const target = { ownerUserId: userId, workspaceId };
     try {
       await seedPostgresIdentity(store, databaseUrl!, owner);
       const receipt = await store.sync.withIdentity(owner, (sync) => sync.commitTransaction({
-        schemaVersion: 3, id: transactionId, vaultId, createdAt: new Date(), requestHash: "retention-test",
-        operations: [{ id: crypto.randomUUID(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null,
+        schemaVersion: 3, id: transactionId, workspaceId, createdAt: new Date(), requestHash: "retention-test",
+        operations: [{ id: crypto.randomUUID(), entity: "workspace", action: "create", entityId: workspaceId, baseRevision: null,
           data: { organizationId: testOrganizationID, name: "Preserved", createdAt: new Date().toISOString() } }],
       }));
       expect((await raw.query("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user")).rows[0])
         .toEqual({ rolsuper: false, rolbypassrls: false });
       await raw.query("BEGIN");
       await raw.query("SELECT set_config('app.user_id', $1, true)", [userId]);
-      await raw.query("UPDATE app.sync_changes SET created_at = now() - interval '91 days' WHERE vault_id = $1", [vaultId]);
+      await raw.query("UPDATE app.sync_changes SET created_at = now() - interval '91 days' WHERE workspace_id = $1", [workspaceId]);
       await raw.query("UPDATE app.transaction_receipts SET created_at = now() - interval '91 days' WHERE transaction_id = $1", [transactionId]);
       await raw.query("COMMIT");
       expect((await raw.query("SELECT * FROM app.transaction_receipts WHERE transaction_id = $1", [transactionId])).rows).toEqual([]);
       // A deliberate database failure after the floor update must roll back the complete batch.
       await raw.query(`CREATE FUNCTION app.retention_test_abort() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test deletion failure'; END $$`);
-      await raw.query(`CREATE TRIGGER retention_test_abort BEFORE DELETE ON app.sync_changes FOR EACH ROW WHEN (OLD.vault_id = '${vaultId}'::uuid) EXECUTE FUNCTION app.retention_test_abort()`);
+      await raw.query(`CREATE TRIGGER retention_test_abort BEFORE DELETE ON app.sync_changes FOR EACH ROW WHEN (OLD.workspace_id = '${workspaceId}'::uuid) EXECUTE FUNCTION app.retention_test_abort()`);
       await expect(store.sync.pruneHistoryBatch(target)).rejects.toThrow();
-      expect((await raw.query<{ pruned_through: string }>("SELECT pruned_through FROM app.sync_vault_state WHERE vault_id = $1", [vaultId])).rows[0]?.pruned_through).toBe("0");
+      expect((await raw.query<{ pruned_through: string }>("SELECT pruned_through FROM app.sync_workspace_state WHERE workspace_id = $1", [workspaceId])).rows[0]?.pruned_through).toBe("0");
       await raw.query("DROP TRIGGER retention_test_abort ON app.sync_changes");
       await raw.query("DROP FUNCTION app.retention_test_abort()");
       const results = await Promise.all([
         store.sync.pruneHistoryBatch(target), store.sync.pruneHistoryBatch(target),
         store.sync.withIdentity(owner, (sync) => sync.commitTransaction({
-          schemaVersion: 3, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "new-edit",
-          operations: [{ id: crypto.randomUUID(), entity: "vault", action: "update", entityId: vaultId, baseRevision: 1, data: { name: "Latest" } }],
+          schemaVersion: 3, id: crypto.randomUUID(), workspaceId, createdAt: new Date(), requestHash: "new-edit",
+          operations: [{ id: crypto.randomUUID(), entity: "workspace", action: "update", entityId: workspaceId, baseRevision: 1, data: { name: "Latest" } }],
         })),
       ]);
       expect(results[0].changesDeleted + results[1].changesDeleted).toBe(1);
       expect(results[0].receiptsCompacted + results[1].receiptsCompacted).toBe(1);
       const service = new MeetingSyncService(store.sync);
-      await expect(service.listChanges(owner, vaultId)).rejects.toMatchObject({ code: "sync_cursor_expired", status: 410 });
-      expect(await service.listSnapshot(owner, vaultId)).toMatchObject({ items: [{ record: { name: "Latest" } }] });
-      const delta = await service.listChanges(owner, vaultId, receipt.cursor);
+      await expect(service.listChanges(owner, workspaceId)).rejects.toMatchObject({ code: "sync_cursor_expired", status: 410 });
+      expect(await service.listSnapshot(owner, workspaceId)).toMatchObject({ items: [{ record: { name: "Latest" } }] });
+      const delta = await service.listChanges(owner, workspaceId, receipt.cursor);
       expect(decodeSyncCursor(delta.cursor)).toBeGreaterThan(decodeSyncCursor(receipt.cursor));
       await raw.query("BEGIN");
       await raw.query("SELECT set_config('app.user_id', $1, true)", [userId]);
       const row = (await raw.query<{ response_json: unknown; results_json: unknown }>("SELECT response_json, results_json FROM app.transaction_receipts WHERE transaction_id = $1", [transactionId])).rows[0];
-      expect(row).toEqual({ response_json: null, results_json: [{ entity: "vault", id: vaultId, revision: 1 }] });
+      expect(row).toEqual({ response_json: null, results_json: [{ entity: "workspace", id: workspaceId, revision: 1 }] });
       await raw.query("ROLLBACK");
       expect((await raw.query("SELECT * FROM app.transaction_receipts WHERE transaction_id = $1", [transactionId])).rows).toEqual([]);
     } finally {

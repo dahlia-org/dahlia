@@ -43,7 +43,7 @@ export function fileMetadataFromWire(value: Partial<z.infer<typeof fileWireMetad
   return { ...metadata, ...(ocrText !== undefined ? { ocr_text: ocrText } : {}) };
 }
 export const fileUploadSchema = z.object({
-  id: z.uuidv7().meta({ format: "uuidv7" }).transform((id) => id.toLowerCase()), vaultId: z.uuid().transform((id) => id.toLowerCase()), name: z.string().min(1).max(255),
+  id: z.uuidv7().meta({ format: "uuidv7" }).transform((id) => id.toLowerCase()), workspaceId: z.uuid().transform((id) => id.toLowerCase()), name: z.string().min(1).max(255),
   contentType: z.string().max(255).regex(/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/),
   metadata: fileWireMetadataSchema.pick({ source: true, width: true, height: true }),
 }).strict();
@@ -55,7 +55,7 @@ export const filePatchSchema = z.object({
 
 export interface FileRecord {
   fileId: string;
-  vaultId: string;
+  workspaceId: string;
   uri: string;
   offset: number;
   size: number;
@@ -72,7 +72,7 @@ export interface FileRecord {
 
 export interface MeetingAttachmentRecord {
   id: string;
-  vaultId: string;
+  workspaceId: string;
   meetingId: string;
   fileId: string;
   capturedAt: Date | null;
@@ -88,7 +88,7 @@ export const imageContentTypes = new Set(["image/png", "image/jpeg", "image/webp
 export function fileResponse(file: FileRecord) {
   const { ocr_text, ...metadata } = file.metadata;
   return {
-    id: file.fileId, vaultId: file.vaultId, size: file.size,
+    id: file.fileId, workspaceId: file.workspaceId, size: file.size,
     contentType: file.contentType, checksum: file.checksum, name: file.name,
     metadata: { ...metadata, ...(ocr_text !== undefined ? { ocrText: ocr_text } : {}) },
     revision: file.revision, createdAt: file.createdAt, updatedAt: file.updatedAt,

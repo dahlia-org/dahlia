@@ -8,17 +8,17 @@ import GRDB
     @MainActor
     struct CodexChatContextProviderTests {
         @Test
-        func projectUsesLatestDatabaseSnapshotAndActiveVault() async throws {
+        func projectUsesLatestDatabaseSnapshotAndActiveWorkspace() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = testVault(name: "Active Project")
-            let otherVault = testVault(name: "Other Project")
+            let workspace = testWorkspace(name: "Active Project")
+            let otherWorkspace = testWorkspace(name: "Other Project")
             let projectID = UUID.v7()
             try await database.dbQueue.write { db in
-                try vault.insert(db)
-                try otherVault.insert(db)
+                try workspace.insert(db)
+                try otherWorkspace.insert(db)
                 try ProjectRecord(
                     id: projectID,
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     parentProjectId: nil,
                     name: "Project",
                     createdAt: .now,
@@ -28,14 +28,14 @@ import GRDB
             }
             let provider = CodexChatContextProvider()
             provider.update(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 meetingID: nil,
                 projectID: projectID,
                 draftMeeting: nil,
                 dbQueue: database.dbQueue
             )
 
-            #expect(try await provider.currentContext(vaultID: vault.id) == .project(
+            #expect(try await provider.currentContext(workspaceID: workspace.id) == .project(
                 id: projectID,
                 name: "Project",
                 description: "Initial"
@@ -48,31 +48,31 @@ import GRDB
                 try project.update(db)
             }
 
-            #expect(try await provider.currentContext(vaultID: vault.id) == .project(
+            #expect(try await provider.currentContext(workspaceID: workspace.id) == .project(
                 id: projectID,
                 name: "Project",
                 description: "Latest"
             ))
-            #expect(try await provider.currentContext(vaultID: otherVault.id) == nil)
+            #expect(try await provider.currentContext(workspaceID: otherWorkspace.id) == nil)
         }
 
         @Test
-        func savedMeetingUsesLatestDatabaseSnapshotAndActiveVault() async throws {
+        func savedMeetingUsesLatestDatabaseSnapshotAndActiveWorkspace() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = testVault(name: "Active")
-            let otherVault = testVault(name: "Other")
+            let workspace = testWorkspace(name: "Active")
+            let otherWorkspace = testWorkspace(name: "Other")
             let event = testCalendarEvent(icalUID: "planning@example.com")
             let key = try #require(event.key)
             let meetingID = UUID.v7()
             let now = Date(timeIntervalSince1970: 1_704_067_200)
 
             try await database.dbQueue.write { db in
-                try vault.insert(db)
-                try otherVault.insert(db)
+                try workspace.insert(db)
+                try otherWorkspace.insert(db)
                 try CalendarEventRecord.upsert(event: event, now: now, in: db)
                 try MeetingRecord(
                     id: meetingID,
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     projectId: nil,
                     name: "Initial name",
                     status: .ready,
@@ -86,13 +86,13 @@ import GRDB
 
             let provider = CodexChatContextProvider()
             provider.update(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 meetingID: meetingID,
                 draftMeeting: nil,
                 dbQueue: database.dbQueue
             )
 
-            let initial = try await provider.currentContext(vaultID: vault.id)
+            let initial = try await provider.currentContext(workspaceID: workspace.id)
             guard case let .meeting(id, name, calendarEvent) = initial else {
                 Issue.record("Expected saved Meeting context")
                 return
@@ -110,20 +110,20 @@ import GRDB
                 try meeting.update(db)
             }
 
-            guard case let .meeting(_, latestName, _) = try await provider.currentContext(vaultID: vault.id) else {
+            guard case let .meeting(_, latestName, _) = try await provider.currentContext(workspaceID: workspace.id) else {
                 Issue.record("Expected updated Meeting context")
                 return
             }
             #expect(latestName == "Latest name")
-            #expect(try await provider.currentContext(vaultID: otherVault.id) == nil)
+            #expect(try await provider.currentContext(workspaceID: otherWorkspace.id) == nil)
         }
 
         @Test
         func draftIsReturnedWithoutCreatingDatabaseMeeting() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = testVault(name: "Draft")
+            let workspace = testWorkspace(name: "Draft")
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
             }
             let event = testCalendarEvent(icalUID: nil)
             let draft = DraftMeeting(
@@ -133,13 +133,13 @@ import GRDB
             )
             let provider = CodexChatContextProvider()
             provider.update(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 meetingID: nil,
                 draftMeeting: draft,
                 dbQueue: database.dbQueue
             )
 
-            let context = try await provider.currentContext(vaultID: vault.id)
+            let context = try await provider.currentContext(workspaceID: workspace.id)
             let meetingCount = try await database.dbQueue.read { db in
                 try MeetingRecord.fetchCount(db)
             }
@@ -152,23 +152,23 @@ import GRDB
             #expect(name == "Unsaved planning")
             #expect(calendarEvent?.icalUID == nil)
             #expect(meetingCount == 0)
-            #expect(try await provider.currentContext(vaultID: UUID.v7()) == nil)
+            #expect(try await provider.currentContext(workspaceID: UUID.v7()) == nil)
         }
 
         @Test
         func selectedMeetingResolutionFailuresThrow() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let activeVault = testVault(name: "Active")
-            let otherVault = testVault(name: "Other")
+            let activeWorkspace = testWorkspace(name: "Active")
+            let otherWorkspace = testWorkspace(name: "Other")
             let otherMeetingID = UUID.v7()
             try await database.dbQueue.write { db in
-                try activeVault.insert(db)
-                try otherVault.insert(db)
+                try activeWorkspace.insert(db)
+                try otherWorkspace.insert(db)
                 try MeetingRecord(
                     id: otherMeetingID,
-                    vaultId: otherVault.id,
+                    workspaceId: otherWorkspace.id,
                     projectId: nil,
-                    name: "Other vault meeting",
+                    name: "Other workspace meeting",
                     status: .ready,
                     duration: nil,
                     createdAt: .now,
@@ -178,38 +178,38 @@ import GRDB
             let provider = CodexChatContextProvider()
 
             provider.update(
-                vaultID: activeVault.id,
+                workspaceID: activeWorkspace.id,
                 meetingID: UUID.v7(),
                 draftMeeting: nil,
                 dbQueue: nil
             )
             await #expect(throws: CodexChatContextError.selectedMeetingUnavailable) {
-                try await provider.currentContext(vaultID: activeVault.id)
+                try await provider.currentContext(workspaceID: activeWorkspace.id)
             }
 
             provider.update(
-                vaultID: activeVault.id,
+                workspaceID: activeWorkspace.id,
                 meetingID: UUID.v7(),
                 draftMeeting: nil,
                 dbQueue: database.dbQueue
             )
             await #expect(throws: CodexChatContextError.selectedMeetingUnavailable) {
-                try await provider.currentContext(vaultID: activeVault.id)
+                try await provider.currentContext(workspaceID: activeWorkspace.id)
             }
 
             provider.update(
-                vaultID: activeVault.id,
+                workspaceID: activeWorkspace.id,
                 meetingID: otherMeetingID,
                 draftMeeting: nil,
                 dbQueue: database.dbQueue
             )
             await #expect(throws: CodexChatContextError.selectedMeetingUnavailable) {
-                try await provider.currentContext(vaultID: activeVault.id)
+                try await provider.currentContext(workspaceID: activeWorkspace.id)
             }
         }
 
-        private func testVault(name: String) -> VaultRecord {
-            VaultRecord(
+        private func testWorkspace(name: String) -> WorkspaceRecord {
+            WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/codex-chat-context-\(name)",
                 name: name,

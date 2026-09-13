@@ -66,8 +66,8 @@ import GRDB
             #expect(throws: ProjectWorkspaceError.hierarchyTooDeep) {
                 try context.service.createProject(name: "Grandchild", parentProjectId: child.id)
             }
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: parent.path).path))
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: child.path).path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: parent.path).path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: child.path).path))
         }
 
         @Test
@@ -103,7 +103,7 @@ import GRDB
             #expect(throws: ProjectWorkspaceError.self) {
                 try context.service.createProject(name: name, parentProjectId: nil)
             }
-            #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).isEmpty)
+            #expect(try context.repository.fetchAllProjects(workspaceId: context.workspace.id).isEmpty)
             #expect(!FileManager.default.fileExists(atPath: context.rootURL.appending(path: "Outside").path))
         }
 
@@ -116,7 +116,7 @@ import GRDB
             let second = try context.service.createProject(name: "project", parentProjectId: nil)
 
             #expect(first.id != second.id)
-            #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).count == 2)
+            #expect(try context.repository.fetchAllProjects(workspaceId: context.workspace.id).count == 2)
         }
 
         @Test
@@ -129,7 +129,7 @@ import GRDB
 
             #expect(fetched.id == original.id)
             #expect(fetched.name == "Project")
-            #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).count == 1)
+            #expect(try context.repository.fetchAllProjects(workspaceId: context.workspace.id).count == 1)
         }
 
         @Test
@@ -141,7 +141,7 @@ import GRDB
             let second = try context.service.createProject(name: "e\u{301}QUIPE", parentProjectId: nil)
 
             #expect(first.id != second.id)
-            #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).count == 2)
+            #expect(try context.repository.fetchAllProjects(workspaceId: context.workspace.id).count == 2)
         }
 
         @Test
@@ -179,7 +179,7 @@ import GRDB
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
             try FileManager.default.createDirectory(
-                at: context.vaultURL.appending(path: "Existing"),
+                at: context.workspaceURL.appending(path: "Existing"),
                 withIntermediateDirectories: false
             )
 
@@ -188,7 +188,7 @@ import GRDB
                 try context.service.createProject(name: String(repeating: "é", count: 128), parentProjectId: nil)
             }
             #expect(project.path == "existing")
-            #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).count == 1)
+            #expect(try context.repository.fetchAllProjects(workspaceId: context.workspace.id).count == 1)
         }
 
         @Test
@@ -200,7 +200,7 @@ import GRDB
             let child = try context.service.createProject(name: "Child", parentProjectId: parent.id)
 
             #expect(child.path == "Parent/Child")
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: parent.path).path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: parent.path).path))
         }
 
         @Test
@@ -210,7 +210,7 @@ import GRDB
 
             let outsideURL = context.rootURL.appending(path: "Outside", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: false)
-            let parentURL = context.vaultURL.appending(path: "Parent", directoryHint: .isDirectory)
+            let parentURL = context.workspaceURL.appending(path: "Parent", directoryHint: .isDirectory)
             try FileManager.default.createSymbolicLink(at: parentURL, withDestinationURL: outsideURL)
 
             let parent = try context.service.createProject(name: "Parent", parentProjectId: nil)
@@ -227,7 +227,7 @@ import GRDB
 
             let outsideURL = context.rootURL.appending(path: "Outside", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: false)
-            let projectURL = context.vaultURL.appending(path: "Source", directoryHint: .isDirectory)
+            let projectURL = context.workspaceURL.appending(path: "Source", directoryHint: .isDirectory)
             try FileManager.default.createSymbolicLink(at: projectURL, withDestinationURL: outsideURL)
 
             let project = try context.service.createProject(name: "Source", parentProjectId: nil)
@@ -251,7 +251,7 @@ import GRDB
 
             #expect(try context.repository.fetchProject(id: source.id) == nil)
             #expect(try context.repository.fetchProject(id: sibling.id)?.name == "1000")
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "1000").path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "1000").path))
         }
 
         @Test
@@ -263,7 +263,7 @@ import GRDB
             let child = try context.service.createProject(name: "Child", parentProjectId: parent.id)
             try context.repository.updateProjectDescription(
                 id: child.id,
-                vaultId: context.vault.id,
+                workspaceId: context.workspace.id,
                 description: "Keep me"
             )
             let meeting = try insertMeeting(projectId: child.id, context: context)
@@ -274,26 +274,26 @@ import GRDB
                 writeFile: true
             )
             try Data("Unrelated".utf8).write(
-                to: context.vaultURL.appending(path: "Original/keep.txt"),
+                to: context.workspaceURL.appending(path: "Original/keep.txt"),
                 options: .atomic
             )
 
             let renamed = try context.service.renameProject(id: parent.id, newName: "Renamed")
 
             let fetchedChildRecord = try context.repository.fetchProject(id: child.id)
-            let vaultExport = try context.repository.fetchSummaryExport(
+            let workspaceExport = try context.repository.fetchSummaryExport(
                 forMeetingId: meeting.id,
-                type: .vault
+                type: .workspace
             )
             let fetchedChild = try #require(fetchedChildRecord)
             #expect(renamed.path == "Renamed")
             #expect(fetchedChild.path == "Renamed/Child")
             #expect(fetchedChild.description == "Keep me")
-            #expect(vaultExport?.url == "vault:///Renamed/Child/Summary.md")
-            #expect(vaultExport?.vaultRelativePath == "Renamed/Child/Summary.md")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Renamed/Child/Summary.md").path))
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Original/keep.txt").path))
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Original/Child").path))
+            #expect(workspaceExport?.url == "vault:///Renamed/Child/Summary.md")
+            #expect(workspaceExport?.workspaceRelativePath == "Renamed/Child/Summary.md")
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Renamed/Child/Summary.md").path))
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Original/keep.txt").path))
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Original/Child").path))
         }
 
         @Test
@@ -304,7 +304,7 @@ import GRDB
             let project = try context.service.createProject(name: "Original", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: project.id, context: context)
             try FileManager.default.createDirectory(
-                at: context.vaultURL.appending(path: "Legacy", directoryHint: .isDirectory),
+                at: context.workspaceURL.appending(path: "Legacy", directoryHint: .isDirectory),
                 withIntermediateDirectories: false
             )
             try insertSummary(
@@ -316,8 +316,8 @@ import GRDB
 
             _ = try context.service.renameProject(id: project.id, newName: "Renamed")
 
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id) == "Legacy/Summary.md")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Legacy/Summary.md").path))
+            #expect(try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: meeting.id) == "Legacy/Summary.md")
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Legacy/Summary.md").path))
         }
 
         @Test
@@ -346,12 +346,12 @@ import GRDB
             }
 
             #expect(try context.repository.fetchProject(id: root.id)?.name == "Acme")
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: rootMeeting.id)
+            #expect(try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: rootMeeting.id)
                 == "Acme/Shared.md")
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: childMeeting.id)
+            #expect(try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: childMeeting.id)
                 == "Acme/Shared.md")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Acme/Shared.md").path))
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Renamed/Shared.md").path))
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Acme/Shared.md").path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Renamed/Shared.md").path))
         }
 
         @Test
@@ -362,7 +362,7 @@ import GRDB
             let project = try context.service.createProject(name: "Project", parentProjectId: nil)
             _ = try context.repository.updateProjectDescription(
                 id: project.id,
-                vaultId: context.vault.id,
+                workspaceId: context.workspace.id,
                 description: "External update"
             )
 
@@ -389,7 +389,7 @@ import GRDB
             let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             _ = try context.repository.updateProjectDescription(
                 id: root.id,
-                vaultId: context.vault.id,
+                workspaceId: context.workspace.id,
                 description: "External update"
             )
 
@@ -446,17 +446,17 @@ import GRDB
             )
 
             let moved = try context.service.reparentProject(id: work.id, parentProjectId: internalRoot.id)
-            let projects = try context.repository.fetchAllProjects(vaultId: context.vault.id)
+            let projects = try context.repository.fetchAllProjects(workspaceId: context.workspace.id)
             let effectiveType = ProjectRecord.effectiveType(for: work.id, records: projects)
 
             #expect(moved.id == work.id)
             #expect(moved.path == "Internal/Work")
             #expect(effectiveType?.type == .internal)
             #expect(effectiveType?.ownerProjectId == internalRoot.id)
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id)
+            #expect(try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: meeting.id)
                 == "Internal/Work/Summary.md")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Internal/Work/Summary.md").path))
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Customer/Work").path))
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Internal/Work/Summary.md").path))
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Customer/Work").path))
         }
 
         @Test
@@ -475,7 +475,7 @@ import GRDB
         }
 
         @Test
-        func movingChildToVaultRootPreservesItsPreviousEffectiveType() throws {
+        func movingChildToWorkspaceRootPreservesItsPreviousEffectiveType() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
@@ -487,7 +487,7 @@ import GRDB
             let child = try context.service.createProject(name: "Work", parentProjectId: root.id)
 
             let moved = try context.service.reparentProject(id: child.id, parentProjectId: nil)
-            let projects = try context.repository.fetchAllProjects(vaultId: context.vault.id)
+            let projects = try context.repository.fetchAllProjects(workspaceId: context.workspace.id)
 
             #expect(moved.id == child.id)
             #expect(moved.parentProjectId == nil)
@@ -512,7 +512,7 @@ import GRDB
             )
 
             let moved = try context.service.reparentProject(id: customer.id, parentProjectId: internalRoot.id)
-            let projects = try context.repository.fetchAllProjects(vaultId: context.vault.id)
+            let projects = try context.repository.fetchAllProjects(workspaceId: context.workspace.id)
 
             #expect(moved.parentProjectId == internalRoot.id)
             #expect(moved.projectType == nil)
@@ -528,7 +528,7 @@ import GRDB
             let child = try context.service.createProject(name: "Child", parentProjectId: root.id)
 
             _ = try context.service.updateRootProjectType(id: root.id, projectType: .personal)
-            let projects = try context.repository.fetchAllProjects(vaultId: context.vault.id)
+            let projects = try context.repository.fetchAllProjects(workspaceId: context.workspace.id)
 
             #expect(ProjectRecord.effectiveType(for: child.id, records: projects)?.type == .personal)
             #expect(throws: ProjectWorkspaceError.typeOwnedByRoot) {
@@ -537,7 +537,7 @@ import GRDB
         }
 
         @Test
-        func rejectsSelfDescendantAndOtherVaultParents() throws {
+        func rejectsSelfDescendantAndOtherWorkspaceParents() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
@@ -547,11 +547,11 @@ import GRDB
                 try context.service.reparentProject(id: root.id, parentProjectId: child.id)
             }
 
-            let otherVaultID = UUID.v7()
+            let otherWorkspaceID = UUID.v7()
             let otherProjectID = UUID.v7()
             try context.database.dbQueue.write { db in
-                try VaultRecord(
-                    id: otherVaultID,
+                try WorkspaceRecord(
+                    id: otherWorkspaceID,
                     path: context.rootURL.appending(path: "Other").path,
                     name: "Other",
                     createdAt: .now,
@@ -559,7 +559,7 @@ import GRDB
                 ).insert(db)
                 try ProjectRecord(
                     id: otherProjectID,
-                    vaultId: otherVaultID,
+                    workspaceId: otherWorkspaceID,
                     parentProjectId: nil,
                     name: "Other",
                     createdAt: .now,
@@ -573,7 +573,7 @@ import GRDB
                 try context.service.updateRootProjectType(id: otherProjectID, projectType: .customer)
             }
             #expect(throws: ProjectWorkspaceError.projectNotFound) {
-                try context.service.updateProjectDescription(id: otherProjectID, description: "Cross Vault")
+                try context.service.updateProjectDescription(id: otherProjectID, description: "Cross Workspace")
             }
         }
 
@@ -587,7 +587,7 @@ import GRDB
 
             #expect(renamed.id == project.id)
             #expect(renamed.name == "project")
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "project").path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "project").path))
         }
 
         @Test
@@ -640,8 +640,8 @@ import GRDB
                 try context.service.renameProject(id: project.id, newName: "Renamed")
             }
             #expect(try context.repository.fetchProject(id: project.id)?.name == "Original")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Original/Summary.md").path))
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Renamed").path))
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Original/Summary.md").path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Renamed").path))
         }
     }
 
@@ -672,22 +672,22 @@ import GRDB
             let movedMeeting = try context.database.dbQueue.read { db in
                 try MeetingRecord.fetchOne(db, key: meeting.id)
             }
-            let vaultExport = try context.repository.fetchSummaryExport(
+            let workspaceExport = try context.repository.fetchSummaryExport(
                 forMeetingId: meeting.id,
-                type: .vault
+                type: .workspace
             )
             #expect(movedMeeting?.projectId == destination.id)
-            #expect(vaultExport?.vaultRelativePath == "Destination/Summary.md")
+            #expect(workspaceExport?.workspaceRelativePath == "Destination/Summary.md")
             #expect(
                 try context.repository.fetchSummaryExport(forMeetingId: meeting.id, type: .googleDocs)?.googleDocumentID
                     == "google-document-id"
             )
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Summary.md").path))
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Destination/Summary.md").path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Source/Summary.md").path))
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Destination/Summary.md").path))
         }
 
         @Test
-        func movesStoredSummaryToVaultRootWhenProjectIsCleared() throws {
+        func movesStoredSummaryToWorkspaceRootWhenProjectIsCleared() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
@@ -706,8 +706,8 @@ import GRDB
                 try MeetingRecord.fetchOne(db, key: meeting.id)
             }
             #expect(movedMeeting?.projectId == nil)
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id) == "Summary.md")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Summary.md").path))
+            #expect(try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: meeting.id) == "Summary.md")
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Summary.md").path))
         }
 
         @Test
@@ -722,7 +722,7 @@ import GRDB
             let outsideURL = context.rootURL.appending(path: "Outside", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: false)
             try FileManager.default.createSymbolicLink(
-                at: context.vaultURL.appending(path: "Destination", directoryHint: .isDirectory),
+                at: context.workspaceURL.appending(path: "Destination", directoryHint: .isDirectory),
                 withDestinationURL: outsideURL
             )
 
@@ -732,19 +732,19 @@ import GRDB
                 try MeetingRecord.fetchOne(db, key: meeting.id)
             }
             #expect(movedMeeting?.projectId == destination.id)
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id) == nil)
+            #expect(try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: meeting.id) == nil)
             #expect(!FileManager.default.fileExists(atPath: outsideURL.appending(path: "Missing.md").path))
         }
 
         @Test
-        func doesNotMoveSummaryThroughProjectSymlinkOutsideVault() throws {
+        func doesNotMoveSummaryThroughProjectSymlinkOutsideWorkspace() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
             let source = try context.service.createProject(name: "Source", parentProjectId: nil)
             let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
-            let sourceURL = context.vaultURL.appending(path: "Source", directoryHint: .isDirectory)
+            let sourceURL = context.workspaceURL.appending(path: "Source", directoryHint: .isDirectory)
             let outsideURL = context.rootURL.appending(path: "Outside", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: false)
             try Data("Outside".utf8).write(to: outsideURL.appending(path: "Summary.md"), options: .atomic)
@@ -759,13 +759,13 @@ import GRDB
                 try MeetingRecord.fetchOne(db, key: meeting.id)
             }
             #expect(unchangedMeeting?.projectId == source.id)
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id) == "Source/Summary.md")
+            #expect(try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: meeting.id) == "Source/Summary.md")
             #expect(FileManager.default.fileExists(atPath: outsideURL.appending(path: "Summary.md").path))
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Destination/Summary.md").path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Destination/Summary.md").path))
         }
 
         @Test
-        func rejectsDestinationProjectSymlinkOutsideVault() throws {
+        func rejectsDestinationProjectSymlinkOutsideWorkspace() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
@@ -778,7 +778,7 @@ import GRDB
                 context: context,
                 writeFile: true
             )
-            let destinationURL = context.vaultURL.appending(path: "Destination", directoryHint: .isDirectory)
+            let destinationURL = context.workspaceURL.appending(path: "Destination", directoryHint: .isDirectory)
             let outsideURL = context.rootURL.appending(path: "Outside", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: false)
             try FileManager.default.createSymbolicLink(at: destinationURL, withDestinationURL: outsideURL)
@@ -787,8 +787,8 @@ import GRDB
                 try context.service.moveMeeting(id: meeting.id, toProjectId: destination.id)
             }
 
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id) == "Source/Summary.md")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Summary.md").path))
+            #expect(try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: meeting.id) == "Source/Summary.md")
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Source/Summary.md").path))
             #expect(!FileManager.default.fileExists(atPath: outsideURL.appending(path: "Summary.md").path))
         }
 
@@ -813,9 +813,9 @@ import GRDB
                 try context.service.moveMeeting(id: meeting.id, toProjectId: destination.id)
             }
 
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id) == "Source/Summary.md")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Summary.md").path))
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Destination/Summary.md").path))
+            #expect(try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: meeting.id) == "Source/Summary.md")
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Source/Summary.md").path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Destination/Summary.md").path))
         }
 
         @Test
@@ -839,10 +839,10 @@ import GRDB
                 try context.service.moveMeeting(id: movingMeeting.id, toProjectId: destination.id)
             }
 
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: movingMeeting.id) == "Source/Summary.md")
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: remainingMeeting.id) == "source/summary.md")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Summary.md").path))
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Destination/Summary.md").path))
+            #expect(try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: movingMeeting.id) == "Source/Summary.md")
+            #expect(try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: remainingMeeting.id) == "source/summary.md")
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Source/Summary.md").path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Destination/Summary.md").path))
         }
 
         @Test
@@ -868,15 +868,15 @@ import GRDB
             )
 
             #expect(
-                try context.repository.fetchSummaryVaultRelativePath(forMeetingId: firstMeeting.id)
+                try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: firstMeeting.id)
                     == "Destination/Summary.md"
             )
             #expect(
-                try context.repository.fetchSummaryVaultRelativePath(forMeetingId: secondMeeting.id)
+                try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: secondMeeting.id)
                     == "Destination/Summary.md"
             )
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Destination/Summary.md").path))
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Summary.md").path))
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Destination/Summary.md").path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Source/Summary.md").path))
         }
 
         @Test
@@ -894,11 +894,11 @@ import GRDB
                 writeFile: true
             )
             try FileManager.default.createDirectory(
-                at: context.vaultURL.appending(path: "Destination", directoryHint: .isDirectory),
+                at: context.workspaceURL.appending(path: "Destination", directoryHint: .isDirectory),
                 withIntermediateDirectories: false
             )
             try Data("Existing".utf8).write(
-                to: context.vaultURL.appending(path: "Destination/Summary.md"),
+                to: context.workspaceURL.appending(path: "Destination/Summary.md"),
                 options: .atomic
             )
 
@@ -910,8 +910,8 @@ import GRDB
                 try MeetingRecord.fetchOne(db, key: meeting.id)
             }
             #expect(unchangedMeeting?.projectId == source.id)
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id) == "Source/Summary.md")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Summary.md").path))
+            #expect(try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: meeting.id) == "Source/Summary.md")
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Source/Summary.md").path))
         }
 
         @Test
@@ -944,9 +944,9 @@ import GRDB
                 )
             }
 
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "First/Summary.md").path))
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Second/Summary.md").path))
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Destination/Summary.md").path))
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "First/Summary.md").path))
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Second/Summary.md").path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Destination/Summary.md").path))
         }
 
         @Test
@@ -981,9 +981,9 @@ import GRDB
                 try MeetingRecord.fetchOne(db, key: meeting.id)
             }
             #expect(unchangedMeeting?.projectId == source.id)
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id) == "Source/Summary.md")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Summary.md").path))
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Destination/Summary.md").path))
+            #expect(try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: meeting.id) == "Source/Summary.md")
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Source/Summary.md").path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Destination/Summary.md").path))
         }
 
         @Test
@@ -1011,21 +1011,21 @@ import GRDB
                 try MeetingRecord.fetchOne(db, key: meeting.id)
             }
             let fetchedSummary = try context.repository.fetchSummary(forMeetingId: meeting.id)
-            let vaultExport = try context.repository.fetchSummaryExport(
+            let workspaceExport = try context.repository.fetchSummaryExport(
                 forMeetingId: meeting.id,
-                type: .vault
+                type: .workspace
             )
             let summary = try #require(fetchedSummary)
             #expect(fetchedMeeting?.projectId == destination.id)
-            #expect(vaultExport?.vaultRelativePath == "Destination/Summary.md")
+            #expect(workspaceExport?.workspaceRelativePath == "Destination/Summary.md")
             #expect(try summary.loadDocument().sections.first?.blocks == [.paragraph("Body")])
             #expect(try context.repository.fetchSegments(forMeetingId: meeting.id).count == 1)
             #expect(try context.repository.fetchTagsForMeeting(id: meeting.id).map(\.name) == ["important"])
             #expect(FileManager.default.fileExists(atPath: audioURL.path))
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Destination/Summary.md").path))
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Destination/Summary.md").path))
             #expect(try context.repository.fetchProject(id: source.id) == nil)
             #expect(try context.repository.fetchProject(id: child.id) == nil)
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Child").path))
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Source/Child").path))
             #expect(!FileManager.default.fileExists(atPath: context.trashURL.appending(path: "Source").path))
         }
 
@@ -1038,7 +1038,7 @@ import GRDB
             let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
             try FileManager.default.createDirectory(
-                at: context.vaultURL.appending(path: "Archive", directoryHint: .isDirectory),
+                at: context.workspaceURL.appending(path: "Archive", directoryHint: .isDirectory),
                 withIntermediateDirectories: false
             )
             try insertSummary(
@@ -1050,13 +1050,13 @@ import GRDB
 
             try await context.service.deleteProjectHierarchy(id: source.id, meetingDisposition: .move(to: destination.id))
 
-            let vaultExport = try context.repository.fetchSummaryExport(
+            let workspaceExport = try context.repository.fetchSummaryExport(
                 forMeetingId: meeting.id,
-                type: .vault
+                type: .workspace
             )
-            #expect(vaultExport?.vaultRelativePath == "Destination/Summary.md")
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Archive/Summary.md").path))
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Destination/Summary.md").path))
+            #expect(workspaceExport?.workspaceRelativePath == "Destination/Summary.md")
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Archive/Summary.md").path))
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Destination/Summary.md").path))
         }
 
         @Test
@@ -1089,7 +1089,7 @@ import GRDB
             #expect(counts.2 == 0)
             #expect(!FileManager.default.fileExists(atPath: audioURL.path))
             #expect(try context.repository.fetchProject(id: source.id) == nil)
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Summary.md").path))
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Source/Summary.md").path))
         }
 
         @Test
@@ -1112,13 +1112,13 @@ import GRDB
                 deletesSummaryFiles: true
             )
 
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Summary.md").path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Source/Summary.md").path))
             #expect(FileManager.default.fileExists(atPath: context.trashURL.appending(path: "Summary.md").path))
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source").path))
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Source").path))
         }
 
         @Test
-        func deletingProjectRejectsSummaryThroughSymlinkOutsideVault() async throws {
+        func deletingProjectRejectsSummaryThroughSymlinkOutsideWorkspace() async throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
@@ -1129,7 +1129,7 @@ import GRDB
             try FileManager.default.createDirectory(at: outsideDirectory, withIntermediateDirectories: false)
             try Data("Outside".utf8).write(to: outsideSummary, options: .atomic)
             try FileManager.default.createSymbolicLink(
-                at: context.vaultURL.appending(path: "Project", directoryHint: .isDirectory),
+                at: context.workspaceURL.appending(path: "Project", directoryHint: .isDirectory),
                 withDestinationURL: outsideDirectory
             )
             try insertSummary(meetingId: meeting.id, path: "Project/Summary.md", context: context)
@@ -1215,7 +1215,7 @@ import GRDB
                 try await context.service.deleteProjectHierarchy(id: project.id, meetingDisposition: .deleteMeetings)
             }
             #expect(try context.repository.fetchProject(id: project.id)?.name == "Project")
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Project").path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Project").path))
             #expect(!FileManager.default.fileExists(atPath: context.trashURL.appending(path: "Project").path))
         }
 
@@ -1322,9 +1322,9 @@ import GRDB
                 try MeetingRecord.fetchOne(db, key: meeting.id)
             }
             #expect(unchangedMeeting?.projectId == source.id)
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id) == "Source/Summary.md")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Summary.md").path))
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Destination/Summary.md").path))
+            #expect(try context.repository.fetchSummaryWorkspaceRelativePath(forMeetingId: meeting.id) == "Source/Summary.md")
+            #expect(FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Source/Summary.md").path))
+            #expect(!FileManager.default.fileExists(atPath: context.workspaceURL.appending(path: "Destination/Summary.md").path))
             #expect(!FileManager.default.fileExists(atPath: context.trashURL.appending(path: "Source").path))
         }
     }
@@ -1339,24 +1339,24 @@ import GRDB
         ) throws -> ProjectWorkspaceTestContext {
             let rootURL = FileManager.default.temporaryDirectory
                 .appending(path: UUID().uuidString, directoryHint: .isDirectory)
-            let vaultURL = rootURL.appending(path: "Vault", directoryHint: .isDirectory)
+            let workspaceURL = rootURL.appending(path: "Workspace", directoryHint: .isDirectory)
             let trashURL = rootURL.appending(path: "Trash", directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
             try FileManager.default.createDirectory(at: trashURL, withIntermediateDirectories: true)
 
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
-                path: usesExportFolder ? vaultURL.path : nil,
-                name: "Test Vault",
+                path: usesExportFolder ? workspaceURL.path : nil,
+                name: "Test Workspace",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
-            try repository.insertVault(vault)
+            try repository.insertWorkspace(workspace)
             let service = ProjectWorkspaceService(
                 repository: repository,
-                vault: vault,
+                workspace: workspace,
                 managedAudioRootURL: rootURL.appending(path: "ManagedAudio", directoryHint: .isDirectory),
                 trashHandler: { sourceURL in
                     let destinationURL = trashURL.appending(path: sourceURL.lastPathComponent, directoryHint: .isDirectory)
@@ -1368,11 +1368,11 @@ import GRDB
             )
             return ProjectWorkspaceTestContext(
                 rootURL: rootURL,
-                vaultURL: vaultURL,
+                workspaceURL: workspaceURL,
                 trashURL: trashURL,
                 database: database,
                 repository: repository,
-                vault: vault,
+                workspace: workspace,
                 service: service
             )
         }
@@ -1383,7 +1383,7 @@ import GRDB
         ) throws -> MeetingRecord {
             let meeting = MeetingRecord(
                 id: .v7(),
-                vaultId: context.vault.id,
+                workspaceId: context.workspace.id,
                 projectId: projectId,
                 name: "Meeting",
                 createdAt: .now,
@@ -1410,12 +1410,12 @@ import GRDB
                     createdAt: .now
                 )
             )
-            try context.repository.updateSummaryVaultRelativePath(
+            try context.repository.updateSummaryWorkspaceRelativePath(
                 forMeetingId: meetingId,
                 relativePath: path
             )
             if writeFile {
-                let fileURL = context.vaultURL.appending(path: path)
+                let fileURL = context.workspaceURL.appending(path: path)
                 try FileManager.default.createDirectory(
                     at: fileURL.deletingLastPathComponent(),
                     withIntermediateDirectories: true

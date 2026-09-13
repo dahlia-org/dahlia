@@ -177,27 +177,27 @@
       ]
     },
     {
-      "operationId": "listVaults",
+      "operationId": "listWorkspaces",
       "method": "GET",
-      "path": "/api/v1/vaults",
+      "path": "/api/v1/workspaces",
       "classification": "modified",
-      "previous": "/api/v1/vaults",
-      "reason": "Accessible Vaults",
+      "previous": "/api/v1/workspaces",
+      "reason": "Accessible Workspaces",
       "consumers": [
         "apps/server/src/client/App.tsx",
         "apps/server/src/client/Sidebar.tsx",
         "apps/desktop/Sources/Dahlia/ViewModels/BackupSettingsViewModel.swift",
         "apps/desktop/Sources/Dahlia/Services/BackupService.swift",
-        "apps/desktop/Sources/Dahlia/Services/CloudVaultDiscovery.swift"
+        "apps/desktop/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift"
       ]
     },
     {
-      "operationId": "getVault",
+      "operationId": "getWorkspace",
       "method": "GET",
-      "path": "/api/v1/vaults/{vaultId}",
+      "path": "/api/v1/workspaces/{workspaceId}",
       "classification": "maintained",
-      "previous": "/api/v1/vaults/{vaultId}",
-      "reason": "Get Vault",
+      "previous": "/api/v1/workspaces/{workspaceId}",
+      "reason": "Get Workspace",
       "consumers": [
         "apps/server/src/client/App.tsx",
         "apps/server/src/client/Sidebar.tsx"
@@ -206,10 +206,10 @@
     {
       "operationId": "listProjects",
       "method": "GET",
-      "path": "/api/v1/vaults/{vaultId}/projects",
+      "path": "/api/v1/workspaces/{workspaceId}/projects",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/projects",
-      "reason": "Vault project tree",
+      "previous": "/api/v1/workspaces/{workspaceId}/projects",
+      "reason": "Workspace project tree",
       "consumers": [
         "apps/server/src/client/App.tsx",
         "apps/server/src/client/Search.tsx",
@@ -223,7 +223,7 @@
       "method": "GET",
       "path": "/api/v1/projects/{projectId}",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/projects/{projectId} (duplicate scoped route removed; unscoped route retained)",
+      "previous": "/api/v1/workspaces/{workspaceId}/projects/{projectId} (duplicate scoped route removed; unscoped route retained)",
       "reason": "Resolve and get an accessible Project",
       "consumers": [
         "apps/server/src/client/App.tsx",
@@ -233,9 +233,9 @@
     {
       "operationId": "listMeetings",
       "method": "GET",
-      "path": "/api/v1/vaults/{vaultId}/meetings",
+      "path": "/api/v1/workspaces/{workspaceId}/meetings",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/meetings",
+      "previous": "/api/v1/workspaces/{workspaceId}/meetings",
       "reason": "Meetings by creation time and ID; 200 per page",
       "consumers": [
         "apps/server/src/client/App.tsx",
@@ -248,7 +248,7 @@
       "method": "GET",
       "path": "/api/v1/meetings/{meetingId}",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId} (duplicate scoped route removed; unscoped route retained)",
+      "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId} (duplicate scoped route removed; unscoped route retained)",
       "reason": "Resolve and get meeting metadata",
       "consumers": [
         "apps/server/src/client/App.tsx",
@@ -262,7 +262,7 @@
       "method": "GET",
       "path": "/api/v1/meetings/{meetingId}/summaries",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary",
+      "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary",
       "reason": "Summary versions, newest first; bodies omitted",
       "consumers": [
         "apps/server/src/client/SummaryHistory.tsx"
@@ -273,7 +273,7 @@
       "method": "GET",
       "path": "/api/v1/meetings/{meetingId}/summaries/{version}",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary/{version}",
+      "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary/{version}",
       "reason": "Read a saved summary version",
       "consumers": [
         "apps/server/src/client/SummaryHistory.tsx"
@@ -284,7 +284,7 @@
       "method": "GET",
       "path": "/api/v1/meetings/{meetingId}/summaries/latest",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary/latest",
+      "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary/latest",
       "reason": "Current summary; present=false when absent",
       "consumers": [
         "apps/server/src/client/App.tsx",
@@ -296,7 +296,7 @@
       "method": "GET",
       "path": "/api/v1/meetings/{meetingId}/transcripts",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/transcript",
+      "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/transcript",
       "reason": "Transcript versions, newest first",
       "consumers": [
         "apps/server/src/client/SummaryGeneration.tsx",
@@ -308,7 +308,7 @@
       "method": "GET",
       "path": "/api/v1/meetings/{meetingId}/transcripts/{version}",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/transcript/{version}",
+      "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/transcript/{version}",
       "reason": "Read a transcript version in bounded pages",
       "consumers": [
         "apps/server/src/client/TranscriptHistory.tsx"
@@ -319,7 +319,7 @@
       "method": "GET",
       "path": "/api/v1/meetings/{meetingId}/transcripts/latest",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/transcript/latest",
+      "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/transcript/latest",
       "reason": "Read current transcript; match version and syncRevision across pages",
       "consumers": [
         "apps/server/src/client/TranscriptHistory.tsx",
@@ -343,7 +343,7 @@
       "method": "POST",
       "path": "/api/v1/meetings/{meetingId}/summary-jobs",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary",
+      "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary",
       "reason": "Queue an owner-only summary job; ID is the replay key; maximum 8 KiB",
       "consumers": [
         "apps/server/src/client/SummaryGeneration.tsx",
@@ -355,7 +355,7 @@
       "method": "GET",
       "path": "/api/v1/meetings/{meetingId}/summary-jobs/latest",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary/job",
+      "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary/job",
       "reason": "Most recent owner-visible job, or null",
       "consumers": [
         "apps/server/src/client/SummaryGeneration.tsx",
@@ -367,7 +367,7 @@
       "method": "GET",
       "path": "/api/v1/meetings/{meetingId}/summary-jobs/{jobId}",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary/job?id={jobId}",
+      "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary/job?id={jobId}",
       "reason": "Get an individual owner-visible job",
       "consumers": [
         "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift"
@@ -378,7 +378,7 @@
       "method": "POST",
       "path": "/api/v1/meetings/{meetingId}/summary-jobs/{jobId}/cancel",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary/job/{jobId}/cancel",
+      "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary/job/{jobId}/cancel",
       "reason": "Cancel a job; repeated cancellation is safe",
       "consumers": [
         "apps/server/src/client/SummaryGeneration.tsx",
@@ -390,7 +390,7 @@
       "method": "POST",
       "path": "/api/v1/meetings/{meetingId}/summary-jobs/{jobId}/retry",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary/job/{jobId}/retry",
+      "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary/job/{jobId}/retry",
       "reason": "Retry a failed or cancelled job using a new ID",
       "consumers": [
         "apps/server/src/client/SummaryGeneration.tsx",
@@ -403,7 +403,7 @@
       "path": "/api/v1/transactions",
       "classification": "maintained",
       "previous": "/api/v1/transactions",
-      "reason": "Commit one atomic Vault transaction; maximum 8 MiB",
+      "reason": "Commit one atomic Workspace transaction; maximum 8 MiB",
       "consumers": [
         "apps/server/src/client/App.tsx",
         "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
@@ -424,9 +424,9 @@
     {
       "operationId": "getChanges",
       "method": "GET",
-      "path": "/api/v1/vaults/{vaultId}/changes",
+      "path": "/api/v1/workspaces/{workspaceId}/changes",
       "classification": "maintained",
-      "previous": "/api/v1/vaults/{vaultId}/changes",
+      "previous": "/api/v1/workspaces/{workspaceId}/changes",
       "reason": "Durable delta feed; retain highWaterCursor across a catch-up",
       "consumers": [
         "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
@@ -435,9 +435,9 @@
     {
       "operationId": "getSnapshot",
       "method": "GET",
-      "path": "/api/v1/vaults/{vaultId}/snapshot",
+      "path": "/api/v1/workspaces/{workspaceId}/snapshot",
       "classification": "maintained",
-      "previous": "/api/v1/vaults/{vaultId}/snapshot",
+      "previous": "/api/v1/workspaces/{workspaceId}/snapshot",
       "reason": "Bounded snapshot; retain startCursor and catch up before reconciliation",
       "consumers": [
         "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
@@ -446,9 +446,9 @@
     {
       "operationId": "search",
       "method": "POST",
-      "path": "/api/v1/vaults/{vaultId}/search",
+      "path": "/api/v1/workspaces/{workspaceId}/search",
       "classification": "modified",
-      "previous": "/api/v1/search (POST body with vaultId)",
+      "previous": "/api/v1/search (POST body with workspaceId)",
       "reason": "Ranked search with explicit truncation indicators; maximum 16 KiB",
       "consumers": [
         "apps/server/src/client/App.tsx",
@@ -484,9 +484,9 @@
     {
       "operationId": "textSearch",
       "method": "POST",
-      "path": "/api/v1/vaults/{vaultId}/text-search",
+      "path": "/api/v1/workspaces/{workspaceId}/text-search",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/search?q={query} (GET)",
+      "previous": "/api/v1/workspaces/{workspaceId}/search?q={query} (GET)",
       "reason": "Exhaustive full-text search pages; cursor invalidates when the ledger changes",
       "consumers": [
         "apps/desktop/Sources/Dahlia/Services/MeetingContentProvider+Search.swift"
@@ -509,7 +509,7 @@
       "method": "PUT",
       "path": "/api/v1/meetings/{meetingId}/transcript-uploads/{patchId}/chunks/{chunkIndex}",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/transcript/{patchId}/chunks/{chunkIndex}",
+      "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/transcript/{patchId}/chunks/{chunkIndex}",
       "reason": "Stage an owner-only transcript patch chunk; SHA-256 of exact request bytes",
       "consumers": [
         "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
@@ -565,9 +565,9 @@
     {
       "operationId": "listFiles",
       "method": "GET",
-      "path": "/api/v1/vaults/{vaultId}/files",
+      "path": "/api/v1/workspaces/{workspaceId}/files",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/files",
+      "previous": "/api/v1/workspaces/{workspaceId}/files",
       "reason": "Committed files by ID; 200 per page",
       "consumers": [
         "apps/desktop/Sources/Dahlia/Services/GoogleDriveAPIClient.swift"
@@ -578,7 +578,7 @@
       "method": "GET",
       "path": "/api/v1/meetings/{meetingId}/files",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/files",
+      "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/files",
       "reason": "Meeting file links by ID; 200 per page",
       "consumers": [
         "apps/server/src/client/App.tsx",
@@ -681,20 +681,20 @@
     {
       "operationId": "getTransferAudience",
       "method": "GET",
-      "path": "/api/v1/vaults/{vaultId}/transfer-audience",
+      "path": "/api/v1/workspaces/{workspaceId}/transfer-audience",
       "classification": "maintained",
-      "previous": "/api/v1/vaults/{vaultId}/transfer-audience",
+      "previous": "/api/v1/workspaces/{workspaceId}/transfer-audience",
       "reason": "Preview readers gaining or losing access; owner only",
       "consumers": [
         "apps/server/src/client/App.tsx"
       ]
     },
     {
-      "operationId": "transferVault",
+      "operationId": "transferWorkspace",
       "method": "POST",
-      "path": "/api/v1/vaults/{vaultId}/transfer",
+      "path": "/api/v1/workspaces/{workspaceId}/transfer",
       "classification": "maintained",
-      "previous": "/api/v1/vaults/{vaultId}/transfer",
+      "previous": "/api/v1/workspaces/{workspaceId}/transfer",
       "reason": "Move all content after revision and audience checks; owner only",
       "consumers": [
         "apps/server/src/client/App.tsx"
@@ -703,10 +703,10 @@
     {
       "operationId": "getRelocations",
       "method": "GET",
-      "path": "/api/v1/vaults/{vaultId}/relocations",
+      "path": "/api/v1/workspaces/{workspaceId}/relocations",
       "classification": "maintained",
-      "previous": "/api/v1/vaults/{vaultId}/relocations",
-      "reason": "Resolve moved resources to currently accessible Vaults",
+      "previous": "/api/v1/workspaces/{workspaceId}/relocations",
+      "reason": "Resolve moved resources to currently accessible Workspaces",
       "consumers": [
         "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
       ]
@@ -714,10 +714,10 @@
     {
       "operationId": "listPermissions",
       "method": "GET",
-      "path": "/api/v1/vaults/{vaultId}/permissions",
+      "path": "/api/v1/workspaces/{workspaceId}/permissions",
       "classification": "modified",
-      "previous": "/api/v1/vaults/{vaultId}/permissions",
-      "reason": "Read Vault sharing permissions",
+      "previous": "/api/v1/workspaces/{workspaceId}/permissions",
+      "reason": "Read Workspace sharing permissions",
       "consumers": [
         "apps/server/src/client/App.tsx"
       ]
@@ -725,9 +725,9 @@
     {
       "operationId": "putOrganizationPermission",
       "method": "PUT",
-      "path": "/api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}",
+      "path": "/api/v1/workspaces/{workspaceId}/permissions/organizations/{organizationId}",
       "classification": "maintained",
-      "previous": "/api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}",
+      "previous": "/api/v1/workspaces/{workspaceId}/permissions/organizations/{organizationId}",
       "reason": "Grant read-only organization access; owner only",
       "consumers": [
         "apps/server/src/client/App.tsx"
@@ -736,9 +736,9 @@
     {
       "operationId": "deleteOrganizationPermission",
       "method": "DELETE",
-      "path": "/api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}",
+      "path": "/api/v1/workspaces/{workspaceId}/permissions/organizations/{organizationId}",
       "classification": "maintained",
-      "previous": "/api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}",
+      "previous": "/api/v1/workspaces/{workspaceId}/permissions/organizations/{organizationId}",
       "reason": "Revoke organization access; owner only",
       "consumers": [
         "apps/server/src/client/App.tsx"
@@ -747,9 +747,9 @@
     {
       "operationId": "putTeamPermission",
       "method": "PUT",
-      "path": "/api/v1/vaults/{vaultId}/permissions/teams/{teamId}",
+      "path": "/api/v1/workspaces/{workspaceId}/permissions/teams/{teamId}",
       "classification": "maintained",
-      "previous": "/api/v1/vaults/{vaultId}/permissions/teams/{teamId}",
+      "previous": "/api/v1/workspaces/{workspaceId}/permissions/teams/{teamId}",
       "reason": "Grant read-only team access; owner only",
       "consumers": [
         "apps/server/src/client/App.tsx"
@@ -758,9 +758,9 @@
     {
       "operationId": "deleteTeamPermission",
       "method": "DELETE",
-      "path": "/api/v1/vaults/{vaultId}/permissions/teams/{teamId}",
+      "path": "/api/v1/workspaces/{workspaceId}/permissions/teams/{teamId}",
       "classification": "maintained",
-      "previous": "/api/v1/vaults/{vaultId}/permissions/teams/{teamId}",
+      "previous": "/api/v1/workspaces/{workspaceId}/permissions/teams/{teamId}",
       "reason": "Revoke team access; owner only",
       "consumers": [
         "apps/server/src/client/App.tsx"
@@ -776,7 +776,7 @@
       "consumers": [
         "apps/server/src/client/App.tsx",
         "apps/server/src/client/Sidebar.tsx",
-        "apps/desktop/Sources/Dahlia/Services/CloudVaultDiscovery.swift"
+        "apps/desktop/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift"
       ]
     },
     {
@@ -793,7 +793,7 @@
     {
       "operationId": "searchPermissionTargets",
       "method": "GET",
-      "path": "/api/v1/vaults/{vaultId}/permission-targets",
+      "path": "/api/v1/workspaces/{workspaceId}/permission-targets",
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Owner-managed read-only sharing with searchable organization-scoped targets",
@@ -804,7 +804,7 @@
     {
       "operationId": "putUserPermission",
       "method": "PUT",
-      "path": "/api/v1/vaults/{vaultId}/permissions/users/{userId}",
+      "path": "/api/v1/workspaces/{workspaceId}/permissions/users/{userId}",
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Owner-managed read-only sharing with searchable organization-scoped targets",
@@ -815,7 +815,7 @@
     {
       "operationId": "deleteUserPermission",
       "method": "DELETE",
-      "path": "/api/v1/vaults/{vaultId}/permissions/users/{userId}",
+      "path": "/api/v1/workspaces/{workspaceId}/permissions/users/{userId}",
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Owner-managed read-only sharing with searchable organization-scoped targets",
@@ -824,9 +824,9 @@
       ]
     },
     {
-      "operationId": "listGovernanceVaults",
+      "operationId": "listGovernanceWorkspaces",
       "method": "GET",
-      "path": "/api/v1/organizations/{organizationId}/vaults",
+      "path": "/api/v1/organizations/{organizationId}/workspaces",
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Organization governance metadata",
@@ -835,23 +835,23 @@
       ]
     },
     {
-      "operationId": "confirmVaultDeletion",
+      "operationId": "confirmWorkspaceDeletion",
       "method": "GET",
-      "path": "/api/v1/organizations/{organizationId}/vaults/{vaultId}/deletion",
+      "path": "/api/v1/organizations/{organizationId}/workspaces/{workspaceId}/deletion",
       "classification": "modified",
       "previous": "new public contract",
-      "reason": "Confirmation for Vault deletion",
+      "reason": "Confirmation for Workspace deletion",
       "consumers": [
         "apps/server/src/client/App.tsx"
       ]
     },
     {
-      "operationId": "forceDeleteVault",
+      "operationId": "forceDeleteWorkspace",
       "method": "DELETE",
-      "path": "/api/v1/organizations/{organizationId}/vaults/{vaultId}",
+      "path": "/api/v1/organizations/{organizationId}/workspaces/{workspaceId}",
       "classification": "modified",
       "previous": "new public contract",
-      "reason": "Confirmed Vault deletion",
+      "reason": "Confirmed Workspace deletion",
       "consumers": [
         "apps/server/src/client/App.tsx"
       ]
@@ -864,7 +864,7 @@
       "previous": "new public contract",
       "reason": "Desktop Organization creation uses the same atomic Better Auth operation.",
       "consumers": [
-        "apps/desktop/Sources/Dahlia/Services/CloudVaultDiscovery.swift"
+        "apps/desktop/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift"
       ]
     }
   ],
@@ -1733,16 +1733,16 @@
     {
       "operation": "mcpScreenshot",
       "method": "GET",
-      "path": "/mcp/resources/vaults/{vaultId}/meetings/{meetingId}/screenshots/{screenshotId}/content",
+      "path": "/mcp/resources/workspaces/{workspaceId}/meetings/{meetingId}/screenshots/{screenshotId}/content",
       "protocol": "MCP resource HTTP bytes",
-      "availability": "current Vault read permission and MCP read scope"
+      "availability": "current Workspace read permission and MCP read scope"
     },
     {
       "operation": "headMcpScreenshot",
       "method": "HEAD",
-      "path": "/mcp/resources/vaults/{vaultId}/meetings/{meetingId}/screenshots/{screenshotId}/content",
+      "path": "/mcp/resources/workspaces/{workspaceId}/meetings/{meetingId}/screenshots/{screenshotId}/content",
       "protocol": "MCP resource HTTP bytes",
-      "availability": "current Vault read permission and MCP read scope"
+      "availability": "current Workspace read permission and MCP read scope"
     },
     {
       "operation": "signInHeader",
@@ -1767,7 +1767,7 @@
       "query_screenshots",
       "get_meeting_screenshots"
     ],
-    "authorization": "Read-only. Each call checks its capability scope and current Vault access."
+    "authorization": "Read-only. Each call checks its capability scope and current Workspace access."
   },
   "fallbacks": [
     "/.well-known/*: unknown metadata -> native 404",

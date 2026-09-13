@@ -13,7 +13,7 @@ import GRDB
         @Test
         func editingSummaryClearsGenerationButUnchangedSavePreservesIt() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             var original = Self.document(title: "Generated", body: "Original")
             original.metadata = .init(
                 generatedBy: "server",
@@ -39,9 +39,9 @@ import GRDB
         func updatesSummaryWithoutALocalExportFolder() throws {
             let fixture = try Fixture()
             try fixture.manager.dbQueue.write { db in
-                try db.execute(sql: "UPDATE vaults SET path = NULL WHERE id = ?", arguments: [fixture.primaryVaultID])
+                try db.execute(sql: "UPDATE workspaces SET path = NULL WHERE id = ?", arguments: [fixture.primaryWorkspaceID])
             }
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
 
             let result = try store.updateMeetingSummary(
@@ -51,13 +51,13 @@ import GRDB
             )
 
             #expect(result.changed)
-            #expect(result.vaultExport == .notExported)
+            #expect(result.workspaceExport == .notExported)
         }
 
         @Test
         func replacesDocumentAndPropagatesMeetingMetadata() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let before = try store.meeting(id: fixture.firstMeetingID)
             let version = try #require(before.summaryDocumentVersion)
             let corrected = Self.document(title: "Corrected planning title", body: "Tanaka approved the plan")
@@ -71,7 +71,7 @@ import GRDB
             #expect(result.changed)
             #expect(result.title == "Corrected planning title")
             #expect(result.description == "One line description")
-            #expect(result.vaultExport == .notExported)
+            #expect(result.workspaceExport == .notExported)
             #expect(result.staleExports.isEmpty)
 
             let stored = try fixture.manager.dbQueue.read { db in
@@ -107,7 +107,7 @@ import GRDB
         @Test
         func blankDocumentMetadataClearsMeetingMetadata() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
             var corrected = Self.document(title: "   ", body: "Corrected body")
             corrected.description = "\n"
@@ -137,7 +137,7 @@ import GRDB
         @Test
         func addsDocumentTagsWithoutRemovingExistingTags() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             try fixture.manager.dbQueue.write { db in
                 try db.execute(sql: "INSERT INTO tags (name, colorHex, createdAt) VALUES ('manual', '#123456', ?)", arguments: [Date()])
                 try db.execute(
@@ -170,14 +170,14 @@ import GRDB
         }
 
         @Test
-        func rewritesExportedVaultMarkdownInPlace() throws {
+        func rewritesExportedWorkspaceMarkdownInPlace() throws {
             let fixture = try Fixture()
             let relativePath = "Acme/2027-01-01-AI-planning-title.md"
-            let fileURL = fixture.primaryVaultURL.appending(path: relativePath)
+            let fileURL = fixture.primaryWorkspaceURL.appending(path: relativePath)
             try Data("stale contents".utf8).write(to: fileURL)
-            try fixture.insertVaultExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
+            try fixture.insertWorkspaceExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
 
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
             let corrected = Self.document(title: "Corrected planning title", body: "Tanaka approved the plan")
 
@@ -187,7 +187,7 @@ import GRDB
                 document: corrected
             )
 
-            #expect(result.vaultExport == .updated)
+            #expect(result.workspaceExport == .updated)
             let written = try String(contentsOf: fileURL, encoding: .utf8)
             #expect(written.contains("Tanaka approved the plan"))
             #expect(written.contains("title: \"Corrected planning title\""))
@@ -207,11 +207,11 @@ import GRDB
         func rendersTheSameMarkdownAsTheApplicationExportPath() throws {
             let fixture = try Fixture()
             let relativePath = "Acme/2027-01-01-AI-planning-title.md"
-            let fileURL = fixture.primaryVaultURL.appending(path: relativePath)
+            let fileURL = fixture.primaryWorkspaceURL.appending(path: relativePath)
             try Data("stale".utf8).write(to: fileURL)
-            try fixture.insertVaultExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
+            try fixture.insertWorkspaceExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
 
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
             var document = Self.document(title: "Screenshot summary", body: "Body")
             document.sections[0].blocks.append(.image(screenshotId: fixture.firstScreenshotID, caption: "Shot"))
@@ -243,8 +243,8 @@ import GRDB
         @Test
         func reportsFileMissingWhenTheExportedMarkdownIsGone() throws {
             let fixture = try Fixture()
-            try fixture.insertVaultExport(meetingID: fixture.firstMeetingID, relativePath: "Acme/absent.md")
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            try fixture.insertWorkspaceExport(meetingID: fixture.firstMeetingID, relativePath: "Acme/absent.md")
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
 
             let result = try store.updateMeetingSummary(
@@ -253,7 +253,7 @@ import GRDB
                 document: Self.document(title: "Still stored", body: "Body")
             )
 
-            #expect(result.vaultExport == .fileMissing)
+            #expect(result.workspaceExport == .fileMissing)
             #expect(result.changed)
         }
 
@@ -269,7 +269,7 @@ import GRDB
                     arguments: [fixture.firstMeetingID, Date(), Date()]
                 )
             }
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
 
             let result = try store.updateMeetingSummary(
@@ -284,14 +284,14 @@ import GRDB
         @Test
         func includesExportCreatedBetweenPlanningAndCommitInStaleExports() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
             let plan = try store.database.read { db in
                 try store.makeSummaryUpdatePlan(
                     meetingID: fixture.firstMeetingID,
                     expectedDocumentVersion: version,
                     document: Self.document(title: "Corrected", body: "Corrected body"),
-                    vaultURL: fixture.primaryVaultURL,
+                    workspaceURL: fixture.primaryWorkspaceURL,
                     in: db
                 )
             }
@@ -317,7 +317,7 @@ import GRDB
         @Test
         func rejectsStaleDocumentVersionWithoutChangingAnything() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let original = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
 
             #expect(throws: MeetingAccessError.summaryVersionConflict) {
@@ -332,15 +332,15 @@ import GRDB
         }
 
         @Test
-        func rejectsDocumentChangedBetweenPlanningAndCommitAndRestoresVaultFile() throws {
+        func rejectsDocumentChangedBetweenPlanningAndCommitAndRestoresWorkspaceFile() throws {
             let fixture = try Fixture()
             let relativePath = "Acme/2027-01-01-AI-planning-title.md"
-            let fileURL = fixture.primaryVaultURL.appending(path: relativePath)
-            let originalFileContents = Data("original vault contents".utf8)
+            let fileURL = fixture.primaryWorkspaceURL.appending(path: relativePath)
+            let originalFileContents = Data("original workspace contents".utf8)
             try originalFileContents.write(to: fileURL)
-            try fixture.insertVaultExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
+            try fixture.insertWorkspaceExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
 
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
             let corrected = Self.document(title: "Corrected", body: "Planned correction")
             let plan = try store.database.read { db in
@@ -348,7 +348,7 @@ import GRDB
                     meetingID: fixture.firstMeetingID,
                     expectedDocumentVersion: version,
                     document: corrected,
-                    vaultURL: fixture.primaryVaultURL,
+                    workspaceURL: fixture.primaryWorkspaceURL,
                     in: db
                 )
             }
@@ -371,7 +371,7 @@ import GRDB
         @Test
         func returnsUnchangedWhenTheDocumentIsIdentical() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let detail = try store.meeting(id: fixture.firstMeetingID)
             let version = try #require(detail.summaryDocumentVersion)
             let stored = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
@@ -383,7 +383,7 @@ import GRDB
             )
 
             #expect(!result.changed)
-            #expect(result.vaultExport == .unchanged)
+            #expect(result.workspaceExport == .unchanged)
             #expect(result.documentVersion == version)
             let after = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
             #expect(after == stored)
@@ -392,10 +392,10 @@ import GRDB
         @Test
         func rejectsScreenshotReferencesFromAnotherMeeting() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
             var document = Self.document(title: "Bad reference", body: "Body")
-            document.sections[0].blocks.append(.image(screenshotId: fixture.otherVaultScreenshotID, caption: "Shot"))
+            document.sections[0].blocks.append(.image(screenshotId: fixture.otherWorkspaceScreenshotID, caption: "Shot"))
 
             #expect(throws: MeetingAccessError.summaryScreenshotNotFound) {
                 try store.updateMeetingSummary(
@@ -409,7 +409,7 @@ import GRDB
         @Test
         func rejectsInvalidTranscriptReferencesFromDirectStoreCallers() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
             var document = Self.document(title: "Bad reference", body: "Body")
             document.sections[0].blocks[0] = .paragraph(
@@ -429,7 +429,7 @@ import GRDB
         @Test
         func rejectsDuplicateBlockIDsAndUnsupportedSchemaVersions() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
 
             var duplicated = Self.document(title: "Duplicated", body: "Body")
@@ -455,9 +455,9 @@ import GRDB
         }
 
         @Test
-        func rejectsMeetingsWithoutSummariesAndFromOtherVaults() throws {
+        func rejectsMeetingsWithoutSummariesAndFromOtherWorkspaces() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let document = Self.document(title: "Anything", body: "Body")
 
             #expect(throws: MeetingAccessError.summaryNotFound) {
@@ -469,7 +469,7 @@ import GRDB
             }
             #expect(throws: MeetingAccessError.meetingNotFound) {
                 try store.updateMeetingSummary(
-                    meetingID: fixture.otherVaultMeetingID,
+                    meetingID: fixture.otherWorkspaceMeetingID,
                     expectedDocumentVersion: "irrelevant",
                     document: document
                 )
@@ -479,7 +479,7 @@ import GRDB
         @Test
         func requiresWriteAccess() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
             let original = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
 
             #expect(throws: MeetingAccessError.writeAccessRequired) {
@@ -498,8 +498,8 @@ import GRDB
         @Test
         func toolIsPublishedOnlyWithWriteAccess() throws {
             let fixture = try Fixture()
-            let writable = try Self.toolNames(fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true))
-            let readOnly = try Self.toolNames(fixture.store(vaultID: fixture.primaryVaultID))
+            let writable = try Self.toolNames(fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true))
+            let readOnly = try Self.toolNames(fixture.store(workspaceID: fixture.primaryWorkspaceID))
 
             #expect(writable.contains("update_meeting_summary"))
             #expect(!readOnly.contains("update_meeting_summary"))
@@ -510,7 +510,7 @@ import GRDB
             let fixture = try Fixture()
             let original = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
 
-            let readOnly = try Self.initializedServer(store: fixture.store(vaultID: fixture.primaryVaultID))
+            let readOnly = try Self.initializedServer(store: fixture.store(workspaceID: fixture.primaryWorkspaceID))
             let denied = try Self.json(readOnly.handleInternalTestLine(Self.updateRequest(id: 9, meetingID: fixture.firstMeetingID)))
             let deniedResult = try #require(denied["result"] as? [String: Any])
             #expect(deniedResult["isError"] as? Bool == true)
@@ -524,7 +524,7 @@ import GRDB
             let fixture = try Fixture()
             let original = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
             let server = try Self.initializedServer(
-                store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+                store: fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             )
             let current = try Self.summaryDocumentFromMeeting(
                 server: server,
@@ -587,7 +587,7 @@ import GRDB
             try fixture.replaceSummaryDocument(meetingID: fixture.firstMeetingID, document: rich)
 
             let server = try Self.initializedServer(
-                store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+                store: fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             )
             let result = try Self.roundTripSummaryDocument(
                 server: server,
@@ -645,7 +645,7 @@ import GRDB
         }
 
         @Test
-        func legacyDocumentRoundTripIsUnchangedAndDoesNotRewriteVaultFile() throws {
+        func legacyDocumentRoundTripIsUnchangedAndDoesNotRewriteWorkspaceFile() throws {
             let fixture = try Fixture()
             let document = Self.richDocument(screenshotID: fixture.firstScreenshotID)
             var legacyObject = try #require(
@@ -661,18 +661,18 @@ import GRDB
             try fixture.replaceSummaryDocument(meetingID: fixture.firstMeetingID, databaseJSON: legacyJSON)
 
             let relativePath = "Acme/legacy-summary.md"
-            let fileURL = fixture.primaryVaultURL.appending(path: relativePath)
-            let originalContents = Data("legacy vault contents".utf8)
+            let fileURL = fixture.primaryWorkspaceURL.appending(path: relativePath)
+            let originalContents = Data("legacy workspace contents".utf8)
             try originalContents.write(to: fileURL)
             let originalModificationDate = Date(timeIntervalSince1970: 1_700_000_000)
             try FileManager.default.setAttributes(
                 [.modificationDate: originalModificationDate],
                 ofItemAtPath: fileURL.path
             )
-            try fixture.insertVaultExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
+            try fixture.insertWorkspaceExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
 
             let server = try Self.initializedServer(
-                store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+                store: fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             )
             let result = try Self.roundTripSummaryDocument(
                 server: server,
@@ -687,19 +687,19 @@ import GRDB
         }
 
         @Test
-        func unreadableVaultFileIsNotRewritten() throws {
+        func unreadableWorkspaceFileIsNotRewritten() throws {
             let fixture = try Fixture()
             let relativePath = "Acme/unreadable-summary.md"
-            let fileURL = fixture.primaryVaultURL.appending(path: relativePath)
+            let fileURL = fixture.primaryWorkspaceURL.appending(path: relativePath)
             let originalContents = Data("must remain unchanged".utf8)
             try originalContents.write(to: fileURL)
-            try fixture.insertVaultExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
+            try fixture.insertWorkspaceExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
             try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: fileURL.path)
             defer {
                 try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
             }
 
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
             let corrected = Self.document(title: "Corrected", body: "Database-only update")
             let result = try store.updateMeetingSummary(
@@ -709,7 +709,7 @@ import GRDB
             )
 
             #expect(result.changed)
-            #expect(result.vaultExport == .fileMissing)
+            #expect(result.workspaceExport == .fileMissing)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
             #expect(try Data(contentsOf: fileURL) == originalContents)
             #expect(try fixture.storedDocument(meetingID: fixture.firstMeetingID) == corrected.databaseJSONString())

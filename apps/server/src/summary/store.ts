@@ -1,4 +1,4 @@
-import { vaultPermissions } from "../auth/vault-permissions";
+import { workspacePermissions } from "../auth/workspace-permissions";
 import { createContentEncryption } from "../encryption/store";
 import type { EncryptionConfig } from "../encryption/crypto";
 import { and, asc, eq, lte, gt, or, sql } from "drizzle-orm";
@@ -45,8 +45,8 @@ export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabas
           const query = connection.select().from(jobs).where(eligible).orderBy(asc(jobs.availableAt)).limit(1);
           const [stored] = isPostgres ? await query.for("update", { skipLocked: true }) : await query;
           if (!stored) return null;
-          const [writable] = await connection.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
-            .where(and(eq(schema.syncedVault.vaultId, stored.vaultId), vaultPermissions(connection, schema, owner.id).write(schema.syncedVault.vaultId))).limit(1);
+          const [writable] = await connection.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
+            .where(and(eq(schema.syncedWorkspace.workspaceId, stored.workspaceId), workspacePermissions(connection, schema, owner.id).write(schema.syncedWorkspace.workspaceId))).limit(1);
           if (!writable) {
             await connection.update(jobs).set({ status: "failed", lastErrorCode: "summary_meeting_unavailable", claimedAt: null, leaseExpiresAt: null }).where(eq(jobs.id, stored.id));
             return null;

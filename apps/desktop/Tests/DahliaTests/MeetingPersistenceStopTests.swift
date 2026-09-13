@@ -17,7 +17,7 @@ import GRDB
             let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: fixture.database.dbQueue,
-                vaultId: fixture.vault.id,
+                workspaceId: fixture.workspace.id,
                 projectId: nil,
                 initialName: "Final segment"
             )
@@ -47,7 +47,7 @@ import GRDB
             let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: fixture.database.dbQueue,
-                vaultId: fixture.vault.id,
+                workspaceId: fixture.workspace.id,
                 projectId: nil,
                 initialName: "Persistence failure"
             )
@@ -81,7 +81,7 @@ import GRDB
             let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: fixture.database.dbQueue,
-                vaultId: fixture.vault.id,
+                workspaceId: fixture.workspace.id,
                 projectId: nil,
                 initialName: "Termination persistence failure"
             )
@@ -114,7 +114,7 @@ import GRDB
             let legacySegment = TranscriptSegment(
                 id: .v7(),
                 sessionId: nil,
-                startTime: fixture.vault.createdAt,
+                startTime: fixture.workspace.createdAt,
                 text: "Legacy transcript",
                 isConfirmed: true,
                 audioSource: "mic"
@@ -122,12 +122,12 @@ import GRDB
             try await fixture.database.dbQueue.write { db in
                 try MeetingRecord(
                     id: meetingId,
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     projectId: nil,
                     name: "Legacy meeting",
                     status: .ready,
-                    createdAt: fixture.vault.createdAt,
-                    updatedAt: fixture.vault.createdAt
+                    createdAt: fixture.workspace.createdAt,
+                    updatedAt: fixture.workspace.createdAt
                 ).insert(db)
                 try TranscriptContent(from: legacySegment, meetingId: meetingId).insert(db)
                 try TranscriptRecord(
@@ -171,20 +171,20 @@ import GRDB
             #expect(records.first(where: { $0.id == newSegment.id })?.sessionId == service.recordingSessionId)
         }
 
-        private func makeDatabase() throws -> (database: AppDatabaseManager, vault: VaultRecord) {
+        private func makeDatabase() throws -> (database: AppDatabaseManager, workspace: WorkspaceRecord) {
             let database = try AppDatabaseManager(path: ":memory:")
             let createdAt = Date(timeIntervalSince1970: 1_776_380_000)
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
                 path: URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).path,
-                name: "Persistence Stop Test Vault",
+                name: "Persistence Stop Test Workspace",
                 createdAt: createdAt,
                 lastOpenedAt: createdAt
             )
             try database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
             }
-            return (database, vault)
+            return (database, workspace)
         }
     }
 #endif

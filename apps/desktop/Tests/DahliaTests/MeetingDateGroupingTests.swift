@@ -50,7 +50,7 @@ import Foundation
 private func meeting(name: String, createdAt: Date) -> MeetingSidebarItem {
     MeetingSidebarItem(
         meetingId: UUID.v7(),
-        vaultId: UUID.v7(),
+        workspaceId: UUID.v7(),
         projectId: nil,
         projectName: nil,
         meetingName: name,

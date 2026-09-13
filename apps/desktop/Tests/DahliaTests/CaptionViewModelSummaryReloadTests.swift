@@ -19,7 +19,7 @@ import GRDB
                 dbQueue: context.manager.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: context.vaultURL
+                workspaceURL: context.workspaceURL
             )
             #expect(await pollUntil { viewModel.currentSummaryDocument?.title == "Original title" })
 
@@ -42,24 +42,24 @@ import GRDB
         @Test
         func canonicalRevisionRefreshesTheOpenMeetingAndPendingStatusWithoutTouchingItsNote() async throws {
             let context = try Self.makeContext()
-            defer { try? FileManager.default.removeItem(at: context.vaultURL) }
+            defer { try? FileManager.default.removeItem(at: context.workspaceURL) }
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://sync.example.test", clientID: "test", createdAt: .now)
-            let vaultId = try #require(try await context.manager.dbQueue.read {
-                try MeetingRecord.fetchOne($0, key: context.meetingID)?.vaultId
+            let workspaceId = try #require(try await context.manager.dbQueue.read {
+                try MeetingRecord.fetchOne($0, key: context.meetingID)?.workspaceId
             })
             try await context.manager.dbQueue.write { db in
                 try connection.insert(db)
                 try SummaryExportRecord.setURL("https://docs.google.com/document/d/old/edit", meetingId: context.meetingID, type: .googleDocs, in: db)
                 try db.execute(
                     sql: """
-                    UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'),
+                    UPDATE workspaces SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'),
                     syncConfirmedConnectionId = ?, syncPullCursor = 'ready' WHERE id = ?
                     """,
-                    arguments: [connection.id, connection.id, vaultId]
+                    arguments: [connection.id, connection.id, workspaceId]
                 )
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'summary', ?, 1)",
-                    arguments: [vaultId, context.meetingID]
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'summary', ?, 1)",
+                    arguments: [workspaceId, context.meetingID]
                 )
                 for index in 0 ..< 400 {
                     try TranscriptContent(
@@ -69,7 +69,13 @@ import GRDB
                 }
             }
             let viewModel = CaptionViewModel()
-            viewModel.loadMeeting(context.meetingID, dbQueue: context.manager.dbQueue, projectURL: nil, projectId: nil, vaultURL: context.vaultURL)
+            viewModel.loadMeeting(
+                context.meetingID,
+                dbQueue: context.manager.dbQueue,
+                projectURL: nil,
+                projectId: nil,
+                workspaceURL: context.workspaceURL
+            )
             #expect(await pollUntil { viewModel.currentSummaryDocument?.title == "Original title" && viewModel.meetingSyncState == .synced })
             #expect(viewModel.currentSummaryGoogleFileId == "old")
             #expect(await viewModel.store.loadEarlier())
@@ -80,12 +86,12 @@ import GRDB
             try await context.manager.dbQueue.write { db in
                 try SummaryExportRecord.filter(Column("meetingId") == context.meetingID).deleteAll(db)
                 try db.execute(
-                    sql: "UPDATE sync_entity_state SET confirmedRevision = 2 WHERE vaultId = ? AND entity = 'summary'",
-                    arguments: [vaultId]
+                    sql: "UPDATE sync_entity_state SET confirmedRevision = 2 WHERE workspace_id = ? AND entity = 'summary'",
+                    arguments: [workspaceId]
                 )
                 try db.execute(
-                    sql: "INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",
-                    arguments: [UUID.v7(), vaultId, connection.id, Date(), Date()]
+                    sql: "INSERT INTO sync_transactions(id, workspace_id, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",
+                    arguments: [UUID.v7(), workspaceId, connection.id, Date(), Date()]
                 )
             }
             #expect(await pollUntil { viewModel.currentSummaryDocument?.title == "Canonical title" && viewModel.meetingSyncState == .pending })
@@ -93,21 +99,25 @@ import GRDB
             #expect(viewModel.noteText == "Keep this local draft")
             #expect(await pollUntil { !viewModel.store.isLoadingPage })
             #expect(viewModel.store.segments.first?.id == firstVisible)
-            try await context.manager.dbQueue.write { try SyncTransactionQueue.discard(vaultId: vaultId, in: $0) }
+            try await context.manager.dbQueue.write { try SyncTransactionQueue.discard(workspaceId: workspaceId, in: $0) }
             #expect(await pollUntil { viewModel.meetingSyncState == .synced })
         }
 
         @Test
         func canonicalTranscriptRefreshInvalidatesDisplayedConversationMetrics() async throws {
             let context = try Self.makeContext()
-            defer { try? FileManager.default.removeItem(at: context.vaultURL) }
+            defer { try? FileManager.default.removeItem(at: context.workspaceURL) }
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://metrics.invalid", clientID: "test", createdAt: .now)
-            let vaultId = try #require(try await context.manager.dbQueue.read { try MeetingRecord.fetchOne($0, key: context.meetingID)?.vaultId })
+            let workspaceId = try #require(try await context.manager.dbQueue
+                .read { try MeetingRecord.fetchOne($0, key: context.meetingID)?.workspaceId })
             try await context.manager.dbQueue.write { db in
                 try connection.insert(db)
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'), syncConfirmedConnectionId = ? WHERE id = ?",
-                    arguments: [connection.id, connection.id, vaultId]
+                    sql: """
+                    UPDATE workspaces SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id),
+                    syncRole = COALESCE(syncRole, 'admin'), syncConfirmedConnectionId = ? WHERE id = ?
+                    """,
+                    arguments: [connection.id, connection.id, workspaceId]
                 )
                 try TranscriptContent(
                     id: .v7(),
@@ -117,15 +127,15 @@ import GRDB
                     isConfirmed: true,
                     audioSource: "mic"
                 ).insert(db)
-                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'transcript', ?, 1)", arguments: [vaultId, context.meetingID])
+                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'transcript', ?, 1)", arguments: [workspaceId, context.meetingID])
                 try db.execute(
-                    sql: "INSERT INTO sync_content_state(vaultId, entity, entityId, residentRevision, complete) VALUES (?, 'transcript', ?, 1, 1)",
-                    arguments: [vaultId, context.meetingID]
+                    sql: "INSERT INTO sync_content_state(workspace_id, entity, entityId, residentRevision, complete) VALUES (?, 'transcript', ?, 1, 1)",
+                    arguments: [workspaceId, context.meetingID]
                 )
             }
             let viewModel = CaptionViewModel()
             defer { viewModel.clearCurrentMeeting() }
-            viewModel.loadMeeting(context.meetingID, dbQueue: context.manager.dbQueue, projectURL: nil, projectId: nil, vaultURL: nil)
+            viewModel.loadMeeting(context.meetingID, dbQueue: context.manager.dbQueue, projectURL: nil, projectId: nil, workspaceURL: nil)
             #expect(await pollUntil { viewModel.currentMeetingHasTranscriptSegments && !viewModel.store.isLoadingInitialPage })
             let reloadToken = viewModel.conversationMetricsStore.reloadToken
             try await context.manager.dbQueue.write { db in
@@ -149,16 +159,16 @@ import GRDB
         @Test
         func serverAdoptionClearsOpenTextAndSearchThenDisplaysRefetchedContent() async throws {
             let context = try Self.makeContext()
-            defer { try? FileManager.default.removeItem(at: context.vaultURL) }
+            defer { try? FileManager.default.removeItem(at: context.workspaceURL) }
             let queue = context.manager.dbQueue
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://discard.invalid", clientID: "test", createdAt: .now)
-            let vaultId = try #require(try await queue.read { try MeetingRecord.fetchOne($0, key: context.meetingID)?.vaultId })
+            let workspaceId = try #require(try await queue.read { try MeetingRecord.fetchOne($0, key: context.meetingID)?.workspaceId })
             let segmentId = UUID.v7()
             try await queue.write { db in
                 try connection.insert(db)
                 try db.execute(
                     sql: """
-                    UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'),
+                    UPDATE workspaces SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'),
                     syncConfirmedConnectionId = ?, syncPullCursor = 'ready'
                     """,
                     arguments: [connection.id, connection.id]
@@ -171,12 +181,12 @@ import GRDB
                     translatedText: "translation",
                     isConfirmed: true
                 ).insert(db)
-                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'vault', ?, 1)", arguments: [vaultId, vaultId])
+                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'workspace', ?, 1)", arguments: [workspaceId, workspaceId])
                 for entity in ["summary", "transcript"] {
-                    try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, ?, ?, 1)", arguments: [vaultId, entity, context.meetingID])
+                    try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, ?, ?, 1)", arguments: [workspaceId, entity, context.meetingID])
                     try db.execute(
-                        sql: "INSERT INTO sync_content_state(vaultId, entity, entityId, residentRevision, complete) VALUES (?, ?, ?, 1, 1)",
-                        arguments: [vaultId, entity, context.meetingID]
+                        sql: "INSERT INTO sync_content_state(workspace_id, entity, entityId, residentRevision, complete) VALUES (?, ?, ?, 1, 1)",
+                        arguments: [workspaceId, entity, context.meetingID]
                     )
                 }
             }
@@ -188,7 +198,7 @@ import GRDB
                 let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: context.meetingID)
                 let segment = try #require(try fetchTranscriptContent(id: segmentId, in: db))
                 try SyncTransactionRecorder.record(
-                    vaultId: vaultId,
+                    workspaceId: workspaceId,
                     operations: [patch],
                     transcriptSegments: [patch.id: [SyncTranscriptPatchSegment(segment)]],
                     in: db
@@ -199,7 +209,7 @@ import GRDB
             }
             let viewModel = CaptionViewModel()
             defer { viewModel.clearCurrentMeeting() }
-            viewModel.loadMeeting(context.meetingID, dbQueue: queue, projectURL: nil, projectId: nil, vaultURL: nil)
+            viewModel.loadMeeting(context.meetingID, dbQueue: queue, projectURL: nil, projectId: nil, workspaceURL: nil)
             #expect(await pollUntil {
                 viewModel.currentSummaryDocument?.title == "Discarded summary" && viewModel.store.segments.count == 1 && !viewModel.store
                     .isLoadingInitialPage
@@ -207,7 +217,7 @@ import GRDB
             viewModel.noteText = "Keep this note"
             let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: queue))
             try await SyncTransactionQueue.block(transaction, reason: .conflict, response: Data("{}".utf8), dbQueue: queue)
-            try await SyncTransactionQueue.acceptServerVersion(vaultId: vaultId, dbQueue: queue)
+            try await SyncTransactionQueue.acceptServerVersion(workspaceId: workspaceId, dbQueue: queue)
             #expect(await pollUntil {
                 viewModel.currentSummaryDocument == nil && viewModel.store.segments.isEmpty && viewModel.textContentState == .missing
             })
@@ -233,7 +243,7 @@ import GRDB
                     arguments: [segmentId]
                 )
                 for entity in ["summary", "transcript"] {
-                    try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, ?, ?, 2)", arguments: [vaultId, entity, context.meetingID])
+                    try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, ?, ?, 2)", arguments: [workspaceId, entity, context.meetingID])
                     try db.execute(sql: "UPDATE sync_content_state SET complete = 1, residentRevision = 2 WHERE entity = ?", arguments: [entity])
                 }
             }
@@ -248,7 +258,7 @@ import GRDB
         private struct Context {
             let manager: AppDatabaseManager
             let meetingID: UUID
-            let vaultURL: URL
+            let workspaceURL: URL
 
             func replaceSummary(title: String, body: String) throws {
                 let document = try SummaryDocument(
@@ -269,20 +279,20 @@ import GRDB
         private static func makeContext() throws -> Context {
             let manager = try AppDatabaseManager(path: ":memory:")
             let repo = MeetingRepository(dbQueue: manager.dbQueue)
-            let vaultURL = URL.temporaryDirectory.appending(path: "dahlia-summary-reload-\(UUID.v7().uuidString)")
-            try FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
+            let workspaceURL = URL.temporaryDirectory.appending(path: "dahlia-summary-reload-\(UUID.v7().uuidString)")
+            try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
 
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
-                path: vaultURL.path,
-                name: "Test Vault",
+                path: workspaceURL.path,
+                name: "Test Workspace",
                 createdAt: Date(),
                 lastOpenedAt: Date()
             )
-            try repo.insertVault(vault)
+            try repo.insertWorkspace(workspace)
             let meeting = MeetingRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: nil,
                 name: "Weekly sync",
                 createdAt: Date(),
@@ -304,7 +314,7 @@ import GRDB
                 ).insert(db)
             }
 
-            return Context(manager: manager, meetingID: meeting.id, vaultURL: vaultURL)
+            return Context(manager: manager, meetingID: meeting.id, workspaceURL: workspaceURL)
         }
     }
 #endif

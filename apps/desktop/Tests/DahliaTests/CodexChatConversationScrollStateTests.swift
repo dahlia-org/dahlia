@@ -99,7 +99,7 @@
         }
 
         private func alternatingMessages(count: Int) -> [CodexChatMessage] {
-            (0..<count).map { index in
+            (0 ..< count).map { index in
                 CodexChatMessage(
                     id: "message-\(index)",
                     role: index.isMultiple(of: 2) ? .user : .assistant,
@@ -110,7 +110,7 @@
 
         private func mixedRoleMessages(count: Int) -> [CodexChatMessage] {
             let roles: [CodexChatMessage.Role] = [.user, .assistant, .assistant, .user, .user]
-            return (0..<count).map { index in
+            return (0 ..< count).map { index in
                 CodexChatMessage(
                     id: "message-\(index)",
                     role: roles[index % roles.count],

@@ -6,39 +6,39 @@ import Observation
 @Observable
 final class SetupTourModel {
     let mode: SetupTourMode
-    let originalVault: VaultRecord?
+    let originalWorkspace: WorkspaceRecord?
 
     private(set) var currentStep: SetupTourStep
-    private(set) var isVaultLocationConfirmed: Bool
+    private(set) var isWorkspaceLocationConfirmed: Bool
     private(set) var isCompleting = false
     private(set) var errorMessage: String?
-    private(set) var selectedVaultURL: URL
-    private(set) var selectedVaultName: String?
-    private(set) var selectedExistingVaultID: UUID?
-    private(set) var didSelectVaultLocation = false
+    private(set) var selectedWorkspaceURL: URL
+    private(set) var selectedWorkspaceName: String?
+    private(set) var selectedExistingWorkspaceID: UUID?
+    private(set) var didSelectWorkspaceLocation = false
     private(set) var selectedAccountConnectionID: UUID?
     private(set) var isAccountSelectionConfirmed: Bool
     private let progressDefaults: UserDefaults?
 
     init(
         mode: SetupTourMode,
-        currentVault: VaultRecord?,
+        currentWorkspace: WorkspaceRecord?,
         signedInAccountConnectionIDs: Set<UUID> = [],
         progressDefaults: UserDefaults? = nil
     ) {
         self.mode = mode
-        originalVault = currentVault
-        selectedAccountConnectionID = currentVault?.accountConnectionId
-        isAccountSelectionConfirmed = currentVault.map { vault in
-            guard let connectionID = vault.accountConnectionId else { return true }
+        originalWorkspace = currentWorkspace
+        selectedAccountConnectionID = currentWorkspace?.accountConnectionId
+        isAccountSelectionConfirmed = currentWorkspace.map { workspace in
+            guard let connectionID = workspace.accountConnectionId else { return true }
             return signedInAccountConnectionIDs.contains(connectionID)
         } ?? false
         self.progressDefaults = progressDefaults
 
-        if mode == .initial, currentVault == nil, let progressDefaults {
-            let restoredVaultURL = SetupTourPresentationPolicy.restoredVaultURL(in: progressDefaults)
-            let restoredVaultConfirmed = restoredVaultURL != nil
-                && SetupTourPresentationPolicy.isRestoredVaultConfirmed(in: progressDefaults)
+        if mode == .initial, currentWorkspace == nil, let progressDefaults {
+            let restoredWorkspaceURL = SetupTourPresentationPolicy.restoredWorkspaceURL(in: progressDefaults)
+            let restoredWorkspaceConfirmed = restoredWorkspaceURL != nil
+                && SetupTourPresentationPolicy.isRestoredWorkspaceConfirmed(in: progressDefaults)
             let restoredStep = SetupTourPresentationPolicy.restoredStep(in: progressDefaults)
             let restoredConnectionID = SetupTourPresentationPolicy.restoredAccountConnectionID(in: progressDefaults)
             let restoredAccountConfirmed = SetupTourPresentationPolicy.isAccountSelectionConfirmed(in: progressDefaults)
@@ -46,22 +46,22 @@ final class SetupTourModel {
             currentStep = if !restoredAccountConfirmed {
                 .account
             } else if restoredStep != .account,
-                      restoredStep != .vault,
-                      !restoredVaultConfirmed {
-                .vault
+                      restoredStep != .workspace,
+                      !restoredWorkspaceConfirmed {
+                .workspace
             } else {
                 restoredStep
             }
             selectedAccountConnectionID = restoredConnectionID
             isAccountSelectionConfirmed = restoredAccountConfirmed
-            selectedVaultURL = restoredVaultURL ?? VaultManagementModel.defaultVaultURL
-            selectedVaultName = SetupTourPresentationPolicy.restoredVaultName(in: progressDefaults)
-            isVaultLocationConfirmed = restoredVaultConfirmed
+            selectedWorkspaceURL = restoredWorkspaceURL ?? WorkspaceManagementModel.defaultWorkspaceURL
+            selectedWorkspaceName = SetupTourPresentationPolicy.restoredWorkspaceName(in: progressDefaults)
+            isWorkspaceLocationConfirmed = restoredWorkspaceConfirmed
         } else {
             currentStep = .account
-            selectedVaultURL = currentVault?.url ?? VaultManagementModel.defaultVaultURL
-            selectedVaultName = nil
-            isVaultLocationConfirmed = currentVault != nil
+            selectedWorkspaceURL = currentWorkspace?.url ?? WorkspaceManagementModel.defaultWorkspaceURL
+            selectedWorkspaceName = nil
+            isWorkspaceLocationConfirmed = currentWorkspace != nil
         }
     }
 
@@ -72,7 +72,7 @@ final class SetupTourModel {
     var canContinue: Bool {
         !isCompleting
             && (currentStep != .account || isAccountSelectionConfirmed)
-            && (currentStep != .vault || isVaultLocationConfirmed)
+            && (currentStep != .workspace || isWorkspaceLocationConfirmed)
     }
 
     var visibleSteps: [SetupTourStep] {
@@ -80,9 +80,9 @@ final class SetupTourModel {
     }
 
     func selectAccountConnection(_ connectionID: UUID?) {
-        if connectionID != selectedAccountConnectionID, selectedExistingVaultID != nil {
-            selectedExistingVaultID = nil
-            isVaultLocationConfirmed = false
+        if connectionID != selectedAccountConnectionID, selectedExistingWorkspaceID != nil {
+            selectedExistingWorkspaceID = nil
+            isWorkspaceLocationConfirmed = false
         }
         selectedAccountConnectionID = connectionID
         isAccountSelectionConfirmed = true
@@ -90,48 +90,48 @@ final class SetupTourModel {
         persistProgress()
     }
 
-    func selectVaultURL(_ url: URL) {
-        selectedExistingVaultID = nil
-        selectedVaultURL = url
-        selectedVaultName = nil
-        didSelectVaultLocation = true
-        isVaultLocationConfirmed = originalVault?.url?.standardizedFileURL == url.standardizedFileURL
+    func selectWorkspaceURL(_ url: URL) {
+        selectedExistingWorkspaceID = nil
+        selectedWorkspaceURL = url
+        selectedWorkspaceName = nil
+        didSelectWorkspaceLocation = true
+        isWorkspaceLocationConfirmed = originalWorkspace?.url?.standardizedFileURL == url.standardizedFileURL
         errorMessage = nil
         persistProgress()
     }
 
-    func selectPathlessVault(named name: String) {
+    func selectPathlessWorkspace(named name: String) {
         guard let name = DahliaProjectName.normalizedName(name) else { return }
-        selectedExistingVaultID = nil
-        selectedVaultName = name
-        selectedVaultURL = VaultManagementModel.defaultVaultURL
-        didSelectVaultLocation = true
-        isVaultLocationConfirmed = true
+        selectedExistingWorkspaceID = nil
+        selectedWorkspaceName = name
+        selectedWorkspaceURL = WorkspaceManagementModel.defaultWorkspaceURL
+        didSelectWorkspaceLocation = true
+        isWorkspaceLocationConfirmed = true
         errorMessage = nil
         persistProgress()
     }
 
-    func selectExistingVault(_ vault: VaultRecord) {
-        guard vault.accountConnectionId == selectedAccountConnectionID else { return }
-        selectedExistingVaultID = vault.id
-        selectedVaultName = nil
-        didSelectVaultLocation = true
-        isVaultLocationConfirmed = true
+    func selectExistingWorkspace(_ workspace: WorkspaceRecord) {
+        guard workspace.accountConnectionId == selectedAccountConnectionID else { return }
+        selectedExistingWorkspaceID = workspace.id
+        selectedWorkspaceName = nil
+        didSelectWorkspaceLocation = true
+        isWorkspaceLocationConfirmed = true
         errorMessage = nil
         persistProgress()
     }
 
-    func confirmVaultSelection() {
-        isVaultLocationConfirmed = true
+    func confirmWorkspaceSelection() {
+        isWorkspaceLocationConfirmed = true
         errorMessage = nil
         persistProgress()
     }
 
-    var keepsOriginalVault: Bool {
-        guard let originalVault else { return false }
-        if let selectedExistingVaultID { return selectedExistingVaultID == originalVault.id }
-        return selectedVaultName == nil && (!didSelectVaultLocation
-            || originalVault.url?.standardizedFileURL == selectedVaultURL.standardizedFileURL
+    var keepsOriginalWorkspace: Bool {
+        guard let originalWorkspace else { return false }
+        if let selectedExistingWorkspaceID { return selectedExistingWorkspaceID == originalWorkspace.id }
+        return selectedWorkspaceName == nil && (!didSelectWorkspaceLocation
+            || originalWorkspace.url?.standardizedFileURL == selectedWorkspaceURL.standardizedFileURL
         )
     }
 
@@ -177,10 +177,10 @@ final class SetupTourModel {
         guard mode == .initial, let progressDefaults else { return }
         SetupTourPresentationPolicy.saveProgress(
             step: currentStep,
-            vaultURL: selectedVaultURL,
-            vaultName: selectedVaultName,
+            workspaceURL: selectedWorkspaceURL,
+            workspaceName: selectedWorkspaceName,
             // Revalidate an automatically discovered selection after relaunch.
-            isVaultConfirmed: isVaultLocationConfirmed && selectedExistingVaultID == nil,
+            isWorkspaceConfirmed: isWorkspaceLocationConfirmed && selectedExistingWorkspaceID == nil,
             accountConnectionID: selectedAccountConnectionID,
             isAccountSelectionConfirmed: isAccountSelectionConfirmed,
             in: progressDefaults

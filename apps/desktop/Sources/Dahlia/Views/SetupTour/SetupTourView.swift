@@ -8,27 +8,27 @@ struct SetupTourView: View {
     @State private var isLanguageMenuHovered = false
     @State private var isCloseHovered = false
 
-    private let vaultManagementModel: VaultManagementModel
+    private let workspaceManagementModel: WorkspaceManagementModel
     private let canComplete: () -> Bool
-    private let onComplete: (VaultRecord, UUID?) async -> Bool
-    private let vaultStepReferenceHeight: CGFloat = 476
+    private let onComplete: (WorkspaceRecord, UUID?) async -> Bool
+    private let workspaceStepReferenceHeight: CGFloat = 476
 
     init(
         mode: SetupTourMode,
-        currentVault: VaultRecord?,
-        vaultManagementModel: VaultManagementModel,
+        currentWorkspace: WorkspaceRecord?,
+        workspaceManagementModel: WorkspaceManagementModel,
         accountController: DahliaCloudAccountController,
         canComplete: @escaping () -> Bool,
-        onComplete: @escaping (VaultRecord, UUID?) async -> Bool
+        onComplete: @escaping (WorkspaceRecord, UUID?) async -> Bool
     ) {
-        self.vaultManagementModel = vaultManagementModel
+        self.workspaceManagementModel = workspaceManagementModel
         self.canComplete = canComplete
         self.onComplete = onComplete
         _accountController = State(initialValue: accountController)
-        let initialVault = mode == .initial ? currentVault : currentVault ?? vaultManagementModel.vaults.first
+        let initialWorkspace = mode == .initial ? currentWorkspace : currentWorkspace ?? workspaceManagementModel.workspaces.first
         _model = State(initialValue: SetupTourModel(
             mode: mode,
-            currentVault: initialVault,
+            currentWorkspace: initialWorkspace,
             signedInAccountConnectionIDs: Set(accountController.connections.filter(\.isSignedIn).map(\.id)),
             progressDefaults: .standard
         ))
@@ -56,7 +56,7 @@ struct SetupTourView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal, 40)
-                        .padding(.top, max((proxy.size.height - vaultStepReferenceHeight) / 2, 32))
+                        .padding(.top, max((proxy.size.height - workspaceStepReferenceHeight) / 2, 32))
                         .padding(.bottom, 32)
                     }
 
@@ -158,8 +158,8 @@ struct SetupTourView: View {
                 isEmbedded: true,
                 onContinueLocally: continueWithLocalAccount
             )
-        case .vault:
-            VaultSetupStepView(model: model, vaultManagementModel: vaultManagementModel)
+        case .workspace:
+            WorkspaceSetupStepView(model: model, workspaceManagementModel: workspaceManagementModel)
         case .workingLanguages:
             WorkingLanguagesSetupStepView()
         case .permissions:
@@ -172,7 +172,7 @@ struct SetupTourView: View {
         case .completion:
             SetupCompletionStepView(
                 model: model,
-                onReviewVault: { model.returnToStep(.vault) },
+                onReviewWorkspace: { model.returnToStep(.workspace) },
                 onReviewPermissions: { model.returnToStep(.permissions) }
             )
         }
@@ -231,42 +231,42 @@ struct SetupTourView: View {
     }
 
     private func completeTour() {
-        guard !requiresVaultSwitch || canComplete() else {
-            model.finishCompletion(errorMessage: L10n.vaultOperationFailed)
+        guard !requiresWorkspaceSwitch || canComplete() else {
+            model.finishCompletion(errorMessage: L10n.workspaceOperationFailed)
             return
         }
         model.beginCompletion()
         Task {
-            guard !requiresVaultSwitch || canComplete() else {
-                model.finishCompletion(errorMessage: L10n.vaultOperationFailed)
+            guard !requiresWorkspaceSwitch || canComplete() else {
+                model.finishCompletion(errorMessage: L10n.workspaceOperationFailed)
                 return
             }
-            let vault: VaultRecord? = if let selectedID = model.selectedExistingVaultID {
-                vaultManagementModel.vaults.first { $0.id == selectedID && $0.accountConnectionId == model.selectedAccountConnectionID }
-            } else if let originalVault = model.originalVault,
-                      model.keepsOriginalVault {
-                originalVault
-            } else if let name = model.selectedVaultName {
-                await vaultManagementModel.createVault(named: name)
+            let workspace: WorkspaceRecord? = if let selectedID = model.selectedExistingWorkspaceID {
+                workspaceManagementModel.workspaces.first { $0.id == selectedID && $0.accountConnectionId == model.selectedAccountConnectionID }
+            } else if let originalWorkspace = model.originalWorkspace,
+                      model.keepsOriginalWorkspace {
+                originalWorkspace
+            } else if let name = model.selectedWorkspaceName {
+                await workspaceManagementModel.createWorkspace(named: name)
             } else {
-                await vaultManagementModel.createVault(at: model.selectedVaultURL)
+                await workspaceManagementModel.createWorkspace(at: model.selectedWorkspaceURL)
             }
-            guard let vault else {
-                vaultManagementModel.isShowingError = false
-                let errorMessage = vaultManagementModel.errorMessage
-                model.finishCompletion(errorMessage: errorMessage.isEmpty ? L10n.vaultOperationFailed : errorMessage)
+            guard let workspace else {
+                workspaceManagementModel.isShowingError = false
+                let errorMessage = workspaceManagementModel.errorMessage
+                model.finishCompletion(errorMessage: errorMessage.isEmpty ? L10n.workspaceOperationFailed : errorMessage)
                 return
             }
-            guard await onComplete(vault, model.selectedAccountConnectionID) else {
-                model.finishCompletion(errorMessage: L10n.vaultOperationFailed)
+            guard await onComplete(workspace, model.selectedAccountConnectionID) else {
+                model.finishCompletion(errorMessage: L10n.workspaceOperationFailed)
                 return
             }
             model.finishCompletion(errorMessage: nil)
         }
     }
 
-    private var requiresVaultSwitch: Bool {
-        !model.keepsOriginalVault
+    private var requiresWorkspaceSwitch: Bool {
+        !model.keepsOriginalWorkspace
     }
 
 }

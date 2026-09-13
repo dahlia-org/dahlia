@@ -15,13 +15,13 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     const app = createApp({ config, authStore: testStore(), extensions: [{
       registerRoutes(app) {
         app.post("/api/v1/custom", (context) => context.json({ extension: true }));
-        app.post("/api/v1/vaults/custom", (context) => context.json({ userId: context.get("identity")?.userId }));
+        app.post("/api/v1/workspaces/custom", (context) => context.json({ userId: context.get("identity")?.userId }));
         app.post("/api/v1/capabilities", (context) => context.json({ extension: true }));
         app.post("/api/v1/custom/:id", (context) => context.json({ extension: true }));
-        app.post("/api/v1/vaults/hooked", (context) => context.json({ extension: true }));
-        app.all("/api/v1/vaults/custom-fallback", (context) => context.json({ extensionFallback: true }, 418));
+        app.post("/api/v1/workspaces/hooked", (context) => context.json({ extension: true }));
+        app.all("/api/v1/workspaces/custom-fallback", (context) => context.json({ extensionFallback: true }, 418));
       },
-      beforeGateway: async ({ path, method }) => path === "/api/v1/vaults/hooked" && method === "DELETE"
+      beforeGateway: async ({ path, method }) => path === "/api/v1/workspaces/hooked" && method === "DELETE"
         ? Response.json({ error: "extension_denied" }, { status: 429 }) : undefined,
     }] });
     const worker = createWorkerHandler(async () => app);
@@ -43,13 +43,13 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     expect((await send("/api/v1/files/id", "PUT", undefined, {})).status).toBe(401);
     expect((await send("/api/v1/missing")).status).toBe(404);
     expect((await send("/api/auth/sign-in/google", "PATCH")).status).toBe(404);
-    const permissions = await send("/api/v1/vaults/id/permissions", "POST");
+    const permissions = await send("/api/v1/workspaces/id/permissions", "POST");
     expect(permissions.status).toBe(405);
     expect(permissions.headers.get("allow")).toBe("GET, HEAD");
     expect((await send("/api/v1/sessions", "POST", undefined, { ...identityHeaders, origin: config.baseUrl })).status).toBe(404);
     expect(await (await send("/api/v1/custom", "POST")).json()).toEqual({ extension: true });
-    expect(await (await send("/api/v1/vaults/custom", "POST")).json()).toEqual({ userId: testUserID("owner@example.com") });
-    expect((await send("/api/v1/vaults/custom", "POST", undefined, {})).status).toBe(401);
+    expect(await (await send("/api/v1/workspaces/custom", "POST")).json()).toEqual({ userId: testUserID("owner@example.com") });
+    expect((await send("/api/v1/workspaces/custom", "POST", undefined, {})).status).toBe(401);
     const mcp = await send("/mcp", "DELETE");
     expect(mcp.status).toBe(405);
     expect(mcp.headers.get("allow")).toBe("POST");
@@ -60,7 +60,7 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     for (const [path, allowed] of [
       ["/api/v1/custom", ["POST"]],
       ["/api/v1/custom/item", ["POST"]],
-      ["/api/v1/vaults/custom", ["GET", "HEAD", "POST"]],
+      ["/api/v1/workspaces/custom", ["GET", "HEAD", "POST"]],
       ["/api/v1/capabilities", ["GET", "HEAD", "POST"]],
     ] as const) {
       const response = await send(path, "DELETE");
@@ -68,8 +68,8 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
       expect(new Set(response.headers.get("allow")?.split(", "))).toEqual(new Set(allowed));
       expect((await send(path, "DELETE", undefined, {})).status).toBe(401);
     }
-    expect((await send("/api/v1/vaults/hooked", "DELETE")).status).toBe(429);
-    const custom = await send("/api/v1/vaults/custom-fallback", "DELETE");
+    expect((await send("/api/v1/workspaces/hooked", "DELETE")).status).toBe(429);
+    const custom = await send("/api/v1/workspaces/custom-fallback", "DELETE");
     expect(custom.status).toBe(418);
     expect(await custom.json()).toEqual({ extensionFallback: true });
     expect((await send("/api/v1/unknown", "DELETE")).status).toBe(404);

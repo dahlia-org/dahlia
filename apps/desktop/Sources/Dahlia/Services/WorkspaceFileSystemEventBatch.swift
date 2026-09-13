@@ -1,0 +1,184 @@
+import CoreServices
+import Foundation
+
+struct WorkspaceFileSystemEventBatch {
+    let directoryRenames: [(oldPath: String, newPath: String)]
+    let newDirectories: [String]
+    let removedDirectories: [String]
+    let summaryRenames: [(oldPath: String, newPath: String)]
+    let removedSummaryPaths: [String]
+
+    init(paths: [String], flags: [UInt32], workspaceURL: URL, fileManager: FileManager = .default) {
+        let workspacePath = workspaceURL.path + "/"
+        var pendingDirectoryRenames: [(path: String, exists: Bool)] = []
+        var pendingSummaryRenames: [(path: String, exists: Bool)] = []
+        var newDirectories: [String] = []
+        var removedDirectories: [String] = []
+        var removedSummaryPaths: [String] = []
+
+        for (path, flag) in zip(paths, flags) {
+            guard let event = Self.classify(
+                path: path,
+                flag: flag,
+                workspaceURL: workspaceURL,
+                workspacePath: workspacePath,
+                fileManager: fileManager
+            ) else { continue }
+            switch event {
+            case let .directoryRename(path, exists):
+                pendingDirectoryRenames.append((path, exists))
+            case let .directoryCreated(path):
+                newDirectories.append(path)
+            case let .directoryRemoved(path):
+                removedDirectories.append(path)
+            case let .summaryRename(path, exists):
+                pendingSummaryRenames.append((path, exists))
+            case let .summaryRemoved(path):
+                removedSummaryPaths.append(path)
+            }
+        }
+
+        let resolvedDirectoryRenames = Self.resolveRenames(pendingDirectoryRenames)
+        let resolvedSummaryRenames = Self.resolveRenames(pendingSummaryRenames)
+        directoryRenames = resolvedDirectoryRenames.renames
+        self.newDirectories = newDirectories + resolvedDirectoryRenames.created
+        self.removedDirectories = removedDirectories + resolvedDirectoryRenames.removed
+        summaryRenames = resolvedSummaryRenames.renames
+        self.removedSummaryPaths = removedSummaryPaths + resolvedSummaryRenames.removed
+    }
+
+    private static func classify(
+        path: String,
+        flag: UInt32,
+        workspaceURL: URL,
+        workspacePath: String,
+        fileManager: FileManager
+    ) -> Event? {
+        guard path.hasPrefix(workspacePath) else { return nil }
+        guard flag & UInt32(kFSEventStreamEventFlagItemIsSymlink) == 0 else { return nil }
+        let relativePath = String(path.dropFirst(workspacePath.count))
+        guard !relativePath.isEmpty else { return nil }
+
+        let isDirectory = flag & UInt32(kFSEventStreamEventFlagItemIsDir) != 0
+        if isDirectory {
+            return classifyDirectory(
+                path: path,
+                relativePath: relativePath,
+                flag: flag,
+                workspaceURL: workspaceURL,
+                fileManager: fileManager
+            )
+        }
+        return classifyFile(
+            path: path,
+            relativePath: relativePath,
+            flag: flag,
+            workspaceURL: workspaceURL,
+            fileManager: fileManager
+        )
+    }
+
+    private static func classifyDirectory(
+        path: String,
+        relativePath: String,
+        flag: UInt32,
+        workspaceURL: URL,
+        fileManager: FileManager
+    ) -> Event? {
+        let components = relativePath.split(separator: "/")
+        guard !components.contains(where: { $0.hasPrefix(".") || $0.hasPrefix("_") }) else { return nil }
+
+        let exists = fileManager.fileExists(atPath: path)
+        if exists {
+            let url = URL(fileURLWithPath: path)
+            guard let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey]),
+                  values.isSymbolicLink != true,
+                  isSafeWorkspacePath(url, workspaceURL: workspaceURL) else {
+                return nil
+            }
+        }
+        if flag & UInt32(kFSEventStreamEventFlagItemRenamed) != 0 {
+            return .directoryRename(relativePath, exists: exists)
+        }
+        if flag & UInt32(kFSEventStreamEventFlagItemRemoved) != 0, !exists {
+            return .directoryRemoved(relativePath)
+        }
+        if flag & UInt32(kFSEventStreamEventFlagItemCreated) != 0, exists {
+            return .directoryCreated(relativePath)
+        }
+        return nil
+    }
+
+    private static func classifyFile(
+        path: String,
+        relativePath: String,
+        flag: UInt32,
+        workspaceURL: URL,
+        fileManager: FileManager
+    ) -> Event? {
+        let components = relativePath.split(separator: "/")
+        guard !components.contains(where: { $0.hasPrefix(".") }),
+              !components.contains("_dahlia"),
+              URL(fileURLWithPath: relativePath).pathExtension.lowercased() == "md"
+        else { return nil }
+
+        let exists = fileManager.fileExists(atPath: path)
+        let isRenamed = flag & UInt32(kFSEventStreamEventFlagItemRenamed) != 0
+        let isRemoved = flag & UInt32(kFSEventStreamEventFlagItemRemoved) != 0
+        if isRenamed {
+            guard !exists || isSafeWorkspacePath(URL(fileURLWithPath: path), workspaceURL: workspaceURL) else {
+                return nil
+            }
+            return .summaryRename(relativePath, exists: exists)
+        }
+        if !exists, isRemoved {
+            return .summaryRemoved(relativePath)
+        }
+        return nil
+    }
+
+    private static func isSafeWorkspacePath(_ url: URL, workspaceURL: URL) -> Bool {
+        let workspace = workspaceURL.standardizedFileURL
+        let candidate = url.standardizedFileURL
+        guard candidate.pathComponents.starts(with: workspace.pathComponents) else { return false }
+
+        var current = workspace
+        for component in candidate.pathComponents.dropFirst(workspace.pathComponents.count) {
+            current.append(path: component)
+            guard let values = try? current.resourceValues(forKeys: [.isSymbolicLinkKey]),
+                  values.isSymbolicLink != true else {
+                return false
+            }
+        }
+
+        let resolvedWorkspacePath = workspace.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolvedCandidatePath = candidate.resolvingSymlinksInPath().standardizedFileURL.path
+        return resolvedCandidatePath.hasPrefix(resolvedWorkspacePath + "/")
+    }
+
+    private static func resolveRenames(
+        _ pendingRenames: [(path: String, exists: Bool)]
+    ) -> (renames: [(oldPath: String, newPath: String)], created: [String], removed: [String]) {
+        guard pendingRenames.count == 2,
+              let first = pendingRenames.first,
+              let second = pendingRenames.last,
+              first.exists != second.exists else {
+            return (
+                renames: [],
+                created: pendingRenames.filter(\.exists).map(\.path),
+                removed: pendingRenames.filter { !$0.exists }.map(\.path)
+            )
+        }
+        let oldPath = first.exists ? second.path : first.path
+        let newPath = first.exists ? first.path : second.path
+        return (renames: [(oldPath, newPath)], created: [], removed: [])
+    }
+
+    private enum Event {
+        case directoryRename(String, exists: Bool)
+        case directoryCreated(String)
+        case directoryRemoved(String)
+        case summaryRename(String, exists: Bool)
+        case summaryRemoved(String)
+    }
+}

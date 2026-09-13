@@ -1,7 +1,7 @@
 import type { CalendarEventSnapshot } from "./schemas";
 import { createContentEncryption } from "../encryption/store";
 import { readAuthorization, validateAuthorization } from "../auth/authorization";
-import { vaultPermissions } from "../auth/vault-permissions";
+import { workspacePermissions } from "../auth/workspace-permissions";
 import { sha256 } from "../storage/sha256";
 import { storedTranscriptSettingsSchema } from "../summary/model";
 import { uuidV7 } from "../id";
@@ -45,9 +45,9 @@ import * as postgresSchema from "../db/auth-schema";
 import * as sqliteSchema from "../db/sqlite-schema";
 import type {
   IdentitySyncStore,
-  VaultTransferRequest,
-  VaultTransferRecord,
-  VaultRelocations,
+  WorkspaceTransferRequest,
+  WorkspaceTransferRecord,
+  WorkspaceRelocations,
   MeetingSyncStore,
   SyncCanonicalRecord,
   SyncChangeRecord,
@@ -69,7 +69,7 @@ const TRANSCRIPT_PATCH_RETENTION_MS = 24 * 60 * 60 * 1_000;
 export const SYNC_HISTORY_RETENTION_MS = 90 * 24 * 60 * 60 * 1_000;
 export const SYNC_RETENTION_BATCH_SIZE = 1_000;
 export const SYNC_SNAPSHOT_PAGE_BYTES = 8 * 1024 * 1024;
-export const SYNC_SNAPSHOT_ENTITIES = ["vault", "project", "meeting", "summary", "transcript", "file", "meeting_attachment", "recording"] as const;
+export const SYNC_SNAPSHOT_ENTITIES = ["workspace", "project", "meeting", "summary", "transcript", "file", "meeting_attachment", "recording"] as const;
 
 function batches<T>(values: T[], size: number): T[][] {
   const result: T[][] = [];
@@ -174,13 +174,13 @@ export function createUnavailableMeetingSyncStore(): MeetingSyncStore {
   };
 }
 
-async function expireRecordingStaging(db: NodePgDatabase, schema: SyncSchema, isPostgres: boolean, vaultId: string, before: Date) {
+async function expireRecordingStaging(db: NodePgDatabase, schema: SyncSchema, isPostgres: boolean, workspaceId: string, before: Date) {
       const expired = (source: RecordingSource) => !isPostgres
         ? sql`json_extract(${schema.syncedRecording.audio}, ${`$.${source}.active`}) = 0 AND json_extract(${schema.syncedRecording.audio}, ${`$.${source}.createdAt`}) < ${before.toISOString()}`
         : sql`${schema.syncedRecording.audio}->${source}->>'active' = 'false' AND ${schema.syncedRecording.audio}->${source}->>'createdAt' < ${before.toISOString()}`;
-      const records = await db.select({ ...getTableColumns(schema.syncedRecording), vaultId: schema.syncedMeeting.vaultId }).from(schema.syncedRecording)
+      const records = await db.select({ ...getTableColumns(schema.syncedRecording), workspaceId: schema.syncedMeeting.workspaceId }).from(schema.syncedRecording)
       .innerJoin(schema.syncedMeeting, eq(schema.syncedMeeting.meetingId, schema.syncedRecording.meetingId)).where(and(
-        eq(schema.syncedMeeting.vaultId, vaultId),
+        eq(schema.syncedMeeting.workspaceId, workspaceId),
         or(expired("mic"), expired("system")),
       )).limit(100);
       for (const record of records) {
@@ -200,34 +200,34 @@ async function expireRecordingStaging(db: NodePgDatabase, schema: SyncSchema, is
 
 function createHistoryMaintenanceStore(db: PostgresDatabase, schema: SyncSchema, isPostgres: boolean, encryption?: AppConfig["encryption"]) {
   return {
-    async expireRecordingUploads(vaultId: string, before: Date) {
+    async expireRecordingUploads(workspaceId: string, before: Date) {
       await db.transaction(async (tx) => {
         if (isPostgres) {
-          await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`vault:${vaultId}`}, 0))`);
-          await tx.execute(sql`select set_config('app.maintenance', 'storage', true), set_config('app.maintenance_vault_id', ${vaultId}, true)`);
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`workspace:${workspaceId}`}, 0))`);
+          await tx.execute(sql`select set_config('app.maintenance', 'storage', true), set_config('app.maintenance_workspace_id', ${workspaceId}, true)`);
         }
-        await expireRecordingStaging(tx, schema, isPostgres, vaultId, before);
+        await expireRecordingStaging(tx, schema, isPostgres, workspaceId, before);
       });
     },
     async listHistoryTargets(after?: SyncHistoryTarget): Promise<SyncHistoryTarget[]> {
-      return db.select({ vaultId: schema.syncVaultState.vaultId }).from(schema.syncVaultState)
-        .where(after ? gt(schema.syncVaultState.vaultId, after.vaultId) : undefined)
-        .orderBy(asc(schema.syncVaultState.vaultId)).limit(100);
+      return db.select({ workspaceId: schema.syncWorkspaceState.workspaceId }).from(schema.syncWorkspaceState)
+        .where(after ? gt(schema.syncWorkspaceState.workspaceId, after.workspaceId) : undefined)
+        .orderBy(asc(schema.syncWorkspaceState.workspaceId)).limit(100);
     },
     async pruneHistoryBatch(target: SyncHistoryTarget) {
       return db.transaction(async (transaction) => {
         if (isPostgres) {
-          await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`vault:${target.vaultId}`}, 0))`);
+          await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`workspace:${target.workspaceId}`}, 0))`);
           await transaction.execute(sql`select set_config('app.maintenance', 'retention', true)`);
         }
         const statePredicate = and(
-          eq(schema.syncVaultState.vaultId, target.vaultId),
+          eq(schema.syncWorkspaceState.workspaceId, target.workspaceId),
         );
-        const [state] = await transaction.select().from(schema.syncVaultState).where(statePredicate).limit(1);
+        const [state] = await transaction.select().from(schema.syncWorkspaceState).where(statePredicate).limit(1);
         if (!state) return { changesDeleted: 0, receiptsCompacted: 0 };
         const cutoff = new Date(Date.now() - SYNC_HISTORY_RETENTION_MS);
         const ledgerPredicate = and(
-          eq(schema.syncChange.vaultId, target.vaultId),
+          eq(schema.syncChange.workspaceId, target.workspaceId),
         );
         const rows = await transaction.select({ sequence: schema.syncChange.sequence, createdAt: schema.syncChange.createdAt })
           .from(schema.syncChange).where(ledgerPredicate).orderBy(asc(schema.syncChange.sequence)).limit(SYNC_RETENTION_BATCH_SIZE);
@@ -236,22 +236,22 @@ function createHistoryMaintenanceStore(db: PostgresDatabase, schema: SyncSchema,
         const expired = firstRetained < 0 ? rows : rows.slice(0, firstRetained);
         const through = expired.at(-1)?.sequence;
         if (through !== undefined) {
-          await transaction.update(schema.syncVaultState).set({ prunedThrough: Math.max(state.prunedThrough, through) })
+          await transaction.update(schema.syncWorkspaceState).set({ prunedThrough: Math.max(state.prunedThrough, through) })
             .where(statePredicate);
           await transaction.delete(schema.syncChange).where(and(ledgerPredicate, lte(schema.syncChange.sequence, through)));
         }
         const receipts = await transaction.select({ id: schema.syncTransactionReceipt.transactionId })
           .from(schema.syncTransactionReceipt).where(and(
-            eq(schema.syncTransactionReceipt.vaultId, target.vaultId),
+            eq(schema.syncTransactionReceipt.workspaceId, target.workspaceId),
             lt(schema.syncTransactionReceipt.createdAt, cutoff),
             isNotNull(schema.syncTransactionReceipt.responseJson),
           )).orderBy(asc(schema.syncTransactionReceipt.createdAt), asc(schema.syncTransactionReceipt.transactionId))
           .limit(SYNC_RETENTION_BATCH_SIZE);
         const content = createContentEncryption(transaction, schema, "", encryption, undefined, "retention");
-        if (receipts.length && await content.cipher(target.vaultId)) {
+        if (receipts.length && await content.cipher(target.workspaceId)) {
           for (const receipt of receipts) {
             await transaction.update(schema.syncTransactionReceipt).set(await content.write(schema.syncTransactionReceipt, { responseJson: null },
-              { transactionId: receipt.id, vaultId: target.vaultId }))
+              { transactionId: receipt.id, workspaceId: target.workspaceId }))
               .where(and(eq(schema.syncTransactionReceipt.transactionId, receipt.id)));
           }
         } else {
@@ -362,11 +362,11 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
     )).rows[0];
     if (role?.rolsuper !== false || role.rolbypassrls !== false) return false;
     const tables = [
-      "app.vaults",
-      "crypto.vault_keys",
+      "app.workspaces",
+      "crypto.workspace_keys",
       "app.projects",
       "app.transaction_receipts",
-      "app.vault_transfers",
+      "app.workspace_transfers",
       "app.meetings",
       "app.meeting_events",
       "app.transcripts",
@@ -395,7 +395,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
     transaction = true;
     await client.query("select set_config('app.user_id', '00000000-0000-7000-8000-000000005899', true)");
     await client.query("select set_config('app.sharing_enabled', 'false', true)");
-    await client.query("select vault_id from app.vaults limit 1");
+    await client.query("select workspace_id from app.workspaces limit 1");
     await client.query("commit");
     transaction = false;
     if (!await identityContextIsEmpty(client)) return false;
@@ -437,35 +437,35 @@ function createIdentityStore(
 ): IdentitySyncStore {
   const userPrincipalId = identity.userId;
   let searchSettings: Promise<SearchSettings> | undefined;
-  const content = createContentEncryption(db, schema, userPrincipalId, encryption, (vault) => readable(vault));
-  const { admin: adminAccess, write: writeAccess, read: readable, role: vaultRole, matchingPrincipal } = vaultPermissions(db, schema, userPrincipalId);
-  const readableHistory = (vault: AnyColumn) => or(readable(vault), and(
-    notExists(db.select({ id: schema.syncedVaultPermission.vaultId }).from(schema.syncedVaultPermission).where(eq(schema.syncedVaultPermission.vaultId, vault))),
-    exists(db.select({ id: schema.syncTransactionReceipt.transactionId }).from(schema.syncTransactionReceipt).where(and(eq(schema.syncTransactionReceipt.vaultId, vault), eq(schema.syncTransactionReceipt.ownerUserId, userPrincipalId)))),
+  const content = createContentEncryption(db, schema, userPrincipalId, encryption, (workspace) => readable(workspace));
+  const { admin: adminAccess, write: writeAccess, read: readable, role: workspaceRole, matchingPrincipal } = workspacePermissions(db, schema, userPrincipalId);
+  const readableHistory = (workspace: AnyColumn) => or(readable(workspace), and(
+    notExists(db.select({ id: schema.syncedWorkspacePermission.workspaceId }).from(schema.syncedWorkspacePermission).where(eq(schema.syncedWorkspacePermission.workspaceId, workspace))),
+    exists(db.select({ id: schema.syncTransactionReceipt.transactionId }).from(schema.syncTransactionReceipt).where(and(eq(schema.syncTransactionReceipt.workspaceId, workspace), eq(schema.syncTransactionReceipt.ownerUserId, userPrincipalId)))),
   ));
-  const adminVault = (vaultId: string) => and(eq(schema.syncedVault.vaultId, vaultId), adminAccess(schema.syncedVault.vaultId));
-  const writableVault = (vaultId: string) => and(
-    eq(schema.syncedVault.vaultId, vaultId),
-    writeAccess(schema.syncedVault.vaultId),
+  const adminWorkspace = (workspaceId: string) => and(eq(schema.syncedWorkspace.workspaceId, workspaceId), adminAccess(schema.syncedWorkspace.workspaceId));
+  const writableWorkspace = (workspaceId: string) => and(
+    eq(schema.syncedWorkspace.workspaceId, workspaceId),
+    writeAccess(schema.syncedWorkspace.workspaceId),
   );
-  const writableMeeting = (vaultId: string, meetingId: string) => and(
-    eq(schema.syncedMeeting.vaultId, vaultId),
+  const writableMeeting = (workspaceId: string, meetingId: string) => and(
+    eq(schema.syncedMeeting.workspaceId, workspaceId),
     eq(schema.syncedMeeting.meetingId, meetingId),
-    writeAccess(schema.syncedMeeting.vaultId),
+    writeAccess(schema.syncedMeeting.workspaceId),
   );
-  const readableMeeting = (vaultId: string, meetingId?: string) => and(
-    readable(schema.syncedMeeting.vaultId),
-    eq(schema.syncedMeeting.vaultId, vaultId),
+  const readableMeeting = (workspaceId: string, meetingId?: string) => and(
+    readable(schema.syncedMeeting.workspaceId),
+    eq(schema.syncedMeeting.workspaceId, workspaceId),
     ...(meetingId ? [eq(schema.syncedMeeting.meetingId, meetingId)] : []),
   );
-  function publicVaultColumns() {
-    const { createdBy, ...columns } = getTableColumns(schema.syncedVault);
+  function publicWorkspaceColumns() {
+    const { createdBy, ...columns } = getTableColumns(schema.syncedWorkspace);
     void createdBy; // Audit snapshot is deliberately excluded from canonical responses.
     return columns;
   }
-  const vaultHasResources = (vault: AnyColumn) => or(
+  const workspaceHasResources = (workspace: AnyColumn) => or(
     ...[schema.syncedProject, schema.syncedMeeting, schema.syncedFile].map((table) =>
-      exists(db.select({ value: sql`1` }).from(table).where(eq(table.vaultId, vault)))),
+      exists(db.select({ value: sql`1` }).from(table).where(eq(table.workspaceId, workspace)))),
   )!;
 
 
@@ -482,57 +482,57 @@ function createIdentityStore(
     }
   }
 
-  async function lockVault(vaultId: string, checkTransfers = true): Promise<void> {
+  async function lockWorkspace(workspaceId: string, checkTransfers = true): Promise<void> {
     if (searchBackend !== "sqlite") {
       // ponytail: serialize authorization-changing transactions; partition this lock if write throughput requires it.
       await db.execute(sql`select pg_advisory_xact_lock(75047176522050)`);
-      await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`vault:${vaultId}`}, 0))`);
+      await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`workspace:${workspaceId}`}, 0))`);
     }
-    if (checkTransfers && identity.syncClient && !identity.syncClient.vaultTransfers) {
-      const [transfer] = await db.select({ id: schema.vaultTransfer.id }).from(schema.vaultTransfer).where(and(or(
-        eq(schema.vaultTransfer.sourceVaultId, vaultId), eq(schema.vaultTransfer.destinationVaultId, vaultId),
-      ), or(eq(schema.vaultTransfer.ownerUserId, userPrincipalId), readable(schema.vaultTransfer.sourceVaultId), readable(schema.vaultTransfer.destinationVaultId)))).limit(1);
-      if (transfer) throw new SyncTransactionError(426, "vault_transfer_update_required");
+    if (checkTransfers && identity.syncClient && !identity.syncClient.workspaceTransfers) {
+      const [transfer] = await db.select({ id: schema.workspaceTransfer.id }).from(schema.workspaceTransfer).where(and(or(
+        eq(schema.workspaceTransfer.sourceWorkspaceId, workspaceId), eq(schema.workspaceTransfer.destinationWorkspaceId, workspaceId),
+      ), or(eq(schema.workspaceTransfer.ownerUserId, userPrincipalId), readable(schema.workspaceTransfer.sourceWorkspaceId), readable(schema.workspaceTransfer.destinationWorkspaceId)))).limit(1);
+      if (transfer) throw new SyncTransactionError(426, "workspace_transfer_update_required");
     }
   }
 
-  async function vaultTransferAudience(sourceVaultId: string, destinationVaultId: string) {
-    for (const id of [sourceVaultId, destinationVaultId].sort()) await lockVault(id, false);
-    for (const id of [sourceVaultId, destinationVaultId]) {
-      const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault).where(adminVault(id)).limit(1);
-      if (!vault) throw new SyncTransactionError(404, "vault_not_found");
+  async function workspaceTransferAudience(sourceWorkspaceId: string, destinationWorkspaceId: string) {
+    for (const id of [sourceWorkspaceId, destinationWorkspaceId].sort()) await lockWorkspace(id, false);
+    for (const id of [sourceWorkspaceId, destinationWorkspaceId]) {
+      const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(adminWorkspace(id)).limit(1);
+      if (!workspace) throw new SyncTransactionError(404, "workspace_not_found");
     }
     if (searchBackend !== "sqlite") {
       // ponytail: transfer-wide sharing locks; use scoped permission versions if transfer traffic makes this costly.
-      await db.execute(sql`LOCK TABLE ${schema.syncedVaultPermission}, ${schema.member}, ${schema.teamMember} IN SHARE MODE`);
+      await db.execute(sql`LOCK TABLE ${schema.syncedWorkspacePermission}, ${schema.member}, ${schema.teamMember} IN SHARE MODE`);
     }
     const readers = async (id: string) => db.select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
-      .from(schema.user).where(exists(db.select({ value: sql`1` }).from(schema.syncedVaultPermission).where(and(
-        eq(schema.syncedVaultPermission.vaultId, id), or(
-          and(eq(schema.syncedVaultPermission.principalType, "user"), eq(schema.syncedVaultPermission.principalId, schema.user.id)),
-          and(eq(schema.syncedVaultPermission.principalType, "organization"), exists(db.select({ value: sql`1` }).from(schema.member).where(and(
-            eq(schema.member.organizationId, schema.syncedVaultPermission.principalId), eq(schema.member.userId, schema.user.id))))),
-          and(eq(schema.syncedVaultPermission.principalType, "team"), exists(db.select({ value: sql`1` }).from(schema.teamMember).where(and(
-            eq(schema.teamMember.teamId, schema.syncedVaultPermission.principalId), eq(schema.teamMember.userId, schema.user.id))))),
+      .from(schema.user).where(exists(db.select({ value: sql`1` }).from(schema.syncedWorkspacePermission).where(and(
+        eq(schema.syncedWorkspacePermission.workspaceId, id), or(
+          and(eq(schema.syncedWorkspacePermission.principalType, "user"), eq(schema.syncedWorkspacePermission.principalId, schema.user.id)),
+          and(eq(schema.syncedWorkspacePermission.principalType, "organization"), exists(db.select({ value: sql`1` }).from(schema.member).where(and(
+            eq(schema.member.organizationId, schema.syncedWorkspacePermission.principalId), eq(schema.member.userId, schema.user.id))))),
+          and(eq(schema.syncedWorkspacePermission.principalType, "team"), exists(db.select({ value: sql`1` }).from(schema.teamMember).where(and(
+            eq(schema.teamMember.teamId, schema.syncedWorkspacePermission.principalId), eq(schema.teamMember.userId, schema.user.id))))),
         ),
       )))).orderBy(asc(schema.user.name), asc(schema.user.id));
-    const source = await readers(sourceVaultId);
-    const destination = await readers(destinationVaultId);
-    const audienceHash = await sha256(JSON.stringify([sourceVaultId, destinationVaultId,
+    const source = await readers(sourceWorkspaceId);
+    const destination = await readers(destinationWorkspaceId);
+    const audienceHash = await sha256(JSON.stringify([sourceWorkspaceId, destinationWorkspaceId,
       source.map((person) => person.id).sort(), destination.map((person) => person.id).sort()]));
     return { audienceHash, removed: source.filter((person) => !destination.some((other) => other.id === person.id)),
       added: destination.filter((person) => !source.some((other) => other.id === person.id)) };
   }
 
-  async function transferVault(request: VaultTransferRequest): Promise<VaultTransferRecord> {
-    const { sourceVaultId, destinationVaultId } = request;
-    if (sourceVaultId === destinationVaultId) throw new SyncTransactionError(400, "same_vault");
-    // Serialize reused keys even when the second request names different Vaults.
+  async function transferWorkspace(request: WorkspaceTransferRequest): Promise<WorkspaceTransferRecord> {
+    const { sourceWorkspaceId, destinationWorkspaceId } = request;
+    if (sourceWorkspaceId === destinationWorkspaceId) throw new SyncTransactionError(400, "same_workspace");
+    // Serialize reused keys even when the second request names different Workspaces.
     if (searchBackend !== "sqlite") {
       await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`transfer:${userPrincipalId}:${request.idempotencyKey}`}, 0))`);
     }
-    for (const id of [sourceVaultId, destinationVaultId].sort()) await lockVault(id, false);
-    const transfers = schema.vaultTransfer;
+    for (const id of [sourceWorkspaceId, destinationWorkspaceId].sort()) await lockWorkspace(id, false);
+    const transfers = schema.workspaceTransfer;
     const [previous] = await db.select().from(transfers).where(and(
       eq(transfers.ownerUserId, userPrincipalId), eq(transfers.idempotencyKey, request.idempotencyKey),
     )).limit(1);
@@ -540,56 +540,56 @@ function createIdentityStore(
       if (previous.requestHash !== request.requestHash) throw new SyncTransactionError(409, "idempotency_key_reused");
       return previous;
     }
-    const vaults = await content.read(schema.syncedVault, await db.select().from(schema.syncedVault).where(and(
-      inArray(schema.syncedVault.vaultId, [sourceVaultId, destinationVaultId]), adminAccess(schema.syncedVault.vaultId),
-      isNull(schema.syncedVault.deletingAt),
+    const workspaces = await content.read(schema.syncedWorkspace, await db.select().from(schema.syncedWorkspace).where(and(
+      inArray(schema.syncedWorkspace.workspaceId, [sourceWorkspaceId, destinationWorkspaceId]), adminAccess(schema.syncedWorkspace.workspaceId),
+      isNull(schema.syncedWorkspace.deletingAt),
     )));
-    if (vaults.length !== 2) throw new SyncTransactionError(404, "vault_not_found");
-    if (vaults.some((vault) => vault.encryption === "server")) throw new SyncTransactionError(409, "encrypted_vault_transfer_unsupported");
-    for (const vault of vaults) {
-      const expected = vault.vaultId === sourceVaultId ? request.sourceRevision : request.destinationRevision;
-      if (vault.revision !== expected) throw new SyncTransactionError(409, "revision_conflict");
+    if (workspaces.length !== 2) throw new SyncTransactionError(404, "workspace_not_found");
+    if (workspaces.some((workspace) => workspace.encryption === "server")) throw new SyncTransactionError(409, "encrypted_workspace_transfer_unsupported");
+    for (const workspace of workspaces) {
+      const expected = workspace.workspaceId === sourceWorkspaceId ? request.sourceRevision : request.destinationRevision;
+      if (workspace.revision !== expected) throw new SyncTransactionError(409, "revision_conflict");
     }
-    const audience = await vaultTransferAudience(sourceVaultId, destinationVaultId);
+    const audience = await workspaceTransferAudience(sourceWorkspaceId, destinationWorkspaceId);
     if (audience.audienceHash !== request.audienceHash) throw new SyncTransactionError(409, "transfer_audience_changed");
-    const affected = [sourceVaultId, destinationVaultId];
-    const [blocked] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault).where(and(
-      inArray(schema.syncedVault.vaultId, affected),
+    const affected = [sourceWorkspaceId, destinationWorkspaceId];
+    const [blocked] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(and(
+      inArray(schema.syncedWorkspace.workspaceId, affected),
       or(
-        exists(db.select({ value: sql`1` }).from(schema.syncedFile).where(and(eq(schema.syncedFile.vaultId, schema.syncedVault.vaultId), eq(schema.syncedFile.active, false)))),
-        exists(db.select({ value: sql`1` }).from(schema.transcriptPatchChunk).where(eq(schema.transcriptPatchChunk.vaultId, schema.syncedVault.vaultId))),
+        exists(db.select({ value: sql`1` }).from(schema.syncedFile).where(and(eq(schema.syncedFile.workspaceId, schema.syncedWorkspace.workspaceId), eq(schema.syncedFile.active, false)))),
+        exists(db.select({ value: sql`1` }).from(schema.transcriptPatchChunk).where(eq(schema.transcriptPatchChunk.workspaceId, schema.syncedWorkspace.workspaceId))),
       ),
     )).limit(1);
     if (blocked) throw new SyncTransactionError(409, "transfer_unsynced_data");
-    const recordings = await selectRecordings().where(inArray(schema.syncedMeeting.vaultId, affected));
+    const recordings = await selectRecordings().where(inArray(schema.syncedMeeting.workspaceId, affected));
     if (recordings.some((recording) => Object.values(recording.audio).some((audio) => !audio.active || !audio.uploadedAt))) {
       throw new SyncTransactionError(409, "transfer_unsynced_data");
     }
-    const [busy] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault).where(and(
-      inArray(schema.syncedVault.vaultId, affected),
+    const [busy] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(and(
+      inArray(schema.syncedWorkspace.workspaceId, affected),
       or(
-        exists(db.select({ value: sql`1` }).from(schema.syncedMeeting).where(and(eq(schema.syncedMeeting.vaultId, schema.syncedVault.vaultId), or(
+        exists(db.select({ value: sql`1` }).from(schema.syncedMeeting).where(and(eq(schema.syncedMeeting.workspaceId, schema.syncedWorkspace.workspaceId), or(
           eq(schema.syncedMeeting.active, false), isNotNull(schema.syncedMeeting.deletingAt), eq(schema.syncedMeeting.status, "PROCESSING_TRANSCRIPT"),
         )))),
-        exists(db.select({ value: sql`1` }).from(schema.recordingSession).where(and(eq(schema.recordingSession.vaultId, schema.syncedVault.vaultId), isNull(schema.recordingSession.endedAt)))),
+        exists(db.select({ value: sql`1` }).from(schema.recordingSession).where(and(eq(schema.recordingSession.workspaceId, schema.syncedWorkspace.workspaceId), isNull(schema.recordingSession.endedAt)))),
         ...[schema.summaryJob, schema.imageAnalysisJob, schema.searchIndexJob].map((table) =>
-          exists(db.select({ value: sql`1` }).from(table).where(and(eq(table.vaultId, schema.syncedVault.vaultId), inArray(table.status, ["pending", "processing"]))))),
+          exists(db.select({ value: sql`1` }).from(table).where(and(eq(table.workspaceId, schema.syncedWorkspace.workspaceId), inArray(table.status, ["pending", "processing"]))))),
       ),
     )).limit(1);
     if (busy) throw new SyncTransactionError(409, "transfer_processing");
-    const projects = await content.read(schema.syncedProject, await db.select().from(schema.syncedProject).where(inArray(schema.syncedProject.vaultId, affected)));
+    const projects = await content.read(schema.syncedProject, await db.select().from(schema.syncedProject).where(inArray(schema.syncedProject.workspaceId, affected)));
     const roots = projects.filter((project) => project.parentProjectId === null);
     const nameKey = (value: string) => [...value.normalize("NFC")].map((character) => character === "ı" ? character : character.toUpperCase().toLowerCase()).join("").normalize("NFC");
-    if (roots.some((source) => source.vaultId === sourceVaultId && roots.some((destination) =>
-      destination.vaultId === destinationVaultId && nameKey(source.name) === nameKey(destination.name)))) {
+    if (roots.some((source) => source.workspaceId === sourceWorkspaceId && roots.some((destination) =>
+      destination.workspaceId === destinationWorkspaceId && nameKey(source.name) === nameKey(destination.name)))) {
       throw new SyncTransactionError(409, "transfer_name_conflict");
     }
     const meetings = await db.select({ id: schema.syncedMeeting.meetingId, revision: schema.syncedMeeting.revision,
       summaryRevision: schema.syncedMeeting.summaryRevision, transcriptRevision: schema.syncedMeeting.transcriptRevision,
-    }).from(schema.syncedMeeting).where(eq(schema.syncedMeeting.vaultId, sourceVaultId));
-    const files = await db.select({ id: schema.syncedFile.fileId, revision: schema.syncedFile.revision }).from(schema.syncedFile).where(eq(schema.syncedFile.vaultId, sourceVaultId));
+    }).from(schema.syncedMeeting).where(eq(schema.syncedMeeting.workspaceId, sourceWorkspaceId));
+    const files = await db.select({ id: schema.syncedFile.fileId, revision: schema.syncedFile.revision }).from(schema.syncedFile).where(eq(schema.syncedFile.workspaceId, sourceWorkspaceId));
     const movedChanges: Pick<SyncChangeRecord, "entity" | "entityId" | "action" | "revision">[] = [
-      ...projects.filter((project) => project.vaultId === sourceVaultId).map((project) => ({ entity: "project" as const, entityId: project.projectId, action: "upsert" as const, revision: project.revision })),
+      ...projects.filter((project) => project.workspaceId === sourceWorkspaceId).map((project) => ({ entity: "project" as const, entityId: project.projectId, action: "upsert" as const, revision: project.revision })),
       ...meetings.flatMap((meeting) => [
         { entity: "meeting" as const, entityId: meeting.id, action: "upsert" as const, revision: meeting.revision },
         { entity: "summary" as const, entityId: meeting.id, action: "upsert" as const, revision: meeting.summaryRevision },
@@ -598,9 +598,9 @@ function createIdentityStore(
       ...files.map((file) => ({ entity: "file" as const, entityId: file.id, action: "upsert" as const, revision: file.revision })),
     ];
     const meetingAttachments = await db.select({ entityId: schema.meetingAttachment.id, revision: schema.meetingAttachment.revision })
-      .from(schema.meetingAttachment).where(eq(schema.meetingAttachment.vaultId, sourceVaultId));
+      .from(schema.meetingAttachment).where(eq(schema.meetingAttachment.workspaceId, sourceWorkspaceId));
     movedChanges.push(...meetingAttachments.map((row) => ({ entity: "meeting_attachment" as const, ...row, action: "upsert" as const })));
-    movedChanges.push(...recordings.filter((recording) => recording.vaultId === sourceVaultId)
+    movedChanges.push(...recordings.filter((recording) => recording.workspaceId === sourceWorkspaceId)
       .map((recording) => ({ entity: "recording" as const, entityId: recording.sessionId, revision: recording.revision, action: "upsert" as const })));
     if (searchBackend === "sqlite") {
       await (db as unknown as SQLiteDatabase).run(sql`PRAGMA defer_foreign_keys = ON`);
@@ -610,85 +610,85 @@ function createIdentityStore(
     for (const table of [schema.syncedProject, schema.syncedMeeting, schema.syncedFile,
       schema.meetingAttachment, schema.meetingEvent, schema.transcriptPatchChunk, schema.searchDocument,
       schema.searchIndexJob, schema.imageAnalysisJob, schema.summaryJob]) {
-      await db.update(table).set({ vaultId: destinationVaultId }).where(eq(table.vaultId, sourceVaultId));
+      await db.update(table).set({ workspaceId: destinationWorkspaceId }).where(eq(table.workspaceId, sourceWorkspaceId));
     }
     // Transcript and summary history follows the unchanged meeting ID. Object keys never change.
     const id = uuidV7();
     const [result] = await db.insert(transfers).values({
       id, ownerUserId: userPrincipalId, idempotencyKey: request.idempotencyKey, requestHash: request.requestHash,
-      sourceVaultId, destinationVaultId,
-      manifest: { projects: projects.filter((project) => project.vaultId === sourceVaultId).map((project) => project.projectId),
+      sourceWorkspaceId, destinationWorkspaceId,
+      manifest: { projects: projects.filter((project) => project.workspaceId === sourceWorkspaceId).map((project) => project.projectId),
         meetings: meetings.map((meeting) => meeting.id), files: files.map((file) => file.id) },
     }).returning();
     if (!result) throw new SyncTransactionError(500, "transfer_not_recorded");
-    for (const vault of vaults) {
-      const revision = vault.revision + 1;
-      await db.update(schema.syncedVault).set({ revision, updatedAt: new Date() }).where(eq(schema.syncedVault.vaultId, vault.vaultId));
-      await appendChanges({ schemaVersion: 3, id, vaultId: vault.vaultId, createdAt: new Date(), requestHash: request.requestHash, operations: [] },
-        [{ entity: "vault", entityId: vault.vaultId, action: "upsert", revision }, ...(vault.vaultId === destinationVaultId ? movedChanges : [])]);
+    for (const workspace of workspaces) {
+      const revision = workspace.revision + 1;
+      await db.update(schema.syncedWorkspace).set({ revision, updatedAt: new Date() }).where(eq(schema.syncedWorkspace.workspaceId, workspace.workspaceId));
+      await appendChanges({ schemaVersion: 3, id, workspaceId: workspace.workspaceId, createdAt: new Date(), requestHash: request.requestHash, operations: [] },
+        [{ entity: "workspace", entityId: workspace.workspaceId, action: "upsert", revision }, ...(workspace.workspaceId === destinationWorkspaceId ? movedChanges : [])]);
     }
     return result;
   }
 
-  async function getVaultRelocations(vaultId: string): Promise<VaultRelocations> {
-    await lockVault(vaultId, false);
-    const table = schema.vaultTransfer;
+  async function getWorkspaceRelocations(workspaceId: string): Promise<WorkspaceRelocations> {
+    await lockWorkspace(workspaceId, false);
+    const table = schema.workspaceTransfer;
     // Receipts retain the IDs after delta expiry or source deletion. Clients ask for current
     // locations, never replay transfer history or acknowledge a separate transfer cursor.
     const history = await db.select().from(table).where(or(
-      eq(table.ownerUserId, userPrincipalId), readable(table.sourceVaultId), readable(table.destinationVaultId),
+      eq(table.ownerUserId, userPrincipalId), readable(table.sourceWorkspaceId), readable(table.destinationWorkspaceId),
     )).orderBy(asc(table.sequence));
-    const relevant = history.filter((transfer) => transfer.sourceVaultId === vaultId || transfer.destinationVaultId === vaultId);
-    if (!relevant.length) return { vaults: [], items: [] };
+    const relevant = history.filter((transfer) => transfer.sourceWorkspaceId === workspaceId || transfer.destinationWorkspaceId === workspaceId);
+    if (!relevant.length) return { workspaces: [], items: [] };
     const ids = { projects: new Set<string>(), meetings: new Set<string>(), files: new Set<string>() };
     for (const transfer of relevant) for (const kind of ["projects", "meetings", "files"] as const) {
       for (const id of transfer.manifest[kind]) ids[kind].add(id);
     }
     const destinations = new Map<string, string>();
-    const items: VaultRelocations["items"] = [];
+    const items: WorkspaceRelocations["items"] = [];
     for (const [kind, entity, content, key] of [
       ["projects", "project", schema.syncedProject, schema.syncedProject.projectId],
       ["meetings", "meeting", schema.syncedMeeting, schema.syncedMeeting.meetingId],
       ["files", "file", schema.syncedFile, schema.syncedFile.fileId],
     ] as const) {
       for (const batch of batches([...ids[kind]], 100)) {
-        const rows = await db.select({ id: key, vaultId: content.vaultId }).from(content).where(and(inArray(key, batch), readable(content.vaultId)));
+        const rows = await db.select({ id: key, workspaceId: content.workspaceId }).from(content).where(and(inArray(key, batch), readable(content.workspaceId)));
         for (const row of rows) {
-          destinations.set(row.id, row.vaultId);
+          destinations.set(row.id, row.workspaceId);
           items.push({ entity, ...row });
         }
       }
     }
     // Resolve missing IDs against receipts read after the canonical lookup: a concurrent
-    // onward transfer must not look like deletion merely because its new Vault is private.
+    // onward transfer must not look like deletion merely because its new Workspace is private.
     const latestHistory = await db.select().from(table).where(or(
-      eq(table.ownerUserId, userPrincipalId), readable(table.sourceVaultId), readable(table.destinationVaultId),
+      eq(table.ownerUserId, userPrincipalId), readable(table.sourceWorkspaceId), readable(table.destinationWorkspaceId),
     )).orderBy(asc(table.sequence));
     const present = new Set(items.map((item) => item.id));
     for (const transfer of latestHistory) for (const kind of ["projects", "meetings", "files"] as const) {
-      for (const id of transfer.manifest[kind]) if (ids[kind].has(id) && !present.has(id)) destinations.set(id, transfer.destinationVaultId);
+      for (const id of transfer.manifest[kind]) if (ids[kind].has(id) && !present.has(id)) destinations.set(id, transfer.destinationWorkspaceId);
     }
-    const vaults: VaultRelocations["vaults"] = [];
+    const workspaces: WorkspaceRelocations["workspaces"] = [];
     for (const id of new Set(destinations.values())) {
-      const [vault] = await content.read(schema.syncedVault, await db.select({ encryption: schema.syncedVault.encryption, encryptedPayload: schema.syncedVault.encryptedPayload, vaultId: schema.syncedVault.vaultId, organizationId: schema.syncedVault.organizationId, name: schema.syncedVault.name,
-        icon: schema.syncedVault.icon, color: schema.syncedVault.color, revision: schema.syncedVault.revision,
-        createdAt: schema.syncedVault.createdAt, updatedAt: schema.syncedVault.updatedAt, role: vaultRole(schema.syncedVault.vaultId),
-      }).from(schema.syncedVault).where(and(eq(schema.syncedVault.vaultId, id), readable(schema.syncedVault.vaultId), isNull(schema.syncedVault.deletingAt))).limit(1));
-      if (!vault) throw new SyncTransactionError(403, "transfer_access_required");
-      vaults.push(vault);
+      const [workspace] = await content.read(schema.syncedWorkspace, await db.select({ encryption: schema.syncedWorkspace.encryption, encryptedPayload: schema.syncedWorkspace.encryptedPayload, workspaceId: schema.syncedWorkspace.workspaceId, organizationId: schema.syncedWorkspace.organizationId, name: schema.syncedWorkspace.name,
+        icon: schema.syncedWorkspace.icon, color: schema.syncedWorkspace.color, revision: schema.syncedWorkspace.revision,
+        createdAt: schema.syncedWorkspace.createdAt, updatedAt: schema.syncedWorkspace.updatedAt, role: workspaceRole(schema.syncedWorkspace.workspaceId),
+      }).from(schema.syncedWorkspace).where(and(eq(schema.syncedWorkspace.workspaceId, id), readable(schema.syncedWorkspace.workspaceId), isNull(schema.syncedWorkspace.deletingAt))).limit(1));
+      if (!workspace) throw new SyncTransactionError(403, "transfer_access_required");
+      workspaces.push(workspace);
     }
-    return { vaults, items };
+    return { workspaces, items };
   }
 
-  async function projectViews(vaultId: string): Promise<SyncProjectView[]> {
+  async function projectViews(workspaceId: string): Promise<SyncProjectView[]> {
     const projects = await content.read(schema.syncedProject, await db.select().from(schema.syncedProject).where(and(
-      readable(schema.syncedProject.vaultId),
-      eq(schema.syncedProject.vaultId, vaultId),
+      readable(schema.syncedProject.workspaceId),
+      eq(schema.syncedProject.workspaceId, workspaceId),
     )).orderBy(asc(schema.syncedProject.parentProjectId), asc(schema.syncedProject.name), asc(schema.syncedProject.projectId)));
-    if (await content.cipher(vaultId)) projects.sort((a, b) => (a.parentProjectId ?? "").localeCompare(b.parentProjectId ?? "") || a.name.localeCompare(b.name) || a.projectId.localeCompare(b.projectId));
+    if (await content.cipher(workspaceId)) projects.sort((a, b) => (a.parentProjectId ?? "").localeCompare(b.parentProjectId ?? "") || a.name.localeCompare(b.name) || a.projectId.localeCompare(b.projectId));
     const counts = await db.select({ projectId: schema.syncedMeeting.projectId, meetingCount: count() })
       .from(schema.syncedMeeting).where(and(
-        readableMeeting(vaultId),
+        readableMeeting(workspaceId),
         eq(schema.syncedMeeting.active, true),
         isNull(schema.syncedMeeting.deletingAt),
         isNotNull(schema.syncedMeeting.projectId),
@@ -721,7 +721,7 @@ function createIdentityStore(
 
   type SearchDocumentInput = {
     documentId: string;
-    vaultId: string;
+    workspaceId: string;
     meetingId: string;
     kind: "meeting" | "screenshot";
     searchText: string;
@@ -737,7 +737,7 @@ function createIdentityStore(
       const batch = inputs.slice(offset, offset + batchSize);
       await db.insert(schema.searchDocument).values(batch.map((input) => ({
         documentId: input.documentId,
-        vaultId: input.vaultId,
+        workspaceId: input.workspaceId,
         meetingId: input.meetingId,
         kind: input.kind,
         searchText: input.searchText,
@@ -745,7 +745,7 @@ function createIdentityStore(
         embeddingContentHash: input.embeddingContentHash,
         updatedAt: now,
       }))).onConflictDoUpdate({
-        target: [schema.searchDocument.vaultId, schema.searchDocument.documentId],
+        target: [schema.searchDocument.workspaceId, schema.searchDocument.documentId],
         set: {
           meetingId: sql`excluded.meeting_id`,
           kind: sql`excluded.kind`,
@@ -763,13 +763,13 @@ function createIdentityStore(
     for (let offset = 0; offset < withoutEmbedding.length; offset += batchSize) {
       const batch = withoutEmbedding.slice(offset, offset + batchSize);
       const documentIds = batch.map(({ documentId }) => documentId);
-      const vaultId = batch[0]!.vaultId;
+      const workspaceId = batch[0]!.workspaceId;
       await db.delete(schema.searchIndexJob).where(and(
-        eq(schema.searchIndexJob.vaultId, vaultId),
+        eq(schema.searchIndexJob.workspaceId, workspaceId),
         inArray(schema.searchIndexJob.documentId, documentIds),
       ));
       await db.update(schema.searchDocument).set({ embedding: null, embeddingModel: null }).where(and(
-        eq(schema.searchDocument.vaultId, vaultId),
+        eq(schema.searchDocument.workspaceId, workspaceId),
         inArray(schema.searchDocument.documentId, documentIds),
       ));
     }
@@ -780,14 +780,14 @@ function createIdentityStore(
     const availableAt = new Date(Date.now() + 5_000);
     for (let offset = 0; offset < changed.length; offset += batchSize) {
       await db.insert(schema.searchIndexJob).values(changed.slice(offset, offset + batchSize).map((input) => ({
-        vaultId: input.vaultId,
+        workspaceId: input.workspaceId,
         documentId: input.documentId,
         model: embeddingConfig.model,
         dimensions: embeddingConfig.dimensions,
         availableAt,
         updatedAt: now,
       }))).onConflictDoUpdate({
-        target: [schema.searchIndexJob.vaultId, schema.searchIndexJob.documentId],
+        target: [schema.searchIndexJob.workspaceId, schema.searchIndexJob.documentId],
         set: {
             model: embeddingConfig.model,
           dimensions: embeddingConfig.dimensions,
@@ -832,10 +832,10 @@ function createIdentityStore(
     };
   }
 
-  function searchFilters(vaultId: string, kind: "meeting" | "screenshot", filters?: SyncSearchFilters) {
+  function searchFilters(workspaceId: string, kind: "meeting" | "screenshot", filters?: SyncSearchFilters) {
     const meeting = schema.syncedMeeting;
     const time = kind === "meeting" ? meeting.createdAt : schema.syncedScreenshot.capturedAt;
-    const meetingFilter = and(readableMeeting(vaultId), eq(meeting.active, true), isNull(meeting.deletingAt),
+    const meetingFilter = and(readableMeeting(workspaceId), eq(meeting.active, true), isNull(meeting.deletingAt),
       ...(filters?.projectIds ? [filters.projectIds.length ? inArray(meeting.projectId, filters.projectIds) : sql`false`] : []),
       ...(filters?.meetingIds ? [filters.meetingIds.length ? inArray(meeting.meetingId, filters.meetingIds) : sql`false`] : []),
       ...(filters?.unassigned ? [isNull(meeting.projectId)] : []));
@@ -848,7 +848,7 @@ function createIdentityStore(
   }
 
   async function ftsDocumentIds(
-    vaultId: string,
+    workspaceId: string,
     meetingId: string | undefined,
     kind: "meeting" | "screenshot",
     query: SyncSearchQuery,
@@ -860,8 +860,8 @@ function createIdentityStore(
     }
     const search = ftsExpressions(query, weights);
     const common = and(
-      readable(schema.searchDocument.vaultId),
-      eq(schema.searchDocument.vaultId, vaultId),
+      readable(schema.searchDocument.workspaceId),
+      eq(schema.searchDocument.workspaceId, workspaceId),
       eq(schema.searchDocument.kind, kind),
       ...(meetingId ? [eq(schema.searchDocument.meetingId, meetingId)] : []),
       search.filter,
@@ -870,26 +870,26 @@ function createIdentityStore(
       return (await db.select({ documentId: schema.searchDocument.documentId, rank: search.rank })
         .from(schema.searchDocument)
         .innerJoin(schema.syncedMeeting, and(
-          eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
+          eq(schema.syncedMeeting.workspaceId, schema.searchDocument.workspaceId),
           eq(schema.syncedMeeting.meetingId, schema.searchDocument.documentId),
         ))
-        .where(and(common, searchFilters(vaultId, "meeting", query.filters)))
+        .where(and(common, searchFilters(workspaceId, "meeting", query.filters)))
         .orderBy(asc(search.rank), desc(schema.syncedMeeting.createdAt), desc(schema.syncedMeeting.meetingId))
         .limit(SEARCH_CANDIDATE_LIMIT)).map(({ documentId }) => documentId);
     }
     return (await db.select({ documentId: schema.searchDocument.documentId, rank: search.rank })
       .from(schema.searchDocument)
       .innerJoin(schema.syncedScreenshot, and(
-        eq(schema.syncedScreenshot.vaultId, schema.searchDocument.vaultId),
+        eq(schema.syncedScreenshot.workspaceId, schema.searchDocument.workspaceId),
         eq(schema.syncedScreenshot.screenshotId, schema.searchDocument.documentId),
       ))
-      .where(and(common, eq(schema.syncedScreenshot.active, true), searchFilters(vaultId, "screenshot", query.filters)))
+      .where(and(common, eq(schema.syncedScreenshot.active, true), searchFilters(workspaceId, "screenshot", query.filters)))
       .orderBy(asc(search.rank), asc(schema.syncedScreenshot.capturedAt), asc(schema.syncedScreenshot.screenshotId))
       .limit(SEARCH_CANDIDATE_LIMIT)).map(({ documentId }) => documentId);
   }
 
   async function vectorDocumentIds(
-    vaultId: string,
+    workspaceId: string,
     meetingId: string | undefined,
     kind: "meeting" | "screenshot",
     query: SyncSearchQuery,
@@ -897,8 +897,8 @@ function createIdentityStore(
     const embedding = query.embedding;
     if (!embedding) return [];
     const common = and(
-      readable(schema.searchDocument.vaultId),
-      eq(schema.searchDocument.vaultId, vaultId),
+      readable(schema.searchDocument.workspaceId),
+      eq(schema.searchDocument.workspaceId, workspaceId),
       eq(schema.searchDocument.kind, kind),
       ...(meetingId ? [eq(schema.searchDocument.meetingId, meetingId)] : []),
       eq(schema.searchDocument.embeddingModel, embedding.model),
@@ -912,17 +912,17 @@ function createIdentityStore(
             vector: schema.searchDocument.embedding,
             sortTime: schema.syncedMeeting.createdAt,
           }).from(schema.searchDocument).innerJoin(schema.syncedMeeting, and(
-            eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
+            eq(schema.syncedMeeting.workspaceId, schema.searchDocument.workspaceId),
             eq(schema.syncedMeeting.meetingId, schema.searchDocument.documentId),
-          )).where(and(common, searchFilters(vaultId, "meeting", query.filters)))
+          )).where(and(common, searchFilters(workspaceId, "meeting", query.filters)))
         : await db.select({
             documentId: schema.searchDocument.documentId,
             vector: schema.searchDocument.embedding,
             sortTime: schema.syncedScreenshot.capturedAt,
           }).from(schema.searchDocument).innerJoin(schema.syncedScreenshot, and(
-            eq(schema.syncedScreenshot.vaultId, schema.searchDocument.vaultId),
+            eq(schema.syncedScreenshot.workspaceId, schema.searchDocument.workspaceId),
             eq(schema.syncedScreenshot.screenshotId, schema.searchDocument.documentId),
-          )).where(and(common, eq(schema.syncedScreenshot.active, true), searchFilters(vaultId, "screenshot", query.filters)));
+          )).where(and(common, eq(schema.syncedScreenshot.active, true), searchFilters(workspaceId, "screenshot", query.filters)));
       return rows.map(({ documentId, vector, sortTime }) => ({
         documentId,
         sortTime,
@@ -946,51 +946,51 @@ function createIdentityStore(
       .from(schema.searchDocument);
     const rows = kind === "meeting"
       ? await base.innerJoin(schema.syncedMeeting, and(
-          eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
+          eq(schema.syncedMeeting.workspaceId, schema.searchDocument.workspaceId),
           eq(schema.syncedMeeting.meetingId, schema.searchDocument.documentId),
-        )).where(and(common, searchFilters(vaultId, "meeting", query.filters)))
+        )).where(and(common, searchFilters(workspaceId, "meeting", query.filters)))
         .orderBy(asc(distance), desc(schema.syncedMeeting.createdAt), desc(schema.syncedMeeting.meetingId))
         .limit(SEARCH_CANDIDATE_LIMIT)
       : await base.innerJoin(schema.syncedScreenshot, and(
-          eq(schema.syncedScreenshot.vaultId, schema.searchDocument.vaultId),
+          eq(schema.syncedScreenshot.workspaceId, schema.searchDocument.workspaceId),
           eq(schema.syncedScreenshot.screenshotId, schema.searchDocument.documentId),
-        )).where(and(common, eq(schema.syncedScreenshot.active, true), searchFilters(vaultId, "screenshot", query.filters)))
+        )).where(and(common, eq(schema.syncedScreenshot.active, true), searchFilters(workspaceId, "screenshot", query.filters)))
         .orderBy(asc(distance), asc(schema.syncedScreenshot.capturedAt), asc(schema.syncedScreenshot.screenshotId))
         .limit(SEARCH_CANDIDATE_LIMIT);
     return rows.map(({ documentId }) => documentId);
   }
 
   async function rankedDocumentIds(
-    vaultId: string,
+    workspaceId: string,
     meetingId: string | undefined,
     kind: "meeting" | "screenshot",
     query: SyncSearchQuery,
   ): Promise<string[]> {
     const [fts, vector] = await Promise.all([
-      query.ftsCandidateIds ?? ftsDocumentIds(vaultId, meetingId, kind, query),
-      vectorDocumentIds(vaultId, meetingId, kind, query),
+      query.ftsCandidateIds ?? ftsDocumentIds(workspaceId, meetingId, kind, query),
+      vectorDocumentIds(workspaceId, meetingId, kind, query),
     ]);
     return reciprocalRankFusion(fts, vector).map(({ documentId }) => documentId);
   }
 
-  async function ensureUploadTarget(vaultId: string, meetingId: string): Promise<boolean> {
-    const [vault] = await db.select({ deletingAt: schema.syncedVault.deletingAt })
-      .from(schema.syncedVault).where(writableVault(vaultId)).limit(1);
-    if (!vault || vault.deletingAt) return false;
+  async function ensureUploadTarget(workspaceId: string, meetingId: string): Promise<boolean> {
+    const [workspace] = await db.select({ deletingAt: schema.syncedWorkspace.deletingAt })
+      .from(schema.syncedWorkspace).where(writableWorkspace(workspaceId)).limit(1);
+    if (!workspace || workspace.deletingAt) return false;
     const [meeting] = await db.select({ active: schema.syncedMeeting.active, deletingAt: schema.syncedMeeting.deletingAt })
-      .from(schema.syncedMeeting).where(writableMeeting(vaultId, meetingId)).limit(1);
+      .from(schema.syncedMeeting).where(writableMeeting(workspaceId, meetingId)).limit(1);
     return meeting?.active === true && meeting.deletingAt === null;
   }
 
   function selectRecordings() {
-    return db.select({ ...getTableColumns(schema.syncedRecording), vaultId: schema.syncedMeeting.vaultId })
+    return db.select({ ...getTableColumns(schema.syncedRecording), workspaceId: schema.syncedMeeting.workspaceId })
       .from(schema.syncedRecording)
       .innerJoin(schema.syncedMeeting, eq(schema.syncedMeeting.meetingId, schema.syncedRecording.meetingId));
   }
 
-  async function queueRecordingDeletes(vaultId: string, meetingId?: string) {
+  async function queueRecordingDeletes(workspaceId: string, meetingId?: string) {
     const records = await selectRecordings().where(and(
-      eq(schema.syncedMeeting.vaultId, vaultId),
+      eq(schema.syncedMeeting.workspaceId, workspaceId),
       meetingId ? eq(schema.syncedRecording.meetingId, meetingId) : undefined,
     ));
     for (const record of records) {
@@ -1000,29 +1000,29 @@ function createIdentityStore(
     return records;
   }
 
-  function readableSummary(vaultId: string, meetingId: string) {
+  function readableSummary(workspaceId: string, meetingId: string) {
     return and(eq(schema.summary.meetingId, meetingId), exists(db.select({ id: schema.syncedMeeting.meetingId }).from(schema.syncedMeeting).where(and(
       eq(schema.syncedMeeting.meetingId, schema.summary.meetingId),
-      eq(schema.syncedMeeting.vaultId, vaultId), readable(schema.syncedMeeting.vaultId),
+      eq(schema.syncedMeeting.workspaceId, workspaceId), readable(schema.syncedMeeting.workspaceId),
     ))));
   }
 
-  async function readMeetings<T extends { vaultId: string; meetingId: string; name: string; description: string; summaryTitle: string | null; summaryDocument: string | null }>(rows: T[]): Promise<T[]> {
+  async function readMeetings<T extends { workspaceId: string; meetingId: string; name: string; description: string; summaryTitle: string | null; summaryDocument: string | null }>(rows: T[]): Promise<T[]> {
     const plain = await content.read(schema.syncedMeeting, rows);
     for (const row of plain) {
-      if (!await content.cipher(row.vaultId)) continue;
-      const summary = await getSummaryVersion(row.vaultId, row.meetingId);
+      if (!await content.cipher(row.workspaceId)) continue;
+      const summary = await getSummaryVersion(row.workspaceId, row.meetingId);
       row.summaryTitle = summary?.title ?? null;
       row.summaryDocument = summary?.document ?? null;
     }
     return plain;
   }
 
-  async function readScreenshots<T extends { vaultId: string; fileId: string; ocrText: string | null; caption: string | null; contentHash: string }>(rows: T[]): Promise<T[]> {
+  async function readScreenshots<T extends { workspaceId: string; fileId: string; ocrText: string | null; caption: string | null; contentHash: string }>(rows: T[]): Promise<T[]> {
     for (const row of rows) {
-      if (!await content.cipher(row.vaultId)) continue;
+      if (!await content.cipher(row.workspaceId)) continue;
       const [file] = await content.read(schema.syncedFile, await db.select().from(schema.syncedFile)
-        .where(and(eq(schema.syncedFile.fileId, row.fileId), eq(schema.syncedFile.vaultId, row.vaultId), readable(schema.syncedFile.vaultId))).limit(1));
+        .where(and(eq(schema.syncedFile.fileId, row.fileId), eq(schema.syncedFile.workspaceId, row.workspaceId), readable(schema.syncedFile.workspaceId))).limit(1));
       if (!file) throw new SyncTransactionError(404, "file_not_found");
       row.ocrText = file.metadata.ocr_text ?? null;
       row.caption = file.metadata.caption ?? null;
@@ -1031,9 +1031,9 @@ function createIdentityStore(
     return rows;
   }
 
-  async function getSummaryVersion(vaultId: string, meetingId: string, version?: number) {
+  async function getSummaryVersion(workspaceId: string, meetingId: string, version?: number) {
     const [row] = await content.read(schema.summary, await db.select().from(schema.summary).where(and(
-      readableSummary(vaultId, meetingId),
+      readableSummary(workspaceId, meetingId),
       version === undefined ? undefined : eq(schema.summary.version, version),
     )).orderBy(desc(schema.summary.version)).limit(1));
     return row ? { ...row, metadata: row.metadata ? summaryMetadataSchema.parse(row.metadata) : null } : null;
@@ -1048,10 +1048,10 @@ function createIdentityStore(
     latestSegmentCreatedAt: sql`(select max(s.created_at) from ${schema.syncedTranscriptSegment} s where s.transcript_id = ${schema.transcript.id})`
       .mapWith(schema.syncedTranscriptSegment.createdAt),
   };
-  async function getTranscript(vaultId: string, meetingId: string, version?: number): Promise<TranscriptVersion | null> {
+  async function getTranscript(workspaceId: string, meetingId: string, version?: number): Promise<TranscriptVersion | null> {
     const [row] = await content.read(schema.transcript, await db.select(transcriptSelection).from(schema.transcript)
       .innerJoin(schema.syncedMeeting, eq(schema.transcript.meetingId, schema.syncedMeeting.meetingId)).where(and(
-        readable(schema.syncedMeeting.vaultId), eq(schema.syncedMeeting.vaultId, vaultId), eq(schema.transcript.meetingId, meetingId),
+        readable(schema.syncedMeeting.workspaceId), eq(schema.syncedMeeting.workspaceId, workspaceId), eq(schema.transcript.meetingId, meetingId),
         version === undefined ? undefined : eq(schema.transcript.version, version),
       )).orderBy(desc(schema.transcript.version)).limit(1));
     return row ? { ...row, status: transcriptStatus(row.endedAt, row.latestSegmentCreatedAt) } : null;
@@ -1059,38 +1059,38 @@ function createIdentityStore(
 
   async function canonicalRecord(
     entity: SyncCanonicalRecord["entity"],
-    vaultId: string,
+    workspaceId: string,
     entityId: string,
     access: "write" | "read" = "write",
   ): Promise<SyncCanonicalRecord> {
     const canAccess = access === "write" ? writeAccess : readable;
-    if (entity === "vault") {
-      const [record] = await content.read(schema.syncedVault, await db.select({ ...publicVaultColumns(), role: vaultRole(schema.syncedVault.vaultId) }).from(schema.syncedVault).where(and(
-        eq(schema.syncedVault.vaultId, vaultId),
-        canAccess(schema.syncedVault.vaultId),
+    if (entity === "workspace") {
+      const [record] = await content.read(schema.syncedWorkspace, await db.select({ ...publicWorkspaceColumns(), role: workspaceRole(schema.syncedWorkspace.workspaceId) }).from(schema.syncedWorkspace).where(and(
+        eq(schema.syncedWorkspace.workspaceId, workspaceId),
+        canAccess(schema.syncedWorkspace.workspaceId),
       )).limit(1));
       return { entity, id: entityId, revision: record?.revision ?? null, record: record ?? null };
     }
     if (entity === "project") {
       const [record] = await content.read(schema.syncedProject, await db.select().from(schema.syncedProject).where(and(
-        eq(schema.syncedProject.vaultId, vaultId),
+        eq(schema.syncedProject.workspaceId, workspaceId),
         eq(schema.syncedProject.projectId, entityId),
-        canAccess(schema.syncedProject.vaultId),
+        canAccess(schema.syncedProject.workspaceId),
       )).limit(1));
       return { entity, id: entityId, revision: record?.revision ?? null, record: record ?? null };
     }
     if (["meeting", "summary", "transcript"].includes(entity)) {
       const [record] = await content.read(schema.syncedMeeting, await db.select().from(schema.syncedMeeting).where(and(
-        eq(schema.syncedMeeting.vaultId, vaultId),
+        eq(schema.syncedMeeting.workspaceId, workspaceId),
         eq(schema.syncedMeeting.meetingId, entityId),
-        canAccess(schema.syncedMeeting.vaultId),
+        canAccess(schema.syncedMeeting.workspaceId),
       )).limit(1));
       if (!record) return { entity, id: entityId, revision: null, record: null };
       if (entity === "transcript") {
         return { entity, id: entityId, revision: record.transcriptRevision ?? null,
-          record: { meetingId: record.meetingId, transcript: await getTranscript(vaultId, entityId) } };
+          record: { meetingId: record.meetingId, transcript: await getTranscript(workspaceId, entityId) } };
       }
-      const summary = await getSummaryVersion(vaultId, entityId);
+      const summary = await getSummaryVersion(workspaceId, entityId);
       if (entity === "summary") {
         return { entity, id: entityId, revision: record.summaryRevision ?? null, record: {
           meetingId: record.meetingId,
@@ -1106,22 +1106,22 @@ function createIdentityStore(
     }
     if (entity === "recording") {
       const [record] = await selectRecordings().where(and(
-        eq(schema.syncedMeeting.vaultId, vaultId), eq(schema.syncedRecording.sessionId, entityId),
-        canAccess(schema.syncedMeeting.vaultId),
+        eq(schema.syncedMeeting.workspaceId, workspaceId), eq(schema.syncedRecording.sessionId, entityId),
+        canAccess(schema.syncedMeeting.workspaceId),
       )).limit(1);
       return { entity, id: entityId, revision: record?.revision || null,
         record: record && record.revision > 0 ? recordingCanonical(record) : null };
     }
     if (entity === "file") {
       const [record] = await content.read(schema.syncedFile, await db.select().from(schema.syncedFile).where(and(
-        eq(schema.syncedFile.vaultId, vaultId), eq(schema.syncedFile.fileId, entityId), canAccess(schema.syncedFile.vaultId),
+        eq(schema.syncedFile.workspaceId, workspaceId), eq(schema.syncedFile.fileId, entityId), canAccess(schema.syncedFile.workspaceId),
         ...(access === "read" ? [eq(schema.syncedFile.active, true)] : []),
       )).limit(1));
       return { entity, id: entityId, revision: record?.active ? record.revision : null,
         record: record ? { ...fileResponse(record), active: record.active } : null };
     }
     const [record] = await db.select().from(schema.meetingAttachment).where(and(
-      eq(schema.meetingAttachment.vaultId, vaultId), eq(schema.meetingAttachment.id, entityId), canAccess(schema.meetingAttachment.vaultId),
+      eq(schema.meetingAttachment.workspaceId, workspaceId), eq(schema.meetingAttachment.id, entityId), canAccess(schema.meetingAttachment.workspaceId),
     )).limit(1);
     return { entity, id: entityId, revision: record?.revision ?? null, record: record ?? null };
   }
@@ -1144,18 +1144,18 @@ function createIdentityStore(
     for (const batch of batches(changes, 100)) {
       const inserted = await db.insert(schema.syncChange).values(batch.map((change) => ({
         ...change,
-        vaultId: transaction.vaultId,
+        workspaceId: transaction.workspaceId,
         transactionId: transaction.id,
       }))).returning({ sequence: schema.syncChange.sequence });
       if (!inserted.length) throw new SyncTransactionError(500, "sync_change_not_recorded");
       cursor = Math.max(...inserted.map(({ sequence }) => sequence));
     }
     if (cursor === undefined) throw new SyncTransactionError(500, "sync_change_not_recorded");
-    await db.insert(schema.syncVaultState).values({
-      vaultId: transaction.vaultId,
+    await db.insert(schema.syncWorkspaceState).values({
+      workspaceId: transaction.workspaceId,
       latestSequence: cursor,
     }).onConflictDoUpdate({
-      target: [schema.syncVaultState.vaultId],
+      target: [schema.syncWorkspaceState.workspaceId],
       set: { latestSequence: cursor },
     });
     return cursor;
@@ -1168,7 +1168,7 @@ function createIdentityStore(
     baseRevision: number | null,
     missingDependencies: Array<{ entity: SyncCanonicalRecord["entity"]; id: string }> = [],
   ): Promise<void> {
-    const current = await canonicalRecord(entity, transaction.vaultId, entityId);
+    const current = await canonicalRecord(entity, transaction.workspaceId, entityId);
     if (current.record === null) {
       const conflicts: SyncRevisionConflict[] = [{
         entity,
@@ -1178,7 +1178,7 @@ function createIdentityStore(
         record: null,
       }];
       for (const dependency of missingDependencies) {
-        const record = await canonicalRecord(dependency.entity, transaction.vaultId, dependency.id);
+        const record = await canonicalRecord(dependency.entity, transaction.workspaceId, dependency.id);
         if (record.record === null) conflicts.push({
           entity: dependency.entity,
           id: dependency.id,
@@ -1205,9 +1205,9 @@ function createIdentityStore(
     operation: SyncTransaction["operations"][number],
   ): Promise<void> {
     if (operation.action !== "create") return;
-    const current = await canonicalRecord(operation.entity, transaction.vaultId, operation.entityId);
+    const current = await canonicalRecord(operation.entity, transaction.workspaceId, operation.entityId);
     if (current.record === null
-      || (operation.entity === "vault" && current.revision === 0)
+      || (operation.entity === "workspace" && current.revision === 0)
       || (operation.entity === "meeting" && current.record.active === false)) return;
     throw new SyncTransactionError(409, "revision_conflict", [{
       entity: operation.entity,
@@ -1219,7 +1219,7 @@ function createIdentityStore(
   }
 
   async function assertProjectHierarchy(
-    vaultId: string,
+    workspaceId: string,
     projectId: string,
     parentProjectId: string | null,
     operationId: string,
@@ -1230,9 +1230,9 @@ function createIdentityStore(
     }
     const [parent] = await db.select({ parentProjectId: schema.syncedProject.parentProjectId })
       .from(schema.syncedProject).where(and(
-        eq(schema.syncedProject.vaultId, vaultId),
+        eq(schema.syncedProject.workspaceId, workspaceId),
         eq(schema.syncedProject.projectId, parentProjectId),
-        writeAccess(schema.syncedProject.vaultId),
+        writeAccess(schema.syncedProject.workspaceId),
       )).limit(1);
     if (!parent) {
       throw new SyncTransactionError(409, "revision_conflict", [{
@@ -1248,24 +1248,24 @@ function createIdentityStore(
     }
     const [child] = await db.select({ id: schema.syncedProject.projectId })
       .from(schema.syncedProject).where(and(
-        eq(schema.syncedProject.vaultId, vaultId),
+        eq(schema.syncedProject.workspaceId, workspaceId),
         eq(schema.syncedProject.parentProjectId, projectId),
-        writeAccess(schema.syncedProject.vaultId),
+        writeAccess(schema.syncedProject.workspaceId),
       )).limit(1);
     if (child) throw new SyncTransactionError(422, "invalid_project_hierarchy", [], operationId);
   }
 
   async function assertProjectReference(
-    vaultId: string,
+    workspaceId: string,
     projectId: string | null,
     operationId: string,
   ): Promise<void> {
     if (!projectId) return;
     const [project] = await db.select({ id: schema.syncedProject.projectId })
       .from(schema.syncedProject).where(and(
-        eq(schema.syncedProject.vaultId, vaultId),
+        eq(schema.syncedProject.workspaceId, workspaceId),
         eq(schema.syncedProject.projectId, projectId),
-        writeAccess(schema.syncedProject.vaultId),
+        writeAccess(schema.syncedProject.workspaceId),
       )).limit(1);
     if (!project) throw new SyncTransactionError(409, "revision_conflict", [{
       entity: "project",
@@ -1277,19 +1277,19 @@ function createIdentityStore(
   }
 
   async function assertProjectDeletionAvailable(
-    vaultId: string,
+    workspaceId: string,
     projectId: string,
     operationId: string,
   ): Promise<void> {
     const conflicts: SyncRevisionConflict[] = [];
     const [child] = await db.select({ id: schema.syncedProject.projectId })
       .from(schema.syncedProject).where(and(
-        eq(schema.syncedProject.vaultId, vaultId),
+        eq(schema.syncedProject.workspaceId, workspaceId),
         eq(schema.syncedProject.parentProjectId, projectId),
-        writeAccess(schema.syncedProject.vaultId),
+        writeAccess(schema.syncedProject.workspaceId),
       )).limit(1);
     if (child) {
-      const current = await canonicalRecord("project", vaultId, child.id);
+      const current = await canonicalRecord("project", workspaceId, child.id);
       conflicts.push({
         entity: "project",
         id: child.id,
@@ -1300,12 +1300,12 @@ function createIdentityStore(
     }
     const [meeting] = await db.select({ id: schema.syncedMeeting.meetingId })
       .from(schema.syncedMeeting).where(and(
-        eq(schema.syncedMeeting.vaultId, vaultId),
+        eq(schema.syncedMeeting.workspaceId, workspaceId),
         eq(schema.syncedMeeting.projectId, projectId),
-        writeAccess(schema.syncedMeeting.vaultId),
+        writeAccess(schema.syncedMeeting.workspaceId),
       )).limit(1);
     if (meeting) {
-      const current = await canonicalRecord("meeting", vaultId, meeting.id);
+      const current = await canonicalRecord("meeting", workspaceId, meeting.id);
       conflicts.push({
         entity: "meeting",
         id: meeting.id,
@@ -1318,7 +1318,7 @@ function createIdentityStore(
   }
 
   async function resolveTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse | null> {
-    await lockVault(transaction.vaultId);
+    await lockWorkspace(transaction.workspaceId);
     if (searchBackend !== "sqlite") {
       await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`transaction:${transaction.id}`}, 0))`);
     }
@@ -1326,44 +1326,23 @@ function createIdentityStore(
       eq(schema.syncTransactionReceipt.transactionId, transaction.id),
     ).limit(1);
     if (!storedReceipt) return null;
-    if (storedReceipt.ownerUserId !== userPrincipalId || storedReceipt.vaultId !== transaction.vaultId) {
-      throw new SyncTransactionError(404, "vault_not_found");
+    if (storedReceipt.ownerUserId !== userPrincipalId || storedReceipt.workspaceId !== transaction.workspaceId) {
+      throw new SyncTransactionError(404, "workspace_not_found");
     }
-    const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
-      .where(and(eq(schema.syncedVault.vaultId, transaction.vaultId), readable(schema.syncedVault.vaultId))).limit(1);
+    const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
+      .where(and(eq(schema.syncedWorkspace.workspaceId, transaction.workspaceId), readable(schema.syncedWorkspace.workspaceId))).limit(1);
     const receiptContent = createContentEncryption(db, schema, userPrincipalId, encryption, undefined, "receipt");
     const [receipt] = await receiptContent.read(schema.syncTransactionReceipt, [storedReceipt]);
     if (!receipt) return null;
-    if (receipt.vaultId !== transaction.vaultId || receipt.requestHash !== transaction.requestHash) {
+    if (receipt.workspaceId !== transaction.workspaceId || receipt.requestHash !== transaction.requestHash) {
       throw new SyncTransactionError(409, "idempotency_key_reused");
     }
-    // After Vault deletion only acknowledge the operation; do not expose old content.
-    if (receipt.responseJson !== null && vault) {
+    // After Workspace deletion only acknowledge the operation; do not expose old content.
+    if (receipt.responseJson !== null && workspace) {
       const response = searchBackend === "sqlite"
         ? JSON.parse(receipt.responseJson as string) as SyncTransactionResponse
         : receipt.responseJson as SyncTransactionResponse;
-      // Project historical receipts without changing their committed content or revisions.
-      return { ...response, records: response.records.map((entry) => {
-        if (!entry.record) return entry;
-        if (entry.entity === "file" && "content_type" in entry.record) {
-          const { content_type, metadata, ...record } = entry.record;
-          delete record.uri;
-          delete record.offset;
-          const { ocr_text, ...fields } = metadata as Record<string, unknown>;
-          return { ...entry, record: { ...record, contentType: content_type,
-            metadata: { ...fields, ...(ocr_text !== undefined ? { ocrText: ocr_text } : {}) } } };
-        }
-        if (entry.entity === "recording") {
-          const audio = Object.fromEntries(Object.entries(entry.record.audio as Record<string, Record<string, unknown>>)
-            .map(([source, value]) => {
-              if (!("content_type" in value)) return [source, value];
-              const { content_type, contentURL, ...fields } = value;
-              return [source, { ...fields, contentType: content_type, contentUrl: contentURL }];
-            }));
-          return { ...entry, record: { ...entry.record, audio } };
-        }
-        return entry;
-      }) };
+      return response;
     }
     const results = searchBackend === "sqlite"
       ? JSON.parse(receipt.resultsJson as string) as SyncTransactionResponse["records"]
@@ -1377,31 +1356,31 @@ function createIdentityStore(
       await db.insert(schema.meetingEvent).values({ ...values, ownerUserId: userPrincipalId });
       return;
     }
-    const fields = ["vaultId", "meetingId", "kind", "occurredAt", "sessionId", "relatedId", "audioSource", "segmentIndex", "changedFields"] as const;
+    const fields = ["workspaceId", "meetingId", "kind", "occurredAt", "sessionId", "relatedId", "audioSource", "segmentIndex", "changedFields"] as const;
     if (fields.some((field) => JSON.stringify(existing[field] ?? null) !== JSON.stringify(values[field] ?? null))) {
       throw new SyncTransactionError(409, "event_id_reused");
     }
   }
 
-  async function redactMeetingEvents(vaultId: string, meetingId?: string) {
+  async function redactMeetingEvents(workspaceId: string, meetingId?: string) {
     await db.update(schema.meetingEvent).set({ sessionId: null, relatedId: null, audioSource: null, segmentIndex: null, changedFields: null })
-      .where(and(eq(schema.meetingEvent.vaultId, vaultId), meetingId ? eq(schema.meetingEvent.meetingId, meetingId) : undefined));
+      .where(and(eq(schema.meetingEvent.workspaceId, workspaceId), meetingId ? eq(schema.meetingEvent.meetingId, meetingId) : undefined));
   }
 
-  async function clearVault(vaultId: string, preservePermissions: boolean) {
-    await queueRecordingDeletes(vaultId);
-    const files = await db.select({ id: schema.syncedFile.fileId }).from(schema.syncedFile).where(eq(schema.syncedFile.vaultId, vaultId));
+  async function clearWorkspace(workspaceId: string, preservePermissions: boolean) {
+    await queueRecordingDeletes(workspaceId);
+    const files = await db.select({ id: schema.syncedFile.fileId }).from(schema.syncedFile).where(eq(schema.syncedFile.workspaceId, workspaceId));
     if (files.length) await db.insert(schema.storageDeleteJob).values(files.map(({ id }) => ({ storageKey: fileStorageKey(id) }))).onConflictDoNothing();
     if (preservePermissions) {
-      await db.delete(schema.meetingAttachment).where(eq(schema.meetingAttachment.vaultId, vaultId));
-      await db.delete(schema.syncedFile).where(eq(schema.syncedFile.vaultId, vaultId));
-      await redactMeetingEvents(vaultId);
-      await db.delete(schema.searchIndexJob).where(eq(schema.searchIndexJob.vaultId, vaultId));
-      await db.delete(schema.syncedMeeting).where(eq(schema.syncedMeeting.vaultId, vaultId));
-      await db.delete(schema.syncedProject).where(eq(schema.syncedProject.vaultId, vaultId));
-      await db.update(schema.syncedVault).set({ revision: 0, updatedAt: new Date() }).where(eq(schema.syncedVault.vaultId, vaultId));
+      await db.delete(schema.meetingAttachment).where(eq(schema.meetingAttachment.workspaceId, workspaceId));
+      await db.delete(schema.syncedFile).where(eq(schema.syncedFile.workspaceId, workspaceId));
+      await redactMeetingEvents(workspaceId);
+      await db.delete(schema.searchIndexJob).where(eq(schema.searchIndexJob.workspaceId, workspaceId));
+      await db.delete(schema.syncedMeeting).where(eq(schema.syncedMeeting.workspaceId, workspaceId));
+      await db.delete(schema.syncedProject).where(eq(schema.syncedProject.workspaceId, workspaceId));
+      await db.update(schema.syncedWorkspace).set({ revision: 0, updatedAt: new Date() }).where(eq(schema.syncedWorkspace.workspaceId, workspaceId));
     } else {
-      await db.delete(schema.syncedVault).where(eq(schema.syncedVault.vaultId, vaultId));
+      await db.delete(schema.syncedWorkspace).where(eq(schema.syncedWorkspace.workspaceId, workspaceId));
     }
   }
 
@@ -1417,32 +1396,32 @@ function createIdentityStore(
   }
 
   const governanceContent = (organizationId: string) => createContentEncryption(db, schema, userPrincipalId, encryption,
-    (vault) => exists(db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault).where(and(eq(schema.syncedVault.vaultId, vault), eq(schema.syncedVault.organizationId, organizationId)))), "governance");
-  const governanceColumns = () => ({ vaultId: schema.syncedVault.vaultId, name: schema.syncedVault.name, encryptedPayload: schema.syncedVault.encryptedPayload,
-    revision: schema.syncedVault.revision, creatorId: sql<string>`${schema.syncedVault.createdBy}->>'id'` });
-  async function confirmVaultDeletion(organizationId: string, vaultId: string) {
+    (workspace) => exists(db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(and(eq(schema.syncedWorkspace.workspaceId, workspace), eq(schema.syncedWorkspace.organizationId, organizationId)))), "governance");
+  const governanceColumns = () => ({ workspaceId: schema.syncedWorkspace.workspaceId, name: schema.syncedWorkspace.name, encryptedPayload: schema.syncedWorkspace.encryptedPayload,
+    revision: schema.syncedWorkspace.revision, creatorId: sql<string>`${schema.syncedWorkspace.createdBy}->>'id'` });
+  async function confirmWorkspaceDeletion(organizationId: string, workspaceId: string) {
     await governance(organizationId);
-    const rows = await db.select(governanceColumns()).from(schema.syncedVault).where(and(eq(schema.syncedVault.organizationId, organizationId), eq(schema.syncedVault.vaultId, vaultId)));
-    const [vault] = await governanceContent(organizationId).read(schema.syncedVault, rows);
-    if (!vault) throw new SyncTransactionError(404, "vault_not_found");
-    const [state] = await db.select({ sequence: schema.syncVaultState.latestSequence }).from(schema.syncVaultState).where(eq(schema.syncVaultState.vaultId, vaultId));
-    return { ...vault, changeCursor: encodeSyncCursor(state?.sequence ?? 0) };
+    const rows = await db.select(governanceColumns()).from(schema.syncedWorkspace).where(and(eq(schema.syncedWorkspace.organizationId, organizationId), eq(schema.syncedWorkspace.workspaceId, workspaceId)));
+    const [workspace] = await governanceContent(organizationId).read(schema.syncedWorkspace, rows);
+    if (!workspace) throw new SyncTransactionError(404, "workspace_not_found");
+    const [state] = await db.select({ sequence: schema.syncWorkspaceState.latestSequence }).from(schema.syncWorkspaceState).where(eq(schema.syncWorkspaceState.workspaceId, workspaceId));
+    return { ...workspace, changeCursor: encodeSyncCursor(state?.sequence ?? 0) };
   }
 
-  async function forceDeleteVault(organizationId: string, transaction: SyncTransaction, revision: number, changeCursor: string) {
-    await lockVault(transaction.vaultId);
+  async function forceDeleteWorkspace(organizationId: string, transaction: SyncTransaction, revision: number, changeCursor: string) {
+    await lockWorkspace(transaction.workspaceId);
     const organization = await governance(organizationId);
-    if (organization.kind !== "team") throw new SyncTransactionError(403, "personal_vault_immutable");
+    if (organization.kind !== "team") throw new SyncTransactionError(403, "personal_workspace_immutable");
     const previous = await resolveTransaction(transaction);
     if (previous) return previous;
-    const confirmation = await confirmVaultDeletion(organizationId, transaction.vaultId);
-    if (confirmation.revision !== revision || confirmation.changeCursor !== changeCursor) throw new SyncTransactionError(409, "vault_delete_confirmation_stale");
+    const confirmation = await confirmWorkspaceDeletion(organizationId, transaction.workspaceId);
+    if (confirmation.revision !== revision || confirmation.changeCursor !== changeCursor) throw new SyncTransactionError(409, "workspace_delete_confirmation_stale");
     const encrypted = governanceContent(organizationId);
-    await encrypted.cipher(transaction.vaultId);
-    if (searchBackend !== "sqlite") await db.execute(sql`select set_config('app.maintenance', 'governance-delete', true), set_config('app.maintenance_vault_id', ${transaction.vaultId}, true)`);
-    await clearVault(transaction.vaultId, false);
-    const cursor = await appendChange(transaction, "vault", transaction.vaultId, "reset", null);
-    const records: SyncCanonicalRecord[] = [{ entity: "vault", id: transaction.vaultId, revision: null, record: null }];
+    await encrypted.cipher(transaction.workspaceId);
+    if (searchBackend !== "sqlite") await db.execute(sql`select set_config('app.maintenance', 'governance-delete', true), set_config('app.maintenance_workspace_id', ${transaction.workspaceId}, true)`);
+    await clearWorkspace(transaction.workspaceId, false);
+    const cursor = await appendChange(transaction, "workspace", transaction.workspaceId, "reset", null);
+    const records: SyncCanonicalRecord[] = [{ entity: "workspace", id: transaction.workspaceId, revision: null, record: null }];
     const response: SyncTransactionResponse = { id: transaction.id, status: "committed", cursor: encodeSyncCursor(cursor), records };
     await saveReceipt(transaction, response, encrypted);
     return response;
@@ -1450,7 +1429,7 @@ function createIdentityStore(
 
   async function saveReceipt(transaction: SyncTransaction, response: SyncTransactionResponse, encrypted = content) {
     await db.insert(schema.syncTransactionReceipt).values(await encrypted.write(schema.syncTransactionReceipt, {
-      transactionId: transaction.id, ownerUserId: userPrincipalId, vaultId: transaction.vaultId, requestHash: transaction.requestHash,
+      transactionId: transaction.id, ownerUserId: userPrincipalId, workspaceId: transaction.workspaceId, requestHash: transaction.requestHash,
       responseJson: searchBackend === "sqlite" ? JSON.stringify(response) : response,
       resultsJson: searchBackend === "sqlite" ? JSON.stringify(response.records.map(({ entity, id, revision }) => ({ entity, id, revision })))
         : response.records.map(({ entity, id, revision }) => ({ entity, id, revision })),
@@ -1466,15 +1445,15 @@ function createIdentityStore(
     const records: SyncCanonicalRecord[] = [];
     let cursor = 0;
     const firstOperation = transaction.operations[0];
-    const establishesVault = firstOperation?.entity === "vault"
+    const establishesWorkspace = firstOperation?.entity === "workspace"
       && (firstOperation.action === "create"
         || (firstOperation.action === "reset" && transaction.operations.length === 1));
-    if (!establishesVault) {
-      const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
-        .where(writableVault(transaction.vaultId)).limit(1);
-      if (!vault) throw new SyncTransactionError(409, "revision_conflict", [{
-        entity: "vault",
-        id: transaction.vaultId,
+    if (!establishesWorkspace) {
+      const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
+        .where(writableWorkspace(transaction.workspaceId)).limit(1);
+      if (!workspace) throw new SyncTransactionError(409, "revision_conflict", [{
+        entity: "workspace",
+        id: transaction.workspaceId,
         clientBaseRevision: null,
         serverRevision: null,
         record: null,
@@ -1486,19 +1465,19 @@ function createIdentityStore(
       if (operation.entity === "meeting_event") {
         if (operation.baseRevision !== null) throw new SyncTransactionError(400, "invalid_sync_operation", [], operation.id);
         const meetingId = String(data.meetingId);
-        const meeting = await canonicalRecord("meeting", transaction.vaultId, meetingId);
+        const meeting = await canonicalRecord("meeting", transaction.workspaceId, meetingId);
         if (!meeting.record || meeting.record.active !== true || meeting.record.deletingAt) {
           throw new SyncTransactionError(410, "meeting_event_parent_unavailable", [], operation.id);
         }
         if (data.sessionId) {
           const [other] = await db.select({ meetingId: schema.meetingEvent.meetingId }).from(schema.meetingEvent).where(and(
-            eq(schema.meetingEvent.vaultId, transaction.vaultId), eq(schema.meetingEvent.sessionId, data.sessionId as string),
+            eq(schema.meetingEvent.workspaceId, transaction.workspaceId), eq(schema.meetingEvent.sessionId, data.sessionId as string),
             sql`${schema.meetingEvent.meetingId} <> ${meetingId}`,
           )).limit(1);
           if (other) throw new SyncTransactionError(409, "recording_session_meeting_mismatch", [], operation.id);
         }
         await insertMeetingEvent({
-          id: operation.entityId, vaultId: transaction.vaultId, meetingId, kind: String(data.kind),
+          id: operation.entityId, workspaceId: transaction.workspaceId, meetingId, kind: String(data.kind),
           occurredAt: data.occurredAt as Date, receivedAt: now,
           sessionId: data.sessionId as string | undefined, relatedId: data.relatedId as string | undefined,
           audioSource: data.audioSource as string | undefined, segmentIndex: data.segmentIndex as number | undefined,
@@ -1509,53 +1488,53 @@ function createIdentityStore(
         continue;
       }
       await assertCreateAvailable(transaction, operation);
-      if (operation.entity === "vault") {
+      if (operation.entity === "workspace") {
         if (operation.action !== "create") {
-          const [managed] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault).where(adminVault(transaction.vaultId)).limit(1);
-          if (!managed) throw new SyncTransactionError(403, "vault_admin_required");
+          const [managed] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(adminWorkspace(transaction.workspaceId)).limit(1);
+          if (!managed) throw new SyncTransactionError(403, "workspace_admin_required");
         }
         if (operation.action === "create") {
           const [organization] = await db.select({ id: schema.organization.id }).from(schema.organization)
             .innerJoin(schema.member, and(eq(schema.member.organizationId, schema.organization.id), eq(schema.member.userId, userPrincipalId)))
-            .where(and(eq(schema.organization.id, String(data.organizationId)), or(eq(schema.organization.kind, "team"), exists(db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault).where(and(adminVault(transaction.vaultId), eq(schema.syncedVault.revision, 0), eq(schema.syncedVault.organizationId, schema.organization.id))))))).limit(1);
+            .where(and(eq(schema.organization.id, String(data.organizationId)), or(eq(schema.organization.kind, "team"), exists(db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(and(adminWorkspace(transaction.workspaceId), eq(schema.syncedWorkspace.revision, 0), eq(schema.syncedWorkspace.organizationId, schema.organization.id))))))).limit(1);
           if (!organization) throw new SyncTransactionError(403, "organization_forbidden");
           const [existing] = await db.select({
-            id: schema.syncedVault.vaultId,
-            revision: schema.syncedVault.revision,
-            encryption: schema.syncedVault.encryption,
-            organizationId: schema.syncedVault.organizationId,
-          }).from(schema.syncedVault)
-            .where(eq(schema.syncedVault.vaultId, transaction.vaultId)).limit(1);
-          if (existing && existing.organizationId !== data.organizationId) throw new SyncTransactionError(409, "vault_organization_immutable");
-          if (existing && data.encryption !== undefined && data.encryption !== existing.encryption) throw new SyncTransactionError(409, "vault_encryption_immutable");
+            id: schema.syncedWorkspace.workspaceId,
+            revision: schema.syncedWorkspace.revision,
+            encryption: schema.syncedWorkspace.encryption,
+            organizationId: schema.syncedWorkspace.organizationId,
+          }).from(schema.syncedWorkspace)
+            .where(eq(schema.syncedWorkspace.workspaceId, transaction.workspaceId)).limit(1);
+          if (existing && existing.organizationId !== data.organizationId) throw new SyncTransactionError(409, "workspace_organization_immutable");
+          if (existing && data.encryption !== undefined && data.encryption !== existing.encryption) throw new SyncTransactionError(409, "workspace_encryption_immutable");
           if (existing?.revision === 0) {
-            const [restored] = await db.update(schema.syncedVault).set(await content.write(schema.syncedVault, {
+            const [restored] = await db.update(schema.syncedWorkspace).set(await content.write(schema.syncedWorkspace, {
               name: String(data.name),
               icon: data.icon as string | null | undefined,
               color: data.color as string | null | undefined,
               revision: 1,
               createdAt: data.createdAt as Date,
               updatedAt: now,
-            }, { vaultId: transaction.vaultId })).where(adminVault(transaction.vaultId)).returning({ id: schema.syncedVault.vaultId });
-            if (!restored) throw new SyncTransactionError(404, "vault_not_found", [], operation.id);
+            }, { workspaceId: transaction.workspaceId })).where(adminWorkspace(transaction.workspaceId)).returning({ id: schema.syncedWorkspace.workspaceId });
+            if (!restored) throw new SyncTransactionError(404, "workspace_not_found", [], operation.id);
           } else {
             if (existing) throw new SyncTransactionError(409, "revision_conflict", [{
-              entity: "vault",
+              entity: "workspace",
               id: operation.entityId,
               clientBaseRevision: null,
-              serverRevision: (await canonicalRecord("vault", transaction.vaultId, operation.entityId)).revision,
-              record: (await canonicalRecord("vault", transaction.vaultId, operation.entityId)).record,
+              serverRevision: (await canonicalRecord("workspace", transaction.workspaceId, operation.entityId)).revision,
+              record: (await canonicalRecord("workspace", transaction.workspaceId, operation.entityId)).record,
             }], operation.id);
             const [creator] = await db.select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
               .from(schema.user).where(eq(schema.user.id, userPrincipalId)).limit(1);
             if (!creator) throw new SyncTransactionError(403, "organization_forbidden");
-            const [used] = await db.select({ id: schema.syncVaultState.vaultId }).from(schema.syncVaultState).where(eq(schema.syncVaultState.vaultId, transaction.vaultId)).limit(1);
-            if (used) throw new SyncTransactionError(409, "vault_id_reused");
-            await db.insert(schema.syncedVault).values({
+            const [used] = await db.select({ id: schema.syncWorkspaceState.workspaceId }).from(schema.syncWorkspaceState).where(eq(schema.syncWorkspaceState.workspaceId, transaction.workspaceId)).limit(1);
+            if (used) throw new SyncTransactionError(409, "workspace_id_reused");
+            await db.insert(schema.syncedWorkspace).values({
               organizationId: organization.id,
               createdBy: creator,
               encryption: "none",
-              vaultId: transaction.vaultId,
+              workspaceId: transaction.workspaceId,
               name: String(data.name),
               icon: data.icon as string | null | undefined,
               color: data.color as string | null | undefined,
@@ -1563,66 +1542,66 @@ function createIdentityStore(
               createdAt: data.createdAt as Date,
               updatedAt: now,
             });
-            await db.insert(schema.syncedVaultPermission).values({
-              vaultId: transaction.vaultId,
+            await db.insert(schema.syncedWorkspacePermission).values({
+              workspaceId: transaction.workspaceId,
               principalType: "user",
               principalId: userPrincipalId,
               role: "admin",
               grantedByUserId: userPrincipalId,
             });
             if (data.encryption === "server") {
-              await content.create(transaction.vaultId);
-              await db.update(schema.syncedVault).set(await content.write(schema.syncedVault,
-                { encryption: "server", name: String(data.name) }, { vaultId: transaction.vaultId })).where(adminVault(transaction.vaultId));
+              await content.create(transaction.workspaceId);
+              await db.update(schema.syncedWorkspace).set(await content.write(schema.syncedWorkspace,
+                { encryption: "server", name: String(data.name) }, { workspaceId: transaction.workspaceId })).where(adminWorkspace(transaction.workspaceId));
             }
           }
         } else if (operation.action === "update") {
-          await assertRevision(transaction, "vault", operation.entityId, operation.baseRevision);
+          await assertRevision(transaction, "workspace", operation.entityId, operation.baseRevision);
           if (data.encryption !== undefined) {
-            const existing = await canonicalRecord("vault", transaction.vaultId, operation.entityId);
-            if (data.encryption !== existing.record?.encryption) throw new SyncTransactionError(409, "vault_encryption_immutable");
+            const existing = await canonicalRecord("workspace", transaction.workspaceId, operation.entityId);
+            if (data.encryption !== existing.record?.encryption) throw new SyncTransactionError(409, "workspace_encryption_immutable");
           }
-          await db.update(schema.syncedVault).set(await content.write(schema.syncedVault, {
+          await db.update(schema.syncedWorkspace).set(await content.write(schema.syncedWorkspace, {
             name: String(data.name),
             icon: data.icon as string | null | undefined,
             color: data.color as string | null | undefined,
-            revision: sql`${schema.syncedVault.revision} + 1`,
+            revision: sql`${schema.syncedWorkspace.revision} + 1`,
             updatedAt: now,
-          }, { vaultId: transaction.vaultId })).where(adminVault(transaction.vaultId));
+          }, { workspaceId: transaction.workspaceId })).where(adminWorkspace(transaction.workspaceId));
         } else if (operation.action === "reset") {
           const [organization] = await db.select({ kind: schema.organization.kind }).from(schema.organization)
-            .innerJoin(schema.syncedVault, eq(schema.syncedVault.organizationId, schema.organization.id))
-            .where(eq(schema.syncedVault.vaultId, transaction.vaultId)).limit(1);
-          if (organization?.kind === "personal" && data.preservePermissions !== true) throw new SyncTransactionError(403, "personal_vault_immutable");
-          const [owned] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
-            .where(adminVault(transaction.vaultId)).limit(1);
+            .innerJoin(schema.syncedWorkspace, eq(schema.syncedWorkspace.organizationId, schema.organization.id))
+            .where(eq(schema.syncedWorkspace.workspaceId, transaction.workspaceId)).limit(1);
+          if (organization?.kind === "personal" && data.preservePermissions !== true) throw new SyncTransactionError(403, "personal_workspace_immutable");
+          const [owned] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
+            .where(adminWorkspace(transaction.workspaceId)).limit(1);
           if (!owned) {
             throw new SyncTransactionError(409, "revision_conflict", [{
-              entity: "vault",
+              entity: "workspace",
               id: operation.entityId,
               clientBaseRevision: operation.baseRevision,
               serverRevision: null,
               record: null,
             }], operation.id);
           }
-          await assertRevision(transaction, "vault", operation.entityId, operation.baseRevision);
+          await assertRevision(transaction, "workspace", operation.entityId, operation.baseRevision);
           if (data.preservePermissions !== true) {
-            const [content] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
-              .where(and(adminVault(transaction.vaultId), vaultHasResources(schema.syncedVault.vaultId))).limit(1);
-            if (content) throw new SyncTransactionError(409, "vault_not_empty", [], operation.id);
+            const [content] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
+              .where(and(adminWorkspace(transaction.workspaceId), workspaceHasResources(schema.syncedWorkspace.workspaceId))).limit(1);
+            if (content) throw new SyncTransactionError(409, "workspace_not_empty", [], operation.id);
           }
-          await clearVault(transaction.vaultId, data.preservePermissions === true);
-          cursor = await appendChange(transaction, "vault", operation.entityId, "reset", null);
-          records.push({ entity: "vault", id: operation.entityId, revision: null, record: null });
+          await clearWorkspace(transaction.workspaceId, data.preservePermissions === true);
+          cursor = await appendChange(transaction, "workspace", operation.entityId, "reset", null);
+          records.push({ entity: "workspace", id: operation.entityId, revision: null, record: null });
           continue;
         }
       } else if (operation.entity === "project") {
         if (operation.action === "create") {
           const parentProjectId = data.parentProjectId as string | null;
-          await assertProjectHierarchy(transaction.vaultId, operation.entityId, parentProjectId, operation.id);
+          await assertProjectHierarchy(transaction.workspaceId, operation.entityId, parentProjectId, operation.id);
           await db.insert(schema.syncedProject).values(await content.write(schema.syncedProject, {
             projectId: operation.entityId,
-            vaultId: transaction.vaultId,
+            workspaceId: transaction.workspaceId,
             parentProjectId,
             name: String(data.name),
             icon: parentProjectId ? null : data.icon as string | null | undefined,
@@ -1637,7 +1616,7 @@ function createIdentityStore(
           const parentProjectId = data.parentProjectId as string | null;
           await assertRevision(transaction, "project", operation.entityId, operation.baseRevision,
             parentProjectId ? [{ entity: "project", id: parentProjectId }] : []);
-          await assertProjectHierarchy(transaction.vaultId, operation.entityId, parentProjectId, operation.id);
+          await assertProjectHierarchy(transaction.workspaceId, operation.entityId, parentProjectId, operation.id);
           await db.update(schema.syncedProject).set(await content.write(schema.syncedProject, {
             parentProjectId,
             name: String(data.name),
@@ -1647,25 +1626,25 @@ function createIdentityStore(
             projectType: data.projectType as string | null,
             revision: sql`${schema.syncedProject.revision} + 1`,
             updatedAt: now,
-          }, { projectId: operation.entityId, vaultId: transaction.vaultId })).where(and(
-            eq(schema.syncedProject.vaultId, transaction.vaultId),
+          }, { projectId: operation.entityId, workspaceId: transaction.workspaceId })).where(and(
+            eq(schema.syncedProject.workspaceId, transaction.workspaceId),
             eq(schema.syncedProject.projectId, operation.entityId),
-            writeAccess(schema.syncedProject.vaultId),
+            writeAccess(schema.syncedProject.workspaceId),
           ));
         } else if (operation.action === "delete") {
           await assertRevision(transaction, "project", operation.entityId, operation.baseRevision);
-          await assertProjectDeletionAvailable(transaction.vaultId, operation.entityId, operation.id);
+          await assertProjectDeletionAvailable(transaction.workspaceId, operation.entityId, operation.id);
           await db.delete(schema.syncedProject).where(and(
-            eq(schema.syncedProject.vaultId, transaction.vaultId),
+            eq(schema.syncedProject.workspaceId, transaction.workspaceId),
             eq(schema.syncedProject.projectId, operation.entityId),
-            writeAccess(schema.syncedProject.vaultId),
+            writeAccess(schema.syncedProject.workspaceId),
           ));
           cursor = await appendChange(transaction, "project", operation.entityId, "delete", null);
           records.push({ entity: "project", id: operation.entityId, revision: null, record: null });
           continue;
         }
       } else if (operation.entity === "meeting") {
-        const previous = operation.action === "update" ? await canonicalRecord("meeting", transaction.vaultId, operation.entityId) : null;
+        const previous = operation.action === "update" ? await canonicalRecord("meeting", transaction.workspaceId, operation.entityId) : null;
         if (data.calendarEvent && typeof data.calendarEvent === "object" && !("attendees" in data.calendarEvent)) {
           const existing = previous?.record?.calendarEvent;
           if (existing && typeof existing === "object" && "attendees" in existing) {
@@ -1674,12 +1653,12 @@ function createIdentityStore(
         }
         if (operation.action === "create") {
           const [existing] = await db.select({ active: schema.syncedMeeting.active })
-            .from(schema.syncedMeeting).where(writableMeeting(transaction.vaultId, operation.entityId)).limit(1);
+            .from(schema.syncedMeeting).where(writableMeeting(transaction.workspaceId, operation.entityId)).limit(1);
           const projectId = data.projectId as string | null;
-          await assertProjectReference(transaction.vaultId, projectId, operation.id);
+          await assertProjectReference(transaction.workspaceId, projectId, operation.id);
           const values = {
             meetingId: operation.entityId,
-            vaultId: transaction.vaultId,
+            workspaceId: transaction.workspaceId,
             projectId,
             name: String(data.name),
             description: stringField(data, "description"),
@@ -1695,7 +1674,7 @@ function createIdentityStore(
             active: true,
           };
           if (existing) {
-            await db.update(schema.syncedMeeting).set(await content.write(schema.syncedMeeting, values, { meetingId: operation.entityId, vaultId: transaction.vaultId })).where(writableMeeting(transaction.vaultId, operation.entityId));
+            await db.update(schema.syncedMeeting).set(await content.write(schema.syncedMeeting, values, { meetingId: operation.entityId, workspaceId: transaction.workspaceId })).where(writableMeeting(transaction.workspaceId, operation.entityId));
           } else {
             await db.insert(schema.syncedMeeting).values(await content.write(schema.syncedMeeting, values));
           }
@@ -1703,7 +1682,7 @@ function createIdentityStore(
           const projectId = data.projectId as string | null;
           await assertRevision(transaction, "meeting", operation.entityId, operation.baseRevision,
             projectId ? [{ entity: "project", id: projectId }] : []);
-          await assertProjectReference(transaction.vaultId, projectId, operation.id);
+          await assertProjectReference(transaction.workspaceId, projectId, operation.id);
           await db.update(schema.syncedMeeting).set(await content.write(schema.syncedMeeting, {
             projectId,
             name: String(data.name),
@@ -1716,16 +1695,16 @@ function createIdentityStore(
             calendarEvent: data.calendarEvent as CalendarEventSnapshot | null | undefined,
             updatedAt: data.updatedAt as Date,
             revision: sql`${schema.syncedMeeting.revision} + 1`,
-          }, { meetingId: operation.entityId, vaultId: transaction.vaultId })).where(writableMeeting(transaction.vaultId, operation.entityId));
+          }, { meetingId: operation.entityId, workspaceId: transaction.workspaceId })).where(writableMeeting(transaction.workspaceId, operation.entityId));
         } else if (operation.action === "delete") {
           await assertRevision(transaction, "meeting", operation.entityId, operation.baseRevision);
           const attachments = await db.select({ id: schema.meetingAttachment.id }).from(schema.meetingAttachment).where(and(
-            eq(schema.meetingAttachment.vaultId, transaction.vaultId), eq(schema.meetingAttachment.meetingId, operation.entityId),
+            eq(schema.meetingAttachment.workspaceId, transaction.workspaceId), eq(schema.meetingAttachment.meetingId, operation.entityId),
           ));
-          const deletedRecordings = await queueRecordingDeletes(transaction.vaultId, operation.entityId);
-          await redactMeetingEvents(transaction.vaultId, operation.entityId);
-          await insertMeetingEvent({ id: operation.id, vaultId: transaction.vaultId, meetingId: operation.entityId, kind: "meeting_deleted", occurredAt: now, receivedAt: now });
-          await db.delete(schema.syncedMeeting).where(writableMeeting(transaction.vaultId, operation.entityId));
+          const deletedRecordings = await queueRecordingDeletes(transaction.workspaceId, operation.entityId);
+          await redactMeetingEvents(transaction.workspaceId, operation.entityId);
+          await insertMeetingEvent({ id: operation.id, workspaceId: transaction.workspaceId, meetingId: operation.entityId, kind: "meeting_deleted", occurredAt: now, receivedAt: now });
+          await db.delete(schema.syncedMeeting).where(writableMeeting(transaction.workspaceId, operation.entityId));
           // A coalesced delete/recreate must still invalidate the old canonical children.
           cursor = await appendChanges(transaction, [
             { entity: "summary", entityId: operation.entityId, action: "delete", revision: null },
@@ -1744,7 +1723,7 @@ function createIdentityStore(
           : [];
         if (operation.action === "create" || changedFields.length) {
           await insertMeetingEvent({
-            id: operation.id, vaultId: transaction.vaultId, meetingId: operation.entityId,
+            id: operation.id, workspaceId: transaction.workspaceId, meetingId: operation.entityId,
             kind: operation.action === "create" ? "meeting_created" : "meeting_updated",
             occurredAt: now, receivedAt: now, changedFields: changedFields.length ? JSON.stringify(changedFields) : null,
           });
@@ -1752,9 +1731,9 @@ function createIdentityStore(
       } else if (operation.entity === "summary") {
         await assertRevision(transaction, "summary", operation.entityId, operation.baseRevision);
         if (operation.action === "delete") {
-          await db.delete(schema.summary).where(readableSummary(transaction.vaultId, operation.entityId));
+          await db.delete(schema.summary).where(readableSummary(transaction.workspaceId, operation.entityId));
         } else {
-          const latest = await getSummaryVersion(transaction.vaultId, operation.entityId);
+          const latest = await getSummaryVersion(transaction.workspaceId, operation.entityId);
           const metadata = summaryMetadata(String(data.document));
           await db.insert(schema.summary).values(await content.write(schema.summary, { id: uuidV7(), meetingId: operation.entityId,
             version: (latest?.version ?? 0) + 1, title: String(data.title), document: String(data.document),
@@ -1762,7 +1741,7 @@ function createIdentityStore(
         }
         await db.update(schema.syncedMeeting).set({
           summaryRevision: sql`${schema.syncedMeeting.summaryRevision} + 1`,
-        }).where(writableMeeting(transaction.vaultId, operation.entityId));
+        }).where(writableMeeting(transaction.workspaceId, operation.entityId));
       } else if (operation.entity === "transcript") {
         await assertRevision(transaction, "transcript", operation.entityId, operation.baseRevision);
         const patchId = String(data.patchId);
@@ -1776,11 +1755,11 @@ function createIdentityStore(
           deletionCount: number;
         }>;
         const patchScope = and(
-          eq(schema.transcriptPatchChunk.vaultId, transaction.vaultId),
+          eq(schema.transcriptPatchChunk.workspaceId, transaction.workspaceId),
           eq(schema.transcriptPatchChunk.meetingId, operation.entityId),
           eq(schema.transcriptPatchChunk.patchId, patchId),
         );
-        const storedChunks = await content.read(schema.transcriptPatchChunk, await db.select({ vaultId: schema.transcriptPatchChunk.vaultId, meetingId: schema.transcriptPatchChunk.meetingId, patchId: schema.transcriptPatchChunk.patchId, encryptedPayload: schema.transcriptPatchChunk.encryptedPayload,
+        const storedChunks = await content.read(schema.transcriptPatchChunk, await db.select({ workspaceId: schema.transcriptPatchChunk.workspaceId, meetingId: schema.transcriptPatchChunk.meetingId, patchId: schema.transcriptPatchChunk.patchId, encryptedPayload: schema.transcriptPatchChunk.encryptedPayload,
           chunkIndex: schema.transcriptPatchChunk.chunkIndex,
           contentHash: schema.transcriptPatchChunk.contentHash,
         }).from(schema.transcriptPatchChunk).where(patchScope).orderBy(asc(schema.transcriptPatchChunk.chunkIndex)));
@@ -1794,7 +1773,7 @@ function createIdentityStore(
           }
         }
         const incoming = data.transcript as Pick<TranscriptVersion, "id" | "startedAt" | "endedAt" | "metadata">;
-        const latest = await getTranscript(transaction.vaultId, operation.entityId);
+        const latest = await getTranscript(transaction.workspaceId, operation.entityId);
         const sameVersion = latest?.id === incoming.id;
         const mode = data.mode as "replace" | "append";
         if (sameVersion) {
@@ -1811,7 +1790,7 @@ function createIdentityStore(
           await db.insert(schema.transcript).values(await content.write(schema.transcript, { ...incoming, meetingId: operation.entityId,
             version: (latest?.version ?? 0) + 1, syncRevision: Number(operation.baseRevision) + 1, createdAt: now }));
           if (mode === "append" && latest) {
-            if (!await content.cipher(transaction.vaultId)) {
+            if (!await content.cipher(transaction.workspaceId)) {
               // Copy once at live-version start. Each version is independently readable.
               await db.insert(schema.syncedTranscriptSegment).select(db.select({
                 ...getTableColumns(schema.syncedTranscriptSegment),
@@ -1824,10 +1803,10 @@ function createIdentityStore(
                 const page = await content.read(schema.syncedTranscriptSegment, await db.select().from(schema.syncedTranscriptSegment)
                   .where(and(eq(schema.syncedTranscriptSegment.transcriptId, latest.id),
                     afterSegment ? gt(schema.syncedTranscriptSegment.segmentId, afterSegment) : undefined))
-                  .orderBy(asc(schema.syncedTranscriptSegment.segmentId)).limit(250), transaction.vaultId);
+                  .orderBy(asc(schema.syncedTranscriptSegment.segmentId)).limit(250), transaction.workspaceId);
                 if (!page.length) break;
                 await db.insert(schema.syncedTranscriptSegment).values(await content.writeMany(schema.syncedTranscriptSegment,
-                  page.map((segment) => ({ ...segment, transcriptId: incoming.id })), { vaultId: transaction.vaultId }));
+                  page.map((segment) => ({ ...segment, transcriptId: incoming.id })), { workspaceId: transaction.workspaceId }));
                 afterSegment = page.at(-1)!.segmentId;
               }
             }
@@ -1869,7 +1848,7 @@ function createIdentityStore(
               startedAt: new Date(segment.startedAt),
               endedAt: segment.endedAt ? new Date(segment.endedAt) : null,
               createdAt: segment.createdAt ? new Date(segment.createdAt) : null,
-            })), { vaultId: transaction.vaultId })).onConflictDoUpdate({
+            })), { workspaceId: transaction.workspaceId })).onConflictDoUpdate({
               target: [schema.syncedTranscriptSegment.transcriptId, schema.syncedTranscriptSegment.segmentId],
               set: {
                 startedAt: sql`excluded.started_at`, endedAt: sql`excluded.ended_at`, text: sql`excluded.text`,
@@ -1884,19 +1863,19 @@ function createIdentityStore(
           throw new SyncTransactionError(422, "invalid_transcript_patch", [], operation.id);
         }
         if (sameVersion) {
-          await db.update(schema.transcript).set(await content.write(schema.transcript, { ...incoming, syncRevision: Number(operation.baseRevision) + 1 }, { vaultId: transaction.vaultId }))
+          await db.update(schema.transcript).set(await content.write(schema.transcript, { ...incoming, syncRevision: Number(operation.baseRevision) + 1 }, { workspaceId: transaction.workspaceId }))
             .where(eq(schema.transcript.id, incoming.id));
         }
         await db.update(schema.syncedMeeting).set({
           transcriptRevision: sql`${schema.syncedMeeting.transcriptRevision} + 1`,
-        }).where(writableMeeting(transaction.vaultId, operation.entityId));
+        }).where(writableMeeting(transaction.workspaceId, operation.entityId));
         await db.delete(schema.transcriptPatchChunk).where(patchScope);
       } else if (operation.entity === "recording") {
         const [record] = await selectRecordings().where(and(
-          eq(schema.syncedMeeting.vaultId, transaction.vaultId), eq(schema.syncedRecording.sessionId, operation.entityId),
-          writeAccess(schema.syncedMeeting.vaultId),
+          eq(schema.syncedMeeting.workspaceId, transaction.workspaceId), eq(schema.syncedRecording.sessionId, operation.entityId),
+          writeAccess(schema.syncedMeeting.workspaceId),
         )).limit(1);
-        if (!record || !await ensureUploadTarget(transaction.vaultId, record.meetingId)) {
+        if (!record || !await ensureUploadTarget(transaction.workspaceId, record.meetingId)) {
           throw new SyncTransactionError(409, "recording_not_found", [], operation.id);
         }
         if (record.revision > 0 || operation.baseRevision !== null) {
@@ -1920,8 +1899,8 @@ function createIdentityStore(
         }).where(eq(schema.syncedRecording.sessionId, operation.entityId));
       } else if (operation.entity === "file") {
         const [file] = await content.read(schema.syncedFile, await db.select().from(schema.syncedFile).where(and(
-          eq(schema.syncedFile.fileId, operation.entityId), eq(schema.syncedFile.vaultId, transaction.vaultId),
-          writeAccess(schema.syncedFile.vaultId),
+          eq(schema.syncedFile.fileId, operation.entityId), eq(schema.syncedFile.workspaceId, transaction.workspaceId),
+          writeAccess(schema.syncedFile.workspaceId),
         )).limit(1));
         if (!file && operation.baseRevision !== null) await assertRevision(transaction, "file", operation.entityId, operation.baseRevision);
         if (!file) throw new SyncTransactionError(422, "file_content_missing", [], operation.id);
@@ -1949,25 +1928,25 @@ function createIdentityStore(
         await db.update(schema.syncedFile).set(await content.write(schema.syncedFile, { active: true, metadata,
           name: typeof data.name === "string" ? data.name : file.name,
           revision: file.revision + 1, updatedAt: now,
-        }, { fileId: file.fileId, vaultId: transaction.vaultId })).where(eq(schema.syncedFile.fileId, file.fileId));
+        }, { fileId: file.fileId, workspaceId: transaction.workspaceId })).where(eq(schema.syncedFile.fileId, file.fileId));
       } else if (operation.entity === "meeting_attachment") {
-        const previous = await canonicalRecord("meeting_attachment", transaction.vaultId, operation.entityId);
+        const previous = await canonicalRecord("meeting_attachment", transaction.workspaceId, operation.entityId);
         if (previous.record !== null || operation.baseRevision !== null || operation.action === "delete") {
           await assertRevision(transaction, "meeting_attachment", operation.entityId, operation.baseRevision,
             operation.action === "delete" ? [] : [{ entity: "meeting", id: String(data.meetingId) }]);
         }
         if (operation.action === "delete") {
           await db.delete(schema.meetingAttachment).where(and(eq(schema.meetingAttachment.id, operation.entityId),
-            eq(schema.meetingAttachment.vaultId, transaction.vaultId)));
-          await db.delete(schema.searchIndexJob).where(and(eq(schema.searchIndexJob.vaultId, transaction.vaultId), eq(schema.searchIndexJob.documentId, operation.entityId)));
-          await db.delete(schema.searchDocument).where(and(eq(schema.searchDocument.vaultId, transaction.vaultId), eq(schema.searchDocument.documentId, operation.entityId)));
+            eq(schema.meetingAttachment.workspaceId, transaction.workspaceId)));
+          await db.delete(schema.searchIndexJob).where(and(eq(schema.searchIndexJob.workspaceId, transaction.workspaceId), eq(schema.searchIndexJob.documentId, operation.entityId)));
+          await db.delete(schema.searchDocument).where(and(eq(schema.searchDocument.workspaceId, transaction.workspaceId), eq(schema.searchDocument.documentId, operation.entityId)));
           cursor = await appendChange(transaction, "meeting_attachment", operation.entityId, "delete", null);
           records.push({ entity: "meeting_attachment", id: operation.entityId, revision: null, record: null });
           continue;
         }
         const meetingId = String(data.meetingId);
         const fileId = String(data.fileId);
-        const meeting = await canonicalRecord("meeting", transaction.vaultId, meetingId);
+        const meeting = await canonicalRecord("meeting", transaction.workspaceId, meetingId);
         if (!meeting.record || meeting.record.deletingAt || meeting.record.active === false) {
           throw new SyncTransactionError(409, "revision_conflict", [{
             entity: "meeting", id: meetingId, clientBaseRevision: null, serverRevision: null, record: null,
@@ -1977,17 +1956,17 @@ function createIdentityStore(
           throw new SyncTransactionError(409, "meeting_attachment_identity_immutable", [], operation.id);
         }
         const [file] = await content.read(schema.syncedFile, await db.select().from(schema.syncedFile).where(and(
-          eq(schema.syncedFile.fileId, fileId), eq(schema.syncedFile.vaultId, transaction.vaultId), eq(schema.syncedFile.active, true),
+          eq(schema.syncedFile.fileId, fileId), eq(schema.syncedFile.workspaceId, transaction.workspaceId), eq(schema.syncedFile.active, true),
         )).limit(1));
         if (!file) throw new SyncTransactionError(422, "file_not_found", [], operation.id);
         const values = { capturedAt: data.capturedAt as Date | null, sessionId: data.sessionId as string | null,
           revision: (previous.revision ?? 0) + 1 };
         if (previous.record) {
           await db.update(schema.meetingAttachment).set(values).where(and(eq(schema.meetingAttachment.id, operation.entityId),
-            eq(schema.meetingAttachment.vaultId, transaction.vaultId)));
+            eq(schema.meetingAttachment.workspaceId, transaction.workspaceId)));
         } else {
           const [inserted] = await db.insert(schema.meetingAttachment).values({ ...values, id: operation.entityId,
-            vaultId: transaction.vaultId, meetingId, fileId, createdAt: data.createdAt as Date,
+            workspaceId: transaction.workspaceId, meetingId, fileId, createdAt: data.createdAt as Date,
           }).onConflictDoNothing().returning({ id: schema.meetingAttachment.id });
           if (!inserted) throw new SyncTransactionError(409, "meeting_attachment_id_conflict", [], operation.id);
         }
@@ -1996,12 +1975,12 @@ function createIdentityStore(
       if (["meeting", "summary"].includes(operation.entity) && typeof data.searchText === "string") {
         const [current] = await db.select({ hash: schema.searchDocument.embeddingContentHash })
           .from(schema.searchDocument).where(and(
-            eq(schema.searchDocument.vaultId, transaction.vaultId),
+            eq(schema.searchDocument.workspaceId, transaction.workspaceId),
             eq(schema.searchDocument.documentId, operation.entityId),
           )).limit(1);
         await updateSearchDocuments([{
           documentId: operation.entityId,
-          vaultId: transaction.vaultId,
+          workspaceId: transaction.workspaceId,
           meetingId: operation.entityId,
           kind: "meeting",
           searchText: data.searchText,
@@ -2012,14 +1991,14 @@ function createIdentityStore(
       }
       if (operation.entity === "file" || operation.entity === "meeting_attachment") {
         const images = await readScreenshots(await db.select().from(schema.syncedScreenshot).where(and(
-          eq(schema.syncedScreenshot.vaultId, transaction.vaultId),
+          eq(schema.syncedScreenshot.workspaceId, transaction.workspaceId),
           operation.entity === "file" ? eq(schema.syncedScreenshot.fileId, operation.entityId) : eq(schema.syncedScreenshot.screenshotId, operation.entityId),
         )));
         for (const image of images) {
           const [current] = await db.select({ hash: schema.searchDocument.embeddingContentHash }).from(schema.searchDocument)
-            .where(and(eq(schema.searchDocument.vaultId, transaction.vaultId), eq(schema.searchDocument.documentId, image.screenshotId))).limit(1);
+            .where(and(eq(schema.searchDocument.workspaceId, transaction.workspaceId), eq(schema.searchDocument.documentId, image.screenshotId))).limit(1);
           await updateSearchDocuments([{
-            documentId: image.screenshotId, vaultId: transaction.vaultId, meetingId: image.meetingId, kind: "screenshot",
+            documentId: image.screenshotId, workspaceId: transaction.workspaceId, meetingId: image.meetingId, kind: "screenshot",
             searchText: typeof data.searchText === "string" ? data.searchText : "",
             searchFields: data.searchFields as SearchDocumentFields,
             embeddingContentHash: data.embeddingContentHash as string | null ?? null, currentEmbeddingContentHash: current?.hash ?? null,
@@ -2027,7 +2006,7 @@ function createIdentityStore(
         }
       }
 
-      const record = await canonicalRecord(operation.entity, transaction.vaultId, operation.entityId);
+      const record = await canonicalRecord(operation.entity, transaction.workspaceId, operation.entityId);
       records.push(record);
       cursor = await appendChange(transaction, operation.entity, operation.entityId, "upsert", record.revision);
     }
@@ -2046,7 +2025,7 @@ function createIdentityStore(
 
   const imageClaimKey = (claim: ImageAnalysisClaim) => and(
     eq(schema.imageAnalysisJob.fileId, claim.fileId),
-    eq(schema.imageAnalysisJob.vaultId, claim.vaultId),
+    eq(schema.imageAnalysisJob.workspaceId, claim.workspaceId),
     eq(schema.imageAnalysisJob.ownerUserId, userPrincipalId),
     eq(schema.imageAnalysisJob.model, claim.model),
     eq(schema.imageAnalysisJob.claimedAt, claim.claimedAt),
@@ -2059,13 +2038,13 @@ function createIdentityStore(
     const [file] = await db.select({ file: schema.syncedFile }).from(schema.syncedFile)
       .innerJoin(schema.imageAnalysisJob, eq(schema.imageAnalysisJob.fileId, schema.syncedFile.fileId))
       .where(and(
-        imageClaimKey(claim), eq(schema.syncedFile.vaultId, claim.vaultId),
+        imageClaimKey(claim), eq(schema.syncedFile.workspaceId, claim.workspaceId),
         eq(schema.syncedFile.active, true), isNotNull(schema.syncedFile.uploadedAt),
-        writeAccess(schema.syncedFile.vaultId),
-        exists(db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault).where(writableVault(claim.vaultId))),
+        writeAccess(schema.syncedFile.workspaceId),
+        exists(db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(writableWorkspace(claim.workspaceId))),
         exists(db.select({ id: schema.meetingAttachment.id }).from(schema.meetingAttachment)
           .innerJoin(schema.syncedMeeting, and(
-            eq(schema.syncedMeeting.vaultId, schema.meetingAttachment.vaultId),
+            eq(schema.syncedMeeting.workspaceId, schema.meetingAttachment.workspaceId),
             eq(schema.syncedMeeting.meetingId, schema.meetingAttachment.meetingId),
           )).where(and(eq(schema.meetingAttachment.fileId, claim.fileId), isNull(schema.syncedMeeting.deletingAt)))),
       )).limit(1);
@@ -2075,7 +2054,7 @@ function createIdentityStore(
   }
 
   async function completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction): Promise<boolean> {
-    await lockVault(input.vaultId);
+    await lockWorkspace(input.workspaceId);
     const claimQuery = db.select({ id: schema.imageAnalysisJob.fileId }).from(schema.imageAnalysisJob)
       .where(imageClaimKey(input));
     const [claim] = searchBackend === "sqlite" ? await claimQuery : await claimQuery.for("update");
@@ -2088,43 +2067,43 @@ function createIdentityStore(
   }
 
   async function listChanges(
-    vaultId: string,
+    workspaceId: string,
     after: number,
     through: number,
     limit: number,
   ): Promise<SyncChangeRecord[]> {
-    await lockVault(vaultId);
-    await assertCursorAvailable(vaultId, after);
-    const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
-      .where(and(readable(schema.syncedVault.vaultId), eq(schema.syncedVault.vaultId, vaultId))).limit(1);
-    const [history] = await db.select({ id: schema.syncVaultState.vaultId }).from(schema.syncVaultState).where(and(eq(schema.syncVaultState.vaultId, vaultId), readableHistory(schema.syncVaultState.vaultId))).limit(1);
-    if (!vault && !history) throw new SyncTransactionError(404, "vault_not_found");
+    await lockWorkspace(workspaceId);
+    await assertCursorAvailable(workspaceId, after);
+    const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
+      .where(and(readable(schema.syncedWorkspace.workspaceId), eq(schema.syncedWorkspace.workspaceId, workspaceId))).limit(1);
+    const [history] = await db.select({ id: schema.syncWorkspaceState.workspaceId }).from(schema.syncWorkspaceState).where(and(eq(schema.syncWorkspaceState.workspaceId, workspaceId), readableHistory(schema.syncWorkspaceState.workspaceId))).limit(1);
+    if (!workspace && !history) throw new SyncTransactionError(404, "workspace_not_found");
     const [latestReset] = await db.select({
       sequence: schema.syncChange.sequence,
       revision: schema.syncChange.revision,
       transactionId: schema.syncChange.transactionId,
     })
       .from(schema.syncChange).where(and(
-        eq(schema.syncChange.vaultId, vaultId),
+        eq(schema.syncChange.workspaceId, workspaceId),
         eq(schema.syncChange.action, "reset"),
         gt(schema.syncChange.sequence, after),
         lte(schema.syncChange.sequence, through),
       )).orderBy(desc(schema.syncChange.sequence)).limit(1);
-    if (!vault && !latestReset) throw new SyncTransactionError(404, "vault_not_found");
+    if (!workspace && !latestReset) throw new SyncTransactionError(404, "workspace_not_found");
     const effectiveAfter = Number(latestReset?.sequence ?? after);
     const latestChanges = db.select({
       entity: schema.syncChange.entity,
       entityId: schema.syncChange.entityId,
       sequence: sql<number>`max(${schema.syncChange.sequence})`.as("sequence"),
     }).from(schema.syncChange).where(and(
-      eq(schema.syncChange.vaultId, vaultId),
+      eq(schema.syncChange.workspaceId, workspaceId),
       gt(schema.syncChange.sequence, effectiveAfter),
       lte(schema.syncChange.sequence, through),
     )).groupBy(schema.syncChange.entity, schema.syncChange.entityId).as("latest_changes");
     const rowLimit = Math.max(0, limit - (latestReset ? 1 : 0));
     const rows = rowLimit === 0 ? [] : await db.select({
       sequence: schema.syncChange.sequence,
-      vaultId: schema.syncChange.vaultId,
+      workspaceId: schema.syncChange.workspaceId,
       entity: schema.syncChange.entity,
       entityId: schema.syncChange.entityId,
       action: schema.syncChange.action,
@@ -2139,22 +2118,22 @@ function createIdentityStore(
     const changes: SyncChangeRecord[] = [];
     const canonicalRecords = new Map<string, SyncCanonicalRecord>();
     if (latestReset) {
-      const [recreated] = vault ? await db.select({ sequence: schema.syncChange.sequence })
+      const [recreated] = workspace ? await db.select({ sequence: schema.syncChange.sequence })
         .from(schema.syncChange).where(and(
-          eq(schema.syncChange.vaultId, vaultId),
-          eq(schema.syncChange.entity, "vault"),
+          eq(schema.syncChange.workspaceId, workspaceId),
+          eq(schema.syncChange.entity, "workspace"),
           eq(schema.syncChange.action, "upsert"),
           gt(schema.syncChange.sequence, latestReset.sequence),
           lte(schema.syncChange.sequence, through),
         )).limit(1) : [];
       const canonical = recreated
-        ? await canonicalRecord("vault", vaultId, vaultId, "read")
+        ? await canonicalRecord("workspace", workspaceId, workspaceId, "read")
         : null;
       changes.push({
         sequence: latestReset.sequence,
-        vaultId,
-        entity: "vault",
-        entityId: vaultId,
+        workspaceId,
+        entity: "workspace",
+        entityId: workspaceId,
         action: "reset",
         revision: canonical?.revision ?? latestReset.revision,
         transactionId: latestReset.transactionId,
@@ -2166,12 +2145,12 @@ function createIdentityStore(
       if (row.action !== "reset") {
         const key = `${row.entity}:${row.entityId}`;
         canonical = canonicalRecords.get(key)
-          ?? await canonicalRecord(row.entity as SyncCanonicalRecord["entity"], vaultId, row.entityId, "read");
+          ?? await canonicalRecord(row.entity as SyncCanonicalRecord["entity"], workspaceId, row.entityId, "read");
         canonicalRecords.set(key, canonical);
       }
       changes.push({
         sequence: row.sequence,
-        vaultId,
+        workspaceId,
         entity: row.entity as SyncCanonicalRecord["entity"],
         entityId: row.entityId,
         action: row.action === "reset" ? "reset" : canonical?.record ? "upsert" : "delete",
@@ -2183,31 +2162,31 @@ function createIdentityStore(
     return changes;
   }
 
-  async function latestChangeSequence(vaultId?: string): Promise<number> {
-    const [row] = await db.select({ sequence: sql<number>`coalesce(max(${schema.syncVaultState.latestSequence}), 0)` })
-      .from(schema.syncVaultState).where(and(
-        readableHistory(schema.syncVaultState.vaultId),
-        ...(vaultId ? [eq(schema.syncVaultState.vaultId, vaultId)] : []),
+  async function latestChangeSequence(workspaceId?: string): Promise<number> {
+    const [row] = await db.select({ sequence: sql<number>`coalesce(max(${schema.syncWorkspaceState.latestSequence}), 0)` })
+      .from(schema.syncWorkspaceState).where(and(
+        readableHistory(schema.syncWorkspaceState.workspaceId),
+        ...(workspaceId ? [eq(schema.syncWorkspaceState.workspaceId, workspaceId)] : []),
       ));
     return Number(row?.sequence ?? 0);
   }
 
-  async function assertCursorAvailable(vaultId: string, after: number): Promise<void> {
-    const [state] = await db.select({ through: sql<number>`max(${schema.syncVaultState.prunedThrough})` })
-      .from(schema.syncVaultState).where(and(
-        eq(schema.syncVaultState.vaultId, vaultId),
-        readableHistory(schema.syncVaultState.vaultId),
+  async function assertCursorAvailable(workspaceId: string, after: number): Promise<void> {
+    const [state] = await db.select({ through: sql<number>`max(${schema.syncWorkspaceState.prunedThrough})` })
+      .from(schema.syncWorkspaceState).where(and(
+        eq(schema.syncWorkspaceState.workspaceId, workspaceId),
+        readableHistory(schema.syncWorkspaceState.workspaceId),
       ));
     if (after < Number(state?.through ?? 0)) throw new SyncTransactionError(410, "sync_cursor_expired");
   }
 
   async function listSnapshot(
-    vaultId: string,
+    workspaceId: string,
     after: SyncSnapshotPosition | undefined,
     limit: number,
   ): Promise<{ items: SyncCanonicalRecord[]; hasMore: boolean }> {
-    const vault = await canonicalRecord("vault", vaultId, vaultId, "read");
-    if (!vault.record || vault.record.deletingAt) throw new SyncTransactionError(404, "vault_not_found");
+    const workspace = await canonicalRecord("workspace", workspaceId, workspaceId, "read");
+    if (!workspace.record || workspace.record.deletingAt) throw new SyncTransactionError(404, "workspace_not_found");
     const records: SyncCanonicalRecord[] = [];
     let bytes = 0;
     const append = (record: SyncCanonicalRecord) => {
@@ -2221,8 +2200,8 @@ function createIdentityStore(
     for (const entity of SYNC_SNAPSHOT_ENTITIES.slice(after ? SYNC_SNAPSHOT_ENTITIES.indexOf(after.entity) : 0)) {
       const afterId = after?.entity === entity ? after.id : undefined;
       const remaining = limit - records.length;
-      if (entity === "vault") {
-        if (!afterId || vaultId > afterId) append(vault);
+      if (entity === "workspace") {
+        if (!afterId || workspaceId > afterId) append(workspace);
         continue;
       }
       if (entity === "meeting") {
@@ -2232,10 +2211,10 @@ function createIdentityStore(
           hasSummary: exists(db.select({ id: schema.summary.id }).from(schema.summary)
             .where(eq(schema.summary.meetingId, meeting.meetingId))),
         }).from(meeting).where(and(
-          readableMeeting(vaultId), eq(meeting.active, true), isNull(meeting.deletingAt),
+          readableMeeting(workspaceId), eq(meeting.active, true), isNull(meeting.deletingAt),
           afterId ? gt(meeting.meetingId, afterId) : undefined,
         )).orderBy(asc(meeting.meetingId)).limit(remaining + 1);
-        for (const row of await content.read(schema.syncedMeeting, rows, vaultId)) {
+        for (const row of await content.read(schema.syncedMeeting, rows, workspaceId)) {
           if (!append({ entity, id: row.meetingId, revision: row.revision,
             record: { ...row, hasSummary: Boolean(row.hasSummary) } })) return { items: records, hasMore: true };
         }
@@ -2251,17 +2230,17 @@ function createIdentityStore(
               entity === "summary" ? exists(db.select({ id: schema.summary.id }).from(schema.summary).where(eq(schema.summary.meetingId, schema.syncedMeeting.meetingId))) : undefined,
               entity === "transcript" ? gt(schema.syncedMeeting.transcriptRevision, 0) : undefined,
             ) };
-      const sourceVault = "vaultId" in source.table ? source.table.vaultId : schema.syncedMeeting.vaultId;
+      const sourceWorkspace = "workspaceId" in source.table ? source.table.workspaceId : schema.syncedMeeting.workspaceId;
       const selection = db.select({ id: source.id }).from(source.table);
       const query = entity === "recording"
         ? selection.innerJoin(schema.syncedMeeting, eq(schema.syncedMeeting.meetingId, schema.syncedRecording.meetingId))
         : selection;
       const rows = await query.where(and(
-        eq(sourceVault, vaultId), readable(sourceVault), source.active,
+        eq(sourceWorkspace, workspaceId), readable(sourceWorkspace), source.active,
         afterId ? gt(source.id, afterId) : undefined,
       )).orderBy(asc(source.id)).limit(remaining + 1);
       for (const row of rows) {
-        if (records.length >= limit || !append(await canonicalRecord(entity, vaultId, row.id, "read"))) {
+        if (records.length >= limit || !append(await canonicalRecord(entity, workspaceId, row.id, "read"))) {
           return { items: records, hasMore: true };
         }
       }
@@ -2270,24 +2249,24 @@ function createIdentityStore(
   }
 
   return {
-    vaultTransferAudience,
-    transferVault,
-    getVaultRelocations,
+    workspaceTransferAudience,
+    transferWorkspace,
+    getWorkspaceRelocations,
     getSummaryVersion,
-    async listSummaryVersions(vaultId, meetingId, limit, before) {
+    async listSummaryVersions(workspaceId, meetingId, limit, before) {
       const columns = schema.summary;
       const rows = await content.read(schema.summary, await db.select({ encryptedPayload: columns.encryptedPayload, id: columns.id, meetingId: columns.meetingId, version: columns.version,
         title: columns.title, createdAt: columns.createdAt, savedAt: columns.savedAt, metadata: columns.metadata }).from(schema.summary).where(and(
-        readableSummary(vaultId, meetingId), before === undefined ? undefined : lt(columns.version, before),
-      )).orderBy(desc(columns.version)).limit(limit), vaultId);
+        readableSummary(workspaceId, meetingId), before === undefined ? undefined : lt(columns.version, before),
+      )).orderBy(desc(columns.version)).limit(limit), workspaceId);
       return rows.map((row) => ({ ...row, metadata: row.metadata ? summaryMetadataSchema.parse(row.metadata) : null }));
     },
-    async getSummaryJob(vaultId, meetingId, id) {
+    async getSummaryJob(workspaceId, meetingId, id) {
       const [row] = await content.read(schema.summaryJob, await db.select().from(schema.summaryJob).where(and(
-        eq(schema.summaryJob.vaultId, vaultId), eq(schema.summaryJob.meetingId, meetingId),
+        eq(schema.summaryJob.workspaceId, workspaceId), eq(schema.summaryJob.meetingId, meetingId),
         eq(schema.summaryJob.ownerUserId, identity.userId),
         id ? eq(schema.summaryJob.id, id) : undefined,
-        writeAccess(schema.summaryJob.vaultId),
+        writeAccess(schema.summaryJob.workspaceId),
       )).orderBy(desc(schema.summaryJob.createdAt), desc(schema.summaryJob.id)).limit(1));
       return row ? { ...row, settings: storedTranscriptSettingsSchema.parse(row.settings) } : null;
     },
@@ -2295,12 +2274,12 @@ function createIdentityStore(
       const inserted = await db.insert(schema.summaryJob).values(await content.write(schema.summaryJob, { ...job })).onConflictDoNothing({ target: schema.summaryJob.id }).returning({ id: schema.summaryJob.id });
       if (!inserted.length) throw new SyncTransactionError(409, "summary_id_reused");
     },
-    async cancelSummaryJob(vaultId, meetingId, id) {
+    async cancelSummaryJob(workspaceId, meetingId, id) {
       const jobs = schema.summaryJob;
       const [row] = await content.read(jobs, await db.update(jobs).set({ status: "cancelled", claimedAt: null, leaseExpiresAt: null })
-        .where(and(eq(jobs.id, id), eq(jobs.vaultId, vaultId), eq(jobs.meetingId, meetingId),
-          eq(jobs.ownerUserId, identity.userId), writeAccess(jobs.vaultId), inArray(jobs.status, ["pending", "processing"])))
-        .returning(), vaultId);
+        .where(and(eq(jobs.id, id), eq(jobs.workspaceId, workspaceId), eq(jobs.meetingId, meetingId),
+          eq(jobs.ownerUserId, identity.userId), writeAccess(jobs.workspaceId), inArray(jobs.status, ["pending", "processing"])))
+        .returning(), workspaceId);
       return row ? { ...row, settings: storedTranscriptSettingsSchema.parse(row.settings) } : null;
     },
     async completeSummaryTranscript(job, transaction, transcriptId) {
@@ -2308,13 +2287,13 @@ function createIdentityStore(
       const filter = and(eq(jobs.id, job.id), eq(jobs.ownerUserId, identity.userId),
         eq(jobs.status, "processing"), eq(jobs.claimedAt, job.claimedAt!), gt(jobs.leaseExpiresAt, new Date()));
       const query = db.select().from(jobs).where(filter);
-      const [current] = await content.read(jobs, searchBackend === "sqlite" ? await query : await query.for("update"), job.vaultId);
+      const [current] = await content.read(jobs, searchBackend === "sqlite" ? await query : await query.for("update"), job.workspaceId);
       if (!current) return null;
-      if (current.transcriptResult) return getTranscript(job.vaultId, job.meetingId, Number(current.transcriptResult.version));
+      if (current.transcriptResult) return getTranscript(job.workspaceId, job.meetingId, Number(current.transcriptResult.version));
       await commitTransaction(transaction);
-      const transcript = await getTranscript(job.vaultId, job.meetingId);
+      const transcript = await getTranscript(job.workspaceId, job.meetingId);
       if (!transcript || transcript.id !== transcriptId) throw new SyncTransactionError(409, "summary_transcript_conflict");
-      await db.update(jobs).set(await content.write(jobs, { stage: "summarizing", transcriptResult: { transcriptId, version: String(transcript.version) } }, { id: job.id, vaultId: job.vaultId })).where(filter);
+      await db.update(jobs).set(await content.write(jobs, { stage: "summarizing", transcriptResult: { transcriptId, version: String(transcript.version) } }, { id: job.id, workspaceId: job.workspaceId })).where(filter);
       return transcript;
     },
     async completeSummaryJob(job, transaction) {
@@ -2322,13 +2301,13 @@ function createIdentityStore(
       const filter = and(eq(jobs.id, job.id), eq(jobs.ownerUserId, identity.userId),
         eq(jobs.status, "processing"), eq(jobs.claimedAt, job.claimedAt!), gt(jobs.leaseExpiresAt, new Date()));
       const query = db.select().from(jobs).where(filter);
-      const [current] = await content.read(jobs, searchBackend === "sqlite" ? await query : await query.for("update"), job.vaultId);
+      const [current] = await content.read(jobs, searchBackend === "sqlite" ? await query : await query.for("update"), job.workspaceId);
       if (!current) return false;
       await commitTransaction(transaction);
       await db.update(jobs).set({ status: "succeeded", claimedAt: null, leaseExpiresAt: null, lastErrorCode: null }).where(filter);
       return true;
     },
-    lockVault,
+    lockWorkspace,
     loadImageAnalysis,
     completeImageAnalysis,
     commitTransaction,
@@ -2336,52 +2315,52 @@ function createIdentityStore(
     assertCursorAvailable,
     listSnapshot,
     listChanges,
-    confirmVaultDeletion, forceDeleteVault,
-    async listGovernanceVaults(organizationId, after) {
+    confirmWorkspaceDeletion, forceDeleteWorkspace,
+    async listGovernanceWorkspaces(organizationId, after) {
       await governance(organizationId);
-      const rows = await db.select(governanceColumns()).from(schema.syncedVault)
-        .where(and(eq(schema.syncedVault.organizationId, organizationId), after ? gt(schema.syncedVault.vaultId, after) : undefined))
-        .orderBy(asc(schema.syncedVault.vaultId)).limit(51);
-      return { items: await governanceContent(organizationId).read(schema.syncedVault, rows.slice(0, 50)), nextCursor: rows.length > 50 ? rows[49]!.vaultId : null };
+      const rows = await db.select(governanceColumns()).from(schema.syncedWorkspace)
+        .where(and(eq(schema.syncedWorkspace.organizationId, organizationId), after ? gt(schema.syncedWorkspace.workspaceId, after) : undefined))
+        .orderBy(asc(schema.syncedWorkspace.workspaceId)).limit(51);
+      return { items: await governanceContent(organizationId).read(schema.syncedWorkspace, rows.slice(0, 50)), nextCursor: rows.length > 50 ? rows[49]!.workspaceId : null };
     },
     latestChangeSequence,
     ensureUploadTarget,
-    async putTranscriptChunk(vaultId, meetingId, patchId, chunkIndex, contentHash, segments, deletions) {
-      await lockVault(vaultId);
-      if (!await ensureUploadTarget(vaultId, meetingId)) return false;
+    async putTranscriptChunk(workspaceId, meetingId, patchId, chunkIndex, contentHash, segments, deletions) {
+      await lockWorkspace(workspaceId);
+      if (!await ensureUploadTarget(workspaceId, meetingId)) return false;
       await db.delete(schema.transcriptPatchChunk).where(and(
-        eq(schema.transcriptPatchChunk.vaultId, vaultId),
+        eq(schema.transcriptPatchChunk.workspaceId, workspaceId),
         lt(schema.transcriptPatchChunk.createdAt, new Date(Date.now() - TRANSCRIPT_PATCH_RETENTION_MS)),
       ));
       const payload = { segments, deletions };
       await db.insert(schema.transcriptPatchChunk).values(await content.write(schema.transcriptPatchChunk, {
-        vaultId,
+        workspaceId,
         meetingId,
         patchId,
         chunkIndex,
         contentHash,
         payload: searchBackend === "sqlite" ? JSON.stringify(payload) : payload,
       })).onConflictDoNothing();
-      const [stored] = await content.read(schema.transcriptPatchChunk, await db.select({ vaultId: schema.transcriptPatchChunk.vaultId, meetingId: schema.transcriptPatchChunk.meetingId, patchId: schema.transcriptPatchChunk.patchId, chunkIndex: schema.transcriptPatchChunk.chunkIndex, encryptedPayload: schema.transcriptPatchChunk.encryptedPayload, contentHash: schema.transcriptPatchChunk.contentHash })
+      const [stored] = await content.read(schema.transcriptPatchChunk, await db.select({ workspaceId: schema.transcriptPatchChunk.workspaceId, meetingId: schema.transcriptPatchChunk.meetingId, patchId: schema.transcriptPatchChunk.patchId, chunkIndex: schema.transcriptPatchChunk.chunkIndex, encryptedPayload: schema.transcriptPatchChunk.encryptedPayload, contentHash: schema.transcriptPatchChunk.contentHash })
         .from(schema.transcriptPatchChunk).where(and(
-          eq(schema.transcriptPatchChunk.vaultId, vaultId),
+          eq(schema.transcriptPatchChunk.workspaceId, workspaceId),
           eq(schema.transcriptPatchChunk.meetingId, meetingId),
           eq(schema.transcriptPatchChunk.patchId, patchId),
           eq(schema.transcriptPatchChunk.chunkIndex, chunkIndex),
         )).limit(1));
       return stored?.contentHash === contentHash;
     },
-    async deleteTranscriptPatch(vaultId, meetingId, patchId) {
+    async deleteTranscriptPatch(workspaceId, meetingId, patchId) {
       await db.delete(schema.transcriptPatchChunk).where(and(
-        eq(schema.transcriptPatchChunk.vaultId, vaultId),
+        eq(schema.transcriptPatchChunk.workspaceId, workspaceId),
         eq(schema.transcriptPatchChunk.meetingId, meetingId),
         eq(schema.transcriptPatchChunk.patchId, patchId),
       ));
     },
-    async getScreenshot(vaultId, meetingId, screenshotId, activeOnly = false) {
+    async getScreenshot(workspaceId, meetingId, screenshotId, activeOnly = false) {
       const [row] = await readScreenshots(await db.select().from(schema.syncedScreenshot).where(and(
-        readable(schema.syncedScreenshot.vaultId),
-        eq(schema.syncedScreenshot.vaultId, vaultId),
+        readable(schema.syncedScreenshot.workspaceId),
+        eq(schema.syncedScreenshot.workspaceId, workspaceId),
         eq(schema.syncedScreenshot.meetingId, meetingId),
         eq(schema.syncedScreenshot.screenshotId, screenshotId),
         ...(activeOnly ? [eq(schema.syncedScreenshot.active, true)] : []),
@@ -2390,22 +2369,22 @@ function createIdentityStore(
     },
     async getFile(fileId, activeOnly = false) {
       const [file] = await content.read(schema.syncedFile, await db.select().from(schema.syncedFile).where(and(
-        eq(schema.syncedFile.fileId, fileId), readable(schema.syncedFile.vaultId),
-        activeOnly ? eq(schema.syncedFile.active, true) : writeAccess(schema.syncedFile.vaultId),
+        eq(schema.syncedFile.fileId, fileId), readable(schema.syncedFile.workspaceId),
+        activeOnly ? eq(schema.syncedFile.active, true) : writeAccess(schema.syncedFile.workspaceId),
       )).limit(1));
       return file ?? null;
     },
-    async reserveRecording(vaultId, meetingId, sessionId, source) {
-      await lockVault(vaultId);
-      if (!await ensureUploadTarget(vaultId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
+    async reserveRecording(workspaceId, meetingId, sessionId, source) {
+      await lockWorkspace(workspaceId);
+      if (!await ensureUploadTarget(workspaceId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
       const [session] = await db.select().from(schema.recordingSession).where(and(
-        eq(schema.recordingSession.vaultId, vaultId), eq(schema.recordingSession.meetingId, meetingId),
+        eq(schema.recordingSession.workspaceId, workspaceId), eq(schema.recordingSession.meetingId, meetingId),
         eq(schema.recordingSession.sessionId, sessionId),
       )).limit(1);
       if (!session?.startedAt || !session.endedAt) throw new SyncTransactionError(409, "recording_session_not_finalized");
       let [record] = await selectRecordings()
         .where(eq(schema.syncedRecording.sessionId, sessionId)).limit(1);
-      if (record && (record.vaultId !== vaultId || record.meetingId !== meetingId)) {
+      if (record && (record.workspaceId !== workspaceId || record.meetingId !== meetingId)) {
         throw new SyncTransactionError(409, "recording_session_meeting_mismatch");
       }
       const now = new Date();
@@ -2416,7 +2395,7 @@ function createIdentityStore(
           number: (last?.number ?? 0) + 1, startedAt: session.startedAt, endedAt: session.endedAt,
           audio: {}, revision: 0, createdAt: now, updatedAt: now,
         }).returning();
-        record = { ...inserted!, vaultId };
+        record = { ...inserted!, workspaceId };
       }
       if (!record) throw new SyncTransactionError(409, "recording_session_conflict");
       const [pending] = await db.select().from(schema.storageDeleteJob)
@@ -2433,19 +2412,19 @@ function createIdentityStore(
     async getRecording(meetingId, number, ownerOnly = false) {
       const [record] = await selectRecordings().where(and(
         eq(schema.syncedRecording.meetingId, meetingId), eq(schema.syncedRecording.number, number),
-        ownerOnly ? writeAccess(schema.syncedMeeting.vaultId) : readable(schema.syncedMeeting.vaultId),
+        ownerOnly ? writeAccess(schema.syncedMeeting.workspaceId) : readable(schema.syncedMeeting.workspaceId),
       )).limit(1);
       return record ?? null;
     },
     async markRecordingUploaded(sessionId, source, generation, size, checksum) {
       const [initial] = await selectRecordings().where(and(
-        eq(schema.syncedRecording.sessionId, sessionId), writeAccess(schema.syncedMeeting.vaultId),
+        eq(schema.syncedRecording.sessionId, sessionId), writeAccess(schema.syncedMeeting.workspaceId),
       )).limit(1);
       if (!initial) return null;
-      await lockVault(initial.vaultId);
+      await lockWorkspace(initial.workspaceId);
       const [record] = await selectRecordings().where(eq(schema.syncedRecording.sessionId, sessionId)).limit(1);
       const audio = record?.audio[source];
-      if (!record || audio?.generation !== generation || !await ensureUploadTarget(record.vaultId, record.meetingId)) return null;
+      if (!record || audio?.generation !== generation || !await ensureUploadTarget(record.workspaceId, record.meetingId)) return null;
       const [pending] = await db.select().from(schema.storageDeleteJob)
         .where(eq(schema.storageDeleteJob.storageKey, recordingStorageKey(record, source))).limit(1);
       if (pending) return null;
@@ -2459,11 +2438,11 @@ function createIdentityStore(
       const sessions = await db.select({ sessionId: schema.recordingSession.sessionId,
         startedAt: schema.recordingSession.startedAt, endedAt: schema.recordingSession.endedAt })
         .from(schema.recordingSession).innerJoin(schema.syncedMeeting, and(
-          eq(schema.syncedMeeting.vaultId, schema.recordingSession.vaultId),
+          eq(schema.syncedMeeting.workspaceId, schema.recordingSession.workspaceId),
           eq(schema.syncedMeeting.meetingId, schema.recordingSession.meetingId),
-        )).where(and(eq(schema.recordingSession.meetingId, meetingId), readable(schema.syncedMeeting.vaultId)));
+        )).where(and(eq(schema.recordingSession.meetingId, meetingId), readable(schema.syncedMeeting.workspaceId)));
       const records = await selectRecordings().where(and(
-        eq(schema.syncedRecording.meetingId, meetingId), readable(schema.syncedMeeting.vaultId),
+        eq(schema.syncedRecording.meetingId, meetingId), readable(schema.syncedMeeting.workspaceId),
       ));
       const bySession = new Map(records.map((record) => [record.sessionId, record]));
       return sessions.some((session) => {
@@ -2476,39 +2455,39 @@ function createIdentityStore(
     async listRecordings(meetingId, after, limit) {
       return selectRecordings().where(and(
         eq(schema.syncedRecording.meetingId, meetingId), gt(schema.syncedRecording.number, after),
-        gt(schema.syncedRecording.revision, 0), readable(schema.syncedMeeting.vaultId),
+        gt(schema.syncedRecording.revision, 0), readable(schema.syncedMeeting.workspaceId),
       )).orderBy(asc(schema.syncedRecording.number)).limit(limit);
     },
-    async expireRecordingUploads(vaultId, before) {
-      await lockVault(vaultId);
-      if (!await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault).where(writableVault(vaultId)).limit(1).then((rows) => rows.length)) return;
-      await expireRecordingStaging(db, schema, searchBackend !== "sqlite", vaultId, before);
+    async expireRecordingUploads(workspaceId, before) {
+      await lockWorkspace(workspaceId);
+      if (!await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(writableWorkspace(workspaceId)).limit(1).then((rows) => rows.length)) return;
+      await expireRecordingStaging(db, schema, searchBackend !== "sqlite", workspaceId, before);
     },
     async reserveFile(input) {
-      await lockVault(input.vaultId);
-      const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
-        .where(writableVault(input.vaultId)).limit(1);
-      if (!vault) return null;
+      await lockWorkspace(input.workspaceId);
+      const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
+        .where(writableWorkspace(input.workspaceId)).limit(1);
+      if (!workspace) return null;
       await db.insert(schema.syncedFile).values(await content.write(schema.syncedFile, { ...input })).onConflictDoNothing();
       const [file] = await content.read(schema.syncedFile, await db.select().from(schema.syncedFile).where(and(
-        eq(schema.syncedFile.fileId, input.fileId), eq(schema.syncedFile.vaultId, input.vaultId), writeAccess(schema.syncedFile.vaultId),
+        eq(schema.syncedFile.fileId, input.fileId), eq(schema.syncedFile.workspaceId, input.workspaceId), writeAccess(schema.syncedFile.workspaceId),
       )).limit(1));
       return file ?? null;
     },
     async markFileUploaded(pending, size, checksum) {
-      const [file] = await content.read(schema.syncedFile, await db.update(schema.syncedFile).set(await content.write(schema.syncedFile, { size, checksum, uploadedAt: new Date(), updatedAt: new Date() }, { fileId: pending.fileId, vaultId: pending.vaultId }))
-        .where(and(eq(schema.syncedFile.fileId, pending.fileId), eq(schema.syncedFile.vaultId, pending.vaultId),
+      const [file] = await content.read(schema.syncedFile, await db.update(schema.syncedFile).set(await content.write(schema.syncedFile, { size, checksum, uploadedAt: new Date(), updatedAt: new Date() }, { fileId: pending.fileId, workspaceId: pending.workspaceId }))
+        .where(and(eq(schema.syncedFile.fileId, pending.fileId), eq(schema.syncedFile.workspaceId, pending.workspaceId),
           eq(schema.syncedFile.createdAt, pending.createdAt), isNull(schema.syncedFile.uploadedAt),
-          eq(schema.syncedFile.active, false), writeAccess(schema.syncedFile.vaultId),
+          eq(schema.syncedFile.active, false), writeAccess(schema.syncedFile.workspaceId),
           notExists(db.select({ key: schema.storageDeleteJob.storageKey }).from(schema.storageDeleteJob)
             .where(eq(schema.storageDeleteJob.storageKey, fileStorageKey(pending.fileId))))))
-        .returning(), pending.vaultId);
+        .returning(), pending.workspaceId);
       return file ?? null;
     },
-    async expireFileUploads(vaultId, before) {
-      await lockVault(vaultId);
+    async expireFileUploads(workspaceId, before) {
+      await lockWorkspace(workspaceId);
       const files = await db.select({ id: schema.syncedFile.fileId }).from(schema.syncedFile).where(and(
-        eq(schema.syncedFile.vaultId, vaultId), eq(schema.syncedFile.active, false), lt(schema.syncedFile.updatedAt, before), writeAccess(schema.syncedFile.vaultId),
+        eq(schema.syncedFile.workspaceId, workspaceId), eq(schema.syncedFile.active, false), lt(schema.syncedFile.updatedAt, before), writeAccess(schema.syncedFile.workspaceId),
       )).limit(25);
       for (const file of files) {
         const deleted = await db.delete(schema.syncedFile).where(and(
@@ -2517,16 +2496,16 @@ function createIdentityStore(
         if (deleted.length) await db.insert(schema.storageDeleteJob).values({ storageKey: fileStorageKey(file.id) }).onConflictDoNothing();
       }
     },
-    async listFiles(vaultId, after, limit) {
+    async listFiles(workspaceId, after, limit) {
       return content.read(schema.syncedFile, await db.select().from(schema.syncedFile).where(and(
-        eq(schema.syncedFile.vaultId, vaultId), readable(schema.syncedFile.vaultId), eq(schema.syncedFile.active, true),
+        eq(schema.syncedFile.workspaceId, workspaceId), readable(schema.syncedFile.workspaceId), eq(schema.syncedFile.active, true),
         after ? gt(schema.syncedFile.fileId, after) : undefined,
       )).orderBy(asc(schema.syncedFile.fileId)).limit(limit));
     },
-    async listMeetingAttachments(vaultId, meetingId, after, limit) {
+    async listMeetingAttachments(workspaceId, meetingId, after, limit) {
       const rows = await db.select({ link: schema.meetingAttachment, file: schema.syncedFile }).from(schema.meetingAttachment)
         .innerJoin(schema.syncedFile, eq(schema.syncedFile.fileId, schema.meetingAttachment.fileId)).where(and(
-          eq(schema.meetingAttachment.vaultId, vaultId), eq(schema.meetingAttachment.meetingId, meetingId), readable(schema.meetingAttachment.vaultId),
+          eq(schema.meetingAttachment.workspaceId, workspaceId), eq(schema.meetingAttachment.meetingId, meetingId), readable(schema.meetingAttachment.workspaceId),
           eq(schema.syncedFile.active, true), after ? gt(schema.meetingAttachment.id, after) : undefined,
         )).orderBy(asc(schema.meetingAttachment.id)).limit(limit);
       return Promise.all(rows.map(async ({ link, file }) => ({ ...link, file: (await content.read(schema.syncedFile, [file]))[0]! })));
@@ -2541,73 +2520,73 @@ function createIdentityStore(
         )),
       )).orderBy(asc(schema.organization.name), asc(schema.organization.id));
     },
-    async listVaults(organizationId) {
-      const scope = organizationId ? eq(schema.syncedVault.organizationId, organizationId) : undefined;
-      const rows = await content.read(schema.syncedVault, await db.select({ encryption: schema.syncedVault.encryption, encryptedPayload: schema.syncedVault.encryptedPayload,
-        vaultId: schema.syncedVault.vaultId,
-        organizationId: schema.syncedVault.organizationId,
-        name: schema.syncedVault.name,
-        icon: schema.syncedVault.icon, color: schema.syncedVault.color,
-        revision: schema.syncedVault.revision,
-        createdAt: schema.syncedVault.createdAt,
-        updatedAt: schema.syncedVault.updatedAt,
-        role: vaultRole(schema.syncedVault.vaultId),
-      }).from(schema.syncedVault).where(and(
-        readable(schema.syncedVault.vaultId),
+    async listWorkspaces(organizationId) {
+      const scope = organizationId ? eq(schema.syncedWorkspace.organizationId, organizationId) : undefined;
+      const rows = await content.read(schema.syncedWorkspace, await db.select({ encryption: schema.syncedWorkspace.encryption, encryptedPayload: schema.syncedWorkspace.encryptedPayload,
+        workspaceId: schema.syncedWorkspace.workspaceId,
+        organizationId: schema.syncedWorkspace.organizationId,
+        name: schema.syncedWorkspace.name,
+        icon: schema.syncedWorkspace.icon, color: schema.syncedWorkspace.color,
+        revision: schema.syncedWorkspace.revision,
+        createdAt: schema.syncedWorkspace.createdAt,
+        updatedAt: schema.syncedWorkspace.updatedAt,
+        role: workspaceRole(schema.syncedWorkspace.workspaceId),
+      }).from(schema.syncedWorkspace).where(and(
+        readable(schema.syncedWorkspace.workspaceId),
         scope,
-        isNull(schema.syncedVault.deletingAt),
-      )).orderBy(desc(schema.syncedVault.updatedAt)));
+        isNull(schema.syncedWorkspace.deletingAt),
+      )).orderBy(desc(schema.syncedWorkspace.updatedAt)));
       return rows;
     },
-    async getVault(vaultId) {
-      const [row] = await content.read(schema.syncedVault, await db.select({ encryption: schema.syncedVault.encryption, encryptedPayload: schema.syncedVault.encryptedPayload,
-        vaultId: schema.syncedVault.vaultId,
-        organizationId: schema.syncedVault.organizationId,
-        name: schema.syncedVault.name,
-        hasResources: vaultHasResources(schema.syncedVault.vaultId).mapWith(Boolean),
-        icon: schema.syncedVault.icon, color: schema.syncedVault.color,
-        revision: schema.syncedVault.revision,
-        createdAt: schema.syncedVault.createdAt,
-        updatedAt: schema.syncedVault.updatedAt,
-        role: vaultRole(schema.syncedVault.vaultId),
-      }).from(schema.syncedVault).where(and(
-        readable(schema.syncedVault.vaultId),
-        eq(schema.syncedVault.vaultId, vaultId),
-        isNull(schema.syncedVault.deletingAt),
+    async getWorkspace(workspaceId) {
+      const [row] = await content.read(schema.syncedWorkspace, await db.select({ encryption: schema.syncedWorkspace.encryption, encryptedPayload: schema.syncedWorkspace.encryptedPayload,
+        workspaceId: schema.syncedWorkspace.workspaceId,
+        organizationId: schema.syncedWorkspace.organizationId,
+        name: schema.syncedWorkspace.name,
+        hasResources: workspaceHasResources(schema.syncedWorkspace.workspaceId).mapWith(Boolean),
+        icon: schema.syncedWorkspace.icon, color: schema.syncedWorkspace.color,
+        revision: schema.syncedWorkspace.revision,
+        createdAt: schema.syncedWorkspace.createdAt,
+        updatedAt: schema.syncedWorkspace.updatedAt,
+        role: workspaceRole(schema.syncedWorkspace.workspaceId),
+      }).from(schema.syncedWorkspace).where(and(
+        readable(schema.syncedWorkspace.workspaceId),
+        eq(schema.syncedWorkspace.workspaceId, workspaceId),
+        isNull(schema.syncedWorkspace.deletingAt),
       )).limit(1));
       return row ?? null;
     },
-    async listProjects(vaultId) {
-      return projectViews(vaultId);
+    async listProjects(workspaceId) {
+      return projectViews(workspaceId);
     },
-    async resolveEntityVault(entity, id) {
+    async resolveEntityWorkspace(entity, id) {
       const table = entity === "meeting" ? schema.syncedMeeting : schema.syncedProject;
       const key = entity === "meeting" ? schema.syncedMeeting.meetingId : schema.syncedProject.projectId;
-      const [row] = await db.select({ vaultId: table.vaultId }).from(table)
-        .innerJoin(schema.syncedVault, eq(schema.syncedVault.vaultId, table.vaultId))
-        .where(and(eq(key, id), readable(table.vaultId), isNull(schema.syncedVault.deletingAt),
+      const [row] = await db.select({ workspaceId: table.workspaceId }).from(table)
+        .innerJoin(schema.syncedWorkspace, eq(schema.syncedWorkspace.workspaceId, table.workspaceId))
+        .where(and(eq(key, id), readable(table.workspaceId), isNull(schema.syncedWorkspace.deletingAt),
           ...(entity === "meeting" ? [eq(schema.syncedMeeting.active, true), isNull(schema.syncedMeeting.deletingAt)] : []))).limit(1);
-      return row?.vaultId ?? null;
+      return row?.workspaceId ?? null;
     },
-    async getProject(vaultId, projectId) {
-      return (await projectViews(vaultId)).find((project) => project.projectId === projectId) ?? null;
+    async getProject(workspaceId, projectId) {
+      return (await projectViews(workspaceId)).find((project) => project.projectId === projectId) ?? null;
     },
-    async searchProjectActivity(vaultId, filters) {
+    async searchProjectActivity(workspaceId, filters) {
       const rows = await db.select({ projectId: schema.syncedMeeting.projectId,
         updatedAt: max(schema.syncedMeeting.updatedAt) }).from(schema.syncedMeeting)
-        .where(searchFilters(vaultId, "meeting", filters)).groupBy(schema.syncedMeeting.projectId);
+        .where(searchFilters(workspaceId, "meeting", filters)).groupBy(schema.syncedMeeting.projectId);
       return rows.map((row) => ({ ...row, updatedAt: row.updatedAt!.toISOString() }));
     },
-    async listMeetings(vaultId, query, limit, projectId, cursor, projectScope, filters) {
+    async listMeetings(workspaceId, query, limit, projectId, cursor, projectScope, filters) {
       if (query && query.tokens.length === 0) return [];
       const projectIds = projectId
-        ? (await projectViews(vaultId)).filter((project) =>
+        ? (await projectViews(workspaceId)).filter((project) =>
             project.projectId === projectId || (projectScope !== "direct" && project.parentProjectId === projectId)).map((project) => project.projectId)
         : undefined;
       if (projectId && projectIds?.length === 0) return [];
       filters = { ...filters, ...(projectIds ? { projectIds } : {}), ...(projectScope === "unassigned" ? { unassigned: true } : {}) };
       const filter = and(
-        searchFilters(vaultId, "meeting", filters),
+        searchFilters(workspaceId, "meeting", filters),
         ...(projectIds ? [inArray(schema.syncedMeeting.projectId, projectIds)] : []),
         ...(projectScope === "unassigned" ? [isNull(schema.syncedMeeting.projectId)] : []),
         ...(cursor ? [or(
@@ -2625,7 +2604,7 @@ function createIdentityStore(
           .where(filter).orderBy(desc(schema.syncedMeeting.createdAt), desc(schema.syncedMeeting.meetingId))
           .limit(limit));
       }
-      const ids = await rankedDocumentIds(vaultId, undefined, "meeting", { ...query, filters });
+      const ids = await rankedDocumentIds(workspaceId, undefined, "meeting", { ...query, filters });
       if (ids.length === 0) return [];
       const rows = await readMeetings(await db.select(meetingSelection(schema)).from(schema.syncedMeeting)
         .where(and(filter, inArray(schema.syncedMeeting.meetingId, ids)))
@@ -2633,65 +2612,65 @@ function createIdentityStore(
       const rank = new Map(ids.map((id, index) => [id, index]));
       return rows.sort((left, right) => rank.get(left.meetingId)! - rank.get(right.meetingId)!).slice(0, limit);
     },
-    async getMeeting(vaultId, meetingId) {
+    async getMeeting(workspaceId, meetingId) {
       const [row] = await readMeetings(await db.select(meetingSelection(schema)).from(schema.syncedMeeting).where(and(
-        readableMeeting(vaultId, meetingId),
+        readableMeeting(workspaceId, meetingId),
         eq(schema.syncedMeeting.active, true),
         isNull(schema.syncedMeeting.deletingAt),
       )).limit(1));
       return row ?? null;
     },
     getTranscript,
-    async listTranscriptVersions(vaultId, meetingId, limit, before) {
+    async listTranscriptVersions(workspaceId, meetingId, limit, before) {
       const rows = await content.read(schema.transcript, await db.select(transcriptSelection).from(schema.transcript)
         .innerJoin(schema.syncedMeeting, eq(schema.transcript.meetingId, schema.syncedMeeting.meetingId)).where(and(
-          readable(schema.syncedMeeting.vaultId), eq(schema.syncedMeeting.vaultId, vaultId), eq(schema.transcript.meetingId, meetingId),
+          readable(schema.syncedMeeting.workspaceId), eq(schema.syncedMeeting.workspaceId, workspaceId), eq(schema.transcript.meetingId, meetingId),
           before === undefined ? undefined : lt(schema.transcript.version, before),
         )).orderBy(desc(schema.transcript.version)).limit(limit));
       const now = new Date();
       return rows.map((row: Omit<TranscriptVersion, "status">) => ({ ...row, status: transcriptStatus(row.endedAt, row.latestSegmentCreatedAt, now) }));
     },
-    async countTranscript(vaultId, meetingId) {
+    async countTranscript(workspaceId, meetingId) {
       const latest = db.select({ id: schema.transcript.id }).from(schema.transcript)
         .innerJoin(schema.syncedMeeting, eq(schema.transcript.meetingId, schema.syncedMeeting.meetingId)).where(and(
-          readable(schema.syncedMeeting.vaultId), eq(schema.syncedMeeting.vaultId, vaultId), eq(schema.transcript.meetingId, meetingId),
+          readable(schema.syncedMeeting.workspaceId), eq(schema.syncedMeeting.workspaceId, workspaceId), eq(schema.transcript.meetingId, meetingId),
         )).orderBy(desc(schema.transcript.version)).limit(1);
       const [row] = await db.select({ count: sql<number>`count(*)` }).from(schema.syncedTranscriptSegment)
         .where(eq(schema.syncedTranscriptSegment.transcriptId, latest));
       return Number(row?.count ?? 0);
     },
-    async searchTextPage(vaultId, query, kind, offset, limit) {
+    async searchTextPage(workspaceId, query, kind, offset, limit) {
       if (query.tokens.length === 0) return [];
       const search = ftsExpressions(query);
-      const common = and(readable(schema.searchDocument.vaultId), eq(schema.searchDocument.vaultId, vaultId),
+      const common = and(readable(schema.searchDocument.workspaceId), eq(schema.searchDocument.workspaceId, workspaceId),
         eq(schema.searchDocument.kind, kind), search.filter);
       const selection = { id: schema.searchDocument.documentId, meetingId: schema.searchDocument.meetingId,
         snippet: sql<string>`substr(${schema.searchDocument.searchText}, 1, 180)` };
-      // The cursor tracks this Vault's revisions; corpus-wide BM25 changes cannot define stable pages.
+      // The cursor tracks this Workspace's revisions; corpus-wide BM25 changes cannot define stable pages.
       const rows = kind === "meeting"
         ? await db.select(selection).from(schema.searchDocument).innerJoin(schema.syncedMeeting, and(
-            eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
+            eq(schema.syncedMeeting.workspaceId, schema.searchDocument.workspaceId),
             eq(schema.syncedMeeting.meetingId, schema.searchDocument.documentId),
           )).where(and(common, eq(schema.syncedMeeting.active, true), isNull(schema.syncedMeeting.deletingAt)))
           .orderBy(asc(schema.searchDocument.documentId)).limit(limit).offset(offset)
         : await db.select(selection).from(schema.searchDocument).innerJoin(schema.syncedScreenshot, and(
-            eq(schema.syncedScreenshot.vaultId, schema.searchDocument.vaultId),
+            eq(schema.syncedScreenshot.workspaceId, schema.searchDocument.workspaceId),
             eq(schema.syncedScreenshot.screenshotId, schema.searchDocument.documentId),
-          )).innerJoin(schema.syncedMeeting, and(eq(schema.syncedMeeting.vaultId, schema.syncedScreenshot.vaultId),
+          )).innerJoin(schema.syncedMeeting, and(eq(schema.syncedMeeting.workspaceId, schema.syncedScreenshot.workspaceId),
             eq(schema.syncedMeeting.meetingId, schema.syncedScreenshot.meetingId)))
           .where(and(common, eq(schema.syncedScreenshot.active, true), eq(schema.syncedMeeting.active, true), isNull(schema.syncedMeeting.deletingAt)))
           .orderBy(asc(schema.searchDocument.documentId)).limit(limit).offset(offset);
       return rows.map((row) => ({ ...row, meetingId: row.meetingId ?? row.id }));
     },
-    async listTranscript(vaultId, meetingId, limit, cursor, version) {
+    async listTranscript(workspaceId, meetingId, limit, cursor, version) {
       const [meeting] = await db.select({ id: schema.syncedMeeting.meetingId })
         .from(schema.syncedMeeting).where(and(
-          readableMeeting(vaultId, meetingId),
+          readableMeeting(workspaceId, meetingId),
           eq(schema.syncedMeeting.active, true),
           isNull(schema.syncedMeeting.deletingAt),
         )).limit(1);
       if (!meeting) return [];
-      const transcript = await getTranscript(vaultId, meetingId, version);
+      const transcript = await getTranscript(workspaceId, meetingId, version);
       if (!transcript) return [];
       const query = db.select({
         encryptedPayload: schema.syncedTranscriptSegment.encryptedPayload,
@@ -2713,11 +2692,11 @@ function createIdentityStore(
           ),
         )] : []),
       )).orderBy(asc(schema.syncedTranscriptSegment.startedAt), asc(schema.syncedTranscriptSegment.segmentId));
-      const rows = await content.read(schema.syncedTranscriptSegment, await (limit === undefined ? query : query.limit(limit)), vaultId);
+      const rows = await content.read(schema.syncedTranscriptSegment, await (limit === undefined ? query : query.limit(limit)), workspaceId);
       return rows.map(({ segmentId, startedAt, endedAt, text, createdAt, audioSource, speakerLabel }) => ({ segmentId, startedAt, endedAt, text, createdAt, audioSource, speakerLabel }));
     },
-    async listTranscriptAnalytics(vaultId, meetingId, version) {
-      const transcript = await getTranscript(vaultId, meetingId, version);
+    async listTranscriptAnalytics(workspaceId, meetingId, version) {
+      const transcript = await getTranscript(workspaceId, meetingId, version);
       if (!transcript) return [];
       const rows = await db.select({
         transcriptId: schema.syncedTranscriptSegment.transcriptId,
@@ -2740,7 +2719,7 @@ function createIdentityStore(
           eq(schema.syncedTranscriptSegment.transcriptId, transcript.id),
           isNull(schema.syncedTranscriptSegment.normalizedCharacterCount),
         ));
-        const plaintext = await content.read(schema.syncedTranscriptSegment, legacy, vaultId);
+        const plaintext = await content.read(schema.syncedTranscriptSegment, legacy, workspaceId);
         const counts = plaintext.map((row) => ({ ...row, count: normalizedCharacterCount(row.text) }));
         for (const batch of batches(counts, 200)) {
           await db.update(schema.syncedTranscriptSegment).set({
@@ -2759,20 +2738,20 @@ function createIdentityStore(
         normalizedCharacterCount: backfilledCounts.get(row.segmentId) ?? row.normalizedCharacterCount!,
       }));
     },
-    async listScreenshots(vaultId, meetingId, query, limit, cursor, filters) {
+    async listScreenshots(workspaceId, meetingId, query, limit, cursor, filters) {
       if (query && query.tokens.length === 0) return [];
       const [meeting] = await db.select({ id: schema.syncedMeeting.meetingId })
         .from(schema.syncedMeeting).where(and(
-          readableMeeting(vaultId, meetingId),
+          readableMeeting(workspaceId, meetingId),
           eq(schema.syncedMeeting.active, true),
           isNull(schema.syncedMeeting.deletingAt),
         )).limit(1);
       if (!meeting) return [];
       const filter = and(
-        readable(schema.syncedScreenshot.vaultId),
-        eq(schema.syncedScreenshot.vaultId, vaultId),
+        readable(schema.syncedScreenshot.workspaceId),
+        eq(schema.syncedScreenshot.workspaceId, workspaceId),
         ...(meetingId ? [eq(schema.syncedScreenshot.meetingId, meetingId)] : []),
-        searchFilters(vaultId, "screenshot", filters),
+        searchFilters(workspaceId, "screenshot", filters),
         eq(schema.syncedScreenshot.active, true),
         ...(cursor ? [or(
           gt(schema.syncedScreenshot.capturedAt, cursor.capturedAt),
@@ -2787,7 +2766,7 @@ function createIdentityStore(
           .orderBy(meetingId ? asc(schema.syncedScreenshot.capturedAt) : desc(schema.syncedScreenshot.capturedAt),
             meetingId ? asc(schema.syncedScreenshot.screenshotId) : desc(schema.syncedScreenshot.screenshotId)).limit(limit));
       }
-      const ids = await rankedDocumentIds(vaultId, meetingId, "screenshot", { ...query, filters });
+      const ids = await rankedDocumentIds(workspaceId, meetingId, "screenshot", { ...query, filters });
       if (ids.length === 0) return [];
       const rows = await readScreenshots(await db.select(screenshotSelection(schema)).from(schema.syncedScreenshot)
         .where(and(filter, inArray(schema.syncedScreenshot.screenshotId, ids)))
@@ -2795,10 +2774,10 @@ function createIdentityStore(
       const rank = new Map(ids.map((id, index) => [id, index]));
       return rows.sort((left, right) => rank.get(left.screenshotId)! - rank.get(right.screenshotId)!).slice(0, limit);
     },
-    async searchPermissionTargets(vaultId, query, offset) {
-      const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
-        .where(and(adminVault(vaultId), isNull(schema.syncedVault.deletingAt))).limit(1);
-      if (!vault) return null;
+    async searchPermissionTargets(workspaceId, query, offset) {
+      const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
+        .where(and(adminWorkspace(workspaceId), isNull(schema.syncedWorkspace.deletingAt))).limit(1);
+      if (!workspace) return null;
       const organizations = db.select({ id: schema.member.organizationId }).from(schema.member)
         .where(eq(schema.member.userId, userPrincipalId));
       const pattern = `%${query.toLowerCase().replace(/[\\%_]/g, "\\$&")}%`;
@@ -2821,23 +2800,23 @@ function createIdentityStore(
         nextCursor: [organizationsFound, teamsFound, usersFound].some((rows) => rows.length > 50) ? String(offset + 50) : null,
       };
     },
-    async listPermissions(vaultId) {
-      const [vault] = await db.select({ role: vaultRole(schema.syncedVault.vaultId) })
-        .from(schema.syncedVault).where(and(
-          readable(schema.syncedVault.vaultId),
-          eq(schema.syncedVault.vaultId, vaultId),
-          isNull(schema.syncedVault.deletingAt),
+    async listPermissions(workspaceId) {
+      const [workspace] = await db.select({ role: workspaceRole(schema.syncedWorkspace.workspaceId) })
+        .from(schema.syncedWorkspace).where(and(
+          readable(schema.syncedWorkspace.workspaceId),
+          eq(schema.syncedWorkspace.workspaceId, workspaceId),
+          isNull(schema.syncedWorkspace.deletingAt),
         )).limit(1);
-      if (!vault) return null;
+      if (!workspace) return null;
       const permissions = await db.select({
-        vaultId: schema.syncedVaultPermission.vaultId,
-        principalType: schema.syncedVaultPermission.principalType,
-        principalId: schema.syncedVaultPermission.principalId,
-        role: schema.syncedVaultPermission.role,
-        createdAt: schema.syncedVaultPermission.createdAt,
-      }).from(schema.syncedVaultPermission).where(and(
-        eq(schema.syncedVaultPermission.vaultId, vaultId),
-        ...(vault.role === "admin" ? [] : [matchingPrincipal()]),
+        workspaceId: schema.syncedWorkspacePermission.workspaceId,
+        principalType: schema.syncedWorkspacePermission.principalType,
+        principalId: schema.syncedWorkspacePermission.principalId,
+        role: schema.syncedWorkspacePermission.role,
+        createdAt: schema.syncedWorkspacePermission.createdAt,
+      }).from(schema.syncedWorkspacePermission).where(and(
+        eq(schema.syncedWorkspacePermission.workspaceId, workspaceId),
+        ...(workspace.role === "admin" ? [] : [matchingPrincipal()]),
       ));
       const organizations = db.select({ id: schema.member.organizationId }).from(schema.member).where(eq(schema.member.userId, userPrincipalId));
       const ids = (type: string) => permissions.filter((p) => p.principalType === type).map((p) => p.principalId);
@@ -2848,34 +2827,34 @@ function createIdentityStore(
       ]);
       return permissions.map((permission) => {
         const label = (permission.principalType === "user" ? users : permission.principalType === "team" ? teams : orgs).find((p) => p.id === permission.principalId);
-        return { ...permission, ...(label ? { name: label.name, detail: label.detail } : {}) } as import("./types").VaultPermissionRecord;
+        return { ...permission, ...(label ? { name: label.name, detail: label.detail } : {}) } as import("./types").WorkspacePermissionRecord;
       });
     },
-    async putPermission(vaultId, principalType, principalId, role) {
-      await lockVault(vaultId);
-      const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
-        .innerJoin(schema.organization, eq(schema.organization.id, schema.syncedVault.organizationId))
-        .where(and(adminVault(vaultId), eq(schema.organization.kind, "team"), isNull(schema.syncedVault.deletingAt))).limit(1);
-      if (!vault) return false;
+    async putPermission(workspaceId, principalType, principalId, role) {
+      await lockWorkspace(workspaceId);
+      const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
+        .innerJoin(schema.organization, eq(schema.organization.id, schema.syncedWorkspace.organizationId))
+        .where(and(adminWorkspace(workspaceId), eq(schema.organization.kind, "team"), isNull(schema.syncedWorkspace.deletingAt))).limit(1);
+      if (!workspace) return false;
       const target = principalType === "user" ? schema.user : principalType === "team" ? schema.team : schema.organization;
       const [found] = await db.select({ id: target.id }).from(target).where(and(eq(target.id, principalId),
         principalType === "organization" ? eq(schema.organization.kind, "team") : undefined)).limit(1);
       if (!found) return false;
-      await db.insert(schema.syncedVaultPermission).values({ vaultId, principalType, principalId, role, grantedByUserId: userPrincipalId })
-        .onConflictDoUpdate({ target: [schema.syncedVaultPermission.vaultId, schema.syncedVaultPermission.principalType, schema.syncedVaultPermission.principalId], set: { role } });
+      await db.insert(schema.syncedWorkspacePermission).values({ workspaceId, principalType, principalId, role, grantedByUserId: userPrincipalId })
+        .onConflictDoUpdate({ target: [schema.syncedWorkspacePermission.workspaceId, schema.syncedWorkspacePermission.principalType, schema.syncedWorkspacePermission.principalId], set: { role } });
       await validateSharing();
       return true;
     },
-    async deletePermission(vaultId, principalType, principalId) {
-      await lockVault(vaultId);
-      const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
-        .innerJoin(schema.organization, eq(schema.organization.id, schema.syncedVault.organizationId))
-        .where(and(adminVault(vaultId), eq(schema.organization.kind, "team"))).limit(1);
-      if (!vault) return false;
-      const [deleted] = await db.delete(schema.syncedVaultPermission).where(and(
-        eq(schema.syncedVaultPermission.vaultId, vaultId), eq(schema.syncedVaultPermission.principalType, principalType),
-        eq(schema.syncedVaultPermission.principalId, principalId),
-      )).returning({ vaultId: schema.syncedVaultPermission.vaultId });
+    async deletePermission(workspaceId, principalType, principalId) {
+      await lockWorkspace(workspaceId);
+      const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
+        .innerJoin(schema.organization, eq(schema.organization.id, schema.syncedWorkspace.organizationId))
+        .where(and(adminWorkspace(workspaceId), eq(schema.organization.kind, "team"))).limit(1);
+      if (!workspace) return false;
+      const [deleted] = await db.delete(schema.syncedWorkspacePermission).where(and(
+        eq(schema.syncedWorkspacePermission.workspaceId, workspaceId), eq(schema.syncedWorkspacePermission.principalType, principalType),
+        eq(schema.syncedWorkspacePermission.principalId, principalId),
+      )).returning({ workspaceId: schema.syncedWorkspacePermission.workspaceId });
       await validateSharing();
       return deleted !== undefined;
     },
@@ -2924,7 +2903,7 @@ function meetingSelection(schema: SyncSchema) {
   return {
     encryptedPayload: schema.syncedMeeting.encryptedPayload,
     meetingId: schema.syncedMeeting.meetingId,
-    vaultId: schema.syncedMeeting.vaultId,
+    workspaceId: schema.syncedMeeting.workspaceId,
     projectId: schema.syncedMeeting.projectId,
     name: schema.syncedMeeting.name,
     description: schema.syncedMeeting.description,
@@ -2936,13 +2915,13 @@ function meetingSelection(schema: SyncSchema) {
     calendarEvent: schema.syncedMeeting.calendarEvent,
     isRecording: sql<boolean>`exists (
       select 1 from ${schema.meetingEvent} as started
-      where started.vault_id = "meetings"."vault_id"
+      where started.workspace_id = "meetings"."workspace_id"
         and started.meeting_id = "meetings"."meeting_id"
         and started.kind = 'recording_started'
         and started.session_id is not null
         and not exists (
           select 1 from ${schema.meetingEvent} as ended
-          where ended.vault_id = started.vault_id and ended.meeting_id = started.meeting_id
+          where ended.workspace_id = started.workspace_id and ended.meeting_id = started.meeting_id
             and ended.session_id = started.session_id and ended.kind = 'recording_ended'
         )
     )`.mapWith(Boolean),
@@ -2962,7 +2941,7 @@ function screenshotSelection(schema: SyncSchema) {
   return {
     screenshotId: schema.syncedScreenshot.screenshotId,
     fileId: schema.syncedScreenshot.fileId,
-    vaultId: schema.syncedScreenshot.vaultId,
+    workspaceId: schema.syncedScreenshot.workspaceId,
     meetingId: schema.syncedScreenshot.meetingId,
     capturedAt: schema.syncedScreenshot.capturedAt,
     contentType: schema.syncedScreenshot.contentType,

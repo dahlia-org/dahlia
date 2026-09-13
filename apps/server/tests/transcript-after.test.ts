@@ -17,8 +17,8 @@ import { encodeId } from "../src/typeid";
 
 const directories: string[] = [];
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
-const owner: Identity = { userId: testUserID("owner"), workspaceId: `personal:${testUserID("owner")}`, source: "header" };
-const reader: Identity = { userId: testUserID("reader"), workspaceId: `personal:${testUserID("reader")}`, source: "header" };
+const owner: Identity = { userId: testUserID("owner"),  source: "header" };
+const reader: Identity = { userId: testUserID("reader"),  source: "header" };
 async function fixture() {
   const directory = mkdtempSync(join(tmpdir(), "dahlia-live-")); directories.push(directory);
   const databasePath = join(directory, "db.sqlite");
@@ -27,21 +27,21 @@ async function fixture() {
   const store = createNodeApplicationStore(config);
   await store.migrate(); await seedHeaderIdentity(store, databasePath, owner); await seedHeaderIdentity(store, databasePath, reader);
   const sync = new MeetingSyncService(store.sync);
-  const vaultId = uuidV7(), meetingId = uuidV7(), sessionId = uuidV7(), now = new Date().toISOString();
-  const transaction = (operations: unknown[]) => ({ schemaVersion: 3, id: uuidV7(), vaultId, createdAt: now, operations });
+  const workspaceId = uuidV7(), meetingId = uuidV7(), sessionId = uuidV7(), now = new Date().toISOString();
+  const transaction = (operations: unknown[]) => ({ schemaVersion: 3, id: uuidV7(), workspaceId, createdAt: now, operations });
   await sync.commitTransaction(owner, transaction([
-    { id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Vault", createdAt: now } },
+    { id: uuidV7(), entity: "workspace", action: "create", entityId: workspaceId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Workspace", createdAt: now } },
     { id: uuidV7(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
       data: { name: "Meeting", status: "READY", projectId: null, duration: null, recordingStartedAt: null, createdAt: now, updatedAt: now } },
   ]));
   const db = new DatabaseSync(databasePath);
-  db.prepare("INSERT INTO meeting_events (id,vault_id,owner_user_id,meeting_id,kind,occurred_at,received_at,session_id) VALUES (?,?,?,?,?,?,?,?)")
-    .run(uuidV7(), vaultId, owner.userId, meetingId, "recording_started", new Date(now).getTime(), Date.now(), sessionId);
+  db.prepare("INSERT INTO meeting_events (id,workspace_id,owner_user_id,meeting_id,kind,occurred_at,received_at,session_id) VALUES (?,?,?,?,?,?,?,?)")
+    .run(uuidV7(), workspaceId, owner.userId, meetingId, "recording_started", new Date(now).getTime(), Date.now(), sessionId);
   db.close();
   const event = (kind: "recording_started" | "recording_ended", at: Date, id = sessionId) => {
     const db = new DatabaseSync(databasePath);
-    db.prepare("INSERT INTO meeting_events (id,vault_id,owner_user_id,meeting_id,kind,occurred_at,received_at,session_id) VALUES (?,?,?,?,?,?,?,?)")
-      .run(uuidV7(), vaultId, owner.userId, meetingId, kind, at.getTime(), Date.now(), id);
+    db.prepare("INSERT INTO meeting_events (id,workspace_id,owner_user_id,meeting_id,kind,occurred_at,received_at,session_id) VALUES (?,?,?,?,?,?,?,?)")
+      .run(uuidV7(), workspaceId, owner.userId, meetingId, kind, at.getTime(), Date.now(), id);
     db.close();
   };
   const patchId = uuidV7();
@@ -56,22 +56,22 @@ async function fixture() {
       chunks: [{ index: 0, sha256, segmentCount: 1, deletionCount: 0 }] } }]));
   const share = (enabled: boolean) => {
     const db = new DatabaseSync(databasePath);
-    if (enabled) db.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', ?, 'viewer', ?, ?)").run(vaultId, reader.userId, owner.userId, Date.now());
-    else db.prepare("DELETE FROM vault_permissions WHERE vault_id = ? AND principal_id = ?").run(vaultId, reader.userId);
+    if (enabled) db.prepare("INSERT INTO workspace_permissions(workspace_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', ?, 'viewer', ?, ?)").run(workspaceId, reader.userId, owner.userId, Date.now());
+    else db.prepare("DELETE FROM workspace_permissions WHERE workspace_id = ? AND principal_id = ?").run(workspaceId, reader.userId);
     db.close();
   };
-  return { store, sync, config, vaultId, meetingId, share, databasePath, event };
+  return { store, sync, config, workspaceId, meetingId, share, databasePath, event };
 }
 
 
 it("returns checkpoints for pagination, empty reads and later appends", async () => {
-  const { store, sync, vaultId, meetingId, databasePath } = await fixture();
+  const { store, sync, workspaceId, meetingId, databasePath } = await fixture();
   try {
-    const first = await sync.listTranscript(owner, vaultId, meetingId, undefined, {});
+    const first = await sync.listTranscript(owner, workspaceId, meetingId, undefined, {});
     expect(first.items.map((item) => item.text)).toEqual(["confirmed"]);
     expect(first).toHaveProperty("next_after");
     expect(first).not.toHaveProperty("previews");
-    const next = await sync.listTranscript(owner, vaultId, meetingId, undefined, { after: first.next_after });
+    const next = await sync.listTranscript(owner, workspaceId, meetingId, undefined, { after: first.next_after });
     expect(next.items).toEqual([]);
     expect(next.next_after).toBe(first.next_after);
     const db = new DatabaseSync(databasePath);
@@ -79,37 +79,37 @@ it("returns checkpoints for pagination, empty reads and later appends", async ()
     db.prepare("INSERT INTO transcript_segments (transcript_id, segment_id, started_at, ended_at, text, created_at, audio_source, speaker_label) SELECT transcript_id, ?, ?, NULL, 'added', ?, audio_source, speaker_label FROM transcript_segments LIMIT 1")
       .run(uuidV7(), Number(original.started_at) + 1000, Number(original.created_at) + 1000);
     db.close();
-    const added = await sync.listTranscript(owner, vaultId, meetingId, undefined, { after: next.next_after });
+    const added = await sync.listTranscript(owner, workspaceId, meetingId, undefined, { after: next.next_after });
     expect(added.items.map((item) => item.text)).toEqual(["added"]);
-    await expect(sync.listTranscript(owner, vaultId, meetingId, "anything", { after: next.next_after })).rejects.toThrow("after_and_cursor");
-    await expect(sync.listTranscript(owner, vaultId, uuidV7(), undefined, { after: next.next_after })).rejects.toThrow("meeting_not_found");
+    await expect(sync.listTranscript(owner, workspaceId, meetingId, "anything", { after: next.next_after })).rejects.toThrow("after_and_cursor");
+    await expect(sync.listTranscript(owner, workspaceId, uuidV7(), undefined, { after: next.next_after })).rejects.toThrow("meeting_not_found");
   } finally { await store.close?.(); }
 });
 
 it("detects late inserts, edits, deletions and generation changes", async () => {
   const { transcriptCheckpoint } = await import("../src/sync/transcript-checkpoint");
-  const vault = uuidV7(), meeting = uuidV7();
-  const first = await transcriptCheckpoint(vault, meeting, "generation", ["one", "two"], undefined, 0, 1);
+  const workspace = uuidV7(), meeting = uuidV7();
+  const first = await transcriptCheckpoint(workspace, meeting, "generation", ["one", "two"], undefined, 0, 1);
   expect(first.items).toEqual(["one"]);
   expect(first.hasMore).toBe(true);
-  const second = await transcriptCheckpoint(vault, meeting, "generation", ["one", "two"], first.next_after, 0, 1);
+  const second = await transcriptCheckpoint(workspace, meeting, "generation", ["one", "two"], first.next_after, 0, 1);
   expect(second.items).toEqual(["two"]);
   for (const records of [["late", "one", "two"], ["edited", "two"], ["one"]]) {
-    await expect(transcriptCheckpoint(vault, meeting, "generation", records, second.next_after, 0, 1)).rejects.toThrow("refetch_without_after");
+    await expect(transcriptCheckpoint(workspace, meeting, "generation", records, second.next_after, 0, 1)).rejects.toThrow("refetch_without_after");
   }
-  await expect(transcriptCheckpoint(vault, meeting, "new", ["one", "two"], second.next_after, 0, 1)).rejects.toThrow("refetch_without_after");
+  await expect(transcriptCheckpoint(workspace, meeting, "new", ["one", "two"], second.next_after, 0, 1)).rejects.toThrow("refetch_without_after");
   await expect(transcriptCheckpoint(uuidV7(), meeting, "generation", [], first.next_after, 0, 1)).rejects.toThrow("invalid_transcript_after");
-  const empty = await transcriptCheckpoint(vault, meeting, "none", [], undefined, 0, 1);
-  expect((await transcriptCheckpoint(vault, meeting, "new", ["first"], empty.next_after, 0, 1)).items).toEqual(["first"]);
+  const empty = await transcriptCheckpoint(workspace, meeting, "none", [], undefined, 0, 1);
+  expect((await transcriptCheckpoint(workspace, meeting, "new", ["first"], empty.next_after, 0, 1)).items).toEqual(["first"]);
 });
 
 it("waits only when empty and finishes at the deadline", async () => {
-  const { store, sync, vaultId, meetingId } = await fixture();
+  const { store, sync, workspaceId, meetingId } = await fixture();
   try {
-    const first = await sync.listTranscript(owner, vaultId, meetingId, undefined, { wait: true });
+    const first = await sync.listTranscript(owner, workspaceId, meetingId, undefined, { wait: true });
     expect(first.items).toHaveLength(1);
     vi.useFakeTimers();
-    const pending = sync.listTranscript(owner, vaultId, meetingId, undefined, { after: first.next_after, wait: true });
+    const pending = sync.listTranscript(owner, workspaceId, meetingId, undefined, { after: first.next_after, wait: true });
     await vi.advanceTimersByTimeAsync(25_000);
     const page = await pending;
     expect(page.items).toEqual([]);
@@ -118,11 +118,11 @@ it("waits only when empty and finishes at the deadline", async () => {
 });
 
 it("rereads outside locks and returns new speech during a wait", async () => {
-  const { store, sync, vaultId, meetingId, databasePath } = await fixture();
+  const { store, sync, workspaceId, meetingId, databasePath } = await fixture();
   try {
-    const first = await sync.listTranscript(owner, vaultId, meetingId, undefined, {});
+    const first = await sync.listTranscript(owner, workspaceId, meetingId, undefined, {});
     let checks = 0;
-    const pending = sync.listTranscript(owner, vaultId, meetingId, undefined, { after: first.next_after, wait: true, authorize: () => {
+    const pending = sync.listTranscript(owner, workspaceId, meetingId, undefined, { after: first.next_after, wait: true, authorize: () => {
       if (++checks !== 2) return;
       const db = new DatabaseSync(databasePath);
       db.prepare("INSERT INTO transcript_segments (transcript_id, segment_id, started_at, ended_at, text, created_at, audio_source, speaker_label) SELECT transcript_id, ?, started_at + 1000, NULL, 'arrived', created_at + 1000, audio_source, speaker_label FROM transcript_segments LIMIT 1").run(uuidV7());
@@ -134,30 +134,30 @@ it("rereads outside locks and returns new speech during a wait", async () => {
 });
 
 it("stops waiting on disconnection and permission revocation", async () => {
-  const { store, sync, vaultId, meetingId, share } = await fixture();
+  const { store, sync, workspaceId, meetingId, share } = await fixture();
   try {
     share(true);
-    const first = await sync.listTranscript(reader, vaultId, meetingId, undefined, {});
+    const first = await sync.listTranscript(reader, workspaceId, meetingId, undefined, {});
     let checks = 0;
-    await expect(sync.listTranscript(reader, vaultId, meetingId, undefined, { after: first.next_after, wait: true,
+    await expect(sync.listTranscript(reader, workspaceId, meetingId, undefined, { after: first.next_after, wait: true,
       authorize: () => { if (++checks === 2) share(false); },
     })).rejects.toThrow("meeting_not_found");
     const controller = new AbortController();
     checks = 0;
-    await expect(sync.listTranscript(owner, vaultId, meetingId, undefined, { after: first.next_after, wait: true, signal: controller.signal,
+    await expect(sync.listTranscript(owner, workspaceId, meetingId, undefined, { after: first.next_after, wait: true, signal: controller.signal,
       authorize: () => { if (++checks === 2) controller.abort(new Error("disconnected")); },
     })).rejects.toThrow("disconnected");
-    await expect(sync.listTranscript(owner, vaultId, meetingId, undefined, { after: first.next_after, wait: true,
+    await expect(sync.listTranscript(owner, workspaceId, meetingId, undefined, { after: first.next_after, wait: true,
       authorize: () => { throw new Error("token revoked"); },
     })).rejects.toThrow("token revoked");
   } finally { await store.close?.(); }
 });
 
 it("removes the live HTTP routes", async () => {
-  const { store, config, vaultId, meetingId } = await fixture();
+  const { store, config, workspaceId, meetingId } = await fixture();
   try {
     const app = createApp({ config, authStore: store });
-    for (const path of [`/api/v1/vaults/${encodeId("vault", vaultId)}/live-meetings`,
+    for (const path of [`/api/v1/workspaces/${encodeId("workspace", workspaceId)}/live-meetings`,
       `/api/v1/meetings/${encodeId("meeting", meetingId)}/live-transcript`,
       `/api/v1/meetings/${encodeId("meeting", meetingId)}/live-transcript/events`]) {
       expect((await app.request(path, { headers: { "X-Forwarded-Email": "owner@example.com" } })).status).toBe(404);
@@ -167,7 +167,7 @@ it("removes the live HTTP routes", async () => {
 
 it("exposes after/wait through MCP and cancels a disconnected request", async () => {
   const { createServerMcpHandler } = await import("../src/mcp");
-  const { store, sync, config, vaultId, meetingId } = await fixture();
+  const { store, sync, config, workspaceId, meetingId } = await fixture();
   try {
     let checks = 0;
     const controller = new AbortController();
@@ -176,7 +176,7 @@ it("exposes after/wait through MCP and cancels a disconnected request", async ()
     });
     const call = (args: Record<string, unknown>, signal?: AbortSignal) => {
       const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: {
-        name: "get_meeting_transcript", arguments: { vault_id: encodeId("vault", vaultId), meeting_id: encodeId("meeting", meetingId), ...args },
+        name: "get_meeting_transcript", arguments: { workspace_id: encodeId("workspace", workspaceId), meeting_id: encodeId("meeting", meetingId), ...args },
         _meta: { "io.modelcontextprotocol/clientCapabilities": {}, "io.modelcontextprotocol/clientInfo": { name: "test", version: "1" },
           "io.modelcontextprotocol/protocolVersion": "2026-07-28" },
       } });

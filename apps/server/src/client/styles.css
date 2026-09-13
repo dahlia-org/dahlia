@@ -24,7 +24,7 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .5; }
 input, select, textarea { font-size: 14px; }
-/* Shared dropdown controls and menus for form pickers and Vault navigation. */
+/* Shared dropdown controls and menus for form pickers and Workspace navigation. */
 select, .dropdown-trigger { max-width: 100%; min-height: 36px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); font-size: 13px; font-weight: 550; text-align: left; }
 select { padding-right: 32px; }
 :is(select, .dropdown-trigger):hover:not(:disabled), .dropdown-trigger:has(+ :popover-open) { background: var(--plum-soft); border-color: #c9becb; }
@@ -226,8 +226,8 @@ a { color: inherit; text-decoration: none; }
 .admin-directory-scroll { overflow-x: auto; }
 .admin-pagination { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .sidebar nav { margin-top: 0; }
-.sidebar .vault-navigation { margin-top: 8px; }
-.sidebar .vault-heading, .sidebar .server-navigation .section-label { margin: 0 12px 6px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.sidebar .workspace-navigation { margin-top: 8px; }
+.sidebar .workspace-heading, .sidebar .server-navigation .section-label { margin: 0 12px 6px; color: var(--muted); font-size: 12px; font-weight: 600; }
 .sidebar .server-navigation .section-label { margin-bottom: 4px; }
 .organization-switcher { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); cursor: pointer; text-align: left; anchor-name: --account-menu; }
 .organization-switcher:hover, .tree-toggle:hover, .sidebar-action:hover { background: var(--paper); }
@@ -315,7 +315,7 @@ a.metadata-chip:hover { background: #e8e8e8; }
 .screenshot-grid figcaption { font-size: 12px; overflow-wrap: anywhere; }
 @media (max-width: 820px) {
   .app-shell { grid-template-columns: minmax(0, 1fr); }
-  .sidebar .vault-navigation { flex-direction: column; flex-wrap: nowrap; margin-top: 4px; max-height: none; overflow: visible; }
+  .sidebar .workspace-navigation { flex-direction: column; flex-wrap: nowrap; margin-top: 4px; max-height: none; overflow: visible; }
   .organization-picker { position-anchor: auto; inset: auto auto 12px 12px; margin: 0; max-height: calc(100dvh - 24px); }
   .meeting-header h1 { font-size: 22px; }
   .meeting-tabs { gap: 14px; }
@@ -332,9 +332,9 @@ a.metadata-chip:hover { background: #e8e8e8; }
 .collection-filters .model-search { margin: 0; flex: 1; min-width: 0; }
 .collection-filters .select-trigger { max-width: 40%; }
 .collection-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-bottom: 12px; }
-.collection-heading h2, .vault-settings h2 { font-size: 15px; font-weight: 600; }
-.vault-settings .collection-heading p { margin: 0; }
-.vault-settings .collection-heading button { flex-shrink: 0; }
+.collection-heading h2, .workspace-settings h2 { font-size: 15px; font-weight: 600; }
+.workspace-settings .collection-heading p { margin: 0; }
+.workspace-settings .collection-heading button { flex-shrink: 0; }
 .collection-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18px 12px; border-bottom: 1px solid var(--line); border-radius: 5px; font-size: 14px; }
 .collection-project-name { display: flex; align-items: center; gap: 10px; }
 .collection-project-name > strong { min-width: 0; }
@@ -440,17 +440,17 @@ a.metadata-chip:hover { background: #e8e8e8; }
 .sidebar .primary-navigation a, .primary-navigation .sidebar-search { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border-radius: 999px; }
 .primary-navigation .navigation-search { margin-left: auto; }
 .primary-navigation .sidebar-search:hover { color: var(--plum); background: var(--paper); }
-.vault-switcher { display: grid; gap: 4px; padding: 0 4px; min-width: 0; }
-.vault-switcher > span { font-size: 11px; color: var(--muted); margin-left: 8px; font-weight: 600; }
-.vault-switcher-trigger { display: flex; align-items: center; gap: 10px; width: 100%; anchor-name: --vault-menu; }
-.vault-switcher-trigger > span:not(.appearance-icon) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sidebar .vault-picker:not(:popover-open) { display: none; }
-.sidebar .vault-picker { inset: 228px auto auto 16px; margin: 0; width: 232px; max-width: calc(100vw - 32px); max-height: min(400px, 60dvh); }
-.sidebar .vault-picker a { min-height: 40px; gap: 10px; padding: 10px; color: var(--ink); }
-.vault-picker a > span:not(.appearance-icon) { flex: 1; min-width: 0; }
-.sidebar .vault-picker a[aria-current="true"], .sidebar .vault-picker a:hover { color: var(--plum); background: var(--plum-soft); }
-@supports (position-anchor: --vault-menu) {
-  .sidebar .vault-picker { position-anchor: --vault-menu; inset: auto; top: anchor(bottom); left: anchor(left); width: anchor-size(width); margin-top: 6px; position-try-fallbacks: flip-block; }
+.workspace-switcher { display: grid; gap: 4px; padding: 0 4px; min-width: 0; }
+.workspace-switcher > span { font-size: 11px; color: var(--muted); margin-left: 8px; font-weight: 600; }
+.workspace-switcher-trigger { display: flex; align-items: center; gap: 10px; width: 100%; anchor-name: --workspace-menu; }
+.workspace-switcher-trigger > span:not(.appearance-icon) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar .workspace-picker:not(:popover-open) { display: none; }
+.sidebar .workspace-picker { inset: 228px auto auto 16px; margin: 0; width: 232px; max-width: calc(100vw - 32px); max-height: min(400px, 60dvh); }
+.sidebar .workspace-picker a { min-height: 40px; gap: 10px; padding: 10px; color: var(--ink); }
+.workspace-picker a > span:not(.appearance-icon) { flex: 1; min-width: 0; }
+.sidebar .workspace-picker a[aria-current="true"], .sidebar .workspace-picker a:hover { color: var(--plum); background: var(--plum-soft); }
+@supports (position-anchor: --workspace-menu) {
+  .sidebar .workspace-picker { position-anchor: --workspace-menu; inset: auto; top: anchor(bottom); left: anchor(left); width: anchor-size(width); margin-top: 6px; position-try-fallbacks: flip-block; }
 }
 .icon-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font-size: 24px; line-height: 1; cursor: pointer; }
 .icon-button:hover { color: var(--ink); background: var(--plum-soft); }
@@ -462,15 +462,15 @@ a.metadata-chip:hover { background: #e8e8e8; }
 .detail-breadcrumbs a { display: inline-flex; align-items: center; gap: 6px; }
 .text-link { display: inline-flex; align-items: center; gap: 8px; padding: 12px 0; color: var(--plum); font-size: 13px; font-weight: 550; }
 .text-link:hover { text-decoration: underline; }
-.vault-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 16px; }
-.vault-card { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); transition: border-color .15s, box-shadow .15s; }
-.vault-card:hover { border-color: #bca8ba; box-shadow: 0 4px 16px #36263508; }
-.vault-card-top, .vault-card-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.vault-symbol, .collection-icon, .empty-symbol { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 40px; height: 40px; color: var(--plum); background: var(--plum-soft); border-radius: 10px; }
-.vault-symbol svg { width: 22px; height: 22px; }
-.vault-card h3 { margin: 20px 0 12px; font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
-.vault-card-bottom { font-size: 12px; color: var(--muted); }
-.vault-card-bottom svg { color: var(--plum); }
+.workspace-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 16px; }
+.workspace-card { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); transition: border-color .15s, box-shadow .15s; }
+.workspace-card:hover { border-color: #bca8ba; box-shadow: 0 4px 16px #36263508; }
+.workspace-card-top, .workspace-card-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.workspace-symbol, .collection-icon, .empty-symbol { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 40px; height: 40px; color: var(--plum); background: var(--plum-soft); border-radius: 10px; }
+.workspace-symbol svg { width: 22px; height: 22px; }
+.workspace-card h3 { margin: 20px 0 12px; font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.workspace-card-bottom { font-size: 12px; color: var(--muted); }
+.workspace-card-bottom svg { color: var(--plum); }
 .status.shared { color: var(--plum); background: var(--plum-soft); }
 .recent-meetings > .collection-heading { padding-bottom: 16px; }
 .recent-meetings > .collection-heading .select-trigger { max-width: 50%; font-size: 13px; }
@@ -566,7 +566,7 @@ kbd { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; font-
   .meeting-toolbar { flex-wrap: wrap; gap: 0 12px; }
   .meeting-actions { margin-left: auto; }
   .meeting-tabs { gap: 20px; max-width: 100%; }
-  .primary, .secondary, .icon-button, .tree-toggle, .action-trigger, .sidebar-action, .vault-switcher-trigger, .select-trigger, .select-menu .dropdown-option { min-height: 44px; }
+  .primary, .secondary, .icon-button, .tree-toggle, .action-trigger, .sidebar-action, .workspace-switcher-trigger, .select-trigger, .select-menu .dropdown-option { min-height: 44px; }
   .icon-button { width: 44px; }
   .tree-toggle { flex-basis: 32px; }
   .organization-picker button, .organization-picker a, .organization-picker nav a, .action-menu button { min-height: 44px; }

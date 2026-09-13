@@ -103,7 +103,7 @@ describe("search embeddings", () => {
   it("returns the first FTS result when vector lookup fails without repeating FTS", async () => {
     const meeting: SyncMeetingRecord = {
       meetingId: "019d3f46-8b72-77f1-b232-93726eec3e9e",
-      vaultId: "019d3f46-7e0d-7d21-98d9-f1456c0bfb58",
+      workspaceId: "019d3f46-7e0d-7d21-98d9-f1456c0bfb58",
       projectId: null,
       name: "Roadmap",
       description: "",
@@ -117,7 +117,7 @@ describe("search embeddings", () => {
       summaryCreatedAt: null,
     };
     const listMeetings = vi.fn(async (
-      _vaultId: string,
+      _workspaceId: string,
       query: SyncSearchQuery | undefined,
     ): Promise<SyncMeetingRecord[]> => {
       if (query?.embedding) {
@@ -127,8 +127,8 @@ describe("search embeddings", () => {
       return [meeting];
     });
     const identityStore = {
-      getVault: vi.fn(() => Promise.resolve({
-        vaultId: meeting.vaultId,
+      getWorkspace: vi.fn(() => Promise.resolve({
+        workspaceId: meeting.workspaceId,
         createdAt: new Date(),
         updatedAt: new Date(),
         role: "owner",
@@ -150,26 +150,26 @@ describe("search embeddings", () => {
         embedQuery: vi.fn(() => Promise.resolve(Array(32).fill(1))),
       },
     );
-    await expect(service.listMeetings({ userId: "owner", workspaceId: "personal:owner", source: "header" },
-      meeting.vaultId, "roadmap")).resolves.toEqual({ items: [meeting] });
+    await expect(service.listMeetings({ userId: "owner",  source: "header" },
+      meeting.workspaceId, "roadmap")).resolves.toEqual({ items: [meeting] });
     expect(listMeetings).toHaveBeenCalledTimes(2);
     warn.mockRestore();
   });
 
   it.each(["hybrid", "offline", "revoked"])("shares one query embedding across common search kinds: %s", async (mode) => {
-    const vaultId = "019d3f46-7e0d-7d21-98d9-f1456c0bfb58";
+    const workspaceId = "019d3f46-7e0d-7d21-98d9-f1456c0bfb58";
     const meetingId = "019d3f46-8b72-77f1-b232-93726eec3e9e";
     let allowed = true;
-    const meeting = { meetingId, vaultId, projectId: null, name: "契約", description: "", createdAt: new Date(), summaryDocument: null } as SyncMeetingRecord;
-    const listMeetings = vi.fn((_vault: string, query?: SyncSearchQuery) => {
+    const meeting = { meetingId, workspaceId, projectId: null, name: "契約", description: "", createdAt: new Date(), summaryDocument: null } as SyncMeetingRecord;
+    const listMeetings = vi.fn((_workspace: string, query?: SyncSearchQuery) => {
       if (query?.embedding) expect(query.ftsCandidateIds).toBeUndefined();
       return Promise.resolve([meeting]);
     });
-    const listScreenshots = vi.fn((_vault: string, _meeting: string | undefined, query?: SyncSearchQuery) => {
+    const listScreenshots = vi.fn((_workspace: string, _meeting: string | undefined, query?: SyncSearchQuery) => {
       if (query?.embedding) expect(query.ftsCandidateIds).toBeUndefined();
       return Promise.resolve([]);
     });
-    const scoped = { getVault: () => Promise.resolve(allowed ? { vaultId } : undefined),
+    const scoped = { getWorkspace: () => Promise.resolve(allowed ? { workspaceId } : undefined),
       listProjects: () => Promise.resolve([]), searchProjectActivity: () => Promise.resolve([]), listMeetings, listScreenshots } as unknown as IdentitySyncStore;
     const store = { withIdentity: <T>(_identity: unknown, action: (store: IdentitySyncStore) => Promise<T>) => action(scoped) } as MeetingSyncStore;
     const embedQuery = vi.fn(async () => {
@@ -181,7 +181,7 @@ describe("search embeddings", () => {
     try {
       const service = new MeetingSyncService(store, undefined, { tokenize: (text) => [text] },
         { model: "model", dimensions: 32, embedDocuments: vi.fn(), embedQuery });
-      const result = service.searchAll({ userId: "owner", workspaceId: "personal:owner", source: "header" }, { vaultId, query: "契約" });
+      const result = service.searchAll({ userId: "owner",  source: "header" }, { workspaceId, query: "契約" });
       if (mode === "revoked") await expect(result).rejects.toMatchObject({ status: 404 });
       else {
         expect((await result).meetings.map((hit) => hit.id)).toEqual([meetingId]);
@@ -194,7 +194,7 @@ describe("search embeddings", () => {
 
   it("processes a claimed batch and retries stale results", async () => {
     const document: SearchIndexDocumentRecord = {
-      vaultId: "vault",
+      workspaceId: "workspace",
       documentId: "document",
 
       generation: 1,
@@ -222,7 +222,7 @@ describe("search embeddings", () => {
 
   it("fails an oversized indexed document without sending it to the model", async () => {
     const document: SearchIndexDocumentRecord = {
-      vaultId: "vault",
+      workspaceId: "workspace",
       documentId: "document",
 
       generation: 1,

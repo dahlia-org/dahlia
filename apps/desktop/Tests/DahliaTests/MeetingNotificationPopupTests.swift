@@ -174,7 +174,7 @@ private func makeCalendarEvent(description: String = "") -> CalendarEvent {
         description: description,
         icalUid: "uid",
         startDate: .now.addingTimeInterval(600),
-        endDate: .now.addingTimeInterval(4_200),
+        endDate: .now.addingTimeInterval(4200),
         isAllDay: false,
         conferenceURI: URL(string: "https://meet.example.com/planning")
     )

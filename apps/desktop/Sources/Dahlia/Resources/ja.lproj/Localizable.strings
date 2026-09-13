@@ -3,9 +3,9 @@
 "settings.organization.generationAndAnalysis" = "要約と画像解析";
 "settings.organization.searchSettings" = "設定を検索";
 "settings.organization.settingsAccountIntro" = "まとめ方や処理方法をアカウントごとに設定します。";
-"settings.organization.settingsAccountsIntro" = "接続先のアカウントと、それぞれの保管庫を管理します。";
+"settings.organization.settingsAccountsIntro" = "接続先のアカウントと、それぞれのワークスペースを管理します。";
 "settings.organization.settingsExportIntro" = "サイドバーで選択中のアカウントの書き出し先を、このMacで設定します。";
-"settings.organization.settingsAccountSelectionDescription" = "編集対象を選んでも、開いている保管庫は変わりません。";
+"settings.organization.settingsAccountSelectionDescription" = "編集対象を選んでも、開いているワークスペースは変わりません。";
 "settings.organization.settingsLoading" = "設定を読み込み中…";
 "settings.organization.settingsApplyNextGeneration" = "変更は自動保存され、次回の生成から適用されます。";
 "settings.organization.settingsSummaryOutput" = "生成結果";
@@ -53,13 +53,13 @@
 "Delete Backup" = "バックアップを削除";
 "Backup Generations" = "バックアップ世代";
 "No Backups" = "バックアップはありません";
-"Create a backup to preserve the selected vault." = "選択した保管庫を保存するにはバックアップを作成してください。";
+"Create a backup to preserve the selected workspace." = "選択したワークスペースを保存するにはバックアップを作成してください。";
 "Backup created." = "バックアップを作成しました。";
 "Backup imported." = "バックアップを読み込みました。";
 "Backup exported." = "バックアップを書き出しました。";
 "Backup deleted." = "バックアップを削除しました。";
 "The selected file is not a valid Dahlia backup." = "選択したファイルは有効なDahliaバックアップではありません。";
-"Another vault restore is already pending." = "別の保管庫の復元がすでに予約されています。";
+"Another workspace restore is already pending." = "別のワークスペースの復元がすでに予約されています。";
 "The selected backup generation no longer exists." = "選択したバックアップ世代は存在しません。";
 "Untitled Meeting" = "名称未設定のミーティング";
 "Resolve %lld unprocessed recording before continuing." = "続行する前に、%lld件の未処理録音を解決してください。";
@@ -67,8 +67,8 @@
 "Backup format %lld is not supported by this version of Dahlia." = "バックアップ形式%lldは、このバージョンのDahliaでは使用できません。";
 "This backup uses the newer database schema %@." = "このバックアップは新しいデータベーススキーマ%@を使用しています。";
 "The backup failed its integrity check: %@" = "バックアップの完全性確認に失敗しました: %@";
-"Vault restored." = "保管庫を復元しました。";
-"Could not restore the vault: %@" = "保管庫を復元できませんでした: %@";
+"Workspace restored." = "ワークスペースを復元しました。";
+"Could not restore the workspace: %@" = "ワークスペースを復元できませんでした: %@";
 "Invalid backup" = "無効なバックアップ";
 "Created before restore" = "復元前に作成";
 "Delete this backup?" = "このバックアップを削除しますか？";
@@ -77,7 +77,7 @@
 "The current database will be backed up first, then replaced. Dahlia will restart. Audio files and app settings are not restored." = "現在のデータベースを先に退避してから置き換え、Dahliaを再起動します。音声ファイルとアプリ設定は復元されません。";
 "Unprocessed Recordings" = "未処理の録音";
 "Open Unprocessed Recordings" = "未処理の録音を開く";
-"Finish the current recording before opening unprocessed recordings in another vault." = "別の保管庫にある未処理の録音を開くには、現在の録音を終了してください。";
+"Finish the current recording before opening unprocessed recordings in another workspace." = "別のワークスペースにある未処理の録音を開くには、現在の録音を終了してください。";
 "Recordings that need manual transcription will appear here." = "手動で文字起こしする必要がある録音がここに表示されます。";
 "Transcribe or discard every unprocessed recording before creating or restoring a backup." = "バックアップの作成または復元前に、すべての未処理録音を文字起こしするか破棄してください。";
 "Waiting for transcription" = "文字起こし待ち";
@@ -179,9 +179,9 @@
 "New Project" = "新規プロジェクト";
 "Create Project" = "プロジェクトを作成";
 "New Subproject" = "新規サブプロジェクト";
-"New Project at Vault Top" = "Vaultトップにプロジェクトを作成";
+"New Project at Workspace Top" = "Workspaceトップにプロジェクトを作成";
 "Create a subproject inside %@." = "「%@」の配下にサブプロジェクトを作成します。";
-"Create a project at the top level of the vault." = "Vaultのトップ階層にプロジェクトを作成します。";
+"Create a project at the top level of the workspace." = "Workspaceのトップ階層にプロジェクトを作成します。";
 "Could Not Create Project" = "プロジェクトを作成できませんでした";
 "The project could not be created." = "プロジェクトを作成できませんでした。";
 "New meeting" = "新規ミーティング";
@@ -318,7 +318,7 @@
 "Summary Destinations" = "要約の書き出し先";
 "The logical Project path determines this destination. The folder is created when a Summary is exported." = "論理 Project パスから書き出し先を決定し、Summary の書き出し時にフォルダを作成します。";
 "Local Summary Folder" = "ローカルの要約フォルダ";
-"The Summary output destination must resolve inside the Vault without symlink or file path components." = "Summary の書き出し先は Vault 内に解決され、パス上にシンボリックリンクやファイルを含めることはできません。";
+"The Summary output destination must resolve inside the Workspace without symlink or file path components." = "Summary の書き出し先は Workspace 内に解決され、パス上にシンボリックリンクやファイルを含めることはできません。";
 "The Summary output folder has not been created yet." = "Summary の書き出しフォルダはまだ作成されていません。";
 "Project Description" = "プロジェクトの説明";
 "The description is provided as context when generating summaries. For example, you can include project members." = "要約生成時にコンテキストとして渡されます。例えば、プロジェクトメンバーなどを記載できます。";
@@ -362,7 +362,7 @@
 "The summary file %@ is linked to multiple meetings and cannot be moved safely." = "要約ファイル「%@」は複数のmeetingから参照されているため、安全に移動できません。";
 "The project operation failed (%@), and Dahlia could not restore the Summary output (%@)." = "Project 操作に失敗し（%@）、Summary 出力も復元できませんでした（%@）。";
 "Select a project to manage summary destinations and instructions." = "要約の書き出し先と instruction を管理するプロジェクトを選択してください。";
-"Open a vault before managing project settings." = "プロジェクト設定を管理するには保管庫を開いてください。";
+"Open a workspace before managing project settings." = "プロジェクト設定を管理するにはワークスペースを開いてください。";
 "Today" = "今日";
 "Tomorrow" = "明日";
 "In Progress" = "進行中";
@@ -544,8 +544,8 @@
 "Max" = "最大";
 "Ultra" = "ウルトラ";
 "Developer Settings" = "開発者設定";
-"Vault" = "保管庫";
-"Accounts and Vaults" = "アカウントと保管庫";
+"Workspace" = "ワークスペース";
+"Accounts and Workspaces" = "アカウントとワークスペース";
 "Dahlia Account" = "Dahlia アカウント";
 "Dahlia Cloud" = "Dahlia Cloud";
 "Dahlia Server" = "Dahlia Server";
@@ -571,37 +571,37 @@
 "Dahlia credentials could not be saved securely." = "Dahlia の認証情報を安全に保存できませんでした。";
 "A Dahlia connection already exists for this server." = "この Server への Dahlia 接続はすでに存在します。";
 "Sign in with the same Dahlia account, or add a new connection." = "同じ Dahlia アカウントでサインインするか、新しい接続を追加してください。";
-"Resolve this connection's Server Vaults before removing it." = "この接続を削除する前に、関連する Server Vault の扱いを解決してください。";
-"Choose what to do with this account's local Vaults before signing out." = "サインアウトする前に、このアカウントのローカル Vault をどう扱うか選択してください。";
+"Resolve this connection's Server Workspaces before removing it." = "この接続を削除する前に、関連する Server Workspace の扱いを解決してください。";
+"Choose what to do with this account's local Workspaces before signing out." = "サインアウトする前に、このアカウントのローカル Workspace をどう扱うか選択してください。";
 "Manage the Local Account and sign-ins to Dahlia Cloud and Server." = "ローカルアカウントと、Dahlia Cloud・Server へのサインインを管理します。";
 "%lld Dahlia accounts" = "%lld 件の Dahlia アカウント";
 "Sign In Again" = "再サインイン";
 "Sign-in required" = "再サインインが必要";
 "Sign out of %@?" = "%@ からサインアウトしますか？";
-"Move Vaults to Local Account and Sign Out" = "Vault をローカルアカウントへ移してサインアウト";
-"Delete Local Vaults and Sign Out" = "ローカル Vault を削除してサインアウト";
-"The Server Vaults will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac." = "Server 上の Vault は変更されません。移動すると作業コピーをこの Mac に残し、削除するとこの Mac から取り除きます。";
+"Move Workspaces to Local Account and Sign Out" = "Workspace をローカルアカウントへ移してサインアウト";
+"Delete Local Workspaces and Sign Out" = "ローカル Workspace を削除してサインアウト";
+"The Server Workspaces will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac." = "Server 上の Workspace は変更されません。移動すると作業コピーをこの Mac に残し、削除するとこの Mac から取り除きます。";
 "Move to Server" = "Server へ移行";
-"Reconnect Server Vault" = "Server Vault に再接続";
+"Reconnect Server Workspace" = "Server Workspace に再接続";
 "Keep in Local Account" = "ローカルアカウントのままにする";
 "Reconnect %@ to this Server?" = "%@ をこの Server に再接続しますか？";
 "Move %@ to this Server?" = "%@ をこの Server へ移行しますか？";
-"A Vault with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict." = "同じ ID の Vault が Server にあります。member は Server 版を使用し、owner は競合時にどちらの版を使うか選択できます。";
-"This Vault will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac." = "この Vault をローカルアカウントから Server へ移行し、自動的に同期します。作業コピーはこの Mac に残ります。";
+"A Workspace with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict." = "同じ ID の Workspace が Server にあります。member は Server 版を使用し、owner は競合時にどちらの版を使うか選択できます。";
+"This Workspace will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac." = "この Workspace をローカルアカウントから Server へ移行し、自動的に同期します。作業コピーはこの Mac に残ります。";
 "Remove Dahlia connection %@?" = "Dahlia 接続 %@ を削除しますか？";
 "The connection will be removed. Local meeting data will not be deleted." = "接続を削除します。ローカルの会議データは削除されません。";
 "Signed in as %@" = "%@ としてサインイン済み";
 "Dahlia request failed (HTTP %lld)." = "Dahlia へのリクエストに失敗しました（HTTP %lld）。";
 "Coming Soon" = "準備中";
-"Loading Vaults…" = "保管庫を読み込み中…";
-"Removing Vault…" = "保管庫を登録解除中…";
+"Loading Workspaces…" = "ワークスペースを読み込み中…";
+"Removing Workspace…" = "ワークスペースを登録解除中…";
 "Confirm Meeting Deletions" = "ミーティング削除を確認";
 "Continue Deleting" = "削除を続行";
 "%lld server meeting deletions are waiting. Continue deleting them?" = "Server 上の %lld 件のミーティング削除が保留中です。削除を続行しますか？";
-"Current Vault" = "現在の保管庫";
-"Choose the vault used for recordings and sync." = "録音と同期に使用する保管庫を選択します。";
-"Open the account and vault menu." = "アカウントと保管庫のメニューを開きます。";
-"No vault selected" = "保管庫が選択されていません";
+"Current Workspace" = "現在のワークスペース";
+"Choose the workspace used for recordings and sync." = "録音と同期に使用するワークスペースを選択します。";
+"Open the account and workspace menu." = "アカウントとワークスペースのメニューを開きます。";
+"No workspace selected" = "ワークスペースが選択されていません";
 "Appearance" = "外観";
 "Display" = "表示";
 "Typography" = "文字";
@@ -726,32 +726,32 @@
 "Google Calendar HTTP %lld: %@" = "Google カレンダー HTTP %lld: %@";
 "Could not parse Google Calendar date: %@" = "Google カレンダーの日付を解析できませんでした: %@";
 
-/* Vault Picker */
-"Create New Vault" = "保管庫を新規作成する";
-"Create a vault without a local export folder." = "ローカルの書き出しフォルダを指定せずに保管庫を作成します。";
-"Add Vault" = "保管庫を追加";
-"Registered Vaults" = "登録済みの保管庫";
-"Open Folder as Vault" = "保管庫としてフォルダを開く";
-"Select an existing folder to use as a vault." = "既存のフォルダを選択して保管庫として使用します。";
-"Remove Vault" = "保管庫を登録解除";
-"Open a different vault before removing this one." = "登録を解除するには、先に別の保管庫を開いてください。";
+/* Workspace Picker */
+"Create New Workspace" = "ワークスペースを新規作成する";
+"Create a workspace without a local export folder." = "ローカルの書き出しフォルダを指定せずにワークスペースを作成します。";
+"Add Workspace" = "ワークスペースを追加";
+"Registered Workspaces" = "登録済みのワークスペース";
+"Open Folder as Workspace" = "ワークスペースとしてフォルダを開く";
+"Select an existing folder to use as a workspace." = "既存のフォルダを選択してワークスペースとして使用します。";
+"Remove Workspace" = "ワークスペースを登録解除";
+"Open a different workspace before removing this one." = "登録を解除するには、先に別のワークスペースを開いてください。";
 "Remove %@?" = "「%@」の登録を解除しますか？";
-"Dahlia will remove this vault and its meeting history from the app. Audio files managed outside the vault folder will also be deleted. Files inside the vault folder are not changed." = "この保管庫とミーティング履歴が Dahlia から削除され、保管庫の外で Dahlia が管理する音声ファイルも削除されます。保管庫フォルダ内のファイルは変更されません。";
-"Vault Details" = "保管庫の詳細";
-"Vault Name" = "保管庫名";
-"Enter a name for the new vault." = "新しい保管庫の名前を入力してください。";
+"Dahlia will remove this workspace and its meeting history from the app. Audio files managed outside the workspace folder will also be deleted. Files inside the workspace folder are not changed." = "このワークスペースとミーティング履歴が Dahlia から削除され、ワークスペースの外で Dahlia が管理する音声ファイルも削除されます。ワークスペースフォルダ内のファイルは変更されません。";
+"Workspace Details" = "ワークスペースの詳細";
+"Workspace Name" = "ワークスペース名";
+"Enter a name for the new workspace." = "新しいワークスペースの名前を入力してください。";
 "Rename %@" = "「%@」の名前を変更";
-"Open Vault" = "この保管庫を開く";
-"Use this vault for recordings and sync." = "録音と同期にこの保管庫を使用します。";
-"Select a vault to view its details." = "詳細を表示する保管庫を選択してください。";
-"No Vaults" = "保管庫がありません";
+"Open Workspace" = "このワークスペースを開く";
+"Use this workspace for recordings and sync." = "録音と同期にこのワークスペースを使用します。";
+"Select a workspace to view its details." = "詳細を表示するワークスペースを選択してください。";
+"No Workspaces" = "ワークスペースがありません";
 "Add a folder to start recording and syncing meetings." = "録音とミーティングの同期を始めるには、フォルダを追加してください。";
-"Vault Operation Failed" = "保管庫を操作できませんでした";
-"Could not select the vault folder." = "保管庫のフォルダを選択できませんでした。";
-"Could not load vaults." = "保管庫を読み込めませんでした。";
-"Could not add the vault." = "保管庫を追加できませんでした。";
-"Could not rename the vault." = "保管庫の名前を変更できませんでした。";
-"Could not remove the vault." = "保管庫の登録を解除できませんでした。";
+"Workspace Operation Failed" = "ワークスペースを操作できませんでした";
+"Could not select the workspace folder." = "ワークスペースのフォルダを選択できませんでした。";
+"Could not load workspaces." = "ワークスペースを読み込めませんでした。";
+"Could not add the workspace." = "ワークスペースを追加できませんでした。";
+"Could not rename the workspace." = "ワークスペースの名前を変更できませんでした。";
+"Could not remove the workspace." = "ワークスペースの登録を解除できませんでした。";
 "Open" = "開く";
 "Enlarge screenshot" = "スクリーンショットを拡大表示";
 "Enlarge screenshot: %@" = "スクリーンショット「%@」を拡大表示";
@@ -801,7 +801,7 @@
 "Open in Editor" = "エディタで開く";
 "Open Templates Folder" = "テンプレートフォルダを開く";
 "Reset Presets" = "プリセットに戻す";
-"Select a template from _custom_instructions/ in the vault." = "保管庫内の _custom_instructions/ からテンプレートを選択します。";
+"Select a template from _custom_instructions/ in the workspace." = "ワークスペース内の _custom_instructions/ からテンプレートを選択します。";
 
 /* Error Messages - Audio */
 "Screen recording access denied. Please allow it in System Settings > Privacy & Security > Screen Recording." = "画面収録のアクセスが拒否されました。システム設定 > プライバシーとセキュリティ > 画面収録 で許可してください";
@@ -842,9 +842,9 @@
 "Stop and save after both recording and supported meeting-app activity have lasted at least 30 seconds. Browser activity also requires a recognized meeting window. In-person meetings are not detected." = "録音と対応会議アプリの利用がどちらも30秒以上続いた後に終了したら、停止して保存します。ブラウザでは対応する会議ウィンドウも必要です。対面会議は検出しません。";
 
 /* Sidebar Footer */
-"Switch Vault" = "保管庫を切り替え";
+"Switch Workspace" = "ワークスペースを切り替え";
 "MCP Settings" = "MCP の設定";
-"Manage Vaults" = "保管庫を管理";
+"Manage Workspaces" = "ワークスペースを管理";
 "Manage Projects..." = "プロジェクトを管理...";
 "Settings" = "設定";
 "Help" = "ヘルプ";
@@ -1006,8 +1006,8 @@
 "Regenerate Summaries" = "要約を再生成";
 "Regenerate selected summaries?" = "選択したミーティングの要約を再生成しますか？";
 "Each selected meeting is regenerated independently. Existing summaries are replaced only after generation succeeds." = "選択したミーティングごとに要約を再生成します。既存の要約は、再生成に成功した場合のみ置き換えられます。";
-"Export Summary to Vault" = "要約を Vault へ書き出す";
-"Write the generated summary and related files to the current Vault." = "生成した要約と関連ファイルを現在の Vault へ書き出します。";
+"Export Summary to Workspace" = "要約を Workspace へ書き出す";
+"Write the generated summary and related files to the current Workspace." = "生成した要約と関連ファイルを現在の Workspace へ書き出します。";
 "Export Summary to Google Docs" = "要約を Google Docs へ書き出す";
 "Export the generated summary to the configured Google Docs folder." = "生成した要約を設定済みの Google Docs フォルダへ書き出します。";
 "Later" = "あとで";
@@ -1101,7 +1101,7 @@
 "Stopped" = "停止中";
 "The bundled Codex helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build." = "同梱 Codex ヘルパーを利用できません。scripts/run-dev.sh で起動するか、署名済みアプリをインストールしてください。";
 "Could not start Codex: %@" = "Codex を起動できませんでした: %@";
-"Codex is not signed in. Open Accounts and Vaults in Settings and sign in, then try again." = "Codex にサインインしていません。設定の「アカウントと保管庫」からサインインして、再試行してください。";
+"Codex is not signed in. Open Accounts and Workspaces in Settings and sign in, then try again." = "Codex にサインインしていません。設定の「アカウントとワークスペース」からサインインして、再試行してください。";
 "Codex sign-in failed: %@" = "Codex へのサインインに失敗しました: %@";
 "Codex sign-in failed." = "Codex へのサインインに失敗しました。";
 "Could not open the Codex sign-in page." = "Codex のサインインページを開けませんでした。";
@@ -1120,7 +1120,7 @@
 "Selected Account" = "選択中のアカウント";
 "Local Account Model Provider" = "ローカルアカウントのモデルプロバイダー";
 "Choose the model provider used by the Local Account." = "ローカルアカウントで使用するモデルプロバイダーを選択します。";
-"This setting is shared by all Local Account vaults. Dahlia Server and Cloud use hosted models automatically." = "この設定はローカルアカウントのすべての保管庫で共通です。Dahlia Server と Cloud は hosted モデルを自動的に使用します。";
+"This setting is shared by all Local Account workspaces. Dahlia Server and Cloud use hosted models automatically." = "この設定はローカルアカウントのすべてのワークスペースで共通です。Dahlia Server と Cloud は hosted モデルを自動的に使用します。";
 "ChatGPT Subscription" = "ChatGPT Subscription";
 "Databricks" = "Databricks";
 "Codex Account" = "Codex アカウント";
@@ -1154,7 +1154,7 @@
 "Codex Configuration" = "Codex 設定";
 "Could not update the Codex configuration: %@" = "Codex 設定を更新できませんでした: %@";
 "Codex is configured for Databricks" = "Codex を Databricks 用に設定しました";
-"The selected AI account is not ready. Open Accounts and Vaults in Settings and finish its configuration." = "選択した AI アカウントの準備が完了していません。設定の「アカウントと保管庫」を開き、設定を完了してください。";
+"The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration." = "選択した AI アカウントの準備が完了していません。設定の「アカウントとワークスペース」を開き、設定を完了してください。";
 "This chat uses %@. Start a new chat to use the current account." = "このチャットは %@ を使用しています。現在のアカウントを使用するには新しいチャットを開始してください。";
 "Codex returned no available models. Try again." = "Codex から利用可能なモデルが返されませんでした。再試行してください。";
 "Models are loaded from the bundled Codex app-server." = "モデルは同梱 Codex app-server から取得します。";
@@ -1204,7 +1204,7 @@
 "Submit" = "送信";
 "This request is too large to review completely, so it cannot be approved." = "このリクエストは全体を確認するには大きすぎるため、許可できません。";
 "This request asks for permissions outside the allowed workspace and cannot be approved." = "許可されたワークスペース外の権限を求めているため、この要求は許可できません。";
-"Open Accounts and Vaults Settings" = "アカウントと保管庫を開く";
+"Open Accounts and Workspaces Settings" = "アカウントとワークスペースを開く";
 "Loading models…" = "モデルを読み込み中…";
 "Chat is running" = "チャットを実行中";
 "Waiting for your response or approval" = "回答または承認を待っています";
@@ -1246,8 +1246,8 @@
 "The Project changed before this update. Its current revision is %lld." = "この Project は更新されています。現在のリビジョンは %lld です。";
 "A Project cannot be moved inside itself or one of its descendants." = "Project を自分自身または子孫の配下へ移動できません。";
 "Projects support one level of subprojects. Choose a root Project as the parent." = "サブプロジェクトは1階層までです。親にはルート Project を選択してください。";
-"Another Project operation is already running for this Vault." = "この Vault では別の Project 操作を実行中です。";
-"mcp.scopeFooter" = "Agent は指定した範囲のミーティング本文と確定した文字起こしを読み取れます。「すべての追加済み保管庫」は、この Mac のローカル／Server 保管庫が対象です。書き込みを許可すると、Project、ミーティング所属、保存済み要約を編集できます。";
+"Another Project operation is already running for this Workspace." = "この Workspace では別の Project 操作を実行中です。";
+"mcp.scopeFooter" = "Agent は指定した範囲のミーティング本文と確定した文字起こしを読み取れます。「すべての追加済みワークスペース」は、この Mac のローカル／Server ワークスペースが対象です。書き込みを許可すると、Project、ミーティング所属、保存済み要約を編集できます。";
 "Copy Command" = "コマンドをコピー";
 "Copy meeting_id" = "meeting_idをコピー";
 "Copies meeting_id to the clipboard" = "meeting_idをクリップボードにコピーします";
@@ -1291,7 +1291,7 @@
 "Close search" = "検索を閉じる";
 "Remove search filter" = "検索フィルターを削除";
 "Search unavailable" = "検索を利用できません";
-"Select a Vault to search." = "検索するにはVaultを選択してください。";
+"Select a Workspace to search." = "検索するにはWorkspaceを選択してください。";
 "Show chat" = "チャットを表示";
 "Shown" = "表示中";
 "Hidden" = "非表示";
@@ -1417,7 +1417,7 @@
 "Ranking preset custom" = "カスタム";
 "Excluded from search" = "検索対象外";
 "Search benchmark" = "検索精度ベンチマーク";
-"Search benchmark description" = "保管庫のミーティングから検索クエリと正解を端末内で作り、重みごとの検索精度を採点します。作成した正解データは再採点のためにこの Mac へ保存します。";
+"Search benchmark description" = "ワークスペースのミーティングから検索クエリと正解を端末内で作り、重みごとの検索精度を採点します。作成した正解データは再採点のためにこの Mac へ保存します。";
 "Run benchmark" = "ベンチマークを実行";
 "Re-evaluate" = "同じ正解で再採点";
 "Building the evaluation set" = "正解データを作成中";
@@ -1457,9 +1457,9 @@
 "Continue with Local Account" = "ローカルアカウントで続ける";
 "Or continue without signing in" = "またはログインせずに続ける";
 "Switching AI account…" = "AIアカウントを切り替えています…";
-"Choose the AI account used by this Vault." = "この保管庫で使用するAIアカウントを選びます。";
-"This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex and Google Drive connection data will be deleted." = "このアカウントは%lld個の保管庫で使用されています。対象の保管庫はローカルアカウントへ戻り、このアカウントのCodexデータとGoogle Drive連携情報は削除されます。";
-"Dahlia stores meeting data and generated files in a local Vault." = "Dahliaはミーティングデータと生成ファイルをローカルのVaultに保存します。";
+"Choose the AI account used by this Workspace." = "このワークスペースで使用するAIアカウントを選びます。";
+"This account is used by %lld Workspaces. Those Workspaces will use the Local Account, and this account's Codex and Google Drive connection data will be deleted." = "このアカウントは%lld個のワークスペースで使用されています。対象のワークスペースはローカルアカウントへ戻り、このアカウントのCodexデータとGoogle Drive連携情報は削除されます。";
+"Dahlia stores meeting data and generated files in a local Workspace." = "Dahliaはミーティングデータと生成ファイルをローカルのWorkspaceに保存します。";
 "Choose the languages Dahlia should recognize and the primary language for AI output." = "Dahliaが認識する言語と、AI出力で主に使う言語を選びます。";
 "Recognition and OCR Languages" = "認識・OCR対象の言語";
 "Primary Language" = "要約・画像説明の言語";
@@ -1470,7 +1470,7 @@
 "Allow access to the audio sources Dahlia records. You can continue and grant access later." = "Dahliaが録音するオーディオへのアクセスを許可します。後から許可することもできます。";
 "Calendar (Optional)" = "カレンダー（オプション）";
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "カレンダーを接続すると、Dahliaで今後のミーティングを確認できます。後から設定することもできます。";
-"Review your choices, then create or open the selected Vault." = "選択内容を確認し、指定したVaultを作成または開きます。";
+"Review your choices, then create or open the selected Workspace." = "選択内容を確認し、指定したWorkspaceを作成または開きます。";
 "Setup Summary" = "セットアップ内容";
 "Sync conflict" = "同期の競合";
 "Use Server Version" = "サーバー版を使用";
@@ -1485,27 +1485,27 @@
 "Waiting to retrieve latest data" = "最新データの再取得を待機中";
 "Update Dahlia and the Server to resume sync" = "同期を再開するにはDahliaとServerを更新してください";
 
-/* Vault backup */
-"Vault Backup" = "保管庫のバックアップ";
-"Back up the selected vaults together, including screenshots. Audio, external files, and account credentials are excluded." = "選択した複数の保管庫をまとめて保存します（スクリーンショットを含む）。音声・外部ファイル・認証情報は含まれません。";
+/* Workspace backup */
+"Workspace Backup" = "ワークスペースのバックアップ";
+"Back up the selected workspaces together, including screenshots. Audio, external files, and account credentials are excluded." = "選択した複数のワークスペースをまとめて保存します（スクリーンショットを含む）。音声・外部ファイル・認証情報は含まれません。";
 "Restore Method" = "復元方法";
-"Restore as a New Local Vault" = "別のローカル保管庫として復元";
-"Overwrite the Original Local Vault" = "元のローカル保管庫を上書き";
-"Overwrite requires the original local vault with no unprocessed recordings. Synced vaults cannot be overwritten." = "上書きには、未処理の録音がない元のローカル保管庫が必要です。同期保管庫には上書きできません。";
-"Restore selected vaults after a restart. Back up and restore each vault independently; failed vaults stay unchanged. Audio and external files are excluded." = "1回の再起動で選択した保管庫を復元します。上書き前に保管庫ごとにバックアップし、個別に復元します。失敗した保管庫は元のまま保持します。音声・外部ファイルは対象外です。";
+"Restore as a New Local Workspace" = "別のローカルワークスペースとして復元";
+"Overwrite the Original Local Workspace" = "元のローカルワークスペースを上書き";
+"Overwrite requires the original local workspace with no unprocessed recordings. Synced workspaces cannot be overwritten." = "上書きには、未処理の録音がない元のローカルワークスペースが必要です。同期ワークスペースには上書きできません。";
+"Restore selected workspaces after a restart. Back up and restore each workspace independently; failed workspaces stay unchanged. Audio and external files are excluded." = "1回の再起動で選択したワークスペースを復元します。上書き前にワークスペースごとにバックアップし、個別に復元します。失敗したワークスペースは元のまま保持します。音声・外部ファイルは対象外です。";
 "%@ (Restored)" = "%@（復元）";
 
-"Deselect All Vaults" = "すべて解除";
+"Deselect All Workspaces" = "すべて解除";
 
 "Do Not Restore" = "復元しない";
 
-"Vaults: %d" = "保管庫数: %d";
+"Workspaces: %d" = "ワークスペース数: %d";
 "%@ (Source: %@): Restored." = "%@（復元元: %@）: 復元しました。";
 "%@ (Source: %@): Restore failed — %@" = "%@（復元元: %@）: 復元に失敗しました — %@";
 
 // Meeting working copy and synchronization
 "meetingSync.local" = "この端末に保存済み";
-"meetingSync.pending" = "端末保存済み・保管庫の同期を待機中";
+"meetingSync.pending" = "端末保存済み・ワークスペースの同期を待機中";
 "meetingSync.synced" = "同期済み";
 "meetingSync.authorization" = "端末保存済み・同期にはサインインが必要";
 "meetingSync.validation" = "端末保存済み・同期内容の確認が必要";
@@ -1513,7 +1513,7 @@
 "screenshot.cache.limit" = "クラウド画像キャッシュの上限";
 "screenshot.cache.description" = "同期済み画像は、必要なときに取得して保存します。上限を超えると古いキャッシュを削除します。ローカルアカウントの画像、未送信の画像、バックアップは上限に含まれません。";
 
-"Only vaults in the Local Account can be backed up." = "バックアップできるのは、ローカルアカウント内の保管庫だけです。";
+"Only workspaces in the Local Account can be backed up." = "バックアップできるのは、ローカルアカウント内のワークスペースだけです。";
 
 // Server text availability and search coverage
 "text.content.missing" = "本文は未取得";
@@ -1562,8 +1562,8 @@
 "settings.processing.location" = "処理する場所";
 "settings.processing.local" = "このMac";
 "settings.processing.remote" = "サーバー";
-"settings.processing.localScope" = "このMacのローカルアカウントに属する、すべての保管庫に適用されます。";
-"settings.processing.syncedScope" = "このアカウントのすべての保管庫に適用され、ほかの端末にも同期されます。";
+"settings.processing.localScope" = "このMacのローカルアカウントに属する、すべてのワークスペースに適用されます。";
+"settings.processing.syncedScope" = "このアカウントのすべてのワークスペースに適用され、ほかの端末にも同期されます。";
 "settings.processing.localDescription" = "このMacのApple Speechで文字起こしし、このMacに設定したAI接続先で要約します。";
 "settings.processing.transcribeFirst" = "先に文字起こしする";
 "settings.processing.thisMac" = "このMac";
@@ -1622,7 +1622,7 @@
 
 "Waiting for initial sync" = "初回同期を待っています";
 "Server meetings will appear after sync. An internet connection and sign-in are required." = "同期するとサーバーのミーティングが表示されます。インターネット接続とサインインが必要です。";
-"mcp.allVaults" = "すべての追加済み保管庫";
+"mcp.allWorkspaces" = "すべての追加済みワークスペース";
 
 "Connect a Databricks workspace." = "Databricks ワークスペースに接続します。";
 
@@ -1658,18 +1658,18 @@
 "sync.syncing" = "同期中";
 "sync.synced" = "同期済み";
 
-"Finish recording and pending sync, then choose a writable Server Vault." = "録音と未完了の同期を終えてから、書き込み可能なServer Vaultを選択してください。";
-"The Vault changed during preparation. Your data is preserved. Try again." = "準備中にVaultが変更されました。データは保持されています。もう一度お試しください。";
+"Finish recording and pending sync, then choose a writable Server Workspace." = "録音と未完了の同期を終えてから、書き込み可能なServer Workspaceを選択してください。";
+"The Workspace changed during preparation. Your data is preserved. Try again." = "準備中にWorkspaceが変更されました。データは保持されています。もう一度お試しください。";
 "Some IDs already exist on the Server. No local data was moved." = "同じIDのデータがServerに存在します。ローカルデータは移動していません。";
 "Import destination" = "取り込み先";
-"Existing Server Vault" = "既存のServer Vault";
-"New Server Vault" = "新しいServer Vault";
+"Existing Server Workspace" = "既存のServer Workspace";
+"New Server Workspace" = "新しいServer Workspace";
 "Organization" = "Organization";
 "Create Organization" = "Organizationを作成";
 "Reload destinations" = "候補を再読み込み";
-"A backup is saved before importing. Existing Vault settings stay unchanged. The original Local Vault remains available." = "取り込み前にバックアップを作成します。既存Vaultの設定は保持し、元のLocal Vaultも残します。";
+"A backup is saved before importing. Existing Workspace settings stay unchanged. The original Local Workspace remains available." = "取り込み前にバックアップを作成します。既存Workspaceの設定は保持し、元のLocal Workspaceも残します。";
 "Import" = "取り込む";
 "Organization name" = "Organization名";
 
-"Vault Admin" = "管理者";
-"Vault Editor" = "編集者";
+"Workspace Admin" = "管理者";
+"Workspace Editor" = "編集者";

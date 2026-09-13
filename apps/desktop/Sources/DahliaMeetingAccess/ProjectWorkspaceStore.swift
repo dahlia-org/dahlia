@@ -6,11 +6,11 @@ import GRDB
 public extension MeetingAccessStore {
     func queryProjects(_ query: ProjectQuery = ProjectQuery()) throws -> ProjectQueryResult {
         try database.read { db in
-            let vault = try workspaceVault(in: db)
+            let workspace = try workspaceWorkspace(in: db)
             let projects = try projectMetadata(in: db)
             let normalizedQuery = query.query?.trimmingCharacters(in: .whitespacesAndNewlines)
             return ProjectQueryResult(
-                vault: vault.scoped,
+                workspace: workspace.scoped,
                 projects: projects.filter { project in
                     if let projectID = query.projectID, project.projectID != projectID { return false }
                     if let type = query.type, project.effectiveType != type { return false }
@@ -31,11 +31,11 @@ public extension MeetingAccessStore {
     ) throws -> ProjectMutationResult {
         try requireWriteAccess()
         let name = try validatedName(name)
-        let vault = try database.read(workspaceVault(in:))
+        let workspace = try database.read(workspaceWorkspace(in:))
         var committed = false
 
         do {
-            let result = try withVaultMutationLock(vaultURL: vault.url) {
+            let result = try withWorkspaceMutationLock(workspaceURL: workspace.url) {
                 let parentID = try database.read { db -> UUID? in
                     let rows = try projectRows(in: db)
                     if let parentProjectID {
@@ -56,14 +56,14 @@ public extension MeetingAccessStore {
                     try db.execute(
                         sql: """
                         INSERT INTO projects (
-                            id, vaultId, parentProjectId, name, nameKey, createdAt,
+                            id, workspace_id, parentProjectId, name, nameKey, createdAt,
                             description, projectType, revision
                         )
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
                         """,
                         arguments: [
                             id,
-                            vaultID,
+                            workspaceID,
                             parentID,
                             name,
                             DahliaProjectName.siblingKey(name),
@@ -83,11 +83,11 @@ public extension MeetingAccessStore {
                     effectiveTypeChangedProjectIDs: []
                 )
             }
-            DahliaWorkspaceChangeNotification.post(vaultID: vaultID)
+            DahliaWorkspaceChangeNotification.post(workspaceID: workspaceID)
             return result
         } catch {
             if committed {
-                DahliaWorkspaceChangeNotification.post(vaultID: vaultID)
+                DahliaWorkspaceChangeNotification.post(workspaceID: workspaceID)
             }
             throw error
         }
@@ -95,11 +95,11 @@ public extension MeetingAccessStore {
 
     func updateProject(id: UUID, update: ProjectUpdate) throws -> ProjectMutationResult {
         try requireWriteAccess()
-        let vault = try database.read(workspaceVault(in:))
+        let workspace = try database.read(workspaceWorkspace(in:))
         var committed = false
 
         do {
-            let result = try withVaultMutationLock(vaultURL: vault.url) {
+            let result = try withWorkspaceMutationLock(workspaceURL: workspace.url) {
                 let beforeRows = try database.read(projectRows(in:))
                 let plan = try makeProjectUpdatePlan(id: id, update: update, rows: beforeRows)
                 guard plan.changed else {
@@ -111,9 +111,9 @@ public extension MeetingAccessStore {
                     )
                 }
                 let summaryPlan = plan.pathChanged
-                    ? try makeProjectSummaryMovePlan(plan: plan, rows: beforeRows, vault: vault)
+                    ? try makeProjectSummaryMovePlan(plan: plan, rows: beforeRows, workspace: workspace)
                     : SummaryMovePlan(moves: [], updates: [])
-                try performSummaryFileMoves(summaryPlan.moves, vaultURL: vault.url) {
+                try performSummaryFileMoves(summaryPlan.moves, workspaceURL: workspace.url) {
                     try commitProjectUpdate(
                         id: id,
                         expectedRevision: update.expectedRevision,
@@ -136,11 +136,11 @@ public extension MeetingAccessStore {
                     effectiveTypeChangedProjectIDs: effectiveTypeChanged.sorted(by: uuidSort)
                 )
             }
-            if result.changed { DahliaWorkspaceChangeNotification.post(vaultID: vaultID) }
+            if result.changed { DahliaWorkspaceChangeNotification.post(workspaceID: workspaceID) }
             return result
         } catch {
             if committed {
-                DahliaWorkspaceChangeNotification.post(vaultID: vaultID)
+                DahliaWorkspaceChangeNotification.post(workspaceID: workspaceID)
             }
             throw error
         }
@@ -157,9 +157,9 @@ public extension MeetingAccessStore {
         guard Set(expectations.map(\.meetingID)).count == expectations.count else {
             throw MeetingAccessError.meetingMembershipConflict
         }
-        let vault = try database.read(workspaceVault(in:))
+        let workspace = try database.read(workspaceWorkspace(in:))
 
-        let result = try withVaultMutationLock(vaultURL: vault.url) {
+        let result = try withWorkspaceMutationLock(workspaceURL: workspace.url) {
             let projectPath = try membershipDestinationProjectPath(projectID: projectID)
             let changedIDs = try database.read { db in
                 try changedMeetingIDs(
@@ -173,22 +173,22 @@ public extension MeetingAccessStore {
             }
 
             let summaryPlan: SummaryMovePlan
-            if let vaultURL = vault.url {
+            if let workspaceURL = workspace.url {
                 let destinationDirectory = projectPath.map {
-                    vaultURL.appending(path: $0, directoryHint: .isDirectory)
-                } ?? vaultURL
+                    workspaceURL.appending(path: $0, directoryHint: .isDirectory)
+                } ?? workspaceURL
                 summaryPlan = try database.read { db in
                     try makeSummaryMovePlan(
                         meetingIDs: Set(changedIDs),
                         destinationDirectory: destinationDirectory,
-                        vaultURL: vaultURL,
+                        workspaceURL: workspaceURL,
                         in: db
                     )
                 }
             } else {
                 summaryPlan = SummaryMovePlan(moves: [], updates: [])
             }
-            try performSummaryFileMoves(summaryPlan.moves, vaultURL: vault.url) {
+            try performSummaryFileMoves(summaryPlan.moves, workspaceURL: workspace.url) {
                 try commitMeetingMemberships(
                     expectations: expectations,
                     projectID: projectID,
@@ -203,20 +203,20 @@ public extension MeetingAccessStore {
             )
         }
         if result.changed {
-            DahliaWorkspaceChangeNotification.post(vaultID: vaultID)
+            DahliaWorkspaceChangeNotification.post(workspaceID: workspaceID)
         }
         return result
     }
 }
 
 private extension MeetingAccessStore {
-    struct WorkspaceVault {
+    struct WorkspaceWorkspace {
         let id: UUID
         let name: String
         let path: String?
 
         var url: URL? { path.map { URL(fileURLWithPath: $0, isDirectory: true) } }
-        var scoped: ScopedVault { ScopedVault(id: id, name: name) }
+        var scoped: ScopedWorkspace { ScopedWorkspace(id: id, name: name) }
     }
 
     struct WorkspaceProjectRow {
@@ -268,19 +268,19 @@ private extension MeetingAccessStore {
         let updates: [SummaryExportUpdate]
     }
 
-    func workspaceVault(in db: Database) throws -> WorkspaceVault {
+    func workspaceWorkspace(in db: Database) throws -> WorkspaceWorkspace {
         let columns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')"))
         guard columns.isSuperset(of: ["parentProjectId", "name", "nameKey", "projectType", "revision"]) else {
             throw MeetingAccessError.databaseUpgradeRequired
         }
         guard let row = try Row.fetchOne(
             db,
-            sql: "SELECT id, name, path FROM vaults WHERE id = ?",
-            arguments: [vaultID]
+            sql: "SELECT id, name, path FROM workspaces WHERE id = ?",
+            arguments: [workspaceID]
         ) else {
-            throw MeetingAccessError.vaultNotFound
+            throw MeetingAccessError.workspaceNotFound
         }
-        return WorkspaceVault(id: row["id"], name: row["name"], path: row["path"])
+        return WorkspaceWorkspace(id: row["id"], name: row["name"], path: row["path"])
     }
 
     func projectRows(in db: Database) throws -> [WorkspaceProjectRow] {
@@ -289,9 +289,9 @@ private extension MeetingAccessStore {
             sql: """
             SELECT id, parentProjectId, name, description, projectType, revision
             FROM projects
-            WHERE vaultId = ?
+            WHERE workspace_id = ?
             """,
-            arguments: [vaultID]
+            arguments: [workspaceID]
         ).map { row in
             let rawType: String? = row["projectType"]
             return WorkspaceProjectRow(
@@ -374,7 +374,7 @@ private extension MeetingAccessStore {
         let name = try update.name.map(validatedName) ?? project.name
         let parentProjectID: UUID? = switch update.parent {
         case .unchanged: project.parentProjectID
-        case .vaultRoot: nil
+        case .workspaceRoot: nil
         case let .project(parentID): parentID
         }
 
@@ -446,8 +446,8 @@ private extension MeetingAccessStore {
         try database.write { db in
             guard try Int.fetchOne(
                 db,
-                sql: "SELECT revision FROM projects WHERE id = ? AND vaultId = ?",
-                arguments: [id, vaultID]
+                sql: "SELECT revision FROM projects WHERE id = ? AND workspace_id = ?",
+                arguments: [id, workspaceID]
             ) == expectedRevision else {
                 throw MeetingAccessError.projectConflict("the project changed before the update was committed")
             }
@@ -456,7 +456,7 @@ private extension MeetingAccessStore {
                 UPDATE projects
                 SET parentProjectId = ?, name = ?, nameKey = ?,
                     description = ?, projectType = ?, revision = revision + 1
-                WHERE id = ? AND vaultId = ?
+                WHERE id = ? AND workspace_id = ?
                 """,
                 arguments: [
                     plan.parentProjectID,
@@ -465,7 +465,7 @@ private extension MeetingAccessStore {
                     plan.description,
                     plan.explicitType?.rawValue,
                     id,
-                    vaultID,
+                    workspaceID,
                 ]
             )
             if plan.pathChanged || plan.typeChanged {
@@ -503,10 +503,10 @@ private extension MeetingAccessStore {
                 sql: """
                 SELECT projectId, COUNT(*) AS count
                 FROM meetings
-                WHERE vaultId = ? AND projectId IS NOT NULL
+                WHERE workspace_id = ? AND projectId IS NOT NULL
                 GROUP BY projectId
                 """,
-                arguments: [vaultID]
+                arguments: [workspaceID]
             ).map { row -> (UUID, Int) in (row["projectId"], row["count"]) }
         )
         let children = Dictionary(grouping: rows, by: \.parentProjectID)
@@ -596,14 +596,14 @@ private extension MeetingAccessStore {
     ) throws -> [UUID] {
         let meetingIDs = expectations.map(\.meetingID)
         let placeholders = meetingIDs.map { _ in "?" }.joined(separator: ",")
-        var arguments: StatementArguments = [vaultID]
+        var arguments: StatementArguments = [workspaceID]
         arguments += StatementArguments(meetingIDs)
         let rows = try Row.fetchAll(
             db,
             sql: """
             SELECT id, projectId
             FROM meetings
-            WHERE vaultId = ? AND id IN (\(placeholders))
+            WHERE workspace_id = ? AND id IN (\(placeholders))
             """,
             arguments: arguments
         )
@@ -643,8 +643,8 @@ private extension MeetingAccessStore {
             )
             for meetingID in meetingIDs {
                 try db.execute(
-                    sql: "UPDATE meetings SET projectId = ?, updatedAt = ? WHERE id = ? AND vaultId = ?",
-                    arguments: [projectID, Date.now, meetingID, vaultID]
+                    sql: "UPDATE meetings SET projectId = ?, updatedAt = ? WHERE id = ? AND workspace_id = ?",
+                    arguments: [projectID, Date.now, meetingID, workspaceID]
                 )
             }
             for update in summaryUpdates {
@@ -661,7 +661,7 @@ private extension MeetingAccessStore {
                 SET url = ?, updatedAt = ?
                 WHERE meetingId = ? AND type = 'vault'
                 """,
-                arguments: [vaultSummaryURL(relativePath), Date.now, update.meetingID]
+                arguments: [workspaceSummaryURL(relativePath), Date.now, update.meetingID]
             )
         } else {
             try db.execute(
@@ -673,18 +673,18 @@ private extension MeetingAccessStore {
 
     func performSummaryFileMoves(
         _ moves: [SummaryFileMove],
-        vaultURL: URL?,
+        workspaceURL: URL?,
         operation: () throws -> Void
     ) throws {
-        guard let vaultURL else { return try operation() }
-        let createdDirectories = try createOutputDirectories(for: moves, vaultURL: vaultURL)
+        guard let workspaceURL else { return try operation() }
+        let createdDirectories = try createOutputDirectories(for: moves, workspaceURL: workspaceURL)
         var completedMoves: [SummaryFileMove] = []
         do {
             for move in moves {
-                try DahliaVaultFileMover.moveItem(
+                try DahliaWorkspaceFileMover.moveItem(
                     at: move.source,
                     to: move.destination,
-                    inside: vaultURL
+                    inside: workspaceURL
                 )
                 completedMoves.append(move)
             }
@@ -693,10 +693,10 @@ private extension MeetingAccessStore {
             var rollbackFailed = false
             for move in completedMoves.reversed() {
                 do {
-                    try DahliaVaultFileMover.moveItem(
+                    try DahliaWorkspaceFileMover.moveItem(
                         at: move.destination,
                         to: move.source,
-                        inside: vaultURL
+                        inside: workspaceURL
                     )
                 } catch {
                     rollbackFailed = true
@@ -719,7 +719,7 @@ private extension MeetingAccessStore {
     func makeSummaryMovePlan(
         meetingIDs: Set<UUID>,
         destinationDirectory: URL,
-        vaultURL: URL,
+        workspaceURL: URL,
         in db: Database
     ) throws -> SummaryMovePlan {
         guard !meetingIDs.isEmpty else { return SummaryMovePlan(moves: [], updates: []) }
@@ -735,7 +735,7 @@ private extension MeetingAccessStore {
         )
         let externallyReferencedSources = try externalSummaryIdentities(
             excluding: meetingIDs,
-            vaultURL: vaultURL,
+            workspaceURL: workspaceURL,
             in: db
         )
         var moves: [SummaryFileMove] = []
@@ -745,12 +745,12 @@ private extension MeetingAccessStore {
         for row in rows {
             let meetingID: UUID = row["meetingId"]
             let storedURL: String = row["url"]
-            guard let relativePath = vaultRelativeSummaryPath(storedURL) else {
+            guard let relativePath = workspaceRelativeSummaryPath(storedURL) else {
                 updates.append(SummaryExportUpdate(meetingID: meetingID, relativePath: nil))
                 continue
             }
-            let source = vaultURL.appending(path: relativePath).standardizedFileURL
-            guard isInsideVault(source, vaultURL: vaultURL) else {
+            let source = workspaceURL.appending(path: relativePath).standardizedFileURL
+            guard isInsideWorkspace(source, workspaceURL: workspaceURL) else {
                 throw MeetingAccessError.projectFileConflict(source.path)
             }
             guard FileManager.default.fileExists(atPath: source.path) else {
@@ -764,10 +764,10 @@ private extension MeetingAccessStore {
                 updates.append(SummaryExportUpdate(meetingID: meetingID, relativePath: nil))
                 continue
             }
-            try validatePathContainsNoSymlink(source, vaultURL: vaultURL)
-            try validateOutputDirectory(destinationDirectory, vaultURL: vaultURL)
+            try validatePathContainsNoSymlink(source, workspaceURL: workspaceURL)
+            try validateOutputDirectory(destinationDirectory, workspaceURL: workspaceURL)
             let destination = destinationDirectory.appending(path: source.lastPathComponent).standardizedFileURL
-            let newRelativePath = String(destination.path.dropFirst(vaultURL.standardizedFileURL.path.count + 1))
+            let newRelativePath = String(destination.path.dropFirst(workspaceURL.standardizedFileURL.path.count + 1))
             updates.append(SummaryExportUpdate(meetingID: meetingID, relativePath: newRelativePath))
             guard source != destination else { continue }
 
@@ -800,9 +800,9 @@ private extension MeetingAccessStore {
     func makeProjectSummaryMovePlan(
         plan: ProjectUpdatePlan,
         rows: [WorkspaceProjectRow],
-        vault: WorkspaceVault
+        workspace: WorkspaceWorkspace
     ) throws -> SummaryMovePlan {
-        guard let vaultURL = vault.url else { return SummaryMovePlan(moves: [], updates: []) }
+        guard let workspaceURL = workspace.url else { return SummaryMovePlan(moves: [], updates: []) }
         let paths = resolvedProjectPaths(rows)
         let projectPlaceholders = plan.hierarchyIDs.map { _ in "?" }.joined(separator: ",")
         let meetingIDs = try database.read { db in
@@ -810,9 +810,9 @@ private extension MeetingAccessStore {
                 db,
                 sql: """
                 SELECT id FROM meetings
-                WHERE vaultId = ? AND projectId IN (\(projectPlaceholders))
+                WHERE workspace_id = ? AND projectId IN (\(projectPlaceholders))
                 """,
-                arguments: StatementArguments([vaultID]) + StatementArguments(plan.hierarchyIDs)
+                arguments: StatementArguments([workspaceID]) + StatementArguments(plan.hierarchyIDs)
             )
         }
         guard !meetingIDs.isEmpty else {
@@ -836,7 +836,7 @@ private extension MeetingAccessStore {
         let externalIdentities = try database.read { db in
             try externalSummaryIdentities(
                 excluding: meetingIDs,
-                vaultURL: vaultURL,
+                workspaceURL: workspaceURL,
                 in: db
             )
         }
@@ -845,13 +845,13 @@ private extension MeetingAccessStore {
             let projectID: UUID = row["projectId"]
             let storedURL: String = row["url"]
             guard let projectPath = paths[projectID],
-                  let storedPath = vaultRelativeSummaryPath(storedURL),
+                  let storedPath = workspaceRelativeSummaryPath(storedURL),
                   !storedPath.hasPrefix(projectPath + "/")
             else {
                 continue
             }
-            let source = vaultURL.appending(path: storedPath).standardizedFileURL
-            guard isInsideVault(source, vaultURL: vaultURL) else {
+            let source = workspaceURL.appending(path: storedPath).standardizedFileURL
+            guard isInsideWorkspace(source, workspaceURL: workspaceURL) else {
                 throw MeetingAccessError.projectFileConflict(source.path)
             }
             guard FileManager.default.fileExists(atPath: source.path) else { continue }
@@ -871,7 +871,7 @@ private extension MeetingAccessStore {
             let newProjectPath = oldProjectPath == plan.oldPath
                 ? plan.newPath
                 : plan.newPath + oldProjectPath.dropFirst(plan.oldPath.count)
-            guard let storedPath = vaultRelativeSummaryPath(storedURL) else {
+            guard let storedPath = workspaceRelativeSummaryPath(storedURL) else {
                 updates.append(SummaryExportUpdate(meetingID: meetingID, relativePath: nil))
                 continue
             }
@@ -885,8 +885,8 @@ private extension MeetingAccessStore {
                 updates.append(SummaryExportUpdate(meetingID: meetingID, relativePath: nil))
                 continue
             }
-            let source = vaultURL.appending(path: storedPath).standardizedFileURL
-            guard isInsideVault(source, vaultURL: vaultURL) else {
+            let source = workspaceURL.appending(path: storedPath).standardizedFileURL
+            guard isInsideWorkspace(source, workspaceURL: workspaceURL) else {
                 throw MeetingAccessError.projectFileConflict(source.path)
             }
             guard FileManager.default.fileExists(atPath: source.path) else {
@@ -900,11 +900,11 @@ private extension MeetingAccessStore {
                 updates.append(SummaryExportUpdate(meetingID: meetingID, relativePath: nil))
                 continue
             }
-            try validatePathContainsNoSymlink(source, vaultURL: vaultURL)
+            try validatePathContainsNoSymlink(source, workspaceURL: workspaceURL)
 
             let destinationRelativePath = "\(newProjectPath)/\(suffix)"
-            let destination = vaultURL.appending(path: destinationRelativePath).standardizedFileURL
-            try validateOutputDirectory(destination.deletingLastPathComponent(), vaultURL: vaultURL)
+            let destination = workspaceURL.appending(path: destinationRelativePath).standardizedFileURL
+            try validateOutputDirectory(destination.deletingLastPathComponent(), workspaceURL: workspaceURL)
             updates.append(SummaryExportUpdate(
                 meetingID: meetingID,
                 relativePath: destinationRelativePath
@@ -937,8 +937,8 @@ private extension MeetingAccessStore {
         return SummaryMovePlan(moves: moves, updates: updates)
     }
 
-    func validateOutputDirectory(_ directory: URL, vaultURL: URL) throws {
-        let root = vaultURL.standardizedFileURL
+    func validateOutputDirectory(_ directory: URL, workspaceURL: URL) throws {
+        let root = workspaceURL.standardizedFileURL
         let candidate = directory.standardizedFileURL
         let rootComponents = root.pathComponents
         guard candidate.pathComponents.starts(with: rootComponents) else {
@@ -948,7 +948,7 @@ private extension MeetingAccessStore {
         for component in candidate.pathComponents.dropFirst(rootComponents.count) {
             current.append(path: component, directoryHint: .isDirectory)
             guard FileManager.default.fileExists(atPath: current.path) else {
-                guard isInsideVaultOrRoot(current, vaultURL: root) else {
+                guard isInsideWorkspaceOrRoot(current, workspaceURL: root) else {
                     throw MeetingAccessError.projectFileConflict(current.path)
                 }
                 return
@@ -956,7 +956,7 @@ private extension MeetingAccessStore {
             let values = try current.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             guard values.isDirectory == true,
                   values.isSymbolicLink != true,
-                  isInsideVaultOrRoot(current, vaultURL: root) else {
+                  isInsideWorkspaceOrRoot(current, workspaceURL: root) else {
                 throw MeetingAccessError.projectFileConflict(current.path)
             }
         }
@@ -983,11 +983,11 @@ private extension MeetingAccessStore {
 
     func externalSummaryIdentities(
         excluding meetingIDs: Set<UUID>,
-        vaultURL: URL,
+        workspaceURL: URL,
         in db: Database
     ) throws -> Set<DahliaWorkspaceFileIdentity> {
         let placeholders = meetingIDs.map { _ in "?" }.joined(separator: ",")
-        var arguments: StatementArguments = [vaultID]
+        var arguments: StatementArguments = [workspaceID]
         arguments += StatementArguments(meetingIDs)
         let urls = try String.fetchAll(
             db,
@@ -996,15 +996,15 @@ private extension MeetingAccessStore {
             FROM summary_exports
             JOIN meetings ON meetings.id = summary_exports.meetingId
             WHERE summary_exports.type = 'vault'
-              AND meetings.vaultId = ?
+              AND meetings.workspace_id = ?
               AND summary_exports.meetingId NOT IN (\(placeholders))
             """,
             arguments: arguments
         )
         return Set(urls.compactMap { storedURL in
-            guard let relativePath = vaultRelativeSummaryPath(storedURL) else { return nil }
-            let source = vaultURL.appending(path: relativePath).standardizedFileURL
-            guard isInsideVault(source, vaultURL: vaultURL) else { return nil }
+            guard let relativePath = workspaceRelativeSummaryPath(storedURL) else { return nil }
+            let source = workspaceURL.appending(path: relativePath).standardizedFileURL
+            guard isInsideWorkspace(source, workspaceURL: workspaceURL) else { return nil }
             guard FileManager.default.fileExists(atPath: source.path) else { return nil }
             return DahliaWorkspaceFileIdentity.resolve(source)
         })
@@ -1012,15 +1012,15 @@ private extension MeetingAccessStore {
 
     func createOutputDirectories(
         for moves: [SummaryFileMove],
-        vaultURL: URL
+        workspaceURL: URL
     ) throws -> [URL] {
-        let root = vaultURL.standardizedFileURL
+        let root = workspaceURL.standardizedFileURL
         let directories = Set(moves.map { $0.destination.deletingLastPathComponent().standardizedFileURL })
             .sorted { $0.pathComponents.count < $1.pathComponents.count }
         var created: [URL] = []
         do {
             for directory in directories {
-                try validateOutputDirectory(directory, vaultURL: root)
+                try validateOutputDirectory(directory, workspaceURL: root)
                 var current = root
                 for component in directory.pathComponents.dropFirst(root.pathComponents.count) {
                     current.append(path: component, directoryHint: .isDirectory)
@@ -1046,13 +1046,13 @@ private extension MeetingAccessStore {
         }
     }
 
-    func isInsideVaultOrRoot(_ value: URL, vaultURL: URL) -> Bool {
-        value.resolvingSymlinksInPath().standardizedFileURL == vaultURL.resolvingSymlinksInPath().standardizedFileURL
-            || isInsideVault(value, vaultURL: vaultURL)
+    func isInsideWorkspaceOrRoot(_ value: URL, workspaceURL: URL) -> Bool {
+        value.resolvingSymlinksInPath().standardizedFileURL == workspaceURL.resolvingSymlinksInPath().standardizedFileURL
+            || isInsideWorkspace(value, workspaceURL: workspaceURL)
     }
 
-    func validatePathContainsNoSymlink(_ value: URL, vaultURL: URL) throws {
-        let root = vaultURL.standardizedFileURL
+    func validatePathContainsNoSymlink(_ value: URL, workspaceURL: URL) throws {
+        let root = workspaceURL.standardizedFileURL
         let candidate = value.standardizedFileURL
         let rootComponents = root.pathComponents
         let candidateComponents = candidate.pathComponents

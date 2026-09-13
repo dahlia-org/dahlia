@@ -1,4 +1,4 @@
-import { rotateVaultKeys } from "../encryption/rotation";
+import { rotateWorkspaceKeys } from "../encryption/rotation";
 import { createSummaryJobStore, type SummaryJobStore } from "../summary/store";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
@@ -51,7 +51,7 @@ export function createNodeApplicationStore(
         config,
         postgresMigrations(migrations),
       ),
-      rotateEncryptionKeys: (apply) => rotateVaultKeys(connection.db, true, config.encryption, apply),
+      rotateEncryptionKeys: (apply) => rotateWorkspaceKeys(connection.db, true, config.encryption, apply),
       searchIndex: config.searchEmbedding ? createPostgresSearchIndexStore(connection.db) : undefined,
       summaryJobs: createSummaryJobStore(connection.db, true, config.encryption),
       imageAnalysis: config.captioningModel ? createImageAnalysisStore(connection.db, true, config.encryption) : undefined,
@@ -179,7 +179,7 @@ export function createNodeApplicationStore(
         }
       },
     },
-    rotateEncryptionKeys: (apply) => rotateVaultKeys(transactionalSqlite, false, config.encryption, apply),
+    rotateEncryptionKeys: (apply) => rotateWorkspaceKeys(transactionalSqlite, false, config.encryption, apply),
     searchIndex: config.searchEmbedding ? createSqliteSearchIndexStore(transactionalSqlite) : undefined,
     summaryJobs: createSummaryJobStore(transactionalSqlite, false, config.encryption),
     imageAnalysis: config.captioningModel ? createImageAnalysisStore(transactionalSqlite, false, config.encryption) : undefined,

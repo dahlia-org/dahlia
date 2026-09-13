@@ -19,10 +19,10 @@ it("disables Lakebase top-K scans before weighted ranking and reads settings onc
     },
   };
   const store = createPostgresMeetingSyncStore(drizzle({ client: client as unknown as Pool }), "lakebase");
-  await store.withIdentity({ userId: "owner", workspaceId: "personal:owner", source: "header" }, async (scoped) => {
+  await store.withIdentity({ userId: "owner",  source: "header" }, async (scoped) => {
     const query = { text: "alpha beta", tokens: ["alpha", "beta"] };
-    await scoped.listMeetings("vault", query, 100);
-    await scoped.listScreenshots("vault", undefined, query, 100);
+    await scoped.listMeetings("workspace", query, 100);
+    await scoped.listScreenshots("workspace", undefined, query, 100);
   });
   expect(queries.filter(({ text }) => text.includes('from "app"."server_settings"'))).toHaveLength(1);
   const disableIndex = queries.findIndex(({ text }) => text.includes("set_config('lakebase_bm25.enable_scan', 'false', true)"));
@@ -49,8 +49,8 @@ it("decodes PostgreSQL project activity as UTC on a non-UTC host", async () => {
       },
     };
     const store = createPostgresMeetingSyncStore(drizzle({ client: client as unknown as Pool }));
-    const result = await store.withIdentity({ userId: "owner", workspaceId: "personal:owner", source: "header" },
-      (scoped) => scoped.searchProjectActivity("vault", {}));
+    const result = await store.withIdentity({ userId: "owner",  source: "header" },
+      (scoped) => scoped.searchProjectActivity("workspace", {}));
     expect(result).toEqual([{ projectId: "project", updatedAt: "2026-09-03T00:00:00.000Z" }]);
   } finally { vi.unstubAllEnvs(); }
 });
@@ -70,10 +70,10 @@ it.each(["postgres", "lakebase"] as const)("ranks integrated plaintext vectors i
     },
   };
   const store = createPostgresMeetingSyncStore(drizzle({ client: client as unknown as Pool }), backend);
-  await store.withIdentity({ userId: "owner", workspaceId: "personal:owner", source: "header" }, async (scoped) => {
+  await store.withIdentity({ userId: "owner",  source: "header" }, async (scoped) => {
     const query = { text: "alpha", tokens: ["alpha"], embedding: { model: "current", dimensions: 32, vector: [1, ...new Array<number>(31).fill(0)] } };
-    await scoped.listMeetings("vault", query, 10);
-    await scoped.listScreenshots("vault", undefined, query, 10);
+    await scoped.listMeetings("workspace", query, 10);
+    await scoped.listScreenshots("workspace", undefined, query, 10);
   });
   const vectors = queries.filter(({ text }) => text.includes("<=>"));
   expect(vectors).toHaveLength(2);

@@ -18,9 +18,9 @@
 
         @Test
         func syncProgressFitsTheMenuAndAppearsInTheFooter() throws {
-            let pending = VaultSyncProgress(
+            let pending = WorkspaceSyncProgress(
                 id: UUID(),
-                name: "Work Vault",
+                name: "Work Workspace",
                 state: .pending,
                 phase: .attachments,
                 errorCode: nil,
@@ -29,8 +29,8 @@
                 attachments: 2400,
                 other: 0
             )
-            let progress = AccountSyncProgress(vaults: [pending])
-            let footer = MainSidebarAccountMenuButton.footerTitle(accountName: "Account", vaultName: pending.name, syncSummary: progress.summary)
+            let progress = AccountSyncProgress(workspaces: [pending])
+            let footer = MainSidebarAccountMenuButton.footerTitle(accountName: "Account", workspaceName: pending.name, syncSummary: progress.summary)
             #expect(footer.string.contains(progress.summary))
             #expect(footer.string.contains(pending.name))
             let menu = NSHostingView(rootView: MainSidebarAccountMenuPanel(width: 320) {
@@ -40,7 +40,7 @@
             #expect(menu.fittingSize.height > 40 && menu.fittingSize.height <= 432)
 
             let rows = [
-                VaultSyncProgress(
+                WorkspaceSyncProgress(
                     id: UUID(),
                     name: "Preparing",
                     state: .pending,
@@ -52,7 +52,7 @@
                     other: 0
                 ),
                 pending,
-                VaultSyncProgress(
+                WorkspaceSyncProgress(
                     id: UUID(),
                     name: "Needs attention",
                     state: .blocked(.validation),
@@ -67,7 +67,7 @@
             let preview = MainSidebarAccountMenuPanel(width: 320) {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(L10n.syncProgress).font(.headline)
-                    ForEach(rows) { VaultSyncProgressView(progress: $0) }
+                    ForEach(rows) { WorkspaceSyncProgressView(progress: $0) }
                 }.padding(12)
             }
             let host = NSHostingView(rootView: preview.fixedSize())
@@ -82,48 +82,48 @@
         }
 
         @Test
-        func footerTitleShowsAccountAndVaultOnSeparateLines() {
+        func footerTitleShowsAccountAndWorkspaceOnSeparateLines() {
             let title = MainSidebarAccountMenuButton.footerTitle(
                 accountName: "Kazuki Matsuda",
-                vaultName: "Obsidian Vault"
+                workspaceName: "Obsidian Workspace"
             )
 
             #expect(title.string.contains("Kazuki Matsuda"))
-            #expect(title.string.contains("Obsidian Vault"))
+            #expect(title.string.contains("Obsidian Workspace"))
             #expect(title.string.contains("\n"))
             #expect(!title.string.contains("\u{FFFC}"))
 
             let accountRange = (title.string as NSString).range(of: "Kazuki Matsuda")
-            let vaultRange = (title.string as NSString).range(of: "Obsidian Vault")
+            let workspaceRange = (title.string as NSString).range(of: "Obsidian Workspace")
             let accountFont = title.attribute(.font, at: accountRange.location, effectiveRange: nil) as? NSFont
-            let vaultFont = title.attribute(.font, at: vaultRange.location, effectiveRange: nil) as? NSFont
+            let workspaceFont = title.attribute(.font, at: workspaceRange.location, effectiveRange: nil) as? NSFont
             let paragraphStyle = title.attribute(
                 .paragraphStyle,
                 at: accountRange.location,
                 effectiveRange: nil
             ) as? NSParagraphStyle
-            #expect(accountFont?.pointSize ?? 0 > vaultFont?.pointSize ?? 0)
+            #expect(accountFont?.pointSize ?? 0 > workspaceFont?.pointSize ?? 0)
             #expect(paragraphStyle?.firstLineHeadIndent == 6)
             #expect(paragraphStyle?.headIndent == 6)
         }
 
         @Test
-        func accountVaultsUseCreationOrderAndExcludeOtherAccounts() {
+        func accountWorkspacesUseCreationOrderAndExcludeOtherAccounts() {
             let connectionID = UUID.v7()
-            let first = makeVault(name: "First", accountConnectionID: connectionID, createdAt: .distantPast)
-            let local = makeVault(name: "Local", accountConnectionID: nil)
-            let second = makeVault(name: "Second", accountConnectionID: connectionID, createdAt: .now)
+            let first = makeWorkspace(name: "First", accountConnectionID: connectionID, createdAt: .distantPast)
+            let local = makeWorkspace(name: "Local", accountConnectionID: nil)
+            let second = makeWorkspace(name: "Second", accountConnectionID: connectionID, createdAt: .now)
 
-            #expect(MainSidebarFooterView.vaults([second, local, first], linkedTo: connectionID) == [first, second])
-            #expect(MainSidebarFooterView.vaults([first, local, second], linkedTo: nil) == [local])
-            #expect(MainSidebarFooterView.vaultToSelect(
+            #expect(MainSidebarFooterView.workspaces([second, local, first], linkedTo: connectionID) == [first, second])
+            #expect(MainSidebarFooterView.workspaces([first, local, second], linkedTo: nil) == [local])
+            #expect(MainSidebarFooterView.workspaceToSelect(
                 from: [first, local, second],
-                currentVault: local,
+                currentWorkspace: local,
                 connectionID: connectionID
             ) == first)
-            #expect(MainSidebarFooterView.vaultToSelect(
+            #expect(MainSidebarFooterView.workspaceToSelect(
                 from: [first, local, second],
-                currentVault: first,
+                currentWorkspace: first,
                 connectionID: connectionID
             ) == nil)
         }
@@ -275,9 +275,9 @@
             window.contentView?.addSubview(button)
             let connections = (0 ..< 20).map { makeConnection(origin: "https://server-\($0).example.com", isCloud: false) }
             let coordinator = MainSidebarAccountMenuCoordinator(
-                vaults: [], currentVault: nil, connections: connections,
+                workspaces: [], currentWorkspace: nil, connections: connections,
                 accountSelection: .init(connectionID: nil, isLocal: true, isLocalAvailable: true),
-                onSelectVault: { _ in }, onOpenSettings: { _ in }, onSelectAccount: { _ in }, onAccountAction: {}
+                onSelectWorkspace: { _ in }, onOpenSettings: { _ in }, onSelectAccount: { _ in }, onAccountAction: {}
             )
             coordinator.button = button
             defer { coordinator.dismissMenu()
@@ -318,15 +318,15 @@
             var didSelectAccount = false
             var didManageAccounts = false
             let coordinator = MainSidebarAccountMenuCoordinator(
-                vaults: [],
-                currentVault: nil,
+                workspaces: [],
+                currentWorkspace: nil,
                 connections: [cloud, server],
                 accountSelection: MainSidebarAccountSelection(
                     connectionID: cloud.id,
                     isLocal: false,
                     isLocalAvailable: true
                 ),
-                onSelectVault: { _ in },
+                onSelectWorkspace: { _ in },
                 onOpenSettings: { _ in },
                 onSelectAccount: {
                     didSelectAccount = true
@@ -362,20 +362,20 @@
         }
 
         @Test
-        func keyboardSelectionSkipsAccountsWithoutVaults() {
-            let unavailable = makeConnection(origin: "https://unused.example.com", isCloud: false, vaultCount: 0)
+        func keyboardSelectionSkipsAccountsWithoutWorkspaces() {
+            let unavailable = makeConnection(origin: "https://unused.example.com", isCloud: false, workspaceCount: 0)
             let available = makeConnection(origin: "https://used.example.com", isCloud: false)
             var selectedConnectionID: UUID?
             let coordinator = MainSidebarAccountMenuCoordinator(
-                vaults: [],
-                currentVault: nil,
+                workspaces: [],
+                currentWorkspace: nil,
                 connections: [unavailable, available],
                 accountSelection: MainSidebarAccountSelection(
                     connectionID: nil,
                     isLocal: true,
                     isLocalAvailable: true
                 ),
-                onSelectVault: { _ in },
+                onSelectWorkspace: { _ in },
                 onOpenSettings: { _ in },
                 onSelectAccount: { selectedConnectionID = $0?.id },
                 onAccountAction: {}
@@ -389,21 +389,21 @@
         }
 
         @Test
-        func currentVaultRemainsSelectableButDoesNothing() {
-            let current = makeVault(name: "Current", accountConnectionID: nil)
-            let other = makeVault(name: "Other", accountConnectionID: nil)
-            var selectedVault: VaultRecord?
+        func currentWorkspaceRemainsSelectableButDoesNothing() {
+            let current = makeWorkspace(name: "Current", accountConnectionID: nil)
+            let other = makeWorkspace(name: "Other", accountConnectionID: nil)
+            var selectedWorkspace: WorkspaceRecord?
             var openedCategory: SettingsCategory?
             let coordinator = MainSidebarAccountMenuCoordinator(
-                vaults: [current, other],
-                currentVault: current,
+                workspaces: [current, other],
+                currentWorkspace: current,
                 connections: [],
                 accountSelection: MainSidebarAccountSelection(
                     connectionID: nil,
                     isLocal: true,
                     isLocalAvailable: true
                 ),
-                onSelectVault: { selectedVault = $0 },
+                onSelectWorkspace: { selectedWorkspace = $0 },
                 onOpenSettings: { openedCategory = $0 },
                 onSelectAccount: { _ in },
                 onAccountAction: {}
@@ -412,23 +412,23 @@
             coordinator.moveSelection(1)
             coordinator.moveSelection(1)
             coordinator.activateSelection()
-            #expect(selectedVault == nil)
+            #expect(selectedWorkspace == nil)
 
             coordinator.moveSelection(1)
             coordinator.moveSelection(1)
             coordinator.moveSelection(1)
             coordinator.activateSelection()
-            #expect(selectedVault == other)
+            #expect(selectedWorkspace == other)
 
             coordinator.moveSelection(1)
             coordinator.moveSelection(1)
             coordinator.moveSelection(1)
             coordinator.moveSelection(1)
             coordinator.activateSelection()
-            #expect(openedCategory == .accountsAndVaults)
+            #expect(openedCategory == .accountsAndWorkspaces)
         }
 
-        private func makeConnection(origin: String, isCloud: Bool, vaultCount: Int = 1) -> DahliaAccountConnection {
+        private func makeConnection(origin: String, isCloud: Bool, workspaceCount: Int = 1) -> DahliaAccountConnection {
             DahliaAccountConnection(
                 record: DahliaAccountConnectionRecord(
                     id: .v7(),
@@ -438,16 +438,16 @@
                 ),
                 account: DahliaCloudAccount(id: origin, name: origin, email: nil),
                 isCloud: isCloud,
-                vaultCount: vaultCount
+                workspaceCount: workspaceCount
             )
         }
 
-        private func makeVault(
+        private func makeWorkspace(
             name: String,
             accountConnectionID: UUID?,
             createdAt: Date = .now
-        ) -> VaultRecord {
-            VaultRecord(
+        ) -> WorkspaceRecord {
+            WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/\(name)",
                 name: name,

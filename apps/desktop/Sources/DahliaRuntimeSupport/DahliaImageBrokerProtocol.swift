@@ -4,21 +4,21 @@ import Foundation
 /// Scoped content IPC: helpers receive bytes and never receive account credentials.
 public enum DahliaImageBrokerProtocol {
     public struct Request: Codable, Sendable {
-        public let vaultId: UUID
+        public let workspaceId: UUID
         public let meetingId: UUID
         public let screenshotId: UUID?
         public let text: TextBrokerRequest?
 
-        public init(vaultId: UUID, meetingId: UUID, screenshotId: UUID) {
-            self.vaultId = vaultId
+        public init(workspaceId: UUID, meetingId: UUID, screenshotId: UUID) {
+            self.workspaceId = workspaceId
             self.meetingId = meetingId
             self.screenshotId = screenshotId
             text = nil
         }
 
-        public init(vaultId: UUID, text: TextBrokerRequest) {
-            self.vaultId = vaultId
-            meetingId = text.meetingId ?? vaultId
+        public init(workspaceId: UUID, text: TextBrokerRequest) {
+            self.workspaceId = workspaceId
+            meetingId = text.meetingId ?? workspaceId
             screenshotId = nil
             self.text = text
         }

@@ -36,9 +36,9 @@ import Foundation
 
         private func makeSession(service: TestCodexChatService) -> CodexChatSessionModel {
             let settings = AppSettings()
-            settings.currentVault = VaultRecord(
+            settings.currentWorkspace = WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/chat-steering-test-vault",
+                path: "/tmp/chat-steering-test-workspace",
                 name: "Chat Steering Test",
                 createdAt: .now,
                 lastOpenedAt: .now

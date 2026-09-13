@@ -25,11 +25,11 @@ import GRDB
         }
 
         @Test
-        func staleDiscardFailureDoesNotAppearAfterVaultChanges() async throws {
+        func staleDiscardFailureDoesNotAppearAfterWorkspaceChanges() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer { fixture.stop() }
             let settings = AppSettings()
-            settings.currentVault = fixture.vault
+            settings.currentWorkspace = fixture.workspace
             let gate = SidebarDiscardGate()
             let viewModel = SidebarViewModel(settings: settings) { _, _, _ in
                 await gate.wait()
@@ -39,10 +39,10 @@ import GRDB
             defer { viewModel.setAppDatabase(nil) }
 
             let discardTask = Task {
-                await viewModel.discardUnprocessedRecording(Self.discardItem(vaultId: fixture.vault.id))
+                await viewModel.discardUnprocessedRecording(Self.discardItem(workspaceId: fixture.workspace.id))
             }
             #expect(await gate.waitUntilBlocked())
-            settings.currentVault = nil
+            settings.currentWorkspace = nil
             viewModel.setAppDatabase(nil)
             await gate.release()
             await discardTask.value
@@ -51,36 +51,36 @@ import GRDB
         }
 
         @Test
-        func staleVaultItemIsRejectedBeforeDiscardStarts() async throws {
+        func staleWorkspaceItemIsRejectedBeforeDiscardStarts() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer { fixture.stop() }
             let settings = AppSettings()
-            settings.currentVault = fixture.vault
+            settings.currentWorkspace = fixture.workspace
             let viewModel = SidebarViewModel(settings: settings) { _, _, _ in
-                Issue.record("Discard must not start for an item from another Vault")
+                Issue.record("Discard must not start for an item from another Workspace")
                 return true
             }
             viewModel.setAppDatabase(fixture.manager)
             defer { viewModel.setAppDatabase(nil) }
-            settings.currentVault = VaultRecord(
+            settings.currentWorkspace = WorkspaceRecord(
                 id: .v7(),
-                path: fixture.vault.path,
+                path: fixture.workspace.path,
                 name: "Other",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
 
-            await viewModel.discardUnprocessedRecording(Self.discardItem(vaultId: fixture.vault.id))
+            await viewModel.discardUnprocessedRecording(Self.discardItem(workspaceId: fixture.workspace.id))
 
             #expect(viewModel.unprocessedRecordingsError == nil)
         }
 
         @Test
-        func successfulDiscardRefreshesAfterOverlappingSameVaultRefresh() async throws {
+        func successfulDiscardRefreshesAfterOverlappingSameWorkspaceRefresh() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer { fixture.stop() }
             let settings = AppSettings()
-            settings.currentVault = fixture.vault
+            settings.currentWorkspace = fixture.workspace
             let gate = SidebarDiscardGate()
             let viewModel = SidebarViewModel(settings: settings) { _, _, _ in
                 await gate.wait()
@@ -90,7 +90,7 @@ import GRDB
             defer { viewModel.setAppDatabase(nil) }
 
             let discardTask = Task {
-                await viewModel.discardUnprocessedRecording(Self.discardItem(vaultId: fixture.vault.id))
+                await viewModel.discardUnprocessedRecording(Self.discardItem(workspaceId: fixture.workspace.id))
             }
             #expect(await gate.waitUntilBlocked())
             await viewModel.refreshUnprocessedRecordings()
@@ -103,11 +103,11 @@ import GRDB
             #expect(viewModel.unprocessedRecordingsError != nil)
         }
 
-        private static func discardItem(vaultId: UUID) -> BackupPreflightItem {
+        private static func discardItem(workspaceId: UUID) -> BackupPreflightItem {
             BackupPreflightItem(
                 sessionId: .v7(),
                 meetingId: .v7(),
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 meetingName: "Discard",
                 startedAt: .now,
                 state: .failed,

@@ -44,16 +44,16 @@ import GRDB
             let queue = try DatabaseQueue()
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v31_meetingConversationMetrics")
             let now = Date(timeIntervalSince1970: 1_776_384_000)
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/transcript-audio-features-migration",
-                name: "Vault",
+                name: "Workspace",
                 createdAt: now,
                 lastOpenedAt: now
             )
             let meeting = MeetingRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: nil,
                 name: "Preserved",
                 createdAt: now,
@@ -61,14 +61,14 @@ import GRDB
             )
             let segmentID = UUID.v7()
             try queue.write { db in
-                try insertLegacyVault(vault, in: db)
+                try insertLegacyWorkspace(workspace, in: db)
                 try db.execute(
                     sql: """
                     INSERT INTO meetings (id, vaultId, projectId, name, status, duration, createdAt, updatedAt)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     arguments: [
-                        meeting.id, meeting.vaultId, meeting.projectId, meeting.name, meeting.status,
+                        meeting.id, meeting.workspaceId, meeting.projectId, meeting.name, meeting.status,
                         meeting.duration, meeting.createdAt, meeting.updatedAt,
                     ]
                 )

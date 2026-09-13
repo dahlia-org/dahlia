@@ -7,9 +7,9 @@
     struct MeetingSidebarProjectionBudgetTests {
         @Test
         func sharesMeetingLimitAcrossPinnedGroups() {
-            let vaultID = UUID.v7()
-            let first = group(vaultID: vaultID, meetingCount: 4)
-            let second = group(vaultID: vaultID, meetingCount: 4)
+            let workspaceID = UUID.v7()
+            let first = group(workspaceID: workspaceID, meetingCount: 4)
+            let second = group(workspaceID: workspaceID, meetingCount: 4)
 
             let groups = MeetingListSidebarView.limitMeetingCount(in: [first, second], to: 5)
 
@@ -20,21 +20,21 @@
 
         @Test
         func findsSelectedMeetingInPinnedGroups() throws {
-            let group = group(vaultID: UUID.v7(), meetingCount: 1)
+            let group = group(workspaceID: UUID.v7(), meetingCount: 1)
             let meetingID = try #require(group.meetings.first?.meetingId)
 
             #expect(MeetingListSidebarView.containsMeeting(meetingID, in: [group]))
             #expect(!MeetingListSidebarView.containsMeeting(UUID.v7(), in: [group]))
         }
 
-        private func group(vaultID: UUID, meetingCount: Int) -> MeetingProjectGroup {
+        private func group(workspaceID: UUID, meetingCount: Int) -> MeetingProjectGroup {
             MeetingProjectGroup(
                 key: .project(UUID.v7()),
                 project: nil,
                 meetings: (0 ..< meetingCount).map { index in
                     MeetingSidebarItem(
                         meetingId: UUID.v7(),
-                        vaultId: vaultID,
+                        workspaceId: workspaceID,
                         projectId: nil,
                         projectName: nil,
                         meetingName: "Meeting \(index)",

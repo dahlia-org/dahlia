@@ -50,7 +50,7 @@ final class CodexChatCoordinator {
 
     func activity(for threadID: String) -> CodexChatThreadActivity? {
         guard let session = sessions.values.first(where: {
-            $0.backendThreadID == threadID && $0.vaultID == dockedSession.vaultID
+            $0.backendThreadID == threadID && $0.workspaceID == dockedSession.workspaceID
         }) else { return nil }
         if session.pendingUserInput != nil || session.pendingApproval != nil {
             return .waitingForUser
@@ -71,13 +71,13 @@ final class CodexChatCoordinator {
         Task { await refreshHistory() }
     }
 
-    func activateVault(_ vaultID: UUID) {
-        guard dockedSession.vaultID != vaultID else { return }
-        for session in sessions.values where session.vaultID != vaultID && session.hasPendingGenerationWork {
+    func activateWorkspace(_ workspaceID: UUID) {
+        guard dockedSession.workspaceID != workspaceID else { return }
+        for session in sessions.values where session.workspaceID != workspaceID && session.hasPendingGenerationWork {
             session.release()
         }
-        contextProvider.update(vaultID: vaultID, meetingID: nil, projectID: nil, draftMeeting: nil, dbQueue: nil)
-        let session = makeSession(vaultID: vaultID)
+        contextProvider.update(workspaceID: workspaceID, meetingID: nil, projectID: nil, draftMeeting: nil, dbQueue: nil)
+        let session = makeSession(workspaceID: workspaceID)
         replaceDockedSession(
             with: session,
             isVisible: isDockedVisible,
@@ -98,10 +98,10 @@ final class CodexChatCoordinator {
         isDockedVisible = false
     }
 
-    func enterFullScreen(vaultID: UUID?) {
+    func enterFullScreen(workspaceID: UUID?) {
         isDockedVisible = false
         contextProvider.update(
-            vaultID: vaultID,
+            workspaceID: workspaceID,
             meetingID: nil,
             projectID: nil,
             draftMeeting: nil,
@@ -147,9 +147,9 @@ final class CodexChatCoordinator {
         _ thread: CodexChatThreadSummary,
         showDockedSidebar: Bool = true
     ) async -> CodexChatSessionID {
-        let vaultID = dockedSession.vaultID
+        let workspaceID = dockedSession.workspaceID
         if let existing = sessions.values.first(where: {
-            $0.backendThreadID == thread.id && $0.vaultID == vaultID
+            $0.backendThreadID == thread.id && $0.workspaceID == workspaceID
         }) {
             if !detachedSessionIDs.contains(existing.id) {
                 replaceDockedSession(with: existing, isVisible: showDockedSidebar)
@@ -158,7 +158,7 @@ final class CodexChatCoordinator {
         }
 
         let session = makeSession(
-            vaultID: vaultID,
+            workspaceID: workspaceID,
             backendThreadID: thread.id,
             title: thread.title
         )
@@ -168,9 +168,9 @@ final class CodexChatCoordinator {
     }
 
     func openHistoryThreadInDetachedWindow(_ thread: CodexChatThreadSummary) async -> CodexChatSessionID {
-        let vaultID = dockedSession.vaultID
+        let workspaceID = dockedSession.workspaceID
         if let existing = sessions.values.first(where: {
-            $0.backendThreadID == thread.id && $0.vaultID == vaultID
+            $0.backendThreadID == thread.id && $0.workspaceID == workspaceID
         }) {
             if existing.id == dockedSessionID {
                 detachedSessionIDs.insert(existing.id)
@@ -183,7 +183,7 @@ final class CodexChatCoordinator {
         }
 
         let session = makeSession(
-            vaultID: vaultID,
+            workspaceID: workspaceID,
             backendThreadID: thread.id,
             title: thread.title
         )
@@ -194,14 +194,14 @@ final class CodexChatCoordinator {
     }
 
     func updateCurrentContext(
-        vaultID: UUID?,
+        workspaceID: UUID?,
         meetingID: UUID?,
         projectID: UUID? = nil,
         draftMeeting: DraftMeeting?,
         dbQueue: DatabaseQueue?
     ) {
         contextProvider.update(
-            vaultID: vaultID,
+            workspaceID: workspaceID,
             meetingID: meetingID,
             projectID: projectID,
             draftMeeting: draftMeeting,
@@ -232,12 +232,12 @@ final class CodexChatCoordinator {
             }
         }
         do {
-            guard dockedSession.isBoundToCurrentVault,
-                  let vaultID = dockedSession.vaultID else { return }
-            let page = try await service.listThreads(cursor: historyCursor, vaultID: vaultID)
+            guard dockedSession.isBoundToCurrentWorkspace,
+                  let workspaceID = dockedSession.workspaceID else { return }
+            let page = try await service.listThreads(cursor: historyCursor, workspaceID: workspaceID)
             guard generation == historyGeneration,
-                  dockedSession.isBoundToCurrentVault,
-                  dockedSession.vaultID == vaultID else { return }
+                  dockedSession.isBoundToCurrentWorkspace,
+                  dockedSession.workspaceID == workspaceID else { return }
             history.append(contentsOf: page.threads.filter { item in
                 !history.contains(where: { $0.id == item.id })
             })
@@ -281,13 +281,13 @@ final class CodexChatCoordinator {
 
     private func makeSession(
         id: CodexChatSessionID = CodexChatSessionID(),
-        vaultID: UUID? = nil,
+        workspaceID: UUID? = nil,
         backendThreadID: String? = nil,
         title: String = ""
     ) -> CodexChatSessionModel {
         let session = CodexChatSessionModel(
             id: id,
-            vaultID: vaultID,
+            workspaceID: workspaceID,
             backendThreadID: backendThreadID,
             title: title,
             service: service,

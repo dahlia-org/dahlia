@@ -1,6 +1,5 @@
 import { APIError } from "better-auth/api";
 import { EncryptionError } from "./encryption/crypto";
-import { personalWorkspaceId } from "./auth/workspace";
 import { installPublicIDs } from "./public-http";
 import { wireValue } from "./public-wire";
 import { meetingMetadata } from "./sync/text-content";
@@ -168,7 +167,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   const identities = new IdentityService(config, auth, async (identity) => {
     const userId = identity.source === "header" ? await store.resolveHeaderUser(identity) : identity.userId;
     if (!userId) return null;
-    const resolved = { ...identity, userId, workspaceId: personalWorkspaceId(userId) };
+    const resolved = { ...identity, userId, };
     return await store.ensureIdentityUser(resolved) ? resolved : null;
   });
   const gateway = new GatewayService(config, dependencies.fetch);
@@ -302,7 +301,6 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
         email: identity.email,
         name: identity.name,
       },
-      workspace: { id: identity.workspaceId, type: "personal" },
     });
   });
 
@@ -404,19 +402,19 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   registerApi(app, "getLatestSummary", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     context.header("Cache-Control", "no-store");
-    return context.json(await sync.latestSummary(identity, await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!)),
+    return context.json(await sync.latestSummary(identity, await sync.meetingWorkspace(identity, sync.parseId(context.req.param("meetingId")!)),
       sync.parseId(context.req.param("meetingId")!), context.req.query("manifest")));
   });
   registerApi(app, "listSummaries", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     context.header("Cache-Control", "no-store");
-    return context.json(await sync.summaryVersions(identity, await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!)),
+    return context.json(await sync.summaryVersions(identity, await sync.meetingWorkspace(identity, sync.parseId(context.req.param("meetingId")!)),
       sync.parseId(context.req.param("meetingId")!), context.req.query("cursor"), context.req.query("limit")));
   });
   registerApi(app, "getSummary", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     context.header("Cache-Control", "no-store");
-    return context.json(await sync.summaryVersion(identity, await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!)),
+    return context.json(await sync.summaryVersion(identity, await sync.meetingWorkspace(identity, sync.parseId(context.req.param("meetingId")!)),
       sync.parseId(context.req.param("meetingId")!), context.req.param("version")!));
   });
   registerApi(app, "getLatestSummaryJob", async (context) => {
@@ -424,7 +422,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     if (!dependencies.summaryService) return context.json({ error: "summary_unavailable" }, 503);
     context.header("cache-control", "no-store");
     return context.json({ job: summaryJobResponse(await dependencies.summaryService.status(identity,
-      await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!)), sync.parseId(context.req.param("meetingId")!),
+      await sync.meetingWorkspace(identity, sync.parseId(context.req.param("meetingId")!)), sync.parseId(context.req.param("meetingId")!),
       undefined)) });
   });
   for (const action of ["cancel", "retry"] as const) registerApi(app, action === "cancel" ? "cancelSummaryJob" : "retrySummaryJob", accountSettingsBodyLimit, async (context) => {
@@ -437,11 +435,11 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       : await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     const service = dependencies.summaryService;
     if (!service) return context.json({ error: "summary_unavailable" }, 503);
-    const vaultId = await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!));
+    const workspaceId = await sync.meetingWorkspace(identity, sync.parseId(context.req.param("meetingId")!));
     const meetingId = sync.parseId(context.req.param("meetingId")!);
     const jobId = sync.parseId(context.req.param("jobId")!);
-    const job = action === "cancel" ? await service.cancel(identity, vaultId, meetingId, jobId)
-      : await service.retry(identity, vaultId, meetingId, jobId, await context.req.json().catch(() => null));
+    const job = action === "cancel" ? await service.cancel(identity, workspaceId, meetingId, jobId)
+      : await service.retry(identity, workspaceId, meetingId, jobId, await context.req.json().catch(() => null));
     if (action === "retry") context.header("Location", `/api/v1/meetings/${meetingId}/summary-jobs/${job.id}`);
     return context.json({ job: summaryJobResponse(job) }, action === "retry" ? 202 : 200);
   });
@@ -452,9 +450,9 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     }
     const identity = await syncIdentity(context.req.raw);
     if (!dependencies.summaryService) return context.json({ error: "summary_unavailable" }, 503);
-    const vaultId = await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!));
+    const workspaceId = await sync.meetingWorkspace(identity, sync.parseId(context.req.param("meetingId")!));
     const meetingId = sync.parseId(context.req.param("meetingId")!);
-    const job = await dependencies.summaryService.start(identity, vaultId, meetingId, await context.req.json().catch(() => null));
+    const job = await dependencies.summaryService.start(identity, workspaceId, meetingId, await context.req.json().catch(() => null));
     context.header("Location", `/api/v1/meetings/${meetingId}/summary-jobs/${job.id}`);
     return context.json({ job: summaryJobResponse(job) }, 202);
   });
@@ -463,8 +461,8 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const identity = await syncIdentity(context.req.raw);
     if (!dependencies.summaryService) return context.json({ error: "summary_unavailable" }, 503);
     const meetingId = sync.parseId(context.req.param("meetingId")!);
-    const vaultId = await sync.meetingVault(identity, meetingId);
-    const job = await dependencies.summaryService.status(identity, vaultId, meetingId, sync.parseId(context.req.param("jobId")!));
+    const workspaceId = await sync.meetingWorkspace(identity, meetingId);
+    const job = await dependencies.summaryService.status(identity, workspaceId, meetingId, sync.parseId(context.req.param("jobId")!));
     return job ? context.json({ job: summaryJobResponse(job) }) : context.json({ error: "summary_job_not_found" }, 404);
   });
 
@@ -491,26 +489,26 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   async function syncIdentity(request: Request): Promise<Identity> {
     const identity = await identities.fromBrowserOrGateway(request, ALL_APIS_SCOPE);
     if (dependencies.onSyncMutation) jobOwners.set(request, identity.userId);
-    return { ...identity, syncClient: { vaultTransfers: request.headers.get("X-Dahlia-Vault-Transfers") === "1" } };
+    return { ...identity, syncClient: { workspaceTransfers: request.headers.get("X-Dahlia-Workspace-Transfers") === "1" } };
   }
 
   registerApi(app, "getTransferAudience", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.vaultTransferAudience(identity, sync.parseId(context.req.param("vaultId")!),
-      sync.parseId(context.req.query("destinationVaultId") ?? "")));
+    return context.json(await sync.workspaceTransferAudience(identity, sync.parseId(context.req.param("workspaceId")!),
+      sync.parseId(context.req.query("destinationWorkspaceId") ?? "")));
   });
-  registerApi(app, "transferVault", syncBodyLimit, async (context) => {
+  registerApi(app, "transferWorkspace", syncBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.transferVault(identity, sync.parseId(context.req.param("vaultId")!),
+    return context.json(await sync.transferWorkspace(identity, sync.parseId(context.req.param("workspaceId")!),
       context.req.header("Idempotency-Key"), await context.req.json().catch(() => null)));
   });
   registerApi(app, "getRelocations", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.getVaultRelocations(identity, sync.parseId(context.req.param("vaultId")!)));
+    return context.json(await sync.getWorkspaceRelocations(identity, sync.parseId(context.req.param("workspaceId")!)));
   });
 
   registerApi(app, "commitTransaction", syncBodyLimit, async (context) => {
@@ -526,7 +524,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.listChanges(
       identity,
-      sync.parseId(context.req.param("vaultId")!),
+      sync.parseId(context.req.param("workspaceId")!),
       context.req.query("cursor"),
       context.req.query("highWaterCursor"),
     ));
@@ -544,7 +542,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.listSnapshot(
       identity,
-      sync.parseId(context.req.param("vaultId")!),
+      sync.parseId(context.req.param("workspaceId")!),
       context.req.query("cursor"),
       context.req.query("startCursor"),
     ));
@@ -555,8 +553,8 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const sources = dependencies.summaryService?.methods.map((method) => method.id) ?? [];
     return context.json({
       sync: { version: 5 },
-      ...(config.encryption ? { vaultEncryption: { version: 1 } } : {}),
-      vaultTransfers: { version: 1 },
+      ...(config.encryption ? { workspaceEncryption: { version: 1 } } : {}),
+      workspaceTransfers: { version: 1 },
       recordingArchive: { version: 1 },
       meetingEvents: { version: 1 },
       search: { version: 1 },
@@ -572,18 +570,18 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     if (!Number.isSafeInteger(version) || version > 2147483647) {
       throw new RequestError(400, "invalid_transcript_version");
     }
-    return context.json(await conversationAnalytics.get(identity, await sync.meetingVault(identity, meetingId), meetingId, version));
+    return context.json(await conversationAnalytics.get(identity, await sync.meetingWorkspace(identity, meetingId), meetingId, version));
   });
   registerApi(app, "search", bodyLimit({ maxSize: 16 * 1024,
     onError: (context) => context.json({ error: "search_request_too_large" }, 413) }), async (context) => {
     const identity = await syncIdentity(context.req.raw);
     context.header("Cache-Control", "no-store");
-    return context.json(await sync.searchAll(identity, { ...await context.req.json().catch(() => ({})), vaultId: sync.parseId(context.req.param("vaultId")!) }, context.req.raw.signal));
+    return context.json(await sync.searchAll(identity, { ...await context.req.json().catch(() => ({})), workspaceId: sync.parseId(context.req.param("workspaceId")!) }, context.req.raw.signal));
   });
   registerApi(app, "textSearch", accountSettingsBodyLimit, async (context) => {
     const identity = await syncIdentity(context.req.raw);
     const body = textSearchRequest.parse(await context.req.json());
-    return context.json(await sync.searchText(identity, sync.parseId(context.req.param("vaultId")!),
+    return context.json(await sync.searchText(identity, sync.parseId(context.req.param("workspaceId")!),
       body.query, body.kind, body.cursor, body.limit === undefined ? undefined : String(body.limit)));
   });
   registerApi(app, "getEvents", async (context) => {
@@ -700,26 +698,26 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   });
   registerApi(app, "listFiles", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.listFiles(identity, sync.parseId(context.req.param("vaultId")!), context.req.query("cursor")));
+    return context.json(await sync.listFiles(identity, sync.parseId(context.req.param("workspaceId")!), context.req.query("cursor")));
   });
-  registerApi(app, "listGovernanceVaults", async (context) => context.json(await sync.listGovernanceVaults(
+  registerApi(app, "listGovernanceWorkspaces", async (context) => context.json(await sync.listGovernanceWorkspaces(
     await identities.fromBrowser(context.req.raw), sync.parseId(context.req.param("organizationId")!), context.req.query("cursor"))));
-  registerApi(app, "confirmVaultDeletion", async (context) => context.json(await sync.confirmVaultDeletion(
-    await identities.fromBrowser(context.req.raw), sync.parseId(context.req.param("organizationId")!), sync.parseId(context.req.param("vaultId")!))));
-  registerApi(app, "forceDeleteVault", syncBodyLimit, async (context) => {
+  registerApi(app, "confirmWorkspaceDeletion", async (context) => context.json(await sync.confirmWorkspaceDeletion(
+    await identities.fromBrowser(context.req.raw), sync.parseId(context.req.param("organizationId")!), sync.parseId(context.req.param("workspaceId")!))));
+  registerApi(app, "forceDeleteWorkspace", syncBodyLimit, async (context) => {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.forceDeleteVault(identity, sync.parseId(context.req.param("organizationId")!),
-      sync.parseId(context.req.param("vaultId")!), await context.req.json().catch(() => null)));
+    return context.json(await sync.forceDeleteWorkspace(identity, sync.parseId(context.req.param("organizationId")!),
+      sync.parseId(context.req.param("workspaceId")!), await context.req.json().catch(() => null)));
   });
-  registerApi(app, "listVaults", async (context) => {
+  registerApi(app, "listWorkspaces", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json({ items: await sync.listVaults(identity, context.req.query("organizationId")), nextCursor: null });
+    return context.json({ items: await sync.listWorkspaces(identity, context.req.query("organizationId")), nextCursor: null });
   });
-  registerApi(app, "getVault", async (context) => {
+  registerApi(app, "getWorkspace", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    const vault = await sync.getVault(identity, sync.parseId(context.req.param("vaultId")!));
-    return vault ? context.json(vault) : context.json({ error: "vault_not_found" }, 404);
+    const workspace = await sync.getWorkspace(identity, sync.parseId(context.req.param("workspaceId")!));
+    return workspace ? context.json(workspace) : context.json({ error: "workspace_not_found" }, 404);
   });
   registerApi(app, "getProject", async (context) => {
     const identity = await syncIdentity(context.req.raw);
@@ -733,15 +731,15 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   });
   registerApi(app, "listProjects", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json({ items: await sync.listProjects(identity, sync.parseId(context.req.param("vaultId")!)), nextCursor: null });
+    return context.json({ items: await sync.listProjects(identity, sync.parseId(context.req.param("workspaceId")!)), nextCursor: null });
   });
 
   registerApi(app, "listMeetings", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    const vaultId = sync.parseId(context.req.param("vaultId")!);
+    const workspaceId = sync.parseId(context.req.param("workspaceId")!);
     const page = await sync.listMeetings(
       identity,
-      vaultId,
+      workspaceId,
       context.req.query("query"),
       context.req.raw.signal,
       context.req.query("projectId") !== undefined ? sync.parseId(context.req.query("projectId")!) : undefined,
@@ -754,35 +752,35 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   registerApi(app, "listTranscripts", async (context) => {
     context.header("cache-control", "no-store");
     const identity = await syncIdentity(context.req.raw);
-    const vaultId = await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!));
+    const workspaceId = await sync.meetingWorkspace(identity, sync.parseId(context.req.param("meetingId")!));
     const meetingId = sync.parseId(context.req.param("meetingId")!);
-    return context.json(await sync.transcriptVersions(identity, vaultId, meetingId, context.req.query("cursor"), context.req.query("limit")));
+    return context.json(await sync.transcriptVersions(identity, workspaceId, meetingId, context.req.query("cursor"), context.req.query("limit")));
   });
   for (const operation of ["getLatestTranscript", "getTranscript"] as const) registerApi(app, operation, async (context) => {
     context.header("cache-control", "no-store");
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.transcriptContent(identity, await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!)),
+    return context.json(await sync.transcriptContent(identity, await sync.meetingWorkspace(identity, sync.parseId(context.req.param("meetingId")!)),
       sync.parseId(context.req.param("meetingId")!), context.req.param("version")! ?? "latest", context.req.query("manifest"), context.req.query("cursor")));
   });
   registerApi(app, "listMeetingFiles", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.listFiles(identity, await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!)),
+    return context.json(await sync.listFiles(identity, await sync.meetingWorkspace(identity, sync.parseId(context.req.param("meetingId")!)),
       context.req.query("cursor"), sync.parseId(context.req.param("meetingId")!)));
   });
   registerApi(app, "searchPermissionTargets", async (context) => {
     const identity = await identities.fromBrowser(context.req.raw);
-    return context.json(await sync.searchPermissionTargets(identity, sync.parseId(context.req.param("vaultId")!), context.req.query("q")?.trim() ?? "", context.req.query("cursor")));
+    return context.json(await sync.searchPermissionTargets(identity, sync.parseId(context.req.param("workspaceId")!), context.req.query("q")?.trim() ?? "", context.req.query("cursor")));
   });
   registerApi(app, "listPermissions", async (context) => {
     const identity = await identities.fromBrowser(context.req.raw);
-    return context.json({ items: await sync.listPermissions(identity, sync.parseId(context.req.param("vaultId")!)), nextCursor: null });
+    return context.json({ items: await sync.listPermissions(identity, sync.parseId(context.req.param("workspaceId")!)), nextCursor: null });
   });
   registerApi(app, "putOrganizationPermission", async (context) => {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
     await sync.putPermission(
       identity,
-      sync.parseId(context.req.param("vaultId")!),
+      sync.parseId(context.req.param("workspaceId")!),
       "organization",
       sync.parsePermissionPrincipal(context.req.param("organizationId")!),
       (await context.req.json<{ role: "admin" | "editor" | "viewer" }>()).role,
@@ -794,7 +792,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const identity = await identities.fromBrowser(context.req.raw);
     await sync.deletePermission(
       identity,
-      sync.parseId(context.req.param("vaultId")!),
+      sync.parseId(context.req.param("workspaceId")!),
       "organization",
       sync.parsePermissionPrincipal(context.req.param("organizationId")!),
     );
@@ -805,7 +803,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const identity = await identities.fromBrowser(context.req.raw);
     await sync.putPermission(
       identity,
-      sync.parseId(context.req.param("vaultId")!),
+      sync.parseId(context.req.param("workspaceId")!),
       "team",
       sync.parsePermissionPrincipal(context.req.param("teamId")!),
       (await context.req.json<{ role: "admin" | "editor" | "viewer" }>()).role,
@@ -817,7 +815,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const identity = await identities.fromBrowser(context.req.raw);
     await sync.deletePermission(
       identity,
-      sync.parseId(context.req.param("vaultId")!),
+      sync.parseId(context.req.param("workspaceId")!),
       "team",
       sync.parsePermissionPrincipal(context.req.param("teamId")!),
     );
@@ -828,7 +826,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const identity = await identities.fromBrowser(context.req.raw);
     await sync.putPermission(
       identity,
-      sync.parseId(context.req.param("vaultId")!),
+      sync.parseId(context.req.param("workspaceId")!),
       "user",
       sync.parsePermissionPrincipal(context.req.param("userId")!),
       (await context.req.json<{ role: "admin" | "editor" | "viewer" }>()).role,
@@ -840,7 +838,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const identity = await identities.fromBrowser(context.req.raw);
     await sync.deletePermission(
       identity,
-      sync.parseId(context.req.param("vaultId")!),
+      sync.parseId(context.req.param("workspaceId")!),
       "user",
       sync.parsePermissionPrincipal(context.req.param("userId")!),
     );
@@ -875,12 +873,12 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   });
   app.on(
     ["GET", "HEAD"],
-    "/mcp/resources/vaults/:vaultId/meetings/:meetingId/screenshots/:screenshotId/content",
+    "/mcp/resources/workspaces/:workspaceId/meetings/:meetingId/screenshots/:screenshotId/content",
     async (context) => {
       const identity = await identities.fromMcpResource(context.req.raw, MCP_READ_SCOPE);
       const response = await sync.readScreenshot(
         identity,
-        sync.parseId(context.req.param("vaultId")),
+        sync.parseId(context.req.param("workspaceId")),
         sync.parseId(context.req.param("meetingId")),
         sync.parseId(context.req.param("screenshotId")),
         context.req.method as "GET" | "HEAD",

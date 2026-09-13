@@ -8,7 +8,7 @@
     @MainActor
     struct MeetingEventTests {
         @Test
-        func recordsOnlyActualTagChangesOnSupportedServerVaults() throws {
+        func recordsOnlyActualTagChangesOnSupportedServerWorkspaces() throws {
             let fixture = try BatchAudioTestFixture(name: "MeetingEventsTags")
             defer { fixture.removeFiles() }
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
@@ -18,7 +18,7 @@
             try repository.addTag(name: "Old server tag", toMeetingId: fixture.meeting.id, colorHex: "#000000")
             #expect(try events(fixture).isEmpty)
             try fixture.database.dbQueue.write { db in
-                try db.execute(sql: "UPDATE vaults SET syncMeetingEventsVersion = 1 WHERE id = ?", arguments: [fixture.meeting.vaultId])
+                try db.execute(sql: "UPDATE workspaces SET syncMeetingEventsVersion = 1 WHERE id = ?", arguments: [fixture.meeting.workspaceId])
             }
             try repository.addTag(name: "Private tag name", toMeetingId: fixture.meeting.id, colorHex: "#000000")
             try repository.addTag(name: "Private tag name", toMeetingId: fixture.meeting.id, colorHex: "#000000")
@@ -78,7 +78,7 @@
                 ))
                 let operation = try SyncInitialSnapshotBuilder.meetingOperation(fixture.meeting, action: .update, in: db)
                 let transactionId = try #require(try SyncTransactionRecorder.record(
-                    vaultId: fixture.meeting.vaultId,
+                    workspaceId: fixture.meeting.workspaceId,
                     operations: [operation],
                     in: db
                 ))
@@ -133,7 +133,7 @@
             await worker.stop()
             #expect(paths.withLock { $0.filter { $0 == "/api/v1/transactions" }.count } == (meetingDeleted ? 2 : 1))
             #expect(try await fixture.database.dbQueue.read { db in
-                try Int.fetchOne(db, sql: "SELECT syncMeetingEventsVersion FROM vaults WHERE id = ?", arguments: [fixture.meeting.vaultId])
+                try Int.fetchOne(db, sql: "SELECT syncMeetingEventsVersion FROM workspaces WHERE id = ?", arguments: [fixture.meeting.workspaceId])
             } == (meetingDeleted ? 1 : 0))
         }
 
@@ -235,13 +235,19 @@
                 )
                 try connection.insert(db)
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'), syncConfirmedConnectionId = ? WHERE id = ?",
-                    arguments: [connection.id, connection.id, fixture.meeting.vaultId]
+                    sql: """
+                    UPDATE workspaces SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id),
+                    syncRole = COALESCE(syncRole, 'admin'), syncConfirmedConnectionId = ? WHERE id = ?
+                    """,
+                    arguments: [connection.id, connection.id, fixture.meeting.workspaceId]
                 )
-                try db.execute(sql: "UPDATE vaults SET syncMeetingEventsVersion = ? WHERE id = ?", arguments: [version, fixture.meeting.vaultId])
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, 1), (?, 'meeting', ?, 1)",
-                    arguments: [fixture.meeting.vaultId, fixture.meeting.vaultId, fixture.meeting.vaultId, fixture.meeting.id]
+                    sql: "UPDATE workspaces SET syncMeetingEventsVersion = ? WHERE id = ?",
+                    arguments: [version, fixture.meeting.workspaceId]
+                )
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, 1), (?, 'meeting', ?, 1)",
+                    arguments: [fixture.meeting.workspaceId, fixture.meeting.workspaceId, fixture.meeting.workspaceId, fixture.meeting.id]
                 )
             }
         }

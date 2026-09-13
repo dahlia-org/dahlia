@@ -62,7 +62,7 @@ import GRDB
                 try db.execute(
                     sql: """
                     INSERT INTO search_documents(
-                        kind, sourceId, vaultId, projectId, sourceContentHash,
+                        kind, sourceId, workspace_id, projectId, sourceContentHash,
                         indexGeneration, updatedAt
                     ) VALUES('project', ?, ?, ?, 'hash', 1, ?)
                     """,

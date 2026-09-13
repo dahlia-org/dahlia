@@ -69,7 +69,7 @@ struct TranscriptRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
         }
         let operation = try mutation(meetingId: session.meetingId, info: info, mode: hasText ? "append" : "replace")
         if let meeting = try MeetingRecord.fetchOne(db, key: session.meetingId) {
-            try SyncTransactionRecorder.record(vaultId: meeting.vaultId, operations: [operation], in: db)
+            try SyncTransactionRecorder.record(workspaceId: meeting.workspaceId, operations: [operation], in: db)
         }
     }
 
@@ -89,7 +89,7 @@ struct TranscriptRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
         if let meeting = try MeetingRecord.fetchOne(db, key: meetingId) {
             let operation = try mutation(meetingId: meetingId, info: info, mode: "append")
             try SyncTransactionRecorder.record(
-                vaultId: meeting.vaultId,
+                workspaceId: meeting.workspaceId,
                 operations: [operation],
                 transcriptDeletions: [operation.id: deletions],
                 in: db
@@ -131,7 +131,7 @@ struct TranscriptRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
         guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else { return }
         let operation = try mutation(meetingId: meetingId, info: info, mode: "replace")
         guard try SyncTransactionRecorder.record(
-            vaultId: meeting.vaultId,
+            workspaceId: meeting.workspaceId,
             operations: [operation],
             allowAfterReset: allowAfterReset,
             connectionIdOverride: connectionId,

@@ -3,17 +3,17 @@ import Foundation
 import GRDB
 
 enum RemoteChangeApplier {
-    static func recoveryGeneration(vaultId: UUID, expectedConnectionId: UUID, dbQueue: DatabaseQueue) async throws -> Int64? {
+    static func recoveryGeneration(workspaceId: UUID, expectedConnectionId: UUID, dbQueue: DatabaseQueue) async throws -> Int64? {
         try await dbQueue.read { db in
-            guard try SyncTransactionQueue.matchesExpectedConnection(vaultId: vaultId, connectionId: expectedConnectionId, in: db),
-                  try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                  try !RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db) else { return nil }
-            return try Int64.fetchOne(db, sql: "SELECT syncMutationGeneration FROM vaults WHERE id = ?", arguments: [vaultId])
+            guard try SyncTransactionQueue.matchesExpectedConnection(workspaceId: workspaceId, connectionId: expectedConnectionId, in: db),
+                  try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db),
+                  try !RecordingSessionRecord.hasActiveRecording(workspaceId: workspaceId, in: db) else { return nil }
+            return try Int64.fetchOne(db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspaceId])
         }
     }
 
     private static func withCurrentAssociation(
-        vaultId: UUID,
+        workspaceId: UUID,
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
         expectedMutationGeneration: Int64? = nil,
@@ -22,7 +22,7 @@ enum RemoteChangeApplier {
     ) async throws -> Bool {
         try await dbQueue.write { db in
             guard try SyncTransactionQueue.matchesExpectedConnection(
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 connectionId: expectedConnectionId,
                 in: db
             ) else { return false }
@@ -30,8 +30,9 @@ enum RemoteChangeApplier {
                 guard try incrementalContext.isCurrent(in: db) else { return false }
             } else if let expectedMutationGeneration {
                 guard try Int64.fetchOne(
-                    db, sql: "SELECT syncMutationGeneration FROM vaults WHERE id = ?", arguments: [vaultId]
-                ) == expectedMutationGeneration, try !RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db) else { return false }
+                    db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspaceId]
+                ) == expectedMutationGeneration,
+                    try !RecordingSessionRecord.hasActiveRecording(workspaceId: workspaceId, in: db) else { return false }
             }
             return try body(db)
         }
@@ -39,7 +40,7 @@ enum RemoteChangeApplier {
 
     private static func withStagedAudioDeletion(
         meetingIds: Set<UUID>,
-        vaultId: UUID,
+        workspaceId: UUID,
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
         expectedMutationGeneration: Int64? = nil,
@@ -48,17 +49,18 @@ enum RemoteChangeApplier {
     ) async throws -> Bool {
         guard !meetingIds.isEmpty else { return try await body() }
         let preflight = try await withCurrentAssociation(
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             expectedConnectionId: expectedConnectionId,
             dbQueue: dbQueue,
             expectedMutationGeneration: expectedMutationGeneration,
             incrementalContext: incrementalContext
         ) { db in
             if incrementalContext != nil {
-                return try meetingIds.allSatisfy { try RemoteChangePolicy.permits(.meeting, id: $0, action: "delete", vaultId: vaultId, in: db) }
+                return try meetingIds
+                    .allSatisfy { try RemoteChangePolicy.permits(.meeting, id: $0, action: "delete", workspaceId: workspaceId, in: db) }
             }
-            return try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) && !RecordingSessionRecord.hasActiveRecording(
-                vaultId: vaultId,
+            return try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db) && !RecordingSessionRecord.hasActiveRecording(
+                workspaceId: workspaceId,
                 in: db
             )
         }
@@ -132,13 +134,13 @@ enum RemoteChangeApplier {
 
     static func reconcileRecoveryProjects(
         _ projects: [SyncProjectSnapshot],
-        vaultId: UUID,
+        workspaceId: UUID,
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
         generation: Int64
     ) async throws -> Bool {
         let existing = try await dbQueue.read { db in
-            try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
+            try ProjectRecord.fetchResolvedAll(workspaceId: workspaceId, in: db)
         }
         let incomingIDs = Set(projects.map(\.projectId))
         let existingChildren = Set(existing.filter { $0.parentProjectId != nil }.map(\.id))
@@ -164,10 +166,10 @@ enum RemoteChangeApplier {
                 for start in stride(from: 0, to: ids.count, by: 100) {
                     let batch = Array(ids[start ..< min(start + 100, ids.count)])
                     guard try await withCurrentAssociation(
-                        vaultId: vaultId, expectedConnectionId: expectedConnectionId, dbQueue: dbQueue,
+                        workspaceId: workspaceId, expectedConnectionId: expectedConnectionId, dbQueue: dbQueue,
                         expectedMutationGeneration: generation,
                         { db in
-                            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) else { return false }
+                            guard try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db) else { return false }
                             for id in batch {
                                 try ProjectRecord.deleteOne(db, key: id)
                             }
@@ -178,7 +180,7 @@ enum RemoteChangeApplier {
             case let .apply(values):
                 for start in stride(from: 0, to: values.count, by: 100) {
                     guard try await reconcileProjectSnapshot(
-                        Array(values[start ..< min(start + 100, values.count)]), vaultId: vaultId,
+                        Array(values[start ..< min(start + 100, values.count)]), workspaceId: workspaceId,
                         expectedConnectionId: expectedConnectionId, dbQueue: dbQueue,
                         expectedMutationGeneration: generation, removeMissing: false
                     ) else { return false }
@@ -190,7 +192,7 @@ enum RemoteChangeApplier {
 
     static func reconcileProjectSnapshot(
         _ projects: [SyncProjectSnapshot],
-        vaultId: UUID,
+        workspaceId: UUID,
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
         expectedMutationGeneration: Int64? = nil,
@@ -199,31 +201,31 @@ enum RemoteChangeApplier {
     ) async throws -> Bool {
         let orderedProjects = removeMissing ? orderProjects(projects) : projects
         return try await withCurrentAssociation(
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             expectedConnectionId: expectedConnectionId,
             dbQueue: dbQueue,
             expectedMutationGeneration: expectedMutationGeneration,
             incrementalContext: incrementalContext
         ) { db in
-            let existing = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
+            let existing = try ProjectRecord.fetchResolvedAll(workspaceId: workspaceId, in: db)
             let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
             let incomingIDs = Set(projects.map(\.projectId))
             let removedIDs = removeMissing ? Set(existingByID.keys).subtracting(incomingIDs) : []
             if incrementalContext != nil {
                 for project in projects {
-                    guard try RemoteChangePolicy.permits(.project, id: project.projectId, vaultId: vaultId, in: db) else { return false }
+                    guard try RemoteChangePolicy.permits(.project, id: project.projectId, workspaceId: workspaceId, in: db) else { return false }
                     if let revision = try Int.fetchOne(
                         db,
-                        sql: "SELECT confirmedRevision FROM sync_entity_state WHERE vaultId = ? AND entity = 'project' AND entityId = ?",
-                        arguments: [vaultId, project.projectId]
+                        sql: "SELECT confirmedRevision FROM sync_entity_state WHERE workspace_id = ? AND entity = 'project' AND entityId = ?",
+                        arguments: [workspaceId, project.projectId]
                     ), revision > project.revision { return false }
                 }
                 for id in removedIDs {
-                    guard try RemoteChangePolicy.permits(.project, id: id, action: "delete", vaultId: vaultId, in: db) else { return false }
+                    guard try RemoteChangePolicy.permits(.project, id: id, action: "delete", workspaceId: workspaceId, in: db) else { return false }
                 }
             } else {
-                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db), try !RecordingSessionRecord.hasActiveRecording(
-                    vaultId: vaultId,
+                guard try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db), try !RecordingSessionRecord.hasActiveRecording(
+                    workspaceId: workspaceId,
                     in: db
                 ) else { return false }
             }
@@ -233,20 +235,20 @@ enum RemoteChangeApplier {
             let children = orderedProjects.filter { $0.parentProjectId != nil }
             for project in roots where existingByID[project.projectId] != nil {
                 try db.execute(
-                    sql: "UPDATE projects SET parentProjectId = NULL, projectType = ? WHERE id = ? AND vaultId = ?",
-                    arguments: [project.projectType, project.projectId, vaultId]
+                    sql: "UPDATE projects SET parentProjectId = NULL, projectType = ? WHERE id = ? AND workspace_id = ?",
+                    arguments: [project.projectType, project.projectId, workspaceId]
                 )
             }
             for project in roots where existingByID[project.projectId] == nil {
-                try insert(project, vaultId: vaultId, in: db)
+                try insert(project, workspaceId: workspaceId, in: db)
             }
             for project in existing where removedIDs.contains(project.id) && project.parentProjectId != nil {
                 try ProjectRecord.deleteOne(db, key: project.id)
             }
             for project in children where existingByID[project.projectId]?.parentProjectId != nil {
                 try db.execute(
-                    sql: "UPDATE projects SET parentProjectId = ?, projectType = NULL WHERE id = ? AND vaultId = ?",
-                    arguments: [project.parentProjectId, project.projectId, vaultId]
+                    sql: "UPDATE projects SET parentProjectId = ?, projectType = NULL WHERE id = ? AND workspace_id = ?",
+                    arguments: [project.parentProjectId, project.projectId, workspaceId]
                 )
             }
             for project in existing where removedIDs.contains(project.id) && project.parentProjectId == nil {
@@ -254,19 +256,19 @@ enum RemoteChangeApplier {
             }
             for project in children where existingByID[project.projectId]?.parentProjectId == nil {
                 try db.execute(
-                    sql: "UPDATE projects SET parentProjectId = ?, projectType = NULL WHERE id = ? AND vaultId = ?",
-                    arguments: [project.parentProjectId, project.projectId, vaultId]
+                    sql: "UPDATE projects SET parentProjectId = ?, projectType = NULL WHERE id = ? AND workspace_id = ?",
+                    arguments: [project.parentProjectId, project.projectId, workspaceId]
                 )
             }
             for project in children where existingByID[project.projectId] == nil {
-                try insert(project, vaultId: vaultId, in: db)
+                try insert(project, workspaceId: workspaceId, in: db)
             }
 
             for project in orderedProjects {
                 let previous = existingByID[project.projectId]
                 try ProjectRecord.applyCanonical(
                     id: project.projectId,
-                    vaultId: vaultId,
+                    workspaceId: workspaceId,
                     parentProjectId: project.parentProjectId,
                     name: project.name,
                     createdAt: project.createdAt,
@@ -293,26 +295,26 @@ enum RemoteChangeApplier {
                 }
                 try db.execute(
                     sql: """
-                    INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
+                    INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision)
                     VALUES (?, 'project', ?, ?)
-                    ON CONFLICT(vaultId, entity, entityId) DO UPDATE SET
+                    ON CONFLICT(workspace_id, entity, entityId) DO UPDATE SET
                         confirmedRevision = excluded.confirmedRevision
                     """,
-                    arguments: [vaultId, project.projectId, project.revision]
+                    arguments: [workspaceId, project.projectId, project.revision]
                 )
             }
             try db.execute(
-                sql: "DELETE FROM sync_entity_state WHERE vaultId = ? AND entity = 'project' AND entityId NOT IN (SELECT id FROM projects WHERE vaultId = ?)",
-                arguments: [vaultId, vaultId]
+                sql: "DELETE FROM sync_entity_state WHERE workspace_id = ? AND entity = 'project' AND entityId NOT IN (SELECT id FROM projects WHERE workspace_id = ?)",
+                arguments: [workspaceId, workspaceId]
             )
             return true
         }
     }
 
-    private static func insert(_ project: SyncProjectSnapshot, vaultId: UUID, in db: Database) throws {
+    private static func insert(_ project: SyncProjectSnapshot, workspaceId: UUID, in db: Database) throws {
         try ProjectRecord(
             id: project.projectId,
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             parentProjectId: project.parentProjectId,
             name: project.name,
             createdAt: project.createdAt,
@@ -324,24 +326,24 @@ enum RemoteChangeApplier {
 
     static func beginTranscript(
         meetingId: UUID,
-        vaultId: UUID,
+        workspaceId: UUID,
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
         expectedMutationGeneration: Int64? = nil,
         incrementalContext: RemoteChangePolicy.Context? = nil
     ) async throws -> Bool {
         try await withCurrentAssociation(
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             expectedConnectionId: expectedConnectionId,
             dbQueue: dbQueue,
             expectedMutationGeneration: expectedMutationGeneration,
             incrementalContext: incrementalContext
         ) { db in
             if incrementalContext != nil {
-                guard try RemoteChangePolicy.permits(.transcript, id: meetingId, vaultId: vaultId, in: db) else { return false }
+                guard try RemoteChangePolicy.permits(.transcript, id: meetingId, workspaceId: workspaceId, in: db) else { return false }
             } else {
-                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db), try !RecordingSessionRecord.hasActiveRecording(
-                    vaultId: vaultId,
+                guard try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db), try !RecordingSessionRecord.hasActiveRecording(
+                    workspaceId: workspaceId,
                     in: db
                 ) else { return false }
             }
@@ -369,24 +371,24 @@ enum RemoteChangeApplier {
     static func applyTranscriptPage(
         _ segments: [SyncTranscriptPage.Segment],
         meetingId: UUID,
-        vaultId: UUID,
+        workspaceId: UUID,
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
         expectedMutationGeneration: Int64? = nil,
         incrementalContext: RemoteChangePolicy.Context? = nil
     ) async throws -> Bool {
         try await withCurrentAssociation(
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             expectedConnectionId: expectedConnectionId,
             dbQueue: dbQueue,
             expectedMutationGeneration: expectedMutationGeneration,
             incrementalContext: incrementalContext
         ) { db in
             if incrementalContext != nil {
-                guard try RemoteChangePolicy.permits(.transcript, id: meetingId, vaultId: vaultId, in: db) else { return false }
+                guard try RemoteChangePolicy.permits(.transcript, id: meetingId, workspaceId: workspaceId, in: db) else { return false }
             } else {
-                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db), try !RecordingSessionRecord.hasActiveRecording(
-                    vaultId: vaultId,
+                guard try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db), try !RecordingSessionRecord.hasActiveRecording(
+                    workspaceId: workspaceId,
                     in: db
                 ) else { return false }
             }
@@ -477,7 +479,7 @@ enum RemoteChangeApplier {
             screenshots: [:],
             transcripts: [:],
             cursor: nil,
-            vaultId: context.vaultId,
+            workspaceId: context.workspaceId,
             expectedConnectionId: context.connectionId,
             dbQueue: dbQueue,
             incrementalContext: context
@@ -493,9 +495,9 @@ enum RemoteChangeApplier {
     ) async throws -> Bool {
         try await dbQueue.write { db in
             guard try context.isCurrent(in: db),
-                  try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults WHERE id = ?", arguments: [context.vaultId]) == previous
+                  try String.fetchOne(db, sql: "SELECT syncPullCursor FROM workspaces WHERE id = ?", arguments: [context.workspaceId]) == previous
             else { return false }
-            try db.execute(sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, context.vaultId])
+            try db.execute(sql: "UPDATE workspaces SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, context.workspaceId])
             return true
         }
     }
@@ -505,7 +507,7 @@ enum RemoteChangeApplier {
         screenshots: [UUID: Data],
         transcripts: [UUID: [SyncTranscriptPage.Segment]],
         cursor: String?,
-        vaultId: UUID,
+        workspaceId: UUID,
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
         expectedMutationGeneration: Int64? = nil,
@@ -516,14 +518,14 @@ enum RemoteChangeApplier {
         })
         return try await withStagedAudioDeletion(
             meetingIds: deletedMeetingIds,
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             expectedConnectionId: expectedConnectionId,
             dbQueue: dbQueue,
             expectedMutationGeneration: expectedMutationGeneration,
             incrementalContext: incrementalContext
         ) {
             try await withCurrentAssociation(
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 expectedConnectionId: expectedConnectionId,
                 dbQueue: dbQueue,
                 expectedMutationGeneration: expectedMutationGeneration,
@@ -531,16 +533,16 @@ enum RemoteChangeApplier {
             ) { db in
                 try Task.checkCancellation()
                 if incrementalContext == nil {
-                    guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) else { return false }
+                    guard try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db) else { return false }
                 }
                 if incrementalContext == nil, changes.contains(where: { $0.entity == .transcript }), try RecordingSessionRecord.hasActiveRecording(
-                    vaultId: vaultId,
+                    workspaceId: workspaceId,
                     in: db
                 ) {
                     return false
                 }
                 if changes.contains(where: { $0.action == "reset" && $0.record != nil }),
-                   try RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db) {
+                   try RecordingSessionRecord.hasActiveRecording(workspaceId: workspaceId, in: db) {
                     return false
                 }
                 let deletingActiveMeeting = try changes.contains { change in
@@ -566,31 +568,31 @@ enum RemoteChangeApplier {
                         }
                     }
                     if change.action == "delete" {
-                        try delete(change.entity, id: change.entityId, vaultId: vaultId, in: db)
+                        try delete(change.entity, id: change.entityId, workspaceId: workspaceId, in: db)
                     } else if change.action == "reset" {
                         if let record = change.record {
-                            try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
-                            try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
-                            try upsert(change, record: record, screenshots: screenshots, transcripts: transcripts, vaultId: vaultId, in: db)
+                            try SyncTransactionQueue.discard(workspaceId: workspaceId, in: db)
+                            try db.execute(sql: "DELETE FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspaceId])
+                            try upsert(change, record: record, screenshots: screenshots, transcripts: transcripts, workspaceId: workspaceId, in: db)
                         } else {
-                            try forgetRemoteVault(vaultId: vaultId, in: db)
+                            try forgetRemoteWorkspace(workspaceId: workspaceId, in: db)
                             return true
                         }
                     } else if let record = change.record {
-                        try upsert(change, record: record, screenshots: screenshots, transcripts: transcripts, vaultId: vaultId, in: db)
+                        try upsert(change, record: record, screenshots: screenshots, transcripts: transcripts, workspaceId: workspaceId, in: db)
                     }
                     try db.execute(
                         sql: """
-                        INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
+                        INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision)
                         VALUES (?, ?, ?, ?)
-                        ON CONFLICT(vaultId, entity, entityId) DO UPDATE SET
+                        ON CONFLICT(workspace_id, entity, entityId) DO UPDATE SET
                             confirmedRevision = excluded.confirmedRevision
                         """,
-                        arguments: [vaultId, change.entity, change.entityId, change.revision]
+                        arguments: [workspaceId, change.entity, change.entityId, change.revision]
                     )
                 }
                 if let cursor {
-                    try db.execute(sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, vaultId])
+                    try db.execute(sql: "UPDATE workspaces SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, workspaceId])
                 }
                 return true
             }
@@ -600,7 +602,7 @@ enum RemoteChangeApplier {
     static func finishReset(
         _ snapshot: SyncResetSnapshot,
         cursor: String?,
-        vaultId: UUID,
+        workspaceId: UUID,
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
         expectedMutationGeneration: Int64? = nil
@@ -616,44 +618,44 @@ enum RemoteChangeApplier {
         }
         let existing = try await dbQueue.read { db in
             try Existing(
-                projects: ProjectRecord.filter(Column("vaultId") == vaultId).fetchAll(db),
+                projects: ProjectRecord.filter(Column("workspace_id") == workspaceId).fetchAll(db),
                 meetings: Set(UUID.fetchAll(
                     db,
-                    sql: "SELECT id FROM meetings WHERE vaultId = ?",
-                    arguments: [vaultId]
+                    sql: "SELECT id FROM meetings WHERE workspace_id = ?",
+                    arguments: [workspaceId]
                 )),
                 summaries: Set(UUID.fetchAll(
                     db,
                     sql: """
                     SELECT summaries.meetingId FROM summaries
                     JOIN meetings ON meetings.id = summaries.meetingId
-                    WHERE meetings.vaultId = ?
+                    WHERE meetings.workspace_id = ?
                     """,
-                    arguments: [vaultId]
+                    arguments: [workspaceId]
                 )),
                 transcripts: Set(UUID.fetchAll(
                     db,
                     sql: """
                     SELECT DISTINCT transcript_segments.meetingId FROM transcript_segments
                     JOIN meetings ON meetings.id = transcript_segments.meetingId
-                    WHERE meetings.vaultId = ?
+                    WHERE meetings.workspace_id = ?
                     """,
-                    arguments: [vaultId]
+                    arguments: [workspaceId]
                 )),
                 screenshots: Set(UUID.fetchAll(
                     db,
                     sql: """
                     SELECT meeting_attachments.id FROM meeting_attachments
                     JOIN meetings ON meetings.id = meeting_attachments.meetingId
-                    WHERE meetings.vaultId = ?
+                    WHERE meetings.workspace_id = ?
                     """,
-                    arguments: [vaultId]
+                    arguments: [workspaceId]
                 )),
-                files: Set(UUID.fetchAll(db, sql: "SELECT id FROM files WHERE vaultId = ?", arguments: [vaultId])),
+                files: Set(UUID.fetchAll(db, sql: "SELECT id FROM files WHERE workspace_id = ?", arguments: [workspaceId])),
                 recordings: Set(UUID.fetchAll(
                     db,
-                    sql: "SELECT sessionId FROM recording_archives WHERE vaultId = ? AND state = 'remote'",
-                    arguments: [vaultId]
+                    sql: "SELECT sessionId FROM recording_archives WHERE workspace_id = ? AND state = 'remote'",
+                    arguments: [workspaceId]
                 ))
             )
         }
@@ -661,14 +663,18 @@ enum RemoteChangeApplier {
             .sorted { ($0.parentProjectId == nil ? 1 : 0) < ($1.parentProjectId == nil ? 1 : 0) }
             .map(\.id)
         let deletedMeetings = existing.meetings.subtracting(snapshot.meetings)
-        let deletions: [(sql: String, vaultScoped: Bool, ids: [UUID])] = [
-            ("DELETE FROM recording_archives WHERE sessionId = ? AND vaultId = ?", true, Array(existing.recordings.subtracting(snapshot.recordings))),
+        let deletions: [(sql: String, workspaceScoped: Bool, ids: [UUID])] = [
+            (
+                "DELETE FROM recording_archives WHERE sessionId = ? AND workspace_id = ?",
+                true,
+                Array(existing.recordings.subtracting(snapshot.recordings))
+            ),
             (
                 "DELETE FROM meeting_attachments WHERE id = ?",
                 false,
                 Array(existing.screenshots.subtracting(snapshot.screenshots))
             ),
-            ("DELETE FROM files WHERE id = ? AND vaultId = ?", true, Array(existing.files.subtracting(snapshot.files))),
+            ("DELETE FROM files WHERE id = ? AND workspace_id = ?", true, Array(existing.files.subtracting(snapshot.files))),
             (
                 "DELETE FROM transcript_segments WHERE meetingId = ?",
                 false,
@@ -680,11 +686,11 @@ enum RemoteChangeApplier {
                 Array(existing.summaries.subtracting(snapshot.summaries))
             ),
             (
-                "DELETE FROM meetings WHERE id = ? AND vaultId = ?",
+                "DELETE FROM meetings WHERE id = ? AND workspace_id = ?",
                 true,
                 Array(deletedMeetings)
             ),
-            ("DELETE FROM projects WHERE id = ? AND vaultId = ?", true, deletedProjects),
+            ("DELETE FROM projects WHERE id = ? AND workspace_id = ?", true, deletedProjects),
         ]
         for deletion in deletions {
             let ids = deletion.ids
@@ -692,25 +698,25 @@ enum RemoteChangeApplier {
                 let batch = ids[batchStart ..< min(batchStart + 100, ids.count)]
                 let applyBatch = {
                     try await withCurrentAssociation(
-                        vaultId: vaultId,
+                        workspaceId: workspaceId,
                         expectedConnectionId: expectedConnectionId,
                         dbQueue: dbQueue,
                         expectedMutationGeneration: expectedMutationGeneration
                     ) { db in
-                        guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                              try !RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db)
+                        guard try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db),
+                              try !RecordingSessionRecord.hasActiveRecording(workspaceId: workspaceId, in: db)
                         else { return false }
                         for id in batch {
-                            let arguments: StatementArguments = deletion.vaultScoped ? [id, vaultId] : [id]
+                            let arguments: StatementArguments = deletion.workspaceScoped ? [id, workspaceId] : [id]
                             try db.execute(sql: deletion.sql, arguments: arguments)
                         }
                         return true
                     }
                 }
-                let completed = if deletion.vaultScoped, deletion.sql.hasPrefix("DELETE FROM meetings") {
+                let completed = if deletion.workspaceScoped, deletion.sql.hasPrefix("DELETE FROM meetings") {
                     try await withStagedAudioDeletion(
                         meetingIds: Set(batch),
-                        vaultId: vaultId,
+                        workspaceId: workspaceId,
                         expectedConnectionId: expectedConnectionId,
                         dbQueue: dbQueue,
                         expectedMutationGeneration: expectedMutationGeneration,
@@ -723,20 +729,23 @@ enum RemoteChangeApplier {
             }
         }
         return try await withCurrentAssociation(
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             expectedConnectionId: expectedConnectionId,
             dbQueue: dbQueue,
             expectedMutationGeneration: expectedMutationGeneration
         ) { db in
-            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                  try !RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db)
+            guard try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db),
+                  try !RecordingSessionRecord.hasActiveRecording(workspaceId: workspaceId, in: db)
             else { return false }
             try db.execute(
-                sql: "DELETE FROM sync_entity_state WHERE vaultId = ? AND confirmedRevision IS NULL",
-                arguments: [vaultId]
+                sql: "DELETE FROM sync_entity_state WHERE workspace_id = ? AND confirmedRevision IS NULL",
+                arguments: [workspaceId]
             )
             if let cursor {
-                try db.execute(sql: "UPDATE vaults SET syncPullCursor = ?, syncRecoveryState = NULL WHERE id = ?", arguments: [cursor, vaultId])
+                try db.execute(
+                    sql: "UPDATE workspaces SET syncPullCursor = ?, syncRecoveryState = NULL WHERE id = ?",
+                    arguments: [cursor, workspaceId]
+                )
             }
             return true
         }
@@ -744,115 +753,115 @@ enum RemoteChangeApplier {
 
     static func advancePullCursor(
         _ cursor: String,
-        vaultId: UUID,
+        workspaceId: UUID,
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
         expectedMutationGeneration: Int64? = nil
     ) async throws -> Bool {
         try await withCurrentAssociation(
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             expectedConnectionId: expectedConnectionId,
             dbQueue: dbQueue,
             expectedMutationGeneration: expectedMutationGeneration
         ) { db in
-            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) else { return false }
-            try db.execute(sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, vaultId])
+            guard try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db) else { return false }
+            try db.execute(sql: "UPDATE workspaces SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, workspaceId])
             return true
         }
     }
 
-    private static func forgetRemoteVault(vaultId: UUID, in db: Database) throws {
-        try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
-        try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
+    private static func forgetRemoteWorkspace(workspaceId: UUID, in db: Database) throws {
+        try SyncTransactionQueue.discard(workspaceId: workspaceId, in: db)
+        try db.execute(sql: "DELETE FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspaceId])
         try db.execute(
             sql: """
-            UPDATE vaults SET syncConfirmedConnectionId = NULL,
+            UPDATE workspaces SET syncConfirmedConnectionId = NULL,
                 syncPullCursor = NULL, syncLastCommittedCursor = NULL
             WHERE id = ?
             """,
-            arguments: [vaultId]
+            arguments: [workspaceId]
         )
     }
 
-    static func reconcileMissingVault(
-        vaultId: UUID,
+    static func reconcileMissingWorkspace(
+        workspaceId: UUID,
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
         expectedMutationGeneration: Int64? = nil
     ) async throws -> Bool {
         let ownerReset = try await withCurrentAssociation(
-            vaultId: vaultId, expectedConnectionId: expectedConnectionId, dbQueue: dbQueue,
+            workspaceId: workspaceId, expectedConnectionId: expectedConnectionId, dbQueue: dbQueue,
             expectedMutationGeneration: expectedMutationGeneration
         ) { db in
-            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                  try !RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db),
-                  try VaultRecord.fetchOne(db, key: vaultId)?.allowsCanonicalEdits == true else { return false }
+            guard try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db),
+                  try !RecordingSessionRecord.hasActiveRecording(workspaceId: workspaceId, in: db),
+                  try WorkspaceRecord.fetchOne(db, key: workspaceId)?.allowsCanonicalEdits == true else { return false }
             // Expired reset history has the same owner recovery semantics as a retained reset event.
-            try forgetRemoteVault(vaultId: vaultId, in: db)
+            try forgetRemoteWorkspace(workspaceId: workspaceId, in: db)
             return true
         }
         if ownerReset { return true }
-        return try await removeRevokedMemberVault(
-            vaultId: vaultId, expectedConnectionId: expectedConnectionId, dbQueue: dbQueue,
+        return try await removeRevokedMemberWorkspace(
+            workspaceId: workspaceId, expectedConnectionId: expectedConnectionId, dbQueue: dbQueue,
             expectedMutationGeneration: expectedMutationGeneration
         )
     }
 
-    static func removeRevokedMemberVault(
-        vaultId: UUID,
+    static func removeRevokedMemberWorkspace(
+        workspaceId: UUID,
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
         expectedMutationGeneration: Int64? = nil
     ) async throws -> Bool {
         let meetingIds: Set<UUID>? = try await dbQueue.read { db in
-            guard try SyncTransactionQueue.matchesExpectedConnection(vaultId: vaultId, connectionId: expectedConnectionId, in: db),
-                  try VaultRecord.fetchOne(db, key: vaultId)?.syncRole == "viewer" else { return nil }
-            return try Set(UUID.fetchAll(db, sql: "SELECT id FROM meetings WHERE vaultId = ?", arguments: [vaultId]))
+            guard try SyncTransactionQueue.matchesExpectedConnection(workspaceId: workspaceId, connectionId: expectedConnectionId, in: db),
+                  try WorkspaceRecord.fetchOne(db, key: workspaceId)?.syncRole == "viewer" else { return nil }
+            return try Set(UUID.fetchAll(db, sql: "SELECT id FROM meetings WHERE workspace_id = ?", arguments: [workspaceId]))
         }
         guard let meetingIds else { return false }
         return try await withStagedAudioDeletion(
             meetingIds: meetingIds,
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             expectedConnectionId: expectedConnectionId,
             dbQueue: dbQueue,
             expectedMutationGeneration: expectedMutationGeneration
         ) {
             try await withCurrentAssociation(
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 expectedConnectionId: expectedConnectionId,
                 dbQueue: dbQueue,
                 expectedMutationGeneration: expectedMutationGeneration
             ) { db in
-                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                      try !RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db)
+                guard try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db),
+                      try !RecordingSessionRecord.hasActiveRecording(workspaceId: workspaceId, in: db)
                 else { return false }
                 try db.execute(
-                    sql: "DELETE FROM vaults WHERE id = ? AND syncRole = 'viewer'",
-                    arguments: [vaultId]
+                    sql: "DELETE FROM workspaces WHERE id = ? AND syncRole = 'viewer'",
+                    arguments: [workspaceId]
                 )
                 return db.changesCount > 0
             }
         }
     }
 
-    private static func delete(_ entity: SyncEntity, id: UUID, vaultId: UUID, in db: Database) throws {
+    private static func delete(_ entity: SyncEntity, id: UUID, workspaceId: UUID, in db: Database) throws {
         switch entity {
         case .project:
-            try db.execute(sql: "DELETE FROM projects WHERE id = ? AND vaultId = ?", arguments: [id, vaultId])
+            try db.execute(sql: "DELETE FROM projects WHERE id = ? AND workspace_id = ?", arguments: [id, workspaceId])
         case .meeting:
-            try db.execute(sql: "DELETE FROM meetings WHERE id = ? AND vaultId = ?", arguments: [id, vaultId])
+            try db.execute(sql: "DELETE FROM meetings WHERE id = ? AND workspace_id = ?", arguments: [id, workspaceId])
         case .summary:
             try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [id])
         case .transcript:
             try db.execute(sql: "DELETE FROM transcript_segments WHERE meetingId = ?", arguments: [id])
             try db.execute(sql: "DELETE FROM transcripts WHERE meetingId = ?", arguments: [id])
         case .file:
-            try db.execute(sql: "DELETE FROM files WHERE id = ? AND vaultId = ?", arguments: [id, vaultId])
+            try db.execute(sql: "DELETE FROM files WHERE id = ? AND workspace_id = ?", arguments: [id, workspaceId])
         case .recording:
-            try db.execute(sql: "DELETE FROM recording_archives WHERE sessionId = ? AND vaultId = ?", arguments: [id, vaultId])
+            try db.execute(sql: "DELETE FROM recording_archives WHERE sessionId = ? AND workspace_id = ?", arguments: [id, workspaceId])
         case .meetingAttachment:
             try db.execute(sql: "DELETE FROM meeting_attachments WHERE id = ?", arguments: [id])
-        case .vault, .meetingEvent:
+        case .workspace, .meetingEvent:
             break
         }
     }
@@ -862,30 +871,30 @@ enum RemoteChangeApplier {
         record: SyncCanonicalPayload,
         screenshots _: [UUID: Data],
         transcripts: [UUID: [SyncTranscriptPage.Segment]],
-        vaultId: UUID,
+        workspaceId: UUID,
         in db: Database
     ) throws {
         switch change.entity {
         case .meetingEvent:
             break
-        case .vault, .project, .meeting, .summary, .file, .recording:
+        case .workspace, .project, .meeting, .summary, .file, .recording:
             try SyncTransactionQueue.applyCanonical(
                 change.entity,
                 id: change.entityId,
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 value: record,
                 remoteRevision: change.revision,
                 in: db
             )
         case .transcript:
-            if try TextContentStore.observe(entity: .transcript, id: change.entityId, vaultId: vaultId, value: record, in: db) { return }
+            if try TextContentStore.observe(entity: .transcript, id: change.entityId, workspaceId: workspaceId, value: record, in: db) { return }
             try applyTranscript(
                 meetingId: change.entityId,
                 segments: transcripts[change.entityId, default: []],
                 in: db
             )
         case .meetingAttachment:
-            try MeetingAttachmentRecord.applyCanonical(id: change.entityId, vaultId: vaultId, value: record, in: db)
+            try MeetingAttachmentRecord.applyCanonical(id: change.entityId, workspaceId: workspaceId, value: record, in: db)
             try db.execute(
                 sql: "DELETE FROM jobs_search_index WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?",
                 arguments: [change.entityId]

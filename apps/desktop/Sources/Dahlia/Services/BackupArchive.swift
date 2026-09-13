@@ -118,7 +118,7 @@ enum BackupArchive {
         var data = Data(count: Int(size))
         try data.withUnsafeMutableBytes { try stream.readBlob(key: dataKey, into: $0) }
         let manifest = try JSONDecoder().decode(BackupArchiveManifest.self, from: data)
-        guard manifest.metadata.formatVersion == 4, !manifest.entries.isEmpty,
+        guard manifest.metadata.formatVersion == BackupMetadata.currentFormatVersion, !manifest.entries.isEmpty,
               Set(manifest.entries.map(\.path)).count == manifest.entries.count,
               manifest.entries.contains(where: { $0.path == "database.sqlite" }) else { throw BackupServiceError.invalidBackup }
         for entry in manifest.entries {

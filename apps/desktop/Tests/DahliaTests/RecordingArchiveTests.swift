@@ -189,10 +189,10 @@ import GRDB
                     try connection.insert(db)
                     try db.execute(
                         sql: """
-                        UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'),
+                        UPDATE workspaces SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'),
                         syncConfirmedConnectionId = ? WHERE id = ?
                         """,
-                        arguments: [connection.id, connection.id, fixture.meeting.vaultId]
+                        arguments: [connection.id, connection.id, fixture.meeting.workspaceId]
                     )
                     let archive = try #require(try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id))
                     let files = try SyncJSON.decoder.decode([String: RecordingArchiveEncoder.Prepared].self, from: Data(archive.preparedJSON.utf8))
@@ -344,11 +344,14 @@ import GRDB
             try await fixture.database.dbQueue.write { db in
                 try connection.insert(db)
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'), syncConfirmedConnectionId = ? WHERE id = ?",
-                    arguments: [connection.id, connection.id, fixture.meeting.vaultId]
+                    sql: """
+                    UPDATE workspaces SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id),
+                    syncRole = COALESCE(syncRole, 'admin'), syncConfirmedConnectionId = ? WHERE id = ?
+                    """,
+                    arguments: [connection.id, connection.id, fixture.meeting.workspaceId]
                 )
-                #expect(try RemoteChangePolicy.permits(.recording, id: sessionId, record: payload, vaultId: fixture.meeting.vaultId, in: db))
-                try SyncTransactionQueue.applyCanonical(.recording, id: sessionId, vaultId: fixture.meeting.vaultId, value: payload, in: db)
+                #expect(try RemoteChangePolicy.permits(.recording, id: sessionId, record: payload, workspaceId: fixture.meeting.workspaceId, in: db))
+                try SyncTransactionQueue.applyCanonical(.recording, id: sessionId, workspaceId: fixture.meeting.workspaceId, value: payload, in: db)
                 #expect(try RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db))
                 #expect(try RecordingArchiveRecord.fetchOne(db, key: sessionId)?.number == 12)
                 #expect(try RecordingSessionRecord.fetchOne(db, key: sessionId)?.batchCompletedAt != nil)
@@ -397,19 +400,31 @@ import GRDB
                     arguments: [sessionId]
                 )
                 #expect(try RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db))
-                try SyncTransactionRecorder.record(vaultId: fixture.meeting.vaultId, operations: [
+                try SyncTransactionRecorder.record(workspaceId: fixture.meeting.workspaceId, operations: [
                     SyncOperationDraft(entity: .recording, action: .upsert, entityId: sessionId, payloadJSON: Data("{}".utf8)),
                 ], in: db)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sync_operations WHERE entity = 'recording'") == 1)
                 #expect(try !RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db))
-                #expect(try !RemoteChangePolicy.permits(.meeting, id: fixture.meeting.id, action: "delete", vaultId: fixture.meeting.vaultId, in: db))
-                try SyncTransactionRecorder.record(vaultId: fixture.meeting.vaultId, operations: [
+                #expect(try !RemoteChangePolicy.permits(
+                    .meeting,
+                    id: fixture.meeting.id,
+                    action: "delete",
+                    workspaceId: fixture.meeting.workspaceId,
+                    in: db
+                ))
+                try SyncTransactionRecorder.record(workspaceId: fixture.meeting.workspaceId, operations: [
                     SyncOperationDraft(entity: .meeting, action: .delete, entityId: fixture.meeting.id),
                 ], in: db)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sync_operations WHERE entity = 'recording'") == 0)
-                #expect(try !RemoteChangePolicy.permits(.recording, id: sessionId, record: payload, vaultId: fixture.meeting.vaultId, in: db))
-                #expect(try !RemoteChangePolicy.permits(.recording, id: sessionId, action: "delete", vaultId: fixture.meeting.vaultId, in: db))
-                try db.execute(sql: "UPDATE vaults SET syncRole = 'viewer' WHERE id = ?", arguments: [fixture.meeting.vaultId])
+                #expect(try !RemoteChangePolicy.permits(.recording, id: sessionId, record: payload, workspaceId: fixture.meeting.workspaceId, in: db))
+                #expect(try !RemoteChangePolicy.permits(
+                    .recording,
+                    id: sessionId,
+                    action: "delete",
+                    workspaceId: fixture.meeting.workspaceId,
+                    in: db
+                ))
+                try db.execute(sql: "UPDATE workspaces SET syncRole = 'viewer' WHERE id = ?", arguments: [fixture.meeting.workspaceId])
                 #expect(try !RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db))
             }
         }
@@ -420,13 +435,24 @@ import GRDB
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
             let fixture = try BatchAudioTestFixture(name: "ArchiveMigration")
             defer { fixture.removeFiles() }
-            let vault = try fixture.database.dbQueue.read { try #require(try VaultRecord.fetchOne($0, key: fixture.meeting.vaultId)) }
+            let workspace = try fixture.database.dbQueue.read { try #require(try WorkspaceRecord.fetchOne($0, key: fixture.meeting.workspaceId)) }
             try queue.write { db in
                 try db.execute(
                     sql: "INSERT INTO vaults(id, path, name, createdAt, lastOpenedAt) VALUES (?, ?, ?, ?, ?)",
-                    arguments: [vault.id, vault.path, vault.name, vault.createdAt, vault.lastOpenedAt]
+                    arguments: [workspace.id, workspace.path, workspace.name, workspace.createdAt, workspace.lastOpenedAt]
                 )
-                try fixture.meeting.insert(db)
+                try db.execute(
+                    sql: "INSERT INTO meetings(id, vaultId, name, status, duration, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    arguments: [
+                        fixture.meeting.id,
+                        fixture.meeting.workspaceId,
+                        fixture.meeting.name,
+                        fixture.meeting.status.rawValue,
+                        fixture.meeting.duration,
+                        fixture.meeting.createdAt,
+                        fixture.meeting.updatedAt,
+                    ]
+                )
                 try db.execute(sql: """
                 INSERT INTO recording_sessions(id, meetingId, startedAt, endedAt, duration, offsetSeconds, createdAt, updatedAt, transcriptionMode,
                     batchCompletedAt, batchAttemptCount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

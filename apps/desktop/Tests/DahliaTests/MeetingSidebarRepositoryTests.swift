@@ -25,14 +25,14 @@ import GRDB
 
             let firstPage = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchMeetingSidebarPage(
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     limit: 50,
                     in: db
                 )
             }
             let secondPage = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchMeetingSidebarPage(
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     after: firstPage.nextCursor,
                     limit: 50,
                     in: db
@@ -69,7 +69,7 @@ import GRDB
 
             let page = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchMeetingSidebarPage(
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     limit: 50,
                     in: db
                 )
@@ -94,16 +94,16 @@ import GRDB
                     EXPLAIN QUERY PLAN
                     SELECT meetings.id
                     FROM meetings
-                    WHERE meetings.vaultId = ?
+                    WHERE meetings.workspace_id = ?
                     ORDER BY COALESCE(meetings.recordingStartedAt, meetings.createdAt) DESC,
                              meetings.id DESC
                     LIMIT 50
                     """,
-                    arguments: [fixture.vault.id]
+                    arguments: [fixture.workspace.id]
                 ).map { $0["detail"] as String }
             }
 
-            #expect(plan.contains { $0.contains("meetings_on_vaultId_recordingStartedAt_createdAt_id") })
+            #expect(plan.contains { $0.contains("meetings_on_workspace_id_recordingStartedAt_createdAt_id") })
         }
 
         @Test
@@ -135,7 +135,7 @@ import GRDB
             await fixture.manager.searchIndexer.drain()
 
             let page = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: fixture.vault.id,
+                workspaceId: fixture.workspace.id,
                 criteria: MeetingSearchCriteria(
                     text: "Needle",
                     projectIDs: [values.projectID],
@@ -158,7 +158,7 @@ import GRDB
             await fixture.manager.searchIndexer.drain()
 
             let page = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: fixture.vault.id,
+                workspaceId: fixture.workspace.id,
                 criteria: MeetingSearchCriteria(text: "budget"),
                 limit: 50,
                 dbQueue: fixture.manager.dbQueue
@@ -170,7 +170,7 @@ import GRDB
             #expect(page.items.first?.searchMatchContext?.text.hasPrefix("…") == true)
 
             let tagPage = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: fixture.vault.id,
+                workspaceId: fixture.workspace.id,
                 criteria: MeetingSearchCriteria(text: "Customer"),
                 limit: 50,
                 dbQueue: fixture.manager.dbQueue
@@ -187,7 +187,7 @@ import GRDB
             let overview = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchMeetingDetail(
                     id: meetingID,
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     in: db
                 )
             }
@@ -202,7 +202,7 @@ import GRDB
         }
 
         @Test
-        func fetchesMeetingDescriptionForHoverWithinVault() throws {
+        func fetchesMeetingDescriptionForHoverWithinWorkspace() throws {
             let fixture = try MeetingSidebarRepositoryFixture()
             let meetingID = try fixture.manager.dbQueue.write { db in
                 try fixture.insertMeeting(
@@ -215,20 +215,20 @@ import GRDB
             let description = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchMeetingDescription(
                     id: meetingID,
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     in: db
                 )
             }
-            let outsideVault = try fixture.manager.dbQueue.read { db in
+            let outsideWorkspace = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchMeetingDescription(
                     id: meetingID,
-                    vaultId: UUID.v7(),
+                    workspaceId: UUID.v7(),
                     in: db
                 )
             }
 
             #expect(description == "Hover description")
-            #expect(outsideVault == nil)
+            #expect(outsideWorkspace == nil)
         }
 
         @Test
@@ -241,7 +241,7 @@ import GRDB
             let items = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchMeetingSidebarItems(
                     ids: [meetingID],
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     in: db
                 )
             }
@@ -251,7 +251,7 @@ import GRDB
         }
 
         @Test
-        func fetchesLightweightMeetingReferencesForOneVault() throws {
+        func fetchesLightweightMeetingReferencesForOneWorkspace() throws {
             let fixture = try MeetingSidebarRepositoryFixture()
             let start = Date(timeIntervalSince1970: 1_800_000_000)
             let unrecordedID = try fixture.manager.dbQueue.write { db in
@@ -267,7 +267,7 @@ import GRDB
             }
 
             let references = try fixture.manager.dbQueue.read { db in
-                try MeetingRepository.fetchMeetingReferences(vaultId: fixture.vault.id, in: db)
+                try MeetingRepository.fetchMeetingReferences(workspaceId: fixture.workspace.id, in: db)
             }
 
             #expect(references.map(\.id) == [recordedID, unrecordedID])
@@ -301,7 +301,7 @@ import GRDB
 
             let projection = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchMeetingProjectProjection(
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     recentLimit: 5,
                     totalLimit: SidebarViewModel.maximumVisibleMeetings,
                     in: db
@@ -333,7 +333,7 @@ import GRDB
             }
             let firstFive = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchMeetingProjectProjection(
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     recentLimit: 5,
                     totalLimit: SidebarViewModel.maximumVisibleMeetings,
                     in: db
@@ -342,7 +342,7 @@ import GRDB
             let page = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchMeetingProjectPage(
                     key: .project(projectID),
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     after: firstFive.last.map(MeetingSidebarCursor.init),
                     limit: 10,
                     in: db
@@ -375,7 +375,7 @@ import GRDB
 
             let projection = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchMeetingProjectProjection(
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     recentLimit: 5,
                     totalLimit: SidebarViewModel.maximumVisibleMeetings,
                     in: db
@@ -405,7 +405,7 @@ import GRDB
             let page = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchProjectHierarchyMeetingPage(
                     projectIds: [values.0, values.1],
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     dateInterval: DateInterval(start: start, end: end),
                     limit: 50,
                     in: db
@@ -436,7 +436,7 @@ import GRDB
             let page = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchProjectHierarchyMeetingPage(
                     projectIds: [projectID],
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     limit: SidebarViewModel.maximumVisibleMeetings,
                     in: db
                 )
@@ -449,11 +449,11 @@ import GRDB
 
     private struct MeetingSidebarRepositoryFixture {
         let manager: AppDatabaseManager
-        let vault: VaultRecord
+        let workspace: WorkspaceRecord
 
         init() throws {
             manager = try AppDatabaseManager(path: ":memory:")
-            vault = VaultRecord(
+            workspace = WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/sidebar-repository-tests",
                 name: "Test",
@@ -461,20 +461,20 @@ import GRDB
                 lastOpenedAt: .now
             )
             try manager.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
             }
         }
 
         func insertSearchFixtures() throws -> SidebarSearchFixtureIDs {
             try manager.dbQueue.write { db in
-                let otherVault = VaultRecord(
+                let otherWorkspace = WorkspaceRecord(
                     id: .v7(),
-                    path: "/tmp/sidebar-repository-other-vault",
+                    path: "/tmp/sidebar-repository-other-workspace",
                     name: "Other",
                     createdAt: .now,
                     lastOpenedAt: .now
                 )
-                try otherVault.insert(db)
+                try otherWorkspace.insert(db)
                 let titleID = try insertMeeting(name: "Quarterly Plan", in: db)
                 let descriptionID = try insertMeeting(
                     name: "Description match",
@@ -501,7 +501,7 @@ import GRDB
                     to: separatorTagID,
                     in: db
                 )
-                try insertOtherVaultTitleMeeting(vaultId: otherVault.id, in: db)
+                try insertOtherWorkspaceTitleMeeting(workspaceId: otherWorkspace.id, in: db)
                 return SidebarSearchFixtureIDs(
                     title: titleID,
                     description: descriptionID,
@@ -599,7 +599,7 @@ import GRDB
             let id = UUID.v7()
             try MeetingRecord(
                 id: id,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: projectId,
                 name: name,
                 description: description,
@@ -614,7 +614,7 @@ import GRDB
 
         func resultIDs(query: String) async throws -> Set<UUID> {
             try await Set(MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 query: query,
                 limit: 50,
                 dbQueue: manager.dbQueue
@@ -624,7 +624,7 @@ import GRDB
         private func insertNestedProject(childName: String, in db: Database) throws -> UUID {
             let root = ProjectRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: nil,
                 name: "Acme",
                 createdAt: .now,
@@ -632,7 +632,7 @@ import GRDB
             )
             let child = ProjectRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: root.id,
                 name: childName,
                 createdAt: .now,
@@ -652,7 +652,7 @@ import GRDB
         ) throws -> UUID {
             let project = ProjectRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: parentID,
                 name: name,
                 createdAt: .now,
@@ -717,10 +717,10 @@ import GRDB
             ).insert(db)
         }
 
-        private func insertOtherVaultTitleMeeting(vaultId: UUID, in db: Database) throws {
+        private func insertOtherWorkspaceTitleMeeting(workspaceId: UUID, in db: Database) throws {
             try MeetingRecord(
                 id: .v7(),
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 projectId: nil,
                 name: "Quarterly Plan",
                 createdAt: .now,

@@ -30,18 +30,18 @@ public enum PublicIDWire {
     }()
 
     private static let kinds: [String: TypeID.Kind] = [
-        "vault": .vault, "project": .project, "meeting": .meeting, "file": .file, "attachment": .attachment,
+        "workspace": .workspace, "project": .project, "meeting": .meeting, "file": .file, "attachment": .attachment,
         "summary": .summary, "transcript": .transcript, "segment": .segment, "recording": .recording,
         "event": .event, "summaryJob": .summaryJob, "user": .user, "organization": .organization, "team": .team,
         "organizationMember": .organizationMember, "teamMember": .teamMember, "invitation": .invitation,
         "session": .session, "transaction": .transaction, "operation": .operation, "patch": .patch,
     ]
     private static let entityKinds: [String: TypeID.Kind] = [
-        "vault": .vault, "project": .project, "meeting": .meeting, "summary": .meeting, "transcript": .meeting,
+        "workspace": .workspace, "project": .project, "meeting": .meeting, "summary": .meeting, "transcript": .meeting,
         "file": .file, "meeting_attachment": .attachment, "meeting_event": .event, "recording": .recording,
     ]
     private static let recordShapes = [
-        "vault": "vault", "project": "project", "meeting": "meeting", "summary": "summary", "transcript": "transcriptPatch",
+        "workspace": "workspace", "project": "project", "meeting": "meeting", "summary": "summary", "transcript": "transcriptPatch",
         "file": "file", "meeting_attachment": "attachment", "meeting_event": "event", "recording": "recording",
     ]
     public static func data(_ data: Data, shape: String, direction: Direction) throws -> Data {
@@ -95,10 +95,7 @@ public enum PublicIDWire {
     }
 
     private static func contextualValue(_ value: Any, shape: String, direction: Direction, parent: [String: Any]) throws -> Any {
-        if shape == "personalWorkspace" {
-            guard let string = value as? String, string.hasPrefix("personal:") else { throw TypeID.Failure.invalidID }
-            return try "personal:\(id(String(string.dropFirst(9)), kind: .user, direction: direction))"
-        }
+
         if shape == "memberOrEmail" {
             if let string = value as? String, string.contains("@") { return string }
             return try id(value, kind: .organizationMember, direction: direction)
@@ -117,7 +114,7 @@ public enum PublicIDWire {
             if let type = object["principalType"] as? String, let kind = kinds[type], let value = object["principalId"] {
                 result["principalId"] = try id(value, kind: kind, direction: direction)
             }
-            for (key, kind) in ["vaultId": TypeID.Kind.vault, "grantedByUserId": .user] {
+            for (key, kind) in ["workspaceId": TypeID.Kind.workspace, "grantedByUserId": .user] {
                 if let value = object[key] { result[key] = try id(value, kind: kind, direction: direction) }
             }
             return result
@@ -162,7 +159,7 @@ public enum PublicIDWire {
                 direction: direction
             ) }
         }
-        for (key, kind) in ["vaultId": TypeID.Kind.vault, "transactionId": .transaction, "operationId": .operation] {
+        for (key, kind) in ["workspaceId": TypeID.Kind.workspace, "transactionId": .transaction, "operationId": .operation] {
             if let value = object[key] { result[key] = try id(value, kind: kind, direction: direction) }
         }
         for key in ["data", "record"] {
@@ -177,7 +174,7 @@ public enum PublicIDWire {
         if kind == "textSearch" {
             guard var parts = try JSONSerialization.jsonObject(with: Data(string.utf8)) as? [Any],
                   parts.count == 5 else { throw TypeID.Failure.invalidID }
-            parts[0] = try id(parts[0], kind: .vault, direction: direction)
+            parts[0] = try id(parts[0], kind: .workspace, direction: direction)
             return try String(decoding: JSONSerialization.data(withJSONObject: parts, options: [.withoutEscapingSlashes]), as: UTF8.self)
         }
         if kind == "file" || kind == "attachment" { return try id(string, kind: kind == "file" ? .file : .attachment, direction: direction) }

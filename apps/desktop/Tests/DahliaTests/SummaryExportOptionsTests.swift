@@ -5,19 +5,19 @@
 
     struct SummaryExportOptionsTests {
         @Test
-        func mergesVaultAndGoogleDocsIndependently() {
+        func mergesWorkspaceAndGoogleDocsIndependently() {
             let merged = SummaryExportOptions.merging([
-                SummaryExportOptions(exportsToVault: true, exportsToGoogleDocs: false),
-                SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: true),
+                SummaryExportOptions(exportsToWorkspace: true, exportsToGoogleDocs: false),
+                SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: true),
             ])
 
-            #expect(merged.exportsToVault)
+            #expect(merged.exportsToWorkspace)
             #expect(merged.exportsToGoogleDocs)
         }
 
         @Test
-        func manualSummaryKeepsExistingVaultExportBehavior() {
-            #expect(SummaryExportOptions.manual.exportsToVault)
+        func manualSummaryKeepsExistingWorkspaceExportBehavior() {
+            #expect(SummaryExportOptions.manual.exportsToWorkspace)
             #expect(!SummaryExportOptions.manual.exportsToGoogleDocs)
         }
     }

@@ -72,7 +72,7 @@ describe("Worker job delivery", () => {
     const reference = { id: uuidV7(), ownerUserId: "owner" };
     expect(jobMessageSchema.safeParse({ action: "run", kind: "summary", reference, text: "private" }).success).toBe(false);
     expect(jobMessageSchema.safeParse({ action: "scan", kind: "summary", ownerUserId: "owner", phase: "dispatch", after: `${uuidV7()}/${uuidV7()}` }).success).toBe(false);
-    expect(jobMessageSchema.safeParse({ action: "run", kind: "search", references: Array(17).fill({ vaultId: uuidV7(), documentId: uuidV7(), ownerUserId: "owner", generation: 1 }) }).success).toBe(false);
+    expect(jobMessageSchema.safeParse({ action: "run", kind: "search", references: Array(17).fill({ workspaceId: uuidV7(), documentId: uuidV7(), ownerUserId: "owner", generation: 1 }) }).success).toBe(false);
   });
   it("propagates database failure for native Queue retry", async () => {
     const { jobs, stores } = setup();

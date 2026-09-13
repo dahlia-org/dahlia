@@ -11,7 +11,6 @@ import { authorizationConflict } from "./authorization";
 
 import { gatewayResource, mcpResource, type AppConfig } from "../config";
 import type { AuthStore } from "./store";
-import { personalWorkspaceId } from "./workspace";
 import {
   AUTHORIZATION_SERVER_SCOPES,
   MCP_SCOPE,
@@ -104,7 +103,6 @@ function buildDahliaAuth(
         customAccessTokenClaims: ({ user, referenceId }) => {
           if (!user) return {};
           return {
-            workspace_id: personalWorkspaceId(user.id),
             impersonated: referenceId?.startsWith("impersonated:") ?? false,
           };
         },
@@ -153,7 +151,7 @@ function buildDahliaAuth(
             if (!source) throw new APIError("UNAUTHORIZED", { message: "proxy_header_required" });
             const externalId = source.email;
             const userId = await authStore.resolveHeaderUser({ userId: externalId, email: source.email,
-              name: source.name, source: "header", workspaceId: personalWorkspaceId(externalId) });
+              name: source.name, source: "header", });
             if (!userId) throw new APIError("UNAUTHORIZED");
             await authStore.organizations.initializeUser(userId);
             const current = await getSessionFromCtx(ctx);

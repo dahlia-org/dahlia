@@ -10,7 +10,7 @@ import Foundation
             let groupedCategories = SettingsGroup.allCases.flatMap(\.categories)
             let hiddenCategories: Set<SettingsCategory> = [
                 .dahliaAccounts,
-                .vault,
+                .workspace,
                 .modelProvider,
                 .aiSummary,
                 .instructions,
@@ -21,14 +21,14 @@ import Foundation
             let expectedCategories = SettingsCategory.allCases.filter { !hiddenCategories.contains($0) }
 
             #expect(SettingsCategory.allCases == [
-                .accountsAndVaults,
+                .accountsAndWorkspaces,
                 .accountPreferences,
                 .macInference,
                 .general,
                 .dahliaAccounts,
                 .language,
                 .appearance,
-                .vault,
+                .workspace,
                 .permissions,
                 .backups,
                 .search,
@@ -50,7 +50,7 @@ import Foundation
             #expect(!groupedCategories.contains(.instructions))
             #expect(!groupedCategories.contains(.mcp))
             #expect(!groupedCategories.contains(.dahliaAccounts))
-            #expect(!groupedCategories.contains(.vault))
+            #expect(!groupedCategories.contains(.workspace))
             #expect(!groupedCategories.contains(.aiSummary))
             #expect(SettingsGroup.allCases.last == .advanced)
             #expect(SettingsGroup.app.categories == [
@@ -63,7 +63,7 @@ import Foundation
             ])
             #expect(SettingsGroup.account.categories == [.accountPreferences])
             #expect(SettingsGroup.app.label == L10n.thisMac)
-            #expect(SettingsGroup.data.categories == [.accountsAndVaults, .backups])
+            #expect(SettingsGroup.data.categories == [.accountsAndWorkspaces, .backups])
             #expect(SettingsGroup.advanced.categories == [.search, .betaFeatures, .developer, .audioDiagnostics])
             #expect(!AppSettings.defaultConversationAnalyticsBetaEnabled)
             #expect(DetailTab.allCases == [.summary, .notes, .screenshots, .transcript, .conversationAnalytics])
@@ -76,8 +76,8 @@ import Foundation
             #expect(SettingsNavigation.visibleSelection(.instructions) == .accountPreferences)
             #expect(SettingsNavigation.visibleSelection(.mcp) == .accountPreferences)
             #expect(SettingsNavigation.visibleSelection(.aiSummary) == .accountPreferences)
-            #expect(SettingsNavigation.visibleSelection(.dahliaAccounts) == .accountsAndVaults)
-            #expect(SettingsNavigation.visibleSelection(.vault) == .accountsAndVaults)
+            #expect(SettingsNavigation.visibleSelection(.dahliaAccounts) == .accountsAndWorkspaces)
+            #expect(SettingsNavigation.visibleSelection(.workspace) == .accountsAndWorkspaces)
             #expect(SettingsNavigation.visibleSelection(.modelProvider) == .macInference)
             #expect(SettingsNavigation.visibleSelection(.calendar) == .calendar)
         }
@@ -116,7 +116,7 @@ import Foundation
             #expect(SettingsNavigation.savedSelection(in: defaults) == .accountPreferences)
 
             defaults.set(SettingsCategory.dahliaAccounts.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
-            #expect(SettingsNavigation.savedSelection(in: defaults) == .accountsAndVaults)
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .accountsAndWorkspaces)
         }
 
         @Test
@@ -133,15 +133,15 @@ import Foundation
         @Test
         func storedCategoryIdentifiersStayStable() {
             #expect(SettingsCategory.modelProvider.rawValue == "accounts")
-            #expect(SettingsCategory.accountsAndVaults.rawValue == "accountsAndVaults")
-            #expect(SettingsCategory.accountsAndVaults.label == L10n.accountsAndVaults)
-            #expect(SettingsCategory.accountsAndVaults.systemImage == "person.2")
+            #expect(SettingsCategory.accountsAndWorkspaces.rawValue == "accountsAndWorkspaces")
+            #expect(SettingsCategory.accountsAndWorkspaces.label == L10n.accountsAndWorkspaces)
+            #expect(SettingsCategory.accountsAndWorkspaces.systemImage == "person.2")
             #expect(SettingsCategory.dahliaAccounts.rawValue == "dahliaAccounts")
             #expect(SettingsCategory.dahliaAccounts.label == L10n.dahliaAccount)
             #expect(SettingsCategory.dahliaAccounts.systemImage == "person.crop.circle")
-            #expect(SettingsCategory.vault.rawValue == "vault")
-            #expect(SettingsCategory.vault.label == L10n.vault)
-            #expect(SettingsCategory.vault.systemImage == "externaldrive")
+            #expect(SettingsCategory.workspace.rawValue == "workspace")
+            #expect(SettingsCategory.workspace.label == L10n.workspace)
+            #expect(SettingsCategory.workspace.systemImage == "externaldrive")
             #expect(SettingsCategory.backups.label == L10n.backups)
             #expect(SettingsCategory.permissions.label == L10n.permissions)
             #expect(SettingsCategory.permissions.systemImage == "hand.raised")

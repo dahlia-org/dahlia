@@ -9,7 +9,7 @@
         func waitsForGoogleDocsExportToReachTerminalState() {
             let state = SummaryProgressState()
             state.summaryGeneration = .completed
-            state.vaultExport = .skipped
+            state.workspaceExport = .skipped
 
             #expect(!state.isAllDone)
 
@@ -24,14 +24,14 @@
             let second = SummaryGenerationJob(meetingId: .v7(), meetingName: "Review")
 
             first.progress.summaryGeneration = .failed("offline")
-            first.progress.vaultExport = .failed("offline")
+            first.progress.workspaceExport = .failed("offline")
             first.progress.googleDocsExport = .failed("offline")
             second.progress.summaryGeneration = .running
 
             #expect(first.hasFailure)
             #expect(first.isFinished)
             #expect(first.progress.summaryGeneration.failureMessage == "offline")
-            #expect(first.progress.vaultExport.failureMessage == "offline")
+            #expect(first.progress.workspaceExport.failureMessage == "offline")
             #expect(first.progress.googleDocsExport.failureMessage == "offline")
             #expect(!second.hasFailure)
             #expect(second.progress.summaryGeneration.failureMessage == nil)
@@ -45,7 +45,7 @@
                 includesTranscription: true
             )
             job.progress.summaryGeneration = .completed
-            job.progress.vaultExport = .skipped
+            job.progress.workspaceExport = .skipped
             job.progress.googleDocsExport = .skipped
 
             #expect(!job.isFinished)

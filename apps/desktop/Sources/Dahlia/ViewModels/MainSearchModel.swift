@@ -193,7 +193,7 @@ final class MainSearchModel {
         self.selectedResultID = ids[min(max(index + offset, 0), ids.count - 1)]
     }
 
-    func resetForVaultChange(using sidebarViewModel: SidebarViewModel) {
+    func resetForWorkspaceChange(using sidebarViewModel: SidebarViewModel) {
         guard isPresented else {
             resetSearch()
             return
@@ -241,7 +241,7 @@ final class MainSearchModel {
         searchTask?.cancel()
         generation &+= 1
         let requestGeneration = generation
-        let vaultID = sidebarViewModel.currentVault?.id
+        let workspaceID = sidebarViewModel.currentWorkspace?.id
         let dbQueue = sidebarViewModel.searchDBQueue
         let criteria = searchCriteria(using: sidebarViewModel)
         let rankingPolicy = AppSettings.shared.meetingSearchRankingPolicy
@@ -254,7 +254,7 @@ final class MainSearchModel {
         preparePresentation(criteria: criteria, appending: appendsCurrentRanking)
         if !appendsCurrentRanking {
             resetRemoteSearch()
-            usesServerSearch = sidebarViewModel.currentVault?.accountConnectionId != nil
+            usesServerSearch = sidebarViewModel.currentWorkspace?.accountConnectionId != nil
                 && criteria.tagIDs.isEmpty && criteria.projectIDs.count <= 1
             serverSearchLoading = usesServerSearch
             serverMeetingVisible = criteria.isEmpty ? MainSearchDesign.recentResultLimit : MainSearchDesign.meetingPageSize
@@ -267,9 +267,9 @@ final class MainSearchModel {
             )
         }
 
-        guard let vaultID, let dbQueue else {
+        guard let workspaceID, let dbQueue else {
             isLoading = false
-            errorMessage = L10n.searchRequiresVault
+            errorMessage = L10n.searchRequiresWorkspace
             return
         }
 
@@ -282,7 +282,7 @@ final class MainSearchModel {
                     self.startRemoteSearch(using: sidebarViewModel)
                 }
                 let page = try await MeetingRepository.searchMeetingSidebarPage(
-                    vaultId: vaultID,
+                    workspaceId: workspaceID,
                     criteria: criteria,
                     rankingPolicy: rankingPolicy,
                     after: cursor,
@@ -292,7 +292,7 @@ final class MainSearchModel {
                 try Task.checkCancellation()
                 guard let self,
                       self.generation == requestGeneration,
-                      sidebarViewModel.currentVault?.id == vaultID else { return }
+                      sidebarViewModel.currentWorkspace?.id == workspaceID else { return }
                 self.apply(page, appending: appendsCurrentRanking)
 
             } catch is CancellationError {
@@ -331,17 +331,17 @@ final class MainSearchModel {
 
     private func startRemoteSearch(using sidebarViewModel: SidebarViewModel) {
         guard usesServerSearch, remoteTask == nil,
-              let vaultId = sidebarViewModel.currentVault?.id, let queue = sidebarViewModel.searchDBQueue else { return }
+              let workspaceId = sidebarViewModel.currentWorkspace?.id, let queue = sidebarViewModel.searchDBQueue else { return }
         let expectedGeneration = remoteGeneration
-        let connectionId = sidebarViewModel.currentVault?.accountConnectionId
+        let connectionId = sidebarViewModel.currentWorkspace?.accountConnectionId
         let criteria = activeMeetingCriteria
         serverSearchLoading = true
         remoteTask = Task { [weak self] in
             do {
-                let result = try await MeetingRepository.serverSearch(vaultId: vaultId, criteria: criteria, dbQueue: queue)
+                let result = try await MeetingRepository.serverSearch(workspaceId: workspaceId, criteria: criteria, dbQueue: queue)
                 guard let self, !Task.isCancelled, self.remoteGeneration == expectedGeneration,
-                      sidebarViewModel.currentVault?.id == vaultId,
-                      sidebarViewModel.currentVault?.accountConnectionId == connectionId else { return }
+                      sidebarViewModel.currentWorkspace?.id == workspaceId,
+                      sidebarViewModel.currentWorkspace?.accountConnectionId == connectionId else { return }
                 self.applyServerSearch(result)
             } catch {
                 guard let self, !Task.isCancelled, self.remoteGeneration == expectedGeneration else { return }
@@ -419,7 +419,7 @@ final class MainSearchModel {
         screenshotGeneration &+= 1
         let requestGeneration = screenshotGeneration
         guard !criteria.text.isEmpty,
-              let vaultID = sidebarViewModel.currentVault?.id,
+              let workspaceID = sidebarViewModel.currentWorkspace?.id,
               let dbQueue = sidebarViewModel.searchDBQueue else {
             if !appending { localScreenshots = [] }
             hasMoreLocalScreenshots = false
@@ -434,7 +434,7 @@ final class MainSearchModel {
                     try await Task.sleep(for: delay)
                 }
                 let page = try await MeetingRepository.searchScreenshotPage(
-                    vaultID: vaultID,
+                    workspaceID: workspaceID,
                     criteria: criteria,
                     after: cursor,
                     limit: MainSearchDesign.screenshotPageSize,
@@ -443,7 +443,7 @@ final class MainSearchModel {
                 try Task.checkCancellation()
                 guard let self,
                       self.screenshotGeneration == requestGeneration,
-                      sidebarViewModel.currentVault?.id == vaultID else { return }
+                      sidebarViewModel.currentWorkspace?.id == workspaceID else { return }
                 if appending, !page.replacesResults {
                     self.localScreenshots.append(contentsOf: page.items)
                 } else {
@@ -462,9 +462,9 @@ final class MainSearchModel {
     }
 
     func screenshotImageData(id: UUID, using sidebarViewModel: SidebarViewModel) async -> Data? {
-        guard let vaultID = sidebarViewModel.currentVault?.id,
+        guard let workspaceID = sidebarViewModel.currentWorkspace?.id,
               let dbQueue = sidebarViewModel.searchDBQueue else { return nil }
-        return try? await MeetingRepository.screenshotImageData(id: id, vaultID: vaultID, dbQueue: dbQueue)
+        return try? await MeetingRepository.screenshotImageData(id: id, workspaceID: workspaceID, dbQueue: dbQueue)
     }
 
     private func startProjectSearch(
@@ -479,7 +479,7 @@ final class MainSearchModel {
         clearInvalidSelection()
         isProjectCatalogLoading = false
         projectCatalogLoadFailed = sidebarViewModel.projectCatalogLoadFailed
-        guard let vaultID = sidebarViewModel.currentVault?.id,
+        guard let workspaceID = sidebarViewModel.currentWorkspace?.id,
               let dbQueue = sidebarViewModel.searchDBQueue else { return }
         guard !projectCatalogLoadFailed else { return }
         guard sidebarViewModel.isProjectCatalogLoaded else {
@@ -498,7 +498,7 @@ final class MainSearchModel {
             } else {
                 do {
                     let ids = try await MeetingRepository.searchProjectIDs(
-                        vaultID: vaultID,
+                        workspaceID: workspaceID,
                         query: criteria.text,
                         limit: MainSearchDesign.projectResultLimit,
                         dbQueue: dbQueue

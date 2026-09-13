@@ -7,7 +7,6 @@ import UniformTypeIdentifiers
 enum BackupFileFormat {
     static let pathExtension = BackupArchive.pathExtension
     static let contentType = UTType(filenameExtension: pathExtension) ?? .data
-    static let legacyContentType = UTType(filenameExtension: "sqlite") ?? .database
 }
 
 struct BackupSettingsView: View {
@@ -39,25 +38,25 @@ struct BackupSettingsView: View {
 
             Section {
                 HStack {
-                    Button(L10n.selectAll) { model.selectedVaultIds = Set(model.vaults.map(\.id)) }
+                    Button(L10n.selectAll) { model.selectedWorkspaceIds = Set(model.workspaces.map(\.id)) }
                         .buttonStyle(.dahlia())
-                    Button(L10n.backupDeselectAll) { model.selectedVaultIds.removeAll() }
+                    Button(L10n.backupDeselectAll) { model.selectedWorkspaceIds.removeAll() }
                         .buttonStyle(.dahlia())
                 }
-                .disabled(model.isBusy || model.vaults.isEmpty)
-                ForEach(model.vaults) { vault in
+                .disabled(model.isBusy || model.workspaces.isEmpty)
+                ForEach(model.workspaces) { workspace in
                     Toggle(isOn: Binding(
-                        get: { model.selectedVaultIds.contains(vault.id) },
+                        get: { model.selectedWorkspaceIds.contains(workspace.id) },
                         set: { selected in
                             if selected {
-                                model.selectedVaultIds.insert(vault.id)
+                                model.selectedWorkspaceIds.insert(workspace.id)
                             } else {
-                                model.selectedVaultIds.remove(vault.id)
+                                model.selectedWorkspaceIds.remove(workspace.id)
                             }
                         }
                     )) {
-                        Text(vault.name)
-                        Text(TypeID.encode(vault.id, as: .vault)).font(.caption).foregroundStyle(.secondary)
+                        Text(workspace.name)
+                        Text(TypeID.encode(workspace.id, as: .workspace)).font(.caption).foregroundStyle(.secondary)
                     }
                     .toggleStyle(.checkbox)
                     .disabled(model.isBusy)
@@ -67,7 +66,7 @@ struct BackupSettingsView: View {
                         Task { await model.createBackup() }
                     }
                     .buttonStyle(.dahlia(.primary))
-                    .disabled(dbQueue == nil || model.selectedVaultIds.isEmpty || model.isBusy || !model.preflightItems.isEmpty)
+                    .disabled(dbQueue == nil || model.selectedWorkspaceIds.isEmpty || model.isBusy || !model.preflightItems.isEmpty)
 
                     Button(L10n.importBackup) {
                         importBackup()
@@ -88,9 +87,9 @@ struct BackupSettingsView: View {
                     SettingsStatusMessage(text: errorMessage, systemImage: "exclamationmark.triangle", tint: .orange)
                 }
             } header: {
-                Text(L10n.vaultBackup)
+                Text(L10n.workspaceBackup)
             } footer: {
-                Text(L10n.vaultBackupDescription + "\n" + L10n.backupLocalVaultsOnly)
+                Text(L10n.workspaceBackupDescription + "\n" + L10n.backupLocalWorkspacesOnly)
             }
 
             Section(L10n.backupGenerations) {
@@ -109,7 +108,7 @@ struct BackupSettingsView: View {
         }
         .formStyle(.grouped)
         .task {
-            model.selectedVaultIds = Set([settings.currentVault?.id].compactMap(\.self))
+            model.selectedWorkspaceIds = Set([settings.currentWorkspace?.id].compactMap(\.self))
             while !Task.isCancelled {
                 if !model.isBusy {
                     await model.refresh()
@@ -157,7 +156,7 @@ struct BackupSettingsView: View {
                     }
                 }
                 .frame(maxHeight: 320)
-                Text(L10n.vaultBackupRestoreDescription).font(.callout).foregroundStyle(.secondary)
+                Text(L10n.workspaceBackupRestoreDescription).font(.callout).foregroundStyle(.secondary)
                 if let error = model.errorMessage {
                     Text(error).foregroundStyle(.red)
                 }
@@ -168,14 +167,14 @@ struct BackupSettingsView: View {
                         .keyboardShortcut(.cancelAction)
                     Button(L10n.restoreBackup) {
                         Task {
-                            guard captionViewModel.canSwitchVault else { return }
+                            guard captionViewModel.canSwitchWorkspace else { return }
                             if await model.prepareRestore(generation) {
                                 BackupRelaunchCoordinator.relaunchAfterTermination()
                             }
                         }
                     }
                     .buttonStyle(.dahlia(.primary))
-                    .disabled(!captionViewModel.canSwitchVault || !model.canRestore)
+                    .disabled(!captionViewModel.canSwitchWorkspace || !model.canRestore)
                 }
                 if model.isBusy { ProgressView().controlSize(.small) }
             }
@@ -189,19 +188,19 @@ struct BackupSettingsView: View {
     }
 
     private func restoreRow(_ selection: Binding<BackupRestoreSelection>) -> some View {
-        let vault = selection.wrappedValue.vault
-        let canOverwrite = model.canOverwrite(vaultId: vault.id)
+        let workspace = selection.wrappedValue.workspace
+        let canOverwrite = model.canOverwrite(workspaceId: workspace.id)
         return VStack(alignment: .leading, spacing: 8) {
-            Text(vault.name).font(.headline)
-            Text(TypeID.encode(vault.id, as: .vault)).font(.caption).foregroundStyle(.secondary)
+            Text(workspace.name).font(.headline)
+            Text(TypeID.encode(workspace.id, as: .workspace)).font(.caption).foregroundStyle(.secondary)
             Picker(L10n.backupRestoreMode, selection: selection.mode) {
-                Text(L10n.backupSkipVault).tag(nil as VaultBackupRestoreRequest.Mode?)
-                Text(L10n.backupOverwriteOriginalVault).tag(VaultBackupRestoreRequest.Mode.overwrite as VaultBackupRestoreRequest.Mode?)
+                Text(L10n.backupSkipWorkspace).tag(nil as WorkspaceBackupRestoreRequest.Mode?)
+                Text(L10n.backupOverwriteOriginalWorkspace).tag(WorkspaceBackupRestoreRequest.Mode.overwrite as WorkspaceBackupRestoreRequest.Mode?)
                     .disabled(!canOverwrite)
-                Text(L10n.backupRestoreAsNewVault).tag(VaultBackupRestoreRequest.Mode.newVault as VaultBackupRestoreRequest.Mode?)
+                Text(L10n.backupRestoreAsNewWorkspace).tag(WorkspaceBackupRestoreRequest.Mode.newWorkspace as WorkspaceBackupRestoreRequest.Mode?)
             }
-            if selection.wrappedValue.mode == .newVault {
-                TextField(L10n.vaultName, text: selection.name)
+            if selection.wrappedValue.mode == .newWorkspace {
+                TextField(L10n.workspaceName, text: selection.name)
             }
             if !canOverwrite {
                 Text(L10n.backupRestoreTargetUnavailable).font(.caption).foregroundStyle(.secondary)
@@ -213,11 +212,11 @@ struct BackupSettingsView: View {
         Section {
             LabeledContent {
                 Button(L10n.viewUnprocessedRecordings, systemImage: "arrow.right") {
-                    guard let vaultID = unprocessedRecordingsTargetVaultID else { return }
-                    onShowUnprocessedRecordings(vaultID)
+                    guard let workspaceID = unprocessedRecordingsTargetWorkspaceID else { return }
+                    onShowUnprocessedRecordings(workspaceID)
                 }
                 .buttonStyle(.dahlia(.primary))
-                .disabled(unprocessedRecordingsTargetVaultID == nil)
+                .disabled(unprocessedRecordingsTargetWorkspaceID == nil)
                 .help(unprocessedRecordingsNavigationHelp)
             } label: {
                 Label(
@@ -232,30 +231,30 @@ struct BackupSettingsView: View {
         }
     }
 
-    private var unprocessedRecordingsTargetVaultID: UUID? {
-        Self.unprocessedRecordingsTargetVaultID(
+    private var unprocessedRecordingsTargetWorkspaceID: UUID? {
+        Self.unprocessedRecordingsTargetWorkspaceID(
             in: model.preflightItems,
-            currentVaultID: settings.currentVault?.id,
-            canSwitchVault: captionViewModel.canSwitchVault
+            currentWorkspaceID: settings.currentWorkspace?.id,
+            canSwitchWorkspace: captionViewModel.canSwitchWorkspace
         )
     }
 
     private var unprocessedRecordingsNavigationHelp: String {
-        unprocessedRecordingsTargetVaultID == nil
-            ? L10n.finishRecordingBeforeOpeningAnotherVault
+        unprocessedRecordingsTargetWorkspaceID == nil
+            ? L10n.finishRecordingBeforeOpeningAnotherWorkspace
             : L10n.viewUnprocessedRecordings
     }
 
-    nonisolated static func unprocessedRecordingsTargetVaultID(
+    nonisolated static func unprocessedRecordingsTargetWorkspaceID(
         in items: [BackupPreflightItem],
-        currentVaultID: UUID?,
-        canSwitchVault: Bool
+        currentWorkspaceID: UUID?,
+        canSwitchWorkspace: Bool
     ) -> UUID? {
-        if let currentVaultID,
-           items.contains(where: { $0.vaultId == currentVaultID }) {
-            return currentVaultID
+        if let currentWorkspaceID,
+           items.contains(where: { $0.workspaceId == currentWorkspaceID }) {
+            return currentWorkspaceID
         }
-        return canSwitchVault ? items.first?.vaultId : nil
+        return canSwitchWorkspace ? items.first?.workspaceId : nil
     }
 
     private func generationRow(_ generation: BackupGeneration) -> some View {
@@ -273,7 +272,7 @@ struct BackupSettingsView: View {
                 .disabled(
                     !generation.isValid
                         || model.isBusy
-                        || !captionViewModel.canSwitchVault
+                        || !captionViewModel.canSwitchWorkspace
                         || model.hasWorkInProgress
                 )
                 Button(L10n.delete, role: .destructive) { pendingDeleteGeneration = generation }
@@ -282,8 +281,8 @@ struct BackupSettingsView: View {
             }
         } label: {
             if let metadata = generation.metadata {
-                Text(L10n.backupVaultCount(metadata.vaults.count))
-                Text(metadata.vaults.map(\.name).joined(separator: ", ")).lineLimit(2)
+                Text(L10n.backupWorkspaceCount(metadata.workspaces.count))
+                Text(metadata.workspaces.map(\.name).joined(separator: ", ")).lineLimit(2)
                 Text(metadata.createdAt.formatted(date: .abbreviated, time: .standard))
                 Text(L10n.backupGenerationDetail(
                     schemaVersion: metadata.schemaVersion,
@@ -305,7 +304,7 @@ struct BackupSettingsView: View {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [BackupFileFormat.contentType, BackupFileFormat.legacyContentType]
+        panel.allowedContentTypes = [BackupFileFormat.contentType]
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             Task {
@@ -322,7 +321,7 @@ struct BackupSettingsView: View {
 
     private func exportBackup(_ generation: BackupGeneration) {
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [generation.fileURL.pathExtension == "sqlite" ? BackupFileFormat.legacyContentType : BackupFileFormat.contentType]
+        panel.allowedContentTypes = [BackupFileFormat.contentType]
         panel.nameFieldStringValue = generation.fileURL.lastPathComponent
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }

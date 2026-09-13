@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct DatabricksAccountSettingsView<LeadingContent: View>: View {
-    @Bindable private var vaultSettings = VaultAISettingsModel.shared
+    @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
     let controller: DatabricksAccountController
     let title: String
     let footer: String?
@@ -24,7 +24,7 @@ struct DatabricksAccountSettingsView<LeadingContent: View>: View {
     var body: some View {
         Section {
             leadingContent
-            if controller.connection == nil, !vaultSettings.databricksProfile.isEmpty {
+            if controller.connection == nil, !workspaceSettings.databricksProfile.isEmpty {
                 Text(L10n.databricksReconnectRequired).foregroundStyle(.secondary)
             }
             TextField(
@@ -39,7 +39,7 @@ struct DatabricksAccountSettingsView<LeadingContent: View>: View {
                 Button(L10n.signOut) {
                     signInTask = Task {
                         if await controller.remove(connection.id) {
-                            vaultSettings.databricksProfile = ""
+                            workspaceSettings.databricksProfile = ""
                             workspaceURL = ""
                         }
                     }
@@ -69,7 +69,7 @@ struct DatabricksAccountSettingsView<LeadingContent: View>: View {
         }
         .task {
             if let id = await controller.load() {
-                vaultSettings.databricksProfile = id
+                workspaceSettings.databricksProfile = id
             }
             workspaceURL = controller.connection?.host ?? ""
         }
@@ -80,7 +80,7 @@ struct DatabricksAccountSettingsView<LeadingContent: View>: View {
         guard !controller.isBusy else { return }
         signInTask = Task {
             if let id = await controller.signIn(workspaceURL: workspaceURL), !Task.isCancelled {
-                vaultSettings.databricksProfile = id
+                workspaceSettings.databricksProfile = id
                 workspaceURL = controller.connection?.host ?? ""
             }
         }

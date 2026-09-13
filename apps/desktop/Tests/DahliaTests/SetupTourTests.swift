@@ -7,57 +7,62 @@
     @MainActor
     struct SetupTourTests {
         @Test
-        func selectsDiscoveredVaultWithoutCreatingALocalVault() throws {
-            let suiteName = "SetupDiscoveredVault-\(UUID())"
+        func selectsDiscoveredWorkspaceWithoutCreatingALocalWorkspace() throws {
+            let suiteName = "SetupDiscoveredWorkspace-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
             let connectionID = UUID.v7()
-            let model = SetupTourModel(mode: .initial, currentVault: nil, progressDefaults: defaults)
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
             model.selectAccountConnection(connectionID)
             model.advance()
-            var vault = VaultRecord(id: .v7(), name: "Shared", createdAt: .now, lastOpenedAt: .distantPast)
-            vault.accountConnectionId = connectionID
-            vault.organizationId = vault.accountConnectionId == nil ? nil : (vault.organizationId ?? .v7())
-            model.selectExistingVault(vault)
-            #expect(model.selectedExistingVaultID == vault.id)
+            var workspace = WorkspaceRecord(id: .v7(), name: "Shared", createdAt: .now, lastOpenedAt: .distantPast)
+            workspace.accountConnectionId = connectionID
+            workspace.organizationId = workspace.accountConnectionId == nil ? nil : (workspace.organizationId ?? .v7())
+            model.selectExistingWorkspace(workspace)
+            #expect(model.selectedExistingWorkspaceID == workspace.id)
             #expect(model.canContinue)
-            #expect(model.selectedVaultName == nil)
-            #expect(!model.keepsOriginalVault)
+            #expect(model.selectedWorkspaceName == nil)
+            #expect(!model.keepsOriginalWorkspace)
             model.advance()
-            let restored = SetupTourModel(mode: .initial, currentVault: nil, signedInAccountConnectionIDs: [connectionID], progressDefaults: defaults)
-            #expect(restored.currentStep == .vault)
-            #expect(!restored.isVaultLocationConfirmed)
+            let restored = SetupTourModel(
+                mode: .initial,
+                currentWorkspace: nil,
+                signedInAccountConnectionIDs: [connectionID],
+                progressDefaults: defaults
+            )
+            #expect(restored.currentStep == .workspace)
+            #expect(!restored.isWorkspaceLocationConfirmed)
             model.selectAccountConnection(nil)
-            #expect(model.selectedExistingVaultID == nil)
-            #expect(!model.isVaultLocationConfirmed)
+            #expect(model.selectedExistingWorkspaceID == nil)
+            #expect(!model.isWorkspaceLocationConfirmed)
         }
 
         @Test
         func automaticPresentationIsLimitedToNewUsers() {
             #expect(SetupTourPresentationPolicy.shouldPresentAutomatically(
                 storedVersion: 0,
-                hasLoadedVaults: true,
-                hasRegisteredVaults: false
+                hasLoadedWorkspaces: true,
+                hasRegisteredWorkspaces: false
             ))
             #expect(!SetupTourPresentationPolicy.shouldPresentAutomatically(
                 storedVersion: 0,
-                hasLoadedVaults: true,
-                hasRegisteredVaults: true
+                hasLoadedWorkspaces: true,
+                hasRegisteredWorkspaces: true
             ))
             #expect(!SetupTourPresentationPolicy.shouldPresentAutomatically(
                 storedVersion: SetupTourPresentationPolicy.currentVersion,
-                hasLoadedVaults: true,
-                hasRegisteredVaults: false
+                hasLoadedWorkspaces: true,
+                hasRegisteredWorkspaces: false
             ))
             #expect(!SetupTourPresentationPolicy.shouldPresentAutomatically(
                 storedVersion: 0,
-                hasLoadedVaults: false,
-                hasRegisteredVaults: false
+                hasLoadedWorkspaces: false,
+                hasRegisteredWorkspaces: false
             ))
             #expect(SetupTourPresentationPolicy.shouldPresentAutomatically(
                 storedVersion: 0,
-                hasLoadedVaults: true,
-                hasRegisteredVaults: true,
+                hasLoadedWorkspaces: true,
+                hasRegisteredWorkspaces: true,
                 hasSavedProgress: true
             ))
         }
@@ -69,8 +74,8 @@
             defer { defaults.removePersistentDomain(forName: suiteName) }
             SetupTourPresentationPolicy.saveProgress(
                 step: .modelProvider,
-                vaultURL: URL(filePath: "/tmp/Dahlia", directoryHint: .isDirectory),
-                isVaultConfirmed: true,
+                workspaceURL: URL(filePath: "/tmp/Dahlia", directoryHint: .isDirectory),
+                isWorkspaceConfirmed: true,
                 in: defaults
             )
 
@@ -79,9 +84,9 @@
             #expect(defaults.integer(forKey: SetupTourPresentationPolicy.userDefaultsKey) ==
                 SetupTourPresentationPolicy.currentVersion)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.progressStepUserDefaultsKey) == nil)
-            #expect(defaults.object(forKey: SetupTourPresentationPolicy.vaultPathUserDefaultsKey) == nil)
-            #expect(defaults.object(forKey: SetupTourPresentationPolicy.vaultNameUserDefaultsKey) == nil)
-            #expect(defaults.object(forKey: SetupTourPresentationPolicy.vaultConfirmedUserDefaultsKey) == nil)
+            #expect(defaults.object(forKey: SetupTourPresentationPolicy.workspacePathUserDefaultsKey) == nil)
+            #expect(defaults.object(forKey: SetupTourPresentationPolicy.workspaceNameUserDefaultsKey) == nil)
+            #expect(defaults.object(forKey: SetupTourPresentationPolicy.workspaceConfirmedUserDefaultsKey) == nil)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.providerUserDefaultsKey) == nil)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.databricksProfileUserDefaultsKey) == nil)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.accountConnectionIDUserDefaultsKey) == nil)
@@ -95,38 +100,38 @@
             defer { defaults.removePersistentDomain(forName: suiteName) }
             SetupTourPresentationPolicy.saveProgress(
                 step: .modelProvider,
-                vaultURL: URL(filePath: "/tmp/Dahlia", directoryHint: .isDirectory),
-                isVaultConfirmed: true,
+                workspaceURL: URL(filePath: "/tmp/Dahlia", directoryHint: .isDirectory),
+                isWorkspaceConfirmed: true,
                 in: defaults
             )
-            let draft = VaultAISettingsModel(setupDefaults: defaults)
+            let draft = WorkspaceAISettingsModel(setupDefaults: defaults)
             draft.localProvider = .databricks
             draft.databricksProfile = "setup-profile"
 
-            let restored = VaultAISettingsModel(setupDefaults: defaults)
+            let restored = WorkspaceAISettingsModel(setupDefaults: defaults)
 
             #expect(restored.localProvider == .databricks)
             #expect(restored.databricksProfile == "setup-profile")
         }
 
         @Test
-        func interruptedInitialTourRestoresItsStepAndVault() throws {
+        func interruptedInitialTourRestoresItsStepAndWorkspace() throws {
             let suiteName = "SetupTourProgressTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
             let selectedURL = URL(filePath: "/tmp/Selected Dahlia", directoryHint: .isDirectory)
-            let model = SetupTourModel(mode: .initial, currentVault: nil, progressDefaults: defaults)
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
 
             model.selectAccountConnection(nil)
             model.advance()
-            model.selectVaultURL(selectedURL)
-            model.confirmVaultSelection()
+            model.selectWorkspaceURL(selectedURL)
+            model.confirmWorkspaceSelection()
             model.advance()
 
-            let restoredModel = SetupTourModel(mode: .initial, currentVault: nil, progressDefaults: defaults)
+            let restoredModel = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
             #expect(restoredModel.currentStep == .workingLanguages)
-            #expect(restoredModel.selectedVaultURL == selectedURL)
-            #expect(restoredModel.isVaultLocationConfirmed)
+            #expect(restoredModel.selectedWorkspaceURL == selectedURL)
+            #expect(restoredModel.isWorkspaceLocationConfirmed)
         }
 
         @Test
@@ -135,118 +140,118 @@
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
             let connectionID = UUID.v7()
-            let model = SetupTourModel(mode: .initial, currentVault: nil, progressDefaults: defaults)
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
 
             model.selectAccountConnection(connectionID)
             model.advance()
 
             let signedOutRestoredModel = SetupTourModel(
                 mode: .initial,
-                currentVault: nil,
+                currentWorkspace: nil,
                 progressDefaults: defaults
             )
             let restoredModel = SetupTourModel(
                 mode: .initial,
-                currentVault: nil,
+                currentWorkspace: nil,
                 signedInAccountConnectionIDs: [connectionID],
                 progressDefaults: defaults
             )
 
             #expect(signedOutRestoredModel.currentStep == .account)
             #expect(!signedOutRestoredModel.isAccountSelectionConfirmed)
-            #expect(restoredModel.currentStep == .vault)
+            #expect(restoredModel.currentStep == .workspace)
             #expect(restoredModel.selectedAccountConnectionID == connectionID)
             #expect(restoredModel.isAccountSelectionConfirmed)
             #expect(!restoredModel.visibleSteps.contains(.modelProvider))
         }
 
         @Test
-        func incompleteVaultProgressReturnsToVaultConfirmation() throws {
+        func incompleteWorkspaceProgressReturnsToWorkspaceConfirmation() throws {
             let suiteName = "SetupTourProgressTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
             defaults.set(SetupTourStep.modelProvider.rawValue, forKey: SetupTourPresentationPolicy.progressStepUserDefaultsKey)
             defaults.set(true, forKey: SetupTourPresentationPolicy.accountSelectionConfirmedUserDefaultsKey)
 
-            let restoredModel = SetupTourModel(mode: .initial, currentVault: nil, progressDefaults: defaults)
+            let restoredModel = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
 
-            #expect(restoredModel.currentStep == .vault)
-            #expect(!restoredModel.isVaultLocationConfirmed)
+            #expect(restoredModel.currentStep == .workspace)
+            #expect(!restoredModel.isWorkspaceLocationConfirmed)
         }
 
         @Test
-        func vaultStepRequiresExplicitConfirmationBeforeAdvancing() {
-            let model = SetupTourModel(mode: .initial, currentVault: nil)
+        func workspaceStepRequiresExplicitConfirmationBeforeAdvancing() {
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
 
             model.selectAccountConnection(nil)
             model.advance()
 
-            #expect(model.currentStep == .vault)
-            #expect(!model.isVaultLocationConfirmed)
+            #expect(model.currentStep == .workspace)
+            #expect(!model.isWorkspaceLocationConfirmed)
             #expect(!model.canContinue)
 
             model.advance()
-            #expect(model.currentStep == .vault)
+            #expect(model.currentStep == .workspace)
 
-            model.confirmVaultSelection()
+            model.confirmWorkspaceSelection()
             model.advance()
 
             #expect(model.currentStep == .workingLanguages)
-            #expect(model.isVaultLocationConfirmed)
+            #expect(model.isWorkspaceLocationConfirmed)
         }
 
         @Test
-        func pathlessCurrentVaultIsKeptUntilAnotherLocationIsSelected() {
-            let vault = VaultRecord(
-                id: .v7(), path: nil, name: "Cloud Vault",
+        func pathlessCurrentWorkspaceIsKeptUntilAnotherLocationIsSelected() {
+            let workspace = WorkspaceRecord(
+                id: .v7(), path: nil, name: "Cloud Workspace",
                 createdAt: .now, lastOpenedAt: .now
             )
-            let model = SetupTourModel(mode: .manual, currentVault: vault)
+            let model = SetupTourModel(mode: .manual, currentWorkspace: workspace)
 
-            #expect(model.keepsOriginalVault)
-            model.selectVaultURL(URL(filePath: "/tmp/Export", directoryHint: .isDirectory))
-            model.confirmVaultSelection()
-            #expect(!model.keepsOriginalVault)
+            #expect(model.keepsOriginalWorkspace)
+            model.selectWorkspaceURL(URL(filePath: "/tmp/Export", directoryHint: .isDirectory))
+            model.confirmWorkspaceSelection()
+            #expect(!model.keepsOriginalWorkspace)
         }
 
         @Test
-        func pathlessVaultSelectionSurvivesInterruptedInitialTour() throws {
+        func pathlessWorkspaceSelectionSurvivesInterruptedInitialTour() throws {
             let suiteName = "SetupTourPathlessProgressTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
-            let model = SetupTourModel(mode: .initial, currentVault: nil, progressDefaults: defaults)
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
             model.selectAccountConnection(nil)
             model.advance()
-            model.selectPathlessVault(named: "Cloud Vault")
+            model.selectPathlessWorkspace(named: "Cloud Workspace")
             model.advance()
 
-            let restored = SetupTourModel(mode: .initial, currentVault: nil, progressDefaults: defaults)
-            #expect(restored.selectedVaultName == "Cloud Vault")
-            #expect(restored.isVaultLocationConfirmed)
+            let restored = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
+            #expect(restored.selectedWorkspaceName == "Cloud Workspace")
+            #expect(restored.isWorkspaceLocationConfirmed)
         }
 
         @Test
         func setupUsesTheRequestedConfigurationOrder() {
             #expect(SetupTourStep.allCases == [
                 .account,
-                .vault,
+                .workspace,
                 .workingLanguages,
                 .permissions,
                 .modelProvider,
                 .calendar,
                 .completion,
             ])
-            #expect(SetupTourModel(mode: .initial, currentVault: nil).currentStep == .account)
+            #expect(SetupTourModel(mode: .initial, currentWorkspace: nil).currentStep == .account)
         }
 
         @Test
         func backNavigationStartsAfterTheFirstStep() {
-            let model = SetupTourModel(mode: .initial, currentVault: nil)
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
 
             #expect(!model.canGoBack)
             model.selectAccountConnection(nil)
             model.advance()
-            model.confirmVaultSelection()
+            model.confirmWorkspaceSelection()
             model.advance()
             #expect(model.currentStep == .workingLanguages)
             #expect(model.canGoBack)
@@ -254,10 +259,10 @@
 
         @Test
         func navigationMovesSequentiallyAndNeverPastCompletion() {
-            let model = SetupTourModel(mode: .initial, currentVault: nil)
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
             model.selectAccountConnection(nil)
             model.advance()
-            model.confirmVaultSelection()
+            model.confirmWorkspaceSelection()
             model.advance()
             model.advance()
             model.advance()
@@ -282,12 +287,12 @@
 
         @Test
         func dahliaAccountSkipsLocalModelProviderSetup() {
-            let model = SetupTourModel(mode: .initial, currentVault: nil)
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
             let connectionID = UUID.v7()
 
             model.selectAccountConnection(connectionID)
             model.advance()
-            model.confirmVaultSelection()
+            model.confirmWorkspaceSelection()
             model.advance()
             model.advance()
             model.advance()
@@ -306,41 +311,41 @@
             #expect(!SetupTourPresentationPolicy.hasSavedProgress(in: defaults))
             SetupTourPresentationPolicy.saveProgress(
                 step: .completion,
-                vaultURL: URL(filePath: "/tmp/Dahlia", directoryHint: .isDirectory),
-                isVaultConfirmed: true,
+                workspaceURL: URL(filePath: "/tmp/Dahlia", directoryHint: .isDirectory),
+                isWorkspaceConfirmed: true,
                 in: defaults
             )
             #expect(SetupTourPresentationPolicy.hasSavedProgress(in: defaults))
         }
 
         @Test
-        func selectingAnotherVaultRequiresASecondConfirmation() {
-            let currentVault = VaultRecord(
+        func selectingAnotherWorkspaceRequiresASecondConfirmation() {
+            let currentWorkspace = WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/Current",
                 name: "Current",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
-            let model = SetupTourModel(mode: .manual, currentVault: currentVault)
+            let model = SetupTourModel(mode: .manual, currentWorkspace: currentWorkspace)
 
-            #expect(model.isVaultLocationConfirmed)
+            #expect(model.isWorkspaceLocationConfirmed)
             #expect(model.currentStep == .account)
             model.advance()
-            #expect(model.currentStep == .vault)
+            #expect(model.currentStep == .workspace)
             #expect(model.canContinue)
 
-            model.selectVaultURL(URL(filePath: "/tmp/Other", directoryHint: .isDirectory))
+            model.selectWorkspaceURL(URL(filePath: "/tmp/Other", directoryHint: .isDirectory))
 
-            #expect(!model.isVaultLocationConfirmed)
-            #expect(model.currentStep == .vault)
+            #expect(!model.isWorkspaceLocationConfirmed)
+            #expect(model.currentStep == .workspace)
             #expect(!model.canContinue)
         }
 
         @Test
-        func signedOutVaultAccountRequiresReauthentication() {
+        func signedOutWorkspaceAccountRequiresReauthentication() {
             let connectionID = UUID.v7()
-            let currentVault = VaultRecord(
+            let currentWorkspace = WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/Current",
                 name: "Current",
@@ -348,10 +353,10 @@
                 lastOpenedAt: .now,
                 accountConnectionId: connectionID
             )
-            let signedOutModel = SetupTourModel(mode: .manual, currentVault: currentVault)
+            let signedOutModel = SetupTourModel(mode: .manual, currentWorkspace: currentWorkspace)
             let signedInModel = SetupTourModel(
                 mode: .manual,
-                currentVault: currentVault,
+                currentWorkspace: currentWorkspace,
                 signedInAccountConnectionIDs: [connectionID]
             )
 

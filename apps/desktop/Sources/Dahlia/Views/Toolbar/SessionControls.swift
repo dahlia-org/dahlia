@@ -66,7 +66,7 @@ struct GenerateSummaryHeaderButton: View {
     }
 
     private var isGenerateSummaryEnabled: Bool {
-        sidebarViewModel.canEditCurrentVault && !isGeneratingCurrentMeeting && viewModel.canGenerateSummary
+        sidebarViewModel.canEditCurrentWorkspace && !isGeneratingCurrentMeeting && viewModel.canGenerateSummary
     }
 
     var body: some View {
@@ -89,7 +89,7 @@ struct GenerateSummaryHeaderButton: View {
         .help(isGeneratingCurrentMeeting ? L10n.generatingSummary : L10n.generateSummary)
         .task(id: viewModel.currentMeetingId) {
             serverJob = nil
-            guard AppSettings.shared.currentVault?.accountConnectionId != nil else { return }
+            guard AppSettings.shared.currentWorkspace?.accountConnectionId != nil else { return }
             while !Task.isCancelled {
                 do {
                     let job = try await viewModel.currentServerSummaryStatus()
@@ -157,7 +157,7 @@ private struct SummarySharePopover: View {
     @ObservedObject var viewModel: CaptionViewModel
     @ObservedObject private var driveStore = GoogleDriveStore.shared
     @ObservedObject private var settings = AppSettings.shared
-    @State private var vaultSettings = VaultAISettingsModel.shared
+    @State private var workspaceSettings = WorkspaceAISettingsModel.shared
     @State private var isGoogleDocsExportRunning = false
     @State private var exportFolderAlertMessage = ""
     @State private var isShowingExportFolderAlert = false
@@ -236,8 +236,8 @@ private struct SummarySharePopover: View {
             exportFolderAlertMessage = message
             isShowingExportFolderAlert = true
         }
-        .task(id: vaultSettings.accountConnectionID) {
-            await driveStore.activate(scope: AppAccountScope(connectionID: vaultSettings.accountConnectionID))
+        .task(id: workspaceSettings.accountConnectionID) {
+            await driveStore.activate(scope: AppAccountScope(connectionID: workspaceSettings.accountConnectionID))
         }
         .onChange(of: driveStore.exportFolderErrorMessage) { _, message in
             guard let message else { return }
@@ -267,7 +267,7 @@ private struct SummarySharePopover: View {
               let accountID = driveStore.account?.id else { return false }
         return settings.googleDriveExportFolderID(
             forAccountID: accountID,
-            scope: AppAccountScope(connectionID: vaultSettings.accountConnectionID)
+            scope: AppAccountScope(connectionID: workspaceSettings.accountConnectionID)
         ) != nil
     }
 

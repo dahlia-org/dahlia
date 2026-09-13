@@ -19,7 +19,7 @@ import GRDB
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             await fixture.select(fixture.first, in: viewModel, note: "note")
             let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
-            let options = SummaryGenerationOptions(exportOptions: .init(exportsToVault: false, exportsToGoogleDocs: false))
+            let options = SummaryGenerationOptions(exportOptions: .init(exportsToWorkspace: false, exportsToGoogleDocs: false))
             let id = UUID.v7()
             // A saved Server request retains its ID on result-sync retry. Use the local runner to gate cleanup.
             let processing = RecordingProcessing(
@@ -38,7 +38,7 @@ import GRDB
             try await fixture.database.dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
             viewModel.registerPendingBatchSummaryForTesting(
                 sessionID: sessionID, meetingID: fixture.first.id, options: options,
-                dbQueue: fixture.database.dbQueue, vaultURL: fixture.vaultURL,
+                dbQueue: fixture.database.dbQueue, workspaceURL: fixture.workspaceURL,
                 generationSettings: processing.generationSettings, processing: processing
             )
             await viewModel.handleBatchTranscriptionUpdate(.init(meetingId: fixture.first.id, state: .completed(sessionId: sessionID)))
@@ -69,7 +69,7 @@ import GRDB
             await fixture.select(fixture.first, in: viewModel, note: "note")
             let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
             let options = SummaryGenerationOptions(
-                exportOptions: .init(exportsToVault: false, exportsToGoogleDocs: true), detailLevel: .detailed
+                exportOptions: .init(exportsToWorkspace: false, exportsToGoogleDocs: true), detailLevel: .detailed
             )
             let processing = RecordingProcessing(
                 id: .v7(), automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
@@ -79,7 +79,7 @@ import GRDB
             try await fixture.database.dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
             viewModel.registerPendingBatchSummaryForTesting(
                 sessionID: sessionID, meetingID: fixture.first.id, options: options,
-                dbQueue: fixture.database.dbQueue, vaultURL: fixture.vaultURL,
+                dbQueue: fixture.database.dbQueue, workspaceURL: fixture.workspaceURL,
                 generationSettings: processing.generationSettings, processing: processing
             )
             await viewModel.handleBatchTranscriptionUpdate(.init(meetingId: fixture.first.id, state: .completed(sessionId: sessionID)))
@@ -134,7 +134,7 @@ import GRDB
             )
             let processing = RecordingProcessing(
                 id: id, automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
-                options: .init(exportOptions: .init(exportsToVault: false, exportsToGoogleDocs: true)),
+                options: .init(exportOptions: .init(exportsToWorkspace: false, exportsToGoogleDocs: true)),
                 generationSettings: .current(), serverSettings: nil, sessionIDs: [sessionID], stage: .saving,
                 summaryExpectation: expected, generatedSummary: saved
             )
@@ -164,7 +164,7 @@ import GRDB
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             await fixture.select(fixture.first, in: viewModel, note: "note", usesExportFolder: false)
             _ = try await MeetingRepository(dbQueue: fixture.database.dbQueue)
-                .updateVaultPath(id: fixture.vault.id, path: nil)
+                .updateWorkspacePath(id: fixture.workspace.id, path: nil)
 
             #expect(viewModel.triggerManualSummary(options: .manual))
             await runner.waitForCallCount(1)
@@ -186,7 +186,7 @@ import GRDB
             #expect(viewModel.triggerManualSummary(options: .manual))
             await runner.waitForCallCount(1)
             _ = try await MeetingRepository(dbQueue: fixture.database.dbQueue)
-                .updateVaultPath(id: fixture.vault.id, path: nil)
+                .updateWorkspacePath(id: fixture.workspace.id, path: nil)
             runner.complete(meetingID: fixture.first.id, title: "Database only")
 
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
@@ -205,7 +205,7 @@ import GRDB
                 summaryDocumentLoader: loader.load
             )
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
             )
 
             await fixture.select(fixture.first, in: viewModel, note: "note")
@@ -285,7 +285,7 @@ import GRDB
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let project = try fixture.insertProject(name: "Selected", description: "Selected context")
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
             )
 
             await fixture.select(fixture.first, in: viewModel, note: "note")
@@ -316,9 +316,9 @@ import GRDB
             viewModel.triggerManualSummaries(
                 meetingIds: [fixture.first.id],
                 dbQueue: fixture.database.dbQueue,
-                vaultURL: fixture.vaultURL,
+                workspaceURL: fixture.workspaceURL,
                 options: SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+                    exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
                 )
             )
             await runner.waitForCallCount(1)
@@ -336,7 +336,7 @@ import GRDB
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let project = try fixture.insertProject(name: "Original", description: "")
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: true, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: true, exportsToGoogleDocs: false)
             )
             await fixture.select(fixture.first, in: viewModel, note: "note")
             #expect(viewModel.assignCurrentMeetingProject(project.id) == nil)
@@ -344,29 +344,29 @@ import GRDB
             await runner.waitForCallCount(1)
 
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
-            let service = ProjectWorkspaceService(repository: repository, vault: fixture.vault)
+            let service = ProjectWorkspaceService(repository: repository, workspace: fixture.workspace)
             _ = try service.renameProject(id: project.id, newName: "Renamed")
             runner.complete(meetingID: fixture.first.id, title: "Summary")
 
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
             #expect(try fixture.summaryPath(for: fixture.first.id) == "Renamed/summary.md")
             #expect(FileManager.default.fileExists(
-                atPath: fixture.vaultURL.appending(path: "Renamed/summary.md").path
+                atPath: fixture.workspaceURL.appending(path: "Renamed/summary.md").path
             ))
             #expect(!FileManager.default.fileExists(
-                atPath: fixture.vaultURL.appending(path: "Original/summary.md").path
+                atPath: fixture.workspaceURL.appending(path: "Original/summary.md").path
             ))
         }
 
         @Test
-        func summaryRegenerationReusesTrackedVaultPath() async throws {
+        func summaryRegenerationReusesTrackedWorkspacePath() async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let project = try fixture.insertProject(name: "Project", description: "")
             try fixture.assign(fixture.first, to: project)
-            let existingURL = fixture.vaultURL.appending(path: "Project/Existing.md")
+            let existingURL = fixture.workspaceURL.appending(path: "Project/Existing.md")
             try Data("Old summary".utf8).write(to: existingURL)
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
             try repository.upsertSummary(SummaryContent(
@@ -375,12 +375,12 @@ import GRDB
                 document: SummaryDocument(title: "Old summary", sections: []).databaseJSONString(),
                 createdAt: .now
             ))
-            try repository.updateSummaryVaultRelativePath(
+            try repository.updateSummaryWorkspaceRelativePath(
                 forMeetingId: fixture.first.id,
                 relativePath: "Project/Existing.md"
             )
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: true, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: true, exportsToGoogleDocs: false)
             )
 
             await fixture.select(fixture.first, in: viewModel, note: "note")
@@ -392,7 +392,7 @@ import GRDB
             #expect(try fixture.summaryPath(for: fixture.first.id) == "Project/Existing.md")
             #expect(try String(contentsOf: existingURL, encoding: .utf8) == "New summary")
             #expect(!FileManager.default.fileExists(
-                atPath: fixture.vaultURL.appending(path: "Project/summary-\(fixture.first.id.uuidString).md").path
+                atPath: fixture.workspaceURL.appending(path: "Project/summary-\(fixture.first.id.uuidString).md").path
             ))
         }
 
@@ -438,7 +438,7 @@ import GRDB
             try fixture.assign(fixture.first, to: project)
             let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false),
                 detailLevel: .eventSession
             )
 
@@ -447,7 +447,7 @@ import GRDB
                 meetingID: fixture.first.id,
                 options: options,
                 dbQueue: fixture.database.dbQueue,
-                vaultURL: fixture.vaultURL
+                workspaceURL: fixture.workspaceURL
             )
             let job = try #require(viewModel.summaryGenerationJobs.first)
             let progress = BatchTranscriptionProgress(completedFileCount: 2, totalFileCount: 5)
@@ -483,7 +483,7 @@ import GRDB
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let meetingIDs: Set<UUID> = [fixture.first.id, fixture.second.id]
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false),
                 detailLevel: .standard
             )
 
@@ -491,7 +491,7 @@ import GRDB
             viewModel.triggerManualSummaries(
                 meetingIds: meetingIDs,
                 dbQueue: fixture.database.dbQueue,
-                vaultURL: fixture.vaultURL,
+                workspaceURL: fixture.workspaceURL,
                 options: options
             )
             await runner.waitForCallCount(2)
@@ -520,7 +520,7 @@ import GRDB
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let meetingIDs: Set<UUID> = [fixture.first.id, fixture.second.id]
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
             )
 
             await fixture.select(fixture.first, in: viewModel, note: "first")
@@ -531,7 +531,7 @@ import GRDB
             viewModel.triggerManualSummaries(
                 meetingIds: meetingIDs,
                 dbQueue: fixture.database.dbQueue,
-                vaultURL: fixture.vaultURL,
+                workspaceURL: fixture.workspaceURL,
                 options: options
             )
             await runner.waitForCallCount(2)
@@ -551,7 +551,7 @@ import GRDB
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
             )
 
             await fixture.select(fixture.first, in: viewModel, note: "first note")
@@ -588,27 +588,27 @@ import GRDB
             let runner = BlockingSummaryRunner()
             let sleeper = ControlledSummaryJobSleeper()
             let settings = AppSettings.shared
-            let vaultSettings = VaultAISettingsModel.shared
+            let workspaceSettings = WorkspaceAISettingsModel.shared
             let originalModel = settings.codexModelID
             let originalEffort = settings.codexReasoningEffort
-            let originalVaultModel = vaultSettings.summaryModelID
-            let originalVaultEffort = vaultSettings.summaryReasoningEffort
+            let originalWorkspaceModel = workspaceSettings.summaryModelID
+            let originalWorkspaceEffort = workspaceSettings.summaryReasoningEffort
             settings.codexModelID = "frozen-model"
             settings.codexReasoningEffort = "high"
-            vaultSettings.summaryModelID = "frozen-model"
-            vaultSettings.summaryReasoningEffort = "high"
+            workspaceSettings.summaryModelID = "frozen-model"
+            workspaceSettings.summaryReasoningEffort = "high"
             defer {
                 settings.codexModelID = originalModel
                 settings.codexReasoningEffort = originalEffort
-                vaultSettings.summaryModelID = originalVaultModel
-                vaultSettings.summaryReasoningEffort = originalVaultEffort
+                workspaceSettings.summaryModelID = originalWorkspaceModel
+                workspaceSettings.summaryReasoningEffort = originalWorkspaceEffort
             }
             let viewModel = CaptionViewModel(
                 summaryGenerationRunner: runner.run,
                 summaryJobSleeper: sleeper.sleep
             )
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false),
                 detailLevel: .eventSession
             )
             await fixture.select(fixture.first, in: viewModel, note: "note")
@@ -617,8 +617,8 @@ import GRDB
             await runner.waitForCallCount(1)
             settings.codexModelID = "changed-model"
             settings.codexReasoningEffort = "low"
-            vaultSettings.summaryModelID = "changed-model"
-            vaultSettings.summaryReasoningEffort = "low"
+            workspaceSettings.summaryModelID = "changed-model"
+            workspaceSettings.summaryReasoningEffort = "low"
             #expect(runner.calls[0].settings.modelID == "frozen-model")
             #expect(runner.calls[0].settings.reasoningEffort == "high")
             #expect(runner.calls[0].settings.detailLevelInstruction == SummaryDetailLevel.eventSession.instruction)
@@ -645,13 +645,13 @@ import GRDB
         }
 
         @Test
-        func pendingAutomaticSummaryKeepsItsSourceVaultProvider() async throws {
+        func pendingAutomaticSummaryKeepsItsSourceWorkspaceProvider() async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
             )
             let sessionID = UUID.v7()
             let sourceSettings = SummaryGenerationSettings(
@@ -666,7 +666,7 @@ import GRDB
                 meetingID: fixture.first.id,
                 options: options,
                 dbQueue: fixture.database.dbQueue,
-                vaultURL: fixture.vaultURL,
+                workspaceURL: fixture.workspaceURL,
                 generationSettings: sourceSettings
             )
 
@@ -689,14 +689,14 @@ import GRDB
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let manualOptions = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
             )
             let eventOptions = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false),
                 detailLevel: .eventSession
             )
             let conciseOptions = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false),
                 detailLevel: .concise
             )
             await fixture.select(fixture.first, in: viewModel, note: "manual")
@@ -711,14 +711,14 @@ import GRDB
                 meetingID: fixture.first.id,
                 options: eventOptions,
                 dbQueue: fixture.database.dbQueue,
-                vaultURL: fixture.vaultURL
+                workspaceURL: fixture.workspaceURL
             )
             viewModel.registerPendingBatchSummaryForTesting(
                 sessionID: secondSessionID,
                 meetingID: fixture.first.id,
                 options: conciseOptions,
                 dbQueue: fixture.database.dbQueue,
-                vaultURL: fixture.vaultURL
+                workspaceURL: fixture.workspaceURL
             )
             await viewModel.handleBatchTranscriptionUpdate(.init(
                 meetingId: fixture.first.id,
@@ -769,7 +769,7 @@ import GRDB
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
             )
             let originalSessionID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
             let destinationSessionID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000002"))
@@ -783,14 +783,14 @@ import GRDB
                 meetingID: original.first.id,
                 options: options,
                 dbQueue: original.database.dbQueue,
-                vaultURL: original.vaultURL
+                workspaceURL: original.workspaceURL
             )
             viewModel.registerPendingBatchSummaryForTesting(
                 sessionID: destinationSessionID,
                 meetingID: original.first.id,
                 options: options,
                 dbQueue: destination.database.dbQueue,
-                vaultURL: destination.vaultURL
+                workspaceURL: destination.workspaceURL
             )
             await viewModel.handleBatchTranscriptionUpdate(.init(
                 meetingId: original.first.id,
@@ -834,15 +834,15 @@ import GRDB
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let eventOptions = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: true, exportsToGoogleDocs: false),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: true, exportsToGoogleDocs: false),
                 detailLevel: .eventSession
             )
             let sameContextOptions = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: true),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: true),
                 detailLevel: .concise
             )
             let otherContextOptions = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false),
                 detailLevel: .concise
             )
             let activeSessionID = try original.insertRecordingSession(for: original.first, offset: 0)
@@ -851,7 +851,7 @@ import GRDB
                 meetingID: original.first.id,
                 options: eventOptions,
                 dbQueue: original.database.dbQueue,
-                vaultURL: original.vaultURL
+                workspaceURL: original.workspaceURL
             )
             await viewModel.handleBatchTranscriptionUpdate(.init(
                 meetingId: original.first.id,
@@ -888,28 +888,28 @@ import GRDB
                 meetingID: original.first.id,
                 options: otherContextOptions,
                 dbQueue: destination.database.dbQueue,
-                vaultURL: destination.vaultURL
+                workspaceURL: destination.workspaceURL
             )
             viewModel.registerPendingBatchSummaryForTesting(
                 sessionID: sameContextSessionID,
                 meetingID: original.first.id,
                 options: sameContextOptions,
                 dbQueue: original.database.dbQueue,
-                vaultURL: original.vaultURL
+                workspaceURL: original.workspaceURL
             )
             viewModel.registerPendingBatchSummaryForTesting(
                 sessionID: otherMeetingSessionID,
                 meetingID: original.second.id,
                 options: otherContextOptions,
                 dbQueue: original.database.dbQueue,
-                vaultURL: original.vaultURL
+                workspaceURL: original.workspaceURL
             )
             viewModel.registerPendingBatchSummaryForTesting(
                 sessionID: failedSessionID,
                 meetingID: original.first.id,
                 options: otherContextOptions,
                 dbQueue: original.database.dbQueue,
-                vaultURL: original.vaultURL
+                workspaceURL: original.workspaceURL
             )
             let failedJobID = try #require(viewModel.summaryGenerationJobs.last?.id)
             await viewModel.handleBatchTranscriptionUpdate(.init(
@@ -925,13 +925,13 @@ import GRDB
             await runner.waitForCallCount(2)
             let failedJob = try #require(viewModel.summaryGenerationJobs.first { $0.id == failedJobID })
             #expect(failedJob.isFinished)
-            #expect(failedJob.progress.vaultExport.isSkipped)
+            #expect(failedJob.progress.workspaceExport.isSkipped)
             #expect(failedJob.progress.googleDocsExport.isSkipped)
             #expect(runner.calls[1].settings.detailLevelInstruction == SummaryDetailLevel.concise.instruction)
             let otherContextJob = try #require(viewModel.summaryGenerationJobs.first {
                 if case .running = $0.progress.summaryGeneration { true } else { false }
             })
-            #expect(otherContextJob.progress.vaultExport.isSkipped)
+            #expect(otherContextJob.progress.workspaceExport.isSkipped)
             #expect(otherContextJob.progress.googleDocsExport.isSkipped)
 
             await viewModel.handleBatchTranscriptionUpdate(.init(
@@ -945,7 +945,7 @@ import GRDB
             let sameContextJob = try #require(viewModel.summaryGenerationJobs.first {
                 if case .running = $0.progress.summaryGeneration { true } else { false }
             })
-            #expect(!sameContextJob.progress.vaultExport.isSkipped)
+            #expect(!sameContextJob.progress.workspaceExport.isSkipped)
             #expect(!sameContextJob.progress.googleDocsExport.isSkipped)
             runner.fail(meetingID: original.first.id)
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: original.first.id) })
@@ -959,7 +959,7 @@ import GRDB
             let otherMeetingJob = try #require(viewModel.summaryGenerationJobs.first {
                 if case .running = $0.progress.summaryGeneration { true } else { false }
             })
-            #expect(otherMeetingJob.progress.vaultExport.isSkipped)
+            #expect(otherMeetingJob.progress.workspaceExport.isSkipped)
             #expect(otherMeetingJob.progress.googleDocsExport.isSkipped)
             runner.fail(meetingID: original.second.id)
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: original.second.id) })
@@ -985,14 +985,14 @@ import GRDB
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let sessionID = UUID.v7()
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
             )
             viewModel.registerPendingBatchSummaryForTesting(
                 sessionID: sessionID,
                 meetingID: fixture.first.id,
                 options: options,
                 dbQueue: fixture.database.dbQueue,
-                vaultURL: fixture.vaultURL
+                workspaceURL: fixture.workspaceURL
             )
             viewModel.setScreenshotDeletionInProgressForTesting(true)
 
@@ -1024,11 +1024,11 @@ import GRDB
                 sessionID: firstSessionID,
                 meetingID: fixture.first.id,
                 options: SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToVault: true, exportsToGoogleDocs: false),
+                    exportOptions: SummaryExportOptions(exportsToWorkspace: true, exportsToGoogleDocs: false),
                     detailLevel: .eventSession
                 ),
                 dbQueue: fixture.database.dbQueue,
-                vaultURL: fixture.vaultURL
+                workspaceURL: fixture.workspaceURL
             )
             await viewModel.handleBatchTranscriptionUpdate(.init(
                 meetingId: fixture.first.id,
@@ -1040,11 +1040,11 @@ import GRDB
                 sessionID: secondSessionID,
                 meetingID: fixture.first.id,
                 options: SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: true),
+                    exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: true),
                     detailLevel: .concise
                 ),
                 dbQueue: fixture.database.dbQueue,
-                vaultURL: fixture.vaultURL
+                workspaceURL: fixture.workspaceURL
             )
             await viewModel.handleBatchTranscriptionUpdate(.init(
                 meetingId: fixture.first.id,
@@ -1062,7 +1062,7 @@ import GRDB
             let job = try #require(viewModel.summaryGenerationJobs.first {
                 if case .running = $0.progress.summaryGeneration { true } else { false }
             })
-            #expect(!job.progress.vaultExport.isSkipped)
+            #expect(!job.progress.workspaceExport.isSkipped)
             #expect(!job.progress.googleDocsExport.isSkipped)
             runner.fail(meetingID: fixture.first.id)
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
@@ -1079,10 +1079,10 @@ import GRDB
                 sessionID: sessionID,
                 meetingID: missingMeetingID,
                 options: SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+                    exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
                 ),
                 dbQueue: fixture.database.dbQueue,
-                vaultURL: fixture.vaultURL
+                workspaceURL: fixture.workspaceURL
             )
 
             await viewModel.handleBatchTranscriptionUpdate(.init(
@@ -1099,7 +1099,7 @@ import GRDB
         }
 
         @Test
-        func batchConfirmationKeepsOriginalDatabaseAndVaultAfterNavigation() async throws {
+        func batchConfirmationKeepsOriginalDatabaseAndWorkspaceAfterNavigation() async throws {
             let original = try SummaryGenerationFixture()
             let destination = try SummaryGenerationFixture()
             defer {
@@ -1110,7 +1110,7 @@ import GRDB
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let project = try original.insertProject(name: "Original Project", description: "Original context")
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
             )
             await original.select(original.first, in: viewModel, note: "original")
             let sessionID = try original.insertRecordingSession(for: original.first, offset: 0)
@@ -1162,7 +1162,7 @@ import GRDB
             defer { fixture.removeFiles() }
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
-            let options = SummaryGenerationOptions(exportOptions: .init(exportsToVault: false, exportsToGoogleDocs: false), detailLevel: .concise)
+            let options = SummaryGenerationOptions(exportOptions: .init(exportsToWorkspace: false, exportsToGoogleDocs: false), detailLevel: .concise)
             await fixture.select(fixture.first, in: viewModel, note: "note")
             #expect(viewModel.triggerManualSummary(options: .init(exportOptions: options.exportOptions, detailLevel: .max)))
             try #require(await waitUntil { runner.calls.count == 1 })
@@ -1179,7 +1179,7 @@ import GRDB
                 if !restoring {
                     viewModel.registerPendingBatchSummaryForTesting(
                         sessionID: sessionID, meetingID: fixture.first.id, options: options,
-                        dbQueue: fixture.database.dbQueue, vaultURL: fixture.vaultURL,
+                        dbQueue: fixture.database.dbQueue, workspaceURL: fixture.workspaceURL,
                         generationSettings: processing.generationSettings, processing: processing
                     )
                     await viewModel.handleBatchTranscriptionUpdate(.init(meetingId: fixture.first.id, state: .completed(sessionId: sessionID)))
@@ -1364,24 +1364,24 @@ import GRDB
     @MainActor
     final class SummaryGenerationFixture {
         let database: AppDatabaseManager
-        let vault: VaultRecord
-        let vaultURL: URL
+        let workspace: WorkspaceRecord
+        let workspaceURL: URL
         let first: MeetingRecord
         let second: MeetingRecord
 
         init() throws {
             database = try AppDatabaseManager(path: ":memory:")
-            vaultURL = FileManager.default.temporaryDirectory
+            workspaceURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-summary-vm-\(UUID.v7())", directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
             let now = Date(timeIntervalSince1970: 1_776_384_000)
-            vault = VaultRecord(id: .v7(), path: vaultURL.path, name: "Test", createdAt: now, lastOpenedAt: now)
+            workspace = WorkspaceRecord(id: .v7(), path: workspaceURL.path, name: "Test", createdAt: now, lastOpenedAt: now)
             first = MeetingRecord(
-                id: .v7(), vaultId: vault.id, projectId: nil, name: "First", createdAt: now, updatedAt: now
+                id: .v7(), workspaceId: workspace.id, projectId: nil, name: "First", createdAt: now, updatedAt: now
             )
             second = MeetingRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: nil,
                 name: "Second",
                 createdAt: now.addingTimeInterval(60),
@@ -1394,7 +1394,7 @@ import GRDB
                 startTime: now.addingTimeInterval(60), text: "second transcript", isConfirmed: true, audioSource: "mic"
             )
             try database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try first.insert(db)
                 try second.insert(db)
                 try TranscriptContent(from: firstSegment, meetingId: first.id).insert(db)
@@ -1413,7 +1413,7 @@ import GRDB
                 dbQueue: database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: usesExportFolder ? vaultURL : nil
+                workspaceURL: usesExportFolder ? workspaceURL : nil
             )
             _ = await pollUntil {
                 viewModel.currentMeetingId == meeting.id
@@ -1432,9 +1432,9 @@ import GRDB
             try database.dbQueue.read { db in
                 try SummaryExportRecord.fetchOne(
                     meetingId: meetingID,
-                    type: .vault,
+                    type: .workspace,
                     in: db
-                )?.vaultRelativePath
+                )?.workspaceRelativePath
             }
         }
 
@@ -1445,11 +1445,11 @@ import GRDB
         }
 
         func insertProject(name: String, description: String) throws -> ProjectRecord {
-            let projectURL = vaultURL.appending(path: name, directoryHint: .isDirectory)
+            let projectURL = workspaceURL.appending(path: name, directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
             let project = ProjectRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 path: name,
                 createdAt: first.createdAt,
                 description: description
@@ -1492,7 +1492,7 @@ import GRDB
             let createdAt = Date(timeIntervalSince1970: 1_776_384_120)
             let meeting = MeetingRecord(
                 id: id,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: nil,
                 name: name,
                 createdAt: createdAt,
@@ -1511,7 +1511,7 @@ import GRDB
         }
 
         func removeFiles() {
-            try? FileManager.default.removeItem(at: vaultURL)
+            try? FileManager.default.removeItem(at: workspaceURL)
         }
     }
 #endif

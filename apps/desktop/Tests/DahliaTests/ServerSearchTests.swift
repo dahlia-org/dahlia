@@ -14,10 +14,11 @@
             let second = UUID.v7()
             let pendingProject = UUID.v7()
             try await fixture.queue.write { db in
-                try ProjectRecord(id: pendingProject, vaultId: fixture.vaultId, path: "未同期", createdAt: .now).insert(db)
-                try MeetingRecord(id: second, vaultId: fixture.vaultId, projectId: nil, name: "Second", createdAt: .now, updatedAt: .now).insert(db)
+                try ProjectRecord(id: pendingProject, workspaceId: fixture.workspaceId, path: "未同期", createdAt: .now).insert(db)
+                try MeetingRecord(id: second, workspaceId: fixture.workspaceId, projectId: nil, name: "Second", createdAt: .now, updatedAt: .now)
+                    .insert(db)
                 for id in [fixture.meetingId, second] {
-                    try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'meeting', ?, 1)", arguments: [fixture.vaultId, id])
+                    try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'meeting', ?, 1)", arguments: [fixture.workspaceId, id])
                 }
                 try db.execute(sql: "UPDATE search_index_state SET phase = 'ready' WHERE indexKind = 'fts'")
             }
@@ -41,7 +42,7 @@
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
             let ranked = try await MeetingRepository.serverSearch(
-                vaultId: fixture.vaultId,
+                workspaceId: fixture.workspaceId,
                 criteria: .init(),
                 dbQueue: fixture.queue,
                 contentProvider: provider
@@ -60,14 +61,14 @@
                 try db.execute(sql: "DELETE FROM sync_entity_state WHERE entity = 'meeting' AND entityId = ?", arguments: [second])
             }
             let pending = try await MeetingRepository.serverSearch(
-                vaultId: fixture.vaultId,
+                workspaceId: fixture.workspaceId,
                 criteria: .init(),
                 dbQueue: fixture.queue,
                 contentProvider: provider
             )
             #expect(pending.meetings.map(\.id) == [fixture.meetingId])
             #expect(pending.pendingMeetings.map(\.id) == [second])
-            let searchPath = "/api/v1/vaults/\(fixture.vaultId.uuidString.lowercased())/search"
+            let searchPath = "/api/v1/workspaces/\(fixture.workspaceId.uuidString.lowercased())/search"
             #expect(paths.withLock { $0 } == ["/api/v1/capabilities", searchPath, "/api/v1/capabilities", searchPath])
         }
 
@@ -78,13 +79,13 @@
             let imageId = UUID.v7()
             let capturedAt = Date(timeIntervalSince1970: 1_780_000_000)
             try await fixture.queue.write { db in
-                try ProjectRecord(id: project, vaultId: fixture.vaultId, path: "Project", createdAt: .now).insert(db)
+                try ProjectRecord(id: project, workspaceId: fixture.workspaceId, path: "Project", createdAt: .now).insert(db)
                 try db.execute(sql: "UPDATE meetings SET projectId = ?", arguments: [project])
                 try MeetingScreenshotRecord(
                     id: imageId, meetingId: fixture.meetingId, sessionId: nil, capturedAt: capturedAt,
                     imageData: Data([1]), mimeType: "image/png"
                 ).insertLegacyForTesting(db)
-                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'meeting', ?, 1)", arguments: [fixture.vaultId, fixture.meetingId])
+                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'meeting', ?, 1)", arguments: [fixture.workspaceId, fixture.meetingId])
                 try db.execute(sql: "UPDATE search_index_state SET phase = 'ready' WHERE indexKind = 'fts'")
             }
             let response = try fixture.response(meetings: [])
@@ -99,14 +100,14 @@
             }
             if mode == "project" { criteria.projectIDs = [project] }
             let result = try await MeetingRepository.serverSearch(
-                vaultId: fixture.vaultId, criteria: criteria, dbQueue: fixture.queue, contentProvider: provider
+                workspaceId: fixture.workspaceId, criteria: criteria, dbQueue: fixture.queue, contentProvider: provider
             )
             #expect(result.pendingScreenshots.map(\.id) == [imageId])
             criteria.pendingOnly = true
             criteria.startDate = capturedAt.addingTimeInterval(1)
             criteria.endDate = nil
             let excluded = try await MeetingRepository.searchScreenshotPage(
-                vaultID: fixture.vaultId,
+                workspaceID: fixture.workspaceId,
                 criteria: criteria,
                 limit: 100,
                 dbQueue: fixture.queue
@@ -115,7 +116,7 @@
             criteria.startDate = nil
             criteria.pendingOnly = false
             let local = try await MeetingRepository.searchScreenshotPage(
-                vaultID: fixture.vaultId,
+                workspaceID: fixture.workspaceId,
                 criteria: criteria,
                 limit: 100,
                 dbQueue: fixture.queue
@@ -135,10 +136,10 @@
                     imageData: Data([1]), mimeType: "image/png", ocrText: "Changed"
                 ).insertLegacyForTesting(db)
                 for (entity, id) in [("meeting", fixture.meetingId), ("meeting_attachment", imageId)] {
-                    try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, ?, ?, 1)", arguments: [fixture.vaultId, entity, id])
+                    try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, ?, ?, 1)", arguments: [fixture.workspaceId, entity, id])
                 }
                 try db.execute(
-                    sql: "INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) SELECT ?, id, accountConnectionId, ?, ? FROM vaults",
+                    sql: "INSERT INTO sync_transactions(id, workspace_id, connectionId, createdAt, availableAt) SELECT ?, id, accountConnectionId, ?, ? FROM workspaces",
                     arguments: [transactionId, Date(), Date()]
                 )
                 for (position, entry) in [("meeting", fixture.meetingId), ("file", imageId)].enumerated() {
@@ -175,7 +176,7 @@
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
             let criteria = MeetingSearchCriteria(text: "Obsolete")
             let pending = try await MeetingRepository.serverSearch(
-                vaultId: fixture.vaultId,
+                workspaceId: fixture.workspaceId,
                 criteria: criteria,
                 dbQueue: fixture.queue,
                 contentProvider: provider
@@ -185,13 +186,13 @@
             try await fixture.queue.write { db in
                 for _ in 0 ..< 100 {
                     try MeetingRecord(
-                        id: .v7(), vaultId: fixture.vaultId, projectId: nil, name: "Newer",
+                        id: .v7(), workspaceId: fixture.workspaceId, projectId: nil, name: "Newer",
                         createdAt: Date().addingTimeInterval(60), updatedAt: .now
                     ).insert(db)
                 }
             }
             let capped = try await MeetingRepository.serverSearch(
-                vaultId: fixture.vaultId, criteria: .init(), dbQueue: fixture.queue, contentProvider: provider
+                workspaceId: fixture.workspaceId, criteria: .init(), dbQueue: fixture.queue, contentProvider: provider
             )
             #expect(capped.pendingMeetings.count == 100 && capped.limited)
             #expect(!capped.pendingMeetings.contains { $0.id == fixture.meetingId })
@@ -200,7 +201,7 @@
                 try db.execute(sql: "DELETE FROM sync_transactions WHERE id = ?", arguments: [transactionId])
             }
             let synced = try await MeetingRepository.serverSearch(
-                vaultId: fixture.vaultId,
+                workspaceId: fixture.workspaceId,
                 criteria: criteria,
                 dbQueue: fixture.queue,
                 contentProvider: provider
@@ -224,18 +225,18 @@
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
             await #expect(throws: TextContentError.changed) {
                 try await MeetingRepository.serverSearch(
-                    vaultId: fixture.vaultId,
+                    workspaceId: fixture.workspaceId,
                     criteria: .init(),
                     dbQueue: fixture.queue,
                     contentProvider: provider
                 )
             }
             try await fixture.queue.write { db in
-                try ProjectRecord(id: project, vaultId: fixture.vaultId, path: "New", createdAt: .now).insert(db)
-                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'project', ?, 1)", arguments: [fixture.vaultId, project])
+                try ProjectRecord(id: project, workspaceId: fixture.workspaceId, path: "New", createdAt: .now).insert(db)
+                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'project', ?, 1)", arguments: [fixture.workspaceId, project])
             }
             let result = try await MeetingRepository.serverSearch(
-                vaultId: fixture.vaultId,
+                workspaceId: fixture.workspaceId,
                 criteria: .init(),
                 dbQueue: fixture.queue,
                 contentProvider: provider
@@ -256,26 +257,26 @@
                 }
                 do {
                     try fixture.queue.write { db in
-                        try db.execute(sql: "UPDATE vaults SET syncMutationGeneration = syncMutationGeneration + 1")
+                        try db.execute(sql: "UPDATE workspaces SET syncMutationGeneration = syncMutationGeneration + 1")
                     }
                 } catch { Issue.record(error) }
                 return (200, [:], response)
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
             await #expect(throws: TextContentError.unavailable) {
-                try await provider.searchAll(vaultId: fixture.vaultId, criteria: .init(), dbQueue: fixture.queue)
+                try await provider.searchAll(workspaceId: fixture.workspaceId, criteria: .init(), dbQueue: fixture.queue)
             }
             await #expect(throws: TextContentError.unavailable) {
-                try await provider.searchAll(vaultId: fixture.vaultId, criteria: .init(tagIDs: [1]), dbQueue: fixture.queue)
+                try await provider.searchAll(workspaceId: fixture.workspaceId, criteria: .init(tagIDs: [1]), dbQueue: fixture.queue)
             }
             offline.withLock { $0 = true }
             await #expect(throws: (any Error).self) {
-                try await provider.searchAll(vaultId: fixture.vaultId, criteria: .init(), dbQueue: fixture.queue)
+                try await provider.searchAll(workspaceId: fixture.workspaceId, criteria: .init(), dbQueue: fixture.queue)
             }
             offline.withLock { $0 = false }
             supported.withLock { $0 = true }
             await #expect(throws: TextContentError.changed) {
-                try await provider.searchAll(vaultId: fixture.vaultId, criteria: .init(), dbQueue: fixture.queue)
+                try await provider.searchAll(workspaceId: fixture.workspaceId, criteria: .init(), dbQueue: fixture.queue)
             }
         }
     }
@@ -309,13 +310,13 @@
                                 if change == "ack" {
                                     try db.execute(
                                         sql: "INSERT INTO sync_entity_state VALUES (?, 'meeting', ?, 1)",
-                                        arguments: [fixture.vaultId, fixture.meetingId]
+                                        arguments: [fixture.workspaceId, fixture.meetingId]
                                     )
-                                    try db.execute(sql: "UPDATE vaults SET syncMutationGeneration = syncMutationGeneration + 1")
+                                    try db.execute(sql: "UPDATE workspaces SET syncMutationGeneration = syncMutationGeneration + 1")
                                 } else {
                                     try db
                                         .execute(
-                                            sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL, syncConfirmedConnectionId = NULL"
+                                            sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL, syncConfirmedConnectionId = NULL"
                                         )
                                 }
                                 return .commit
@@ -326,7 +327,7 @@
             }
             await #expect(throws: TextContentError.changed) {
                 try await MeetingRepository.serverSearch(
-                    vaultId: fixture.vaultId,
+                    workspaceId: fixture.workspaceId,
                     criteria: .init(),
                     dbQueue: fixture.queue,
                     contentProvider: provider
@@ -335,7 +336,7 @@
             #expect(scheduled.withLock { $0 })
             if change == "ack" {
                 let retried = try await MeetingRepository.serverSearch(
-                    vaultId: fixture.vaultId,
+                    workspaceId: fixture.workspaceId,
                     criteria: .init(),
                     dbQueue: fixture.queue,
                     contentProvider: provider
@@ -349,9 +350,9 @@
         func reportsPendingProjectOverflow() async throws {
             let fixture = try ServerSearchFixture()
             try await fixture.queue.write { db in
-                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'meeting', ?, 1)", arguments: [fixture.vaultId, fixture.meetingId])
+                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'meeting', ?, 1)", arguments: [fixture.workspaceId, fixture.meetingId])
                 for index in 0 ..< 101 {
-                    try ProjectRecord(id: .v7(), vaultId: fixture.vaultId, path: "Pending \(index)", createdAt: .now).insert(db)
+                    try ProjectRecord(id: .v7(), workspaceId: fixture.workspaceId, path: "Pending \(index)", createdAt: .now).insert(db)
                 }
             }
             let response = try fixture.response(meetings: [])
@@ -361,7 +362,7 @@
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
             let result = try await MeetingRepository.serverSearch(
-                vaultId: fixture.vaultId,
+                workspaceId: fixture.workspaceId,
                 criteria: .init(),
                 dbQueue: fixture.queue,
                 contentProvider: provider
@@ -373,28 +374,29 @@
 
     private struct ServerSearchFixture: Sendable {
         let queue: DatabaseQueue
-        let vaultId = UUID.v7()
+        let workspaceId = UUID.v7()
         let meetingId = UUID.v7()
         let origin = "https://search-\(UUID().uuidString.lowercased()).invalid"
 
         init() throws {
             queue = try AppDatabaseManager(path: ":memory:").dbQueue
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: origin, clientID: "test", createdAt: .now)
-            var vault = VaultRecord(id: vaultId, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
-            vault.accountConnectionId = connection.id
-            if vault.syncRole == nil { vault.syncRole = "admin" }
-            if vault.organizationId == nil { vault.organizationId = .v7() }
-            vault.syncConfirmedConnectionId = connection.id
+            var workspace = WorkspaceRecord(id: workspaceId, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
+            workspace.accountConnectionId = connection.id
+            if workspace.syncRole == nil { workspace.syncRole = "admin" }
+            if workspace.organizationId == nil { workspace.organizationId = .v7() }
+            workspace.syncConfirmedConnectionId = connection.id
             try queue.write { db in
                 try connection.insert(db)
-                try vault.insert(db)
-                try MeetingRecord(id: meetingId, vaultId: vaultId, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now).insert(db)
+                try workspace.insert(db)
+                try MeetingRecord(id: meetingId, workspaceId: workspaceId, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now)
+                    .insert(db)
             }
         }
 
         func response(meetings: [[String: String]], screenshots: [[String: String]] = [], projects: [[String: String]] = []) throws -> Data {
             try JSONSerialization.data(withJSONObject: [
-                "vaultId": vaultId.uuidString,
+                "workspaceId": workspaceId.uuidString,
                 "meetings": meetings,
                 "screenshots": screenshots,
                 "projects": projects,

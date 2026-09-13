@@ -6,7 +6,7 @@ import { refreshData } from "../../src/client/live-data";
 import "../../src/client/styles.css";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
-const requests: { query: string; vaultId: string }[] = [];
+const requests: { query: string; workspaceId: string }[] = [];
 let release: (() => void) | undefined;
 let aborted = false;
 const image = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#ddd"/></svg>');
@@ -18,22 +18,22 @@ window.fetch = async (input, init) => {
     const id = path.split("/").at(-1)!;
     return Response.json({ id, name: "Image", contentType: "image/png", variants: { thumb_1568: image }, metadata: { caption: `Image preview ${id}` } });
   }
-  if (!/^\/api\/v1\/vaults\/[^/]+\/search$/.test(path)) throw new Error(`Unexpected URL: ${path}`);
+  if (!/^\/api\/v1\/workspaces\/[^/]+\/search$/.test(path)) throw new Error(`Unexpected URL: ${path}`);
   const inputBody: { query: string } = await request.json();
-  const body = { ...inputBody, vaultId: path.split("/")[4]! };
+  const body = { ...inputBody, workspaceId: path.split("/")[4]! };
   requests.push(body);
   if (body.query === "slow") {
     await new Promise<void>((resolve) => { release = resolve; request.signal.addEventListener("abort", () => { aborted = true; resolve(); }); });
   }
-  return Response.json({ vaultId: body.vaultId,
+  return Response.json({ workspaceId: body.workspaceId,
     meetings: Array.from({ length: 30 }, (_, i) => ({ id: `m${i}`, meetingId: `m${i}`, kind: "meeting", title: `${body.query || "Recent"} ${i}`, date: "2026-09-03T00:00:00Z", snippet: "Summary", projectPath: "Parent / Child" })),
     screenshots: [1, 2].map((i) => ({ id: `s${i}`, kind: "screenshot", meetingId: "m0", fileId: `f${i}`, title: `Screenshot result ${i}`, date: "2026-09-03T00:00:00Z", snippet: "OCR" })),
     projects: [{ id: "p1", projectId: "p1", kind: "project", title: "Child", projectPath: "Parent / Child", date: "2026-09-03T00:00:00Z", snippet: "" }],
     limited: { meeting: false, screenshot: false, project: false } });
 };
 function App() {
-  const [vault, setVault] = useState("v1");
-  return <><button id="switch" onClick={() => setVault("v2")}>Switch vault</button><Search key={vault} vaultId={vault} /></>;
+  const [workspace, setWorkspace] = useState("v1");
+  return <><button id="switch" onClick={() => setWorkspace("v2")}>Switch workspace</button><Search key={workspace} workspaceId={workspace} /></>;
 }
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 async function until(predicate: () => unknown) {
@@ -101,9 +101,9 @@ async function run() {
   document.querySelector<HTMLButtonElement>("#switch")!.click();
   await until(() => !document.querySelector("dialog"));
   document.querySelector<HTMLButtonElement>(".sidebar-search")!.click();
-  await until(() => requests.at(-1)?.vaultId === "v2");
-  assert(input().value === "", "Vault switch retained query");
+  await until(() => requests.at(-1)?.workspaceId === "v2");
+  assert(input().value === "", "Workspace switch retained query");
   document.body.dataset.testResult = "passed";
-  console.log("PASS: shared search debounce, IME, cancellation, rank navigation, preview, focus, refresh and vault isolation");
+  console.log("PASS: shared search debounce, IME, cancellation, rank navigation, preview, focus, refresh and workspace isolation");
 }
 void run().catch((error: unknown) => { document.body.dataset.testResult = "failed"; document.body.dataset.testError = String(error); console.error(error); });

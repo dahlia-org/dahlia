@@ -40,7 +40,7 @@ describe("fixed OAuth client policy", () => {
       expect(request).toBeInstanceOf(Request);
       return {
         sub: "user-1",
-        workspace_id: "personal:user-1",
+
         client_id: "https://client.example/metadata.json",
         exp: Math.floor(Date.now() / 1000) + 60,
         scope: MCP_SCOPE,
@@ -69,14 +69,14 @@ describe("fixed OAuth client policy", () => {
       void request;
       return {
         sub: "user-1",
-        workspace_id: "personal:user-1",
+
         client_id: "mcp-client",
         exp: Math.floor(Date.now() / 1000) + 60,
         scope: MCP_READ_SCOPE,
       };
     });
     Object.assign(identities, { verifyAccessToken: verifier });
-    const request = new Request("http://internal/mcp/resources/vaults/vault/screenshots/image/content", {
+    const request = new Request("http://internal/mcp/resources/workspaces/workspace/screenshots/image/content", {
       headers: { Authorization: "DPoP access-token", DPoP: "proof" },
     });
 
@@ -84,7 +84,7 @@ describe("fixed OAuth client policy", () => {
       userId: "user-1",
     });
     expect((verifier.mock.calls[0]?.[0] as Request).url)
-      .toBe("https://new.dahlia.example/mcp/resources/vaults/vault/screenshots/image/content");
+      .toBe("https://new.dahlia.example/mcp/resources/workspaces/workspace/screenshots/image/content");
     await expect(identities.fromMcpResource(request, MCP_SCOPE))
       .rejects.toThrow("Insufficient scope");
   });
@@ -92,8 +92,8 @@ describe("fixed OAuth client policy", () => {
   it.each(["resource", "gateway"])("preserves the public URL through ID decoding for %s proofs", async (kind) => {
     const uuid = "01990ab0-0000-7000-8000-000000000001";
     const path = kind === "resource"
-      ? `/mcp/resources/vaults/${encodeId("vault", uuid)}/meetings/${encodeId("meeting", uuid)}/screenshots/${encodeId("attachment", uuid)}/content`
-      : `/api/v1/vaults/${encodeId("vault", uuid)}`;
+      ? `/mcp/resources/workspaces/${encodeId("workspace", uuid)}/meetings/${encodeId("meeting", uuid)}/screenshots/${encodeId("attachment", uuid)}/content`
+      : `/api/v1/workspaces/${encodeId("workspace", uuid)}`;
     const publicURL = `${config.baseUrl}${path}`;
     const identities = new IdentityService(config);
     const verifier = vi.fn(async (request: Request) => {
@@ -101,7 +101,7 @@ describe("fixed OAuth client policy", () => {
       expect(request.method).toBe("GET");
       expect(request.headers.get("authorization")).toBe("DPoP access-token");
       if (request.headers.get("dpop") !== "valid-proof") throw new Error("invalid proof");
-      return { sub: uuid, workspace_id: `personal:${uuid}`, client_id: "mcp-client",
+      return { sub: uuid,  client_id: "mcp-client",
         exp: Math.floor(Date.now() / 1000) + 60, scope: kind === "resource" ? MCP_READ_SCOPE : ALL_APIS_SCOPE };
     });
     Object.assign(identities, { verifyAccessToken: verifier });
@@ -125,7 +125,7 @@ describe("fixed OAuth client policy", () => {
     const identities = new IdentityService(config);
     Object.assign(identities, { verifyAccessToken: vi.fn(async () => ({
       sub: "user-1",
-      workspace_id: "personal:user-1",
+
       client_id: "mcp-client",
       exp: Math.floor(Date.now() / 1000) + 60,
       scope: `${ALL_APIS_SCOPE} ${MCP_SCOPE}`,
@@ -194,7 +194,7 @@ describe("fixed OAuth client policy", () => {
     const gateway = vi.spyOn(identities, "fromGateway").mockRejectedValue(new Error("invalid token"));
     const browser = vi.spyOn(identities, "fromBrowser").mockResolvedValue({
       userId: "browser-user",
-      workspaceId: "personal:browser-user",
+
       source: "accounts",
     });
 

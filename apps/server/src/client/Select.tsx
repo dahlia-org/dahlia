@@ -5,7 +5,7 @@ type Option = { value?: string | number; children?: ReactNode; disabled?: boolea
 type Props = { value: string | number; onValueChange: (value: string) => void; children: ReactNode;
   disabled?: boolean; placeholder?: string; menuLabel?: string; "aria-label"?: string };
 
-/** Single-value picker using the same menu surface as Vault navigation. */
+/** Single-value picker using the same menu surface as Workspace navigation. */
 export function Select({ value, onValueChange, children, disabled, placeholder, menuLabel, "aria-label": label }: Props) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);

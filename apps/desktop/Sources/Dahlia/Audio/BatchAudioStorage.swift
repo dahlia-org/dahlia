@@ -31,13 +31,13 @@ enum BatchAudioStorage {
     static func baseURL(
         for location: RecordingAudioStorageLocation,
         managedRootURL: URL = managedRootURL,
-        vaultURL: URL
+        workspaceURL: URL
     ) -> URL {
         switch location {
         case .managed:
             managedRootURL
-        case .vault:
-            vaultURL
+        case .workspace:
+            workspaceURL
         }
     }
 

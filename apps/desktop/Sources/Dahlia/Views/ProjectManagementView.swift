@@ -8,7 +8,7 @@ struct ProjectManagementView: View {
     let recordingCoordinator: RecordingCoordinator
     @Bindable var mainWindowNavigation: MainWindowNavigation
     let appDatabase: AppDatabaseManager?
-    var vaultManagementModel: VaultManagementModel
+    var workspaceManagementModel: WorkspaceManagementModel
     let onShowUpcomingSchedule: () -> Void
     let onShowChat: () -> Void
     let onShowUnprocessedRecordings: () -> Void
@@ -19,9 +19,9 @@ struct ProjectManagementView: View {
     let onEditProject: (ProjectOverviewItem) -> Void
     let onRequestProjectDeletion: (ProjectOverviewItem) -> Void
     let onOpenSidebarProject: (UUID, ProjectNavigationIntent) -> Void
-    let onSelectVault: (VaultRecord) -> Void
+    let onSelectWorkspace: (WorkspaceRecord) -> Void
 
-    private var canEdit: Bool { sidebarViewModel.canEditCurrentVault }
+    private var canEdit: Bool { sidebarViewModel.canEditCurrentWorkspace }
 
     var body: some View {
         let isShowingSettings = mainWindowNavigation.isShowingSettings
@@ -51,15 +51,15 @@ struct ProjectManagementView: View {
                     onShowUnprocessedRecordings: onShowUnprocessedRecordings,
                     onCreateProject: onCreateProject,
                     onOpenProject: onOpenSidebarProject,
-                    onSelectVault: onSelectVault
+                    onSelectWorkspace: onSelectWorkspace
                 )
             } settingsContent: {
                 SettingsSidebarView(
                     selection: $mainWindowNavigation.settingsCategory,
-                    vaults: vaultManagementModel.vaults,
-                    currentVault: sidebarViewModel.currentVault,
+                    workspaces: workspaceManagementModel.workspaces,
+                    currentWorkspace: sidebarViewModel.currentWorkspace,
                     updateController: updateController,
-                    onSelectVault: onSelectVault,
+                    onSelectWorkspace: onSelectWorkspace,
                     onReturnToApp: mainWindowNavigation.dismissSettings
                 )
             }
@@ -72,7 +72,7 @@ struct ProjectManagementView: View {
                     captionViewModel: captionViewModel,
                     sidebarViewModel: sidebarViewModel,
                     appDatabase: appDatabase,
-                    vaultManagementModel: vaultManagementModel,
+                    workspaceManagementModel: workspaceManagementModel,
                     onShowUnprocessedRecordings: openUnprocessedRecordingsFromSettings
                 )
             }
@@ -83,11 +83,11 @@ struct ProjectManagementView: View {
         }
     }
 
-    private func openUnprocessedRecordingsFromSettings(vaultID: UUID) {
-        if sidebarViewModel.currentVault?.id != vaultID {
-            guard let vault = vaultManagementModel.vaults.first(where: { $0.id == vaultID }) else { return }
-            onSelectVault(vault)
-            guard sidebarViewModel.currentVault?.id == vaultID else { return }
+    private func openUnprocessedRecordingsFromSettings(workspaceID: UUID) {
+        if sidebarViewModel.currentWorkspace?.id != workspaceID {
+            guard let workspace = workspaceManagementModel.workspaces.first(where: { $0.id == workspaceID }) else { return }
+            onSelectWorkspace(workspace)
+            guard sidebarViewModel.currentWorkspace?.id == workspaceID else { return }
         }
         onShowUnprocessedRecordings()
         mainWindowNavigation.openUnprocessedRecordingsFromSettings()
@@ -95,11 +95,11 @@ struct ProjectManagementView: View {
 
     @ViewBuilder
     private var projectCatalog: some View {
-        if AppSettings.shared.currentVault == nil {
+        if AppSettings.shared.currentWorkspace == nil {
             ContentUnavailableView {
-                Label(L10n.noVaultSelected, systemImage: "externaldrive")
+                Label(L10n.noWorkspaceSelected, systemImage: "externaldrive")
             } description: {
-                Text(L10n.projectManagementNoVaultDescription)
+                Text(L10n.projectManagementNoWorkspaceDescription)
             }
         } else if !sidebarViewModel.isProjectCatalogLoaded {
             ProgressView(L10n.loadingProjects)
@@ -118,12 +118,12 @@ struct ProjectManagementView: View {
                 projects: sidebarViewModel.allProjectItems,
                 appearance: projectAppearance(project.projectId),
                 appearanceForProject: projectAppearance,
-                vaultID: sidebarViewModel.currentVault?.id,
+                workspaceID: sidebarViewModel.currentWorkspace?.id,
                 dbQueue: sidebarViewModel.dbQueue,
                 workspaceChangeToken: sidebarViewModel.workspaceChangeToken,
-                displayMode: mainWindowNavigation.projectDetailDisplayMode(vaultId: sidebarViewModel.currentVault?.id),
+                displayMode: mainWindowNavigation.projectDetailDisplayMode(workspaceId: sidebarViewModel.currentWorkspace?.id),
                 onChangeDisplayMode: {
-                    mainWindowNavigation.setProjectDetailDisplayMode($0, vaultId: sidebarViewModel.currentVault?.id)
+                    mainWindowNavigation.setProjectDetailDisplayMode($0, workspaceId: sidebarViewModel.currentWorkspace?.id)
                 },
                 onBack: onShowProjectCatalog,
                 canEdit: canEdit,
@@ -133,7 +133,7 @@ struct ProjectManagementView: View {
         } else {
             ProjectCatalogView(
                 projects: sidebarViewModel.allProjectItems,
-                pinnedProjectIDs: Set(mainWindowNavigation.pinnedProjectIDs(vaultId: sidebarViewModel.currentVault?.id)),
+                pinnedProjectIDs: Set(mainWindowNavigation.pinnedProjectIDs(workspaceId: sidebarViewModel.currentWorkspace?.id)),
                 canEdit: canEdit,
                 canCreateMeeting: canEdit && !captionViewModel.isRecordingStartPending && !captionViewModel.isFinalizingRecording,
                 appearanceForProject: projectAppearance,
@@ -154,14 +154,14 @@ struct ProjectManagementView: View {
     }
 
     private func toggleProjectPin(_ project: ProjectOverviewItem) {
-        mainWindowNavigation.toggleProjectPin(project.projectId, vaultId: sidebarViewModel.currentVault?.id)
+        mainWindowNavigation.toggleProjectPin(project.projectId, workspaceId: sidebarViewModel.currentWorkspace?.id)
     }
 
     private func projectAppearance(_ projectId: UUID) -> ProjectAppearance {
         mainWindowNavigation.projectAppearance(
             for: projectId,
             in: sidebarViewModel.projectItemsByID,
-            vaultId: sidebarViewModel.currentVault?.id
+            workspaceId: sidebarViewModel.currentWorkspace?.id
         )
     }
 }

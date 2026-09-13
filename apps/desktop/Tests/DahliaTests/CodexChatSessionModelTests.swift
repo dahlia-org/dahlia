@@ -36,7 +36,7 @@ import Foundation
         func approvalChangeDuringTurnStartIsPersistedAfterTheStartedMethod() async {
             let service = TestCodexChatService(mode: .delayTurnHandleIgnoringCancellation)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 backendThreadID: "thread-1",
                 approvalMethod: .ask,
@@ -77,7 +77,7 @@ import Foundation
                 approvalMethodUpdateError: .invalidProtocolResponse
             )
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 backendThreadID: "thread-1",
                 approvalMethod: .ask,
@@ -103,7 +103,7 @@ import Foundation
                 approvalMethodUpdateError: .invalidProtocolResponse
             )
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 backendThreadID: "thread-1",
                 approvalMethod: .ask,
@@ -133,7 +133,7 @@ import Foundation
                 approvalMethodUpdateError: .invalidProtocolResponse
             )
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 backendThreadID: "thread-1",
                 approvalMethod: .ask,
@@ -181,10 +181,10 @@ import Foundation
         func restoredTaskRestoresItsApprovalMethod() async {
             let service = TestCodexChatService(mode: .complete, restoredApprovalMethod: .fullAccess)
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 backendThreadID: "thread-1",
                 approvalMethod: .ask,
                 service: service,
@@ -204,10 +204,10 @@ import Foundation
                 restoredApprovalMethod: .fullAccess
             )
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 backendThreadID: "thread-1",
                 approvalMethod: .ask,
                 service: service,
@@ -238,10 +238,10 @@ import Foundation
                 restoredApprovalMethod: method
             )
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 backendThreadID: "thread-1",
                 service: service,
                 settings: settings
@@ -266,10 +266,10 @@ import Foundation
                 restoredApprovalMethod: .ask
             )
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 backendThreadID: "thread-1",
                 service: service,
                 settings: settings
@@ -295,10 +295,10 @@ import Foundation
                 resumeErrors: [.invalidProtocolResponse]
             )
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 backendThreadID: "thread-1",
                 service: service,
                 settings: settings
@@ -326,10 +326,10 @@ import Foundation
         func legacyTaskRestoresToAskAndPersistsTheSafeSetting() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 backendThreadID: "thread-1",
                 approvalMethod: .fullAccess,
                 service: service,
@@ -364,7 +364,7 @@ import Foundation
         func telemetryCountsManualPromptsWithoutCountingRetries() async {
             let service = TestCodexChatService(mode: .complete, restoredApprovalMethod: .fullAccess)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             var events: [UsageTelemetryEvent] = []
             let session = CodexChatSessionModel(
                 modelID: "default-model",
@@ -392,7 +392,7 @@ import Foundation
             let settings = AppSettings()
             let oldModel = settings.codexChatModelID
             let oldEffort = settings.codexChatReasoningEffort
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             defer {
                 settings.codexChatModelID = oldModel
                 settings.codexChatReasoningEffort = oldEffort
@@ -421,7 +421,7 @@ import Foundation
         func missingThreadIsResumedBeforeRetryingFollowUp() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -455,7 +455,7 @@ import Foundation
         func stopWhileTurnHandleIsReturningStopsTheOwnedRuntime() async {
             let service = TestCodexChatService(mode: .delayTurnHandleIgnoringCancellation)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -479,7 +479,7 @@ import Foundation
         func stopBeforeTurnHandleReturnsWaitsBeforeStartingQueuedInput() async {
             let service = TestCodexChatService(mode: .delayTurnHandleIgnoringCancellation)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -512,8 +512,8 @@ import Foundation
         func sendDraftSerializesMultipleMeetingReferencesBeforeInstruction() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -522,7 +522,7 @@ import Foundation
             )
             let first = Self.meetingReference(name: "First", offset: -60)
             let second = Self.meetingReference(name: "Second", offset: 0)
-            session.updateAvailableMeetings([first, second], catalogVaultID: vault.id)
+            session.updateAvailableMeetings([first, second], catalogWorkspaceID: workspace.id)
             session.addMeetingReference(first)
             session.addMeetingReference(second)
             session.addMeetingReference(first)
@@ -547,8 +547,8 @@ import Foundation
         func meetingReferenceCanBeSentWithoutInstruction() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -556,7 +556,7 @@ import Foundation
                 settings: settings
             )
             let meeting = Self.meetingReference(name: "Reference Only", offset: 0)
-            session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
+            session.updateAvailableMeetings([meeting], catalogWorkspaceID: workspace.id)
             session.addMeetingReference(meeting)
 
             #expect(session.canSend)
@@ -569,81 +569,81 @@ import Foundation
         @Test
         func meetingCatalogUpdatesNamesAndPrunesDeletedDraftReferences() {
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
                 service: TestCodexChatService(mode: .complete),
                 settings: settings
             )
             let meeting = Self.meetingReference(name: "Original", offset: 0)
-            session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
+            session.updateAvailableMeetings([meeting], catalogWorkspaceID: workspace.id)
             session.addMeetingReference(meeting)
             let renamed = CodexChatMeetingReference(
                 id: meeting.id,
                 name: "Renamed",
                 recordingStartedAt: meeting.recordingStartedAt
             )
-            session.updateAvailableMeetings([renamed], catalogVaultID: vault.id)
+            session.updateAvailableMeetings([renamed], catalogWorkspaceID: workspace.id)
 
             #expect(session.meetingDisplayName(for: meeting.id) == "Renamed")
-            session.updateAvailableMeetings([], catalogVaultID: vault.id)
+            session.updateAvailableMeetings([], catalogWorkspaceID: workspace.id)
             #expect(session.selectedMeetingReferenceIDs.isEmpty)
             #expect(session.meetingDisplayName(for: meeting.id) == "Renamed")
         }
 
         @Test
-        func anotherVaultCatalogDoesNotPruneDetachedSessionReferences() {
+        func anotherWorkspaceCatalogDoesNotPruneDetachedSessionReferences() {
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 service: TestCodexChatService(mode: .complete),
                 settings: settings
             )
             let meeting = Self.meetingReference(name: "Original", offset: 0)
-            session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
+            session.updateAvailableMeetings([meeting], catalogWorkspaceID: workspace.id)
             session.addMeetingReference(meeting)
 
-            let otherVault = Self.testVault()
-            session.updateAvailableMeetings([], catalogVaultID: otherVault.id)
+            let otherWorkspace = Self.testWorkspace()
+            session.updateAvailableMeetings([], catalogWorkspaceID: otherWorkspace.id)
 
             #expect(session.selectedMeetingReferenceIDs == [meeting.id])
             #expect(session.meetingDisplayName(for: meeting.id) == "Original")
 
-            session.updateAvailableMeetings([], catalogVaultID: vault.id)
+            session.updateAvailableMeetings([], catalogWorkspaceID: workspace.id)
             #expect(session.selectedMeetingReferenceIDs.isEmpty)
         }
 
         @Test
-        func loadingSameVaultCatalogDoesNotPruneReferences() {
+        func loadingSameWorkspaceCatalogDoesNotPruneReferences() {
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 service: TestCodexChatService(mode: .complete),
                 settings: settings
             )
             let meeting = Self.meetingReference(name: "Original", offset: 0)
-            session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
+            session.updateAvailableMeetings([meeting], catalogWorkspaceID: workspace.id)
             session.addMeetingReference(meeting)
 
             session.updateAvailableMeetings(
                 [],
-                catalogVaultID: vault.id,
+                catalogWorkspaceID: workspace.id,
                 isCatalogLoaded: false
             )
             #expect(session.selectedMeetingReferenceIDs == [meeting.id])
 
-            session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
+            session.updateAvailableMeetings([meeting], catalogWorkspaceID: workspace.id)
             #expect(session.selectedMeetingReferenceIDs == [meeting.id])
         }
 
         @Test
-        func missingVaultCatalogDoesNotPruneReferences() {
+        func missingWorkspaceCatalogDoesNotPruneReferences() {
             let settings = AppSettings()
-            settings.currentVault = nil
+            settings.currentWorkspace = nil
             let session = CodexChatSessionModel(
                 service: TestCodexChatService(mode: .complete),
                 settings: settings
@@ -651,7 +651,7 @@ import Foundation
             let reference = CodexChatMeetingReference(id: .v7(), name: "Cached", recordingStartedAt: .now)
             session.addMeetingReference(reference)
 
-            session.updateAvailableMeetings([], catalogVaultID: nil)
+            session.updateAvailableMeetings([], catalogWorkspaceID: nil)
 
             #expect(session.selectedMeetingReferenceIDs == [reference.id])
         }
@@ -659,19 +659,19 @@ import Foundation
         @Test
         func restoredRawReferencesUseCachedNamesAcrossTitleAndMessages() {
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let meeting = Self.meetingReference(name: "Weekly Sync", offset: 0)
             let token = "meeting:\(meeting.id.uuidString)"
             let session = CodexChatSessionModel(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 title: "\(token) Review",
                 messages: [CodexChatMessage(role: .user, text: "Use (\(token)).")],
                 service: TestCodexChatService(mode: .complete),
                 settings: settings
             )
 
-            session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
+            session.updateAvailableMeetings([meeting], catalogWorkspaceID: workspace.id)
 
             #expect(session.displayTitle == "Weekly Sync Review")
             #expect(session.displayText(session.messages[0].text) == "Use (Weekly Sync).")
@@ -681,7 +681,7 @@ import Foundation
         func stopKeepsPartialResponse() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -705,7 +705,7 @@ import Foundation
         func approvalRequestIsPresentedAndDecisionIsForwarded() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -741,7 +741,7 @@ import Foundation
         func approvalDecisionOutsidePresentedActionsIsIgnored() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -775,7 +775,7 @@ import Foundation
         func decidingOneApprovalDoesNotResolveAnotherPendingRequest() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -824,7 +824,7 @@ import Foundation
         func staleApprovalDecisionAdvancesToTheNextRequest() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -855,7 +855,7 @@ import Foundation
         func stopCancelsAllApprovalsBeforeInterrupting() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -896,7 +896,7 @@ import Foundation
         func staleRolloutDoesNotReplaceCompletedStream() async {
             let service = TestCodexChatService(mode: .staleRollout)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -915,7 +915,7 @@ import Foundation
         func rolloutWithoutReasoningPreservesStreamedSummary() async {
             let service = TestCodexChatService(mode: .rolloutWithoutReasoning)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -935,7 +935,7 @@ import Foundation
         func multipleAgentMessageItemsAreCombinedIntoOneResponse() async {
             let service = TestCodexChatService(mode: .multipleMessages)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -955,7 +955,7 @@ import Foundation
         func releasedGeneratingSessionInterruptsAndUnsubscribes() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
@@ -975,16 +975,16 @@ import Foundation
         }
 
         @Test
-        func sessionCannotSendWhileAnotherVaultIsSelected() {
+        func sessionCannotSendWhileAnotherWorkspaceIsSelected() {
             let settings = AppSettings()
-            let boundVault = Self.testVault()
-            settings.currentVault = boundVault
+            let boundWorkspace = Self.testWorkspace()
+            settings.currentWorkspace = boundWorkspace
             let session = CodexChatSessionModel(
-                vaultID: boundVault.id,
+                workspaceID: boundWorkspace.id,
                 service: TestCodexChatService(mode: .complete),
                 settings: settings
             )
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
 
             session.draft = "Do not send"
             #expect(!session.canSend)
@@ -996,8 +996,8 @@ import Foundation
         func everyTurnUsesLatestContextWithoutExposingPromptMarkup() async throws {
             let service = TestCodexChatService(mode: .staleRollout)
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let firstContext = try CodexChatContext.meeting(
                 id: #require(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")),
                 name: "First",
@@ -1042,7 +1042,7 @@ import Foundation
         func contextFailureKeepsDraftAndDoesNotSend() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let contextProvider = TestCodexChatContextProvider(
                 error: CodexAppServerError.invalidProtocolResponse
             )
@@ -1070,7 +1070,7 @@ import Foundation
         func contextFailureReplacesStaleRetryAndSuccessfulRetryClearsDraft() async {
             let service = TestCodexChatService(mode: .staleRollout)
             let settings = AppSettings()
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             let contextProvider = TestCodexChatContextProvider()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
@@ -1104,11 +1104,11 @@ import Foundation
         func unavailableSelectedMeetingKeepsDraftAndDoesNotSend() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let contextProvider = CodexChatContextProvider()
             contextProvider.update(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 meetingID: UUID.v7(),
                 draftMeeting: nil,
                 dbQueue: nil
@@ -1131,10 +1131,10 @@ import Foundation
             #expect(await service.sentTextBlocks.isEmpty)
         }
 
-        private static func testVault() -> VaultRecord {
-            VaultRecord(
+        private static func testWorkspace() -> WorkspaceRecord {
+            WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/chat-test-vault",
+                path: "/tmp/chat-test-workspace",
                 name: "Chat Test",
                 createdAt: .now,
                 lastOpenedAt: .now
@@ -1256,7 +1256,7 @@ import Foundation
             [Self.model]
         }
 
-        func listThreads(cursor _: String?, vaultID _: UUID) async throws -> CodexChatThreadPage {
+        func listThreads(cursor _: String?, workspaceID _: UUID) async throws -> CodexChatThreadPage {
             CodexChatThreadPage(threads: [], nextCursor: nil)
         }
 
@@ -1294,7 +1294,7 @@ import Foundation
             )
         }
 
-        func resumeThread(id: String, vaultID _: UUID) async throws -> CodexChatThread {
+        func resumeThread(id: String, workspaceID _: UUID) async throws -> CodexChatThread {
             resumedThreadIDs.append(id)
             if !resumeErrors.isEmpty {
                 throw resumeErrors.removeFirst()
@@ -1310,7 +1310,7 @@ import Foundation
             )
         }
 
-        func startThread(model _: String?, effort: String, vaultID _: UUID) async throws -> CodexChatThread {
+        func startThread(model _: String?, effort: String, workspaceID _: UUID) async throws -> CodexChatThread {
             CodexChatThread(
                 id: "thread-1",
                 title: "",
@@ -1574,7 +1574,7 @@ import Foundation
             self.shouldBlock = shouldBlock
         }
 
-        func currentContext(vaultID _: UUID) async throws -> CodexChatContext? {
+        func currentContext(workspaceID _: UUID) async throws -> CodexChatContext? {
             requestCount += 1
             if shouldBlock {
                 await withCheckedContinuation { continuation in

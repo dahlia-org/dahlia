@@ -59,7 +59,7 @@ private struct SummaryGenerationConfirmationPresentationModifier: ViewModifier {
             viewModel.triggerManualSummaries(
                 meetingIds: meetingIDs,
                 dbQueue: sidebarViewModel.dbQueue,
-                vaultURL: sidebarViewModel.currentVault?.url,
+                workspaceURL: sidebarViewModel.currentWorkspace?.url,
                 options: options
             )
             return nil

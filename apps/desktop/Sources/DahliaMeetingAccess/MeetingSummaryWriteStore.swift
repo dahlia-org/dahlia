@@ -15,7 +15,7 @@ public extension MeetingAccessStore {
     ///
     /// docs/adr/desktop/summary.md の「訂正と export」と
     /// docs/adr/desktop/local-mcp-and-projects.md の「Export directory」に従い、
-    /// Vault ロックを取り、完全に事前検証してから
+    /// Workspace ロックを取り、完全に事前検証してから
     /// ファイルを書き、単一トランザクションでデータベースを更新し、失敗時はファイルを書き戻す。
     func updateMeetingSummary(
         meetingID: UUID,
@@ -24,14 +24,14 @@ public extension MeetingAccessStore {
     ) throws -> SummaryMutationResult {
         try requireWriteAccess()
 
-        let vaultURL = try database.read(summaryVaultURL(in:))
-        return try withVaultMutationLock(vaultURL: vaultURL) { () throws -> SummaryMutationResult in
+        let workspaceURL = try database.read(summaryWorkspaceURL(in:))
+        return try withWorkspaceMutationLock(workspaceURL: workspaceURL) { () throws -> SummaryMutationResult in
             let plan = try database.read { db in
                 try makeSummaryUpdatePlan(
                     meetingID: meetingID,
                     expectedDocumentVersion: expectedDocumentVersion,
                     document: document,
-                    vaultURL: vaultURL,
+                    workspaceURL: workspaceURL,
                     in: db
                 )
             }
@@ -41,7 +41,7 @@ public extension MeetingAccessStore {
                 return result
             case let .apply(update):
                 let result = try applySummaryUpdate(update)
-                DahliaWorkspaceChangeNotification.post(vaultID: vaultID)
+                DahliaWorkspaceChangeNotification.post(workspaceID: workspaceID)
                 return result
             }
         }
@@ -62,9 +62,9 @@ extension MeetingAccessStore {
         let meetingName: String
         let meetingDescription: String
         let tags: [String]
-        /// 書き戻す Vault の Markdown。書き出し記録がない、または到達できない場合は nil。
-        let vaultFile: VaultFileWrite?
-        let vaultExport: SummaryMutationResult.VaultExportOutcome
+        /// 書き戻す Workspace の Markdown。書き出し記録がない、または到達できない場合は nil。
+        let workspaceFile: WorkspaceFileWrite?
+        let workspaceExport: SummaryMutationResult.WorkspaceExportOutcome
 
         func result(staleExports: [String]) -> SummaryMutationResult {
             SummaryMutationResult(
@@ -73,25 +73,25 @@ extension MeetingAccessStore {
                 title: summaryTitle,
                 description: meetingDescription,
                 changed: true,
-                vaultExport: vaultExport,
+                workspaceExport: workspaceExport,
                 staleExports: staleExports
             )
         }
     }
 
-    struct VaultFileWrite {
+    struct WorkspaceFileWrite {
         let fileURL: URL
         let relativePath: String
         let markdown: String
         let previousContents: Data
     }
 
-    func summaryVaultURL(in db: Database) throws -> URL? {
-        _ = try fetchVault(in: db)
+    func summaryWorkspaceURL(in db: Database) throws -> URL? {
+        _ = try fetchWorkspace(in: db)
         let path = try String.fetchOne(
             db,
-            sql: "SELECT path FROM vaults WHERE id = ?",
-            arguments: [vaultID]
+            sql: "SELECT path FROM workspaces WHERE id = ?",
+            arguments: [workspaceID]
         )
         return path.map { URL(fileURLWithPath: $0, isDirectory: true) }
     }
@@ -102,13 +102,13 @@ extension MeetingAccessStore {
         meetingID: UUID,
         expectedDocumentVersion: String,
         document: SummaryDocument,
-        vaultURL: URL?,
+        workspaceURL: URL?,
         in db: Database
     ) throws -> SummaryUpdatePlan {
         guard try Bool.fetchOne(
             db,
-            sql: "SELECT 1 FROM meetings WHERE id = ? AND vaultId = ?",
-            arguments: [meetingID, vaultID]
+            sql: "SELECT 1 FROM meetings WHERE id = ? AND workspace_id = ?",
+            arguments: [meetingID, workspaceID]
         ) != nil else {
             throw MeetingAccessError.meetingNotFound
         }
@@ -142,7 +142,7 @@ extension MeetingAccessStore {
                 title: existingTitle,
                 description: meetingDescription,
                 changed: false,
-                vaultExport: .unchanged,
+                workspaceExport: .unchanged,
                 staleExports: staleExports(meetingID: meetingID, in: db)
             ))
         }
@@ -151,11 +151,11 @@ extension MeetingAccessStore {
         document.metadata = nil
         let editedDocument = try document.databaseJSONString()
         let createdAt = summary.createdAt
-        let vaultFile = try makeVaultFileWrite(
+        let workspaceFile = try makeWorkspaceFileWrite(
             meetingID: meetingID,
             document: document,
             createdAt: createdAt,
-            vaultURL: vaultURL,
+            workspaceURL: workspaceURL,
             in: db
         )
 
@@ -167,8 +167,8 @@ extension MeetingAccessStore {
             meetingName: meetingName,
             meetingDescription: meetingDescription,
             tags: document.tags.filter { !$0.isEmpty },
-            vaultFile: vaultFile.write,
-            vaultExport: vaultFile.outcome
+            workspaceFile: workspaceFile.write,
+            workspaceExport: workspaceFile.outcome
         ))
     }
 
@@ -221,9 +221,9 @@ extension MeetingAccessStore {
             SELECT meeting_images.id
             FROM meeting_images
             JOIN meetings ON meetings.id = meeting_images.meetingId
-            WHERE meeting_images.meetingId = ? AND meetings.vaultId = ?
+            WHERE meeting_images.meetingId = ? AND meetings.workspace_id = ?
             """,
-            arguments: [meetingID, vaultID]
+            arguments: [meetingID, workspaceID]
         )
         return Set(ids)
     }
@@ -236,31 +236,31 @@ extension MeetingAccessStore {
         )
     }
 
-    // MARK: - Vault markdown
+    // MARK: - Workspace markdown
 
-    private func makeVaultFileWrite(
+    private func makeWorkspaceFileWrite(
         meetingID: UUID,
         document: SummaryDocument,
         createdAt: Date,
-        vaultURL: URL?,
+        workspaceURL: URL?,
         in db: Database
-    ) throws -> (write: VaultFileWrite?, outcome: SummaryMutationResult.VaultExportOutcome) {
-        guard let vaultURL else { return (nil, .notExported) }
+    ) throws -> (write: WorkspaceFileWrite?, outcome: SummaryMutationResult.WorkspaceExportOutcome) {
+        guard let workspaceURL else { return (nil, .notExported) }
         guard let storedURL = try String.fetchOne(
             db,
             sql: "SELECT url FROM summary_exports WHERE meetingId = ? AND type = 'vault'",
             arguments: [meetingID]
-        ), let relativePath = vaultRelativeSummaryPath(storedURL) else {
+        ), let relativePath = workspaceRelativeSummaryPath(storedURL) else {
             return (nil, .notExported)
         }
 
-        guard let fileURL = VaultSummaryFileLocator.findSummaryFile(
+        guard let fileURL = WorkspaceSummaryFileLocator.findSummaryFile(
             storedRelativePath: relativePath,
-            vaultURL: vaultURL
+            workspaceURL: workspaceURL
         ) else {
             return (nil, .fileMissing)
         }
-        let reachable = try isInsideVault(fileURL, vaultURL: vaultURL) && !containsSymbolicLink(fileURL, vaultURL: vaultURL)
+        let reachable = try isInsideWorkspace(fileURL, workspaceURL: workspaceURL) && !containsSymbolicLink(fileURL, workspaceURL: workspaceURL)
         guard reachable else {
             return (nil, .fileMissing)
         }
@@ -282,7 +282,7 @@ extension MeetingAccessStore {
         guard let previousContents = try? Data(contentsOf: fileURL) else {
             return (nil, .fileMissing)
         }
-        let write = VaultFileWrite(
+        let write = WorkspaceFileWrite(
             fileURL: fileURL,
             relativePath: relativePath,
             markdown: rendered.markdown,
@@ -291,7 +291,7 @@ extension MeetingAccessStore {
         return (write, .updated)
     }
 
-    /// Vault へ書き出したスクリーンショットのファイル名。アプリの書き出し規則と一致させる。
+    /// Workspace へ書き出したスクリーンショットのファイル名。アプリの書き出し規則と一致させる。
     private func screenshotFilenames(
         for screenshotIDs: Set<UUID>,
         meetingID: UUID,
@@ -299,7 +299,7 @@ extension MeetingAccessStore {
     ) throws -> [UUID: String] {
         guard !screenshotIDs.isEmpty else { return [:] }
         let placeholders = Array(repeating: "?", count: screenshotIDs.count).joined(separator: ", ")
-        var arguments: StatementArguments = [meetingID, vaultID]
+        var arguments: StatementArguments = [meetingID, workspaceID]
         arguments += StatementArguments(Array(screenshotIDs))
         let rows = try Row.fetchAll(
             db,
@@ -307,7 +307,7 @@ extension MeetingAccessStore {
             SELECT meeting_images.id, meeting_images.mimeType, meeting_images.imageData
             FROM meeting_images
             JOIN meetings ON meetings.id = meeting_images.meetingId
-            WHERE meeting_images.meetingId = ? AND meetings.vaultId = ?
+            WHERE meeting_images.meetingId = ? AND meetings.workspace_id = ?
               AND meeting_images.id IN (\(placeholders))
             """,
             arguments: arguments
@@ -327,8 +327,8 @@ extension MeetingAccessStore {
         return filenames
     }
 
-    private func containsSymbolicLink(_ fileURL: URL, vaultURL: URL) throws -> Bool {
-        let root = vaultURL.standardizedFileURL
+    private func containsSymbolicLink(_ fileURL: URL, workspaceURL: URL) throws -> Bool {
+        let root = workspaceURL.standardizedFileURL
         var current = root
         for component in fileURL.standardizedFileURL.pathComponents.dropFirst(root.pathComponents.count) {
             current.append(path: component)
@@ -340,11 +340,11 @@ extension MeetingAccessStore {
     }
 
     /// ファイルを先に書き、データベース更新が失敗したら元の内容へ戻す。
-    private func writingVaultFile<T>(
+    private func writingWorkspaceFile<T>(
         _ update: SummaryUpdate,
         operation: () throws -> T
     ) throws -> T {
-        guard let file = update.vaultFile else { return try operation() }
+        guard let file = update.workspaceFile else { return try operation() }
 
         try Data(file.markdown.utf8).write(to: file.fileURL, options: .atomic)
         do {
@@ -362,7 +362,7 @@ extension MeetingAccessStore {
     // MARK: - Database
 
     func applySummaryUpdate(_ update: SummaryUpdate) throws -> SummaryMutationResult {
-        try writingVaultFile(update) {
+        try writingWorkspaceFile(update) {
             try database.write { db in
                 let staleExports = try commitSummaryUpdate(update, in: db)
                 return update.result(staleExports: staleExports)
@@ -390,16 +390,16 @@ extension MeetingAccessStore {
         try db.execute(sql: "UPDATE summaries SET title = ? WHERE meetingId = ?", arguments: [update.summaryTitle, update.meetingID])
 
         try db.execute(
-            sql: "UPDATE meetings SET name = ?, description = ?, updatedAt = ? WHERE id = ? AND vaultId = ?",
-            arguments: [update.meetingName, update.meetingDescription, now, update.meetingID, vaultID]
+            sql: "UPDATE meetings SET name = ?, description = ?, updatedAt = ? WHERE id = ? AND workspace_id = ?",
+            arguments: [update.meetingName, update.meetingDescription, now, update.meetingID, workspaceID]
         )
 
         try upsertTags(update.tags, meetingID: update.meetingID, now: now, in: db)
 
-        if let file = update.vaultFile {
+        if let file = update.workspaceFile {
             try db.execute(
                 sql: "UPDATE summary_exports SET url = ?, updatedAt = ? WHERE meetingId = ? AND type = 'vault'",
-                arguments: [vaultSummaryURL(file.relativePath), now, update.meetingID]
+                arguments: [workspaceSummaryURL(file.relativePath), now, update.meetingID]
             )
         }
         return try staleExports(meetingID: update.meetingID, in: db)

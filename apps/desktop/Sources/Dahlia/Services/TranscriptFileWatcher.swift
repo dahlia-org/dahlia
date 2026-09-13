@@ -5,19 +5,19 @@ import GRDB
 /// `_dahlia/transcripts/` ディレクトリを FSEvents で監視する。
 final class TranscriptFileWatcher: Sendable {
     let dbQueue: DatabaseQueue
-    private let vaultURL: URL
+    private let workspaceURL: URL
     private nonisolated(unsafe) var streamRef: FSEventStreamRef?
     private let callbackQueue = DispatchQueue(label: "com.dahlia.transcript-file-watcher", qos: .utility)
 
-    init(dbQueue: DatabaseQueue, vaultURL: URL) {
+    init(dbQueue: DatabaseQueue, workspaceURL: URL) {
         self.dbQueue = dbQueue
-        self.vaultURL = vaultURL
+        self.workspaceURL = workspaceURL
     }
 
     func startMonitoring() {
         stopMonitoring()
 
-        let transcriptsDir = TranscriptExportService.transcriptsDirectoryURL(in: vaultURL)
+        let transcriptsDir = TranscriptExportService.transcriptsDirectoryURL(in: workspaceURL)
         try? FileManager.default.createDirectory(at: transcriptsDir, withIntermediateDirectories: true)
 
         let pathsToWatch = [transcriptsDir.path as CFString] as CFArray

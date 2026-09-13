@@ -1,7 +1,6 @@
 import Testing
 @testable import Dahlia
 
-@Suite
 struct CodexChatUserInputTests {
     @Test
     func parsesGenericQuestionWithoutMistakingMCPApproval() throws {

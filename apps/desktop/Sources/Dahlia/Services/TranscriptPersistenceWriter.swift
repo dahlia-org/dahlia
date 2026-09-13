@@ -156,9 +156,9 @@ actor TranscriptPersistenceWriter {
                 for record in records {
                     try record.insert(db)
                 }
-                if !records.isEmpty, let vaultId = try UUID.fetchOne(
+                if !records.isEmpty, let workspaceId = try UUID.fetchOne(
                     db,
-                    sql: "SELECT vaultId FROM meetings WHERE id = ?",
+                    sql: "SELECT workspace_id FROM meetings WHERE id = ?",
                     arguments: [meetingId]
                 ) {
                     guard let transcript = try TranscriptRecord.fetchOne(db, key: meetingId),
@@ -167,7 +167,7 @@ actor TranscriptPersistenceWriter {
                     guard info.endedAt == nil else { throw TextContentError.changed }
                     let patch = try TranscriptRecord.mutation(meetingId: meetingId, info: info, mode: "append")
                     try SyncTransactionRecorder.record(
-                        vaultId: vaultId,
+                        workspaceId: workspaceId,
                         operations: [patch],
                         transcriptSegments: [patch.id: records.map(SyncTranscriptPatchSegment.init)],
                         in: db

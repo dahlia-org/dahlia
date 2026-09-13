@@ -15,8 +15,8 @@ struct SyncProgressView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(connection.displayName).font(.subheadline).foregroundStyle(.secondary)
                             if let progress = controller.syncProgress[connection.id] {
-                                ForEach(progress.vaults) { vault in
-                                    VaultSyncProgressView(progress: vault)
+                                ForEach(progress.workspaces) { workspace in
+                                    WorkspaceSyncProgressView(progress: workspace)
                                 }
                             } else {
                                 Label(L10n.syncFetching, systemImage: "arrow.triangle.2.circlepath")
@@ -31,8 +31,8 @@ struct SyncProgressView: View {
     }
 }
 
-struct VaultSyncProgressView: View {
-    let progress: VaultSyncProgress
+struct WorkspaceSyncProgressView: View {
+    let progress: WorkspaceSyncProgress
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -68,7 +68,7 @@ struct VaultSyncProgressView: View {
     }
 }
 
-extension VaultSyncProgress.Phase {
+extension WorkspaceSyncProgress.Phase {
     var title: String {
         switch self {
         case .preparing: L10n.syncPreparing
@@ -86,12 +86,12 @@ extension AccountSyncProgress {
     var summary: String {
         switch state {
         case .synced: return L10n.syncSynced
-        case .recovering: return L10n.vaultSyncRecovering
+        case .recovering: return L10n.workspaceSyncRecovering
         case .pending: break
         default: return L10n.syncAttention
         }
-        if vaults.contains(where: { $0.phase == .preparing }) { return L10n.syncPreparing }
-        let title = vaults.contains(where: { $0.phase == .retrying }) ? L10n.syncRetrying : L10n.syncSyncing
+        if workspaces.contains(where: { $0.phase == .preparing }) { return L10n.syncPreparing }
+        let title = workspaces.contains(where: { $0.phase == .retrying }) ? L10n.syncRetrying : L10n.syncSyncing
         return remaining > 0 ? "\(title) · \(String(format: L10n.syncRemainingFormat, remaining))" : L10n.syncFetching
     }
 }

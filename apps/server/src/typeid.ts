@@ -1,5 +1,5 @@
 export const idPrefixes = {
-  vault: "vlt", project: "proj", meeting: "mtg", file: "file", attachment: "att",
+  workspace: "ws", project: "proj", meeting: "mtg", file: "file", attachment: "att",
   summary: "sum", transcript: "transcript", segment: "seg", recording: "rec",
   event: "evt", summaryJob: "sjob", contact: "contact", topic: "topic", insight: "inst",
   projectReference: "prr", user: "user", organization: "org", team: "team",

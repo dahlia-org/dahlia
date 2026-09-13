@@ -7,7 +7,7 @@ function Fixture() {
   const [value, setValue] = useState("a");
   return <dialog open><label>Choice<Select value={value} onValueChange={setValue}>
     <option value="a"><svg aria-hidden="true" width="16" height="16"><circle cx="8" cy="8" r="6" /></svg><span>Alpha</span></option><option value="disabled" disabled>Blocked</option><option value="b">Beta</option>
-  </Select></label><fieldset disabled><label>Disabled<Select value="a" onValueChange={() => { throw Error("Disabled changed"); }}><option value="a">Alpha</option></Select></label></fieldset><button>After</button><Select aria-label="Destination" value="" placeholder="Choose a Vault" menuLabel="Vaults" onValueChange={() => {}}><option value="target">Target</option></Select></dialog>;
+  </Select></label><fieldset disabled><label>Disabled<Select value="a" onValueChange={() => { throw Error("Disabled changed"); }}><option value="a">Alpha</option></Select></label></fieldset><button>After</button><Select aria-label="Destination" value="" placeholder="Choose a Workspace" menuLabel="Workspaces" onValueChange={() => {}}><option value="target">Target</option></Select></dialog>;
 }
 const assert = (value: unknown, message: string) => { if (!value) throw Error(message); };
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -36,7 +36,7 @@ async function run() {
   const destination = document.querySelector<HTMLButtonElement>('[aria-label="Destination"]')!;
   destination.click(); await frame(); await frame();
   const popup = document.getElementById(destination.getAttribute("aria-controls")!)!;
-  assert(popup.querySelector("strong")?.textContent === "Vaults", "menu label missing");
+  assert(popup.querySelector("strong")?.textContent === "Workspaces", "menu label missing");
   assert(popup.querySelectorAll('[role="option"]').length === 1, "placeholder became an option");
   assert(document.querySelector('[role="option"] svg'), "option icon missing");
   key("Escape");

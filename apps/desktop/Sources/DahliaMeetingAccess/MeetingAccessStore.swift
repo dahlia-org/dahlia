@@ -13,7 +13,7 @@ public final class MeetingAccessStore: Sendable {
     }
 
     let database: DatabaseQueue
-    public let vaultID: UUID
+    public let workspaceID: UUID
     public let allowsWrites: Bool
     private let screenshotCache: ScreenshotFileStore?
     private let imageResolver: @Sendable (UUID, UUID, UUID) throws -> Data
@@ -21,7 +21,7 @@ public final class MeetingAccessStore: Sendable {
 
     public init(
         databaseURL: URL = MeetingAccessStore.defaultDatabaseURL,
-        vaultID: UUID,
+        workspaceID: UUID,
         allowsWrites: Bool = false,
         screenshotCache: ScreenshotFileStore? = nil,
         imageResolver: (@Sendable (UUID, UUID, UUID) throws -> Data)? = nil,
@@ -34,38 +34,38 @@ public final class MeetingAccessStore: Sendable {
             try SearchFTS5Tokenizer.register(in: db)
         }
         database = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
-        self.vaultID = vaultID
+        self.workspaceID = workspaceID
         self.allowsWrites = allowsWrites
         let usesAppDatabase = databaseURL.standardizedFileURL == Self.defaultDatabaseURL.standardizedFileURL
-        self.textResolver = textResolver ?? (usesAppDatabase ? { @Sendable vaultId, request in
-            try DahliaImageBrokerProtocol.requestImage(.init(vaultId: vaultId, text: request))
+        self.textResolver = textResolver ?? (usesAppDatabase ? { @Sendable workspaceId, request in
+            try DahliaImageBrokerProtocol.requestImage(.init(workspaceId: workspaceId, text: request))
         } : nil)
         self.screenshotCache = screenshotCache ?? (usesAppDatabase ? try? ScreenshotFileStore(readOnly: true) : nil)
-        self.imageResolver = imageResolver ?? { vaultId, meetingId, screenshotId in
+        self.imageResolver = imageResolver ?? { workspaceId, meetingId, screenshotId in
             guard usesAppDatabase else { throw MeetingAccessError.screenshotUnavailable }
             do {
-                return try DahliaImageBrokerProtocol.requestImage(.init(vaultId: vaultId, meetingId: meetingId, screenshotId: screenshotId))
+                return try DahliaImageBrokerProtocol.requestImage(.init(workspaceId: workspaceId, meetingId: meetingId, screenshotId: screenshotId))
             } catch { throw MeetingAccessError.screenshotUnavailable }
         }
     }
 
     /// App-side broker reads use the same scoped SQL without recursively entering IPC.
-    public init(database: DatabaseQueue, vaultID: UUID) {
+    public init(database: DatabaseQueue, workspaceID: UUID) {
         self.database = database
-        self.vaultID = vaultID
+        self.workspaceID = workspaceID
         allowsWrites = false
         screenshotCache = nil
         imageResolver = { _, _, _ in throw MeetingAccessError.screenshotUnavailable }
         textResolver = nil
     }
 
-    func scoped(to vaultID: UUID) -> MeetingAccessStore {
-        MeetingAccessStore(copying: self, vaultID: vaultID)
+    func scoped(to workspaceID: UUID) -> MeetingAccessStore {
+        MeetingAccessStore(copying: self, workspaceID: workspaceID)
     }
 
-    private init(copying store: MeetingAccessStore, vaultID: UUID) {
+    private init(copying store: MeetingAccessStore, workspaceID: UUID) {
         database = store.database
-        self.vaultID = vaultID
+        self.workspaceID = workspaceID
         allowsWrites = store.allowsWrites
         screenshotCache = store.screenshotCache
         imageResolver = store.imageResolver
@@ -81,7 +81,7 @@ public final class MeetingAccessStore: Sendable {
         filter: ([TextSearchPage.Item], Database) throws -> [TextSearchPage.Item]
     ) -> RemoteTextSearchResults? {
         let isServer = (try? database.read { db in
-            try Bool.fetchOne(db, sql: "SELECT accountConnectionId IS NOT NULL FROM vaults WHERE id = ?", arguments: [vaultID]) == true
+            try Bool.fetchOne(db, sql: "SELECT accountConnectionId IS NOT NULL FROM workspaces WHERE id = ?", arguments: [workspaceID]) == true
         }) == true
         guard isServer else { return nil }
         do {
@@ -90,16 +90,16 @@ public final class MeetingAccessStore: Sendable {
             repeat {
                 let page = try JSONDecoder().decode(
                     TextSearchPage.self,
-                    from: textResolver(vaultID, .init(operation: .search, query: query, kind: kind, cursor: position, limit: limit))
+                    from: textResolver(workspaceID, .init(operation: .search, query: query, kind: kind, cursor: position, limit: limit))
                 )
                 let items = try database.read { db in
-                    _ = try fetchVault(in: db)
+                    _ = try fetchWorkspace(in: db)
                     guard !page.items.isEmpty else { return [TextSearchPage.Item]() }
                     let ids = Array(Set(page.items.map(\.meetingId)))
                     let known = try Int.fetchOne(
                         db,
-                        sql: "SELECT count(*) FROM meetings WHERE vaultId = ? AND id IN (\(Array(repeating: "?", count: ids.count).joined(separator: ",")))",
-                        arguments: StatementArguments([vaultID] + ids)
+                        sql: "SELECT count(*) FROM meetings WHERE workspace_id = ? AND id IN (\(Array(repeating: "?", count: ids.count).joined(separator: ",")))",
+                        arguments: StatementArguments([workspaceID] + ids)
                     )
                     guard known == ids.count else { throw TextContentError.changed }
                     return try filter(page.items, db)
@@ -123,8 +123,8 @@ public final class MeetingAccessStore: Sendable {
         }
     }
 
-    public func scopedVault() throws -> ScopedVault {
-        try database.read(fetchVault(in:))
+    public func scopedWorkspace() throws -> ScopedWorkspace {
+        try database.read(fetchWorkspace(in:))
     }
 
     public func queryMeetings(_ query: MeetingQuery = MeetingQuery()) throws -> MeetingQueryPage {
@@ -163,14 +163,14 @@ public final class MeetingAccessStore: Sendable {
         }
 
         return try database.read { db in
-            let vault = try fetchVault(in: db)
+            let workspace = try fetchWorkspace(in: db)
             let usesTextSearch = query.query?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             return try withSearchDeadline(enabled: usesTextSearch, in: db) {
                 let usesFullTextSearch = usesTextSearch && !query.simple
                 let indexRevision = try usesFullTextSearch ? fullTextIndexRevision(in: db) : nil
                 let cursorScope = meetingCursorScope(query)
                 let cursor = try query.cursor.map {
-                    try MeetingCursor.decode($0, vaultID: vaultID, scope: cursorScope, indexRevision: indexRevision)
+                    try MeetingCursor.decode($0, workspaceID: workspaceID, scope: cursorScope, indexRevision: indexRevision)
                 }
                 let queryComponents = try meetingQueryComponents(query, cursor: cursor, in: db)
                 let rows = try meetingRows(in: db, components: queryComponents, limit: query.limit)
@@ -179,14 +179,14 @@ public final class MeetingAccessStore: Sendable {
                 let meetings = pageRows.map(Self.metadata(from:))
                 let nextCursor = hasMore ? meetings.last.map {
                     MeetingCursor(
-                        vaultID: vaultID,
+                        workspaceID: workspaceID,
                         scope: cursorScope,
                         indexRevision: indexRevision,
                         createdAt: $0.createdAt,
                         meetingID: $0.id
                     ).encoded()
                 } : nil
-                return MeetingQueryPage(vault: vault, meetings: meetings, nextCursor: nextCursor)
+                return MeetingQueryPage(workspace: workspace, meetings: meetings, nextCursor: nextCursor)
             }
         }
     }
@@ -204,8 +204,8 @@ public final class MeetingAccessStore: Sendable {
             try hits.filter { hit in
                 guard let row = try Row.fetchOne(db, sql: """
                 SELECT m.projectId, s.capturedAt FROM meeting_images s JOIN meetings m ON m.id = s.meetingId
-                WHERE s.id = ? AND m.id = ? AND m.vaultId = ?
-                """, arguments: [hit.id, hit.meetingId, self.vaultID]) else { throw TextContentError.changed }
+                WHERE s.id = ? AND m.id = ? AND m.workspace_id = ?
+                """, arguments: [hit.id, hit.meetingId, self.workspaceID]) else { throw TextContentError.changed }
                 let projectId: UUID? = row["projectId"]
                 let date: Date = row["capturedAt"]
                 return (query.projectID == nil || query.projectID == projectId)
@@ -228,22 +228,22 @@ public final class MeetingAccessStore: Sendable {
             throw MeetingAccessError.invalidSearchQuery(maximum: Self.maximumSearchQueryLength)
         }
         return try database.read { db in
-            let vault = try fetchVault(in: db)
+            let workspace = try fetchWorkspace(in: db)
             return try withSearchDeadline(enabled: true, in: db) {
                 let revision = try fullTextIndexRevision(in: db)
                 let scope = screenshotCursorScope(text: text, query: query)
                 let cursor = try query.cursor.map {
-                    try ScreenshotTextCursor.decode($0, vaultID: vaultID, revision: revision, scope: scope)
+                    try ScreenshotTextCursor.decode($0, workspaceID: workspaceID, revision: revision, scope: scope)
                 }
                 guard let fullTextQuery = try fullTextQuery(text, in: db) else {
-                    return ScreenshotTextQueryPage(vault: vault, screenshots: [], nextCursor: nil)
+                    return ScreenshotTextQueryPage(workspace: workspace, screenshots: [], nextCursor: nil)
                 }
                 var conditions = [
                     "search_documents.kind = 'screenshot'",
-                    "search_documents.vaultId = ?",
+                    "search_documents.workspace_id = ?",
                     "search_documents_fts MATCH ?",
                 ]
-                var arguments: StatementArguments = [vaultID, "{ocr caption} : (\(fullTextQuery))"]
+                var arguments: StatementArguments = [workspaceID, "{ocr caption} : (\(fullTextQuery))"]
                 if let projectID = query.projectID {
                     conditions.append("meetings.projectId = ?")
                     arguments += [projectID]
@@ -288,13 +288,13 @@ public final class MeetingAccessStore: Sendable {
                 }
                 let nextCursor = hasMore
                     ? ScreenshotTextCursor(
-                        vaultID: vaultID,
+                        workspaceID: workspaceID,
                         revision: revision,
                         scope: scope,
                         offset: (cursor?.offset ?? 0) + screenshots.count
                     ).encoded()
                     : nil
-                return ScreenshotTextQueryPage(vault: vault, screenshots: screenshots, nextCursor: nextCursor)
+                return ScreenshotTextQueryPage(workspace: workspace, screenshots: screenshots, nextCursor: nextCursor)
             }
         }
     }
@@ -337,7 +337,7 @@ public final class MeetingAccessStore: Sendable {
     }
 
     private func meetingQueryComponents(_ query: MeetingQuery, cursor: MeetingCursor?, in db: Database) throws -> QueryComponents {
-        var components = QueryComponents(predicates: ["meetings.vaultId = ?"], arguments: [vaultID])
+        var components = QueryComponents(predicates: ["meetings.workspace_id = ?"], arguments: [workspaceID])
         let trimmedQuery = query.query?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let trimmedQuery, !trimmedQuery.isEmpty {
             if query.simple {
@@ -421,21 +421,21 @@ public final class MeetingAccessStore: Sendable {
     }
 
     private func meetingRows(in db: Database, components: QueryComponents, limit: Int) throws -> [Row] {
-        var arguments: StatementArguments = [vaultID, vaultID]
+        var arguments: StatementArguments = [workspaceID, workspaceID]
         arguments += components.arguments
         arguments += [limit + 1]
         return try Row.fetchAll(
             db,
             sql: """
-            WITH RECURSIVE project_paths(id, vaultId, name) AS (
-                SELECT id, vaultId, name
+            WITH RECURSIVE project_paths(id, workspace_id, name) AS (
+                SELECT id, workspace_id, name
                 FROM projects
-                WHERE parentProjectId IS NULL AND vaultId = ?
+                WHERE parentProjectId IS NULL AND workspace_id = ?
                 UNION ALL
-                SELECT child.id, child.vaultId, project_paths.name || '/' || child.name
+                SELECT child.id, child.workspace_id, project_paths.name || '/' || child.name
                 FROM projects AS child
                 JOIN project_paths ON project_paths.id = child.parentProjectId
-                WHERE child.vaultId = ?
+                WHERE child.workspace_id = ?
             )
             SELECT
                 meetings.id,
@@ -458,7 +458,7 @@ public final class MeetingAccessStore: Sendable {
             FROM meetings
             LEFT JOIN project_paths AS projects
               ON projects.id = meetings.projectId
-             AND projects.vaultId = meetings.vaultId
+             AND projects.workspace_id = meetings.workspace_id
             LEFT JOIN calendar_events
               ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
              AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
@@ -478,13 +478,13 @@ public final class MeetingAccessStore: Sendable {
             return result
         } catch TextContentError.incomplete {
             guard let textResolver else { throw TextContentError.incomplete }
-            return try JSONDecoder().decode(MeetingDetail.self, from: textResolver(vaultID, .init(operation: .meeting, meetingId: id)))
+            return try JSONDecoder().decode(MeetingDetail.self, from: textResolver(workspaceID, .init(operation: .meeting, meetingId: id)))
         }
     }
 
     private func cachedMeeting(id: UUID) throws -> MeetingDetail {
         try database.read { db in
-            let vault = try fetchVault(in: db)
+            let workspace = try fetchWorkspace(in: db)
             guard let row = try meetingRow(id: id, in: db) else {
                 throw MeetingAccessError.meetingNotFound
             }
@@ -504,7 +504,7 @@ public final class MeetingAccessStore: Sendable {
                 throw MeetingAccessError.invalidSummaryDocument
             }
             return try MeetingDetail(
-                vault: vault,
+                workspace: workspace,
                 meeting: Self.metadata(from: row),
                 summary: summary,
                 summaryDocument: summaryDocument,
@@ -547,7 +547,7 @@ public final class MeetingAccessStore: Sendable {
             _ = try JSONDecoder().decode(
                 TranscriptPage.self,
                 from: textResolver(
-                    vaultID,
+                    workspaceID,
                     .init(
                         operation: .transcript,
                         meetingId: meetingID,
@@ -570,7 +570,7 @@ public final class MeetingAccessStore: Sendable {
     }
 
     private func touchText(entity: TextContentEntity, meetingId: UUID) {
-        _ = try? textResolver?(vaultID, .init(operation: .touch, meetingId: meetingId, entity: entity))
+        _ = try? textResolver?(workspaceID, .init(operation: .touch, meetingId: meetingId, entity: entity))
     }
 
     private func cachedTranscript(
@@ -584,7 +584,7 @@ public final class MeetingAccessStore: Sendable {
         let decodedCursor = try cursor.map {
             try TranscriptCursor.decode(
                 $0,
-                vaultID: vaultID,
+                workspaceID: workspaceID,
                 meetingID: meetingID,
                 fromElapsedSeconds: fromElapsedSeconds,
                 toElapsedSeconds: toElapsedSeconds
@@ -592,11 +592,11 @@ public final class MeetingAccessStore: Sendable {
         }
 
         return try database.read { db in
-            let vault = try fetchVault(in: db)
+            let workspace = try fetchWorkspace(in: db)
             guard try Bool.fetchOne(
                 db,
-                sql: "SELECT EXISTS(SELECT 1 FROM meetings WHERE id = ? AND vaultId = ?)",
-                arguments: [meetingID, vaultID]
+                sql: "SELECT EXISTS(SELECT 1 FROM meetings WHERE id = ? AND workspace_id = ?)",
+                arguments: [meetingID, workspaceID]
             ) == true else {
                 throw MeetingAccessError.meetingNotFound
             }
@@ -619,7 +619,7 @@ public final class MeetingAccessStore: Sendable {
                 start = index + 1
             } else { start = 0 }
             let page = try TranscriptAfter.page(
-                vaultID: vaultID,
+                workspaceID: workspaceID,
                 meetingID: meetingID,
                 from: fromElapsedSeconds,
                 to: toElapsedSeconds,
@@ -633,7 +633,7 @@ public final class MeetingAccessStore: Sendable {
             let hasMore = segments.last.map { $0.id != entries.last?.id } ?? false
             let nextCursor = hasMore ? segments.last.map {
                 TranscriptCursor(
-                    vaultID: vaultID,
+                    workspaceID: workspaceID,
                     meetingID: meetingID,
                     startedAt: $0.startedAt,
                     elapsedSeconds: $0.elapsedSeconds,
@@ -650,7 +650,7 @@ public final class MeetingAccessStore: Sendable {
             )
             return try TranscriptPage(
                 transcript: transcript,
-                vault: vault,
+                workspace: workspace,
                 meetingID: meetingID,
                 segments: segments,
                 nextCursor: nextCursor,
@@ -756,7 +756,7 @@ extension MeetingAccessStore {
         let images = try result.payloads.map { try encodedScreenshot($0, meetingID: meetingID, originalSize: originalSize) }
         return (
             MeetingScreenshotPage(
-                vault: result.page.vault,
+                workspace: result.page.workspace,
                 meetingID: result.page.meetingID,
                 screenshots: images.map(\.metadata),
                 nextCursor: result.page.nextCursor
@@ -777,7 +777,7 @@ extension MeetingAccessStore {
         let decodedCursor = try query.cursor.map {
             try ScreenshotCursor.decode(
                 $0,
-                vaultID: vaultID,
+                workspaceID: workspaceID,
                 meetingID: meetingID,
                 fromElapsedSeconds: query.fromElapsedSeconds,
                 toElapsedSeconds: query.toElapsedSeconds
@@ -786,7 +786,7 @@ extension MeetingAccessStore {
 
         let referencedIDs = try referencedScreenshotIDs(meetingID: meetingID)
         return try database.read { db in
-            let vault = try fetchVault(in: db)
+            let workspace = try fetchWorkspace(in: db)
             guard try meetingExists(id: meetingID, in: db) else {
                 throw MeetingAccessError.meetingNotFound
             }
@@ -802,7 +802,7 @@ extension MeetingAccessStore {
             let screenshots = pageRows.map { Self.screenshotMetadata(from: $0, referencedIDs: referencedIDs) }
             let nextCursor = hasMore ? screenshots.last.map {
                 ScreenshotCursor(
-                    vaultID: vaultID,
+                    workspaceID: workspaceID,
                     meetingID: meetingID,
                     elapsedSeconds: $0.elapsedSeconds,
                     screenshotID: $0.id,
@@ -815,7 +815,7 @@ extension MeetingAccessStore {
             } : []
             return ScreenshotPageData(
                 page: MeetingScreenshotPage(
-                    vault: vault,
+                    workspace: workspace,
                     meetingID: meetingID,
                     screenshots: screenshots,
                     nextCursor: nextCursor
@@ -850,7 +850,7 @@ extension MeetingAccessStore {
         }
         let referencedIDs = try referencedScreenshotIDs(meetingID: meetingID)
         let payloads: [ScreenshotPayload] = try database.read { db in
-            _ = try fetchVault(in: db)
+            _ = try fetchWorkspace(in: db)
             guard try meetingExists(id: meetingID, in: db) else {
                 throw MeetingAccessError.meetingNotFound
             }
@@ -887,7 +887,7 @@ extension MeetingAccessStore {
             original = try? screenshotCache?.read(source, variant: .original)?.data
         }
         if original == nil {
-            original = try imageResolver(vaultID, meetingID, payload.metadata.id)
+            original = try imageResolver(workspaceID, meetingID, payload.metadata.id)
         }
         guard let original else { throw MeetingAccessError.screenshotUnavailable }
         let imageData = originalSize
@@ -911,8 +911,8 @@ extension MeetingAccessStore {
     func meetingExists(id: UUID, in db: Database) throws -> Bool {
         try Bool.fetchOne(
             db,
-            sql: "SELECT EXISTS(SELECT 1 FROM meetings WHERE id = ? AND vaultId = ?)",
-            arguments: [id, vaultID]
+            sql: "SELECT EXISTS(SELECT 1 FROM meetings WHERE id = ? AND workspace_id = ?)",
+            arguments: [id, workspaceID]
         ) == true
     }
 
@@ -924,7 +924,7 @@ extension MeetingAccessStore {
         in db: Database
     ) throws -> [Row] {
         var predicates: [String] = []
-        var arguments: StatementArguments = [meetingID, vaultID]
+        var arguments: StatementArguments = [meetingID, workspaceID]
         if let from = query.fromElapsedSeconds {
             predicates.append("elapsedSeconds >= ?")
             arguments += [from]
@@ -959,7 +959,7 @@ extension MeetingAccessStore {
                 LEFT JOIN recording_sessions AS sessions
                   ON sessions.id = meeting_images.sessionId
                  AND sessions.meetingId = meeting_images.meetingId
-                WHERE meeting_images.meetingId = ? AND meetings.vaultId = ?
+                WHERE meeting_images.meetingId = ? AND meetings.workspace_id = ?
             )
             SELECT * FROM candidates
             \(filtering)
@@ -976,7 +976,7 @@ extension MeetingAccessStore {
             ? "coalesce(meeting_images.localReference, meeting_images.remoteReference) AS remoteReference"
             : columns.contains("remoteReference") ? "meeting_images.remoteReference" : "NULL AS remoteReference"
         let placeholders = Array(repeating: "?", count: screenshotIDs.count).joined(separator: ", ")
-        var arguments: StatementArguments = [meetingID, vaultID]
+        var arguments: StatementArguments = [meetingID, workspaceID]
         arguments += StatementArguments(screenshotIDs)
         return try Row.fetchAll(
             db,
@@ -994,7 +994,7 @@ extension MeetingAccessStore {
             LEFT JOIN recording_sessions AS sessions
               ON sessions.id = meeting_images.sessionId
              AND sessions.meetingId = meeting_images.meetingId
-            WHERE meeting_images.meetingId = ? AND meetings.vaultId = ?
+            WHERE meeting_images.meetingId = ? AND meetings.workspace_id = ?
               AND meeting_images.id IN (\(placeholders))
             """,
             arguments: arguments
@@ -1019,7 +1019,7 @@ extension MeetingAccessStore {
         let data: Data?
         do {
             data = try database.read { db in
-                _ = try fetchVault(in: db)
+                _ = try fetchWorkspace(in: db)
                 guard try meetingExists(id: meetingID, in: db) else { throw MeetingAccessError.meetingNotFound }
                 return try TextContentAccess.summary(meetingId: meetingID, in: db)?.document.data(using: .utf8)
             }
@@ -1053,7 +1053,7 @@ extension MeetingAccessStore {
         let summaryColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')"))
         let searchColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('search_documents_fts')"))
         let projectColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')"))
-        let legacySummaryColumns: Set = ["summary", "googleFileId", "vaultRelativePath"]
+        let legacySummaryColumns: Set = ["summary", "googleFileId", "workspaceRelativePath"]
         guard meetingColumns.contains("description"),
               try db.tableExists("summary_bodies"),
               try db.tableExists("transcript_segment_bodies"),
@@ -1075,31 +1075,31 @@ extension MeetingAccessStore {
         }
     }
 
-    func fetchVault(in db: Database) throws -> ScopedVault {
+    func fetchWorkspace(in db: Database) throws -> ScopedWorkspace {
         try validateSchema(in: db)
         guard let row = try Row.fetchOne(
             db,
-            sql: "SELECT id, name FROM vaults WHERE id = ?",
-            arguments: [vaultID]
+            sql: "SELECT id, name FROM workspaces WHERE id = ?",
+            arguments: [workspaceID]
         ) else {
-            throw MeetingAccessError.vaultNotFound
+            throw MeetingAccessError.workspaceNotFound
         }
-        return ScopedVault(id: row["id"], name: row["name"])
+        return ScopedWorkspace(id: row["id"], name: row["name"])
     }
 
     private func meetingRow(id: UUID, in db: Database) throws -> Row? {
         try Row.fetchOne(
             db,
             sql: """
-            WITH RECURSIVE project_paths(id, vaultId, name) AS (
-                SELECT id, vaultId, name
+            WITH RECURSIVE project_paths(id, workspace_id, name) AS (
+                SELECT id, workspace_id, name
                 FROM projects
-                WHERE parentProjectId IS NULL AND vaultId = ?
+                WHERE parentProjectId IS NULL AND workspace_id = ?
                 UNION ALL
-                SELECT child.id, child.vaultId, project_paths.name || '/' || child.name
+                SELECT child.id, child.workspace_id, project_paths.name || '/' || child.name
                 FROM projects AS child
                 JOIN project_paths ON project_paths.id = child.parentProjectId
-                WHERE child.vaultId = ?
+                WHERE child.workspace_id = ?
             )
             SELECT
                 meetings.id,
@@ -1122,14 +1122,14 @@ extension MeetingAccessStore {
             FROM meetings
             LEFT JOIN project_paths AS projects
               ON projects.id = meetings.projectId
-             AND projects.vaultId = meetings.vaultId
+             AND projects.workspace_id = meetings.workspace_id
             LEFT JOIN calendar_events
               ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
              AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
             LEFT JOIN summaries ON summaries.meetingId = meetings.id
-            WHERE meetings.id = ? AND meetings.vaultId = ?
+            WHERE meetings.id = ? AND meetings.workspace_id = ?
             """,
-            arguments: [vaultID, vaultID, id, vaultID]
+            arguments: [workspaceID, workspaceID, id, workspaceID]
         )
     }
 
@@ -1205,7 +1205,7 @@ private struct QueryComponents {
             JOIN search_documents_fts ON search_documents_fts.rowid = search_documents.id
             WHERE search_documents.kind = 'meeting'
               AND search_documents.meetingId = meetings.id
-              AND search_documents.vaultId = meetings.vaultId
+              AND search_documents.workspace_id = meetings.workspace_id
               AND search_documents_fts MATCH ?
         )
         """)
@@ -1214,7 +1214,7 @@ private struct QueryComponents {
 }
 
 private struct MeetingCursor: Codable {
-    let vaultID: UUID
+    let workspaceID: UUID
     let scope: String
     let indexRevision: Int?
     let createdAt: Date
@@ -1224,9 +1224,9 @@ private struct MeetingCursor: Codable {
         AccessCursorCodec.encode(self)
     }
 
-    static func decode(_ value: String, vaultID: UUID, scope: String, indexRevision: Int?) throws -> Self {
+    static func decode(_ value: String, workspaceID: UUID, scope: String, indexRevision: Int?) throws -> Self {
         try AccessCursorCodec.decode(Self.self, from: value) { cursor in
-            cursor.vaultID == vaultID && cursor.scope == scope && cursor.indexRevision == indexRevision
+            cursor.workspaceID == workspaceID && cursor.scope == scope && cursor.indexRevision == indexRevision
         }
     }
 }
@@ -1237,7 +1237,7 @@ private final class SearchDeadline {
 }
 
 private struct TranscriptCursor: Codable {
-    let vaultID: UUID
+    let workspaceID: UUID
     let meetingID: UUID
     let startedAt: Date
     let elapsedSeconds: Double
@@ -1252,13 +1252,13 @@ private struct TranscriptCursor: Codable {
 
     static func decode(
         _ value: String,
-        vaultID: UUID,
+        workspaceID: UUID,
         meetingID: UUID,
         fromElapsedSeconds: Double?,
         toElapsedSeconds: Double?
     ) throws -> Self {
         try AccessCursorCodec.decode(Self.self, from: value) { cursor in
-            cursor.vaultID == vaultID
+            cursor.workspaceID == workspaceID
                 && cursor.meetingID == meetingID
                 && cursor.fromElapsedSeconds == fromElapsedSeconds
                 && cursor.toElapsedSeconds == toElapsedSeconds
@@ -1267,7 +1267,7 @@ private struct TranscriptCursor: Codable {
 }
 
 private struct ScreenshotCursor: Codable {
-    let vaultID: UUID
+    let workspaceID: UUID
     let meetingID: UUID
     let elapsedSeconds: Double
     let screenshotID: UUID
@@ -1280,13 +1280,13 @@ private struct ScreenshotCursor: Codable {
 
     static func decode(
         _ value: String,
-        vaultID: UUID,
+        workspaceID: UUID,
         meetingID: UUID,
         fromElapsedSeconds: Double?,
         toElapsedSeconds: Double?
     ) throws -> Self {
         try AccessCursorCodec.decode(Self.self, from: value) { cursor in
-            cursor.vaultID == vaultID
+            cursor.workspaceID == workspaceID
                 && cursor.meetingID == meetingID
                 && cursor.fromElapsedSeconds == fromElapsedSeconds
                 && cursor.toElapsedSeconds == toElapsedSeconds
@@ -1295,16 +1295,16 @@ private struct ScreenshotCursor: Codable {
 }
 
 private struct ScreenshotTextCursor: Codable {
-    let vaultID: UUID
+    let workspaceID: UUID
     let revision: Int
     let scope: String
     let offset: Int
 
     func encoded() -> String { AccessCursorCodec.encode(self) }
 
-    static func decode(_ value: String, vaultID: UUID, revision: Int, scope: String) throws -> Self {
+    static func decode(_ value: String, workspaceID: UUID, revision: Int, scope: String) throws -> Self {
         try AccessCursorCodec.decode(Self.self, from: value) {
-            $0.vaultID == vaultID && $0.revision == revision && $0.scope == scope && $0.offset >= 0
+            $0.workspaceID == workspaceID && $0.revision == revision && $0.scope == scope && $0.offset >= 0
         }
     }
 }

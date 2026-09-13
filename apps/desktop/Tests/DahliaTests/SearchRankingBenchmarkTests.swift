@@ -154,7 +154,7 @@ import Synchronization
         func localJudgmentsExcludeProjectPathAndCoverEveryRankedSearchField() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             defer { try? database.close() }
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/search-benchmark-\(UUID.v7())",
                 name: "Benchmark",
@@ -163,7 +163,7 @@ import Synchronization
             )
             let project = ProjectRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: nil,
                 name: "ProjectNeedle",
                 createdAt: .now,
@@ -171,7 +171,7 @@ import Synchronization
             )
             let meetingID = UUID.v7()
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try project.insert(db)
                 try db.execute(
                     sql: """
@@ -183,7 +183,7 @@ import Synchronization
                 )
                 try MeetingRecord(
                     id: meetingID,
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     projectId: project.id,
                     name: "TitleNeedle",
                     description: "DescriptionNeedle",
@@ -216,7 +216,7 @@ import Synchronization
             }
 
             let list = try await MeetingSearchJudgmentService.generateJudgments(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 dbQueue: database.searchDBQueue
             )
             let queries = Set(list.judgments.map(\.query))
@@ -234,7 +234,7 @@ import Synchronization
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
             let list = MeetingSearchJudgmentList(
-                vaultID: .v7(),
+                workspaceID: .v7(),
                 generatedAt: .now,
                 sampledMeetingCount: 1,
                 judgments: [MeetingSearchJudgment(
@@ -255,7 +255,7 @@ import Synchronization
         func benchmarkDiscardsResultWhenRankingPolicyChanges() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             defer { try? database.close() }
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/search-benchmark-policy-\(UUID.v7())",
                 name: "Benchmark",
@@ -263,10 +263,10 @@ import Synchronization
                 lastOpenedAt: .now
             )
             try await database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
                 try MeetingRecord(
                     id: .v7(),
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     projectId: nil,
                     name: "PolicyNeedle",
                     createdAt: .now,
@@ -276,7 +276,7 @@ import Synchronization
             let policy = Mutex(MeetingSearchRankingPolicy.standard)
             let model = SearchRankingBenchmarkModel(database: database) { policy.withLock { $0 } }
 
-            model.regenerateAndRun(vaultID: vault.id)
+            model.regenerateAndRun(workspaceID: workspace.id)
             policy.withLock { $0 = .standard.settingWeight(3, for: .summary) }
 
             #expect(await pollUntil { !model.isRunning })

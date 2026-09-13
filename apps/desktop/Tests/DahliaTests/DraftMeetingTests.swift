@@ -14,7 +14,7 @@ import GRDB
 
             viewModel.beginDraftMeeting(
                 dbQueue: database.dbQueue,
-                vaultURL: URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+                workspaceURL: URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             )
 
             let meetingCount = try database.dbQueue.read(MeetingRecord.fetchCount)
@@ -28,24 +28,24 @@ import GRDB
         func noteMaterializesDraftBeforeNavigation() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
-            let vaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            let vault = VaultRecord(
+            let workspaceURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            let workspace = WorkspaceRecord(
                 id: .v7(),
-                path: vaultURL.path,
-                name: "Test Vault",
+                path: workspaceURL.path,
+                name: "Test Workspace",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
             try database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
             }
-            let previousVault = AppSettings.shared.currentVault
-            AppSettings.shared.currentVault = vault
-            defer { AppSettings.shared.currentVault = previousVault }
+            let previousWorkspace = AppSettings.shared.currentWorkspace
+            AppSettings.shared.currentWorkspace = workspace
+            defer { AppSettings.shared.currentWorkspace = previousWorkspace }
 
             viewModel.beginDraftMeeting(
                 dbQueue: database.dbQueue,
-                vaultURL: vaultURL
+                workspaceURL: workspaceURL
             )
             let draftID = try #require(viewModel.draftMeeting?.id)
             viewModel.noteText = "Keep this note"
@@ -70,26 +70,26 @@ import GRDB
         func consecutiveDraftMaterializationsAreDeliveredWithoutLoss() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
-            let vaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            let vault = VaultRecord(
+            let workspaceURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            let workspace = WorkspaceRecord(
                 id: .v7(),
-                path: vaultURL.path,
-                name: "Test Vault",
+                path: workspaceURL.path,
+                name: "Test Workspace",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
             try database.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
             }
-            let previousVault = AppSettings.shared.currentVault
-            AppSettings.shared.currentVault = vault
-            defer { AppSettings.shared.currentVault = previousVault }
+            let previousWorkspace = AppSettings.shared.currentWorkspace
+            AppSettings.shared.currentWorkspace = workspace
+            defer { AppSettings.shared.currentWorkspace = previousWorkspace }
 
-            viewModel.beginDraftMeeting(dbQueue: database.dbQueue, vaultURL: vaultURL)
+            viewModel.beginDraftMeeting(dbQueue: database.dbQueue, workspaceURL: workspaceURL)
             let firstDraftID = try #require(viewModel.draftMeeting?.id)
             viewModel.noteText = "Persist the first draft"
 
-            viewModel.beginDraftMeeting(dbQueue: database.dbQueue, vaultURL: vaultURL)
+            viewModel.beginDraftMeeting(dbQueue: database.dbQueue, workspaceURL: workspaceURL)
             let secondDraftID = try #require(viewModel.draftMeeting?.id)
             viewModel.noteText = "Persist the second draft"
             viewModel.clearCurrentMeeting()
@@ -104,13 +104,13 @@ import GRDB
         func draftPreservesActiveRecordingContext() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
-            let vaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            let vaultID = UUID.v7()
+            let workspaceURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            let workspaceID = UUID.v7()
             try database.dbQueue.write { db in
-                try VaultRecord(
-                    id: vaultID,
-                    path: vaultURL.path,
-                    name: "Test Vault",
+                try WorkspaceRecord(
+                    id: workspaceID,
+                    path: workspaceURL.path,
+                    name: "Test Workspace",
                     createdAt: .now,
                     lastOpenedAt: .now
                 ).insert(db)
@@ -118,10 +118,10 @@ import GRDB
             viewModel.createEmptyMeeting(
                 dbQueue: database.dbQueue,
                 projectURL: nil,
-                vaultId: vaultID,
+                workspaceId: workspaceID,
                 projectId: nil,
                 name: "Recording",
-                vaultURL: vaultURL
+                workspaceURL: workspaceURL
             )
             let recordingMeetingID = try #require(viewModel.currentMeetingId)
             let recordingStore = viewModel.store
@@ -131,7 +131,7 @@ import GRDB
 
             viewModel.beginDraftMeeting(
                 dbQueue: database.dbQueue,
-                vaultURL: vaultURL
+                workspaceURL: workspaceURL
             )
 
             let persistedNote = try database.dbQueue.read { db in
@@ -174,9 +174,9 @@ import GRDB
         }
 
         @Test
-        func memberVaultCalendarSelectionDoesNotCreateADraftOrClearSelection() throws {
+        func memberWorkspaceCalendarSelectionDoesNotCreateADraftOrClearSelection() throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            var vault = VaultRecord(
+            var workspace = WorkspaceRecord(
                 id: .v7(),
                 path: nil,
                 name: "Shared",
@@ -184,15 +184,15 @@ import GRDB
                 lastOpenedAt: .now
             )
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://calendar.invalid", clientID: "test", createdAt: .now)
-            vault.accountConnectionId = connection.id
-            vault.organizationId = .v7()
-            vault.syncRole = "viewer"
+            workspace.accountConnectionId = connection.id
+            workspace.organizationId = .v7()
+            workspace.syncRole = "viewer"
             try database.dbQueue.write { db in
                 try connection.insert(db)
-                try vault.insert(db)
+                try workspace.insert(db)
             }
             let settings = AppSettings()
-            settings.currentVault = vault
+            settings.currentWorkspace = workspace
             let sidebarViewModel = SidebarViewModel(settings: settings)
             sidebarViewModel.setAppDatabase(database)
             defer { sidebarViewModel.setAppDatabase(nil) }
@@ -233,17 +233,17 @@ import GRDB
         @Test
         func createsDraftInSelectedProject() throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vaultURL = FileManager.default.temporaryDirectory
+            let workspaceURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-project-draft-\(UUID.v7())", directoryHint: .isDirectory)
-            let vault = VaultRecord(
+            let workspace = WorkspaceRecord(
                 id: .v7(),
-                path: vaultURL.path,
+                path: workspaceURL.path,
                 name: "Test",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
             let settings = AppSettings()
-            settings.currentVault = vault
+            settings.currentWorkspace = workspace
             let sidebarViewModel = SidebarViewModel(settings: settings)
             sidebarViewModel.setAppDatabase(database)
             defer { sidebarViewModel.setAppDatabase(nil) }
@@ -270,7 +270,7 @@ import GRDB
 
             #expect(viewModel.draftMeeting?.projectId == project.projectId)
             #expect(viewModel.draftMeeting?.projectName == project.projectName)
-            #expect(viewModel.draftMeeting?.projectURL == vaultURL.appending(path: project.projectName, directoryHint: .isDirectory))
+            #expect(viewModel.draftMeeting?.projectURL == workspaceURL.appending(path: project.projectName, directoryHint: .isDirectory))
             guard case let .meetingDraft(navigationDraft, noteText) = navigation.currentLocation else {
                 Issue.record("Expected meeting draft navigation")
                 return
@@ -283,7 +283,7 @@ import GRDB
         func restoresCalendarDraftWithIdentityMetadataAndNote() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let viewModel = CaptionViewModel()
-            let vaultURL = FileManager.default.temporaryDirectory
+            let workspaceURL = FileManager.default.temporaryDirectory
             let event = CalendarEvent(
                 id: "calendar::event",
                 calendarID: "calendar",
@@ -310,7 +310,7 @@ import GRDB
                 draft,
                 noteText: "Questions to ask",
                 dbQueue: database.dbQueue,
-                vaultURL: vaultURL
+                workspaceURL: workspaceURL
             )
 
             #expect(viewModel.draftMeeting == draft)

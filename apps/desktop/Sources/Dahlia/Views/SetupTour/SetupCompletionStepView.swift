@@ -2,11 +2,11 @@ import SwiftUI
 
 struct SetupCompletionStepView: View {
     @ObservedObject private var settings = AppSettings.shared
-    @Bindable private var vaultSettings = VaultAISettingsModel.shared
+    @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var permissionModel = PermissionGuideModel()
     var model: SetupTourModel
-    let onReviewVault: () -> Void
+    let onReviewWorkspace: () -> Void
     let onReviewPermissions: () -> Void
 
     var body: some View {
@@ -21,7 +21,7 @@ struct SetupCompletionStepView: View {
                 )
                 LabeledContent(L10n.primaryLanguage, value: settings.llmSummaryLanguage.displayName)
                 if model.selectedAccountConnectionID == nil {
-                    LabeledContent(L10n.modelProvider, value: vaultSettings.localProvider.displayName)
+                    LabeledContent(L10n.modelProvider, value: workspaceSettings.localProvider.displayName)
                 } else {
                     LabeledContent(L10n.dahliaAccount, value: L10n.connected)
                 }
@@ -51,7 +51,7 @@ struct SetupCompletionStepView: View {
                         tint: .red
                     )
 
-                    Button(L10n.edit, action: onReviewVault)
+                    Button(L10n.edit, action: onReviewWorkspace)
                         .buttonStyle(.dahlia())
                 }
             }

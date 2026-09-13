@@ -2,7 +2,7 @@ import SwiftUI
 
 private struct MeetingSidebarHoverOverlayModifier: ViewModifier {
     let isVisible: Bool
-    let vaultID: UUID?
+    let workspaceID: UUID?
     let canEditProject: Bool
     let onOpenProject: (UUID) -> Void
     let onEditProject: (UUID) -> Void
@@ -23,10 +23,10 @@ private struct MeetingSidebarHoverOverlayModifier: ViewModifier {
         self.onOpenProject = onOpenProject
         self.onEditProject = onEditProject
         self.onToggleProjectPin = onToggleProjectPin
-        vaultID = sidebarViewModel.currentVault?.id
-        canEditProject = sidebarViewModel.canEditCurrentVault
-        _controller = State(initialValue: MeetingSidebarHoverController { [weak sidebarViewModel] meetingID, vaultID in
-            await sidebarViewModel?.meetingDescription(id: meetingID, vaultId: vaultID)
+        workspaceID = sidebarViewModel.currentWorkspace?.id
+        canEditProject = sidebarViewModel.canEditCurrentWorkspace
+        _controller = State(initialValue: MeetingSidebarHoverController { [weak sidebarViewModel] meetingID, workspaceID in
+            await sidebarViewModel?.meetingDescription(id: meetingID, workspaceId: workspaceID)
         })
     }
 
@@ -61,7 +61,7 @@ private struct MeetingSidebarHoverOverlayModifier: ViewModifier {
                     controller.dismissAll()
                 }
             }
-            .onChange(of: vaultID) {
+            .onChange(of: workspaceID) {
                 controller.dismissAll()
             }
     }

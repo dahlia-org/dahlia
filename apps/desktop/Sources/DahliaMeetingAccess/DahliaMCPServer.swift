@@ -19,7 +19,7 @@ public final class DahliaMCPServer {
     }
 
     let store: MeetingAccessStore
-    let vaultScope: UUID?
+    let workspaceScope: UUID?
     private let telemetryOrigin: MCPUsageTelemetryEvent.Origin?
     private let usageTelemetryReporter: (MCPUsageTelemetryEvent) -> Void
     private var initialized = false
@@ -30,19 +30,24 @@ public final class DahliaMCPServer {
         usageTelemetryReporter: @escaping (MCPUsageTelemetryEvent) -> Void = { _ in }
     ) {
         self.store = store
-        vaultScope = store.vaultID
+        workspaceScope = store.workspaceID
         self.telemetryOrigin = telemetryOrigin
         self.usageTelemetryReporter = usageTelemetryReporter
     }
 
     public init(
         databaseURL: URL = MeetingAccessStore.defaultDatabaseURL,
-        vaultID: UUID? = nil,
+        workspaceID: UUID? = nil,
         allowsWrites: Bool = false,
         textResolver: (@Sendable (UUID, TextBrokerRequest) throws -> Data)? = nil
     ) throws {
-        store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vaultID ?? UUID(), allowsWrites: allowsWrites, textResolver: textResolver)
-        vaultScope = vaultID
+        store = try MeetingAccessStore(
+            databaseURL: databaseURL,
+            workspaceID: workspaceID ?? UUID(),
+            allowsWrites: allowsWrites,
+            textResolver: textResolver
+        )
+        workspaceScope = workspaceID
         telemetryOrigin = nil
         usageTelemetryReporter = { _ in }
     }
@@ -75,7 +80,7 @@ public final class DahliaMCPServer {
     private func handleRequest(method: String, id: Any, params: Any?) throws -> String {
         switch method {
         case "initialize":
-            if vaultScope != nil { _ = try store.scopedVault() } else { try store.database.read(store.validateSchema(in:)) }
+            if workspaceScope != nil { _ = try store.scopedWorkspace() } else { try store.database.read(store.validateSchema(in:)) }
             return response(id: id, result: initializationResult)
         case "ping":
             return response(id: id, result: [:])
@@ -94,18 +99,19 @@ public final class DahliaMCPServer {
     private var initializationResult: [String: Any] {
         let accessInstructions = store.allowsWrites
             ?
-            (vaultScope == nil ? "Read and write access to all vaults added to this Mac. For new records specify vault_id or a parent ID. " :
-                "Read and write access to one configured Dahlia vault. ")
+            (workspaceScope == nil ?
+                "Read and write access to all workspaces added to this Mac. For new records specify workspace_id or a parent ID. " :
+                "Read and write access to one configured Dahlia workspace. ")
             :
-            (vaultScope == nil ?
-                "Read-only access to all vaults added to this Mac. Use list_vaults to discover them. Query tools group results by vault; continue pages with vault_id and that vault’s cursor. " :
-                "Read-only access to one configured Dahlia vault. ")
+            (workspaceScope == nil ?
+                "Read-only access to all workspaces on this Mac. Discover them with list_workspaces. Query pages are grouped by workspace; continue with workspace_id and its cursor. " :
+                "Read-only access to one configured Dahlia workspace. ")
         let writeInstructions = store.allowsWrites
             ? "Query or get each record before updating it. Record updates require revision. "
             + "update_meeting_summary replaces one meeting's whole summary document. Call get_meeting first, edit the "
             + "returned summary_document in place, and send it back with summary_document_version. Keep every section id, "
             + "block id, screenshot_id, and transcript_ref you are not correcting; a dropped id loses that block's "
-            + "identity, and a screenshot_id from another meeting is rejected. A vault-exported summary is rewritten in "
+            + "identity, and a screenshot_id from another meeting is rejected. A workspace-exported summary is rewritten in "
             + "place under its existing file name, while a Google Docs export is left stale and reported in "
             + "stale_exports. "
             : ""
@@ -319,7 +325,7 @@ public final class DahliaMCPServer {
             let parent: ProjectParentUpdate = if !arguments.keys.contains("parent_project_id") {
                 .unchanged
             } else if arguments["parent_project_id"] is NSNull {
-                .vaultRoot
+                .workspaceRoot
             } else {
                 try .project(requiredUUID(arguments, key: "parent_project_id"))
             }
@@ -457,7 +463,7 @@ public final class DahliaMCPServer {
                 originalSize: originalSize
             )
             let page = try MeetingScreenshotPage(
-                vault: store.scopedVault(),
+                workspace: store.scopedWorkspace(),
                 meetingID: meetingID,
                 screenshots: images.map(\.metadata),
                 nextCursor: nil
@@ -737,10 +743,10 @@ extension DahliaMCPServer {
         ]
     }
 
-    private static var vaultSchema: [String: Any] {
+    private static var workspaceSchema: [String: Any] {
         objectSchema(
             properties: [
-                "id": idSchema(.vault),
+                "id": idSchema(.workspace),
                 "name": ["type": "string"],
             ],
             required: ["id", "name"]
@@ -973,34 +979,34 @@ extension DahliaMCPServer {
     private static var meetingQueryOutputSchema: [String: Any] {
         objectSchema(
             properties: [
-                "vault": vaultSchema,
+                "workspace": workspaceSchema,
                 "meetings": ["type": "array", "items": meetingMetadataSchema],
                 "next_cursor": ["type": "string"],
                 "search_scope": ["type": "string"],
                 "server": remoteTextSearchSchema,
             ],
-            required: ["vault", "meetings"]
+            required: ["workspace", "meetings"]
         )
     }
 
     private static var meetingDetailOutputSchema: [String: Any] {
         objectSchema(
             properties: [
-                "vault": vaultSchema,
+                "workspace": workspaceSchema,
                 "text_content": textContentSchema,
                 "meeting": meetingMetadataSchema,
                 "summary": ["type": "string"],
                 "summary_document": summaryDocumentSchema,
                 "summary_document_version": ["type": "string"],
             ],
-            required: ["vault", "meeting"]
+            required: ["workspace", "meeting"]
         )
     }
 
     private static var screenshotTextQueryOutputSchema: [String: Any] {
         objectSchema(
             properties: [
-                "vault": vaultSchema,
+                "workspace": workspaceSchema,
                 "screenshots": [
                     "type": "array",
                     "items": objectSchema(
@@ -1020,14 +1026,14 @@ extension DahliaMCPServer {
                 "search_scope": ["type": "string"],
                 "server": remoteTextSearchSchema,
             ],
-            required: ["vault", "screenshots"]
+            required: ["workspace", "screenshots"]
         )
     }
 
     private static var transcriptOutputSchema: [String: Any] {
         objectSchema(
             properties: [
-                "vault": vaultSchema,
+                "workspace": workspaceSchema,
                 "text_content": textContentSchema,
                 "transcript": ["type": "object", "description": "Latest version, status, and provider/model generation metadata."],
                 "meeting_id": idSchema(.meeting),
@@ -1035,19 +1041,19 @@ extension DahliaMCPServer {
                 "next_cursor": ["type": "string"],
                 "next_after": ["type": "string"],
             ],
-            required: ["vault", "meeting_id", "segments"]
+            required: ["workspace", "meeting_id", "segments"]
         )
     }
 
     private static var screenshotsOutputSchema: [String: Any] {
         objectSchema(
             properties: [
-                "vault": vaultSchema,
+                "workspace": workspaceSchema,
                 "meeting_id": idSchema(.meeting),
                 "screenshots": ["type": "array", "items": screenshotMetadataSchema],
                 "next_cursor": ["type": "string"],
             ],
-            required: ["vault", "meeting_id", "screenshots"]
+            required: ["workspace", "meeting_id", "screenshots"]
         )
     }
 
@@ -1087,10 +1093,10 @@ extension DahliaMCPServer {
     private static var projectQueryOutputSchema: [String: Any] {
         objectSchema(
             properties: [
-                "vault": vaultSchema,
+                "workspace": workspaceSchema,
                 "projects": ["type": "array", "items": projectMetadataSchema],
             ],
-            required: ["vault", "projects"]
+            required: ["workspace", "projects"]
         )
     }
 
@@ -1116,7 +1122,7 @@ extension DahliaMCPServer {
             [
                 "name": "query_projects",
                 "title": "Query projects",
-                "description": "Inspect the configured vault's complete two-level Project workspace hierarchy. Paths are "
+                "description": "Inspect the configured workspace's complete two-level Project workspace hierarchy. Paths are "
                     + "derived from stable project_id, parent_project_id, and names; directories are not hierarchy input. "
                     + "explicit_type is stored only by roots; effective_type and type_owner_project_id describe inheritance. "
                     + "Meeting counts distinguish direct membership from the whole subtree.",
@@ -1162,7 +1168,7 @@ extension DahliaMCPServer {
                 + "The whole document is replaced, so preserve every section id, block id, screenshot_id, and "
                 + "transcript_ref you do not intend to change. The meeting name and description follow the document "
                 + "title and description, and tags in the document are added without removing existing tags. A summary "
-                + "already exported to the vault is rewritten in place under its current file name; a Google Docs export "
+                + "already exported to the workspace is rewritten in place under its current file name; a Google Docs export "
                 + "is not updated and is reported in stale_exports.",
             [
                 "meeting_id": idSchema(.meeting),
@@ -1184,13 +1190,13 @@ extension DahliaMCPServer {
                 "title": ["type": "string"],
                 "description": ["type": "string"],
                 "changed": ["type": "boolean"],
-                "vault_export": [
+                "workspace_export": [
                     "type": "string",
                     "enum": ["updated", "unchanged", "not_exported", "file_missing"],
                 ],
                 "stale_exports": ["type": "array", "items": ["type": "string"]],
             ],
-            required: ["meeting_id", "document_version", "title", "description", "changed", "vault_export", "stale_exports"]
+            required: ["meeting_id", "document_version", "title", "description", "changed", "workspace_export", "stale_exports"]
         )
     }
 
@@ -1223,8 +1229,8 @@ extension DahliaMCPServer {
         [
             "name": "update_project",
             "title": "Update project",
-            "description": "Atomically rename, reparent, move to the Vault root, edit description, or change a root type. "
-                + "Omitted properties are unchanged; parent_project_id:null means Vault root. revision is required and stale "
+            "description": "Atomically rename, reparent, move to the Workspace root, edit description, or change a root type. "
+                + "Omitted properties are unchanged; parent_project_id:null means Workspace root. revision is required and stale "
                 + "updates fail. A child moved to root preserves its previous effective type as explicit; a root moved under "
                 + "another root drops its explicit type and inherits that root. Parents must be roots, and a root with children "
                 + "cannot become a child. Only tracked Summary files move; unrelated directories and files are untouched.",
@@ -1318,7 +1324,7 @@ extension DahliaMCPServer {
         [
             "name": "query_meetings",
             "title": "Query meetings",
-            "description": "Find recent meetings in the configured vault by meeting name, AI description, summary body, "
+            "description": "Find recent meetings in the configured workspace by meeting name, AI description, summary body, "
                 + "calendar title, or tag. Project names and paths are not searched by query; use project or project_id "
                 + "to filter by Project. Use ical_uid to find past meetings for the same calendar event. Transcript bodies are "
                 + "not searched. All parameters are optional filters. Omit unused properties entirely; do not "
@@ -1404,7 +1410,7 @@ extension DahliaMCPServer {
         [
             "name": "get_meeting_transcript",
             "title": "Get meeting transcript",
-            "description": "Read confirmed original transcript segments for one meeting in the configured vault. "
+            "description": "Read confirmed original transcript segments for one meeting in the configured workspace. "
                 + "Use only after identifying a meeting and when original-text evidence is needed.",
             "inputSchema": [
                 "type": "object",

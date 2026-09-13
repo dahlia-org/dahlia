@@ -74,7 +74,7 @@ enum UsageTelemetryEvent: Equatable, Sendable {
     }
 
     enum ExportDestination: String, CaseIterable, Sendable {
-        case vault
+        case workspace = "vault" // Published telemetry allowlist value.
         case googleDocs
         case localFiles
     }

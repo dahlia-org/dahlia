@@ -3,7 +3,7 @@ import Foundation
 import GRDB
 
 extension DahliaMCPServer {
-    struct VaultAccess: Encodable {
+    struct WorkspaceAccess: Encodable {
         let id: UUID
         let name: String
         let accountType: String
@@ -11,19 +11,19 @@ extension DahliaMCPServer {
         let freshness: String
     }
 
-    private func vaults() throws -> [VaultAccess] {
+    private func workspaces() throws -> [WorkspaceAccess] {
         try store.database.read { db in
             let rows = try Row.fetchAll(db, sql: """
             SELECT id, name, accountConnectionId, syncConfirmedConnectionId, syncRecoveryState
-            FROM vaults ORDER BY name, id
+            FROM workspaces ORDER BY name, id
             """)
             return rows.compactMap { row in
                 let id: UUID = row["id"]
-                guard vaultScope == nil || vaultScope == id else { return nil }
+                guard workspaceScope == nil || workspaceScope == id else { return nil }
                 let connection: UUID? = row["accountConnectionId"]
                 let confirmed: UUID? = row["syncConfirmedConnectionId"]
                 let recovery: String? = row["syncRecoveryState"]
-                return VaultAccess(
+                return WorkspaceAccess(
                     id: id, name: row["name"], accountType: connection == nil ? "local" : "server",
                     accessState: connection == nil ? "local" : (connection != confirmed ? "not_synced" : (recovery ?? "cached")),
                     freshness: connection == nil ? "local" : "last_synced"
@@ -33,9 +33,9 @@ extension DahliaMCPServer {
     }
 
     func executeTool(named name: String, arguments: [String: Any]) throws -> [String: Any] {
-        if name == "list_vaults" {
+        if name == "list_workspaces" {
             try validate(arguments, allowedKeys: [])
-            return try toolResult(["vaults": vaults()])
+            return try toolResult(["workspaces": workspaces()])
         }
         let definitions = Self.readOnlyToolDefinitions
         guard let definition = definitions.first(where: { $0["name"] as? String == name }) else {
@@ -43,14 +43,14 @@ extension DahliaMCPServer {
         }
         let schema = definition["inputSchema"] as? [String: Any]
         let keys = (schema?["properties"] as? [String: Any])?.keys.map(\.self) ?? []
-        try validate(arguments, allowedKeys: Set(keys + ["vault_id"]))
+        try validate(arguments, allowedKeys: Set(keys + ["workspace_id"]))
         var scopedArguments = arguments
-        let requestedVault = try optionalUUID(arguments, key: "vault_id")
-        scopedArguments.removeValue(forKey: "vault_id")
-        if let vaultScope, let requestedVault, vaultScope != requestedVault { throw MeetingAccessError.vaultNotFound }
-        if let id = requestedVault ?? vaultScope {
-            guard try vaults().contains(where: { $0.id == id }) else { throw MeetingAccessError.vaultNotFound }
-            return try scopedRead(name: name, arguments: scopedArguments, vaultID: id)
+        let requestedWorkspace = try optionalUUID(arguments, key: "workspace_id")
+        scopedArguments.removeValue(forKey: "workspace_id")
+        if let workspaceScope, let requestedWorkspace, workspaceScope != requestedWorkspace { throw MeetingAccessError.workspaceNotFound }
+        if let id = requestedWorkspace ?? workspaceScope {
+            guard try workspaces().contains(where: { $0.id == id }) else { throw MeetingAccessError.workspaceNotFound }
+            return try scopedRead(name: name, arguments: scopedArguments, workspaceID: id)
         }
         if name.hasPrefix("get_") {
             let mapping: [String: (String, String)] = [
@@ -59,24 +59,24 @@ extension DahliaMCPServer {
                 "get_meeting_screenshots": ("meeting_id", "meetings"),
                 "get_project": ("project_id", "projects"),
             ]
-            guard let (key, table) = mapping[name] else { throw ParameterError("vault_id is required for this tool") }
+            guard let (key, table) = mapping[name] else { throw ParameterError("workspace_id is required for this tool") }
             let entityID = try requiredUUID(arguments, key: key)
             let id = try store.database.read { db in
-                try UUID.fetchOne(db, sql: "SELECT vaultId FROM \(table) WHERE id = ?", arguments: [entityID])
+                try UUID.fetchOne(db, sql: "SELECT workspace_id FROM \(table) WHERE id = ?", arguments: [entityID])
             }
-            guard let id, try vaults().contains(where: { $0.id == id }) else { throw MeetingAccessError.vaultNotFound }
-            return try scopedRead(name: name, arguments: scopedArguments, vaultID: id)
+            guard let id, try workspaces().contains(where: { $0.id == id }) else { throw MeetingAccessError.workspaceNotFound }
+            return try scopedRead(name: name, arguments: scopedArguments, workspaceID: id)
         }
         guard arguments["cursor"] == nil, arguments["server_cursor"] == nil else {
-            throw ParameterError("Continue each vault's page with vault_id and its cursor")
+            throw ParameterError("Continue each workspace's page with workspace_id and its cursor")
         }
         var groups: [[String: Any]] = []
-        for vault in try vaults() {
+        for workspace in try workspaces() {
             do {
-                let result = try scopedRead(name: name, arguments: scopedArguments, vaultID: vault.id)
+                let result = try scopedRead(name: name, arguments: scopedArguments, workspaceID: workspace.id)
                 groups.append([
-                    "vault_id": vault.id.uuidString.lowercased(),
-                    "vault_name": vault.name,
+                    "workspace_id": workspace.id.uuidString.lowercased(),
+                    "workspace_name": workspace.name,
                     "result": result["structuredContent"] ?? result,
                     "is_error": result["isError"] ?? false,
                 ])
@@ -86,14 +86,14 @@ extension DahliaMCPServer {
                 let code = (error as? MeetingAccessError)?.reasonCode ?? (error as? TextContentError)?
                     .rawValue ?? "unavailable"
                 groups.append([
-                    "vault_id": vault.id.uuidString.lowercased(),
-                    "vault_name": vault.name,
+                    "workspace_id": workspace.id.uuidString.lowercased(),
+                    "workspace_name": workspace.name,
                     "error": code,
                     "is_error": true,
                 ])
             }
         }
-        let object: [String: Any] = ["vaults": groups]
+        let object: [String: Any] = ["workspaces": groups]
         return try [
             "content": [["type": "text", "text": String(decoding: JSONSerialization.data(withJSONObject: object), as: UTF8.self)]],
             "structuredContent": object,
@@ -108,30 +108,30 @@ extension DahliaMCPServer {
         guard store.allowsWrites else { throw MeetingAccessError.writeAccessRequired }
         let schema = definition["inputSchema"] as? [String: Any]
         let keys = (schema?["properties"] as? [String: Any])?.keys.map(\.self) ?? []
-        try validate(arguments, allowedKeys: Set(keys + ["vault_id"]))
-        var target = try optionalUUID(arguments, key: "vault_id") ?? vaultScope
-        if let vaultScope, target != vaultScope { throw MeetingAccessError.vaultNotFound }
+        try validate(arguments, allowedKeys: Set(keys + ["workspace_id"]))
+        var target = try optionalUUID(arguments, key: "workspace_id") ?? workspaceScope
+        if let workspaceScope, target != workspaceScope { throw MeetingAccessError.workspaceNotFound }
         let references = [
             "meeting_id": "meetings", "project_id": "projects", "parent_project_id": "projects",
         ]
         for (key, table) in references where arguments[key] != nil && !(arguments[key] is NSNull) {
             let id = try requiredUUID(arguments, key: key)
-            guard let vaultID = try store.database.read({ db in
-                try UUID.fetchOne(db, sql: "SELECT vaultId FROM \(table) WHERE id = ?", arguments: [id])
-            }) else { throw MeetingAccessError.vaultNotFound }
-            if let target, target != vaultID { throw MeetingAccessError.vaultNotFound }
-            target = vaultID
+            guard let workspaceID = try store.database.read({ db in
+                try UUID.fetchOne(db, sql: "SELECT workspace_id FROM \(table) WHERE id = ?", arguments: [id])
+            }) else { throw MeetingAccessError.workspaceNotFound }
+            if let target, target != workspaceID { throw MeetingAccessError.workspaceNotFound }
+            target = workspaceID
         }
-        guard let target, try vaults().contains(where: { $0.id == target }) else {
-            throw ParameterError("vault_id or an unambiguous parent ID is required")
+        guard let target, try workspaces().contains(where: { $0.id == target }) else {
+            throw ParameterError("workspace_id or an unambiguous parent ID is required")
         }
         var scopedArguments = arguments
-        scopedArguments.removeValue(forKey: "vault_id")
-        return try scopedRead(name: name, arguments: scopedArguments, vaultID: target)
+        scopedArguments.removeValue(forKey: "workspace_id")
+        return try scopedRead(name: name, arguments: scopedArguments, workspaceID: target)
     }
 
-    private func scopedRead(name: String, arguments: [String: Any], vaultID: UUID) throws -> [String: Any] {
-        let server = DahliaMCPServer(store: store.scoped(to: vaultID))
+    private func scopedRead(name: String, arguments: [String: Any], workspaceID: UUID) throws -> [String: Any] {
+        let server = DahliaMCPServer(store: store.scoped(to: workspaceID))
         return try server.executeScopedTool(named: name, arguments: arguments)
     }
 
@@ -140,21 +140,21 @@ extension DahliaMCPServer {
             var definition = definition
             var schema = definition["inputSchema"] as? [String: Any] ?? [:]
             var properties = schema["properties"] as? [String: Any] ?? [:]
-            var vaultSchema = Self.idSchema(.vault)
-            vaultSchema["description"] = "Vault scope. Required for new records unless a parent ID identifies the Vault. Cannot widen the configured scope."
-            properties["vault_id"] = vaultSchema
+            var workspaceSchema = Self.idSchema(.workspace)
+            workspaceSchema["description"] = "Workspace scope. Required for new records unless a parent ID identifies the Workspace. Cannot widen the configured scope."
+            properties["workspace_id"] = workspaceSchema
             schema["properties"] = properties
             definition["inputSchema"] = schema
-            if vaultScope == nil, (definition["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == true,
+            if workspaceScope == nil, (definition["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == true,
                (definition["name"] as? String)?.hasPrefix("get_") != true {
-                // Cross-Vault query results wrap each original result, including its own cursors and errors.
+                // Cross-Workspace query results wrap each original result, including its own cursors and errors.
                 definition.removeValue(forKey: "outputSchema")
             }
             return definition
         }
         return [[
-            "name": "list_vaults",
-            "description": "List vaults added to this Mac within the configured scope. Server metadata is a last-synced working copy, not proof of current server access.",
+            "name": "list_workspaces",
+            "description": "List workspaces added to this Mac within the configured scope. Server metadata is a last-synced working copy, not proof of current server access.",
             "inputSchema": ["type": "object", "properties": [:], "additionalProperties": false],
             "annotations": ["readOnlyHint": true],
         ]] + reads

@@ -21,7 +21,7 @@ import GRDB
 
             let initial = try AppDatabaseManager(path: databaseURL.path)
             try initial.dbQueue.write { db in
-                try makeVault(name: "Main", path: rootURL.appending(path: "MainVault").path).insert(db)
+                try makeWorkspace(name: "Main", path: rootURL.appending(path: "MainWorkspace").path).insert(db)
             }
             try initial.close()
 
@@ -29,7 +29,7 @@ import GRDB
             try walQueue.writeWithoutTransaction { db in
                 _ = try String.fetchOne(db, sql: "PRAGMA journal_mode = WAL")
                 try db.execute(sql: "PRAGMA wal_autocheckpoint = 0")
-                try makeVault(name: "Committed WAL", path: rootURL.appending(path: "WALVault").path).insert(db)
+                try makeWorkspace(name: "Committed WAL", path: rootURL.appending(path: "WALWorkspace").path).insert(db)
             }
             let walURL = URL(fileURLWithPath: databaseURL.path + "-wal")
             #expect(FileManager.default.fileExists(atPath: walURL.path))
@@ -57,7 +57,7 @@ import GRDB
             }
             let reopened = try AppDatabaseManager(path: databaseURL.path)
             let names = try reopened.dbQueue.read { db in
-                try String.fetchAll(db, sql: "SELECT name FROM vaults ORDER BY name")
+                try String.fetchAll(db, sql: "SELECT name FROM workspaces ORDER BY name")
             }
             #expect(names == ["Committed WAL", "Main"])
         }
@@ -71,12 +71,12 @@ import GRDB
             let recoveryURL = rootURL.appending(path: BackupRestoreStartupProcessor.recoveryFilename)
             let current = try AppDatabaseManager(path: databaseURL.path)
             try current.dbQueue.write { db in
-                try makeVault(name: "Unverified", path: rootURL.appending(path: "UnverifiedVault").path).insert(db)
+                try makeWorkspace(name: "Unverified", path: rootURL.appending(path: "UnverifiedWorkspace").path).insert(db)
             }
             try current.close()
             let recovery = try AppDatabaseManager(path: recoveryURL.path)
             try recovery.dbQueue.write { db in
-                try makeVault(name: "Original", path: rootURL.appending(path: "OriginalVault").path).insert(db)
+                try makeWorkspace(name: "Original", path: rootURL.appending(path: "OriginalWorkspace").path).insert(db)
             }
             try recovery.close()
 
@@ -87,7 +87,7 @@ import GRDB
 
             #expect(outcome == .none)
             let reopened = try AppDatabaseManager(path: databaseURL.path)
-            let names = try reopened.dbQueue.read { db in try String.fetchAll(db, sql: "SELECT name FROM vaults") }
+            let names = try reopened.dbQueue.read { db in try String.fetchAll(db, sql: "SELECT name FROM workspaces") }
             #expect(names == ["Original"])
             #expect(!FileManager.default.fileExists(atPath: recoveryURL.path))
         }
@@ -131,7 +131,7 @@ import GRDB
 
             let current = try AppDatabaseManager(path: databaseURL.path)
             try current.dbQueue.write { db in
-                try makeVault(name: "Current", path: rootURL.appending(path: "CurrentVault").path).insert(db)
+                try makeWorkspace(name: "Current", path: rootURL.appending(path: "CurrentWorkspace").path).insert(db)
             }
             try current.close()
             try Data("not sqlite".utf8).write(to: stagedURL)
@@ -147,12 +147,12 @@ import GRDB
                 return
             }
             let reopened = try AppDatabaseManager(path: databaseURL.path)
-            let names = try reopened.dbQueue.read { db in try String.fetchAll(db, sql: "SELECT name FROM vaults") }
+            let names = try reopened.dbQueue.read { db in try String.fetchAll(db, sql: "SELECT name FROM workspaces") }
             #expect(names == ["Current"])
         }
 
-        private func makeVault(name: String, path: String) -> VaultRecord {
-            VaultRecord(id: .v7(), path: path, name: name, createdAt: .now, lastOpenedAt: .now)
+        private func makeWorkspace(name: String, path: String) -> WorkspaceRecord {
+            WorkspaceRecord(id: .v7(), path: path, name: name, createdAt: .now, lastOpenedAt: .now)
         }
 
         private func writeMarker(stagedURL: URL, restoreDirectoryURL: URL) throws {
@@ -164,14 +164,19 @@ import GRDB
                 migrationIdentifier: AppDatabaseManager.currentMigrationIdentifier,
                 appVersion: "1.2.3",
                 appBuild: "45",
-                reason: .manual, vaults: [BackupVault(id: .v7(), name: "Test")]
+                reason: .manual, workspaces: [BackupWorkspace(id: .v7(), name: "Test")]
             )
             let marker = try PendingDatabaseRestore(
                 stagedFilename: stagedURL.lastPathComponent,
                 sha256: BackupService.sha256(of: stagedURL),
                 requestedAt: .now,
                 sourceMetadata: metadata,
-                requests: [VaultBackupRestoreRequest(sourceVaultId: metadata.vaults[0].id, targetVaultId: .v7(), mode: .newVault, name: "Restored")]
+                requests: [WorkspaceBackupRestoreRequest(
+                    sourceWorkspaceId: metadata.workspaces[0].id,
+                    targetWorkspaceId: .v7(),
+                    mode: .newWorkspace,
+                    name: "Restored"
+                )]
             )
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .deferredToDate

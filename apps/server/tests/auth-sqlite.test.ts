@@ -40,7 +40,7 @@ afterEach(() => {
 });
 
 describe("SQLite Better Auth store", () => {
-  it("retries interrupted Personal initialization without duplicating membership or Vaults", async () => {
+  it("retries interrupted Personal initialization without duplicating membership or Workspaces", async () => {
     const directory = mkdtempSync(join(tmpdir(), "dahlia-accounts-owner-"));
     directories.push(directory);
     const path = join(directory, "auth.sqlite");
@@ -54,13 +54,13 @@ describe("SQLite Better Auth store", () => {
       database.exec("CREATE TRIGGER fail_initial_owner BEFORE INSERT ON member BEGIN SELECT RAISE(ABORT, 'member insert failed'); END");
       await expect(context.internalAdapter.createUser({ name: "First", email: "first@example.com", emailVerified: true }, { method: "oauth", oauth: { providerId: "google", profile: {} } })).rejects.toThrow();
       const id = String(database.prepare("SELECT id FROM user WHERE email = 'first@example.com'").get()!.id);
-      expect(database.prepare("SELECT count(*) AS count FROM vaults").get()).toEqual({ count: 0 });
+      expect(database.prepare("SELECT count(*) AS count FROM workspaces").get()).toEqual({ count: 0 });
       expect(database.prepare("SELECT count(*) AS count FROM organization WHERE kind = 'personal'").get()).toEqual({ count: 0 });
       database.exec("DROP TRIGGER fail_initial_owner");
-      const identity = { userId: id, workspaceId: `personal:${id}`, source: "accounts" as const };
+      const identity = { userId: id,  source: "accounts" as const };
       expect(await Promise.all([store.ensureIdentityUser(identity), store.ensureIdentityUser(identity)])).toEqual([true, true]);
       expect(database.prepare("SELECT role FROM member WHERE organization_id = ?").all(id)).toEqual([{ role: "owner" }]);
-      expect(database.prepare("SELECT vault_id, organization_id FROM vaults WHERE organization_id = ?").all(id)).toEqual([{ vault_id: id, organization_id: id }]);
+      expect(database.prepare("SELECT workspace_id, organization_id FROM workspaces WHERE organization_id = ?").all(id)).toEqual([{ workspace_id: id, organization_id: id }]);
       expect(database.prepare("SELECT id FROM organization WHERE domain IS NOT NULL").all()).toEqual([]);
       expect(await store.isAdminUser(id)).toBe(true);
     } finally { database.close(); await store.close?.(); }
@@ -352,8 +352,8 @@ describe("SQLite Better Auth store", () => {
     });
 
     expect(database.prepare('SELECT 1 FROM "user" WHERE "id" = ?').get("rolled-back-user")).toBeUndefined();
-    const firstAdmin = await store.resolveHeaderUser({ userId: "first-admin", workspaceId: "personal:first-admin", source: "header", email: "first-admin@example.com" });
-    const secondAdmin = await store.resolveHeaderUser({ userId: "second-admin", workspaceId: "personal:second-admin", source: "header", email: "second-admin@example.com" });
+    const firstAdmin = await store.resolveHeaderUser({ userId: "first-admin",  source: "header", email: "first-admin@example.com" });
+    const secondAdmin = await store.resolveHeaderUser({ userId: "second-admin",  source: "header", email: "second-admin@example.com" });
     await store.addAdminUser("first-admin@example.com");
     expect(await store.addAdminUser("second-admin@example.com")).toMatchObject({ id: secondAdmin! });
     expect(await store.isAdminUser(secondAdmin!)).toBe(true);

@@ -6,7 +6,7 @@ extension CodexChatSessionModel {
     }
 
     var canSendProjectOrganizationShortcut: Bool {
-        showsProjectOrganizationShortcut && isBoundToCurrentVault && !isGenerating
+        showsProjectOrganizationShortcut && isBoundToCurrentWorkspace && !isGenerating
     }
 
     func sendProjectOrganizationShortcut(

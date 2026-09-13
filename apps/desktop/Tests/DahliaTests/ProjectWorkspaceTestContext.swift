@@ -4,11 +4,11 @@ import Foundation
 
     struct ProjectWorkspaceTestContext {
         let rootURL: URL
-        let vaultURL: URL
+        let workspaceURL: URL
         let trashURL: URL
         let database: AppDatabaseManager
         let repository: MeetingRepository
-        let vault: VaultRecord
+        let workspace: WorkspaceRecord
         let service: ProjectWorkspaceService
     }
 #endif

@@ -1,4 +1,4 @@
-import { canWriteVault } from "./auth/vault-permissions";
+import { canWriteWorkspace } from "./auth/workspace-permissions";
 import { z } from "@hono/zod-openapi";
 import type { Identity } from "./auth/identity";
 import type { RecordingAudio, RecordingRecord, RecordingSource } from "./recordings/model";
@@ -76,19 +76,19 @@ function isRecordingSource(source: string | null): source is RecordingSource {
 export class ConversationAnalyticsService {
   constructor(private readonly store: MeetingSyncStore) {}
 
-  async get(identity: Identity, vaultId: string, meetingId: string, version: number): Promise<ConversationAnalyticsResponse> {
+  async get(identity: Identity, workspaceId: string, meetingId: string, version: number): Promise<ConversationAnalyticsResponse> {
     return this.store.withIdentity(identity, async (scoped) => {
-      if (!canWriteVault((await scoped.getVault(vaultId))?.role) || !await scoped.getMeeting(vaultId, meetingId)) {
+      if (!canWriteWorkspace((await scoped.getWorkspace(workspaceId))?.role) || !await scoped.getMeeting(workspaceId, meetingId)) {
         throw new RequestError(404, "conversation_analytics_unavailable");
       }
-      const transcript = await scoped.getTranscript(vaultId, meetingId, version);
+      const transcript = await scoped.getTranscript(workspaceId, meetingId, version);
       if (!transcript) throw new RequestError(404, "transcript_version_not_found");
       if (transcript.endedAt === null) {
-        const latest = await scoped.getTranscript(vaultId, meetingId);
+        const latest = await scoped.getTranscript(workspaceId, meetingId);
         if (!latest || latest.version <= transcript.version) throw new RequestError(409, "transcript_version_not_finalized");
       }
       const recordings = await listAllRecordings(scoped.listRecordings.bind(scoped), meetingId);
-      const segments = await scoped.listTranscriptAnalytics(vaultId, meetingId, version);
+      const segments = await scoped.listTranscriptAnalytics(workspaceId, meetingId, version);
       const timeline = recordingTimeline(transcript.metadata, recordings);
       if (!timeline || !hasAudioCoverage(segments, timeline)) return {
         status: "unavailable", transcriptId: transcript.id, transcriptVersion: transcript.version, reason: "recording_audio_missing",

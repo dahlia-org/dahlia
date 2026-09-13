@@ -10,7 +10,7 @@
     struct SyncTransactionQueueTests {
         @Test(arguments: ["", "20260903T000000Z"])
         func uploadsCalendarOccurrenceIdentity(recurrenceId: String) async throws {
-            let (database, vault) = try await syncedDatabase()
+            let (database, workspace) = try await syncedDatabase()
             let start = try Date("2026-09-03T09:00:00+09:00", strategy: .iso8601)
             let end = start.addingTimeInterval(3600)
             try await database.dbQueue.write { db in
@@ -19,7 +19,7 @@
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, arguments: ["shared@example.com", recurrenceId, start, start, "Calendar", start, end, recurrenceId.isEmpty])
                 var meeting = MeetingRecord(
-                    id: .v7(), vaultId: vault.id, name: "Meeting", createdAt: start, updatedAt: start,
+                    id: .v7(), workspaceId: workspace.id, name: "Meeting", createdAt: start, updatedAt: start,
                     calendarEventIcalUid: "shared@example.com", calendarEventRecurrenceId: recurrenceId
                 )
                 for action in [SyncAction.create, .update] {
@@ -48,10 +48,10 @@
 
         @Test
         func collectionAppearanceRoundTripsThroughCanonicalStorageAndUpload() async throws {
-            let (database, vault) = try await syncedDatabase()
+            let (database, workspace) = try await syncedDatabase()
             let project = ProjectRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: nil,
                 name: "Project",
                 createdAt: .now,
@@ -73,21 +73,21 @@
             )
             try await database.dbQueue.write { db in
                 try project.insert(db)
-                for (entity, id) in [(SyncEntity.vault, vault.id), (.project, project.id)] {
-                    try SyncTransactionQueue.applyCanonical(entity, id: id, vaultId: vault.id, value: payload, in: db)
-                    try SyncTransactionQueue.applyCanonical(entity, id: id, vaultId: vault.id, value: renamed, in: db)
+                for (entity, id) in [(SyncEntity.workspace, workspace.id), (.project, project.id)] {
+                    try SyncTransactionQueue.applyCanonical(entity, id: id, workspaceId: workspace.id, value: payload, in: db)
+                    try SyncTransactionQueue.applyCanonical(entity, id: id, workspaceId: workspace.id, value: renamed, in: db)
                 }
             }
-            let (savedVault, savedProject) = try await database.dbQueue.read { db in
-                try (VaultRecord.fetchOne(db, key: vault.id), ProjectRecord.fetchOne(db, key: project.id))
+            let (savedWorkspace, savedProject) = try await database.dbQueue.read { db in
+                try (WorkspaceRecord.fetchOne(db, key: workspace.id), ProjectRecord.fetchOne(db, key: project.id))
             }
-            let storedVault = try #require(savedVault)
+            let storedWorkspace = try #require(savedWorkspace)
             let storedProject = try #require(savedProject)
-            #expect(storedVault.appearance?.icon.rawValue == "book.closed")
-            #expect(storedVault.appearance?.color.rawValue == "green")
-            #expect(storedProject.appearance == storedVault.appearance)
+            #expect(storedWorkspace.appearance?.icon.rawValue == "book.closed")
+            #expect(storedWorkspace.appearance?.color.rawValue == "green")
+            #expect(storedProject.appearance == storedWorkspace.appearance)
             for operation in try [
-                SyncInitialSnapshotBuilder.vaultOperation(storedVault, action: .update),
+                SyncInitialSnapshotBuilder.workspaceOperation(storedWorkspace, action: .update),
                 SyncInitialSnapshotBuilder.projectOperation(storedProject, action: .update),
             ] {
                 let data = try #require(operation.payloadJSON)
@@ -99,9 +99,9 @@
 
         @Test(arguments: [false, true])
         func canonicalProjectAbsenceClearsLocalAppearance(useSnapshot: Bool) async throws {
-            let (database, vault) = try await syncedDatabase()
+            let (database, workspace) = try await syncedDatabase()
             let project = ProjectRecord(
-                id: .v7(), vaultId: vault.id, parentProjectId: nil, name: "Project",
+                id: .v7(), workspaceId: workspace.id, parentProjectId: nil, name: "Project",
                 createdAt: Date(timeIntervalSince1970: 1000), projectType: .undefined,
                 appearance: ProjectAppearance(icon: .book, color: .green)
             )
@@ -118,7 +118,7 @@
                         revision: 2,
                         createdAt: project.createdAt
                     ),
-                ], vaultId: vault.id, expectedConnectionId: #require(vault.syncConfirmedConnectionId), dbQueue: database.dbQueue))
+                ], workspaceId: workspace.id, expectedConnectionId: #require(workspace.syncConfirmedConnectionId), dbQueue: database.dbQueue))
             } else {
                 let canonical = try SyncJSON.decoder.decode(
                     SyncCanonicalPayload.self,
@@ -126,7 +126,7 @@
                         .utf8)
                 )
                 try await database.dbQueue.write { db in
-                    try SyncTransactionQueue.applyCanonical(.project, id: project.id, vaultId: vault.id, value: canonical, in: db)
+                    try SyncTransactionQueue.applyCanonical(.project, id: project.id, workspaceId: workspace.id, value: canonical, in: db)
                 }
             }
             let saved = try await database.dbQueue.read { db in try #require(try ProjectRecord.fetchOne(db, key: project.id)) }
@@ -143,7 +143,7 @@
         func operationBodyEncodesAbsentValuesAsExplicitNull() throws {
             let body = SyncOperationBody(
                 id: .v7(),
-                entity: .vault,
+                entity: .workspace,
                 action: .create,
                 entityId: .v7(),
                 baseRevision: nil,
@@ -161,13 +161,13 @@
 
         @Test
         func canonicalProjectUpdateInvalidatesOpenEditsForItsHierarchy() async throws {
-            let (database, vault) = try await syncedDatabase()
+            let (database, workspace) = try await syncedDatabase()
             let root = ProjectRecord(
-                id: .v7(), vaultId: vault.id, parentProjectId: nil,
+                id: .v7(), workspaceId: workspace.id, parentProjectId: nil,
                 name: "Root", createdAt: .now, projectType: .undefined
             )
             let child = ProjectRecord(
-                id: .v7(), vaultId: vault.id, parentProjectId: root.id,
+                id: .v7(), workspaceId: workspace.id, parentProjectId: root.id,
                 name: "Child", createdAt: .now, projectType: nil
             )
             let canonical = try SyncJSON.decoder.decode(
@@ -183,7 +183,7 @@
                 try SyncTransactionQueue.applyCanonical(
                     .project,
                     id: root.id,
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     value: canonical,
                     in: db
                 )
@@ -201,17 +201,17 @@
 
         @Test
         func retryingAValidationBlockPreservesTheImmutableTransaction() async throws {
-            let (database, vault) = try await syncedDatabase()
+            let (database, workspace) = try await syncedDatabase()
             let payload = try SyncJSON.encoder.encode(JSONValue.object(["name": .string("Queued")]))
             let operationId = UUID.v7()
             _ = try await database.dbQueue.write { db in
                 try SyncTransactionRecorder.record(
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     operations: [SyncOperationDraft(
                         id: operationId,
-                        entity: .vault,
+                        entity: .workspace,
                         action: .update,
-                        entityId: vault.id,
+                        entityId: workspace.id,
                         payloadJSON: payload
                     )],
                     in: db
@@ -225,7 +225,7 @@
                 dbQueue: database.dbQueue
             )
 
-            try await SyncTransactionQueue.retryInvalidTransaction(vaultId: vault.id, dbQueue: database.dbQueue)
+            try await SyncTransactionQueue.retryInvalidTransaction(workspaceId: workspace.id, dbQueue: database.dbQueue)
 
             let retried = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
             #expect(retried.id == firstClaim.id)
@@ -234,41 +234,41 @@
         }
 
         @Test
-        func interruptedInitialSnapshotRepairsOnlyAnUnconfirmedOwnerVault() async throws {
-            let (database, vault) = try await syncedDatabase()
+        func interruptedInitialSnapshotRepairsOnlyAnUnconfirmedOwnerWorkspace() async throws {
+            let (database, workspace) = try await syncedDatabase()
 
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
 
             let ownerState: (UUID?, Row?) = try database.dbQueue.read { db in
-                let savedVault = try VaultRecord.fetchOne(db, key: vault.id)
+                let savedWorkspace = try WorkspaceRecord.fetchOne(db, key: workspace.id)
                 let operation = try Row.fetchOne(
                     db,
                     sql: """
                     SELECT o.entity, o.action FROM sync_operations o
                     JOIN sync_transactions t ON t.id = o.transactionId
-                    WHERE t.vaultId = ? ORDER BY t.sequence, o.position LIMIT 1
+                    WHERE t.workspace_id = ? ORDER BY t.sequence, o.position LIMIT 1
                     """,
-                    arguments: [vault.id]
+                    arguments: [workspace.id]
                 )
-                return (savedVault?.syncConfirmedConnectionId, operation)
+                return (savedWorkspace?.syncConfirmedConnectionId, operation)
             }
-            #expect(ownerState.0 == vault.accountConnectionId)
-            #expect(ownerState.1?["entity"] as String? == "vault")
+            #expect(ownerState.0 == workspace.accountConnectionId)
+            #expect(ownerState.1?["entity"] as String? == "workspace")
             #expect(ownerState.1?["action"] as String? == "create")
 
-            let memberVaultId = UUID.v7()
+            let memberWorkspaceId = UUID.v7()
             try await database.dbQueue.write { db in
-                var member = VaultRecord(
-                    id: memberVaultId,
+                var member = WorkspaceRecord(
+                    id: memberWorkspaceId,
                     path: "/tmp/member",
                     name: "Member",
                     createdAt: .now,
                     lastOpenedAt: .now
                 )
-                member.accountConnectionId = vault.accountConnectionId
+                member.accountConnectionId = workspace.accountConnectionId
                 if member.syncRole == nil { member.syncRole = "admin" }
                 if member.organizationId == nil { member.organizationId = .v7() }
-                member.syncConfirmedConnectionId = vault.accountConnectionId
+                member.syncConfirmedConnectionId = workspace.accountConnectionId
                 member.syncRole = "viewer"
                 try member.insert(db)
             }
@@ -276,25 +276,25 @@
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
 
             let memberState: (UUID?, Int?) = try await database.dbQueue.read { db in
-                let savedVault = try VaultRecord.fetchOne(db, key: memberVaultId)
+                let savedWorkspace = try WorkspaceRecord.fetchOne(db, key: memberWorkspaceId)
                 let transactionCount = try Int.fetchOne(
                     db,
-                    sql: "SELECT count(*) FROM sync_transactions WHERE vaultId = ?",
-                    arguments: [memberVaultId]
+                    sql: "SELECT count(*) FROM sync_transactions WHERE workspace_id = ?",
+                    arguments: [memberWorkspaceId]
                 )
-                return (savedVault?.syncConfirmedConnectionId, transactionCount)
+                return (savedWorkspace?.syncConfirmedConnectionId, transactionCount)
             }
-            #expect(memberState.0 == vault.accountConnectionId)
+            #expect(memberState.0 == workspace.accountConnectionId)
             #expect(memberState.1 == 0)
         }
 
         @Test
         func initialSnapshotRepairLeavesAnExistingOwnerTransactionUntouched() async throws {
-            let (database, vault) = try await syncedDatabase()
+            let (database, workspace) = try await syncedDatabase()
             _ = try await database.dbQueue.write { db in
                 try SyncTransactionRecorder.record(
-                    vaultId: vault.id,
-                    operations: [SyncOperationDraft(entity: .vault, action: .update, entityId: vault.id)],
+                    workspaceId: workspace.id,
+                    operations: [SyncOperationDraft(entity: .workspace, action: .update, entityId: workspace.id)],
                     in: db
                 )
             }
@@ -307,9 +307,9 @@
                     sql: """
                     SELECT o.action FROM sync_operations o
                     JOIN sync_transactions t ON t.id = o.transactionId
-                    WHERE t.vaultId = ? ORDER BY t.sequence, o.position
+                    WHERE t.workspace_id = ? ORDER BY t.sequence, o.position
                     """,
-                    arguments: [vault.id]
+                    arguments: [workspace.id]
                 ).map { $0["action"] as String }
             }
             #expect(operations == ["update"])
@@ -317,11 +317,11 @@
 
         @Test
         func nonConflictBlocksCannotDiscardDurableTransactions() async throws {
-            let (database, vault) = try await syncedDatabase()
+            let (database, workspace) = try await syncedDatabase()
             _ = try await database.dbQueue.write { db in
                 try SyncTransactionRecorder.record(
-                    vaultId: vault.id,
-                    operations: [SyncOperationDraft(entity: .vault, action: .update, entityId: vault.id)],
+                    workspaceId: workspace.id,
+                    operations: [SyncOperationDraft(entity: .workspace, action: .update, entityId: workspace.id)],
                     in: db
                 )
             }
@@ -333,28 +333,28 @@
                 dbQueue: database.dbQueue
             )
 
-            try await SyncTransactionQueue.acceptServerVersion(vaultId: vault.id, dbQueue: database.dbQueue)
-            try await SyncTransactionQueue.reapplyLocalVersion(vaultId: vault.id, dbQueue: database.dbQueue)
+            try await SyncTransactionQueue.acceptServerVersion(workspaceId: workspace.id, dbQueue: database.dbQueue)
+            try await SyncTransactionQueue.reapplyLocalVersion(workspaceId: workspace.id, dbQueue: database.dbQueue)
 
             #expect(try await database.dbQueue.read { db in
-                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE vaultId = ?", arguments: [vault.id])
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE workspace_id = ?", arguments: [workspace.id])
             } == 1)
 
-            try await SyncTransactionQueue.discardInvalidTransaction(vaultId: vault.id, dbQueue: database.dbQueue)
+            try await SyncTransactionQueue.discardInvalidTransaction(workspaceId: workspace.id, dbQueue: database.dbQueue)
             let replacement = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
-            #expect(replacement.vaultId == vault.id)
+            #expect(replacement.workspaceId == workspace.id)
             #expect(replacement.operations.count == 1)
-            #expect(replacement.operations.first?.entity == .vault)
+            #expect(replacement.operations.first?.entity == .workspace)
             #expect(replacement.operations.first?.action == .create)
         }
 
         @Test
         func authorizationBlocksCanRetryAfterReauthentication() async throws {
-            let (database, vault) = try await syncedDatabase()
+            let (database, workspace) = try await syncedDatabase()
             _ = try await database.dbQueue.write { db in
                 try SyncTransactionRecorder.record(
-                    vaultId: vault.id,
-                    operations: [SyncOperationDraft(entity: .vault, action: .update, entityId: vault.id)],
+                    workspaceId: workspace.id,
+                    operations: [SyncOperationDraft(entity: .workspace, action: .update, entityId: workspace.id)],
                     in: db
                 )
             }
@@ -376,12 +376,12 @@
         }
 
         @Test
-        func restoreResetKeepsTheConfirmedVaultRevisionInItsImmutableOperation() async throws {
-            let (database, vault) = try await syncedDatabase()
+        func restoreResetKeepsTheConfirmedWorkspaceRevisionInItsImmutableOperation() async throws {
+            let (database, workspace) = try await syncedDatabase()
             try await database.dbQueue.write { db in
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, 4)",
-                    arguments: [vault.id, vault.id]
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, 4)",
+                    arguments: [workspace.id, workspace.id]
                 )
             }
 
@@ -392,9 +392,9 @@
                 try (
                     Int.fetchOne(
                         db,
-                        sql: "SELECT baseRevision FROM sync_operations WHERE entity = 'vault' AND action = 'reset'"
+                        sql: "SELECT baseRevision FROM sync_operations WHERE entity = 'workspace' AND action = 'reset'"
                     ),
-                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE vaultId = ?", arguments: [vault.id])
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspace.id])
                 )
             }
             #expect(state.0 == 4)
@@ -402,39 +402,39 @@
         }
 
         @Test
-        func ignoresReceiptThatReturnsAfterVaultMovesToLocalAccount() async throws {
+        func ignoresReceiptThatReturnsAfterWorkspaceMovesToLocalAccount() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let connection = DahliaAccountConnectionRecord(
                 id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
             )
-            var vault = VaultRecord(id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
-            vault.accountConnectionId = connection.id
-            if vault.syncRole == nil { vault.syncRole = "admin" }
-            if vault.organizationId == nil { vault.organizationId = .v7() }
-            vault.syncConfirmedConnectionId = connection.id
-            let savedVault = vault
+            var workspace = WorkspaceRecord(id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
+            workspace.accountConnectionId = connection.id
+            if workspace.syncRole == nil { workspace.syncRole = "admin" }
+            if workspace.organizationId == nil { workspace.organizationId = .v7() }
+            workspace.syncConfirmedConnectionId = connection.id
+            let savedWorkspace = workspace
             try await database.dbQueue.write { db in
                 try connection.insert(db)
-                try savedVault.insert(db)
+                try savedWorkspace.insert(db)
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, 3)",
-                    arguments: [savedVault.id, savedVault.id]
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, 3)",
+                    arguments: [savedWorkspace.id, savedWorkspace.id]
                 )
             }
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            _ = try await repository.updateVaultName(id: savedVault.id, name: "Sent name")
+            _ = try await repository.updateWorkspaceName(id: savedWorkspace.id, name: "Sent name")
             let claimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
 
             // Simulate a completed detach so the delayed receipt exercises the association guard.
             try await database.dbQueue.write { db in
-                try SyncTransactionQueue.discard(vaultId: savedVault.id, in: db)
-                try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [savedVault.id])
+                try SyncTransactionQueue.discard(workspaceId: savedWorkspace.id, in: db)
+                try db.execute(sql: "DELETE FROM sync_entity_state WHERE workspace_id = ?", arguments: [savedWorkspace.id])
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL, syncConfirmedConnectionId = NULL, syncPullCursor = NULL WHERE id = ?",
-                    arguments: [savedVault.id]
+                    sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL, syncConfirmedConnectionId = NULL, syncPullCursor = NULL WHERE id = ?",
+                    arguments: [savedWorkspace.id]
                 )
             }
-            _ = try await repository.updateVaultName(id: savedVault.id, name: "Local after sign out")
+            _ = try await repository.updateWorkspaceName(id: savedWorkspace.id, name: "Local after sign out")
             try await SyncTransactionQueue.complete(
                 claimed,
                 response: SyncTransactionResponse(
@@ -442,8 +442,8 @@
                     status: "committed",
                     cursor: "late-cursor",
                     records: [.init(
-                        entity: .vault,
-                        id: savedVault.id,
+                        entity: .workspace,
+                        id: savedWorkspace.id,
                         revision: 4,
                         record: .object(["name": .string("Late canonical name")])
                     )]
@@ -453,9 +453,9 @@
 
             let state = try await database.dbQueue.read { db in
                 try (
-                    VaultRecord.fetchOne(db, key: savedVault.id),
-                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE vaultId = ?", arguments: [savedVault.id]),
-                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE vaultId = ?", arguments: [savedVault.id])
+                    WorkspaceRecord.fetchOne(db, key: savedWorkspace.id),
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE workspace_id = ?", arguments: [savedWorkspace.id]),
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE workspace_id = ?", arguments: [savedWorkspace.id])
                 )
             }
             #expect(state.0?.name == "Local after sign out")
@@ -466,22 +466,22 @@
         }
 
         @Test(arguments: [false, true])
-        func acceptingServerVersionForcesCanonicalReconciliation(hasConfirmedVault: Bool) async throws {
-            let (database, vault) = try await syncedDatabase()
+        func acceptingServerVersionForcesCanonicalReconciliation(hasConfirmedWorkspace: Bool) async throws {
+            let (database, workspace) = try await syncedDatabase()
             try await database.dbQueue.write { db in
-                if hasConfirmedVault {
+                if hasConfirmedWorkspace {
                     try db.execute(
-                        sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, 3)",
-                        arguments: [vault.id, vault.id]
+                        sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, 3)",
+                        arguments: [workspace.id, workspace.id]
                     )
                 }
-                var edited = vault
+                var edited = workspace
                 edited.name = "Rejected local name"
                 edited.appearance = ProjectAppearance(icon: .book, color: .green)
                 try edited.update(db)
                 try SyncTransactionRecorder.record(
-                    vaultId: vault.id,
-                    operations: [SyncInitialSnapshotBuilder.vaultOperation(edited, action: hasConfirmedVault ? .update : .create)],
+                    workspaceId: workspace.id,
+                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(edited, action: hasConfirmedWorkspace ? .update : .create)],
                     in: db
                 )
             }
@@ -490,18 +490,18 @@
                 claimed,
                 reason: .conflict,
                 response: Data("""
-                {"conflicts":[{"entity":"vault","id":"\(vault.id.uuidString)","serverRevision":4}]}
+                {"conflicts":[{"entity":"workspace","id":"\(workspace.id.uuidString)","serverRevision":4}]}
                 """.utf8),
                 dbQueue: database.dbQueue
             )
 
-            try await SyncTransactionQueue.acceptServerVersion(vaultId: vault.id, dbQueue: database.dbQueue)
+            try await SyncTransactionQueue.acceptServerVersion(workspaceId: workspace.id, dbQueue: database.dbQueue)
 
             let state = try await database.dbQueue.read { db in
                 try (
-                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE vaultId = ?", arguments: [vault.id]),
-                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE vaultId = ?", arguments: [vault.id]),
-                    VaultRecord.fetchOne(db, key: vault.id)?.syncPullCursor
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE workspace_id = ?", arguments: [workspace.id]),
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspace.id]),
+                    WorkspaceRecord.fetchOne(db, key: workspace.id)?.syncPullCursor
                 )
             }
             #expect(state.0 == 0)
@@ -510,49 +510,49 @@
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
             #expect(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue) == nil)
             #expect(try await database.dbQueue.read { db in
-                try VaultRecord.fetchOne(db, key: vault.id)?.syncConfirmedConnectionId
-            } == vault.syncConfirmedConnectionId)
+                try WorkspaceRecord.fetchOne(db, key: workspace.id)?.syncConfirmedConnectionId
+            } == workspace.syncConfirmedConnectionId)
 
             let canonical = try SyncJSON.decoder.decode(
                 SyncCanonicalPayload.self,
                 from: Data(#"{"name":"Server name","icon":null,"color":null}"#.utf8)
             )
             let changes: [SyncChangePage.Change] = [
-                .init(sequence: 4, entity: .vault, entityId: vault.id, action: "upsert", revision: 4, record: canonical),
+                .init(sequence: 4, entity: .workspace, entityId: workspace.id, action: "upsert", revision: 4, record: canonical),
             ]
             #expect(try await RemoteChangeApplier.apply(
                 changes, screenshots: [:], transcripts: [:], cursor: nil,
-                vaultId: vault.id, expectedConnectionId: #require(vault.syncConfirmedConnectionId),
+                workspaceId: workspace.id, expectedConnectionId: #require(workspace.syncConfirmedConnectionId),
                 dbQueue: database.dbQueue
             ))
             #expect(try await RemoteChangeApplier.finishReset(
                 SyncResetSnapshot(canonicalChanges: changes), cursor: "server-cursor",
-                vaultId: vault.id, expectedConnectionId: #require(vault.syncConfirmedConnectionId),
+                workspaceId: workspace.id, expectedConnectionId: #require(workspace.syncConfirmedConnectionId),
                 dbQueue: database.dbQueue
             ))
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
             #expect(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue) == nil)
             #expect(try await database.dbQueue.read { db in
-                try VaultRecord.fetchOne(db, key: vault.id)?.name
+                try WorkspaceRecord.fetchOne(db, key: workspace.id)?.name
             } == "Server name")
             #expect(try await database.dbQueue.read { db in
-                try VaultRecord.fetchOne(db, key: vault.id)?.appearance
+                try WorkspaceRecord.fetchOne(db, key: workspace.id)?.appearance
             } == nil)
         }
 
         @Test
         func reconciliationRebasesDurableEditsBeforeTheyCanBeClaimed() async throws {
-            let (database, vault) = try await syncedDatabase()
-            let connectionId = try #require(vault.syncConfirmedConnectionId)
+            let (database, workspace) = try await syncedDatabase()
+            let connectionId = try #require(workspace.syncConfirmedConnectionId)
             _ = try await database.dbQueue.write { db in
                 try SyncTransactionRecorder.record(
-                    vaultId: vault.id,
-                    operations: [SyncInitialSnapshotBuilder.vaultOperation(vault, action: .update)], in: db
+                    workspaceId: workspace.id,
+                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)], in: db
                 )
             }
             let rejected = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
             try await SyncTransactionQueue.block(rejected, reason: .conflict, response: Data("{}".utf8), dbQueue: database.dbQueue)
-            try await SyncTransactionQueue.acceptServerVersion(vaultId: vault.id, dbQueue: database.dbQueue)
+            try await SyncTransactionQueue.acceptServerVersion(workspaceId: workspace.id, dbQueue: database.dbQueue)
 
             let meetingId = UUID.v7()
             let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meetingId)
@@ -565,58 +565,58 @@
             ))
             try await database.dbQueue.write { db in
                 for name in ["First edit", "Second edit"] {
-                    var edited = vault
+                    var edited = workspace
                     edited.name = name
                     try edited.update(db)
                     try SyncTransactionRecorder.record(
-                        vaultId: vault.id,
-                        operations: [SyncInitialSnapshotBuilder.vaultOperation(edited, action: .update)], in: db
+                        workspaceId: workspace.id,
+                        operations: [SyncInitialSnapshotBuilder.workspaceOperation(edited, action: .update)], in: db
                     )
                 }
                 try SyncTransactionRecorder.record(
-                    vaultId: vault.id, operations: [patch], transcriptSegments: [patch.id: [segment]], in: db
+                    workspaceId: workspace.id, operations: [patch], transcriptSegments: [patch.id: [segment]], in: db
                 )
             }
             #expect(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue) == nil)
             await #expect(throws: SyncTransactionQueueError.self) {
                 try await SyncTransactionQueue.reconcileRevisions(
-                    [], vaultId: vault.id, connectionId: connectionId, dbQueue: database.dbQueue
+                    [], workspaceId: workspace.id, connectionId: connectionId, dbQueue: database.dbQueue
                 )
             }
             #expect(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue) == nil)
 
             let canonical = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: Data("{\"name\":\"Server\"}".utf8))
             let changes: [SyncChangePage.Change] = [
-                .init(sequence: 1, entity: .vault, entityId: vault.id, action: "upsert", revision: 8, record: canonical),
+                .init(sequence: 1, entity: .workspace, entityId: workspace.id, action: "upsert", revision: 8, record: canonical),
                 .init(sequence: 2, entity: .transcript, entityId: meetingId, action: "upsert", revision: 4, record: nil),
             ]
             try await SyncTransactionQueue.reconcileRevisions(
-                changes, vaultId: vault.id, connectionId: connectionId, dbQueue: database.dbQueue
+                changes, workspaceId: workspace.id, connectionId: connectionId, dbQueue: database.dbQueue
             )
             let revisions = try await database.dbQueue.read { db in
                 try Int.fetchAll(db, sql: """
                 SELECT o.baseRevision FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
-                WHERE t.vaultId = ? ORDER BY t.sequence, o.position
-                """, arguments: [vault.id])
+                WHERE t.workspace_id = ? ORDER BY t.sequence, o.position
+                """, arguments: [workspace.id])
             }
             #expect(revisions == [8, 9, 4])
             #expect(try await SyncTransactionQueue.transcriptPatch(operationId: patch.id, dbQueue: database.dbQueue).segments.first?.text == segment
                 .text)
             #expect(try await database.dbQueue.read { db in
-                try VaultRecord.fetchOne(db, key: vault.id)?.name
+                try WorkspaceRecord.fetchOne(db, key: workspace.id)?.name
             } == "Second edit")
             let first = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
             #expect(first.operations.first?.baseRevision == 8)
             // A pre-upgrade retry must retain its wire body even if a revision marker remains.
             try await database.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE sync_entity_state SET confirmedRevision = NULL WHERE vaultId = ? AND entity = 'vault'",
-                    arguments: [vault.id]
+                    sql: "UPDATE sync_entity_state SET confirmedRevision = NULL WHERE workspace_id = ? AND entity = 'workspace'",
+                    arguments: [workspace.id]
                 )
             }
             try await SyncTransactionQueue.reconcileRevisions(
-                [.init(sequence: 3, entity: .vault, entityId: vault.id, action: "upsert", revision: 20, record: canonical)],
-                vaultId: vault.id, connectionId: connectionId, dbQueue: database.dbQueue
+                [.init(sequence: 3, entity: .workspace, entityId: workspace.id, action: "upsert", revision: 20, record: canonical)],
+                workspaceId: workspace.id, connectionId: connectionId, dbQueue: database.dbQueue
             )
             #expect(try await database.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT baseRevision FROM sync_operations WHERE transactionId = ?", arguments: [first.id])
@@ -650,11 +650,11 @@
 
         @Test
         func summaryReceiptAcknowledgesAfterLaterMeetingDeletion() async throws {
-            let (database, vault) = try await syncedDatabase()
-            let meeting = MeetingRecord(id: .v7(), vaultId: vault.id, projectId: nil, name: "Deleted", createdAt: .now, updatedAt: .now)
+            let (database, workspace) = try await syncedDatabase()
+            let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, projectId: nil, name: "Deleted", createdAt: .now, updatedAt: .now)
             try await database.dbQueue.write { db in
                 try meeting.insert(db)
-                try SyncTransactionRecorder.record(vaultId: vault.id, operations: [
+                try SyncTransactionRecorder.record(workspaceId: workspace.id, operations: [
                     SyncOperationDraft(entity: .summary, action: .upsert, entityId: meeting.id),
                 ], in: db)
             }
@@ -676,41 +676,41 @@
 
         @Test
         func compactReceiptPreservesLaterEditAndItsBaseRevision() async throws {
-            let (database, vault) = try await syncedDatabase()
+            let (database, workspace) = try await syncedDatabase()
             try await database.dbQueue.write { db in
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, 3)",
-                    arguments: [vault.id, vault.id]
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, 3)",
+                    arguments: [workspace.id, workspace.id]
                 )
                 try SyncTransactionRecorder.record(
-                    vaultId: vault.id,
-                    operations: [SyncInitialSnapshotBuilder.vaultOperation(vault, action: .update)],
+                    workspaceId: workspace.id,
+                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
                     in: db
                 )
             }
             let first = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
             try await database.dbQueue.write { db in
-                var edited = vault
+                var edited = workspace
                 edited.name = "Newer local edit"
                 try edited.update(db)
                 try SyncTransactionRecorder.record(
-                    vaultId: vault.id,
-                    operations: [SyncInitialSnapshotBuilder.vaultOperation(edited, action: .update)],
+                    workspaceId: workspace.id,
+                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(edited, action: .update)],
                     in: db
                 )
             }
             let response = try SyncJSON.decoder.decode(SyncTransactionResponse.self, from: Data("""
-            {"id":"\(first.id)","status":"committed","receipt":"compact","cursor":"old-commit","records":[{"entity":"vault","id":"\(vault
+            {"id":"\(first.id)","status":"committed","receipt":"compact","cursor":"old-commit","records":[{"entity":"workspace","id":"\(workspace
                 .id)","revision":4}]}
             """.utf8))
             try await SyncTransactionQueue.complete(first, response: response, dbQueue: database.dbQueue)
             let canonical = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: Data(#"{"name":"Server changed again"}"#.utf8))
             try await SyncTransactionQueue.reconcileRevisions([
-                .init(sequence: 9, entity: .vault, entityId: vault.id, action: "upsert", revision: 9, record: canonical),
-            ], vaultId: vault.id, connectionId: #require(vault.syncConfirmedConnectionId), dbQueue: database.dbQueue)
+                .init(sequence: 9, entity: .workspace, entityId: workspace.id, action: "upsert", revision: 9, record: canonical),
+            ], workspaceId: workspace.id, connectionId: #require(workspace.syncConfirmedConnectionId), dbQueue: database.dbQueue)
             let next = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
             #expect(next.operations.first?.baseRevision == 4)
-            let saved = try await database.dbQueue.read { db in try VaultRecord.fetchOne(db, key: vault.id) }
+            let saved = try await database.dbQueue.read { db in try WorkspaceRecord.fetchOne(db, key: workspace.id) }
             #expect(saved?.name == "Newer local edit")
             #expect(saved?.syncPullCursor == nil)
             #expect(saved?.syncRecoveryState == "pending")
@@ -718,50 +718,50 @@
 
         @Test(arguments: [false, true])
         func recoveryFenceSurvivesAnEditOrReconnectEvenAfterQueueDrains(reconnect: Bool) async throws {
-            let (database, vault) = try await syncedDatabase()
-            let connection = try #require(vault.syncConfirmedConnectionId)
+            let (database, workspace) = try await syncedDatabase()
+            let connection = try #require(workspace.syncConfirmedConnectionId)
             let generation = try #require(try await RemoteChangeApplier.recoveryGeneration(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 expectedConnectionId: connection,
                 dbQueue: database.dbQueue
             ))
             try await database.dbQueue.write { db in
                 if reconnect {
-                    try db.execute(sql: "UPDATE vaults SET syncConfirmedConnectionId = NULL WHERE id = ?", arguments: [vault.id])
-                    try db.execute(sql: "UPDATE vaults SET syncConfirmedConnectionId = ? WHERE id = ?", arguments: [connection, vault.id])
+                    try db.execute(sql: "UPDATE workspaces SET syncConfirmedConnectionId = NULL WHERE id = ?", arguments: [workspace.id])
+                    try db.execute(sql: "UPDATE workspaces SET syncConfirmedConnectionId = ? WHERE id = ?", arguments: [connection, workspace.id])
                 } else {
                     try SyncTransactionRecorder.record(
-                        vaultId: vault.id,
-                        operations: [SyncInitialSnapshotBuilder.vaultOperation(vault, action: .update)],
+                        workspaceId: workspace.id,
+                        operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
                         in: db
                     )
-                    try db.execute(sql: "DELETE FROM sync_transactions WHERE vaultId = ?", arguments: [vault.id])
+                    try db.execute(sql: "DELETE FROM sync_transactions WHERE workspace_id = ?", arguments: [workspace.id])
                 }
             }
             #expect(try await RemoteChangeApplier
-                .recoveryGeneration(vaultId: vault.id, expectedConnectionId: connection, dbQueue: database.dbQueue) != generation)
+                .recoveryGeneration(workspaceId: workspace.id, expectedConnectionId: connection, dbQueue: database.dbQueue) != generation)
             let payload = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: Data(#"{"name":"Stale snapshot"}"#.utf8))
             #expect(try await !RemoteChangeApplier.apply(
                 [
-                    .init(sequence: 1, entity: .vault, entityId: vault.id, action: "upsert", revision: 1, record: payload),
+                    .init(sequence: 1, entity: .workspace, entityId: workspace.id, action: "upsert", revision: 1, record: payload),
                 ],
                 screenshots: [:],
                 transcripts: [:],
                 cursor: nil,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 expectedConnectionId: connection,
                 dbQueue: database.dbQueue,
                 expectedMutationGeneration: generation
             ))
             #expect(try await !RemoteChangeApplier.finishReset(
-                SyncResetSnapshot(ids: [.vault: [vault.id]]),
+                SyncResetSnapshot(ids: [.workspace: [workspace.id]]),
                 cursor: "stale",
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 expectedConnectionId: connection,
                 dbQueue: database.dbQueue,
                 expectedMutationGeneration: generation
             ))
-            #expect(try await database.dbQueue.read { db in try VaultRecord.fetchOne(db, key: vault.id)?.name } == vault.name)
+            #expect(try await database.dbQueue.read { db in try WorkspaceRecord.fetchOne(db, key: workspace.id)?.name } == workspace.name)
         }
 
         @Test
@@ -778,36 +778,36 @@
             #expect(try await store.revisionChanges().count == 104)
             try await store.merge([.init(sequence: 2, entity: .project, entityId: removed, action: "upsert", revision: 1, record: payload)])
             #expect(try await store.revisionChanges().count == 105)
-            try await store.merge([.init(sequence: 3, entity: .vault, entityId: .v7(), action: "reset", revision: nil, record: nil)])
+            try await store.merge([.init(sequence: 3, entity: .workspace, entityId: .v7(), action: "reset", revision: nil, record: nil)])
             #expect(try await store.page().isEmpty)
         }
 
         @Test(arguments: ["target", "local", "server"])
-        func recordingDefersRecoveryApplicationAndCheckpoint(recordingVault: String) async throws {
-            let (database, vault) = try await syncedDatabase()
-            let connection = try #require(vault.syncConfirmedConnectionId)
+        func recordingDefersRecoveryApplicationAndCheckpoint(recordingWorkspace: String) async throws {
+            let (database, workspace) = try await syncedDatabase()
+            let connection = try #require(workspace.syncConfirmedConnectionId)
             let generation = try #require(try await RemoteChangeApplier.recoveryGeneration(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 expectedConnectionId: connection,
                 dbQueue: database.dbQueue
             ))
             let meetingId = UUID.v7()
             let contentMeetingId = UUID.v7()
             try await database.dbQueue.write { db in
-                var otherVault = VaultRecord(id: .v7(), path: nil, name: "Other", createdAt: .now, lastOpenedAt: .now)
-                if recordingVault == "server" {
-                    otherVault.accountConnectionId = connection
-                    if otherVault.syncRole == nil { otherVault.syncRole = "admin" }
-                    if otherVault.organizationId == nil { otherVault.organizationId = .v7() }
-                    otherVault.syncConfirmedConnectionId = connection
+                var otherWorkspace = WorkspaceRecord(id: .v7(), path: nil, name: "Other", createdAt: .now, lastOpenedAt: .now)
+                if recordingWorkspace == "server" {
+                    otherWorkspace.accountConnectionId = connection
+                    if otherWorkspace.syncRole == nil { otherWorkspace.syncRole = "admin" }
+                    if otherWorkspace.organizationId == nil { otherWorkspace.organizationId = .v7() }
+                    otherWorkspace.syncConfirmedConnectionId = connection
                 }
-                if recordingVault != "target" { try otherVault.insert(db) }
+                if recordingWorkspace != "target" { try otherWorkspace.insert(db) }
                 try MeetingRecord(
-                    id: contentMeetingId, vaultId: vault.id, projectId: nil, name: "Content", createdAt: .now, updatedAt: .now
+                    id: contentMeetingId, workspaceId: workspace.id, projectId: nil, name: "Content", createdAt: .now, updatedAt: .now
                 ).insert(db)
                 try db.execute(
-                    sql: "INSERT INTO meetings(id, vaultId, name, createdAt, updatedAt) VALUES (?, ?, 'Recording', ?, ?)",
-                    arguments: [meetingId, recordingVault == "target" ? vault.id : otherVault.id, Date.now, Date.now]
+                    sql: "INSERT INTO meetings(id, workspace_id, name, createdAt, updatedAt) VALUES (?, ?, 'Recording', ?, ?)",
+                    arguments: [meetingId, recordingWorkspace == "target" ? workspace.id : otherWorkspace.id, Date.now, Date.now]
                 )
                 try RecordingSessionRecord(
                     id: .v7(),
@@ -821,25 +821,25 @@
                 ).insert(db)
             }
             let currentGeneration = try await RemoteChangeApplier
-                .recoveryGeneration(vaultId: vault.id, expectedConnectionId: connection, dbQueue: database.dbQueue)
-            #expect((currentGeneration == nil) == (recordingVault == "target"))
+                .recoveryGeneration(workspaceId: workspace.id, expectedConnectionId: connection, dbQueue: database.dbQueue)
+            #expect((currentGeneration == nil) == (recordingWorkspace == "target"))
             try await database.dbQueue.read { db in
                 let source = try #require(try TextContentStore.source(entity: .summary, id: contentMeetingId, in: db))
-                #expect(try TextContentStore.mayReplace(source, entity: .summary, id: contentMeetingId, in: db) == (recordingVault != "target"))
-                if recordingVault == "target" {
-                    #expect(throws: TextContentError.self) { try TextContentStore.requireVaultComplete(vaultId: vault.id, in: db) }
+                #expect(try TextContentStore.mayReplace(source, entity: .summary, id: contentMeetingId, in: db) == (recordingWorkspace != "target"))
+                if recordingWorkspace == "target" {
+                    #expect(throws: TextContentError.self) { try TextContentStore.requireWorkspaceComplete(workspaceId: workspace.id, in: db) }
                 } else {
-                    try TextContentStore.requireVaultComplete(vaultId: vault.id, in: db)
+                    try TextContentStore.requireWorkspaceComplete(workspaceId: workspace.id, in: db)
                 }
             }
             #expect(try await RemoteChangeApplier.finishReset(
-                SyncResetSnapshot(ids: [.vault: [vault.id]]),
+                SyncResetSnapshot(ids: [.workspace: [workspace.id]]),
                 cursor: "stale",
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 expectedConnectionId: connection,
                 dbQueue: database.dbQueue,
                 expectedMutationGeneration: generation
-            ) == (recordingVault != "target"))
+            ) == (recordingWorkspace != "target"))
             let count = try await database.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT count(*) FROM meetings WHERE id = ?", arguments: [meetingId])
             }
@@ -847,7 +847,7 @@
         }
 
         @Test
-        func recoveryMigrationPreservesReleasedVault() throws {
+        func recoveryMigrationPreservesReleasedWorkspace() throws {
             let queue = try DatabaseQueue()
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
             let id = UUID.v7()
@@ -859,30 +859,37 @@
             }
             try AppDatabaseManager.migrator.migrate(queue)
             try queue.read { db in
-                let vault = try #require(try VaultRecord.fetchOne(db, key: id))
-                #expect(vault.name == "Preserved")
-                #expect(vault.syncPullCursor == nil)
-                #expect(vault.syncRecoveryState == nil)
-                #expect(try Int.fetchOne(db, sql: "SELECT syncMutationGeneration FROM vaults WHERE id = ?", arguments: [id]) == 0)
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: id))
+                #expect(workspace.name == "Preserved")
+                #expect(workspace.syncPullCursor == nil)
+                #expect(workspace.syncRecoveryState == nil)
+                #expect(try Int.fetchOne(db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [id]) == 0)
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
             }
         }
 
         @Test
         func recoveryRemovesMissingChildBeforeDemotingItsParent() async throws {
-            let (database, vault) = try await syncedDatabase()
-            let connection = try #require(vault.syncConfirmedConnectionId)
+            let (database, workspace) = try await syncedDatabase()
+            let connection = try #require(workspace.syncConfirmedConnectionId)
             let parent = UUID.v7()
             let child = UUID.v7()
             let newRoot = UUID.v7()
             try await database.dbQueue.write { db in
-                try ProjectRecord(id: parent, vaultId: vault.id, parentProjectId: nil, name: "Parent", createdAt: .now, projectType: .undefined)
-                    .insert(db)
-                try ProjectRecord(id: child, vaultId: vault.id, parentProjectId: parent, name: "Removed", createdAt: .now, projectType: nil)
+                try ProjectRecord(
+                    id: parent,
+                    workspaceId: workspace.id,
+                    parentProjectId: nil,
+                    name: "Parent",
+                    createdAt: .now,
+                    projectType: .undefined
+                )
+                .insert(db)
+                try ProjectRecord(id: child, workspaceId: workspace.id, parentProjectId: parent, name: "Removed", createdAt: .now, projectType: nil)
                     .insert(db)
             }
             let generation = try #require(try await RemoteChangeApplier.recoveryGeneration(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 expectedConnectionId: connection,
                 dbQueue: database.dbQueue
             ))
@@ -897,7 +904,7 @@
                     createdAt: .now
                 ),
                 .init(projectId: parent, parentProjectId: newRoot, name: "Parent", description: "", projectType: nil, revision: 2, createdAt: .now),
-            ], vaultId: vault.id, expectedConnectionId: connection, dbQueue: database.dbQueue, generation: generation))
+            ], workspaceId: workspace.id, expectedConnectionId: connection, dbQueue: database.dbQueue, generation: generation))
             let records = try await database.dbQueue.read { db in try ProjectRecord.fetchAll(db) }
             #expect(records.count == 2)
             #expect(records.first { $0.id == parent }?.parentProjectId == newRoot)
@@ -905,8 +912,8 @@
 
         @Test
         func snapshotChildInvalidationClearsSummaryAfterMeetingRecreation() async throws {
-            let (database, vault) = try await syncedDatabase()
-            let meeting = MeetingRecord(id: .v7(), vaultId: vault.id, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now)
+            let (database, workspace) = try await syncedDatabase()
+            let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now)
             try await database.dbQueue.write { db in
                 try meeting.insert(db)
                 try SummaryContent(meetingId: meeting.id, title: "Old summary", document: "{}", createdAt: .now).insert(db)
@@ -930,9 +937,9 @@
                 .init(sequence: 4, entity: .summary, entityId: meeting.id, action: "upsert", revision: 0, record: cleared),
                 .init(sequence: 5, entity: .meeting, entityId: meeting.id, action: "upsert", revision: 1, record: canonicalMeeting),
             ])
-            let connection = try #require(vault.syncConfirmedConnectionId)
+            let connection = try #require(workspace.syncConfirmedConnectionId)
             let generation = try #require(try await RemoteChangeApplier.recoveryGeneration(
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 expectedConnectionId: connection,
                 dbQueue: database.dbQueue
             ))
@@ -941,7 +948,7 @@
                 screenshots: [:],
                 transcripts: [:],
                 cursor: nil,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 expectedConnectionId: connection,
                 dbQueue: database.dbQueue,
                 expectedMutationGeneration: generation
@@ -949,32 +956,32 @@
             #expect(try await RemoteChangeApplier.finishReset(
                 store.resetSnapshot(),
                 cursor: "recreated",
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 expectedConnectionId: connection,
                 dbQueue: database.dbQueue,
                 expectedMutationGeneration: generation
             ))
             #expect(try await database.dbQueue.read { db in try SummaryContent.fetchOne(db, key: meeting.id) } == nil)
-            #expect(try await database.dbQueue.read { db in try VaultRecord.fetchOne(db, key: vault.id)?.syncPullCursor } == "recreated")
-            #expect(try await !SyncTransactionQueue.hasPending(vaultId: vault.id, dbQueue: database.dbQueue))
+            #expect(try await database.dbQueue.read { db in try WorkspaceRecord.fetchOne(db, key: workspace.id)?.syncPullCursor } == "recreated")
+            #expect(try await !SyncTransactionQueue.hasPending(workspaceId: workspace.id, dbQueue: database.dbQueue))
         }
 
-        private func syncedDatabase() async throws -> (AppDatabaseManager, VaultRecord) {
+        private func syncedDatabase() async throws -> (AppDatabaseManager, WorkspaceRecord) {
             let database = try AppDatabaseManager(path: ":memory:")
             let connection = DahliaAccountConnectionRecord(
                 id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
             )
-            var vault = VaultRecord(id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
-            vault.accountConnectionId = connection.id
-            if vault.syncRole == nil { vault.syncRole = "admin" }
-            if vault.organizationId == nil { vault.organizationId = .v7() }
-            vault.syncConfirmedConnectionId = connection.id
-            let savedVault = vault
+            var workspace = WorkspaceRecord(id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
+            workspace.accountConnectionId = connection.id
+            if workspace.syncRole == nil { workspace.syncRole = "admin" }
+            if workspace.organizationId == nil { workspace.organizationId = .v7() }
+            workspace.syncConfirmedConnectionId = connection.id
+            let savedWorkspace = workspace
             try await database.dbQueue.write { db in
                 try connection.insert(db)
-                try savedVault.insert(db)
+                try savedWorkspace.insert(db)
             }
-            return (database, savedVault)
+            return (database, savedWorkspace)
         }
     }
 #endif

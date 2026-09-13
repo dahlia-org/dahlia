@@ -2,7 +2,7 @@ import DahliaRuntimeSupport
 import Foundation
 
 protocol CodexChatWorkspaceLocating: Sendable {
-    func workspaceURL(vaultID: UUID) throws -> URL
+    func workspaceURL(workspaceID: UUID) throws -> URL
 }
 
 struct ApplicationSupportCodexChatWorkspaceLocator: CodexChatWorkspaceLocating {
@@ -12,13 +12,13 @@ struct ApplicationSupportCodexChatWorkspaceLocator: CodexChatWorkspaceLocating {
         self.applicationSupportURL = applicationSupportURL
     }
 
-    func workspaceURL(vaultID: UUID) throws -> URL {
+    func workspaceURL(workspaceID: UUID) throws -> URL {
         let dahliaApplicationSupportURL = applicationSupportURL.map {
             $0.appending(path: "Dahlia", directoryHint: .isDirectory)
         } ?? DahliaApplicationSupport.currentDirectoryURL
         let workspaceURL = dahliaApplicationSupportURL
             .appending(path: "CodexChatWorkspace", directoryHint: .isDirectory)
-            .appending(path: vaultID.uuidString.lowercased(), directoryHint: .isDirectory)
+            .appending(path: workspaceID.uuidString.lowercased(), directoryHint: .isDirectory)
 
         do {
             try FileManager.default.createDirectory(

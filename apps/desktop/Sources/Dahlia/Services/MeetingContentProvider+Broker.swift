@@ -4,12 +4,12 @@ import Foundation
 import GRDB
 
 extension MeetingContentProvider {
-    func resolve(_ request: TextBrokerRequest, vaultId: UUID, dbQueue: DatabaseQueue) async throws -> Data {
-        let store = MeetingAccessStore(database: dbQueue, vaultID: vaultId)
+    func resolve(_ request: TextBrokerRequest, workspaceId: UUID, dbQueue: DatabaseQueue) async throws -> Data {
+        let store = MeetingAccessStore(database: dbQueue, workspaceID: workspaceId)
         if request.operation == .search {
             guard let query = request.query, let kind = request.kind else { throw TextContentError.unavailable }
             return try await JSONEncoder().encode(search(
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 query: query,
                 kind: kind,
                 cursor: request.cursor,
@@ -20,7 +20,11 @@ extension MeetingContentProvider {
         guard let meetingId = request.meetingId,
               try await dbQueue.read({ db in
                   try Bool
-                      .fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM meetings WHERE id = ? AND vaultId = ?)", arguments: [meetingId, vaultId]) ==
+                      .fetchOne(
+                          db,
+                          sql: "SELECT EXISTS(SELECT 1 FROM meetings WHERE id = ? AND workspace_id = ?)",
+                          arguments: [meetingId, workspaceId]
+                      ) ==
                       true
               }) else { throw TextContentError.deleted }
         if request.operation == .touch {

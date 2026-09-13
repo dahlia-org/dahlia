@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "299ed8da-c43e-42ef-b0f0-52e396744289",
+  "id": "354fdd46-87e6-472a-bc83-d04db33854ca",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -96,7 +96,7 @@
     },
     {
       "isRlsEnabled": false,
-      "name": "sync_vault_state",
+      "name": "sync_workspace_state",
       "entityType": "tables",
       "schema": "app"
     },
@@ -132,13 +132,13 @@
     },
     {
       "isRlsEnabled": true,
-      "name": "vaults",
+      "name": "workspaces",
       "entityType": "tables",
       "schema": "app"
     },
     {
       "isRlsEnabled": false,
-      "name": "vault_permissions",
+      "name": "workspace_permissions",
       "entityType": "tables",
       "schema": "app"
     },
@@ -156,13 +156,13 @@
     },
     {
       "isRlsEnabled": true,
-      "name": "vault_keys",
+      "name": "workspace_keys",
       "entityType": "tables",
       "schema": "crypto"
     },
     {
       "isRlsEnabled": true,
-      "name": "vault_transfers",
+      "name": "workspace_transfers",
       "entityType": "tables",
       "schema": "app"
     },
@@ -265,7 +265,7 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "jobs",
       "table": "image_analysis"
@@ -395,7 +395,7 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "app",
       "table": "meeting_attachments"
@@ -499,7 +499,7 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "app",
       "table": "meeting_events"
@@ -655,7 +655,7 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "search",
       "table": "documents"
@@ -949,7 +949,7 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "jobs",
       "table": "search_index"
@@ -1378,7 +1378,7 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "jobs",
       "table": "summary"
@@ -1651,7 +1651,7 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "app",
       "table": "sync_changes"
@@ -1781,7 +1781,7 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "app",
       "table": "transaction_receipts"
@@ -1859,10 +1859,10 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "app",
-      "table": "sync_vault_state"
+      "table": "sync_workspace_state"
     },
     {
       "type": "bigint",
@@ -1875,7 +1875,7 @@
       "name": "latest_sequence",
       "entityType": "columns",
       "schema": "app",
-      "table": "sync_vault_state"
+      "table": "sync_workspace_state"
     },
     {
       "type": "bigint",
@@ -1888,7 +1888,7 @@
       "name": "pruned_through",
       "entityType": "columns",
       "schema": "app",
-      "table": "sync_vault_state"
+      "table": "sync_workspace_state"
     },
     {
       "type": "text",
@@ -1924,7 +1924,7 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "app",
       "table": "files"
@@ -2119,7 +2119,7 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "app",
       "table": "meetings"
@@ -2366,7 +2366,7 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "app",
       "table": "projects"
@@ -2746,7 +2746,7 @@
       "name": "encryption",
       "entityType": "columns",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "text",
@@ -2759,7 +2759,7 @@
       "name": "encrypted_payload",
       "entityType": "columns",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "uuid",
@@ -2769,10 +2769,10 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "uuid",
@@ -2785,7 +2785,7 @@
       "name": "organization_id",
       "entityType": "columns",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "jsonb",
@@ -2798,7 +2798,7 @@
       "name": "created_by",
       "entityType": "columns",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "text",
@@ -2811,7 +2811,7 @@
       "name": "name",
       "entityType": "columns",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "text",
@@ -2824,7 +2824,7 @@
       "name": "icon",
       "entityType": "columns",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "text",
@@ -2837,7 +2837,7 @@
       "name": "color",
       "entityType": "columns",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "integer",
@@ -2850,7 +2850,7 @@
       "name": "revision",
       "entityType": "columns",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "timestamp",
@@ -2863,7 +2863,7 @@
       "name": "deleting_at",
       "entityType": "columns",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "timestamp",
@@ -2876,7 +2876,7 @@
       "name": "created_at",
       "entityType": "columns",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "timestamp",
@@ -2889,7 +2889,7 @@
       "name": "updated_at",
       "entityType": "columns",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "type": "uuid",
@@ -2899,10 +2899,10 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "app",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "type": "text",
@@ -2915,7 +2915,7 @@
       "name": "principal_type",
       "entityType": "columns",
       "schema": "app",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "type": "uuid",
@@ -2928,7 +2928,7 @@
       "name": "principal_id",
       "entityType": "columns",
       "schema": "app",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "type": "text",
@@ -2941,7 +2941,7 @@
       "name": "role",
       "entityType": "columns",
       "schema": "app",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "type": "uuid",
@@ -2954,7 +2954,7 @@
       "name": "granted_by_user_id",
       "entityType": "columns",
       "schema": "app",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "type": "timestamp",
@@ -2967,7 +2967,7 @@
       "name": "created_at",
       "entityType": "columns",
       "schema": "app",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "type": "text",
@@ -3107,7 +3107,7 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "app",
       "table": "transcript_patch_chunks"
@@ -3198,10 +3198,10 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
+      "name": "workspace_id",
       "entityType": "columns",
       "schema": "crypto",
-      "table": "vault_keys"
+      "table": "workspace_keys"
     },
     {
       "type": "text",
@@ -3214,7 +3214,7 @@
       "name": "wrapped_key",
       "entityType": "columns",
       "schema": "crypto",
-      "table": "vault_keys"
+      "table": "workspace_keys"
     },
     {
       "type": "timestamp",
@@ -3227,7 +3227,7 @@
       "name": "created_at",
       "entityType": "columns",
       "schema": "crypto",
-      "table": "vault_keys"
+      "table": "workspace_keys"
     },
     {
       "type": "bigserial",
@@ -3240,7 +3240,7 @@
       "name": "sequence",
       "entityType": "columns",
       "schema": "app",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "type": "uuid",
@@ -3253,7 +3253,7 @@
       "name": "id",
       "entityType": "columns",
       "schema": "app",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "type": "uuid",
@@ -3266,7 +3266,7 @@
       "name": "owner_user_id",
       "entityType": "columns",
       "schema": "app",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "type": "uuid",
@@ -3279,7 +3279,7 @@
       "name": "idempotency_key",
       "entityType": "columns",
       "schema": "app",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "type": "text",
@@ -3292,7 +3292,7 @@
       "name": "request_hash",
       "entityType": "columns",
       "schema": "app",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "type": "uuid",
@@ -3302,10 +3302,10 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "source_vault_id",
+      "name": "source_workspace_id",
       "entityType": "columns",
       "schema": "app",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "type": "uuid",
@@ -3315,10 +3315,10 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "destination_vault_id",
+      "name": "destination_workspace_id",
       "entityType": "columns",
       "schema": "app",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "type": "jsonb",
@@ -3331,7 +3331,7 @@
       "name": "manifest",
       "entityType": "columns",
       "schema": "app",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "nameExplicit": true,
@@ -3372,7 +3372,7 @@
       "nameExplicit": true,
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false,
           "asc": true,
           "nullsFirst": false,
@@ -3398,7 +3398,7 @@
       "with": "",
       "method": "btree",
       "concurrently": false,
-      "name": "meeting_attachments_vault_meeting_id_idx",
+      "name": "meeting_attachments_workspace_meeting_id_idx",
       "entityType": "indexes",
       "schema": "app",
       "table": "meeting_attachments"
@@ -3407,7 +3407,7 @@
       "nameExplicit": true,
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false,
           "asc": true,
           "nullsFirst": false,
@@ -3449,7 +3449,7 @@
       "nameExplicit": true,
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false,
           "asc": true,
           "nullsFirst": false,
@@ -3477,7 +3477,7 @@
       "nameExplicit": true,
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false,
           "asc": true,
           "nullsFirst": false,
@@ -3510,7 +3510,7 @@
       "with": "",
       "method": "btree",
       "concurrently": false,
-      "name": "search_document_vault_kind_meeting_document_idx",
+      "name": "search_document_workspace_kind_meeting_document_idx",
       "entityType": "indexes",
       "schema": "search",
       "table": "documents"
@@ -3638,7 +3638,7 @@
       "nameExplicit": true,
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false,
           "asc": true,
           "nullsFirst": false,
@@ -3657,7 +3657,7 @@
       "with": "",
       "method": "btree",
       "concurrently": false,
-      "name": "sync_change_vault_sequence_idx",
+      "name": "sync_change_workspace_sequence_idx",
       "entityType": "indexes",
       "schema": "app",
       "table": "sync_changes"
@@ -3694,7 +3694,7 @@
       "nameExplicit": true,
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false,
           "asc": true,
           "nullsFirst": false,
@@ -3713,7 +3713,7 @@
       "with": "",
       "method": "btree",
       "concurrently": false,
-      "name": "files_vault_file_idx",
+      "name": "files_workspace_file_idx",
       "entityType": "indexes",
       "schema": "app",
       "table": "files"
@@ -3750,7 +3750,7 @@
       "nameExplicit": true,
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false,
           "asc": true,
           "nullsFirst": false,
@@ -3776,7 +3776,7 @@
       "with": "",
       "method": "btree",
       "concurrently": false,
-      "name": "synced_meeting_vault_created_id_idx",
+      "name": "synced_meeting_workspace_created_id_idx",
       "entityType": "indexes",
       "schema": "app",
       "table": "meetings"
@@ -3785,7 +3785,7 @@
       "nameExplicit": true,
       "columns": [
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false,
           "asc": true,
           "nullsFirst": false,
@@ -3811,7 +3811,7 @@
       "with": "",
       "method": "btree",
       "concurrently": false,
-      "name": "project_vault_parent_name_idx",
+      "name": "project_workspace_parent_name_idx",
       "entityType": "indexes",
       "schema": "app",
       "table": "projects"
@@ -3932,7 +3932,7 @@
           "opclass": null
         },
         {
-          "value": "vault_id",
+          "value": "workspace_id",
           "isExpression": false,
           "asc": true,
           "nullsFirst": false,
@@ -3944,10 +3944,10 @@
       "with": "",
       "method": "btree",
       "concurrently": false,
-      "name": "vault_permission_principal_vault_idx",
+      "name": "workspace_permission_principal_workspace_idx",
       "entityType": "indexes",
       "schema": "app",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "nameExplicit": true,
@@ -3972,10 +3972,10 @@
       "with": "",
       "method": "btree",
       "concurrently": false,
-      "name": "vault_transfer_owner_sequence_idx",
+      "name": "workspace_transfer_owner_sequence_idx",
       "entityType": "indexes",
       "schema": "app",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "nameExplicit": false,
@@ -4014,16 +4014,16 @@
     {
       "nameExplicit": true,
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
       "schemaTo": "app",
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "jobs_image_analysis_vault_id_vaults_vault_id_fkey",
+      "name": "jobs_image_analysis_workspace_id_workspaces_workspace_id_fkey",
       "entityType": "fks",
       "schema": "jobs",
       "table": "image_analysis"
@@ -4048,18 +4048,18 @@
     {
       "nameExplicit": false,
       "columns": [
-        "vault_id",
+        "workspace_id",
         "meeting_id"
       ],
       "schemaTo": "app",
       "tableTo": "meetings",
       "columnsTo": [
-        "vault_id",
+        "workspace_id",
         "meeting_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "meeting_attachments_fnlH8jMHLYfd_fkey",
+      "name": "meeting_attachments_vQf2DeRIoS0x_fkey",
       "entityType": "fks",
       "schema": "app",
       "table": "meeting_attachments"
@@ -4067,18 +4067,18 @@
     {
       "nameExplicit": false,
       "columns": [
-        "vault_id",
+        "workspace_id",
         "file_id"
       ],
       "schemaTo": "app",
       "tableTo": "files",
       "columnsTo": [
-        "vault_id",
+        "workspace_id",
         "file_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
-      "name": "meeting_attachments_sV1ehoid9FNK_fkey",
+      "name": "meeting_attachments_hqOEFenFD03M_fkey",
       "entityType": "fks",
       "schema": "app",
       "table": "meeting_attachments"
@@ -4086,16 +4086,16 @@
     {
       "nameExplicit": false,
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
       "schemaTo": "app",
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "meeting_events_vault_id_vaults_vault_id_fkey",
+      "name": "meeting_events_workspace_id_workspaces_workspace_id_fkey",
       "entityType": "fks",
       "schema": "app",
       "table": "meeting_events"
@@ -4120,13 +4120,13 @@
     {
       "nameExplicit": true,
       "columns": [
-        "vault_id",
+        "workspace_id",
         "meeting_id"
       ],
       "schemaTo": "app",
       "tableTo": "meetings",
       "columnsTo": [
-        "vault_id",
+        "workspace_id",
         "meeting_id"
       ],
       "onUpdate": "NO ACTION",
@@ -4139,16 +4139,16 @@
     {
       "nameExplicit": true,
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
       "schemaTo": "app",
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "search_index_job_vault_fk",
+      "name": "search_index_job_workspace_fk",
       "entityType": "fks",
       "schema": "jobs",
       "table": "search_index"
@@ -4173,16 +4173,16 @@
     {
       "nameExplicit": true,
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
       "schemaTo": "app",
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "jobs_summary_vault_id_vaults_vault_id_fkey",
+      "name": "jobs_summary_workspace_id_workspaces_workspace_id_fkey",
       "entityType": "fks",
       "schema": "jobs",
       "table": "summary"
@@ -4241,16 +4241,16 @@
     {
       "nameExplicit": false,
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
       "schemaTo": "app",
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "files_vault_id_vaults_vault_id_fkey",
+      "name": "files_workspace_id_workspaces_workspace_id_fkey",
       "entityType": "fks",
       "schema": "app",
       "table": "files"
@@ -4258,16 +4258,16 @@
     {
       "nameExplicit": true,
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
       "schemaTo": "app",
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "synced_meeting_vault_fk",
+      "name": "synced_meeting_workspace_fk",
       "entityType": "fks",
       "schema": "app",
       "table": "meetings"
@@ -4275,13 +4275,13 @@
     {
       "nameExplicit": true,
       "columns": [
-        "vault_id",
+        "workspace_id",
         "project_id"
       ],
       "schemaTo": "app",
       "tableTo": "projects",
       "columnsTo": [
-        "vault_id",
+        "workspace_id",
         "project_id"
       ],
       "onUpdate": "NO ACTION",
@@ -4294,16 +4294,16 @@
     {
       "nameExplicit": true,
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
       "schemaTo": "app",
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "project_vault_fk",
+      "name": "project_workspace_fk",
       "entityType": "fks",
       "schema": "app",
       "table": "projects"
@@ -4311,13 +4311,13 @@
     {
       "nameExplicit": true,
       "columns": [
-        "vault_id",
+        "workspace_id",
         "parent_project_id"
       ],
       "schemaTo": "app",
       "tableTo": "projects",
       "columnsTo": [
-        "vault_id",
+        "workspace_id",
         "project_id"
       ],
       "onUpdate": "NO ACTION",
@@ -4373,27 +4373,27 @@
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
-      "name": "vaults_organization_id_organization_id_fkey",
+      "name": "workspaces_organization_id_organization_id_fkey",
       "entityType": "fks",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "nameExplicit": true,
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
       "schemaTo": "app",
-      "tableTo": "vaults",
+      "tableTo": "workspaces",
       "columnsTo": [
-        "vault_id"
+        "workspace_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "vault_permission_vault_fk",
+      "name": "workspace_permission_workspace_fk",
       "entityType": "fks",
       "schema": "app",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "nameExplicit": true,
@@ -4407,10 +4407,10 @@
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
-      "name": "vault_permission_granted_by_user_fk",
+      "name": "workspace_permission_granted_by_user_fk",
       "entityType": "fks",
       "schema": "app",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "nameExplicit": false,
@@ -4432,13 +4432,13 @@
     {
       "nameExplicit": true,
       "columns": [
-        "vault_id",
+        "workspace_id",
         "meeting_id"
       ],
       "schemaTo": "app",
       "tableTo": "meetings",
       "columnsTo": [
-        "vault_id",
+        "workspace_id",
         "meeting_id"
       ],
       "onUpdate": "NO ACTION",
@@ -4460,14 +4460,14 @@
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "vault_transfers_owner_user_id_user_id_fkey",
+      "name": "workspace_transfers_owner_user_id_user_id_fkey",
       "entityType": "fks",
       "schema": "app",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "document_id"
       ],
       "nameExplicit": true,
@@ -4478,7 +4478,7 @@
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "document_id"
       ],
       "nameExplicit": true,
@@ -4489,13 +4489,13 @@
     },
     {
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
       "nameExplicit": false,
-      "name": "sync_vault_state_pkey",
+      "name": "sync_workspace_state_pkey",
       "entityType": "pks",
       "schema": "app",
-      "table": "sync_vault_state"
+      "table": "sync_workspace_state"
     },
     {
       "columns": [
@@ -4510,19 +4510,19 @@
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "principal_type",
         "principal_id"
       ],
       "nameExplicit": true,
-      "name": "vault_permission_pk",
+      "name": "workspace_permission_pk",
       "entityType": "pks",
       "schema": "app",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "columns": [
-        "vault_id",
+        "workspace_id",
         "meeting_id",
         "patch_id",
         "chunk_index"
@@ -4675,12 +4675,12 @@
     },
     {
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
       "nameExplicit": false,
-      "name": "vaults_pkey",
+      "name": "workspaces_pkey",
       "schema": "app",
-      "table": "vaults",
+      "table": "workspaces",
       "entityType": "pks"
     },
     {
@@ -4695,12 +4695,12 @@
     },
     {
       "columns": [
-        "vault_id"
+        "workspace_id"
       ],
       "nameExplicit": false,
-      "name": "vault_keys_pkey",
+      "name": "workspace_keys_pkey",
       "schema": "crypto",
-      "table": "vault_keys",
+      "table": "workspace_keys",
       "entityType": "pks"
     },
     {
@@ -4708,9 +4708,9 @@
         "sequence"
       ],
       "nameExplicit": false,
-      "name": "vault_transfers_pkey",
+      "name": "workspace_transfers_pkey",
       "schema": "app",
-      "table": "vault_transfers",
+      "table": "workspace_transfers",
       "entityType": "pks"
     },
     {
@@ -4740,11 +4740,11 @@
     {
       "nameExplicit": true,
       "columns": [
-        "vault_id",
+        "workspace_id",
         "file_id"
       ],
       "nullsNotDistinct": false,
-      "name": "files_vault_file_unique",
+      "name": "files_workspace_file_unique",
       "entityType": "uniques",
       "schema": "app",
       "table": "files"
@@ -4752,11 +4752,11 @@
     {
       "nameExplicit": true,
       "columns": [
-        "vault_id",
+        "workspace_id",
         "meeting_id"
       ],
       "nullsNotDistinct": false,
-      "name": "synced_meeting_vault_meeting_unique",
+      "name": "synced_meeting_workspace_meeting_unique",
       "entityType": "uniques",
       "schema": "app",
       "table": "meetings"
@@ -4764,11 +4764,11 @@
     {
       "nameExplicit": true,
       "columns": [
-        "vault_id",
+        "workspace_id",
         "project_id"
       ],
       "nullsNotDistinct": false,
-      "name": "project_vault_project_unique",
+      "name": "project_workspace_project_unique",
       "entityType": "uniques",
       "schema": "app",
       "table": "projects"
@@ -4804,10 +4804,10 @@
         "idempotency_key"
       ],
       "nullsNotDistinct": false,
-      "name": "vault_transfer_owner_key_unique",
+      "name": "workspace_transfer_owner_key_unique",
       "entityType": "uniques",
       "schema": "app",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "nameExplicit": false,
@@ -4815,9 +4815,9 @@
         "id"
       ],
       "nullsNotDistinct": false,
-      "name": "vault_transfers_id_key",
+      "name": "workspace_transfers_id_key",
       "schema": "app",
-      "table": "vault_transfers",
+      "table": "workspace_transfers",
       "entityType": "uniques"
     },
     {
@@ -4891,7 +4891,7 @@
       "table": "summary"
     },
     {
-      "value": "\"entity\" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')",
+      "value": "\"entity\" IN ('workspace', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')",
       "name": "sync_change_entity_check",
       "entityType": "checks",
       "schema": "app",
@@ -4906,10 +4906,10 @@
     },
     {
       "value": "\"pruned_through\" >= 0 AND \"latest_sequence\" >= \"pruned_through\"",
-      "name": "sync_vault_state_boundary_check",
+      "name": "sync_workspace_state_boundary_check",
       "entityType": "checks",
       "schema": "app",
-      "table": "sync_vault_state"
+      "table": "sync_workspace_state"
     },
     {
       "value": "\"offset\" = 0",
@@ -4976,24 +4976,24 @@
     },
     {
       "value": "\"encryption\" IN ('none', 'server')",
-      "name": "vault_encryption_check",
+      "name": "workspace_encryption_check",
       "entityType": "checks",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "value": "\"principal_type\" IN ('user', 'organization', 'team')",
-      "name": "vault_permission_principal_type_check",
+      "name": "workspace_permission_principal_type_check",
       "entityType": "checks",
       "schema": "app",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "value": "\"role\" IN ('admin', 'editor', 'viewer')",
-      "name": "vault_permission_role_check",
+      "name": "workspace_permission_role_check",
       "entityType": "checks",
       "schema": "app",
-      "table": "vault_permissions"
+      "table": "workspace_permissions"
     },
     {
       "value": "\"version\" >= 1",
@@ -5021,7 +5021,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"meeting_attachments\".\"vault_id\") OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.vault_id = \"app\".\"meeting_attachments\".\"vault_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
+      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"meeting_attachments\".\"workspace_id\") OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.workspace_id = \"app\".\"meeting_attachments\".\"workspace_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
       "withCheck": null,
       "name": "meeting_attachment_select",
       "entityType": "policies",
@@ -5034,8 +5034,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"meeting_attachments\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"meeting_attachments\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"meeting_attachments\".\"workspace_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"meeting_attachments\".\"workspace_id\")",
       "name": "meeting_attachment_write",
       "entityType": "policies",
       "schema": "app",
@@ -5047,7 +5047,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"meeting_events\".\"vault_id\") OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.vault_id = \"app\".\"meeting_events\".\"vault_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
+      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"meeting_events\".\"workspace_id\") OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.workspace_id = \"app\".\"meeting_events\".\"workspace_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
       "withCheck": null,
       "name": "meeting_event_select",
       "entityType": "policies",
@@ -5060,8 +5060,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"meeting_events\".\"vault_id\") OR current_setting('app.maintenance', true) = 'rotation'",
-      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"meeting_events\".\"vault_id\") OR current_setting('app.maintenance', true) = 'rotation'",
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"meeting_events\".\"workspace_id\") OR current_setting('app.maintenance', true) = 'rotation'",
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"meeting_events\".\"workspace_id\") OR current_setting('app.maintenance', true) = 'rotation'",
       "name": "meeting_event_write",
       "entityType": "policies",
       "schema": "app",
@@ -5073,7 +5073,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"search\".\"documents\".\"vault_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"search\".\"documents\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)",
+      "using": "\"app\".\"current_identity_can_read_workspace\"(\"search\".\"documents\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"search\".\"documents\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
       "withCheck": null,
       "name": "search_document_select",
       "entityType": "policies",
@@ -5086,8 +5086,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_write_vault\"(\"search\".\"documents\".\"vault_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"search\".\"documents\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)",
-      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"search\".\"documents\".\"vault_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"search\".\"documents\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)",
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"search\".\"documents\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"search\".\"documents\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"search\".\"documents\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"search\".\"documents\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
       "name": "search_document_write",
       "entityType": "policies",
       "schema": "search",
@@ -5099,7 +5099,7 @@
       "roles": [
         "public"
       ],
-      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" m WHERE m.meeting_id = \"app\".\"summaries\".\"meeting_id\" AND \"app\".\"current_identity_can_read_vault\"(m.vault_id))",
+      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" m WHERE m.meeting_id = \"app\".\"summaries\".\"meeting_id\" AND \"app\".\"current_identity_can_read_workspace\"(m.workspace_id))",
       "withCheck": null,
       "name": "summary_select",
       "entityType": "policies",
@@ -5112,8 +5112,8 @@
       "roles": [
         "public"
       ],
-      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" m WHERE m.meeting_id = \"app\".\"summaries\".\"meeting_id\" AND \"app\".\"current_identity_can_write_vault\"(m.vault_id))",
-      "withCheck": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" m WHERE m.meeting_id = \"app\".\"summaries\".\"meeting_id\" AND \"app\".\"current_identity_can_write_vault\"(m.vault_id))",
+      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" m WHERE m.meeting_id = \"app\".\"summaries\".\"meeting_id\" AND \"app\".\"current_identity_can_write_workspace\"(m.workspace_id))",
+      "withCheck": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" m WHERE m.meeting_id = \"app\".\"summaries\".\"meeting_id\" AND \"app\".\"current_identity_can_write_workspace\"(m.workspace_id))",
       "name": "summary_write",
       "entityType": "policies",
       "schema": "app",
@@ -5151,7 +5151,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"files\".\"vault_id\") OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"files\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.vault_id = \"app\".\"files\".\"vault_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
+      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"files\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"files\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.workspace_id = \"app\".\"files\".\"workspace_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
       "withCheck": null,
       "name": "file_select",
       "entityType": "policies",
@@ -5164,8 +5164,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"files\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"files\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"files\".\"workspace_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"files\".\"workspace_id\")",
       "name": "file_write",
       "entityType": "policies",
       "schema": "app",
@@ -5177,7 +5177,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"meetings\".\"vault_id\") OR (current_setting('app.maintenance', true) IN ('search', 'storage', 'governance-delete') AND \"app\".\"meetings\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)",
+      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"meetings\".\"workspace_id\") OR (current_setting('app.maintenance', true) IN ('search', 'storage', 'governance-delete') AND \"app\".\"meetings\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
       "withCheck": null,
       "name": "meeting_select",
       "entityType": "policies",
@@ -5190,8 +5190,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"meetings\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"meetings\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"meetings\".\"workspace_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"meetings\".\"workspace_id\")",
       "name": "meeting_write",
       "entityType": "policies",
       "schema": "app",
@@ -5203,7 +5203,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"projects\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"projects\".\"workspace_id\")",
       "withCheck": null,
       "name": "project_select",
       "entityType": "policies",
@@ -5217,7 +5217,7 @@
         "public"
       ],
       "using": null,
-      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"projects\".\"vault_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"projects\".\"workspace_id\")",
       "name": "project_insert",
       "entityType": "policies",
       "schema": "app",
@@ -5229,8 +5229,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"projects\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"projects\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"projects\".\"workspace_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"projects\".\"workspace_id\")",
       "name": "project_update",
       "entityType": "policies",
       "schema": "app",
@@ -5242,7 +5242,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"projects\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"projects\".\"workspace_id\")",
       "withCheck": null,
       "name": "project_delete",
       "entityType": "policies",
@@ -5255,7 +5255,7 @@
       "roles": [
         "public"
       ],
-      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND (\"app\".\"current_identity_can_read_vault\"(\"vault_id\") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND \"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)))",
+      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND (\"app\".\"current_identity_can_read_workspace\"(\"workspace_id\") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND \"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)))",
       "withCheck": null,
       "name": "recording_select",
       "entityType": "policies",
@@ -5268,8 +5268,8 @@
       "roles": [
         "public"
       ],
-      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND (\"app\".\"current_identity_can_write_vault\"(\"vault_id\") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND \"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)))",
-      "withCheck": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND (\"app\".\"current_identity_can_write_vault\"(\"vault_id\") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND \"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)))",
+      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND (\"app\".\"current_identity_can_write_workspace\"(\"workspace_id\") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND \"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)))",
+      "withCheck": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND (\"app\".\"current_identity_can_write_workspace\"(\"workspace_id\") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND \"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)))",
       "name": "recording_write",
       "entityType": "policies",
       "schema": "app",
@@ -5281,7 +5281,7 @@
       "roles": [
         "public"
       ],
-      "using": "exists (select 1 from \"app\".\"transcripts\" t join \"app\".\"meetings\" m on m.meeting_id = t.meeting_id where t.id = \"app\".\"transcript_segments\".\"transcript_id\" and \"app\".\"current_identity_can_read_vault\"(m.vault_id))",
+      "using": "exists (select 1 from \"app\".\"transcripts\" t join \"app\".\"meetings\" m on m.meeting_id = t.meeting_id where t.id = \"app\".\"transcript_segments\".\"transcript_id\" and \"app\".\"current_identity_can_read_workspace\"(m.workspace_id))",
       "withCheck": null,
       "name": "transcript_select",
       "entityType": "policies",
@@ -5294,8 +5294,8 @@
       "roles": [
         "public"
       ],
-      "using": "exists (select 1 from \"app\".\"transcripts\" t join \"app\".\"meetings\" m on m.meeting_id = t.meeting_id where t.id = \"app\".\"transcript_segments\".\"transcript_id\" and \"app\".\"current_identity_can_write_vault\"(m.vault_id))",
-      "withCheck": "exists (select 1 from \"app\".\"transcripts\" t join \"app\".\"meetings\" m on m.meeting_id = t.meeting_id where t.id = \"app\".\"transcript_segments\".\"transcript_id\" and \"app\".\"current_identity_can_write_vault\"(m.vault_id))",
+      "using": "exists (select 1 from \"app\".\"transcripts\" t join \"app\".\"meetings\" m on m.meeting_id = t.meeting_id where t.id = \"app\".\"transcript_segments\".\"transcript_id\" and \"app\".\"current_identity_can_write_workspace\"(m.workspace_id))",
+      "withCheck": "exists (select 1 from \"app\".\"transcripts\" t join \"app\".\"meetings\" m on m.meeting_id = t.meeting_id where t.id = \"app\".\"transcript_segments\".\"transcript_id\" and \"app\".\"current_identity_can_write_workspace\"(m.workspace_id))",
       "name": "transcript_write",
       "entityType": "policies",
       "schema": "app",
@@ -5307,12 +5307,12 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"vaults\".\"vault_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"app\".\"vaults\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid) OR current_setting('app.maintenance', true) = 'authorization' OR (current_setting('app.maintenance', true) = 'governance' AND \"app\".\"vaults\".\"organization_id\" = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"vaults\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)",
+      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"workspaces\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"app\".\"workspaces\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) = 'authorization' OR (current_setting('app.maintenance', true) = 'governance' AND \"app\".\"workspaces\".\"organization_id\" = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"workspaces\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
       "withCheck": null,
-      "name": "vault_select",
+      "name": "workspace_select",
       "entityType": "policies",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "as": "PERMISSIVE",
@@ -5322,10 +5322,10 @@
       ],
       "using": null,
       "withCheck": "coalesce(current_setting('app.user_id', true), '') <> ''",
-      "name": "vault_insert",
+      "name": "workspace_insert",
       "entityType": "policies",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "as": "PERMISSIVE",
@@ -5333,12 +5333,12 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_admin_vault\"(\"app\".\"vaults\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_can_admin_vault\"(\"app\".\"vaults\".\"vault_id\")",
-      "name": "vault_update",
+      "using": "\"app\".\"current_identity_can_admin_workspace\"(\"app\".\"workspaces\".\"workspace_id\")",
+      "withCheck": "\"app\".\"current_identity_can_admin_workspace\"(\"app\".\"workspaces\".\"workspace_id\")",
+      "name": "workspace_update",
       "entityType": "policies",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "as": "PERMISSIVE",
@@ -5346,12 +5346,12 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_admin_vault\"(\"app\".\"vaults\".\"vault_id\") OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"vaults\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid)",
+      "using": "\"app\".\"current_identity_can_admin_workspace\"(\"app\".\"workspaces\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"workspaces\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
       "withCheck": null,
-      "name": "vault_delete",
+      "name": "workspace_delete",
       "entityType": "policies",
       "schema": "app",
-      "table": "vaults"
+      "table": "workspaces"
     },
     {
       "as": "PERMISSIVE",
@@ -5359,7 +5359,7 @@
       "roles": [
         "public"
       ],
-      "using": "exists (select 1 from \"app\".\"meetings\" m where m.meeting_id = \"app\".\"transcripts\".\"meeting_id\" and \"app\".\"current_identity_can_read_vault\"(m.vault_id))",
+      "using": "exists (select 1 from \"app\".\"meetings\" m where m.meeting_id = \"app\".\"transcripts\".\"meeting_id\" and \"app\".\"current_identity_can_read_workspace\"(m.workspace_id))",
       "withCheck": null,
       "name": "transcript_version_select",
       "entityType": "policies",
@@ -5372,8 +5372,8 @@
       "roles": [
         "public"
       ],
-      "using": "exists (select 1 from \"app\".\"meetings\" m where m.meeting_id = \"app\".\"transcripts\".\"meeting_id\" and \"app\".\"current_identity_can_write_vault\"(m.vault_id))",
-      "withCheck": "exists (select 1 from \"app\".\"meetings\" m where m.meeting_id = \"app\".\"transcripts\".\"meeting_id\" and \"app\".\"current_identity_can_write_vault\"(m.vault_id))",
+      "using": "exists (select 1 from \"app\".\"meetings\" m where m.meeting_id = \"app\".\"transcripts\".\"meeting_id\" and \"app\".\"current_identity_can_write_workspace\"(m.workspace_id))",
+      "withCheck": "exists (select 1 from \"app\".\"meetings\" m where m.meeting_id = \"app\".\"transcripts\".\"meeting_id\" and \"app\".\"current_identity_can_write_workspace\"(m.workspace_id))",
       "name": "transcript_version_write",
       "entityType": "policies",
       "schema": "app",
@@ -5385,7 +5385,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"transcript_patch_chunks\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"transcript_patch_chunks\".\"workspace_id\")",
       "withCheck": null,
       "name": "transcript_patch_select",
       "entityType": "policies",
@@ -5398,8 +5398,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"transcript_patch_chunks\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"app\".\"transcript_patch_chunks\".\"vault_id\")",
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"transcript_patch_chunks\".\"workspace_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"transcript_patch_chunks\".\"workspace_id\")",
       "name": "transcript_patch_write",
       "entityType": "policies",
       "schema": "app",
@@ -5411,12 +5411,12 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"crypto\".\"vault_keys\".\"vault_id\") OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"crypto\".\"vault_keys\".\"vault_id\" = nullif(current_setting('app.maintenance_vault_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'governance' AND EXISTS (SELECT 1 FROM app.vaults v WHERE v.vault_id = \"crypto\".\"vault_keys\".\"vault_id\" AND v.organization_id = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid)) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.vault_id = \"crypto\".\"vault_keys\".\"vault_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
+      "using": "\"app\".\"current_identity_can_read_workspace\"(\"crypto\".\"workspace_keys\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"crypto\".\"workspace_keys\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'governance' AND EXISTS (SELECT 1 FROM app.workspaces v WHERE v.workspace_id = \"crypto\".\"workspace_keys\".\"workspace_id\" AND v.organization_id = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid)) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.workspace_id = \"crypto\".\"workspace_keys\".\"workspace_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
       "withCheck": null,
-      "name": "vault_key_read",
+      "name": "workspace_key_read",
       "entityType": "policies",
       "schema": "crypto",
-      "table": "vault_keys"
+      "table": "workspace_keys"
     },
     {
       "as": "PERMISSIVE",
@@ -5424,12 +5424,12 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_write_vault\"(\"crypto\".\"vault_keys\".\"vault_id\") OR current_setting('app.maintenance', true) = 'rotation'",
-      "withCheck": "\"app\".\"current_identity_can_write_vault\"(\"crypto\".\"vault_keys\".\"vault_id\") OR current_setting('app.maintenance', true) = 'rotation'",
-      "name": "vault_key_write",
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"crypto\".\"workspace_keys\".\"workspace_id\") OR current_setting('app.maintenance', true) = 'rotation'",
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"crypto\".\"workspace_keys\".\"workspace_id\") OR current_setting('app.maintenance', true) = 'rotation'",
+      "name": "workspace_key_write",
       "entityType": "policies",
       "schema": "crypto",
-      "table": "vault_keys"
+      "table": "workspace_keys"
     },
     {
       "as": "PERMISSIVE",
@@ -5437,12 +5437,12 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"vault_transfers\".\"source_vault_id\") OR \"app\".\"current_identity_can_read_vault\"(\"app\".\"vault_transfers\".\"destination_vault_id\")",
+      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"workspace_transfers\".\"source_workspace_id\") OR \"app\".\"current_identity_can_read_workspace\"(\"app\".\"workspace_transfers\".\"destination_workspace_id\")",
       "withCheck": null,
-      "name": "vault_transfer_reader",
+      "name": "workspace_transfer_reader",
       "entityType": "policies",
       "schema": "app",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
       "as": "PERMISSIVE",
@@ -5450,15 +5450,15 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"vault_transfers\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
-      "withCheck": "\"app\".\"vault_transfers\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
-      "name": "vault_transfer_owner",
+      "using": "\"app\".\"workspace_transfers\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "\"app\".\"workspace_transfers\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
+      "name": "workspace_transfer_owner",
       "entityType": "policies",
       "schema": "app",
-      "table": "vault_transfers"
+      "table": "workspace_transfers"
     },
     {
-      "definition": "\n  SELECT vault_id, meeting_id, session_id,\n    min(CASE WHEN kind = 'recording_started' THEN occurred_at END) AS started_at,\n    max(CASE WHEN kind = 'recording_ended' THEN occurred_at END) AS ended_at\n  FROM app.meeting_events\n  WHERE session_id IS NOT NULL AND kind IN ('recording_started', 'recording_ended')\n  GROUP BY vault_id, meeting_id, session_id\n",
+      "definition": "\n  SELECT workspace_id, meeting_id, session_id,\n    min(CASE WHEN kind = 'recording_started' THEN occurred_at END) AS started_at,\n    max(CASE WHEN kind = 'recording_ended' THEN occurred_at END) AS ended_at\n  FROM app.meeting_events\n  WHERE session_id IS NOT NULL AND kind IN ('recording_started', 'recording_ended')\n  GROUP BY workspace_id, meeting_id, session_id\n",
       "with": {
         "checkOption": null,
         "securityBarrier": null,
@@ -5491,7 +5491,7 @@
       "schema": "app"
     },
     {
-      "definition": "\n  SELECT m.id AS screenshot_id, f.file_id, m.vault_id, m.meeting_id,\n    coalesce(m.captured_at, m.created_at) AS captured_at, f.content_type,\n    'files/' || f.file_id || '/original' AS storage_key,\n    f.size AS content_length, substr(f.checksum, 9) AS content_hash, f.active,\n    f.metadata ->> 'ocr_text' AS ocr_text,\n    f.metadata ->> 'caption' AS caption,\n    m.revision\n  FROM app.meeting_attachments m JOIN app.files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id\n  WHERE f.metadata ->> 'source' = 'screenshot'\n",
+      "definition": "\n  SELECT m.id AS screenshot_id, f.file_id, m.workspace_id, m.meeting_id,\n    coalesce(m.captured_at, m.created_at) AS captured_at, f.content_type,\n    'files/' || f.file_id || '/original' AS storage_key,\n    f.size AS content_length, substr(f.checksum, 9) AS content_hash, f.active,\n    f.metadata ->> 'ocr_text' AS ocr_text,\n    f.metadata ->> 'caption' AS caption,\n    m.revision\n  FROM app.meeting_attachments m JOIN app.files f ON f.file_id = m.file_id AND f.workspace_id = m.workspace_id\n  WHERE f.metadata ->> 'source' = 'screenshot'\n",
       "with": {
         "checkOption": null,
         "securityBarrier": null,

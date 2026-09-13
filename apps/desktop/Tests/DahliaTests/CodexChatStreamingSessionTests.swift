@@ -62,9 +62,9 @@ import Foundation
             updateInterval: Duration = .milliseconds(50)
         ) -> CodexChatSessionModel {
             let settings = AppSettings()
-            settings.currentVault = VaultRecord(
+            settings.currentWorkspace = WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/chat-streaming-test-vault",
+                path: "/tmp/chat-streaming-test-workspace",
                 name: "Chat Streaming Test",
                 createdAt: .now,
                 lastOpenedAt: .now

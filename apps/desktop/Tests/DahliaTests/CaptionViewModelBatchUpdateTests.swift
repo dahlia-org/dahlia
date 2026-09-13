@@ -29,7 +29,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: batch.vaultURL
+                workspaceURL: batch.workspaceURL
             )
 
             #expect(await waitUntil {
@@ -94,7 +94,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: batch.vaultURL
+                workspaceURL: batch.workspaceURL
             )
             #expect(await waitUntil {
                 viewModel.store.segments.contains(where: { $0.id == prepared.recordingSegment.id })
@@ -106,7 +106,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: batch.vaultURL
+                workspaceURL: batch.workspaceURL
             )
             #expect(await waitUntil {
                 viewModel.store.segments.contains(where: { $0.id == prepared.visibleSegment.id })
@@ -201,7 +201,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: batch.vaultURL
+                workspaceURL: batch.workspaceURL
             )
             #expect(await waitUntil {
                 viewModel.batchTranscriptionState == .awaitingConfirmation(sessionId: batch.session.id)
@@ -233,7 +233,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: batch.vaultURL
+                workspaceURL: batch.workspaceURL
             )
             #expect(await waitUntil {
                 viewModel.store.segments.contains(where: { $0.id == existingSegment.id })
@@ -249,7 +249,7 @@ import GRDB
             )
             let recordingMeeting = MeetingRecord(
                 id: .v7(),
-                vaultId: batch.meeting.vaultId,
+                workspaceId: batch.meeting.workspaceId,
                 projectId: nil,
                 name: "active-recording",
                 createdAt: batch.now.addingTimeInterval(-60),

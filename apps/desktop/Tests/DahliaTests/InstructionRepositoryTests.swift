@@ -7,38 +7,38 @@ import Foundation
     @MainActor
     struct InstructionRepositoryTests {
         @Test
-        func createUpdateDeleteAndFilterInstructionsByVault() throws {
+        func createUpdateDeleteAndFilterInstructionsByWorkspace() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let firstVault = VaultRecord(
+            let firstWorkspace = WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/test-vault-1",
+                path: "/tmp/test-workspace-1",
                 name: "First",
                 createdAt: Date(),
                 lastOpenedAt: Date()
             )
-            let secondVault = VaultRecord(
+            let secondWorkspace = WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/test-vault-2",
+                path: "/tmp/test-workspace-2",
                 name: "Second",
                 createdAt: Date(),
                 lastOpenedAt: Date()
             )
-            try repository.insertVault(firstVault)
-            try repository.insertVault(secondVault)
+            try repository.insertWorkspace(firstWorkspace)
+            try repository.insertWorkspace(secondWorkspace)
 
             let created = try repository.createInstruction(
-                vaultId: firstVault.id,
+                workspaceId: firstWorkspace.id,
                 name: "customer_meeting",
                 content: AppSettings.defaultSummaryPrompt
             )
             _ = try repository.createInstruction(
-                vaultId: secondVault.id,
+                workspaceId: secondWorkspace.id,
                 name: "internal_sync",
                 content: "# Output Format\n- Internal only"
             )
 
-            #expect(try repository.fetchInstructions(vaultId: firstVault.id).map(\.id) == [created.id])
+            #expect(try repository.fetchInstructions(workspaceId: firstWorkspace.id).map(\.id) == [created.id])
             #expect(created.content == AppSettings.defaultSummaryPrompt)
 
             try repository.updateInstruction(
@@ -54,8 +54,8 @@ import Foundation
 
             try repository.deleteInstruction(id: created.id)
             #expect(try repository.fetchInstruction(id: created.id) == nil)
-            #expect(try repository.fetchInstructions(vaultId: firstVault.id).isEmpty)
-            #expect(try repository.fetchInstructions(vaultId: secondVault.id).count == 1)
+            #expect(try repository.fetchInstructions(workspaceId: firstWorkspace.id).isEmpty)
+            #expect(try repository.fetchInstructions(workspaceId: secondWorkspace.id).count == 1)
         }
     }
 #endif

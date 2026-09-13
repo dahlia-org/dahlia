@@ -7,7 +7,7 @@ import Observation
 @MainActor
 final class AppStartupModel {
     enum Phase: Equatable, Sendable {
-        case preparing, restoring, updating, loadingVaults
+        case preparing, restoring, updating, loadingWorkspaces
     }
 
     enum State: Equatable {
@@ -54,7 +54,7 @@ final class AppStartupModel {
     func show(_ phase: Phase) {
         guard case let .working(current) = state else { return }
         // A synchronous migration callback may arrive after database preparation completes.
-        guard current != .loadingVaults else { return }
+        guard current != .loadingWorkspaces else { return }
         state = .working(phase)
     }
 
@@ -81,7 +81,7 @@ final class AppStartupModel {
     }
 
     /// Call only after durable preparation and installation of the service shutdown handler.
-    func beginVaultLoading() -> Bool {
+    func beginWorkspaceLoading() -> Bool {
         canCancelStartup = true
         return !isTerminating
     }

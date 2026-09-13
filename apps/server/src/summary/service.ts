@@ -1,4 +1,4 @@
-import { canWriteVault } from "../auth/vault-permissions";
+import { canWriteWorkspace } from "../auth/workspace-permissions";
 import { z } from "zod";
 import { generationPreferencesSchema, normalizeSummaryDetail, outputLanguageSchema, summaryModelSettingsSchema } from "../account-settings-model";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettingsStore } from "../account-settings";
@@ -26,51 +26,51 @@ export class SummaryService {
   constructor(private readonly store: MeetingSyncStore, private readonly settings: AccountSettingsStore,
     readonly methods: readonly SummaryMethod[]) {}
 
-  async status(identity: Identity, vaultId: string, meetingId: string, id?: string): Promise<SummaryJob | null> {
+  async status(identity: Identity, workspaceId: string, meetingId: string, id?: string): Promise<SummaryJob | null> {
     return this.store.withIdentity(identity, async (scoped) => {
-      if (!canWriteVault((await scoped.getVault(vaultId))?.role) || !await scoped.getMeeting(vaultId, meetingId)) {
+      if (!canWriteWorkspace((await scoped.getWorkspace(workspaceId))?.role) || !await scoped.getMeeting(workspaceId, meetingId)) {
         throw new RequestError(404, "summary_meeting_unavailable");
       }
-      return scoped.getSummaryJob(vaultId, meetingId, id);
+      return scoped.getSummaryJob(workspaceId, meetingId, id);
     });
   }
-  async cancel(identity: Identity, vaultId: string, meetingId: string, id: string): Promise<SummaryJob> {
+  async cancel(identity: Identity, workspaceId: string, meetingId: string, id: string): Promise<SummaryJob> {
     if (identity.impersonated) throw new RequestError(403, "impersonation_read_only");
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockVault(vaultId);
-      if (!canWriteVault((await scoped.getVault(vaultId))?.role) || !await scoped.getMeeting(vaultId, meetingId)) {
+      await scoped.lockWorkspace(workspaceId);
+      if (!canWriteWorkspace((await scoped.getWorkspace(workspaceId))?.role) || !await scoped.getMeeting(workspaceId, meetingId)) {
         throw new RequestError(404, "summary_meeting_unavailable");
       }
-      const job = await scoped.getSummaryJob(vaultId, meetingId, id);
+      const job = await scoped.getSummaryJob(workspaceId, meetingId, id);
       if (!job) throw new RequestError(404, "summary_job_unavailable");
-      return await scoped.cancelSummaryJob(vaultId, meetingId, id) ?? job;
+      return await scoped.cancelSummaryJob(workspaceId, meetingId, id) ?? job;
     });
   }
 
-  async retry(identity: Identity, vaultId: string, meetingId: string, previousId: string, body: unknown): Promise<SummaryJob> {
+  async retry(identity: Identity, workspaceId: string, meetingId: string, previousId: string, body: unknown): Promise<SummaryJob> {
     if (identity.impersonated) throw new RequestError(403, "impersonation_read_only");
     const parsed = z.object({ id: z.uuidv7() }).strict().safeParse(body);
     if (!parsed.success) throw new RequestError(400, "invalid_summary_request");
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockVault(vaultId);
-      const meeting = await scoped.getMeeting(vaultId, meetingId);
-      if (!canWriteVault((await scoped.getVault(vaultId))?.role) || !meeting) {
+      await scoped.lockWorkspace(workspaceId);
+      const meeting = await scoped.getMeeting(workspaceId, meetingId);
+      if (!canWriteWorkspace((await scoped.getWorkspace(workspaceId))?.role) || !meeting) {
         throw new RequestError(404, "summary_meeting_unavailable");
       }
-      const requestHash = JSON.stringify({ vaultId, meetingId, retryOf: previousId });
-      const existing = await scoped.getSummaryJob(vaultId, meetingId, parsed.data.id);
+      const requestHash = JSON.stringify({ workspaceId, meetingId, retryOf: previousId });
+      const existing = await scoped.getSummaryJob(workspaceId, meetingId, parsed.data.id);
       if (existing) {
         if (existing.requestHash !== requestHash) throw new RequestError(409, "summary_id_reused");
         return existing;
       }
-      const previous = await scoped.getSummaryJob(vaultId, meetingId, previousId);
+      const previous = await scoped.getSummaryJob(workspaceId, meetingId, previousId);
       if (!previous || !["failed", "cancelled"].includes(previous.status)) throw new RequestError(409, "summary_job_not_retryable");
-      const current = await scoped.getSummaryJob(vaultId, meetingId);
+      const current = await scoped.getSummaryJob(workspaceId, meetingId);
       if (current && ["pending", "processing"].includes(current.status)) throw new RequestError(409, "summary_already_running");
       const method = this.methods.find((method) => method.id === previous.method);
       if (!method) throw new RequestError(400, "summary_method_unavailable");
       let inputVersion: string;
-      try { inputVersion = await method.version(scoped, vaultId, meetingId, previous.input); }
+      try { inputVersion = await method.version(scoped, workspaceId, meetingId, previous.input); }
       catch (error) {
         if (error instanceof SummaryError) throw new RequestError(error.retryable ? 503 : 400, error.code);
         throw error;
@@ -86,19 +86,19 @@ export class SummaryService {
     });
   }
 
-  async start(identity: Identity, vaultId: string, meetingId: string, body: unknown): Promise<SummaryJob> {
+  async start(identity: Identity, workspaceId: string, meetingId: string, body: unknown): Promise<SummaryJob> {
     if (identity.impersonated) throw new RequestError(403, "impersonation_read_only");
     const parsed = summaryStartSchema.safeParse(body);
     if (!parsed.success) throw new RequestError(400, "invalid_summary_request");
     const settings = await this.settings.get(identity.userId) ?? DEFAULT_ACCOUNT_SETTINGS;
     const request = parsed.data;
     let input: SummaryInput | undefined = "input" in request ? request.input : undefined;
-    const requestHash = "preferences" in request ? JSON.stringify({ vaultId, meetingId, input, preferences: request.preferences }) : JSON.stringify({ vaultId, meetingId,
+    const requestHash = "preferences" in request ? JSON.stringify({ workspaceId, meetingId, input, preferences: request.preferences }) : JSON.stringify({ workspaceId, meetingId,
       ...("input" in request ? { input: request.input, model: request.model, detail: request.detail,
         reasoningEffort: request.reasoningEffort ?? null } : { detail: request.detail ?? null }),
       ...(request.outputLanguage === undefined ? {} : { outputLanguage: request.outputLanguage }) });
     // Authorize and recover accepted requests before any provider I/O. Recheck under the lock before insertion.
-    const accepted = await this.status(identity, vaultId, meetingId, request.id);
+    const accepted = await this.status(identity, workspaceId, meetingId, request.id);
     if (accepted) {
       if (!summaryRequestHashesMatch(accepted.requestHash, requestHash)) throw new RequestError(409, "summary_id_reused");
       return accepted;
@@ -127,20 +127,20 @@ export class SummaryService {
       throw error;
     }
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockVault(vaultId);
-      if (!canWriteVault((await scoped.getVault(vaultId))?.role)) throw new RequestError(404, "summary_meeting_unavailable");
-      const meeting = await scoped.getMeeting(vaultId, meetingId);
+      await scoped.lockWorkspace(workspaceId);
+      if (!canWriteWorkspace((await scoped.getWorkspace(workspaceId))?.role)) throw new RequestError(404, "summary_meeting_unavailable");
+      const meeting = await scoped.getMeeting(workspaceId, meetingId);
       if (!meeting) throw new RequestError(404, "summary_meeting_unavailable");
-      const previous = await scoped.getSummaryJob(vaultId, meetingId, parsed.data.id);
+      const previous = await scoped.getSummaryJob(workspaceId, meetingId, parsed.data.id);
       if (previous) {
         if (!summaryRequestHashesMatch(previous.requestHash, requestHash)) throw new RequestError(409, "summary_id_reused");
         return previous;
       }
-      const current = await scoped.getSummaryJob(vaultId, meetingId);
+      const current = await scoped.getSummaryJob(workspaceId, meetingId);
       if (current && ["pending", "processing"].includes(current.status)) throw new RequestError(409, "summary_already_running");
       let inputVersion: string;
       try {
-        inputVersion = await method.version(scoped, vaultId, meetingId, input, { requireCompleteMeeting: true });
+        inputVersion = await method.version(scoped, workspaceId, meetingId, input, { requireCompleteMeeting: true });
       }
       catch (error) {
         if (error instanceof SummaryError) throw new RequestError(error.retryable ? 503 : 400, error.code);
@@ -148,7 +148,7 @@ export class SummaryService {
       }
       const now = new Date();
       const job: SummaryJob = {
-        id: parsed.data.id, vaultId, meetingId, ownerUserId: identity.userId,
+        id: parsed.data.id, workspaceId, meetingId, ownerUserId: identity.userId,
         method: methodID, settings: captured,
         input: input ?? null, transcriptRevision: meeting.transcriptRevision ?? 0,
         stage: methodID === "transcript" ? "summarizing" : input?.type === "recording" && input.transcriptionModel ? "transcribing" : "generating",

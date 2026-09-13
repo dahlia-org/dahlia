@@ -76,7 +76,7 @@
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
             let base = Date(timeIntervalSince1970: 1000)
             let end = base.addingTimeInterval(120)
-            let vaultId = UUID.v7(), meetingId = UUID.v7(), segmentId = UUID.v7()
+            let workspaceId = UUID.v7(), meetingId = UUID.v7(), segmentId = UUID.v7()
             let session = RecordingSessionRecord(
                 id: .v7(),
                 meetingId: meetingId,
@@ -92,18 +92,12 @@
             try queue.write { db in
                 try db.execute(
                     sql: "INSERT INTO vaults(id, path, name, createdAt, lastOpenedAt) VALUES (?, '/tmp/activity', 'Legacy', ?, ?)",
-                    arguments: [vaultId, base, base]
+                    arguments: [workspaceId, base, base]
                 )
-                try MeetingRecord(
-                    id: meetingId,
-                    vaultId: vaultId,
-                    projectId: nil,
-                    name: "Legacy",
-                    duration: 30,
-                    createdAt: base,
-                    updatedAt: end,
-                    recordingStartedAt: base
-                ).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO meetings(id, vaultId, name, status, duration, createdAt, updatedAt, recordingStartedAt) VALUES (?, ?, 'Legacy', 'READY', 30, ?, ?, ?)",
+                    arguments: [meetingId, workspaceId, base, end, base]
+                )
                 try db.execute(sql: """
                 INSERT INTO recording_sessions(id, meetingId, startedAt, endedAt, duration, offsetSeconds, createdAt, updatedAt, transcriptionMode,
                     batchCompletedAt, batchAttemptCount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

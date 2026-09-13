@@ -31,7 +31,7 @@ export interface SummaryTranscriptResult {
 }
 export type SummaryGenerationResult = SummaryDocument & { transcript?: GeneratedTranscript };
 export interface SummaryJob {
-  id: string; vaultId: string; meetingId: string; ownerUserId: string;
+  id: string; workspaceId: string; meetingId: string; ownerUserId: string;
   method: "transcript" | "audio"; settings: TranscriptSettings; outputLanguage: string;
   status: string; attempts: number; createdAt: Date; availableAt: Date;
   claimedAt: Date | null; leaseExpiresAt: Date | null; lastErrorCode: string | null;
@@ -85,7 +85,7 @@ export interface SummaryMethod {
   captureSettings(settings: AccountSettings, detail?: z.infer<typeof summaryDetailSchema>): SummaryJob["settings"];
   resolvePreferences?(preferences: GenerationPreferences, input: SummaryInput): Promise<{ settings: TranscriptSettings; input: SummaryInput }>;
   validateSettings?(settings: TranscriptSettings, input?: SummaryInput): Promise<void>;
-  version(store: IdentitySyncStore, vaultId: string, meetingId: string, input?: SummaryInput | null,
+  version(store: IdentitySyncStore, workspaceId: string, meetingId: string, input?: SummaryInput | null,
     options?: { requireCompleteMeeting?: boolean }): Promise<string>;
   transcribe?(job: SummaryJob, signal: AbortSignal): Promise<GeneratedTranscript>;
   generate(job: SummaryJob, signal: AbortSignal): Promise<SummaryGenerationResult>;

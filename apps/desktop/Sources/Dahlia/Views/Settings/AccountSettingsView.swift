@@ -1,12 +1,12 @@
 import SwiftUI
 
 struct AccountSettingsView: View {
-    @Bindable private var vaultSettings = VaultAISettingsModel.shared
+    @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
     @State private var chatGPTController = CodexAccountController()
     @State private var databricksController = DatabricksAccountController()
 
     var body: some View {
-        switch vaultSettings.localProvider {
+        switch workspaceSettings.localProvider {
         case .chatGPTSubscription:
             ChatGPTAccountSettingsView(
                 controller: chatGPTController,
@@ -25,7 +25,7 @@ struct AccountSettingsView: View {
             }
         }
 
-        if vaultSettings.isLocalAccount, let errorMessage = vaultSettings.errorMessage {
+        if workspaceSettings.isLocalAccount, let errorMessage = workspaceSettings.errorMessage {
             Section {
                 SettingsStatusMessage(
                     text: errorMessage,
@@ -39,19 +39,19 @@ struct AccountSettingsView: View {
     private var providerPicker: some View {
         DahliaMenuPicker(
             title: L10n.modelProvider,
-            selection: $vaultSettings.localProvider,
+            selection: $workspaceSettings.localProvider,
             options: AIAccountProvider.allCases,
             label: \.displayName
         )
         .disabled(
             chatGPTController.isBusy
                 || databricksController.isBusy
-                || (vaultSettings.isLocalAccount && vaultSettings.isSwitchingRuntime)
+                || (workspaceSettings.isLocalAccount && workspaceSettings.isSwitchingRuntime)
         )
     }
 
     private var localProviderDescription: String {
-        switch vaultSettings.localProvider {
+        switch workspaceSettings.localProvider {
         case .chatGPTSubscription:
             L10n.codexAccountDescription
         case .databricks:

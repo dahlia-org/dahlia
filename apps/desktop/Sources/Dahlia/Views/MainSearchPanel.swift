@@ -149,8 +149,8 @@ struct MainSearchPanel: View {
             isSearchFocused = true
             model.catalogDidChange(using: sidebarViewModel)
         }
-        .onChange(of: sidebarViewModel.currentVault?.accountConnectionId) {
-            model.resetForVaultChange(using: sidebarViewModel)
+        .onChange(of: sidebarViewModel.currentWorkspace?.accountConnectionId) {
+            model.resetForWorkspaceChange(using: sidebarViewModel)
         }
         .onChange(of: model.inputText) {
             model.queryDidChange(using: sidebarViewModel)

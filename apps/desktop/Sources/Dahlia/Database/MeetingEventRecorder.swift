@@ -42,18 +42,18 @@ enum MeetingEventRecorder {
         in db: Database
     ) throws {
         guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId),
-              let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId),
-              try Int.fetchOne(db, sql: "SELECT syncMeetingEventsVersion FROM vaults WHERE id = ?", arguments: [vault.id]) == 1,
-              vault.accountConnectionId != nil,
-              vault.accountConnectionId == vault.syncConfirmedConnectionId,
-              vault.allowsCanonicalEdits else { return }
+              let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId),
+              try Int.fetchOne(db, sql: "SELECT syncMeetingEventsVersion FROM workspaces WHERE id = ?", arguments: [workspace.id]) == 1,
+              workspace.accountConnectionId != nil,
+              workspace.accountConnectionId == workspace.syncConfirmedConnectionId,
+              workspace.allowsCanonicalEdits else { return }
         let payload = Payload(
             meetingId: meetingId.uuidString.lowercased(), kind: kind, occurredAt: occurredAt,
             sessionId: sessionId?.uuidString.lowercased(), relatedId: relatedId,
             audioSource: audioSource?.audioSource, segmentIndex: segmentIndex
         )
         try SyncTransactionRecorder.record(
-            vaultId: meeting.vaultId,
+            workspaceId: meeting.workspaceId,
             operations: [SyncOperationDraft(entity: .meetingEvent, action: .create, entityId: .v7(), payloadJSON: SyncJSON.encoder.encode(payload))],
             in: db
         )

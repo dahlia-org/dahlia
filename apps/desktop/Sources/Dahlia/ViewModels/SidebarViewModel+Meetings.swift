@@ -3,13 +3,13 @@ import GRDB
 import OSLog
 
 extension SidebarViewModel {
-    func meetingDescription(id meetingId: UUID, vaultId: UUID) async -> String? {
+    func meetingDescription(id meetingId: UUID, workspaceId: UUID) async -> String? {
         guard let dbQueue,
-              currentVault?.id == vaultId else { return nil }
+              currentWorkspace?.id == workspaceId else { return nil }
         return await (try? dbQueue.read { db in
             try MeetingRepository.fetchMeetingDescription(
                 id: meetingId,
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 in: db
             )
         })
@@ -17,10 +17,10 @@ extension SidebarViewModel {
 
     func containsMeeting(id meetingId: UUID) async -> Bool {
         guard let dbQueue,
-              let vaultId = currentVault?.id else { return false }
+              let workspaceId = currentWorkspace?.id else { return false }
         return await (try? dbQueue.read { db in
-            try MeetingRecord.fetchOne(db, key: meetingId)?.vaultId == vaultId
-        }) == true && currentVault?.id == vaultId
+            try MeetingRecord.fetchOne(db, key: meetingId)?.workspaceId == workspaceId
+        }) == true && currentWorkspace?.id == workspaceId
     }
 
     var meetingSearchQuery: String {
@@ -59,13 +59,13 @@ extension SidebarViewModel {
         isSearchingMeetings ? isMeetingSearchLimited : isMeetingListLimited
     }
 
-    func startMeetingListObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
+    func startMeetingListObservation(dbQueue: DatabaseQueue, workspaceId: UUID) {
         meetingListObservation?.cancel()
         meetingListObservationGeneration &+= 1
         let generation = meetingListObservationGeneration
         let observation = ValueObservation.tracking { db in
             try MeetingRepository.fetchMeetingSidebarPage(
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 limit: Self.meetingPageSize,
                 in: db
             )
@@ -77,7 +77,7 @@ extension SidebarViewModel {
                 sidebarViewModelLogger.error("Failed to load meeting sidebar: \(error, privacy: .public)")
                 ErrorReportingService.capture(error, context: ["source": "meetingSidebarObservation"])
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       self.meetingListObservationGeneration == generation else { return }
                 self.isMeetingListLoaded = true
                 self.isMeetingListLoadingMore = false
@@ -85,18 +85,18 @@ extension SidebarViewModel {
             },
             onChange: { [weak self] page in
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       self.meetingListObservationGeneration == generation else { return }
                 self.applyInitialMeetingPage(page)
             }
         )
     }
 
-    func restartMeetingSearchIfNeeded(dbQueue: DatabaseQueue, vaultId: UUID) {
+    func restartMeetingSearchIfNeeded(dbQueue: DatabaseQueue, workspaceId: UUID) {
         guard !meetingSearchCriteria.isEmpty else { return }
         startMeetingSearch(
             dbQueue: dbQueue,
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             criteria: meetingSearchCriteria,
             delay: nil,
             appending: false
@@ -105,7 +105,7 @@ extension SidebarViewModel {
 
     private func startMeetingSearch(
         dbQueue: DatabaseQueue,
-        vaultId: UUID,
+        workspaceId: UUID,
         criteria: MeetingSearchCriteria,
         delay: Duration?,
         appending: Bool
@@ -124,7 +124,7 @@ extension SidebarViewModel {
                     try await Task.sleep(for: delay)
                 }
                 let page = try await MeetingRepository.searchMeetingSidebarPage(
-                    vaultId: vaultId,
+                    workspaceId: workspaceId,
                     criteria: criteria,
                     rankingPolicy: rankingPolicy,
                     after: cursor,
@@ -133,7 +133,7 @@ extension SidebarViewModel {
                 )
                 try Task.checkCancellation()
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       self.meetingSearchCriteria == criteria,
                       self.meetingSearchObservationGeneration == generation else { return }
 
@@ -154,7 +154,7 @@ extension SidebarViewModel {
                 sidebarViewModelLogger.error("Failed to search meetings: \(error, privacy: .public)")
                 ErrorReportingService.capture(error, context: ["source": "meetingSidebarSearch"])
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       self.meetingSearchCriteria == criteria,
                       self.meetingSearchObservationGeneration == generation else { return }
                 self.isMeetingSearchLoaded = true
@@ -171,13 +171,13 @@ extension SidebarViewModel {
         selectedMeetingDetailLoadError = nil
         guard let meetingId = selectedMeetingId,
               let dbQueue,
-              let vaultId = currentVault?.id else { return }
+              let workspaceId = currentWorkspace?.id else { return }
 
         let generation = selectedMeetingObservationGeneration
         let observation = ValueObservation.tracking { db in
             try MeetingRepository.fetchMeetingDetail(
                 id: meetingId,
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 in: db
             )
         }
@@ -188,7 +188,7 @@ extension SidebarViewModel {
                 sidebarViewModelLogger.error("Failed to load selected meeting: \(error, privacy: .public)")
                 ErrorReportingService.capture(error, context: ["source": "selectedMeetingObservation"])
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       self.selectedMeetingId == meetingId,
                       self.selectedMeetingObservationGeneration == generation else { return }
                 self.selectedMeetingDetailLoadError = error.localizedDescription
@@ -196,7 +196,7 @@ extension SidebarViewModel {
             },
             onChange: { [weak self] detail in
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       self.selectedMeetingId == meetingId,
                       self.selectedMeetingObservationGeneration == generation else { return }
                 guard let detail else {
@@ -209,12 +209,12 @@ extension SidebarViewModel {
         )
     }
 
-    func startMeetingReferencesObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
+    func startMeetingReferencesObservation(dbQueue: DatabaseQueue, workspaceId: UUID) {
         meetingReferencesObservation?.cancel()
         meetingReferencesObservationGeneration &+= 1
         let generation = meetingReferencesObservationGeneration
         let observation = ValueObservation.tracking { db in
-            try MeetingRepository.fetchMeetingReferences(vaultId: vaultId, in: db)
+            try MeetingRepository.fetchMeetingReferences(workspaceId: workspaceId, in: db)
         }
         .removeDuplicates()
         meetingReferencesObservation = observation.start(
@@ -223,13 +223,13 @@ extension SidebarViewModel {
                 sidebarViewModelLogger.error("Failed to load meeting references: \(error, privacy: .public)")
                 ErrorReportingService.capture(error, context: ["source": "meetingReferenceObservation"])
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       self.meetingReferencesObservationGeneration == generation else { return }
                 self.isMeetingCatalogLoaded = false
             },
             onChange: { [weak self] references in
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       self.meetingReferencesObservationGeneration == generation else { return }
                 let removedIds = Set(self.meetingReferences.map(\.id))
                     .subtracting(references.map(\.id))
@@ -245,9 +245,9 @@ extension SidebarViewModel {
     func loadMeetingReferencesIfNeeded() {
         guard !isMeetingCatalogRequested,
               let dbQueue,
-              let vaultId = currentVault?.id else { return }
+              let workspaceId = currentWorkspace?.id else { return }
         isMeetingCatalogRequested = true
-        startMeetingReferencesObservation(dbQueue: dbQueue, vaultId: vaultId)
+        startMeetingReferencesObservation(dbQueue: dbQueue, workspaceId: workspaceId)
     }
 
     func resetMeetingListPagination() {
@@ -290,8 +290,8 @@ extension SidebarViewModel {
 
     func restartCurrentMeetingSearch() {
         guard let dbQueue,
-              let vaultId = currentVault?.id else { return }
-        restartMeetingSearchIfNeeded(dbQueue: dbQueue, vaultId: vaultId)
+              let workspaceId = currentWorkspace?.id else { return }
+        restartMeetingSearchIfNeeded(dbQueue: dbQueue, workspaceId: workspaceId)
     }
 
     func updateMeetingSearchQuery(_ value: String) {
@@ -321,10 +321,10 @@ extension SidebarViewModel {
         isMeetingSearchLoaded = false
         isMeetingSearchLoadingMore = false
         guard let dbQueue,
-              let vaultId = currentVault?.id else { return }
+              let workspaceId = currentWorkspace?.id else { return }
         startMeetingSearch(
             dbQueue: dbQueue,
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             criteria: criteria,
             delay: .milliseconds(250),
             appending: false
@@ -336,26 +336,26 @@ extension SidebarViewModel {
               !isDisplayedMeetingListLoadingMore,
               displayedMeetingListLoadError == nil,
               let dbQueue,
-              let vaultId = currentVault?.id else { return }
+              let workspaceId = currentWorkspace?.id else { return }
 
         if isSearchingMeetings {
             isMeetingSearchLoadingMore = true
             startMeetingSearch(
                 dbQueue: dbQueue,
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 criteria: meetingSearchCriteria,
                 delay: nil,
                 appending: true
             )
         } else {
             isMeetingListLoadingMore = true
-            loadNextMeetingPage(dbQueue: dbQueue, vaultId: vaultId)
+            loadNextMeetingPage(dbQueue: dbQueue, workspaceId: workspaceId)
         }
     }
 
     func retryDisplayedMeetingLoading() {
         guard let dbQueue,
-              let vaultId = currentVault?.id else { return }
+              let workspaceId = currentWorkspace?.id else { return }
 
         if isSearchingMeetings {
             let hasItems = !meetingSearchItems.isEmpty
@@ -367,7 +367,7 @@ extension SidebarViewModel {
             }
             startMeetingSearch(
                 dbQueue: dbQueue,
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 criteria: meetingSearchCriteria,
                 delay: nil,
                 appending: hasItems
@@ -381,9 +381,9 @@ extension SidebarViewModel {
                 isMeetingListLoaded = false
             }
             if hasItems {
-                loadNextMeetingPage(dbQueue: dbQueue, vaultId: vaultId)
+                loadNextMeetingPage(dbQueue: dbQueue, workspaceId: workspaceId)
             } else {
-                startMeetingListObservation(dbQueue: dbQueue, vaultId: vaultId)
+                startMeetingListObservation(dbQueue: dbQueue, workspaceId: workspaceId)
             }
         }
     }
@@ -416,7 +416,7 @@ extension SidebarViewModel {
         startAdditionalMeetingRowsObservationIfNeeded()
     }
 
-    private func loadNextMeetingPage(dbQueue: DatabaseQueue, vaultId: UUID) {
+    private func loadNextMeetingPage(dbQueue: DatabaseQueue, workspaceId: UUID) {
         guard let cursor = meetingListCursor else {
             isMeetingListLoadingMore = false
             hasMoreMeetings = false
@@ -431,7 +431,7 @@ extension SidebarViewModel {
                 let fetchTask = Task.detached(priority: .userInitiated) {
                     try dbQueue.read { db in
                         try MeetingRepository.fetchMeetingSidebarPage(
-                            vaultId: vaultId,
+                            workspaceId: workspaceId,
                             after: cursor,
                             limit: Self.meetingPageSize,
                             in: db
@@ -445,7 +445,7 @@ extension SidebarViewModel {
                 }
                 try Task.checkCancellation()
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       self.meetingPageLoadGeneration == generation,
                       self.meetingListCursor == cursor else { return }
                 self.meetingSidebarItems.append(contentsOf: page.items)
@@ -461,7 +461,7 @@ extension SidebarViewModel {
                 sidebarViewModelLogger.error("Failed to load more meetings: \(error, privacy: .public)")
                 ErrorReportingService.capture(error, context: ["source": "meetingSidebarPage"])
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       self.meetingPageLoadGeneration == generation else { return }
                 self.isMeetingListLoadingMore = false
                 self.meetingListLoadError = error.localizedDescription
@@ -486,14 +486,14 @@ extension SidebarViewModel {
         let ids = Array(meetingSidebarItems.dropFirst(meetingInitialPageIDs.count).map(\.id))
         guard !ids.isEmpty,
               let dbQueue,
-              let vaultId = currentVault?.id else { return }
+              let workspaceId = currentWorkspace?.id else { return }
 
         let generation = additionalMeetingRowsObservationGeneration
         let observedIDs = Set(ids)
         let observation = ValueObservation.tracking { db in
             try MeetingRepository.fetchMeetingSidebarItems(
                 ids: ids,
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 in: db
             )
         }
@@ -511,7 +511,7 @@ extension SidebarViewModel {
             },
             onChange: { [weak self] items in
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       self.additionalMeetingRowsObservationGeneration == generation else { return }
 
                 let itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })

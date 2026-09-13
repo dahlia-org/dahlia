@@ -41,7 +41,7 @@ extension MeetingRepository {
         try Bool.fetchOne(
             db,
             sql: """
-            SELECT EXISTS (SELECT 1 FROM vaults WHERE accountConnectionId = ?)
+            SELECT EXISTS (SELECT 1 FROM workspaces WHERE accountConnectionId = ?)
                 OR EXISTS (SELECT 1 FROM sync_transactions WHERE connectionId = ?)
             """,
             arguments: [id, id]
@@ -51,14 +51,14 @@ extension MeetingRepository {
 
 enum DahliaAccountConnectionError: LocalizedError {
     case pendingServerDeletion
-    case vaultDispositionRequired
+    case workspaceDispositionRequired
 
     var errorDescription: String? {
         switch self {
         case .pendingServerDeletion:
             L10n.dahliaAccountPendingServerDeletion
-        case .vaultDispositionRequired:
-            L10n.dahliaAccountVaultDispositionRequired
+        case .workspaceDispositionRequired:
+            L10n.dahliaAccountWorkspaceDispositionRequired
         }
     }
 }

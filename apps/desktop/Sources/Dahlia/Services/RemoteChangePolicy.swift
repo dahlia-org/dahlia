@@ -4,16 +4,16 @@ import GRDB
 /// Shared by incremental sync and revision-bound body reads. Recovery and eviction are separate, stricter operations.
 enum RemoteChangePolicy {
     struct Context: Sendable {
-        let vaultId: UUID
+        let workspaceId: UUID
         let connectionId: UUID
         let generation: Int64
 
         func isCurrent(in db: Database) throws -> Bool {
-            try SyncTransactionQueue.matchesExpectedConnection(vaultId: vaultId, connectionId: connectionId, in: db)
+            try SyncTransactionQueue.matchesExpectedConnection(workspaceId: workspaceId, connectionId: connectionId, in: db)
                 && Int64.fetchOne(
                     db,
-                    sql: "SELECT syncMutationGeneration FROM vaults WHERE id = ? AND syncRecoveryState IS NULL",
-                    arguments: [vaultId]
+                    sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ? AND syncRecoveryState IS NULL",
+                    arguments: [workspaceId]
                 ) == generation
         }
     }
@@ -35,14 +35,14 @@ enum RemoteChangePolicy {
             id: change.entityId,
             action: change.action,
             record: change.record,
-            vaultId: context.vaultId,
+            workspaceId: context.workspaceId,
             in: db
         ) else { return .deferred }
         if change.action == "upsert", let incoming = change.revision,
            let confirmed = try Int.fetchOne(
                db,
-               sql: "SELECT confirmedRevision FROM sync_entity_state WHERE vaultId = ? AND entity = ? AND entityId = ?",
-               arguments: [context.vaultId, change.entity, change.entityId]
+               sql: "SELECT confirmedRevision FROM sync_entity_state WHERE workspace_id = ? AND entity = ? AND entityId = ?",
+               arguments: [context.workspaceId, change.entity, change.entityId]
            ), confirmed >= incoming {
             // Changes carry current canonical records, not historical bodies. A decrease may be a coalesced delete/recreate.
             return confirmed == incoming ? .alreadyApplied : .retry
@@ -61,7 +61,7 @@ enum RemoteChangePolicy {
         var meetings: Set<UUID> = []
         var projects: Set<UUID> = []
         switch entity {
-        case .vault: break
+        case .workspace: break
         case .recording:
             if let session = try RecordingSessionRecord.fetchOne(db, key: id) { meetings.insert(session.meetingId) }
             if let meeting = record?.meetingId { meetings.insert(meeting) }
@@ -103,10 +103,11 @@ enum RemoteChangePolicy {
         id: UUID,
         action: String = "upsert",
         record: SyncCanonicalPayload? = nil,
-        vaultId: UUID,
+        workspaceId: UUID,
         in db: Database
     ) throws -> Bool {
-        guard try String.fetchOne(db, sql: "SELECT syncRecoveryState FROM vaults WHERE id = ?", arguments: [vaultId]) == nil else { return false }
+        guard try String.fetchOne(db, sql: "SELECT syncRecoveryState FROM workspaces WHERE id = ?", arguments: [workspaceId]) == nil
+        else { return false }
         let key = Key(entity: entity, id: id)
         let related = try references(entity, id: id, record: record, in: db)
         let destructive = action == "delete" || action == "reset"
@@ -115,16 +116,16 @@ enum RemoteChangePolicy {
         let pending = try Row.fetchCursor(db, sql: """
         SELECT o.entity, o.entityId, o.action, o.payloadJSON
         FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
-        WHERE t.vaultId = ? AND (
-            o.entity = 'vault' OR o.entity = ? AND o.entityId = ?
+        WHERE t.workspace_id = ? AND (
+            o.entity = 'workspace' OR o.entity = ? AND o.entityId = ?
             OR o.action IN ('delete', 'reset', 'create') OR ?
             OR ? AND o.entity = 'meeting_attachment' OR ? AND o.entity = 'file'
         )
         """, arguments: [
-            vaultId,
+            workspaceId,
             entity,
             id,
-            destructive || entity == .project || entity == .vault,
+            destructive || entity == .project || entity == .workspace,
             entity == .file,
             entity == .meetingAttachment,
         ])
@@ -133,7 +134,7 @@ enum RemoteChangePolicy {
             let localId: UUID = row["entityId"]
             let localAction: String = row["action"]
             let localKey = Key(entity: localEntity, id: localId)
-            if entity == .vault || localEntity == .vault || key == localKey { return false }
+            if entity == .workspace || localEntity == .workspace || key == localKey { return false }
             if localAction == "delete" || localAction == "reset" || localAction == "create", related.contains(localKey) { return false }
             if entity == .meetingAttachment, localEntity == .file, related.contains(localKey) { return false }
             guard destructive || entity == .project || (entity == .file && localEntity == .meetingAttachment) else { continue }
@@ -152,8 +153,8 @@ enum RemoteChangePolicy {
                record.fileId != link.fileId || record.meetingId != link.meetingId || record.sessionId != link.sessionId || record.capturedAt != link
                .capturedAt { return false }
             if destructive {
-                if entity == .vault,
-                   try MeetingRecord.fetchOne(db, key: meeting)?.vaultId == vaultId { return false }
+                if entity == .workspace,
+                   try MeetingRecord.fetchOne(db, key: meeting)?.workspaceId == workspaceId { return false }
                 if related.contains(.init(entity: .meeting, id: meeting)) { return false }
                 if entity == .project, try references(.meeting, id: meeting, record: nil, in: db).contains(key) { return false }
             }

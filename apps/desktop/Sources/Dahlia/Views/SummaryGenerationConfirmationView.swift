@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SummaryGenerationConfirmationView: View {
-    @State private var exportsToVault = SummaryExportOptions.manual.exportsToVault
+    @State private var exportsToWorkspace = SummaryExportOptions.manual.exportsToWorkspace
     @State private var exportsToGoogleDocs = SummaryExportOptions.manual.exportsToGoogleDocs
     @State private var detailLevel: SummaryDetailLevel?
     @State private var selectedProjectId: UUID?
@@ -37,7 +37,7 @@ struct SummaryGenerationConfirmationView: View {
         self.loadSourceAvailability = loadSourceAvailability
         self.onCancel = onCancel
         self.onGenerate = onGenerate
-        let connectionID = AppSettings.shared.currentVault?.accountConnectionId
+        let connectionID = AppSettings.shared.currentWorkspace?.accountConnectionId
         let serverDetail = connectionID.flatMap { connectionID -> SummaryDetailLevel? in
             guard let summary = ServerAccountSettingsModel.shared.state(for: connectionID).settings?.summary else { return nil }
             return summary.detailLevel
@@ -77,7 +77,7 @@ struct SummaryGenerationConfirmationView: View {
 
                     SummaryGenerationOptionsControls(
                         detailLevel: $detailLevel,
-                        exportsToVault: $exportsToVault,
+                        exportsToWorkspace: $exportsToWorkspace,
                         exportsToGoogleDocs: $exportsToGoogleDocs,
                         isEnabled: true
                     )
@@ -114,7 +114,7 @@ struct SummaryGenerationConfirmationView: View {
     private func generateSummary() {
         errorMessage = onGenerate(SummaryGenerationOptions(
             exportOptions: SummaryExportOptions(
-                exportsToVault: exportsToVault,
+                exportsToWorkspace: exportsToWorkspace,
                 exportsToGoogleDocs: exportsToGoogleDocs
             ),
             detailLevel: detailLevel,

@@ -5,7 +5,7 @@ import GRDB
 
 extension MeetingRepository {
     nonisolated static func searchMeetingSidebarPage(
-        vaultId: UUID,
+        workspaceId: UUID,
         query: String,
         rankingPolicy: MeetingSearchRankingPolicy = .standard,
         after cursor: MeetingSearchCursor? = nil,
@@ -13,7 +13,7 @@ extension MeetingRepository {
         dbQueue: DatabaseQueue
     ) async throws -> MeetingSearchPage {
         try await searchMeetingSidebarPage(
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             criteria: MeetingSearchCriteria(text: query),
             rankingPolicy: rankingPolicy,
             after: cursor,
@@ -23,7 +23,7 @@ extension MeetingRepository {
     }
 
     nonisolated static func searchMeetingSidebarPage(
-        vaultId: UUID,
+        workspaceId: UUID,
         criteria: MeetingSearchCriteria,
         rankingPolicy: MeetingSearchRankingPolicy = .standard,
         after cursor: MeetingSearchCursor? = nil,
@@ -34,7 +34,7 @@ extension MeetingRepository {
             try await dbQueue.read { db in
                 if criteria.text.isEmpty {
                     return try chronologicalSearch(
-                        vaultId: vaultId,
+                        workspaceId: workspaceId,
                         criteria: criteria,
                         cursor: cursor,
                         limit: limit,
@@ -42,7 +42,7 @@ extension MeetingRepository {
                     )
                 }
                 return try fullTextSearch(
-                    vaultId: vaultId,
+                    workspaceId: workspaceId,
                     criteria: criteria,
                     policy: rankingPolicy,
                     cursor: cursor,
@@ -54,14 +54,21 @@ extension MeetingRepository {
     }
 
     nonisolated static func remoteMeetingPage(
-        vaultId: UUID, criteria: MeetingSearchCriteria, cursor: String?, dbQueue: DatabaseQueue, contentProvider: MeetingContentProvider = .shared
+        workspaceId: UUID, criteria: MeetingSearchCriteria, cursor: String?, dbQueue: DatabaseQueue, contentProvider: MeetingContentProvider = .shared
     ) async throws -> (items: [MeetingSidebarItem], cursor: String?) {
         var position = cursor
         repeat {
-            let page = try await contentProvider.search(vaultId: vaultId, query: criteria.text, kind: .meeting, cursor: position, dbQueue: dbQueue)
+            let page = try await contentProvider.search(
+                workspaceId: workspaceId,
+                query: criteria.text,
+                kind: .meeting,
+                cursor: position,
+                dbQueue: dbQueue
+            )
             let items = try await dbQueue.read { db in
-                let ids = try filterRemoteSearchMeetingIDs(page.items.map(\.meetingId), vaultId: vaultId, criteria: criteria, in: db)
-                let byId = try Dictionary(uniqueKeysWithValues: fetchMeetingSidebarItems(ids: ids, vaultId: vaultId, in: db).map { ($0.id, $0) })
+                let ids = try filterRemoteSearchMeetingIDs(page.items.map(\.meetingId), workspaceId: workspaceId, criteria: criteria, in: db)
+                let byId = try Dictionary(uniqueKeysWithValues: fetchMeetingSidebarItems(ids: ids, workspaceId: workspaceId, in: db)
+                    .map { ($0.id, $0) })
                 return page.items.compactMap { hit -> MeetingSidebarItem? in
                     guard var item = byId[hit.id] else { return nil }
                     item.searchMatchContext = .init(kind: .server, text: hit.snippet)
@@ -76,24 +83,24 @@ extension MeetingRepository {
 
     /// Filter each bounded server page before deciding whether another page is necessary.
     nonisolated static func filterRemoteSearchMeetingIDs(
-        _ ids: [UUID], vaultId: UUID, criteria: MeetingSearchCriteria, in db: Database
+        _ ids: [UUID], workspaceId: UUID, criteria: MeetingSearchCriteria, in db: Database
     ) throws -> [UUID] {
         let unique = Array(Set(ids))
         guard !unique.isEmpty else { return [] }
         let placeholders = searchPlaceholders(unique.count)
         let known = try Int.fetchOne(
             db,
-            sql: "SELECT count(*) FROM meetings WHERE vaultId = ? AND id IN (\(placeholders))",
-            arguments: StatementArguments([vaultId] + unique)
+            sql: "SELECT count(*) FROM meetings WHERE workspace_id = ? AND id IN (\(placeholders))",
+            arguments: StatementArguments([workspaceId] + unique)
         )
         guard known == unique.count else { throw TextContentError.changed }
-        let projects = try includedProjectIDs(for: criteria, vaultId: vaultId, in: db)
+        let projects = try includedProjectIDs(for: criteria, workspaceId: workspaceId, in: db)
         let filter = searchFilters(criteria: criteria, includedProjectIDs: projects)
-        var arguments = StatementArguments([vaultId] + unique)
+        var arguments = StatementArguments([workspaceId] + unique)
         arguments += filter.arguments
         return try UUID.fetchAll(
             db,
-            sql: "SELECT meetings.id FROM meetings WHERE meetings.vaultId = ? AND meetings.id IN (\(placeholders)) \(filter.condition)",
+            sql: "SELECT meetings.id FROM meetings WHERE meetings.workspace_id = ? AND meetings.id IN (\(placeholders)) \(filter.condition)",
             arguments: arguments
         )
     }
@@ -129,7 +136,7 @@ extension MeetingRepository {
     }
 
     private nonisolated static func fullTextSearch(
-        vaultId: UUID,
+        workspaceId: UUID,
         criteria: MeetingSearchCriteria,
         policy: MeetingSearchRankingPolicy,
         cursor: MeetingSearchCursor?,
@@ -154,12 +161,12 @@ extension MeetingRepository {
             replacesResults = cursor != nil
         }
 
-        let includedProjects = try includedProjectIDs(for: criteria, vaultId: vaultId, in: db)
+        let includedProjects = try includedProjectIDs(for: criteria, workspaceId: workspaceId, in: db)
         let filters = searchFilters(criteria: criteria, includedProjectIDs: includedProjects)
         let queryTokens = try orderedQueryTokens(tokens, in: db)
         let meetingIDs = try qualifyingMeetingIDs(
             queryTokens: queryTokens,
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             policy: policy,
             filters: filters,
             in: db
@@ -176,7 +183,7 @@ extension MeetingRepository {
         let visible = Array(window.prefix(limit))
         let orderedIDs = visible.map(\.meetingID)
         var itemsByID = try Dictionary(
-            uniqueKeysWithValues: fetchMeetingSidebarItems(ids: orderedIDs, vaultId: vaultId, in: db)
+            uniqueKeysWithValues: fetchMeetingSidebarItems(ids: orderedIDs, workspaceId: workspaceId, in: db)
                 .map { ($0.id, $0) }
         )
         let fieldsByMeeting = try matchedFields(
@@ -337,7 +344,7 @@ extension MeetingRepository {
 
     private nonisolated static func qualifyingMeetingIDs(
         queryTokens: [FTSQueryToken],
-        vaultId: UUID,
+        workspaceId: UUID,
         policy: MeetingSearchRankingPolicy,
         filters: (condition: String, arguments: StatementArguments),
         in db: Database
@@ -357,7 +364,7 @@ extension MeetingRepository {
             )
             """
         }.joined(separator: " AND ")
-        var arguments: StatementArguments = [policy.matchExpression(seed.query), vaultId]
+        var arguments: StatementArguments = [policy.matchExpression(seed.query), workspaceId]
         arguments += filters.arguments
         arguments += StatementArguments(remaining.map { policy.matchExpression($0.query) })
         return try UUID.fetchAll(
@@ -369,7 +376,7 @@ extension MeetingRepository {
                 JOIN search_documents ON search_documents.id = search_documents_fts.rowid
                 JOIN meetings ON meetings.id = search_documents.meetingId
                 WHERE search_documents_fts MATCH ?
-                  AND search_documents.vaultId = ?
+                  AND search_documents.workspace_id = ?
                   AND search_documents.kind = 'meeting'
                   \(filters.condition)
                 GROUP BY search_documents.meetingId
@@ -393,7 +400,7 @@ extension MeetingRepository {
     }
 
     private nonisolated static func chronologicalSearch(
-        vaultId: UUID,
+        workspaceId: UUID,
         criteria: MeetingSearchCriteria,
         cursor: MeetingSearchCursor?,
         limit: Int,
@@ -402,19 +409,19 @@ extension MeetingRepository {
         let chronologicalCursor: MeetingSidebarCursor? = if case let .chronological(value) = cursor { value } else {
             nil
         }
-        let projects = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
+        let projects = try ProjectRecord.fetchResolvedAll(workspaceId: workspaceId, in: db)
         let paths = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0.path) })
         let includedProjects = descendantProjectIDs(selectedIDs: criteria.projectIDs, projects: projects)
         let filters = searchFilters(criteria: criteria, includedProjectIDs: includedProjects)
         let cursorFilter = sidebarCursorFilter(chronologicalCursor)
-        var arguments: StatementArguments = [vaultId]
+        var arguments: StatementArguments = [workspaceId]
         arguments += filters.arguments
         arguments += cursorFilter.arguments
         arguments += [limit + 1]
         var items = try MeetingSidebarItem.fetchAll(
             db,
             sql: """
-            SELECT meetings.id AS meetingId, meetings.vaultId AS vaultId,
+            SELECT meetings.id AS meetingId, meetings.workspace_id AS workspace_id,
                    meetings.projectId AS projectId, NULL AS projectName,
                    meetings.name AS meetingName, meetings.status AS status,
                    meetings.duration AS duration, meetings.createdAt AS createdAt,
@@ -423,7 +430,7 @@ extension MeetingRepository {
             FROM meetings LEFT JOIN calendar_events
               ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
              AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
-            WHERE meetings.vaultId = ? \(filters.condition) \(cursorFilter.condition)
+            WHERE meetings.workspace_id = ? \(filters.condition) \(cursorFilter.condition)
             ORDER BY \(sidebarRecordingStartedAtSQL) DESC, meetings.id DESC LIMIT ?
             """,
             arguments: arguments
@@ -492,11 +499,11 @@ extension MeetingRepository {
 
     private nonisolated static func includedProjectIDs(
         for criteria: MeetingSearchCriteria,
-        vaultId: UUID,
+        workspaceId: UUID,
         in db: Database
     ) throws -> Set<UUID> {
         guard !criteria.projectIDs.isEmpty else { return [] }
-        let projects = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
+        let projects = try ProjectRecord.fetchResolvedAll(workspaceId: workspaceId, in: db)
         return descendantProjectIDs(selectedIDs: criteria.projectIDs, projects: projects)
     }
 
@@ -591,7 +598,7 @@ extension MeetingRepository {
 
 extension MeetingRepository {
     nonisolated static func searchProjectIDs(
-        vaultID: UUID,
+        workspaceID: UUID,
         query: String,
         limit: Int,
         dbQueue: DatabaseQueue
@@ -599,13 +606,13 @@ extension MeetingRepository {
         try await withSearchDeadline {
             try await dbQueue.read { db in
                 try requireReadySearchIndex(in: db)
-                return try searchProjectIDs(vaultID: vaultID, query: query, limit: limit, in: db)
+                return try searchProjectIDs(workspaceID: workspaceID, query: query, limit: limit, in: db)
             }
         }
     }
 
     private nonisolated static func searchProjectIDs(
-        vaultID: UUID,
+        workspaceID: UUID,
         query: String,
         limit: Int,
         in db: Database
@@ -627,11 +634,11 @@ extension MeetingRepository {
                 FROM search_documents_fts
                 JOIN search_documents ON search_documents.id = search_documents_fts.rowid
                 WHERE search_documents_fts MATCH ?
-                  AND search_documents.vaultId = ? AND search_documents.kind = 'project'
+                  AND search_documents.workspace_id = ? AND search_documents.kind = 'project'
                 ORDER BY bm25(search_documents_fts), search_documents.projectId
                 LIMIT ?
                 """,
-                arguments: ["\(columnScope) : (\(tokenQuery))", vaultID, limit]
+                arguments: ["\(columnScope) : (\(tokenQuery))", workspaceID, limit]
             )
             for id in ids where seenProjectIDs.insert(id).inserted {
                 projectIDs.append(id)

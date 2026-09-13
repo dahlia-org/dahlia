@@ -3,7 +3,7 @@ import { z } from "zod";
 const id = z.uuid().transform((value) => value.toLowerCase());
 const date = z.iso.datetime({ offset: true }).transform((value) => new Date(value));
 const searchFields = z.object({
-  vaultId: id,
+  workspaceId: id,
   query: z.string().trim().max(500).default(""),
   kind: z.enum(["meeting", "screenshot", "project"]).optional(),
   projectId: id.optional(),
@@ -13,7 +13,7 @@ const searchFields = z.object({
 }).strict();
 const validDateRange = ({ from, to }: { from?: Date; to?: Date }) => !from || !to || from < to;
 export const searchRequestSchema = searchFields.refine(validDateRange);
-export const vaultSearchRequestSchema = searchFields.omit({ vaultId: true }).refine(validDateRange);
+export const workspaceSearchRequestSchema = searchFields.omit({ workspaceId: true }).refine(validDateRange);
 
 export interface SearchHit {
   id: string;
@@ -29,7 +29,7 @@ export interface SearchHit {
 }
 
 export interface SearchResults {
-  vaultId: string;
+  workspaceId: string;
   meetings: SearchHit[];
   screenshots: SearchHit[];
   projects: SearchHit[];

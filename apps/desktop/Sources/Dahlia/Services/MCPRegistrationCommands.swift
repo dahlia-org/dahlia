@@ -4,23 +4,23 @@ import Foundation
 struct MCPRegistrationCommands: Equatable {
     private let helper: String
     private let helperPath: String
-    private let vault: String?
-    private let vaultID: String?
+    private let workspace: String?
+    private let workspaceID: String?
 
     init(
         helperURL: URL,
-        vaultID: UUID?
+        workspaceID: UUID?
     ) {
         helperPath = helperURL.path
         helper = Self.shellQuote(helperURL.path)
-        self.vaultID = vaultID.map { TypeID.encode($0, as: .vault) }
-        vault = vaultID.map { Self.shellQuote(TypeID.encode($0, as: .vault)) }
+        self.workspaceID = workspaceID.map { TypeID.encode($0, as: .workspace) }
+        workspace = workspaceID.map { Self.shellQuote(TypeID.encode($0, as: .workspace)) }
     }
 
     func registrationCommand(for client: MCPClient, writeEnabled: Bool) -> String? {
         guard let prefix = client.registrationCommandPrefix else { return nil }
         let writeArgument = writeEnabled ? " --write" : ""
-        return "\(prefix) \(helper)\(vault.map { " --vault-id \($0)" } ?? "")\(writeArgument)"
+        return "\(prefix) \(helper)\(workspace.map { " --workspace-id \($0)" } ?? "")\(writeArgument)"
     }
 
     func removalCommand(for client: MCPClient) -> String? {
@@ -28,7 +28,7 @@ struct MCPRegistrationCommands: Equatable {
     }
 
     func mcpJSONSample(writeEnabled: Bool) -> String? {
-        var args = vaultID.map { ["--vault-id", $0] } ?? []
+        var args = workspaceID.map { ["--workspace-id", $0] } ?? []
         if writeEnabled {
             args.append("--write")
         }

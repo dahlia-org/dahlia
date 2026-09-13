@@ -1,4 +1,4 @@
-import { vaultPermissions } from "../auth/vault-permissions";
+import { workspacePermissions } from "../auth/workspace-permissions";
 import { createContentEncryption } from "../encryption/store";
 import type { EncryptionConfig } from "../encryption/crypto";
 import { and, asc, eq, exists, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
@@ -36,26 +36,26 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
   async function reconcilePage(model: string, userId: string, after?: string, batchSize = 100): Promise<string | undefined> {
     const rows = await withOwner(userId, async (transaction) => {
       const content = createContentEncryption(transaction, schema, userId, encryption);
-      const page = await content.read(files, await transaction.select({ encryptedPayload: files.encryptedPayload, fileId: files.fileId, vaultId: files.vaultId, metadata: files.metadata })
+      const page = await content.read(files, await transaction.select({ encryptedPayload: files.encryptedPayload, fileId: files.fileId, workspaceId: files.workspaceId, metadata: files.metadata })
         .from(files).leftJoin(jobs, eq(jobs.fileId, files.fileId))
         .where(and(
           eq(files.active, true), isNotNull(files.uploadedAt), inArray(files.contentType, [...imageContentTypes]),
           after ? gt(files.fileId, after) : undefined,
           or(isNull(jobs.fileId), ne(jobs.model, model)),
-          vaultPermissions(transaction, schema, userId).write(files.vaultId),
-          exists(transaction.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault).where(and(
-            eq(schema.syncedVault.vaultId, files.vaultId), isNull(schema.syncedVault.deletingAt),
+          workspacePermissions(transaction, schema, userId).write(files.workspaceId),
+          exists(transaction.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(and(
+            eq(schema.syncedWorkspace.workspaceId, files.workspaceId), isNull(schema.syncedWorkspace.deletingAt),
           ))),
           exists(transaction.select({ id: schema.meetingAttachment.id }).from(schema.meetingAttachment)
             .innerJoin(schema.syncedMeeting, and(
-              eq(schema.syncedMeeting.vaultId, schema.meetingAttachment.vaultId),
+              eq(schema.syncedMeeting.workspaceId, schema.meetingAttachment.workspaceId),
               eq(schema.syncedMeeting.meetingId, schema.meetingAttachment.meetingId),
             )).where(and(eq(schema.meetingAttachment.fileId, files.fileId), isNull(schema.syncedMeeting.deletingAt)))),
         )).orderBy(asc(files.fileId)).limit(batchSize));
       const missing = page.filter((row) => needsImageAnalysis(row.metadata));
       if (missing.length) {
-        await transaction.insert(jobs).values(missing.map(({ fileId, vaultId }) => ({
-          fileId, vaultId, ownerUserId: userId, model,
+        await transaction.insert(jobs).values(missing.map(({ fileId, workspaceId }) => ({
+          fileId, workspaceId, ownerUserId: userId, model,
         }))).onConflictDoUpdate({
           target: jobs.fileId,
           set: { model, status: "pending", attempts: 0, availableAt: new Date(), claimedAt: null, leaseExpiresAt: null, lastErrorCode: null },

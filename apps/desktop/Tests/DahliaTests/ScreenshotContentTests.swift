@@ -23,7 +23,7 @@
             #expect(ScreenshotOCRState.processing.limitingRemoteWait(to: .seconds(300)) == .processing)
         }
 
-        @Test(.timeLimit(.minutes(1)), arguments: ["retry", "checksum", "size", "id", "vaultId"])
+        @Test(.timeLimit(.minutes(1)), arguments: ["retry", "checksum", "size", "id", "workspaceId"])
         func rawFileUploadPreservesTheQueuedTransactionAcrossRetries(firstFailure: String) async throws {
             let fixture = try ScreenshotContentFixture()
             let fileStore = try await ScreenshotContentProvider.shared.fileStore(for: fixture.dbQueue)
@@ -51,21 +51,23 @@
                 payloadJSON: SyncJSON.encoder.encode(payload)
             )
             let transactionId = try await fixture.dbQueue.write { db in
-                // This is an established Vault, so an empty queue must not trigger initial snapshot recovery.
+                // This is an established Workspace, so an empty queue must not trigger initial snapshot recovery.
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, 1)",
-                    arguments: [fixture.vaultId, fixture.vaultId]
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, 1)",
+                    arguments: [fixture.workspaceId, fixture.workspaceId]
                 )
-                return try #require(try SyncTransactionRecorder.record(vaultId: fixture.vaultId, operations: [operation], screenshotAttachments: [
-                    operation.id: SyncScreenshotAttachmentReference(mimeType: "image/png", source: fixture.source),
-                ], in: db))
+                return try #require(try SyncTransactionRecorder.record(
+                    workspaceId: fixture.workspaceId, operations: [operation], screenshotAttachments: [
+                        operation.id: SyncScreenshotAttachmentReference(mimeType: "image/png", source: fixture.source),
+                    ], in: db
+                ))
             }
             let metadataData = try SyncJSON.encoder.encode(payload.metadata)
             var wireMetadata: [String: JSONValue] = [:]
             wireMetadata = try SyncJSON.decoder.decode(type(of: wireMetadata), from: metadataData)
             wireMetadata["ocrText"] = wireMetadata.removeValue(forKey: "ocr_text")
             let uploadRecord: [String: JSONValue] = [
-                "id": .string(fixture.screenshotId.uuidString), "vaultId": .string(fixture.vaultId.uuidString),
+                "id": .string(fixture.screenshotId.uuidString), "workspaceId": .string(fixture.workspaceId.uuidString),
                 "size": .number(Double(fixture.bytes.count)), "checksum": .string(payload.checksum),
                 "uri": .string("/Volumes/test/app/files/files/\(fixture.screenshotId.uuidString.lowercased())/original"),
                 "offset": .number(0), "contentType": .string("image/png"), "name": .string(filename),
@@ -77,7 +79,7 @@
             switch firstFailure {
             case "checksum": incorrect["checksum"] = .string("SHA-256:" + String(repeating: "0", count: 64))
             case "size": incorrect["size"] = .number(0)
-            case "id", "vaultId": incorrect[firstFailure] = .string(UUID.v7().uuidString)
+            case "id", "workspaceId": incorrect[firstFailure] = .string(UUID.v7().uuidString)
             default: break
             }
             let firstUpload = try SyncJSON.encoder.encode(incorrect)
@@ -168,7 +170,7 @@
                 let body = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
                 #expect(reservation.httpMethod == "POST")
                 #expect(body["id"] as? String == fixture.screenshotId.uuidString.lowercased())
-                #expect(body["vaultId"] as? String == fixture.vaultId.uuidString.lowercased())
+                #expect(body["workspaceId"] as? String == fixture.workspaceId.uuidString.lowercased())
                 #expect(body["name"] as? String == filename)
                 #expect(body["contentType"] as? String == "image/png")
                 let metadata = try #require(body["metadata"] as? [String: Any])
@@ -194,17 +196,17 @@
         }
 
         @Test
-        func missingSnapshotOriginalDoesNotStarveOtherVaultsAndCanRetry() async throws {
+        func missingSnapshotOriginalDoesNotStarveOtherWorkspacesAndCanRetry() async throws {
             let missing = try ScreenshotContentFixture()
             let pending = try ScreenshotContentFixture(dbQueue: missing.dbQueue)
             let queued = try ScreenshotContentFixture(dbQueue: missing.dbQueue)
             try await missing.makeRemoteOnly()
             try await missing.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE vaults SET syncConfirmedConnectionId = NULL WHERE id IN (?, ?)",
-                    arguments: [missing.vaultId, pending.vaultId]
+                    sql: "UPDATE workspaces SET syncConfirmedConnectionId = NULL WHERE id IN (?, ?)",
+                    arguments: [missing.workspaceId, pending.workspaceId]
                 )
-                try SyncTransactionRecorder.record(vaultId: queued.vaultId, operations: [
+                try SyncTransactionRecorder.record(workspaceId: queued.workspaceId, operations: [
                     SyncOperationDraft(entity: .meeting, action: .update, entityId: queued.meetingId),
                 ], in: db)
             }
@@ -223,18 +225,20 @@
             }
             #expect(failures.withLock { $0 } == 1)
             let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: missing.dbQueue))
-            #expect(transaction.vaultId == queued.vaultId)
+            #expect(transaction.workspaceId == queued.workspaceId)
             try await missing.dbQueue.read { db throws in
-                #expect(try VaultRecord.fetchOne(db, key: pending.vaultId)?.syncConfirmedConnectionId == pending.connectionId)
-                #expect(try VaultRecord.fetchOne(db, key: missing.vaultId)?.syncConfirmedConnectionId == nil)
+                #expect(try WorkspaceRecord.fetchOne(db, key: pending.workspaceId)?.syncConfirmedConnectionId == pending.connectionId)
+                #expect(try WorkspaceRecord.fetchOne(db, key: missing.workspaceId)?.syncConfirmedConnectionId == nil)
                 #expect(try MeetingScreenshotRecord.fetchOne(db, key: missing.screenshotId)?.remoteSource == missing.source)
-                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE vaultId = ?", arguments: [missing.vaultId]) == 0)
+                #expect(try Int
+                    .fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE workspace_id = ?", arguments: [missing.workspaceId]) == 0)
             }
             available.withLock { $0 = true }
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: missing.dbQueue, screenshotContent: provider)
             #expect(try await missing.storedBytes() == nil)
             #expect(try await provider.content(id: missing.screenshotId, dbQueue: missing.dbQueue).data == missing.bytes)
-            #expect(try await missing.dbQueue.read { try VaultRecord.fetchOne($0, key: missing.vaultId)?.syncConfirmedConnectionId } == missing
+            #expect(try await missing.dbQueue
+                .read { try WorkspaceRecord.fetchOne($0, key: missing.workspaceId)?.syncConfirmedConnectionId } == missing
                 .connectionId)
         }
 
@@ -251,17 +255,20 @@
                     sql: "INSERT INTO jobs_search_index(indexKind, targetKind, targetKey, priority, availableAt, updatedAt) VALUES ('fts', 'screenshotAnalysis', ?, -10, ?, ?)",
                     arguments: [fixture.screenshotId, Date(), Date()]
                 )
-                try SyncTransactionRecorder.record(vaultId: fixture.vaultId, operations: [
+                try SyncTransactionRecorder.record(workspaceId: fixture.workspaceId, operations: [
                     SyncOperationDraft(entity: .file, action: .upsert, entityId: fixture.screenshotId),
                 ], in: db)
                 if uploaded {
-                    try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'file', ?, 1)", arguments: [fixture.vaultId, fixture.screenshotId])
+                    try db.execute(
+                        sql: "INSERT INTO sync_entity_state VALUES (?, 'file', ?, 1)",
+                        arguments: [fixture.workspaceId, fixture.screenshotId]
+                    )
                     try db.execute(sql: "UPDATE sync_content_state SET residentRevision = 1 WHERE entity = 'file'")
                 }
             }
             let viewModel = CaptionViewModel()
             defer { viewModel.clearCurrentMeeting() }
-            viewModel.loadMeeting(fixture.meetingId, dbQueue: fixture.dbQueue, projectURL: nil, projectId: nil, vaultURL: nil)
+            viewModel.loadMeeting(fixture.meetingId, dbQueue: fixture.dbQueue, projectURL: nil, projectId: nil, workspaceURL: nil)
             let remotePending = ScreenshotOCRState.remote(ocrText: nil, caption: nil, state: .ready)
             #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .pending))
             try await fixture.dbQueue.write { db in
@@ -336,10 +343,10 @@
             let entityId = deletesScreenshot ? fixture.screenshotId : fixture.meetingId
             try await fixture.dbQueue.write { db in
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 1)",
-                    arguments: [fixture.vaultId, fixture.meetingId]
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 1)",
+                    arguments: [fixture.workspaceId, fixture.meetingId]
                 )
-                try SyncTransactionRecorder.record(vaultId: fixture.vaultId, operations: [
+                try SyncTransactionRecorder.record(workspaceId: fixture.workspaceId, operations: [
                     SyncOperationDraft(entity: entity, action: deletesScreenshot ? .delete : .update, entityId: entityId),
                 ], in: db)
             }
@@ -349,7 +356,11 @@
             {"conflicts":[{"entity":"\(entity.rawValue)","id":"\(entityId)","serverRevision":\(revision)}]}
             """.utf8), dbQueue: fixture.dbQueue)
 
-            try await SyncTransactionQueue.reapplyLocalVersion(vaultId: fixture.vaultId, dbQueue: fixture.dbQueue, screenshotContent: provider)
+            try await SyncTransactionQueue.reapplyLocalVersion(
+                workspaceId: fixture.workspaceId,
+                dbQueue: fixture.dbQueue,
+                screenshotContent: provider
+            )
 
             #expect(calls.withLock { $0 } == 0)
             #expect(try await fixture.storedBytes() == nil)
@@ -370,11 +381,11 @@
             try await fixture.dbQueue.write { db in
                 let image = try #require(try MeetingScreenshotRecord.fetchOne(db, key: fixture.screenshotId))
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'meeting_attachment', ?, 1)",
-                    arguments: [fixture.vaultId, image.id]
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'meeting_attachment', ?, 1)",
+                    arguments: [fixture.workspaceId, image.id]
                 )
                 try SyncTransactionRecorder.record(
-                    vaultId: fixture.vaultId,
+                    workspaceId: fixture.workspaceId,
                     operations: [SyncInitialSnapshotBuilder.meetingAttachmentOperation(image)],
                     in: db
                 )
@@ -387,7 +398,7 @@
             ]}
             """.utf8), dbQueue: fixture.dbQueue)
             try await SyncTransactionQueue.reapplyLocalVersion(
-                vaultId: fixture.vaultId,
+                workspaceId: fixture.workspaceId,
                 dbQueue: fixture.dbQueue,
                 screenshotContent: ScreenshotContentProvider()
             )
@@ -408,7 +419,7 @@
         }
 
         @Test(.timeLimit(.minutes(1)), arguments: ["success", "missingImage", "serverChanged"])
-        func movingAnAccountRetainsAllItsVaultsUntilCompletion(scenario: String) async throws {
+        func movingAnAccountRetainsAllItsWorkspacesUntilCompletion(scenario: String) async throws {
             let failsSecondImage = scenario == "missingImage"
             let serverChanged = Mutex(false)
             let first = try ScreenshotContentFixture()
@@ -420,8 +431,8 @@
             )
             try await first.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncConfirmedConnectionId = ? WHERE id = ?",
-                    arguments: [first.connectionId, first.connectionId, second.vaultId]
+                    sql: "UPDATE workspaces SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncConfirmedConnectionId = ? WHERE id = ?",
+                    arguments: [first.connectionId, first.connectionId, second.workspaceId]
                 )
                 try db.execute(
                     sql: "UPDATE files SET remoteReference = ? WHERE id = ?",
@@ -435,7 +446,7 @@
             try await second.makeRemoteOnly()
             ImageURLProtocol.register(origin: first.source.origin) { request in
                 let path = request.url!.path
-                if path.hasSuffix("/changes"), path.contains(first.vaultId.uuidString.lowercased()), serverChanged.withLock({ $0 }) {
+                if path.hasSuffix("/changes"), path.contains(first.workspaceId.uuidString.lowercased()), serverChanged.withLock({ $0 }) {
                     return (200, [:], Data("""
                     {"items":[],"cursor":"new-server-update","highWaterCursor":"new-server-update","hasMore":false}
                     """.utf8))
@@ -460,7 +471,7 @@
             })
             var events = gate.events.makeAsyncIterator()
             let moving = Task {
-                try await MeetingRepository(dbQueue: first.dbQueue).resolveVaultsForSignOut(
+                try await MeetingRepository(dbQueue: first.dbQueue).resolveWorkspacesForSignOut(
                     connectionID: first.connectionId, disposition: .moveToLocalAccount, screenshotContent: provider,
                     textContent: MeetingContentProvider(client: SyncAPIClient(
                         session: URLSession(configuration: configuration),
@@ -483,10 +494,11 @@
                     await #expect(throws: TextContentError.changed) { try await moving.value }
                 }
                 try await first.dbQueue.read { db throws in
-                    for vaultId in [first.vaultId, second.vaultId] {
-                        #expect(try VaultRecord.fetchOne(db, key: vaultId)?.accountConnectionId == first.connectionId)
-                        #expect(try VaultRecord.fetchOne(db, key: vaultId)?.syncPullCursor == "after")
-                        #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])! > 0)
+                    for workspaceId in [first.workspaceId, second.workspaceId] {
+                        #expect(try WorkspaceRecord.fetchOne(db, key: workspaceId)?.accountConnectionId == first.connectionId)
+                        #expect(try WorkspaceRecord.fetchOne(db, key: workspaceId)?.syncPullCursor == "after")
+                        #expect(try Int
+                            .fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspaceId])! > 0)
                     }
                 }
                 // Failure releases the protection, so normal cache maintenance can resume.
@@ -499,7 +511,7 @@
                 #expect(try await second.storedBytes() == nil)
                 #expect(try await provider.content(id: second.screenshotId, dbQueue: second.dbQueue).data == second.bytes)
                 #expect(try await first.dbQueue.read {
-                    try Int.fetchOne($0, sql: "SELECT count(*) FROM vaults WHERE accountConnectionId = ?", arguments: [first.connectionId])
+                    try Int.fetchOne($0, sql: "SELECT count(*) FROM workspaces WHERE accountConnectionId = ?", arguments: [first.connectionId])
                 } == 0)
             }
         }
@@ -512,8 +524,8 @@
             let cache = try ScreenshotFileStore(directory: root)
             let provider = ScreenshotContentProvider(cache: cache)
             let queue = fixture.dbQueue
-            let vaultId = fixture.vaultId
-            try await provider.prepareOriginals(vaultId: vaultId, dbQueue: queue)
+            let workspaceId = fixture.workspaceId
+            try await provider.prepareOriginals(workspaceId: workspaceId, dbQueue: queue)
             #expect(try await fixture.storedBytes() == nil)
             try await provider.trimFiles(dbQueue: queue, budget: 0)
             #expect(try cache.read(fixture.source, variant: .original)?.data == fixture.bytes)
@@ -527,7 +539,7 @@
                 let record = try #require(try MeetingScreenshotRecord.fetchOne(db, key: fixture.screenshotId))
                 let operation = try SyncInitialSnapshotBuilder.screenshotOperation(record, action: .upsert, contentHash: fixture.source.contentHash)
                 try SyncTransactionRecorder.record(
-                    vaultId: vaultId,
+                    workspaceId: workspaceId,
                     operations: [operation],
                     in: db
                 )
@@ -539,18 +551,18 @@
             try await provider.trimFiles(dbQueue: queue, budget: 0)
             #expect(try cache.read(fixture.source, variant: .original)?.data == fixture.bytes)
             try await queue.write { db in
-                try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
-                try db.execute(sql: "UPDATE vaults SET syncRecoveryState = 'pending' WHERE id = ?", arguments: [vaultId])
+                try SyncTransactionQueue.discard(workspaceId: workspaceId, in: db)
+                try db.execute(sql: "UPDATE workspaces SET syncRecoveryState = 'pending' WHERE id = ?", arguments: [workspaceId])
             }
             try await provider.trimFiles(dbQueue: queue, budget: 0)
             #expect(try cache.read(fixture.source, variant: .original)?.data == fixture.bytes)
             try await queue.write { db in
-                try db.execute(sql: "UPDATE vaults SET syncRecoveryState = NULL WHERE id = ?", arguments: [vaultId])
+                try db.execute(sql: "UPDATE workspaces SET syncRecoveryState = NULL WHERE id = ?", arguments: [workspaceId])
             }
             try await provider.trimFiles(dbQueue: queue, budget: 0)
             #expect(try cache.read(fixture.source, variant: .original) == nil)
-            #expect(try await queue.read { try VaultRecord.fetchOne($0, key: vaultId)?.syncPullCursor } == "cursor")
-            #expect(try await !SyncTransactionQueue.hasPending(vaultId: vaultId, dbQueue: queue))
+            #expect(try await queue.read { try WorkspaceRecord.fetchOne($0, key: workspaceId)?.syncPullCursor } == "cursor")
+            #expect(try await !SyncTransactionQueue.hasPending(workspaceId: workspaceId, dbQueue: queue))
         }
 
         @Test
@@ -587,7 +599,10 @@
                 try await provider.content(id: fixture.screenshotId, dbQueue: fixture.dbQueue)
             }
             try await fixture.dbQueue.write { db in
-                try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?", arguments: [fixture.vaultId])
+                try db.execute(
+                    sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?",
+                    arguments: [fixture.workspaceId]
+                )
             }
             await #expect(throws: ScreenshotContentError.authorizationRequired) {
                 try await provider.content(id: fixture.screenshotId, dbQueue: fixture.dbQueue)
@@ -618,8 +633,8 @@
             let disconnecting = ScreenshotContentProvider(session: URLSession(configuration: config), tokenProvider: { _, _ in
                 try await fixture.dbQueue.write { db in
                     try db.execute(
-                        sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?",
-                        arguments: [fixture.vaultId]
+                        sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?",
+                        arguments: [fixture.workspaceId]
                     )
                 }
                 return "test-token"
@@ -685,19 +700,19 @@
             }
             defer { ImageURLProtocol.remove(origin: fixture.source.origin) }
             let backup = BackupService(dbQueue: fixture.dbQueue, applicationSupportURL: root)
-            await #expect(throws: BackupServiceError.localVaultsOnly) { try await backup.createGeneration(vaultIds: [fixture.vaultId]) }
+            await #expect(throws: BackupServiceError.localWorkspacesOnly) { try await backup.createGeneration(workspaceIds: [fixture.workspaceId]) }
             let configuration = URLSessionConfiguration.ephemeral
             configuration.protocolClasses = [ImageURLProtocol.self]
             let textProvider = MeetingContentProvider(client: SyncAPIClient(
                 session: URLSession(configuration: configuration),
                 tokenProvider: { _, _ in "test-token" }
             ))
-            try await MeetingRepository(dbQueue: fixture.dbQueue).resolveVaultsForSignOut(
+            try await MeetingRepository(dbQueue: fixture.dbQueue).resolveWorkspacesForSignOut(
                 connectionID: fixture.connectionId, disposition: .moveToLocalAccount, screenshotContent: provider, textContent: textProvider
             )
-            let generation = try await backup.createGeneration(vaultIds: [fixture.vaultId])
-            let marker = try await backup.prepareRestore(from: generation, requests: [VaultBackupRestoreRequest(
-                sourceVaultId: fixture.vaultId, targetVaultId: .v7(), mode: .newVault, name: "Restored"
+            let generation = try await backup.createGeneration(workspaceIds: [fixture.workspaceId])
+            let marker = try await backup.prepareRestore(from: generation, requests: [WorkspaceBackupRestoreRequest(
+                sourceWorkspaceId: fixture.workspaceId, targetWorkspaceId: .v7(), mode: .newWorkspace, name: "Restored"
             )])
             #expect(calls.withLock { $0 } == 0)
             let archiveURL = root.appending(path: "Restore/\(marker.stagedFilename)")
@@ -814,16 +829,19 @@
             let local = try ScreenshotContentFixture(dbQueue: server.dbQueue)
             try await local.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL, syncRole = NULL, syncConfirmedConnectionId = NULL WHERE id = ?",
-                    arguments: [local.vaultId]
+                    sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL, syncRole = NULL, syncConfirmedConnectionId = NULL WHERE id = ?",
+                    arguments: [local.workspaceId]
                 )
             }
             let root = temporaryDirectory()
             defer { try? FileManager.default.removeItem(at: root) }
             let service = BackupService(dbQueue: server.dbQueue, applicationSupportURL: root)
-            #expect(try await service.listVaults().map(\.id) == [local.vaultId])
-            await #expect(throws: BackupServiceError.localVaultsOnly) { try await service.createGeneration(vaultIds: [server.vaultId]) }
-            await #expect(throws: BackupServiceError.localVaultsOnly) { try await service.createGeneration(vaultIds: [server.vaultId, local.vaultId])
+            #expect(try await service.listWorkspaces().map(\.id) == [local.workspaceId])
+            await #expect(throws: BackupServiceError.localWorkspacesOnly) { try await service.createGeneration(workspaceIds: [server.workspaceId]) }
+            await #expect(throws: BackupServiceError.localWorkspacesOnly) { try await service.createGeneration(workspaceIds: [
+                server.workspaceId,
+                local.workspaceId,
+            ])
             }
             #expect(try await service.listGenerations().isEmpty)
             #expect(try await server.storedBytes() == server.bytes)
@@ -869,7 +887,7 @@
                     let source = try #require(try TextContentStore.source(entity: .file, id: id, in: db))
                     let body = try TextContentAccess.cachedFileText(fileId: id, in: db)
                     return try JSONSerialization.data(withJSONObject: [
-                        "id": id.uuidString, "vaultId": source.vaultId.uuidString, "revision": source.revision,
+                        "id": id.uuidString, "workspaceId": source.workspaceId.uuidString, "revision": source.revision,
                         "checksum": file.checksum, "name": file.name, "contentType": file.contentType, "size": file.size,
                         "createdAt": "2026-09-07T00:00:00Z", "updatedAt": "2026-09-07T00:00:00Z", "metadata": [
                             "source": "screenshot",
@@ -940,7 +958,7 @@
 
     private struct ScreenshotContentFixture: Sendable {
         let dbQueue: DatabaseQueue
-        let vaultId = UUID.v7()
+        let workspaceId = UUID.v7()
         let connectionId = UUID.v7()
         let meetingId = UUID.v7()
         let screenshotId = UUID.v7()
@@ -956,16 +974,16 @@
                 contentHash: ScreenshotRemoteReference.digest(bytes)
             )
             let connection = DahliaAccountConnectionRecord(id: connectionId, origin: source.origin, clientID: "test", createdAt: .now)
-            var vault = VaultRecord(id: vaultId, path: nil, name: "Vault", createdAt: .now, lastOpenedAt: .now)
-            vault.accountConnectionId = connectionId
-            if vault.syncRole == nil { vault.syncRole = "admin" }
-            if vault.organizationId == nil { vault.organizationId = .v7() }
-            vault.syncConfirmedConnectionId = connectionId
-            vault.syncPullCursor = "cursor"
-            let meeting = MeetingRecord(id: meetingId, vaultId: vaultId, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now)
+            var workspace = WorkspaceRecord(id: workspaceId, path: nil, name: "Workspace", createdAt: .now, lastOpenedAt: .now)
+            workspace.accountConnectionId = connectionId
+            if workspace.syncRole == nil { workspace.syncRole = "admin" }
+            if workspace.organizationId == nil { workspace.organizationId = .v7() }
+            workspace.syncConfirmedConnectionId = connectionId
+            workspace.syncPullCursor = "cursor"
+            let meeting = MeetingRecord(id: meetingId, workspaceId: workspaceId, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now)
             try self.dbQueue.write { db in
                 try connection.insert(db)
-                try vault.insert(db)
+                try workspace.insert(db)
                 try meeting.insert(db)
                 try MeetingScreenshotRecord(
                     id: screenshotId,
@@ -983,8 +1001,8 @@
         func confirm() async throws {
             try await dbQueue.write { db in
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'file', ?, 1)",
-                    arguments: [vaultId, screenshotId]
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'file', ?, 1)",
+                    arguments: [workspaceId, screenshotId]
                 )
             }
         }

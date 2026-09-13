@@ -39,7 +39,7 @@ struct MeetingRecord: Codable, FetchableRecord, PersistableRecord, Equatable, Se
     static let databaseTableName = "meetings"
 
     var id: UUID
-    var vaultId: UUID
+    var workspaceId: UUID
     var projectId: UUID?
     var name: String
     var description = ""
@@ -57,7 +57,7 @@ struct MeetingRecord: Codable, FetchableRecord, PersistableRecord, Equatable, Se
 
     enum CodingKeys: String, CodingKey {
         case id
-        case vaultId
+        case workspaceId = "workspace_id"
         case projectId
         case name
         case description
@@ -76,7 +76,7 @@ extension MeetingRecord {
     static func resolvedProjectIdForNewMeeting(
         requestedProjectId: UUID?,
         calendarEvent: CalendarEvent?,
-        vaultId: UUID,
+        workspaceId: UUID,
         allowsCalendarSeriesProjectInheritance: Bool = true,
         in db: Database
     ) throws -> UUID? {
@@ -96,14 +96,14 @@ extension MeetingRecord {
               ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
              AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
             JOIN projects ON projects.id = meetings.projectId
-            WHERE meetings.vaultId = ?
-              AND projects.vaultId = ?
+            WHERE meetings.workspace_id = ?
+              AND projects.workspace_id = ?
               AND meetings.calendar_event_ical_uid = ?
               AND calendar_events.start <= ?
             ORDER BY calendar_events.start DESC, meetings.createdAt DESC, meetings.id DESC
             LIMIT 1
             """,
-            arguments: [vaultId, vaultId, icalUid, calendarEvent.startDate]
+            arguments: [workspaceId, workspaceId, icalUid, calendarEvent.startDate]
         )
     }
 }

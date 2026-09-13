@@ -44,7 +44,7 @@ actor MeetingContentProvider {
 
     var requests: [Key: Request] = [:]
     var leases: [Key: Int] = [:]
-    var retainedVaults: [ObjectIdentifier: [UUID: Int]] = [:]
+    var retainedWorkspaces: [ObjectIdentifier: [UUID: Int]] = [:]
     var maintenance: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var activeReads = 0
     private var waiters: [(key: Key, background: Bool, continuation: CheckedContinuation<Void, Never>)] = []
@@ -67,14 +67,14 @@ actor MeetingContentProvider {
         leases[key] = count > 1 ? count - 1 : nil
     }
 
-    func retainVault(_ vaultId: UUID, dbQueue: DatabaseQueue) {
-        retainedVaults[ObjectIdentifier(dbQueue), default: [:]][vaultId, default: 0] += 1
+    func retainWorkspace(_ workspaceId: UUID, dbQueue: DatabaseQueue) {
+        retainedWorkspaces[ObjectIdentifier(dbQueue), default: [:]][workspaceId, default: 0] += 1
     }
 
-    func releaseVault(_ vaultId: UUID, dbQueue: DatabaseQueue) {
+    func releaseWorkspace(_ workspaceId: UUID, dbQueue: DatabaseQueue) {
         let database = ObjectIdentifier(dbQueue)
-        let count = retainedVaults[database]?[vaultId] ?? 0
-        retainedVaults[database]?[vaultId] = count > 1 ? count - 1 : nil
+        let count = retainedWorkspaces[database]?[workspaceId] ?? 0
+        retainedWorkspaces[database]?[workspaceId] = count > 1 ? count - 1 : nil
     }
 
     func withContent<T: Sendable>(
@@ -172,14 +172,14 @@ actor MeetingContentProvider {
                 }
                 let worker = SyncWorker(dbQueue: dbQueue, session: client.session, apiClient: client)
                 // Unrelated protected changes may remain; fetch revalidates the body before publishing.
-                _ = try await worker.pullRemoteChanges(vaultId: expected.vaultId, connectionId: expected.connectionId)
+                _ = try await worker.pullRemoteChanges(workspaceId: expected.workspaceId, connectionId: expected.connectionId)
                 try await fetch(entity: entity, id: id, dbQueue: dbQueue, prefetchBudget: prefetchBudget)
             }
         } catch {
             let failure = error is CancellationError ? nil : (error as? TextContentError)?.rawValue ?? "unavailable"
             try? await dbQueue.write { db in
                 guard let expected, let current = try TextContentStore.source(entity: entity, id: id, in: db),
-                      current.vaultId == expected.vaultId, current.connectionId == expected.connectionId,
+                      current.workspaceId == expected.workspaceId, current.connectionId == expected.connectionId,
                       current.origin == expected.origin else { return }
                 let message = current == expected ? failure : nil
                 try db.execute(
@@ -248,7 +248,7 @@ actor MeetingContentProvider {
         if entity == .transcript {
             guard try await RemoteChangeApplier.beginTranscript(
                 meetingId: id,
-                vaultId: source.vaultId,
+                workspaceId: source.workspaceId,
                 expectedConnectionId: source.connectionId,
                 dbQueue: dbQueue,
                 incrementalContext: source.context
@@ -296,7 +296,7 @@ actor MeetingContentProvider {
     private func fetchFile(source: TextContentStore.Source, id: UUID, dbQueue: DatabaseQueue, prefetchBudget: Int?) async throws {
         struct FileContent: Decodable {
             let id: UUID
-            let vaultId: UUID
+            let workspaceId: UUID
             let revision: Int
             let checksum: String
             struct Body: Decodable {
@@ -316,7 +316,7 @@ actor MeetingContentProvider {
             let metadata: Body
         }
         let file = try await SyncJSON.decoder.decode(FileContent.self, from: get(source: source, entity: .file, id: id))
-        guard file.id == id, file.vaultId == source.vaultId else { throw TextContentError.integrityFailure }
+        guard file.id == id, file.workspaceId == source.workspaceId else { throw TextContentError.integrityFailure }
         guard file.revision == source.revision, file.checksum == source.checksum else { throw TextContentError.changed }
         var digest = TextContentDigest()
         digest.add(file.metadata.ocrText)
@@ -379,7 +379,7 @@ actor MeetingContentProvider {
                 guard try await RemoteChangeApplier.applyTranscriptPage(
                     items,
                     meetingId: id,
-                    vaultId: source.vaultId,
+                    workspaceId: source.workspaceId,
                     expectedConnectionId: source.connectionId,
                     dbQueue: dbQueue,
                     incrementalContext: source.context

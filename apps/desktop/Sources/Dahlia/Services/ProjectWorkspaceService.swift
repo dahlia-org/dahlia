@@ -21,16 +21,16 @@ final class ProjectWorkspaceService {
     private struct MeetingMovePlan {
         let meetingIds: Set<UUID>
         let relocations: [SummaryRelocation]
-        let vaultExportUpdates: [MeetingRepository.MeetingVaultExportUpdate]
+        let workspaceExportUpdates: [MeetingRepository.MeetingWorkspaceExportUpdate]
     }
 
     private struct ProjectSummaryMovePlan {
         let relocations: [SummaryRelocation]
-        let vaultExportUpdates: [MeetingRepository.MeetingVaultExportUpdate]
+        let workspaceExportUpdates: [MeetingRepository.MeetingWorkspaceExportUpdate]
     }
 
     private nonisolated let repository: MeetingRepository
-    private nonisolated let vault: VaultRecord
+    private nonisolated let workspace: WorkspaceRecord
     private let managedAudioRootURL: URL
     private let fileManager: FileManager
     private let trashHandler: TrashHandler
@@ -39,7 +39,7 @@ final class ProjectWorkspaceService {
 
     init(
         repository: MeetingRepository,
-        vault: VaultRecord,
+        workspace: WorkspaceRecord,
         managedAudioRootURL: URL = BatchAudioStorage.managedRootURL,
         fileManager: FileManager = .default,
         trashHandler: @escaping TrashHandler = ProjectWorkspaceService.moveToTrash,
@@ -47,7 +47,7 @@ final class ProjectWorkspaceService {
         stagedAudioRestorer: @escaping StagedAudioRestorer = BatchAudioCleanupService.restoreStagedFiles
     ) {
         self.repository = repository
-        self.vault = vault
+        self.workspace = workspace
         self.managedAudioRootURL = managedAudioRootURL
         self.fileManager = fileManager
         self.trashHandler = trashHandler
@@ -76,7 +76,7 @@ final class ProjectWorkspaceService {
     func fetchOrCreateRootProject(name: String) throws -> ProjectRecord {
         let name = try Self.validatedName(name)
         let (project, changed) = try withMutationLock {
-            let projects = try repository.fetchAllProjects(vaultId: vault.id)
+            let projects = try repository.fetchAllProjects(workspaceId: workspace.id)
             if let existing = projects.first(where: {
                 $0.parentProjectId == nil
                     && DahliaProjectName.siblingKey($0.name) == DahliaProjectName.siblingKey(name)
@@ -88,7 +88,7 @@ final class ProjectWorkspaceService {
             return (project, true)
         }
         if changed {
-            DahliaWorkspaceChangeNotification.post(vaultID: vault.id)
+            DahliaWorkspaceChangeNotification.post(workspaceID: workspace.id)
         }
         return project
     }
@@ -102,7 +102,7 @@ final class ProjectWorkspaceService {
     ) throws -> ProjectRecord {
         let name = try Self.validatedName(name)
         let parent = try parentProjectId.map { id in
-            guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
+            guard let project = try repository.fetchProject(id: id), project.workspaceId == workspace.id else {
                 throw ProjectWorkspaceError.projectNotFound
             }
             guard project.parentProjectId == nil else {
@@ -114,7 +114,7 @@ final class ProjectWorkspaceService {
             throw ProjectWorkspaceError.typeOwnedByRoot
         }
         return try repository.createProject(
-            vaultId: vault.id,
+            workspaceId: workspace.id,
             parentProjectId: parentProjectId,
             name: name,
             description: description,
@@ -142,7 +142,7 @@ final class ProjectWorkspaceService {
         newName: String,
         expectedRevision: Int?
     ) throws -> ProjectRecord {
-        guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
+        guard let project = try repository.fetchProject(id: id), project.workspaceId == workspace.id else {
             throw ProjectWorkspaceError.projectNotFound
         }
         if let expectedRevision, project.revision != expectedRevision {
@@ -162,10 +162,10 @@ final class ProjectWorkspaceService {
         try performSummaryRelocations(summaryPlan.relocations) {
             renamed = try repository.updateProjectLocation(
                 id: id,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: project.parentProjectId,
                 name: newName,
-                vaultExportUpdates: summaryPlan.vaultExportUpdates,
+                workspaceExportUpdates: summaryPlan.workspaceExportUpdates,
                 expectedRevision: expectedRevision
             )
         }
@@ -192,7 +192,7 @@ final class ProjectWorkspaceService {
         parentProjectId: UUID?,
         expectedRevision: Int?
     ) throws -> ProjectRecord {
-        guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
+        guard let project = try repository.fetchProject(id: id), project.workspaceId == workspace.id else {
             throw ProjectWorkspaceError.projectNotFound
         }
         if let expectedRevision, project.revision != expectedRevision {
@@ -200,7 +200,7 @@ final class ProjectWorkspaceService {
         }
         guard project.parentProjectId != parentProjectId else { return project }
 
-        let projects = try repository.fetchAllProjects(vaultId: vault.id)
+        let projects = try repository.fetchAllProjects(workspaceId: workspace.id)
         let descendantIds = Set(ProjectRecord.hierarchy(projectId: id, records: projects).dropFirst().map(\.id))
         guard parentProjectId != id,
               parentProjectId.map({ !descendantIds.contains($0) }) ?? true else {
@@ -209,7 +209,7 @@ final class ProjectWorkspaceService {
 
         let parent = try parentProjectId.map { parentId in
             guard let parent = projects.first(where: { $0.id == parentId }),
-                  parent.vaultId == vault.id else {
+                  parent.workspaceId == workspace.id else {
                 throw ProjectWorkspaceError.projectNotFound
             }
             guard parent.parentProjectId == nil else {
@@ -230,10 +230,10 @@ final class ProjectWorkspaceService {
         try performSummaryRelocations(summaryPlan.relocations) {
             moved = try repository.updateProjectLocation(
                 id: id,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 parentProjectId: parentProjectId,
                 name: project.name,
-                vaultExportUpdates: summaryPlan.vaultExportUpdates,
+                workspaceExportUpdates: summaryPlan.workspaceExportUpdates,
                 expectedRevision: expectedRevision
             )
         }
@@ -247,12 +247,12 @@ final class ProjectWorkspaceService {
         expectedRevision: Int? = nil
     ) throws -> ProjectRecord {
         try withNotifyingMutation {
-            guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
+            guard let project = try repository.fetchProject(id: id), project.workspaceId == workspace.id else {
                 throw ProjectWorkspaceError.projectNotFound
             }
             return try repository.updateRootProjectType(
                 id: id,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectType: projectType,
                 expectedRevision: expectedRevision
             )
@@ -269,14 +269,14 @@ final class ProjectWorkspaceService {
         appearance: ProjectAppearance? = nil
     ) throws -> ProjectRecord {
         try withNotifyingMutation {
-            guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
+            guard let project = try repository.fetchProject(id: id), project.workspaceId == workspace.id else {
                 throw ProjectWorkspaceError.projectNotFound
             }
             guard project.revision == expectedRevision else {
                 throw ProjectWorkspaceError.staleRevision(current: project.revision)
             }
             let name = try Self.validatedName(name)
-            let projects = try repository.fetchAllProjects(vaultId: vault.id)
+            let projects = try repository.fetchAllProjects(workspaceId: workspace.id)
             let descendants = Array(ProjectRecord.hierarchy(projectId: id, records: projects).dropFirst())
             let descendantIDs = Set(descendants.map(\.id))
             guard parentProjectId != id,
@@ -294,7 +294,7 @@ final class ProjectWorkspaceService {
             }
             let newPath = parent.map { "\($0.path)/\(name)" } ?? name
             let summaryPlan = if project.path == newPath {
-                ProjectSummaryMovePlan(relocations: [], vaultExportUpdates: [])
+                ProjectSummaryMovePlan(relocations: [], workspaceExportUpdates: [])
             } else {
                 try projectSummaryMovePlan(
                     projectId: id,
@@ -305,12 +305,12 @@ final class ProjectWorkspaceService {
             return try performSummaryRelocations(summaryPlan.relocations) {
                 try repository.updateProject(
                     id: id,
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     parentProjectId: parentProjectId,
                     name: name,
                     description: description,
                     projectType: projectType,
-                    vaultExportUpdates: summaryPlan.vaultExportUpdates,
+                    workspaceExportUpdates: summaryPlan.workspaceExportUpdates,
                     expectedRevision: expectedRevision,
                     appearance: appearance
                 )
@@ -324,7 +324,7 @@ final class ProjectWorkspaceService {
         expectedRevision: Int? = nil
     ) throws -> Bool {
         let changed = try withMutationLock {
-            guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
+            guard let project = try repository.fetchProject(id: id), project.workspaceId == workspace.id else {
                 throw ProjectWorkspaceError.projectNotFound
             }
             if let expectedRevision, project.revision != expectedRevision {
@@ -332,13 +332,13 @@ final class ProjectWorkspaceService {
             }
             return try repository.updateProjectDescription(
                 id: id,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 description: description,
                 expectedRevision: expectedRevision
             )
         }
         if changed {
-            DahliaWorkspaceChangeNotification.post(vaultID: vault.id)
+            DahliaWorkspaceChangeNotification.post(workspaceID: workspace.id)
         }
         return changed
     }
@@ -352,7 +352,7 @@ final class ProjectWorkspaceService {
             try moveMeetingsUnlocked(ids: ids, toProjectId: toProjectId)
         }
         if changed {
-            DahliaWorkspaceChangeNotification.post(vaultID: vault.id)
+            DahliaWorkspaceChangeNotification.post(workspaceID: workspace.id)
         }
     }
 
@@ -364,8 +364,8 @@ final class ProjectWorkspaceService {
             try repository.commitMeetingMove(
                 ids: plan.meetingIds,
                 toProjectId: toProjectId,
-                vaultId: vault.id,
-                vaultExportUpdates: plan.vaultExportUpdates
+                workspaceId: workspace.id,
+                workspaceExportUpdates: plan.workspaceExportUpdates
             )
         }
         return true
@@ -383,7 +383,7 @@ final class ProjectWorkspaceService {
                 deletesSummaryFiles: deletesSummaryFiles
             )
         }
-        DahliaWorkspaceChangeNotification.post(vaultID: vault.id)
+        DahliaWorkspaceChangeNotification.post(workspaceID: workspace.id)
         try BatchAudioCleanupService.discardStagedFiles(stagedAudio)
     }
 
@@ -392,7 +392,7 @@ final class ProjectWorkspaceService {
         meetingDisposition: ProjectMeetingDisposition,
         deletesSummaryFiles: Bool
     ) throws -> [BatchAudioCleanupService.StagedFile] {
-        guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
+        guard let project = try repository.fetchProject(id: id), project.workspaceId == workspace.id else {
             throw ProjectWorkspaceError.projectNotFound
         }
 
@@ -401,16 +401,16 @@ final class ProjectWorkspaceService {
             let hierarchyIds = try Set(
                 ProjectRecord.hierarchy(
                     projectId: id,
-                    records: repository.fetchAllProjects(vaultId: vault.id)
+                    records: repository.fetchAllProjects(workspaceId: workspace.id)
                 ).map(\.id)
             )
             guard let destination = try repository.fetchProject(id: destinationId),
-                  destination.vaultId == vault.id,
+                  destination.workspaceId == workspace.id,
                   !hierarchyIds.contains(destinationId)
             else {
                 throw ProjectWorkspaceError.invalidMoveDestination
             }
-            let hierarchyMeetingIds = try repository.meetingIds(projectHierarchy: id, vaultId: vault.id)
+            let hierarchyMeetingIds = try repository.meetingIds(projectHierarchy: id, workspaceId: workspace.id)
             movePlan = try makeMeetingMovePlan(ids: hierarchyMeetingIds, toProjectId: destinationId)
         } else {
             movePlan = nil
@@ -425,9 +425,9 @@ final class ProjectWorkspaceService {
             stagedAudio = try performSummaryRelocations(relocations) {
                 try repository.deleteProjectHierarchy(
                     projectId: id,
-                    vaultId: vault.id,
+                    workspaceId: workspace.id,
                     meetingDisposition: meetingDisposition,
-                    vaultExportUpdates: movePlan?.vaultExportUpdates ?? [],
+                    workspaceExportUpdates: movePlan?.workspaceExportUpdates ?? [],
                     managedAudioRootURL: managedAudioRootURL,
                     restoreStagedAudio: stagedAudioRestorer
                 )
@@ -440,25 +440,25 @@ final class ProjectWorkspaceService {
     }
 
     private func trashTrackedSummaries(projectId: UUID) throws -> [TrashedSummary] {
-        guard let vaultURL = vault.url else { return [] }
-        let meetingIds = try repository.meetingIds(projectHierarchy: projectId, vaultId: vault.id)
+        guard let workspaceURL = workspace.url else { return [] }
+        let meetingIds = try repository.meetingIds(projectHierarchy: projectId, workspaceId: workspace.id)
         guard !meetingIds.isEmpty else { return [] }
-        let candidates = try repository.fetchMeetingMoveCandidates(ids: meetingIds, vaultId: vault.id)
-        let externalPaths = try repository.externalVaultSummaryPaths(
+        let candidates = try repository.fetchMeetingMoveCandidates(ids: meetingIds, workspaceId: workspace.id)
+        let externalPaths = try repository.externalWorkspaceSummaryPaths(
             movingMeetingIds: meetingIds,
-            vaultId: vault.id
+            workspaceId: workspace.id
         )
         let externalIdentities = try Set(externalPaths.compactMap {
-            try summaryFileResolver($0, vaultURL).map {
+            try summaryFileResolver($0, workspaceURL).map {
                 DahliaWorkspaceFileIdentity.resolve($0, fileManager: fileManager)
             }
         })
         var trashed: [TrashedSummary] = []
         var handled: Set<DahliaWorkspaceFileIdentity> = []
         do {
-            for candidate in candidates where candidate.hasVaultExport {
-                guard let source = try summaryFileResolver(candidate.vaultRelativePath, vaultURL) else { continue }
-                guard isInsideVaultAfterResolvingSymlinks(source),
+            for candidate in candidates where candidate.hasWorkspaceExport {
+                guard let source = try summaryFileResolver(candidate.workspaceRelativePath, workspaceURL) else { continue }
+                guard isInsideWorkspaceAfterResolvingSymlinks(source),
                       pathContainsNoSymlinks(source) else {
                     throw ProjectWorkspaceError.invalidMoveDestination
                 }
@@ -506,63 +506,63 @@ final class ProjectWorkspaceService {
 extension ProjectWorkspaceService {
     private nonisolated func withNotifyingMutation<T>(_ operation: () throws -> T) throws -> T {
         let result = try withMutationLock(operation)
-        DahliaWorkspaceChangeNotification.post(vaultID: vault.id)
+        DahliaWorkspaceChangeNotification.post(workspaceID: workspace.id)
         return result
     }
 
     private nonisolated func withMutationLock<T>(_ operation: () throws -> T) throws -> T {
-        guard let vaultURL = vault.url else { return try operation() }
+        guard let workspaceURL = workspace.url else { return try operation() }
         do {
-            return try DahliaVaultMutationLock.withLock(
-                vaultURL: vaultURL,
-                vaultID: vault.id,
+            return try DahliaWorkspaceMutationLock.withLock(
+                workspaceURL: workspaceURL,
+                workspaceID: workspace.id,
                 operation: operation
             )
-        } catch is DahliaVaultMutationLockError {
-            throw ProjectWorkspaceError.vaultBusy
+        } catch is DahliaWorkspaceMutationLockError {
+            throw ProjectWorkspaceError.workspaceBusy
         }
     }
 
     private func projectURL(path: String) throws -> URL {
-        guard let vaultURL = vault.url else { throw ProjectWorkspaceError.invalidMoveDestination }
-        return vaultURL.appending(path: path, directoryHint: .isDirectory)
+        guard let workspaceURL = workspace.url else { throw ProjectWorkspaceError.invalidMoveDestination }
+        return workspaceURL.appending(path: path, directoryHint: .isDirectory)
     }
 
     private func makeMeetingMovePlan(ids: Set<UUID>, toProjectId: UUID?) throws -> MeetingMovePlan {
         guard !ids.isEmpty else {
-            return MeetingMovePlan(meetingIds: [], relocations: [], vaultExportUpdates: [])
+            return MeetingMovePlan(meetingIds: [], relocations: [], workspaceExportUpdates: [])
         }
 
-        let candidates = try repository.fetchMeetingMoveCandidates(ids: ids, vaultId: vault.id)
+        let candidates = try repository.fetchMeetingMoveCandidates(ids: ids, workspaceId: workspace.id)
             .filter { $0.projectId != toProjectId }
         guard !candidates.isEmpty else {
-            return MeetingMovePlan(meetingIds: [], relocations: [], vaultExportUpdates: [])
+            return MeetingMovePlan(meetingIds: [], relocations: [], workspaceExportUpdates: [])
         }
         let meetingIds = Set(candidates.map(\.meetingId))
-        guard let vaultURL = vault.url else {
-            return MeetingMovePlan(meetingIds: meetingIds, relocations: [], vaultExportUpdates: [])
+        guard let workspaceURL = workspace.url else {
+            return MeetingMovePlan(meetingIds: meetingIds, relocations: [], workspaceExportUpdates: [])
         }
         let destinationDirectory = try summaryDestinationDirectory(toProjectId: toProjectId)
-        let externalSummaryPaths = try repository.externalVaultSummaryPaths(
+        let externalSummaryPaths = try repository.externalWorkspaceSummaryPaths(
             movingMeetingIds: meetingIds,
-            vaultId: vault.id
+            workspaceId: workspace.id
         )
         let externallyReferencedSources = try Set(externalSummaryPaths.compactMap { relativePath
                 -> DahliaWorkspaceFileIdentity? in
-            guard let url = try summaryFileResolver(relativePath, vaultURL) else { return nil }
+            guard let url = try summaryFileResolver(relativePath, workspaceURL) else { return nil }
             return DahliaWorkspaceFileIdentity.resolve(url, fileManager: fileManager)
         })
         var relocations: [SummaryRelocation] = []
-        var updates: [MeetingRepository.MeetingVaultExportUpdate] = []
+        var updates: [MeetingRepository.MeetingWorkspaceExportUpdate] = []
         var destinationPaths: Set<String> = []
         var destinationBySource: [DahliaWorkspaceFileIdentity: URL] = [:]
 
-        for candidate in candidates where candidate.hasVaultExport {
-            guard let sourceURL = try summaryFileResolver(candidate.vaultRelativePath, vaultURL) else {
+        for candidate in candidates where candidate.hasWorkspaceExport {
+            guard let sourceURL = try summaryFileResolver(candidate.workspaceRelativePath, workspaceURL) else {
                 updates.append(.init(meetingId: candidate.meetingId, relativePath: nil))
                 continue
             }
-            guard isInsideVaultAfterResolvingSymlinks(sourceURL),
+            guard isInsideWorkspaceAfterResolvingSymlinks(sourceURL),
                   pathContainsNoSymlinks(sourceURL) else {
                 throw ProjectWorkspaceError.invalidMoveDestination
             }
@@ -572,9 +572,9 @@ extension ProjectWorkspaceService {
                 .appending(path: sourceURL.lastPathComponent, directoryHint: .notDirectory)
                 .standardizedFileURL
             let standardizedSourceURL = sourceURL.standardizedFileURL
-            guard let relativePath = VaultSummaryFileLocator.relativePath(
+            guard let relativePath = WorkspaceSummaryFileLocator.relativePath(
                 for: destinationURL,
-                vaultURL: vaultURL
+                workspaceURL: workspaceURL
             ) else {
                 updates.append(.init(meetingId: candidate.meetingId, relativePath: nil))
                 continue
@@ -618,7 +618,7 @@ extension ProjectWorkspaceService {
         return MeetingMovePlan(
             meetingIds: meetingIds,
             relocations: relocations,
-            vaultExportUpdates: updates
+            workspaceExportUpdates: updates
         )
     }
 
@@ -626,14 +626,14 @@ extension ProjectWorkspaceService {
         let destinationDirectory: URL
         if let toProjectId {
             guard let destination = try repository.fetchProject(id: toProjectId),
-                  destination.vaultId == vault.id
+                  destination.workspaceId == workspace.id
             else {
                 throw ProjectWorkspaceError.invalidMoveDestination
             }
             destinationDirectory = try projectURL(path: destination.path)
         } else {
-            guard let vaultURL = vault.url else { throw ProjectWorkspaceError.invalidMoveDestination }
-            destinationDirectory = vaultURL
+            guard let workspaceURL = workspace.url else { throw ProjectWorkspaceError.invalidMoveDestination }
+            destinationDirectory = workspaceURL
         }
         return destinationDirectory
     }
@@ -643,16 +643,16 @@ extension ProjectWorkspaceService {
         oldPrefix: String,
         newPrefix: String
     ) throws -> ProjectSummaryMovePlan {
-        guard let vaultURL = vault.url else {
-            return ProjectSummaryMovePlan(relocations: [], vaultExportUpdates: [])
+        guard let workspaceURL = workspace.url else {
+            return ProjectSummaryMovePlan(relocations: [], workspaceExportUpdates: [])
         }
         let fileManager = FileManager.default
-        let meetingIds = try repository.meetingIds(projectHierarchy: projectId, vaultId: vault.id)
+        let meetingIds = try repository.meetingIds(projectHierarchy: projectId, workspaceId: workspace.id)
         guard !meetingIds.isEmpty else {
-            return ProjectSummaryMovePlan(relocations: [], vaultExportUpdates: [])
+            return ProjectSummaryMovePlan(relocations: [], workspaceExportUpdates: [])
         }
-        let candidates = try repository.fetchMeetingMoveCandidates(ids: meetingIds, vaultId: vault.id)
-        let projects = try repository.fetchAllProjects(vaultId: vault.id)
+        let candidates = try repository.fetchMeetingMoveCandidates(ids: meetingIds, workspaceId: workspace.id)
+        let projects = try repository.fetchAllProjects(workspaceId: workspace.id)
         let projectPaths = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0.path) })
         let protectedIdentities = try protectedProjectSummaryIdentities(
             candidates: candidates,
@@ -661,16 +661,16 @@ extension ProjectWorkspaceService {
         )
 
         var relocations: [SummaryRelocation] = []
-        var updates: [MeetingRepository.MeetingVaultExportUpdate] = []
+        var updates: [MeetingRepository.MeetingWorkspaceExportUpdate] = []
         var destinations: Set<String> = []
         var destinationBySource: [DahliaWorkspaceFileIdentity: URL] = [:]
-        for candidate in candidates where candidate.hasVaultExport {
+        for candidate in candidates where candidate.hasWorkspaceExport {
             guard let projectId = candidate.projectId,
                   let oldProjectPath = projectPaths[projectId] else { continue }
             let newProjectPath = oldProjectPath == oldPrefix
                 ? newPrefix
                 : newPrefix + oldProjectPath.dropFirst(oldPrefix.count)
-            guard let storedPath = candidate.vaultRelativePath else {
+            guard let storedPath = candidate.workspaceRelativePath else {
                 updates.append(.init(meetingId: candidate.meetingId, relativePath: nil))
                 continue
             }
@@ -685,15 +685,15 @@ extension ProjectWorkspaceService {
                 continue
             }
             let destinationRelativePath = "\(newProjectPath)/\(suffix)"
-            guard let resolvedSourceURL = try summaryFileResolver(storedPath, vaultURL) else {
+            guard let resolvedSourceURL = try summaryFileResolver(storedPath, workspaceURL) else {
                 updates.append(.init(meetingId: candidate.meetingId, relativePath: nil))
                 continue
             }
-            guard isInsideVaultAfterResolvingSymlinks(resolvedSourceURL),
+            guard isInsideWorkspaceAfterResolvingSymlinks(resolvedSourceURL),
                   pathContainsNoSymlinks(resolvedSourceURL) else {
                 throw ProjectWorkspaceError.invalidMoveDestination
             }
-            let destinationURL = vaultURL
+            let destinationURL = workspaceURL
                 .appending(path: destinationRelativePath, directoryHint: .notDirectory)
                 .standardizedFileURL
             try validateOutputDirectory(destinationURL.deletingLastPathComponent())
@@ -732,7 +732,7 @@ extension ProjectWorkspaceService {
         }
         return ProjectSummaryMovePlan(
             relocations: relocations,
-            vaultExportUpdates: updates
+            workspaceExportUpdates: updates
         )
     }
 
@@ -741,24 +741,24 @@ extension ProjectWorkspaceService {
         projectPaths: [UUID: String],
         meetingIds: Set<UUID>
     ) throws -> Set<DahliaWorkspaceFileIdentity> {
-        guard let vaultURL = vault.url else { return [] }
+        guard let workspaceURL = workspace.url else { return [] }
         let fileManager = FileManager.default
-        let externalPaths = try repository.externalVaultSummaryPaths(
+        let externalPaths = try repository.externalWorkspaceSummaryPaths(
             movingMeetingIds: meetingIds,
-            vaultId: vault.id
+            workspaceId: workspace.id
         )
         let externalIdentities = try Set(externalPaths.compactMap {
-            try summaryFileResolver($0, vaultURL).map {
+            try summaryFileResolver($0, workspaceURL).map {
                 DahliaWorkspaceFileIdentity.resolve($0, fileManager: fileManager)
             }
         })
         let retainedIdentities: Set<DahliaWorkspaceFileIdentity> = try Set(candidates.compactMap { candidate in
-            guard candidate.hasVaultExport,
+            guard candidate.hasWorkspaceExport,
                   let projectId = candidate.projectId,
                   let projectPath = projectPaths[projectId],
-                  let storedPath = candidate.vaultRelativePath,
+                  let storedPath = candidate.workspaceRelativePath,
                   !storedPath.hasPrefix(projectPath + "/"),
-                  let sourceURL = try summaryFileResolver(storedPath, vaultURL)
+                  let sourceURL = try summaryFileResolver(storedPath, workspaceURL)
             else {
                 return nil
             }
@@ -769,7 +769,7 @@ extension ProjectWorkspaceService {
 
     private nonisolated func validateOutputDirectory(_ directory: URL) throws {
         let fileManager = FileManager.default
-        guard let root = vault.url?.standardizedFileURL else {
+        guard let root = workspace.url?.standardizedFileURL else {
             throw ProjectWorkspaceError.invalidMoveDestination
         }
         let candidate = directory.standardizedFileURL
@@ -782,7 +782,7 @@ extension ProjectWorkspaceService {
         for component in candidate.pathComponents.dropFirst(rootComponents.count) {
             current.append(path: component, directoryHint: .isDirectory)
             guard fileManager.fileExists(atPath: current.path) else {
-                guard isInsideVaultAfterResolvingSymlinks(current) else {
+                guard isInsideWorkspaceAfterResolvingSymlinks(current) else {
                     throw ProjectWorkspaceError.invalidMoveDestination
                 }
                 return
@@ -790,11 +790,11 @@ extension ProjectWorkspaceService {
             let values = try current.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             guard values.isDirectory == true,
                   values.isSymbolicLink != true,
-                  isInsideVaultAfterResolvingSymlinks(current) else {
+                  isInsideWorkspaceAfterResolvingSymlinks(current) else {
                 throw ProjectWorkspaceError.invalidMoveDestination
             }
         }
-        guard isDirectoryInsideVault(candidate) else {
+        guard isDirectoryInsideWorkspace(candidate) else {
             throw ProjectWorkspaceError.invalidMoveDestination
         }
     }
@@ -819,21 +819,21 @@ extension ProjectWorkspaceService {
         return false
     }
 
-    private nonisolated func isDirectoryInsideVault(_ url: URL) -> Bool {
+    private nonisolated func isDirectoryInsideWorkspace(_ url: URL) -> Bool {
         (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
-            && isInsideVaultAfterResolvingSymlinks(url)
+            && isInsideWorkspaceAfterResolvingSymlinks(url)
             && pathContainsNoSymlinks(url)
     }
 
-    private nonisolated func isInsideVaultAfterResolvingSymlinks(_ url: URL) -> Bool {
-        guard let vaultPath = vault.url?.resolvingSymlinksInPath().standardizedFileURL.path else { return false }
+    private nonisolated func isInsideWorkspaceAfterResolvingSymlinks(_ url: URL) -> Bool {
+        guard let workspacePath = workspace.url?.resolvingSymlinksInPath().standardizedFileURL.path else { return false }
         let candidatePath = url.resolvingSymlinksInPath().standardizedFileURL.path
-        let prefix = vaultPath.hasSuffix("/") ? vaultPath : vaultPath + "/"
-        return candidatePath == vaultPath || candidatePath.hasPrefix(prefix)
+        let prefix = workspacePath.hasSuffix("/") ? workspacePath : workspacePath + "/"
+        return candidatePath == workspacePath || candidatePath.hasPrefix(prefix)
     }
 
     private nonisolated func pathContainsNoSymlinks(_ url: URL) -> Bool {
-        guard let root = vault.url?.standardizedFileURL else { return false }
+        guard let root = workspace.url?.standardizedFileURL else { return false }
         let candidate = url.standardizedFileURL
         let rootComponents = root.pathComponents
         let candidateComponents = candidate.pathComponents
@@ -850,9 +850,9 @@ extension ProjectWorkspaceService {
         return true
     }
 
-    nonisolated static func resolveSummaryFile(storedRelativePath: String?, vaultURL: URL) throws -> URL? {
+    nonisolated static func resolveSummaryFile(storedRelativePath: String?, workspaceURL: URL) throws -> URL? {
         guard let storedRelativePath,
-              let fileURL = VaultSummaryFileLocator.fileURL(for: storedRelativePath, vaultURL: vaultURL),
+              let fileURL = WorkspaceSummaryFileLocator.fileURL(for: storedRelativePath, workspaceURL: workspaceURL),
               fileURL.pathExtension.lowercased() == "md"
         else { return nil }
 
@@ -872,15 +872,15 @@ extension ProjectWorkspaceService {
         operation: () throws -> Result
     ) throws -> Result {
         guard !relocations.isEmpty else { return try operation() }
-        guard let vaultURL = vault.url else { throw ProjectWorkspaceError.invalidMoveDestination }
+        guard let workspaceURL = workspace.url else { throw ProjectWorkspaceError.invalidMoveDestination }
         let createdDirectories = try createOutputDirectories(for: relocations)
         var completed: [SummaryRelocation] = []
         do {
             for relocation in relocations {
-                try DahliaVaultFileMover.moveItem(
+                try DahliaWorkspaceFileMover.moveItem(
                     at: relocation.sourceURL,
                     to: relocation.destinationURL,
-                    inside: vaultURL
+                    inside: workspaceURL
                 )
                 completed.append(relocation)
             }
@@ -889,10 +889,10 @@ extension ProjectWorkspaceService {
             var rollbackError: (any Error)?
             for relocation in completed.reversed() {
                 do {
-                    try DahliaVaultFileMover.moveItem(
+                    try DahliaWorkspaceFileMover.moveItem(
                         at: relocation.destinationURL,
                         to: relocation.sourceURL,
-                        inside: vaultURL
+                        inside: workspaceURL
                     )
                 } catch {
                     rollbackError = rollbackError ?? error
@@ -917,7 +917,7 @@ extension ProjectWorkspaceService {
 
     private nonisolated func createOutputDirectories(for relocations: [SummaryRelocation]) throws -> [URL] {
         guard !relocations.isEmpty else { return [] }
-        guard let vaultURL = vault.url else { throw ProjectWorkspaceError.invalidMoveDestination }
+        guard let workspaceURL = workspace.url else { throw ProjectWorkspaceError.invalidMoveDestination }
         let fileManager = FileManager.default
         let directories = Set(relocations.map { $0.destinationURL.deletingLastPathComponent().standardizedFileURL })
             .sorted { $0.pathComponents.count < $1.pathComponents.count }
@@ -925,7 +925,7 @@ extension ProjectWorkspaceService {
         do {
             for directory in directories {
                 try validateOutputDirectory(directory)
-                let root = vaultURL.standardizedFileURL
+                let root = workspaceURL.standardizedFileURL
                 var current = root
                 for component in directory.pathComponents.dropFirst(root.pathComponents.count) {
                     current.append(path: component, directoryHint: .isDirectory)

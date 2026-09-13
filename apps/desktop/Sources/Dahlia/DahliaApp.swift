@@ -28,7 +28,7 @@ struct DahliaApp: App {
     @State private var recordingCoordinator: RecordingCoordinator
     @State private var menuBarCalendarViewModel: MenuBarCalendarViewModel
     @State private var chatCoordinator: CodexChatCoordinator
-    @State private var vaultManagementModel: VaultManagementModel
+    @State private var workspaceManagementModel: WorkspaceManagementModel
     @State private var dahliaAccountController = DahliaCloudAccountController.shared
     @State private var tokenBroker = DahliaTokenBrokerServer()
     @State private var imageBroker: DahliaImageBrokerServer?
@@ -36,8 +36,8 @@ struct DahliaApp: App {
     @State private var appDatabase: AppDatabaseManager?
     @State private var meetingSyncWorker: SyncWorker?
     @State private var startup: AppStartupModel
-    @State private var showVaultPicker = true
-    @State private var pendingSetupAdoptionVaultID: UUID?
+    @State private var showWorkspacePicker = true
+    @State private var pendingSetupAdoptionWorkspaceID: UUID?
 
     @MainActor
     init() {
@@ -72,7 +72,7 @@ struct DahliaApp: App {
         _menuBarCalendarViewModel = State(initialValue: menuBarCalendarViewModel)
         _liveSubtitleOverlayCoordinator = State(initialValue: liveSubtitleOverlayCoordinator)
         _chatCoordinator = State(initialValue: chatCoordinator)
-        _vaultManagementModel = State(initialValue: VaultManagementModel())
+        _workspaceManagementModel = State(initialValue: WorkspaceManagementModel())
         self.mainWindowNavigation = mainWindowNavigation
     }
 
@@ -89,23 +89,23 @@ struct DahliaApp: App {
                     } else if let setupTourMode = mainWindowNavigation.setupTourMode {
                         SetupTourView(
                             mode: setupTourMode,
-                            currentVault: AppSettings.shared.currentVault,
-                            vaultManagementModel: vaultManagementModel,
+                            currentWorkspace: AppSettings.shared.currentWorkspace,
+                            workspaceManagementModel: workspaceManagementModel,
                             accountController: dahliaAccountController,
-                            canComplete: { viewModel.canSwitchVault },
+                            canComplete: { viewModel.canSwitchWorkspace },
                             onComplete: completeSetupTour
                         )
-                    } else if showVaultPicker {
-                        VaultPickerView(
+                    } else if showWorkspacePicker {
+                        WorkspacePickerView(
                             appDatabase: appDatabase,
-                            model: vaultManagementModel,
-                            canSwitchVault: viewModel.canSwitchVault,
+                            model: workspaceManagementModel,
+                            canSwitchWorkspace: viewModel.canSwitchWorkspace,
                             captionViewModel: viewModel,
                             sidebarViewModel: sidebarViewModel,
                             mainWindowNavigation: mainWindowNavigation,
                             updateController: updateController
-                        ) { vault in
-                            openVault(vault)
+                        ) { workspace in
+                            openWorkspace(workspace)
                         }
                     } else {
                         ContentView(
@@ -116,8 +116,8 @@ struct DahliaApp: App {
                             chatCoordinator: chatCoordinator,
                             mainWindowNavigation: mainWindowNavigation,
                             appDatabase: appDatabase,
-                            vaultManagementModel: vaultManagementModel,
-                            onSelectVault: { vault in openVault(vault) }
+                            workspaceManagementModel: workspaceManagementModel,
+                            onSelectWorkspace: { workspace in openWorkspace(workspace) }
                         )
                     }
                 }
@@ -143,21 +143,21 @@ struct DahliaApp: App {
             )
             .dahliaSimpleWindowStyle()
             .alert(
-                L10n.vaultOperationFailed,
+                L10n.workspaceOperationFailed,
                 isPresented: Binding(
-                    get: { vaultManagementModel.isShowingError },
-                    set: { vaultManagementModel.isShowingError = $0 }
+                    get: { workspaceManagementModel.isShowingError },
+                    set: { workspaceManagementModel.isShowingError = $0 }
                 )
             ) {} message: {
-                Text(vaultManagementModel.errorMessage)
+                Text(workspaceManagementModel.errorMessage)
             }
             .overlay {
-                if let pending = vaultManagementModel.pendingServerAdoption {
-                    VaultImportView(
-                        pending: pending, isBusy: vaultManagementModel.updatingVaultAccountID != nil,
+                if let pending = workspaceManagementModel.pendingServerAdoption {
+                    WorkspaceImportView(
+                        pending: pending, isBusy: workspaceManagementModel.updatingWorkspaceAccountID != nil,
                         onCancel: cancelServerAdoption,
-                        onReload: { await vaultManagementModel.reloadServerAdoption() },
-                        onCreateOrganization: { await vaultManagementModel.createAdoptionOrganization(name: $0) },
+                        onReload: { await workspaceManagementModel.reloadServerAdoption() },
+                        onCreateOrganization: { await workspaceManagementModel.createAdoptionOrganization(name: $0) },
                         onImport: { destinationId, organizationId in
                             await confirmServerAdoption(pending, destinationId: destinationId, organizationId: organizationId)
                         }
@@ -174,17 +174,17 @@ struct DahliaApp: App {
                 ),
                 titleVisibility: .visible
             ) {
-                Button(L10n.moveVaultsToLocalAndSignOut) {
+                Button(L10n.moveWorkspacesToLocalAndSignOut) {
                     dahliaAccountController.confirmSignOut(disposition: .moveToLocalAccount)
                 }
-                Button(L10n.deleteLocalVaultsAndSignOut, role: .destructive) {
+                Button(L10n.deleteLocalWorkspacesAndSignOut, role: .destructive) {
                     dahliaAccountController.confirmSignOut(disposition: .deleteLocalCopies)
                 }
                 Button(L10n.cancel, role: .cancel) {
                     dahliaAccountController.cancelSignOut()
                 }
             } message: {
-                Text(L10n.signOutVaultDispositionDescription)
+                Text(L10n.signOutWorkspaceDispositionDescription)
             }
             .sheet(item: $viewModel.pendingBatchTranscriptionConfirmation) { confirmation in
                 BatchTranscriptionConfirmationView(
@@ -233,7 +233,7 @@ struct DahliaApp: App {
             .onChange(of: dahliaAccountController.connections) {
                 ServerAccountSettingsModel.shared.updateConnections(dahliaAccountController.connections)
                 Task {
-                    await reconcileVaultsAfterAccountChange()
+                    await reconcileWorkspacesAfterAccountChange()
                     await meetingSyncWorker?.applicationBecameActive()
                 }
             }
@@ -250,10 +250,10 @@ struct DahliaApp: App {
                     .keyboardShortcut("n", modifiers: .command)
                     .disabled(
                         !startup.isReady
-                            || showVaultPicker
+                            || showWorkspacePicker
                             || mainWindowNavigation.isShowingSettings
                             || mainWindowNavigation.isShowingDahliaSignIn
-                            || !sidebarViewModel.canEditCurrentVault
+                            || !sidebarViewModel.canEditCurrentWorkspace
                     )
             }
             SettingsCommands(mainWindowNavigation: mainWindowNavigation)
@@ -355,32 +355,32 @@ struct DahliaApp: App {
             startup.show(phase)
         }
         AppDelegate.backupRestoreOutcome = restoreOutcome
-        startup.show(.loadingVaults)
+        startup.show(.loadingWorkspaces)
         CalendarSourceCoordinator.shared.configure(dbQueue: db.dbQueue)
         try? await ScreenshotStorageMaintenance.compactAtStartup(dbQueue: db.dbQueue)
         appDatabase = db
-        let vaultAISettings = VaultAISettingsModel.shared
-        vaultAISettings.configure(dbQueue: db.dbQueue)
+        let workspaceAISettings = WorkspaceAISettingsModel.shared
+        workspaceAISettings.configure(dbQueue: db.dbQueue)
         await ScreenshotContentProvider.shared.configure(dbQueue: db.dbQueue)
         await CodexRuntimeContextCoordinator.shared.configure(dbQueue: db.dbQueue)
         do {
             try await MeetingRepository(dbQueue: db.dbQueue)
-                .backfillVaultAISettings(VaultAISettingsLegacyValues(settings: .shared))
-            try await vaultAISettings.inheritLocalAccountSettings(from: db.dbQueue)
+                .backfillWorkspaceAISettings(WorkspaceAISettingsLegacyValues(settings: .shared))
+            try await workspaceAISettings.inheritLocalAccountSettings(from: db.dbQueue)
         } catch {
-            ErrorReportingService.capture(error, context: ["source": "vaultAISettingsBackfill"])
+            ErrorReportingService.capture(error, context: ["source": "workspaceAISettingsBackfill"])
         }
         await DahliaCloudCredentialStorage.deleteLegacyCredential()
         await dahliaAccountController.configure(appDatabase: db)
         ServerAccountSettingsModel.shared.startNetworkMonitoring()
         ServerAccountSettingsModel.shared.updateConnections(dahliaAccountController.connections)
         let meetingSyncWorker = SyncWorker(dbQueue: db.dbQueue) {
-            await reconcileVaultsAfterAccountChange()
+            await reconcileWorkspacesAfterAccountChange()
             await dahliaAccountController.reload()
         }
         self.meetingSyncWorker = meetingSyncWorker
         dahliaAccountController.syncWorker = meetingSyncWorker
-        // Backup restore only changes local vaults; existing canonical sync resumes normally.
+        // Backup restore only changes local workspaces; existing canonical sync resumes normally.
         await meetingSyncWorker.start()
         do {
             try tokenBroker.start()
@@ -405,20 +405,20 @@ struct DahliaApp: App {
         }
 
         let warning = AppStartupModel.restoreWarning(restoreOutcome)
-        guard startup.beginVaultLoading() else { return warning }
-        await vaultManagementModel.configure(appDatabase: db)
+        guard startup.beginWorkspaceLoading() else { return warning }
+        await workspaceManagementModel.configure(appDatabase: db)
         guard !Task.isCancelled else { return warning }
         let setupVersion = UserDefaults.standard.integer(forKey: SetupTourPresentationPolicy.userDefaultsKey)
         let setupProgressExists = setupVersion < SetupTourPresentationPolicy.currentVersion
             && SetupTourPresentationPolicy.hasSavedProgress()
         if !setupProgressExists,
-           let vault = await vaultManagementModel.resolveExistingStartupVault(appDatabase: db) {
+           let workspace = await workspaceManagementModel.resolveExistingStartupWorkspace(appDatabase: db) {
             guard !Task.isCancelled else { return warning }
-            openVault(vault)
+            openWorkspace(workspace)
         } else if SetupTourPresentationPolicy.shouldPresentAutomatically(
             storedVersion: setupVersion,
-            hasLoadedVaults: vaultManagementModel.hasLoadedVaults,
-            hasRegisteredVaults: !vaultManagementModel.vaults.isEmpty,
+            hasLoadedWorkspaces: workspaceManagementModel.hasLoadedWorkspaces,
+            hasRegisteredWorkspaces: !workspaceManagementModel.workspaces.isEmpty,
             hasSavedProgress: setupProgressExists
         ), !Task.isCancelled {
             mainWindowNavigation.presentInitialSetupTour()
@@ -427,30 +427,30 @@ struct DahliaApp: App {
     }
 
     @discardableResult
-    private func openVault(_ vault: VaultRecord, recordsLastOpened: Bool = true) -> Bool {
-        if !showVaultPicker, AppSettings.shared.currentVault?.id == vault.id {
-            AppSettings.shared.currentVault = vault
-            VaultAISettingsModel.shared.activate(vault: vault)
+    private func openWorkspace(_ workspace: WorkspaceRecord, recordsLastOpened: Bool = true) -> Bool {
+        if !showWorkspacePicker, AppSettings.shared.currentWorkspace?.id == workspace.id {
+            AppSettings.shared.currentWorkspace = workspace
+            WorkspaceAISettingsModel.shared.activate(workspace: workspace)
             return true
         }
-        guard viewModel.canSwitchVault, let db = appDatabase else { return false }
+        guard viewModel.canSwitchWorkspace, let db = appDatabase else { return false }
 
-        if let url = vault.url {
+        if let url = workspace.url {
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         }
 
         sidebarViewModel.clearMeetingSelection()
         viewModel.clearCurrentMeeting()
-        mainWindowNavigation.changeVault(to: vault.id)
-        AppSettings.shared.currentVault = vault
-        VaultAISettingsModel.shared.activate(vault: vault)
-        chatCoordinator.activateVault(vault.id)
+        mainWindowNavigation.changeWorkspace(to: workspace.id)
+        AppSettings.shared.currentWorkspace = workspace
+        WorkspaceAISettingsModel.shared.activate(workspace: workspace)
+        chatCoordinator.activateWorkspace(workspace.id)
         sidebarViewModel.setAppDatabase(db)
         if recordsLastOpened {
-            Task { await vaultManagementModel.markVaultOpened(vault) }
+            Task { await workspaceManagementModel.markWorkspaceOpened(workspace) }
         }
         viewModel.prepareAnalyzer()
-        showVaultPicker = false
+        showWorkspacePicker = false
         return true
     }
 
@@ -470,64 +470,68 @@ struct DahliaApp: App {
         mainWindowNavigation.dismissDahliaSignIn()
     }
 
-    private func confirmServerAdoption(_ pending: PendingVaultServerAdoption, destinationId: UUID?, organizationId: UUID?) async {
-        guard let updated = await vaultManagementModel.confirmServerAdoption(pending, destinationId: destinationId, organizationId: organizationId)
+    private func confirmServerAdoption(_ pending: PendingWorkspaceServerAdoption, destinationId: UUID?, organizationId: UUID?) async {
+        guard let updated = await workspaceManagementModel.confirmServerAdoption(
+            pending,
+            destinationId: destinationId,
+            organizationId: organizationId
+        )
         else {
-            if vaultManagementModel.pendingServerAdoption == nil {
-                pendingSetupAdoptionVaultID = nil
+            if workspaceManagementModel.pendingServerAdoption == nil {
+                pendingSetupAdoptionWorkspaceID = nil
             }
             return
         }
         await meetingSyncWorker?.drain()
-        if pendingSetupAdoptionVaultID == updated.id {
-            pendingSetupAdoptionVaultID = nil
-            guard openVault(updated, recordsLastOpened: false),
-                  await vaultManagementModel.markVaultOpened(updated)
+        if pendingSetupAdoptionWorkspaceID == updated.id {
+            pendingSetupAdoptionWorkspaceID = nil
+            guard openWorkspace(updated, recordsLastOpened: false),
+                  await workspaceManagementModel.markWorkspaceOpened(updated)
             else { return }
             SetupTourPresentationPolicy.markCompleted()
             mainWindowNavigation.completeSetupTour()
             await dahliaAccountController.reload()
             return
         }
-        if AppSettings.shared.currentVault?.id == updated.id {
-            AppSettings.shared.currentVault = updated
-            VaultAISettingsModel.shared.activate(vault: updated)
+        if AppSettings.shared.currentWorkspace?.id == updated.id {
+            AppSettings.shared.currentWorkspace = updated
+            WorkspaceAISettingsModel.shared.activate(workspace: updated)
         }
         await dahliaAccountController.reload()
     }
 
     private func cancelServerAdoption() {
-        pendingSetupAdoptionVaultID = nil
-        vaultManagementModel.cancelServerAdoption()
+        pendingSetupAdoptionWorkspaceID = nil
+        workspaceManagementModel.cancelServerAdoption()
     }
 
-    private func reconcileVaultsAfterAccountChange() async {
-        await vaultManagementModel.loadVaults()
-        guard let current = AppSettings.shared.currentVault else { return }
-        guard let updated = vaultManagementModel.vaults.first(where: { $0.id == current.id }) else {
-            AppSettings.shared.currentVault = nil
+    private func reconcileWorkspacesAfterAccountChange() async {
+        await workspaceManagementModel.loadWorkspaces()
+        guard let current = AppSettings.shared.currentWorkspace else { return }
+        guard let updated = workspaceManagementModel.workspaces.first(where: { $0.id == current.id }) else {
+            AppSettings.shared.currentWorkspace = nil
             sidebarViewModel.clearMeetingSelection()
             viewModel.clearCurrentMeeting()
-            showVaultPicker = true
+            showWorkspacePicker = true
             return
         }
-        AppSettings.shared.currentVault = updated
-        VaultAISettingsModel.shared.activate(vault: updated)
+        AppSettings.shared.currentWorkspace = updated
+        WorkspaceAISettingsModel.shared.activate(workspace: updated)
     }
 
-    private func completeSetupTour(_ vault: VaultRecord, accountConnectionID: UUID?) async -> Bool {
-        if let accountConnectionID, vault.accountConnectionId == nil {
+    private func completeSetupTour(_ workspace: WorkspaceRecord, accountConnectionID: UUID?) async -> Bool {
+        if let accountConnectionID, workspace.accountConnectionId == nil {
             guard let connection = dahliaAccountController.connections.first(where: {
                 $0.id == accountConnectionID
             }) else { return false }
-            await vaultManagementModel.requestServerAdoption(for: vault, connection: connection)
-            guard vaultManagementModel.pendingServerAdoption?.vault.id == vault.id else { return false }
-            pendingSetupAdoptionVaultID = vault.id
+            await workspaceManagementModel.requestServerAdoption(for: workspace, connection: connection)
+            guard workspaceManagementModel.pendingServerAdoption?.workspace.id == workspace.id else { return false }
+            pendingSetupAdoptionWorkspaceID = workspace.id
             return true
         }
-        guard vault.accountConnectionId == accountConnectionID,
-              openVault(vault, recordsLastOpened: false),
-              await vaultManagementModel.markVaultOpened(vault)
+        guard workspace.accountConnectionId == accountConnectionID,
+              openWorkspace(workspace, recordsLastOpened: false),
+              await workspaceManagementModel.markWorkspaceOpened(workspace)
         else { return false }
         await dahliaAccountController.reload()
         SetupTourPresentationPolicy.markCompleted()
@@ -579,7 +583,7 @@ struct DahliaApp: App {
         startTranscription: Bool
     ) {
         guard startup.isReady, !startup.isTerminating,
-              let vault = AppSettings.shared.currentVault else { return }
+              let workspace = AppSettings.shared.currentWorkspace else { return }
         mainWindowNavigation.openMeetings()
 
         if let event = meeting.calendarEvent {
@@ -587,14 +591,14 @@ struct DahliaApp: App {
             do {
                 if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(
                     event,
-                    vaultId: vault.id
+                    workspaceId: workspace.id
                 ) {
                     sidebarViewModel.selectMeeting(existingMeetingId)
-                    if startTranscription, vault.allowsCanonicalEdits {
+                    if startTranscription, workspace.allowsCanonicalEdits {
                         startTranscriptionForMeeting(
                             existingMeetingId,
                             in: db,
-                            vault: vault
+                            workspace: workspace
                         )
                     }
                     return
@@ -605,12 +609,12 @@ struct DahliaApp: App {
                 return
             }
 
-            guard vault.allowsCanonicalEdits else { return }
+            guard workspace.allowsCanonicalEdits else { return }
             sidebarViewModel.clearMeetingSelection()
             viewModel.beginDraftMeeting(
                 from: event,
                 dbQueue: db.dbQueue,
-                vaultURL: vault.url
+                workspaceURL: workspace.url
             )
             guard let meetingId = viewModel.materializeDraftMeeting() else { return }
             sidebarViewModel.selectMeeting(meetingId)
@@ -618,36 +622,36 @@ struct DahliaApp: App {
                 startTranscriptionForMeeting(
                     meetingId,
                     in: db,
-                    vault: vault
+                    workspace: workspace
                 )
             }
             return
         }
 
-        guard vault.allowsCanonicalEdits else { return }
+        guard workspace.allowsCanonicalEdits else { return }
         guard let meetingId = viewModel.createEmptyMeeting(
             dbQueue: db.dbQueue,
             projectURL: nil,
-            vaultId: vault.id,
+            workspaceId: workspace.id,
             projectId: nil,
             name: "",
             projectName: nil,
-            vaultURL: vault.url
+            workspaceURL: workspace.url
         ) else { return }
         sidebarViewModel.selectMeeting(meetingId)
         if startTranscription {
-            startTranscriptionForMeeting(meetingId, in: db, vault: vault)
+            startTranscriptionForMeeting(meetingId, in: db, workspace: workspace)
         }
     }
 
     private func startTranscriptionForMeeting(
         _ meetingId: UUID,
         in db: AppDatabaseManager,
-        vault: VaultRecord
+        workspace: WorkspaceRecord
     ) {
         let ctx: (projectURL: URL?, projectId: UUID?, projectName: String?)
         do {
-            ctx = try meetingContext(for: meetingId, in: db, vault: vault)
+            ctx = try meetingContext(for: meetingId, in: db, workspace: workspace)
         } catch {
             viewModel.errorMessage = error.localizedDescription
             ErrorReportingService.capture(error, context: ["source": "meetingContext"])
@@ -658,10 +662,10 @@ struct DahliaApp: App {
             await viewModel.startListening(
                 dbQueue: db.dbQueue,
                 projectURL: ctx.projectURL,
-                vaultId: vault.id,
+                workspaceId: workspace.id,
                 projectId: ctx.projectId,
                 projectName: ctx.projectName,
-                vaultURL: vault.url,
+                workspaceURL: workspace.url,
                 appendingTo: meetingId,
                 reservation: reservation
             )
@@ -672,7 +676,7 @@ struct DahliaApp: App {
     private func meetingContext(
         for meetingId: UUID,
         in db: AppDatabaseManager,
-        vault: VaultRecord
+        workspace: WorkspaceRecord
     ) throws -> (projectURL: URL?, projectId: UUID?, projectName: String?) {
         let repository = MeetingRepository(dbQueue: db.dbQueue)
         guard let meeting = try repository.fetchMeeting(id: meetingId) else {
@@ -680,7 +684,7 @@ struct DahliaApp: App {
         }
         let project = try meeting.projectId.flatMap { try repository.fetchProject(id: $0) }
         let projectURL = project.flatMap { project in
-            vault.url?.appending(path: project.path, directoryHint: .isDirectory)
+            workspace.url?.appending(path: project.path, directoryHint: .isDirectory)
         }
         return (projectURL, project?.id, project?.path)
     }

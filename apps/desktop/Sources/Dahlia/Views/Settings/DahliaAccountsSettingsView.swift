@@ -2,7 +2,7 @@ import SwiftUI
 
 struct DahliaAccountsSettingsView: View {
     let controller: DahliaCloudAccountController
-    let currentVault: VaultRecord?
+    let currentWorkspace: WorkspaceRecord?
     let onShowSignIn: () -> Void
 
     @State private var pendingRemoval: DahliaAccountConnection?
@@ -23,8 +23,8 @@ struct DahliaAccountsSettingsView: View {
                 }
                 Button(L10n.cancel, role: .cancel) { pendingRemoval = nil }
             } message: {
-                Text(pendingRemoval.map { L10n.removeDahliaConnectionDescription(vaultCount: $0.vaultCount) }
-                    ?? L10n.removeDahliaConnectionDescription(vaultCount: 0))
+                Text(pendingRemoval.map { L10n.removeDahliaConnectionDescription(workspaceCount: $0.workspaceCount) }
+                    ?? L10n.removeDahliaConnectionDescription(workspaceCount: 0))
             }
     }
 
@@ -109,7 +109,7 @@ struct DahliaAccountsSettingsView: View {
 
     @ViewBuilder
     private func selectionMark(connectionID: UUID?) -> some View {
-        if let currentVault, currentVault.accountConnectionId == connectionID {
+        if let currentWorkspace, currentWorkspace.accountConnectionId == connectionID {
             Image(systemName: "checkmark")
                 .foregroundStyle(.tint)
                 .accessibilityLabel(L10n.selectedAccount)

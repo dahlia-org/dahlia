@@ -34,11 +34,11 @@ extension SidebarViewModel {
             projectMeetingUnassignedCount = 0
             return
         }
-        guard let dbQueue, let vaultId = currentVault?.id else { return }
-        startProjectMeetingObservation(dbQueue: dbQueue, vaultId: vaultId)
+        guard let dbQueue, let workspaceId = currentWorkspace?.id else { return }
+        startProjectMeetingObservation(dbQueue: dbQueue, workspaceId: workspaceId)
     }
 
-    func startProjectMeetingObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
+    func startProjectMeetingObservation(dbQueue: DatabaseQueue, workspaceId: UUID) {
         projectMeetingObservation?.cancel()
         projectMeetingObservationGeneration &+= 1
         let generation = projectMeetingObservationGeneration
@@ -47,7 +47,7 @@ extension SidebarViewModel {
         }
         let observation = ValueObservation.tracking { db in
             try MeetingRepository.fetchMeetingProjectProjection(
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 recentLimit: Self.projectMeetingInitialLimit,
                 expandedLimits: expandedLimits,
                 totalLimit: Self.maximumVisibleMeetings,
@@ -59,14 +59,14 @@ extension SidebarViewModel {
             in: dbQueue,
             onError: { [weak self] error in
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       self.projectMeetingObservationGeneration == generation else { return }
                 self.isProjectMeetingProjectionLoaded = true
                 self.projectMeetingProjectionLoadError = error.localizedDescription
             },
             onChange: { [weak self] projection in
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       self.projectMeetingObservationGeneration == generation else { return }
                 self.applyProjectMeetingProjection(projection)
             }
@@ -74,10 +74,10 @@ extension SidebarViewModel {
     }
 
     func retryProjectMeetingProjection() {
-        guard let dbQueue, let vaultId = currentVault?.id else { return }
+        guard let dbQueue, let workspaceId = currentWorkspace?.id else { return }
         isProjectMeetingProjectionLoaded = false
         projectMeetingProjectionLoadError = nil
-        startProjectMeetingObservation(dbQueue: dbQueue, vaultId: vaultId)
+        startProjectMeetingObservation(dbQueue: dbQueue, workspaceId: workspaceId)
     }
 
     func cancelProjectMeetingPageLoads() {
@@ -99,7 +99,7 @@ extension SidebarViewModel {
               !projectMeetingLimitedKeys.contains(key),
               let cursor = projectMeetingItemsByKey[key]?.last.map(MeetingSidebarCursor.init),
               let dbQueue,
-              let vaultId = currentVault?.id else { return }
+              let workspaceId = currentWorkspace?.id else { return }
 
         projectMeetingLoadTasks[key]?.cancel()
         let generation = projectMeetingLoadGenerations[key, default: 0] + 1
@@ -112,7 +112,7 @@ extension SidebarViewModel {
                     try dbQueue.read { db in
                         try MeetingRepository.fetchMeetingProjectPage(
                             key: key,
-                            vaultId: vaultId,
+                            workspaceId: workspaceId,
                             after: cursor,
                             limit: Self.projectMeetingPageSize,
                             in: db
@@ -126,7 +126,7 @@ extension SidebarViewModel {
                 }
                 try Task.checkCancellation()
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       self.projectMeetingLoadGenerations[key] == generation else { return }
                 var items = self.projectMeetingItemsByKey[key, default: []]
                 let totalVisibleCount = self.projectMeetingItemsByKey.values.reduce(0) { $0 + $1.count }
@@ -153,12 +153,12 @@ extension SidebarViewModel {
                     }
                 }
                 self.projectMeetingLoadingKeys.remove(key)
-                self.startProjectMeetingObservation(dbQueue: dbQueue, vaultId: vaultId)
+                self.startProjectMeetingObservation(dbQueue: dbQueue, workspaceId: workspaceId)
             } catch is CancellationError {
                 return
             } catch {
                 guard let self,
-                      self.currentVault?.id == vaultId,
+                      self.currentWorkspace?.id == workspaceId,
                       self.projectMeetingLoadGenerations[key] == generation else { return }
                 self.projectMeetingLoadingKeys.remove(key)
                 self.projectMeetingLoadErrors[key] = error.localizedDescription

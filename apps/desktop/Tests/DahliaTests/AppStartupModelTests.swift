@@ -16,9 +16,9 @@ import os
                 calls += 1
                 model.show(.updating)
                 #expect(model.state == .working(.updating))
-                model.show(.loadingVaults)
+                model.show(.loadingWorkspaces)
                 model.show(.updating)
-                #expect(model.state == .working(.loadingVaults))
+                #expect(model.state == .working(.loadingWorkspaces))
                 return nil
             }
             await model.start {
@@ -79,7 +79,7 @@ import os
                     }
                     #expect(!Task.isCancelled)
                     finished = true
-                    #expect(!model.beginVaultLoading())
+                    #expect(!model.beginWorkspaceLoading())
                     return nil
                 }
             }
@@ -121,20 +121,20 @@ import os
         }
 
         @Test
-        func quitCancelsVaultLoadingAfterDurablePreparation() async {
+        func quitCancelsWorkspaceLoadingAfterDurablePreparation() async {
             let model = AppStartupModel()
             let (started, continuation) = AsyncStream<Void>.makeStream()
             var cancelled = false
             var readyCalls = 0
             let launch = Task {
                 await model.start(onReady: { readyCalls += 1 }) {
-                    #expect(model.beginVaultLoading())
+                    #expect(model.beginWorkspaceLoading())
                     continuation.yield(())
                     continuation.finish()
                     do {
                         // Stand in for a slow, cancellable network request, not a synchronization delay.
                         try await Task.sleep(for: .seconds(5))
-                        Issue.record("Vault loading was not cancelled")
+                        Issue.record("Workspace loading was not cancelled")
                     } catch is CancellationError {
                         cancelled = true
                     }
@@ -151,14 +151,14 @@ import os
         }
 
         @Test
-        func quitDoesNotWaitForUncancellableVaultTokenRefresh() async {
+        func quitDoesNotWaitForUncancellableWorkspaceTokenRefresh() async {
             let model = AppStartupModel()
             let (started, continuation) = AsyncStream<Void>.makeStream()
             var release: CheckedContinuation<Void, Never>?
             var finished = false
             let launch = Task {
                 await model.start {
-                    #expect(model.beginVaultLoading())
+                    #expect(model.beginWorkspaceLoading())
                     await withCheckedContinuation {
                         release = $0
                         continuation.yield(())
@@ -192,10 +192,10 @@ import os
         @Test
         func recordingAndMeetingCreationWaitForStartupAcknowledgement() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let vault = VaultRecord(id: .v7(), path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now)
-            try await database.dbQueue.write { try vault.insert($0) }
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now)
+            try await database.dbQueue.write { try workspace.insert($0) }
             let settings = AppSettings()
-            settings.currentVault = vault
+            settings.currentWorkspace = workspace
             let sidebar = SidebarViewModel(settings: settings)
             sidebar.setAppDatabase(database)
             defer { sidebar.setAppDatabase(nil) }
@@ -223,12 +223,12 @@ import os
         }
 
         @Test
-        func partialRestoreShowsBothSuccessfulAndFailedVaults() throws {
-            let request = VaultBackupRestoreRequest(
-                sourceVaultId: .v7(), targetVaultId: .v7(), mode: .newVault, name: "Restored vault"
+        func partialRestoreShowsBothSuccessfulAndFailedWorkspaces() throws {
+            let request = WorkspaceBackupRestoreRequest(
+                sourceWorkspaceId: .v7(), targetWorkspaceId: .v7(), mode: .newWorkspace, name: "Restored workspace"
             )
-            let success = VaultBackupRestoreResult(request: request, error: nil)
-            let failure = VaultBackupRestoreResult(request: request, error: "Disk full")
+            let success = WorkspaceBackupRestoreResult(request: request, error: nil)
+            let failure = WorkspaceBackupRestoreResult(request: request, error: "Disk full")
             #expect(AppStartupModel.restoreWarning(.completed([success])) == nil)
             let warning = try #require(AppStartupModel.restoreWarning(.completed([success, failure])))
             #expect(warning.contains(success.localizedMessage))
@@ -241,11 +241,11 @@ import os
             defer { try? FileManager.default.removeItem(at: directory) }
             let url = directory.appending(path: "dahlia.sqlite")
             let initial = try AppDatabaseManager(path: url.path)
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             try await initial.dbQueue.write { db in
                 try db.execute(
-                    sql: "INSERT INTO vaults (id, path, name, createdAt, lastOpenedAt) VALUES (?, '/tmp/preserved', 'Preserved', ?, ?)",
-                    arguments: [vaultID, Date.now, Date.now]
+                    sql: "INSERT INTO workspaces (id, path, name, createdAt, lastOpenedAt) VALUES (?, '/tmp/preserved', 'Preserved', ?, ?)",
+                    arguments: [workspaceID, Date.now, Date.now]
                 )
             }
             try initial.close()
@@ -259,7 +259,7 @@ import os
             #expect(phases == [.restoring, .preparing])
             #expect(AppStartupModel.restoreWarning(outcome) != nil)
             #expect(try await db.dbQueue
-                .read { try String.fetchOne($0, sql: "SELECT name FROM vaults WHERE id = ?", arguments: [vaultID]) } == "Preserved")
+                .read { try String.fetchOne($0, sql: "SELECT name FROM workspaces WHERE id = ?", arguments: [workspaceID]) } == "Preserved")
             try db.close()
         }
 

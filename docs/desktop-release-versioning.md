@@ -27,3 +27,10 @@ v41 以前の登録名・順序・処理は維持し、公開版からの更新�
 旧 v42〜v54 を適用した開発・QA DB は配布対象外で、自動互換移行は設けない。
 空の QA 環境ではアプリを終了して、対象の開発プロファイルの SQLite ファイルと WAL/SHM を退避してから再起動する。
 `grdb_migrations` だけを書き換えて再適用しない。通常利用中の `Application Support/Dahlia` の DB はこの作業の対象外。
+
+## Workspace 名称への移行（次回リリース）
+
+未公開 v42 の改変を承認した上で、現行の Vault モデル・表示・API を Workspace に統一する。
+v41 以前は維持し、v42 の一度のテーブル再構築後に SQLite の RENAME を使って
+`workspaces`／`workspace_id` と関連する参照へ切り替える。公開済みデータの UUID・内容・出力パスを維持する。
+詳細と検証範囲は [Workspace migration](workspace-migration.md) を参照。

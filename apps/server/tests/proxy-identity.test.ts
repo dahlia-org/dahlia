@@ -30,7 +30,7 @@ describe("proxy identity boundary", () => {
       userId: "user@example.com",
       email: "user@example.com",
       name: "Dahlia User",
-      workspaceId: "personal:user@example.com",
+
       source: "header",
     });
   });
@@ -45,7 +45,7 @@ describe("proxy identity boundary", () => {
       userId: "user@example.com",
       email: "user@example.com",
       name: "user@example.com",
-      workspaceId: "personal:user@example.com",
+
       source: "header",
     });
   });
@@ -96,7 +96,7 @@ describe("local single-user identity", () => {
       userId: "local@example.com",
       email: "local@example.com",
       name: "local@example.com",
-      workspaceId: "personal:local@example.com",
+
       source: "header",
     });
   });

@@ -3,37 +3,37 @@ import SwiftUI
 struct MainSidebarFooterView: View {
     @Environment(MainWindowNavigation.self) private var mainWindowNavigation
 
-    let vaults: [VaultRecord]
-    let currentVault: VaultRecord?
+    let workspaces: [WorkspaceRecord]
+    let currentWorkspace: WorkspaceRecord?
     var updateController: AppUpdateController
-    let onSelectVault: (VaultRecord) -> Void
+    let onSelectWorkspace: (WorkspaceRecord) -> Void
 
     @State private var isAccountMenuHovered = false
     @State private var isHelpHovered = false
     @State private var isMCPPresented = false
     @State private var dahliaAccountController = DahliaCloudAccountController.shared
-    @State private var vaultAISettings = VaultAISettingsModel.shared
+    @State private var workspaceAISettings = WorkspaceAISettingsModel.shared
 
     var body: some View {
-        let connection = vaultAISettings.accountConnectionID.flatMap { connectionID in
+        let connection = workspaceAISettings.accountConnectionID.flatMap { connectionID in
             dahliaAccountController.connections.first(where: { $0.id == connectionID })
         }
         let signedInConnections = dahliaAccountController.connections.filter(\.isSignedIn)
-        let accountVaults = Self.vaults(vaults, linkedTo: vaultAISettings.accountConnectionID)
+        let accountWorkspaces = Self.workspaces(workspaces, linkedTo: workspaceAISettings.accountConnectionID)
         HStack(spacing: 4) {
             MainSidebarAccountMenuButton(
-                vaults: accountVaults,
-                currentVault: currentVault,
+                workspaces: accountWorkspaces,
+                currentWorkspace: currentWorkspace,
                 connections: signedInConnections,
                 currentConnectionID: connection?.id,
-                isLocalAccount: vaultAISettings.isLocalAccount,
-                isLocalAccountAvailable: vaults.contains { $0.accountConnectionId == nil },
-                onSelectVault: onSelectVault,
+                isLocalAccount: workspaceAISettings.isLocalAccount,
+                isLocalAccountAvailable: workspaces.contains { $0.accountConnectionId == nil },
+                onSelectWorkspace: onSelectWorkspace,
                 onOpenSettings: showSettings,
                 onSelectAccount: selectAccount,
                 onAccountAction: accountAction
             )
-            .disabled(vaultAISettings.isSwitchingRuntime)
+            .disabled(workspaceAISettings.isSwitchingRuntime)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 44)
             .background(
@@ -44,9 +44,9 @@ struct MainSidebarFooterView: View {
             .onContinuousHover { phase in
                 isAccountMenuHovered = phase != .ended
             }
-            .help(L10n.accountAndVaultMenuDescription)
+            .help(L10n.accountAndWorkspaceMenuDescription)
 
-            if vaultAISettings.isSwitchingRuntime {
+            if workspaceAISettings.isSwitchingRuntime {
                 ProgressView()
                     .controlSize(.small)
                     .help(L10n.switchingAIAccount)
@@ -75,8 +75,8 @@ struct MainSidebarFooterView: View {
         }
         .sheet(isPresented: $isMCPPresented) {
             MCPModalView(
-                vaults: vaults,
-                currentVault: currentVault
+                workspaces: workspaces,
+                currentWorkspace: currentWorkspace
             )
         }
     }
@@ -90,7 +90,7 @@ struct MainSidebarFooterView: View {
     }
 
     private func accountAction() {
-        if let connectionID = vaultAISettings.accountConnectionID,
+        if let connectionID = workspaceAISettings.accountConnectionID,
            let connection = dahliaAccountController.connections.first(where: { $0.id == connectionID }) {
             if connection.isSignedIn {
                 dahliaAccountController.requestSignOut(connectionID: connection.id)
@@ -103,28 +103,28 @@ struct MainSidebarFooterView: View {
     }
 
     private func selectAccount(_ connection: DahliaAccountConnection?) {
-        guard let vault = Self.vaultToSelect(
-            from: vaults,
-            currentVault: currentVault,
+        guard let workspace = Self.workspaceToSelect(
+            from: workspaces,
+            currentWorkspace: currentWorkspace,
             connectionID: connection?.id
         ) else { return }
-        onSelectVault(vault)
+        onSelectWorkspace(workspace)
     }
 
-    static func vaults(_ vaults: [VaultRecord], linkedTo connectionID: UUID?) -> [VaultRecord] {
-        vaults
+    static func workspaces(_ workspaces: [WorkspaceRecord], linkedTo connectionID: UUID?) -> [WorkspaceRecord] {
+        workspaces
             .filter { $0.accountConnectionId == connectionID }
             .sorted {
                 ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString)
             }
     }
 
-    static func vaultToSelect(
-        from vaults: [VaultRecord],
-        currentVault: VaultRecord?,
+    static func workspaceToSelect(
+        from workspaces: [WorkspaceRecord],
+        currentWorkspace: WorkspaceRecord?,
         connectionID: UUID?
-    ) -> VaultRecord? {
-        guard currentVault?.accountConnectionId != connectionID else { return nil }
-        return Self.vaults(vaults, linkedTo: connectionID).first
+    ) -> WorkspaceRecord? {
+        guard currentWorkspace?.accountConnectionId != connectionID else { return nil }
+        return Self.workspaces(workspaces, linkedTo: connectionID).first
     }
 }

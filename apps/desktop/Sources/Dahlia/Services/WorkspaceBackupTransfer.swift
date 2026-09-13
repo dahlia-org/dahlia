@@ -1,0 +1,300 @@
+import DahliaMeetingAccess
+import DahliaRuntimeSupport
+import Foundation
+import GRDB
+
+/// Copies only portable workspace content into a trusted current-schema database.
+/// Keep this list explicit: adding a table must not silently export accounts or runtime state.
+enum WorkspaceBackupTransfer {
+    static let workspaceTables = ["files", "projects", "instructions"]
+    static let meetingTables = [
+        "recording_sessions", "transcript_segments", "notes", "meeting_attachments", "summaries", "action_items",
+        "summary_exports", "meeting_conversation_metrics", "meeting_conversation_source_metrics", "meeting_tags",
+        "summary_bodies",
+    ]
+    static let referenceTables = [
+        "transcript_segment_bodies": ("segmentId", "transcript_segments"),
+        "file_text_bodies": ("fileId", "files"),
+    ]
+    private static let references = [
+        "segmentId": "transcript_segments",
+        "fileId": "files", "workspace_id": "workspaces", "projectId": "projects", "parentProjectId": "projects",
+        "meetingId": "meetings", "sessionId": "recording_sessions", "recordingSessionId": "recording_sessions",
+        "tagId": "tags",
+    ]
+
+    static func copy(
+        workspaceId: UUID,
+        in db: Database,
+        destinationWorkspace: WorkspaceRecord,
+        remapIDs: Bool,
+        storeOriginal: ((UUID, UUID) throws -> String)? = nil
+    ) throws {
+        guard try WorkspaceRecord.fetchOne(db, sql: "SELECT * FROM backup_source.workspaces WHERE id = ?", arguments: [workspaceId]) != nil
+        else { throw BackupServiceError.invalidBackup }
+        try destinationWorkspace.insert(db)
+        var mappings: [String: [DatabaseValue: DatabaseValue]] = [
+            "workspaces": [workspaceId.databaseValue: destinationWorkspace.id.databaseValue],
+        ]
+        // meeting_attachments triggers inspect OCR to choose indexing or analysis, so restore file text first.
+        let tables = workspaceTables + ["file_text_bodies", "meetings"] + meetingTables
+            + referenceTables.keys.sorted().filter { $0 != "file_text_bodies" }
+        if remapIDs {
+            for table in tables where try db.columns(in: table).contains(where: { $0.name == "id" && $0.type == "BLOB" }) {
+                let ids = try UUID.fetchAll(db, sql: "SELECT id FROM backup_source.\(table) WHERE \(predicate(table))", arguments: [workspaceId])
+                mappings[table] = Dictionary(uniqueKeysWithValues: ids.map { ($0.databaseValue, UUID.v7().databaseValue) })
+            }
+        }
+        try copyTags(workspaceId: workspaceId, in: db, mappings: &mappings)
+        try copyCalendar(workspaceId: workspaceId, in: db)
+        for table in tables {
+            let sql = if table == "projects" {
+                """
+                WITH RECURSIVE hierarchy(id, depth) AS (
+                    SELECT id, 0 FROM backup_source.\(table) WHERE workspace_id = ? AND parentProjectId IS NULL
+                    UNION ALL
+                    SELECT child.id, hierarchy.depth + 1 FROM backup_source.\(table) child
+                    JOIN hierarchy ON child.parentProjectId = hierarchy.id
+                ) SELECT content.* FROM backup_source.\(table) content JOIN hierarchy ON content.id = hierarchy.id ORDER BY depth
+                """
+            } else {
+                "SELECT * FROM backup_source.\(table) WHERE \(predicate(table))"
+            }
+            let rows = try Row.fetchCursor(db, sql: sql, arguments: [workspaceId])
+            var copiedCount = 0
+            while let row = try rows.next() {
+                // New workspaces do not inherit export destinations; local output files are never included.
+                if table == "summary_exports", remapIDs || row["type"] as String == SummaryExportType.workspace.rawValue { continue }
+                let columns = Array(row.columnNames)
+                let values = try columns.map { column -> DatabaseValue in
+                    if table == "files" {
+                        if column == "uri" || column == "remoteReference" { return .null }
+                        if column == "localReference" {
+                            let originalId: UUID = row["id"]
+                            let destinationId = mappings["files"]?[originalId.databaseValue].flatMap(UUID.fromDatabaseValue) ?? originalId
+                            return try storeOriginal?(originalId, destinationId).databaseValue ?? .null
+                        }
+                    }
+                    let value: DatabaseValue = row[column]
+                    if value.isNull { return value }
+                    if remapIDs, table == "summary_bodies", column == "document" {
+                        return try remapSummary(row["document"], screenshots: mappings["meeting_attachments"] ?? [:]).databaseValue
+                    }
+                    let referencedTable: String? = if column == "id" {
+                        table
+                    } else {
+                        references[column]
+                    }
+                    if let referencedTable, let mapping = mappings[referencedTable] {
+                        guard let mapped = mapping[value] else { throw BackupServiceError.invalidBackup }
+                        return mapped
+                    }
+                    return value
+                }
+                try insert(columns: columns, values: values, table: table, into: db)
+                copiedCount += 1
+            }
+            if table == "projects" {
+                let expected = try Int.fetchOne(
+                    db,
+                    sql: "SELECT COUNT(*) FROM backup_source.\(table) WHERE workspace_id = ?",
+                    arguments: [workspaceId]
+                )
+                guard expected == copiedCount else { throw BackupServiceError.invalidBackup }
+            }
+        }
+        try validateBodies(workspaceId: destinationWorkspace.id, in: db)
+        let projects = try Row.fetchCursor(
+            db,
+            sql: "SELECT id, revision FROM backup_source.projects WHERE workspace_id = ?",
+            arguments: [workspaceId]
+        )
+        while let project = try projects.next() {
+            let original: DatabaseValue = project["id"]
+            let id = mappings["projects"]?[original] ?? original
+            try db.execute(
+                sql: "UPDATE projects SET revision = ? WHERE id = ?",
+                arguments: [project["revision"] as DatabaseValue, id]
+            )
+        }
+    }
+
+    private static func validateBodies(workspaceId: UUID, in db: Database) throws {
+        // Never publish a Local backup/restore whose headers outlive missing body rows.
+        let meetingIDs = try UUID.fetchCursor(db, sql: "SELECT id FROM meetings WHERE workspace_id = ?", arguments: [workspaceId])
+        while let id = try meetingIDs.next() {
+            try TextContentAccess.requireComplete(entity: .transcript, id: id, in: db)
+            try TextContentAccess.requireComplete(entity: .summary, id: id, in: db)
+        }
+        let fileIDs = try UUID.fetchCursor(db, sql: "SELECT id FROM files WHERE workspace_id = ?", arguments: [workspaceId])
+        while let id = try fileIDs.next() {
+            try TextContentAccess.requireComplete(entity: .file, id: id, in: db)
+        }
+    }
+
+    private static func remapSummary(_ json: String, screenshots: [DatabaseValue: DatabaseValue]) throws -> String {
+        var document = try SummaryDocument.decode(databaseJSON: json)
+        for sectionIndex in document.sections.indices {
+            document.sections[sectionIndex].id = .v7()
+            for blockIndex in document.sections[sectionIndex].blocks.indices {
+                var block = document.sections[sectionIndex].blocks[blockIndex]
+                block.id = .v7()
+                if case let .image(id, caption) = block.content {
+                    guard let value = screenshots[id.databaseValue], let mapped = UUID.fromDatabaseValue(value) else {
+                        throw BackupServiceError.invalidBackup
+                    }
+                    block.content = .image(screenshotId: mapped, caption: caption)
+                }
+                document.sections[sectionIndex].blocks[blockIndex] = block
+            }
+        }
+        return try document.databaseJSONString()
+    }
+
+    static func portableWorkspace(_ workspace: WorkspaceRecord) -> WorkspaceRecord {
+        var result = workspace
+        result.path = nil
+        result.accountConnectionId = nil
+        result.syncRole = nil
+        result.organizationId = nil
+        result.syncConfirmedConnectionId = nil
+        result.syncPullCursor = nil
+        result.syncLastCommittedCursor = nil
+        result.syncRecoveryState = nil
+        result.databricksProfile = ""
+        return result
+    }
+
+    static func retainedAudio(workspaceId: UUID, in db: Database) throws -> [(table: String, rows: [Row])] {
+        let sessions = """
+        SELECT current.id FROM recording_sessions current
+        JOIN meetings ON meetings.id = current.meetingId
+        JOIN backup_source.recording_sessions saved ON saved.id = current.id AND saved.meetingId = current.meetingId
+        WHERE meetings.workspace_id = ?
+        """
+        let segments = "SELECT id FROM recording_audio_segments WHERE recordingSessionId IN (\(sessions))"
+        let files = "SELECT id FROM recording_audio_files WHERE recordingSessionId IN (\(sessions))"
+        let selections = [
+            ("recording_audio_segments", "recordingSessionId IN (\(sessions))"),
+            ("recording_audio_segment_ranges", "audioSegmentId IN (\(segments))"),
+            ("recording_audio_source_progress", "recordingSessionId IN (\(sessions))"),
+            ("recording_audio_files", "recordingSessionId IN (\(sessions))"),
+            ("recording_audio_ranges", "audioFileId IN (\(files))"),
+        ]
+        var retained = try selections.map { table, predicate in
+            try (table: table, rows: Row.fetchAll(db, sql: "SELECT * FROM \(table) WHERE \(predicate)", arguments: [workspaceId]))
+        }
+        try retained.append(("recording_audio_reconciliation_issues", Row.fetchAll(db, sql: """
+        SELECT * FROM recording_audio_reconciliation_issues
+        WHERE (recordingSessionId IN (\(sessions)) OR audioSegmentId IN (\(segments)))
+          AND (recordingSessionId IS NULL OR recordingSessionId IN (\(sessions)))
+          AND (audioSegmentId IS NULL OR audioSegmentId IN (\(segments)))
+        """, arguments: [workspaceId, workspaceId, workspaceId, workspaceId])))
+        return retained
+    }
+
+    static func restoreRetainedAudio(_ retained: [(table: String, rows: [Row])], in db: Database) throws {
+        for (table, rows) in retained {
+            for row in rows {
+                let columns = Array(row.columnNames)
+                try insert(columns: columns, values: columns.map { row[$0] as DatabaseValue }, table: table, into: db)
+            }
+        }
+    }
+
+    static func removeWorkspaceContent(id: UUID, in db: Database) throws {
+        let projects = try ProjectRecord.fetchResolvedAll(workspaceId: id, in: db)
+            .sorted { $0.path.split(separator: "/").count > $1.path.split(separator: "/").count }
+        for project in projects {
+            _ = try ProjectRecord.deleteOne(db, key: project.id)
+        }
+        try db.execute(sql: "PRAGMA defer_foreign_keys = ON")
+        _ = try WorkspaceRecord.deleteOne(db, key: id)
+        try db.execute(sql: "DELETE FROM sync_entity_state WHERE workspace_id = ?", arguments: [id])
+    }
+
+    static func validateLocalTarget(id: UUID, in db: Database) throws -> WorkspaceRecord {
+        guard let workspace = try WorkspaceRecord.fetchOne(db, key: id),
+              workspace.accountConnectionId == nil, workspace.syncRole == nil,
+              workspace.syncConfirmedConnectionId == nil,
+              try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM sync_transactions WHERE workspace_id = ?)", arguments: [id]) == false else {
+            throw BackupServiceError.restoreTargetUnavailable
+        }
+        return workspace
+    }
+
+    static func validateIntegrity(in db: Database) throws {
+        let result = try String.fetchOne(db, sql: "PRAGMA quick_check") ?? "unknown"
+        guard result == "ok", try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty else {
+            throw BackupServiceError.integrityCheckFailed(result)
+        }
+    }
+
+    private static func predicate(_ table: String) -> String {
+        if workspaceTables.contains(table) || table == "meetings" { return "workspace_id = ?" }
+        if meetingTables.contains(table) { return "meetingId IN (SELECT id FROM backup_source.meetings WHERE workspace_id = ?)" }
+        let (column, parent) = referenceTables[table]!
+        let parentPredicate = meetingTables.contains(parent)
+            ? "meetingId IN (SELECT id FROM backup_source.meetings WHERE workspace_id = ?)"
+            : "workspace_id = ?"
+        return "\(column) IN (SELECT id FROM backup_source.\(parent) WHERE \(parentPredicate))"
+    }
+
+    private static func copyTags(
+        workspaceId: UUID,
+        in db: Database,
+        mappings: inout [String: [DatabaseValue: DatabaseValue]]
+    ) throws {
+        let rows = try Row.fetchCursor(db, sql: """
+        SELECT * FROM backup_source.tags WHERE id IN (
+            SELECT tagId FROM backup_source.meeting_tags JOIN backup_source.meetings ON meetings.id = meeting_tags.meetingId WHERE workspace_id = ?
+        )
+        """, arguments: [workspaceId])
+        mappings["tags"] = [:]
+        while let row = try rows.next() {
+            let name: String = row["name"]
+            let id: Int64
+            if let existing = try Int64.fetchOne(db, sql: "SELECT id FROM tags WHERE name = ?", arguments: [name]) {
+                id = existing
+            } else {
+                let columns = Array(row.columnNames).filter { $0 != "id" }
+                try insert(columns: columns, values: columns.map { row[$0] as DatabaseValue }, table: "tags", into: db)
+                id = db.lastInsertedRowID
+            }
+            mappings["tags"]?[row["id"] as DatabaseValue] = id.databaseValue
+        }
+    }
+
+    private static func copyCalendar(workspaceId: UUID, in db: Database) throws {
+        for table in ["calendar_events", "calendar_event_sources"] {
+            let rows = try Row.fetchCursor(db, sql: """
+            SELECT * FROM backup_source.\(table) WHERE EXISTS (
+                SELECT 1 FROM backup_source.meetings WHERE workspace_id = ?
+                AND calendar_event_ical_uid = \(table).ical_uid
+                AND calendar_event_recurrence_id = \(table).recurrence_id
+            )
+            """, arguments: [workspaceId])
+            while let row = try rows.next() {
+                let columns = Array(row.columnNames)
+                try insert(
+                    columns: columns,
+                    values: columns.map { row[$0] as DatabaseValue },
+                    table: table,
+                    into: db,
+                    onConflict: " ON CONFLICT DO NOTHING"
+                )
+            }
+        }
+    }
+
+    private static func insert(
+        columns: [String], values: [DatabaseValue], table: String, into db: Database, onConflict: String = ""
+    ) throws {
+        let names = columns.map { "\"\($0)\"" }.joined(separator: ", ")
+        let placeholders = columns.map { _ in "?" }.joined(separator: ", ")
+        try db.execute(
+            sql: "INSERT INTO \(table) (\(names)) VALUES (\(placeholders))\(onConflict)",
+            arguments: StatementArguments(values)
+        )
+    }
+}

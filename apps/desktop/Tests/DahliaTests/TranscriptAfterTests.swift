@@ -11,27 +11,27 @@ import Synchronization
     @MainActor
     struct TranscriptAfterTests {
         @Test
-        func workspaceReadsAllVaultsButCannotWidenExplicitScope() async throws {
+        func workspaceReadsAllWorkspacesButCannotWidenExplicitScope() async throws {
             let fixture = try Fixture()
             let all = try DahliaMCPServer(databaseURL: fixture.databaseURL)
-            let listing = try all.executeTool(named: "list_vaults", arguments: [:])
-            let vaults = try #require((listing["structuredContent"] as? [String: Any])?["vaults"] as? [[String: Any]])
-            #expect(vaults.count == 2)
+            let listing = try all.executeTool(named: "list_workspaces", arguments: [:])
+            let workspaces = try #require((listing["structuredContent"] as? [String: Any])?["workspaces"] as? [[String: Any]])
+            #expect(workspaces.count == 2)
             let result = try all.executeTool(named: "query_meetings", arguments: ["limit": 1])
-            #expect(((result["structuredContent"] as? [String: Any])?["vaults"] as? [Any])?.count == 2)
-            let detail = try all.executeTool(named: "get_meeting", arguments: ["meeting_id": fixture.otherVaultMeetingID.uuidString])
+            #expect(((result["structuredContent"] as? [String: Any])?["workspaces"] as? [Any])?.count == 2)
+            let detail = try all.executeTool(named: "get_meeting", arguments: ["meeting_id": fixture.otherWorkspaceMeetingID.uuidString])
             #expect(detail["isError"] as? Bool == false)
-            let scoped = try DahliaMCPServer(databaseURL: fixture.databaseURL, vaultID: fixture.primaryVaultID)
-            #expect(throws: MeetingAccessError.vaultNotFound) {
+            let scoped = try DahliaMCPServer(databaseURL: fixture.databaseURL, workspaceID: fixture.primaryWorkspaceID)
+            #expect(throws: MeetingAccessError.workspaceNotFound) {
                 try scoped.executeTool(
                     named: "get_meeting",
-                    arguments: ["vault_id": fixture.otherVaultID.uuidString, "meeting_id": fixture.otherVaultMeetingID.uuidString]
+                    arguments: ["workspace_id": fixture.otherWorkspaceID.uuidString, "meeting_id": fixture.otherWorkspaceMeetingID.uuidString]
                 )
             }
             #expect(throws: (any Error).self) { try all.executeTool(named: "query_meetings", arguments: ["cursor": "wrong"]) }
-            try await fixture.manager.dbQueue.write { try $0.execute(sql: "DELETE FROM vaults") }
-            let empty = try all.executeTool(named: "list_vaults", arguments: [:])
-            #expect(((empty["structuredContent"] as? [String: Any])?["vaults"] as? [Any])?.isEmpty == true)
+            try await fixture.manager.dbQueue.write { try $0.execute(sql: "DELETE FROM workspaces") }
+            let empty = try all.executeTool(named: "list_workspaces", arguments: [:])
+            #expect(((empty["structuredContent"] as? [String: Any])?["workspaces"] as? [Any])?.isEmpty == true)
             #expect(throws: (any Error).self) { try all.executeTool(named: "query_meetings", arguments: ["unknown": "rejected"]) }
 
         }
@@ -39,7 +39,7 @@ import Synchronization
         @Test
         func checkpointsPreservePaginationAndDetectChanges() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
             let first = try store.transcript(meetingID: fixture.firstMeetingID, limit: 1)
             let after = try #require(first.nextAfter)
             let second = try store.transcript(meetingID: fixture.firstMeetingID, limit: 1, after: after)
@@ -72,7 +72,7 @@ import Synchronization
 
         @Test
         func checkpointDetectsLateInsertionDeletionAndRegeneration() throws {
-            let vault = UUID(), meeting = UUID()
+            let workspace = UUID(), meeting = UUID()
             let first = entry("one"), second = entry("two")
             func page(
                 _ segments: [TranscriptEntry],
@@ -80,7 +80,7 @@ import Synchronization
                 generation: String = "one"
             ) throws -> (segments: [TranscriptEntry], next: String) {
                 try TranscriptAfter.page(
-                    vaultID: vault,
+                    workspaceID: workspace,
                     meetingID: meeting,
                     from: nil,
                     to: nil,
@@ -104,7 +104,7 @@ import Synchronization
         @Test
         func missingBodiesAreErrorsInsteadOfNoNewSpeech() throws {
             let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
             let token = try #require(store.transcript(meetingID: fixture.firstMeetingID).nextAfter)
             try fixture.manager.dbQueue.write { db in
                 try db.execute(sql: "DELETE FROM transcript_segment_bodies WHERE segmentId = ?", arguments: [fixture.firstSegmentID])
@@ -113,41 +113,44 @@ import Synchronization
         }
 
         @Test
-        func workspaceWritesResolveIDsAndRejectCrossVaultReferences() throws {
+        func workspaceWritesResolveIDsAndRejectCrossWorkspaceReferences() throws {
             let fixture = try Fixture()
             let server = try DahliaMCPServer(databaseURL: fixture.databaseURL, allowsWrites: true)
             #expect(throws: (any Error).self) { try server.executeTool(named: "create_project", arguments: ["name": "ambiguous"]) }
             let created = try server.executeTool(
                 named: "create_project",
-                arguments: ["name": "child", "parent_project_id": fixture.otherVaultProjectID.uuidString]
+                arguments: ["name": "child", "parent_project_id": fixture.otherWorkspaceProjectID.uuidString]
             )
             #expect(created["isError"] as? Bool == false)
-            let explicit = try server.executeTool(named: "create_project", arguments: ["name": "root", "vault_id": fixture.otherVaultID.uuidString])
+            let explicit = try server.executeTool(
+                named: "create_project",
+                arguments: ["name": "root", "workspace_id": fixture.otherWorkspaceID.uuidString]
+            )
             #expect(explicit["isError"] as? Bool == false)
             let updated = try server.executeTool(
                 named: "update_project",
-                arguments: ["project_id": fixture.otherVaultProjectID.uuidString, "revision": 1, "description": "updated"]
+                arguments: ["project_id": fixture.otherWorkspaceProjectID.uuidString, "revision": 1, "description": "updated"]
             )
             #expect(updated["isError"] as? Bool == false)
             #expect(throws: (any Error).self) {
                 try server.executeTool(named: "update_project", arguments: [
-                    "project_id": fixture.otherVaultProjectID.uuidString,
+                    "project_id": fixture.otherWorkspaceProjectID.uuidString,
                     "revision": 2,
                     "parent_project_id": fixture.primaryProjectID.uuidString,
                 ])
             }
-            let scoped = try DahliaMCPServer(databaseURL: fixture.databaseURL, vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let scoped = try DahliaMCPServer(databaseURL: fixture.databaseURL, workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             #expect(throws: (any Error).self) {
-                try scoped.executeTool(named: "create_project", arguments: ["name": "outside", "vault_id": fixture.otherVaultID.uuidString])
+                try scoped.executeTool(named: "create_project", arguments: ["name": "outside", "workspace_id": fixture.otherWorkspaceID.uuidString])
             }
             #expect(throws: (any Error).self) {
                 try scoped.executeTool(
                     named: "update_project",
-                    arguments: ["project_id": fixture.otherVaultProjectID.uuidString, "revision": 2, "name": "outside"]
+                    arguments: ["project_id": fixture.otherWorkspaceProjectID.uuidString, "revision": 2, "name": "outside"]
                 )
             }
             let tools = server.workspaceToolDefinitions.compactMap { $0["name"] as? String }
-            #expect(tools.contains("list_vaults"))
+            #expect(tools.contains("list_workspaces"))
             #expect(!tools.contains("get_live_transcript"))
             #expect(!tools.contains("list_live_meetings"))
         }
@@ -155,13 +158,13 @@ import Synchronization
         @Test
         func waitReturnsNewConfirmedTextWithoutHoldingTheDatabase() async throws {
             let fixture = try Fixture()
-            let databaseURL = fixture.databaseURL, vaultID = fixture.primaryVaultID, meetingID = fixture.firstMeetingID
-            let token = try #require(fixture.store(vaultID: vaultID).transcript(meetingID: meetingID).nextAfter)
+            let databaseURL = fixture.databaseURL, workspaceID = fixture.primaryWorkspaceID, meetingID = fixture.firstMeetingID
+            let token = try #require(fixture.store(workspaceID: workspaceID).transcript(meetingID: meetingID).nextAfter)
             let ready = AsyncStream<Void>.makeStream()
             let touches = Mutex(0)
             let task = Task.detached {
                 defer { ready.continuation.finish() }
-                let server = try DahliaMCPServer(databaseURL: databaseURL, vaultID: vaultID, textResolver: { _, request in
+                let server = try DahliaMCPServer(databaseURL: databaseURL, workspaceID: workspaceID, textResolver: { _, request in
                     guard request.operation == .touch else { throw TextContentError.unavailable }
                     touches.withLock { $0 += 1 }
                     ready.continuation.yield(())
@@ -198,11 +201,11 @@ import Synchronization
         @Test
         func emptyWaitTimesOutWithAReusableCheckpoint() async throws {
             let fixture = try Fixture()
-            let databaseURL = fixture.databaseURL, vaultID = fixture.primaryVaultID, meetingID = fixture.firstMeetingID
-            let token = try #require(fixture.store(vaultID: vaultID).transcript(meetingID: meetingID).nextAfter)
+            let databaseURL = fixture.databaseURL, workspaceID = fixture.primaryWorkspaceID, meetingID = fixture.firstMeetingID
+            let token = try #require(fixture.store(workspaceID: workspaceID).transcript(meetingID: meetingID).nextAfter)
             let touches = Mutex(0)
             let result = try await Task.detached {
-                let server = try DahliaMCPServer(databaseURL: databaseURL, vaultID: vaultID, textResolver: { _, request in
+                let server = try DahliaMCPServer(databaseURL: databaseURL, workspaceID: workspaceID, textResolver: { _, request in
                     guard request.operation == .touch else { throw TextContentError.unavailable }
                     touches.withLock { $0 += 1 }
                     return Data("{}".utf8)

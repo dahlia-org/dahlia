@@ -28,7 +28,7 @@ extension CodexChatSessionModel {
         composerSnapshot: CodexChatComposerSnapshot? = nil,
         includesCurrentContext: Bool = true
     ) {
-        guard isBoundToCurrentVault,
+        guard isBoundToCurrentWorkspace,
               !isRestoring,
               !needsRestore,
               !isGenerating,
@@ -97,7 +97,7 @@ extension CodexChatSessionModel {
             errorMessage = error.localizedDescription
             return
         }
-        guard !isReleased, isBoundToCurrentVault else { return }
+        guard !isReleased, isBoundToCurrentWorkspace else { return }
         let responseID = "pending-\(UUID.v7().uuidString)"
 
         _ = await runTurn(
@@ -157,8 +157,8 @@ extension CodexChatSessionModel {
 
     func resolveContext(if isRequired: Bool) async throws -> CodexChatContext? {
         guard isRequired else { return nil }
-        guard let vaultID else { throw CodexAppServerError.invalidProtocolResponse }
-        return try await contextProvider.currentContext(vaultID: vaultID)
+        guard let workspaceID else { throw CodexAppServerError.invalidProtocolResponse }
+        return try await contextProvider.currentContext(workspaceID: workspaceID)
     }
 
     static let maximumAttachedImages = CodexChatImageAttachment.maximumAttachmentCount

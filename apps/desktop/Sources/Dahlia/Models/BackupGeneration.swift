@@ -1,7 +1,7 @@
 import Foundation
 
 struct BackupMetadata: Codable, Equatable, Sendable {
-    static let currentFormatVersion = 4
+    static let currentFormatVersion = 5
 
     enum Reason: String, Codable, Sendable {
         case manual
@@ -16,10 +16,10 @@ struct BackupMetadata: Codable, Equatable, Sendable {
     let appVersion: String
     let appBuild: String
     let reason: Reason
-    let vaults: [BackupVault]
+    let workspaces: [BackupWorkspace]
 }
 
-struct BackupVault: Codable, Equatable, Sendable, Identifiable {
+struct BackupWorkspace: Codable, Equatable, Sendable, Identifiable {
     let id: UUID
     let name: String
 }
@@ -50,7 +50,7 @@ struct BackupPreflightItem: Identifiable, Equatable, Sendable {
 
     let sessionId: UUID
     let meetingId: UUID
-    let vaultId: UUID
+    let workspaceId: UUID
     let meetingName: String
     let startedAt: Date
     let state: State
@@ -91,14 +91,14 @@ struct BackupPreflightItem: Identifiable, Equatable, Sendable {
     }
 }
 
-struct VaultBackupRestoreRequest: Codable, Equatable, Sendable {
+struct WorkspaceBackupRestoreRequest: Codable, Equatable, Sendable {
     enum Mode: String, Codable, Sendable {
         case overwrite
-        case newVault
+        case newWorkspace
     }
 
-    let sourceVaultId: UUID
-    let targetVaultId: UUID
+    let sourceWorkspaceId: UUID
+    let targetWorkspaceId: UUID
     let mode: Mode
     let name: String
 }

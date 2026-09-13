@@ -3,16 +3,16 @@ import SwiftUI
 struct MCPModalView: View {
     @Environment(\.dismiss) private var dismiss
 
-    let vaults: [VaultRecord]
-    let currentVault: VaultRecord?
+    let workspaces: [WorkspaceRecord]
+    let currentWorkspace: WorkspaceRecord?
 
     var body: some View {
         VStack(spacing: 0) {
             DahliaSheetHeader(title: L10n.mcp)
 
             MCPSettingsView(
-                vaults: vaults,
-                currentVault: currentVault
+                workspaces: workspaces,
+                currentWorkspace: currentWorkspace
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 

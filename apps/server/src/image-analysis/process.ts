@@ -1,6 +1,5 @@
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettingsStore } from "../account-settings";
 import type { Identity } from "../auth/identity";
-import { personalWorkspaceId } from "../auth/workspace";
 import { RequestError } from "../storage/upload";
 import type { MeetingSyncService } from "../sync/service";
 import type { MeetingSyncStore } from "../sync/types";
@@ -17,7 +16,7 @@ export async function processImageAnalysisJob(
   signal = AbortSignal.any([signal, AbortSignal.timeout(240_000)]);
   const job = await jobs.claim(captioner.model, reference);
   if (!job) return false;
-  const identity: Identity = { userId: job.ownerUserId, workspaceId: personalWorkspaceId(job.ownerUserId), source: "accounts" };
+  const identity: Identity = { userId: job.ownerUserId, source: "accounts" };
   try {
     const input = await syncStore.withIdentity(identity, (scoped) => scoped.loadImageAnalysis(job));
     if (!input) {

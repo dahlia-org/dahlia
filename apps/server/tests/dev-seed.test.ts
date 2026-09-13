@@ -34,7 +34,7 @@ it("seeds authenticated empty SQLite users atomically with UUIDv7 content and pr
     expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
     const db = new DatabaseSync(path);
     try {
-      const tables = [["vaults", "vault_id", 1], ["projects", "project_id", 1], ["meetings", "meeting_id", 3], ["summaries", "id", 3]] as const;
+      const tables = [["workspaces", "workspace_id", 1], ["projects", "project_id", 1], ["meetings", "meeting_id", 3], ["summaries", "id", 3]] as const;
       for (const [table, column, count] of tables) {
         const rows = db.prepare(`SELECT ${column} AS id FROM ${table}`).all();
         expect(rows).toHaveLength(count);

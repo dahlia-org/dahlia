@@ -6,7 +6,7 @@
 
 認証・管理・同期で DB を分けず、Drizzle の単一 application database に統一する。認証方式、DB、AI provider、storage の選択は独立させる。
 
-- PostgreSQL / Lakebase は `auth`（生成 Better Auth）、`app`（Vault / Project、permission、meeting、transcript、screenshot、同期履歴）、`search`（文書・テキスト・vector）、`crypto`（wrapped Vault key）、`jobs`（summary / image_analysis / search_index / storage_delete）。検索 projection は `search.documents` に置き、`search → app → auth` の参照を持つ。検索データ全体は暗号化対象外だが、Vault 単位の RLS / FORCE RLS を適用する。ジョブは `jobs → app / auth` の参照を持つ。
+- PostgreSQL / Lakebase は `auth`（生成 Better Auth）、`app`（Workspace / Project、permission、meeting、transcript、screenshot、同期履歴）、`search`（文書・テキスト・vector）、`crypto`（wrapped Workspace key）、`jobs`（summary / image_analysis / search_index / storage_delete）。検索 projection は `search.documents` に置き、`search → app → auth` の参照を持つ。検索データ全体は暗号化対象外だが、Workspace 単位の RLS / FORCE RLS を適用する。ジョブは `jobs → app / auth` の参照を持つ。
 - SQLite は Better Auth を top-level、Dahlia table は prefix なしにする。PostgreSQL の content ID は native UUID、非 UUID の user / workspace ID や hash は text。SQLite も境界で canonical UUID を検証する。
 - Better Auth schema は生成物として手編集しない。全認証方式で Auth → application の順に migration を適用する。PostgreSQL の ledger は `drizzle.__dahlia_auth_migrations` と `drizzle.__dahlia_server_migrations` に分離し、SQLite は単一 baseline を使う。
 - Node は SQLite / PostgreSQL / Lakebase、Workers は Hyperdrive / direct PostgreSQL を対象とする。D1はサポート対象から外し、専用adapter・migrationを配布しない。
@@ -14,7 +14,7 @@
 
 初期の `dahlia` 単一 schema と header-only application migration は、参照方向と認証方式間の一貫性を保つため変更した。当時の未リリース DB は再生成 baseline を使い、旧開発データを自動変換しなかった。released migration は不変で、以後は forward migration を追加する。
 
-2026-09-06: Server canonical model では Vault / Project と meeting が同じ正本を構成するため、未リリースの `core` / `content` を `app` に統合した。SQLite は prefix を除去する。baseline を直接更新し、旧開発 DB からの自動移行は提供しない。認可、保持期間、再生成可否はスキーマではなく各テーブルの責務で区別する。
+2026-09-06: Server canonical model では Workspace / Project と meeting が同じ正本を構成するため、未リリースの `core` / `content` を `app` に統合した。SQLite は prefix を除去する。baseline を直接更新し、旧開発 DB からの自動移行は提供しない。認可、保持期間、再生成可否はスキーマではなく各テーブルの責務で区別する。
 
 ## リリース前 baseline 統合（2026-09-09、2026-09-12更新）
 
@@ -28,6 +28,8 @@ PostgreSQL は既存の生成 Auth baseline → application initial → runtime_
 
 2026-09-12: 未公開の `transcript_segments.normalized_character_count` と PostgreSQL の OCR / caption 長制約を initial に統合した。空 DB には旧データの切り詰めが不要なため、全 owner を走査して一時テーブルへ補正値を準備する migration runner 専用処理も削除した。
 
+2026-09-13: ユーザー承認により、Vault → Workspace の変更も現行 Drizzle schema から初期 migration を再生成して統合した。旧 Server DB、暗号化ドメイン、保存済み receipt の互換変換は提供しない。リリース済み Desktop v41 のデータ移行は維持する。
+
 以下の forward migration の説明は統合前の経緯であり、旧開発 DB からの移行保証ではない。リリース後は従来どおり forward-only とする。
 
 ## Header identity
@@ -38,33 +40,33 @@ Header mode でも `auth.user` を作り、`DAHLIA_AUTH_HEADER`（既定 `X-Forw
 
 Header mode で管理者がユーザーを事前作成する場合も、作成 transaction 内で Header account と Personal/domain Organization を初期化する。後の proxy ログインはその account を参照し、既存の別認証方式のユーザーを email だけで自動統合しない。
 
-`app.vault_permissions.granted_by_user_id` は `auth.user.id` を参照する。search jobはVault単位で、summary／image jobのuser IDはrequesterである。polymorphic な principal ID は type と組で扱い、単独の外部キーにしない。proxy の ID・認証方式変更による既存 permission の対応付けは自動化しない。
+`app.workspace_permissions.granted_by_user_id` は `auth.user.id` を参照する。search jobはWorkspace単位で、summary／image jobのuser IDはrequesterである。polymorphic な principal ID は type と組で扱い、単独の外部キーにしない。proxy の ID・認証方式変更による既存 permission の対応付けは自動化しない。
 
-## Vault permission
+## Workspace permission
 
-`app.vaults.organization_id` が変更不能な所有Organizationを示す。削除はRESTRICTとし、`created_by {id,name,email}` は不変の監査snapshotとしてVault削除まで保持する。監査snapshotは通常APIやprincipal検索に公開しない。
+`app.workspaces.organization_id` が変更不能な所有Organizationを示す。削除はRESTRICTとし、`created_by {id,name,email}` は不変の監査snapshotとしてWorkspace削除まで保持する。監査snapshotは通常APIやprincipal検索に公開しない。
 
-`vault_permissions` のprincipalは `user | organization | team`、roleは `admin | editor | viewer`。有効roleはAdminを最優先とし、内容書込とVault管理を別predicateで評価する。Team権限はTeamと親Organizationの両membershipが必要。Organization所属だけではVaultアクセスを与えない。
+`workspace_permissions` のprincipalは `user | organization | team`、roleは `admin | editor | viewer`。有効roleはAdminを最優先とし、内容書込とWorkspace管理を別predicateで評価する。Team権限はTeamと親Organizationの両membershipが必要。Organization所属だけではWorkspaceアクセスを与えない。
 
 PostgreSQL / Lakebaseはtransaction-local `app.user_id` と現在membershipをRLS / FORCE RLSで評価し、SQLiteも同じアプリpredicateを使う。permission自体へのRLSは自己参照再帰を避けて設定せず、認可済みstore以外へ公開しない。組織・Team・permission変更は共通アプリ検査と変更を一つのtransactionに含める。PostgreSQLは共通advisory lock、SQLiteはwriter transactionで同時変更を直列化し、最後のowner/member/Adminを守る。DBには形・参照整合性・RLS・FTSだけを置き、Organizationライフサイクルの業務ロジックをtriggerにしない。
 
 ## 経緯と制約
 
-owner column と share table の重複を Vault permission に集約した。header mode で Auth schema を省く案は user 外部キーと migration 集合を分岐させたため撤回し、共通 user directory と生の user ID を採用した。organization ID 一覧を transaction context に渡す方式と `header_deployment` principal も廃止し、DB の現在 membership を参照する。
+owner column と share table の重複を Workspace permission に集約した。header mode で Auth schema を省く案は user 外部キーと migration 集合を分岐させたため撤回し、共通 user directory と生の user ID を採用した。organization ID 一覧を transaction context に渡す方式と `header_deployment` principal も廃止し、DB の現在 membership を参照する。
 
 認証方式を同じ DB 上で切り替える identity 移行は対象外。permission table に新しい access path を足す場合は同等の認可境界が必要。
 
 ## Sync retention metadata（2026-09-06）
 
-`app.sync_vault_state` は Vault と latest sequence / pruned boundary のみを保持する運用 metadata とし、既存 change ledger と同様に RLS の対象外とする。identity-scoped sync store と管理用 retention 処理以外へ公開せず、正本・receipt の認可は引き続き RLS と application 層で強制する。内容を追加する場合はこの例外を再評価する。
+`app.sync_workspace_state` は Workspace と latest sequence / pruned boundary のみを保持する運用 metadata とし、既存 change ledger と同様に RLS の対象外とする。identity-scoped sync store と管理用 retention 処理以外へ公開せず、正本・receipt の認可は引き続き RLS と application 層で強制する。内容を追加する場合はこの例外を再評価する。
 
-forward migration は既存 receipt 本文を保持したまま結果 ID / revision を抽出し、ledger と receipt の最大 sequence で Vault state を初期化する。PostgreSQL では migration owner が同一 transaction 内だけ receipt の FORCE RLS を解除して backfill し、完了前に復元する。保持処理は identity を transaction-local に設定し、失敗時は floor と削除を共に rollback する。
+forward migration は既存 receipt 本文を保持したまま結果 ID / revision を抽出し、ledger と receipt の最大 sequence で Workspace state を初期化する。PostgreSQL では migration owner が同一 transaction 内だけ receipt の FORCE RLS を解除して backfill し、完了前に復元する。保持処理は identity を transaction-local に設定し、失敗時は floor と削除を共に rollback する。
 
 ## アカウント設定と画像解析 job（2026-09-07）
 
 `app.account_settings` は `auth.user.id` を正本キーに出力言語と解析言語範囲・一覧を保持する。本人の GET/PATCH だけを公開し、PostgreSQL は transaction-local identity と FORCE RLS、SQLite は user ID predicate で分離する。PATCH は指定項目だけの upsert、初回初期化は conditional INSERT。設定の競合制御用 revision は持たない。
 
-`app.image_analysis_jobs` は file ID / Vault ID / requester user ID / model / lease / retry 状態だけの運用 metadata。既存の search job と同様に RLS の対象外とし、Node worker だけが利用する。画像・OCR・caption は queue に複製せず、identity-scoped store の認可と RLS を通して読取り・保存する。追加は forward migration で行い、既存の user / Vault / meeting / file を書き換えない。
+`app.image_analysis_jobs` は file ID / Workspace ID / requester user ID / model / lease / retry 状態だけの運用 metadata。既存の search job と同様に RLS の対象外とし、Node worker だけが利用する。画像・OCR・caption は queue に複製せず、identity-scoped store の認可と RLS を通して読取り・保存する。追加は forward migration で行い、既存の user / Workspace / meeting / file を書き換えない。
 
 OCR / caption の API 上限は OpenAPI `maxLength` の Unicode code point 数としてそれぞれ 32,768 / 1,024 とする。PostgreSQL は最終安全網として `app.files.metadata` と `search.documents` に 65,536 / 2,048 文字の制約を持ち、API validation を制約違反処理の代用にしない。SQLite には同じ DB 制約を追加しない。
 
@@ -89,7 +91,7 @@ FORCE RLS は backfill transaction 内だけ解除し commit 前に復元する�
 
 PostgreSQL / Lakebase のジョブは `jobs.search_index`、`jobs.storage_delete`、`jobs.image_analysis`、`jobs.summary` に配置する。SQLite は `jobs_*`、Desktop の検索ジョブは `jobs_search_index` を維持する。要約ジョブの暗号化ポリシー・AAD・HMAC purpose は物理名から独立した既存の `jobs_summary` を維持する。未リリース Server の baseline を更新し、既存開発 DB は [データを保持する手順](../../../apps/server/docs/jobs-schema-move.md)で手動移行する。
 
-`recordings` は `meeting_id` を外部キーとし、Vault は親会議から導出する。PostgreSQL RLS と共通 store の認可をともに親会議経由にし、API の `vaultId` は維持する。`meeting_events.vault_id` は会議削除後の履歴認可のため、`meeting_attachments.vault_id` は同一 Vault の複合外部キー制約のため維持する。
+`recordings` は `meeting_id` を外部キーとし、Workspace は親会議から導出する。PostgreSQL RLS と共通 store の認可をともに親会議経由にし、API の `workspaceId` は維持する。`meeting_events.workspace_id` は会議削除後の履歴認可のため、`meeting_attachments.workspace_id` は同一 Workspace の複合外部キー制約のため維持する。
 
 コンテンツ世代は `version`、同期・更新検出は `revision` とする。`account_settings.change_version` は `revision` に改名するが、項目単位の更新方法は維持し、CAS 必須にはしない。処理世代の generation、録音 UUID、解析方式・通信形式のバージョンは別概念として扱う。
 

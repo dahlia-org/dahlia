@@ -5,7 +5,7 @@ import Observation
 @Observable
 final class CodexChatSessionModel: Identifiable {
     let id: CodexChatSessionID
-    let vaultID: UUID?
+    let workspaceID: UUID?
     private(set) var backendThreadID: String?
     private(set) var didStartBackendThread = false
     private(set) var title: String
@@ -86,7 +86,7 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var approvalMethodUpdateErrorMessage: String?
     @ObservationIgnored private var approvalMethodSelectionGeneration: UInt = 0
     @ObservationIgnored private var restoreSelectionGeneration: UInt?
-    @ObservationIgnored private let vaultSettings: VaultAISettingsModel
+    @ObservationIgnored private let workspaceSettings: WorkspaceAISettingsModel
     @ObservationIgnored private let runtimeProviderResolver: @Sendable () -> CodexRuntimeProvider
     @ObservationIgnored private var preparedRuntimeProvider: CodexRuntimeProvider?
 
@@ -101,7 +101,7 @@ final class CodexChatSessionModel: Identifiable {
 
     init(
         id: CodexChatSessionID = CodexChatSessionID(),
-        vaultID: UUID? = nil,
+        workspaceID: UUID? = nil,
         backendThreadID: String? = nil,
         title: String = "",
         messages: [CodexChatMessage] = [],
@@ -110,7 +110,7 @@ final class CodexChatSessionModel: Identifiable {
         approvalMethod: CodexChatApprovalMethod? = nil,
         service: any CodexChatServicing = CodexChatService.shared,
         settings: AppSettings = .shared,
-        vaultSettings: VaultAISettingsModel = .shared,
+        workspaceSettings: WorkspaceAISettingsModel = .shared,
         runtimeProviderResolver: @escaping @Sendable () -> CodexRuntimeProvider = {
             CodexRuntimeContextStore.shared.provider
         },
@@ -121,19 +121,19 @@ final class CodexChatSessionModel: Identifiable {
         }
     ) {
         self.id = id
-        let resolvedVaultID = vaultID ?? settings.currentVault?.id
-        let usesVaultSettings = vaultSettings.vaultID == resolvedVaultID
-        self.vaultID = resolvedVaultID
+        let resolvedWorkspaceID = workspaceID ?? settings.currentWorkspace?.id
+        let usesWorkspaceSettings = workspaceSettings.workspaceID == resolvedWorkspaceID
+        self.workspaceID = resolvedWorkspaceID
         self.backendThreadID = backendThreadID
         self.title = title
         self.messages = messages
-        self.selectedModelID = modelID ?? (usesVaultSettings ? vaultSettings.chatModelID : settings.codexChatModelID)
-        self.selectedEffort = effort ?? (usesVaultSettings ? vaultSettings.chatReasoningEffort : settings.codexChatReasoningEffort)
+        self.selectedModelID = modelID ?? (usesWorkspaceSettings ? workspaceSettings.chatModelID : settings.codexChatModelID)
+        self.selectedEffort = effort ?? (usesWorkspaceSettings ? workspaceSettings.chatReasoningEffort : settings.codexChatReasoningEffort)
         self.selectedApprovalMethod = approvalMethod ?? .autoReview
         self.needsRestore = backendThreadID != nil && messages.isEmpty && approvalMethod == nil
         self.service = service
         self.settings = settings
-        self.vaultSettings = vaultSettings
+        self.workspaceSettings = workspaceSettings
         self.runtimeProviderResolver = runtimeProviderResolver
         self.contextProvider = contextProvider
         self.streamingUpdateInterval = streamingUpdateInterval
@@ -190,8 +190,8 @@ final class CodexChatSessionModel: Identifiable {
         }
         do {
             async let availableModels = service.models(forceRefresh: false)
-            guard let vaultID else { throw CodexAppServerError.invalidProtocolResponse }
-            async let restoredThread = service.resumeThread(id: backendThreadID, vaultID: vaultID)
+            guard let workspaceID else { throw CodexAppServerError.invalidProtocolResponse }
+            async let restoredThread = service.resumeThread(id: backendThreadID, workspaceID: workspaceID)
             let (models, thread) = try await (availableModels, restoredThread)
             try await ensureThreadLease(thread.id)
             self.models = models
@@ -820,8 +820,8 @@ extension CodexChatSessionModel {
 
             )
         } catch let error as CodexAppServerError where error.isThreadNotFound {
-            guard let vaultID else { throw error }
-            let thread = try await service.resumeThread(id: retry.threadID, vaultID: vaultID)
+            guard let workspaceID else { throw error }
+            let thread = try await service.resumeThread(id: retry.threadID, workspaceID: workspaceID)
             try ensureSubmissionCanContinue(submissionID)
             apply(thread, preservingPendingMessages: true)
             syncedApprovalMethod = thread.approvalMethod
@@ -939,13 +939,13 @@ extension CodexChatSessionModel {
         if let backendThreadID {
             return backendThreadID
         }
-        guard isBoundToCurrentVault, let vaultID else {
+        guard isBoundToCurrentWorkspace, let workspaceID else {
             throw CodexAppServerError.invalidProtocolResponse
         }
         let thread = try await service.startThread(
             model: selectedModelID.nilIfBlank,
             effort: selectedEffort,
-            vaultID: vaultID
+            workspaceID: workspaceID
         )
         try ensureSubmissionCanContinue(submissionID)
         apply(thread, preservingPendingMessages: true)
@@ -1041,23 +1041,23 @@ extension CodexChatSessionModel {
     }
 
     private func persistChatModelID(_ modelID: String) {
-        if usesVaultSettings {
-            vaultSettings.chatModelID = modelID
+        if usesWorkspaceSettings {
+            workspaceSettings.chatModelID = modelID
         } else {
             settings.codexChatModelID = modelID
         }
     }
 
     private func persistChatReasoningEffort(_ effort: String) {
-        if usesVaultSettings {
-            vaultSettings.chatReasoningEffort = effort
+        if usesWorkspaceSettings {
+            workspaceSettings.chatReasoningEffort = effort
         } else {
             settings.codexChatReasoningEffort = effort
         }
     }
 
-    private var usesVaultSettings: Bool {
-        vaultSettings.vaultID == vaultID
+    private var usesWorkspaceSettings: Bool {
+        workspaceSettings.workspaceID == workspaceID
     }
 }
 
@@ -1065,7 +1065,7 @@ extension CodexChatSessionModel {
 
     func processPendingInputIfPossible() {
         guard !isReleased,
-              isBoundToCurrentVault,
+              isBoundToCurrentWorkspace,
               !isTurnCleanupPending,
               steerTask == nil,
               errorMessage == nil else { return }
@@ -1204,10 +1204,10 @@ extension CodexChatSessionModel {
 extension CodexChatSessionModel {
     func updateAvailableMeetings(
         _ references: [CodexChatMeetingReference],
-        catalogVaultID: UUID?,
+        catalogWorkspaceID: UUID?,
         isCatalogLoaded: Bool = true
     ) {
-        guard let vaultID, catalogVaultID == vaultID else { return }
+        guard let workspaceID, catalogWorkspaceID == workspaceID else { return }
         availableMeetingReferences = references
         for reference in references {
             meetingNamesByID[reference.id] = reference.name

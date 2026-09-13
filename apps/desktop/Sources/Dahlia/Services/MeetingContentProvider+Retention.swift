@@ -12,7 +12,7 @@ extension MeetingContentProvider {
                 let verify = try await dbQueue.read { db in
                     try Row.fetchAll(db, sql: """
                     SELECT c.entity, c.entityId FROM sync_content_state c
-                    JOIN sync_entity_state s ON s.vaultId = c.vaultId AND s.entity = c.entity AND s.entityId = c.entityId
+                    JOIN sync_entity_state s ON s.workspace_id = c.workspace_id AND s.entity = c.entity AND s.entityId = c.entityId
                     WHERE c.complete = 1 AND c.fetchError IS NOT 'integrityFailure' AND (c.verifiedHash IS NULL OR c.residentRevision IS NOT s.confirmedRevision)
                     ORDER BY c.fetchError IS NOT NULL, c.lastAccessedAt LIMIT 20
                     """).map { ($0["entity"] as String, $0["entityId"] as UUID) }
@@ -26,7 +26,7 @@ extension MeetingContentProvider {
                 try await trim(dbQueue: dbQueue)
                 let recent = try await dbQueue.read { db in
                     try UUID.fetchAll(db, sql: """
-                    SELECT m.id FROM meetings m JOIN vaults v ON v.id = m.vaultId
+                    SELECT m.id FROM meetings m JOIN workspaces v ON v.id = m.workspace_id
                     WHERE v.accountConnectionId IS NOT NULL AND v.syncRecoveryState IS NULL AND v.syncPullCursor IS NOT NULL
                     ORDER BY coalesce(m.recordingStartedAt, m.createdAt) DESC, m.id DESC LIMIT 20
                     """)
@@ -54,7 +54,7 @@ extension MeetingContentProvider {
     static func usedBytes(dbQueue: DatabaseQueue) async throws -> Int {
         try await dbQueue.read { db in
             try Int.fetchOne(db, sql: """
-            SELECT coalesce(sum(c.byteCount), 0) FROM sync_content_state c JOIN vaults v ON v.id = c.vaultId
+            SELECT coalesce(sum(c.byteCount), 0) FROM sync_content_state c JOIN workspaces v ON v.id = c.workspace_id
             WHERE v.accountConnectionId IS NOT NULL
             """) ?? 0
         }
@@ -82,10 +82,10 @@ extension MeetingContentProvider {
 
     private func evict(entity: TextContentEntity, id: UUID, dbQueue: DatabaseQueue) throws -> Int {
         let raw = entity.rawValue
-        let protected = Set(retainedVaults[ObjectIdentifier(dbQueue), default: [:]].keys)
+        let protected = Set(retainedWorkspaces[ObjectIdentifier(dbQueue), default: [:]].keys)
         // Keep lease acquisition and the eviction transaction ordered on this actor.
         return try dbQueue.write { db in
-            guard let source = try TextContentStore.source(entity: entity, id: id, in: db), !protected.contains(source.vaultId),
+            guard let source = try TextContentStore.source(entity: entity, id: id, in: db), !protected.contains(source.workspaceId),
                   try TextContentStore.mayReplace(source, entity: entity, id: id, in: db),
                   let row = try Row.fetchOne(
                       db,

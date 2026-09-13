@@ -36,7 +36,7 @@ actor CodexAppServerService {
 
     static let shared = CodexAppServerService()
 
-    /// Mac inference is independent of the selected Vault's chat/Gateway context.
+    /// Mac inference is independent of the selected Workspace's chat/Gateway context.
     static let macInference = CodexAppServerService(
         launcher: BundledCodexAppServerLauncher(
             tokenBrokerAuthorization: .macInference,
@@ -212,7 +212,7 @@ actor CodexAppServerService {
         providerAuthenticationPreparation: @escaping ProviderAuthenticationPreparation =
             CodexAppServerService.prepareConfiguredDatabricksAuthentication,
         configurationReadiness: @escaping ConfigurationReadiness = {
-            await VaultAISettingsModel.shared.waitForRuntimeContext()
+            await WorkspaceAISettingsModel.shared.waitForRuntimeContext()
         },
         accountProviderResolver: @escaping AccountProviderResolver = {
             CodexRuntimeContextStore.shared.provider.localAccountProvider
@@ -821,7 +821,7 @@ actor CodexAppServerService {
 
     func chatThreadConfiguration(
         reasoningEffort: String,
-        vaultID: UUID,
+        workspaceID: UUID,
         helperURL: URL,
         bypassConfigurationReloadAdmission: Bool = false
     ) async throws -> JSONValue {
@@ -835,7 +835,7 @@ actor CodexAppServerService {
             from: configuration,
             reasoningEffort: reasoningEffort,
             helperURL: helperURL,
-            vaultID: vaultID
+            workspaceID: workspaceID
         )
     }
 
@@ -944,7 +944,7 @@ actor CodexAppServerService {
         from configReadResult: JSONValue,
         reasoningEffort: String = CodexReasoningEffortOption.defaultValue,
         helperURL: URL,
-        vaultID: UUID,
+        workspaceID: UUID,
         runtimeProfile: DahliaRuntimeProfile = DahliaApplicationSupport.profile()
     ) throws -> JSONValue {
         guard case var .object(config) = try restrictedThreadConfig(
@@ -956,7 +956,7 @@ actor CodexAppServerService {
         var servers = config["mcp_servers"]?.objectValue ?? [:]
         servers["dahlia"] = dahliaChatMCPServer(
             executableURL: helperURL,
-            vaultID: vaultID,
+            workspaceID: workspaceID,
             runtimeProfile: runtimeProfile
         )
         config["mcp_servers"] = .object(servers)
@@ -969,7 +969,7 @@ actor CodexAppServerService {
 
     private nonisolated static func dahliaChatMCPServer(
         executableURL: URL,
-        vaultID: UUID,
+        workspaceID: UUID,
         runtimeProfile: DahliaRuntimeProfile
     ) -> JSONValue {
         let command: String
@@ -987,8 +987,8 @@ actor CodexAppServerService {
         }
         return .object([
             "args": .array(invocationArguments + [
-                .string("--vault-id"),
-                .string(TypeID.encode(vaultID, as: .vault)),
+                .string("--workspace-id"),
+                .string(TypeID.encode(workspaceID, as: .workspace)),
                 .string("--write"),
                 .string("--telemetry-origin"),
                 .string("codexChat"),

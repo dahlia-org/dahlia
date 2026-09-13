@@ -38,8 +38,8 @@ export function createOrganizationStore(connection: NodePgDatabase | SQLiteDatab
         }
         await tx.insert(schema.organization).values({ id: userId, name: "Personal", slug: `personal-${userId}`, kind: "personal", createdAt: user.createdAt });
         await tx.insert(schema.member).values({ id: userId, userId, organizationId: userId, role: "owner", createdAt: user.createdAt });
-        await tx.insert(schema.syncedVault).values({ vaultId: userId, organizationId: userId, createdBy: { id: user.id, name: user.name, email: user.email }, name: "Personal", createdAt: user.createdAt, updatedAt: user.createdAt });
-        await tx.insert(schema.syncedVaultPermission).values({ vaultId: userId, principalType: "user", principalId: userId, role: "admin", grantedByUserId: userId });
+        await tx.insert(schema.syncedWorkspace).values({ workspaceId: userId, organizationId: userId, createdBy: { id: user.id, name: user.name, email: user.email }, name: "Personal", createdAt: user.createdAt, updatedAt: user.createdAt });
+        await tx.insert(schema.syncedWorkspacePermission).values({ workspaceId: userId, principalType: "user", principalId: userId, role: "admin", grantedByUserId: userId });
         if (user.registrationState === "domain") {
           const domain = user.email.slice(user.email.lastIndexOf("@") + 1);
           const [existing] = await tx.select({ id: schema.organization.id }).from(schema.organization).where(eq(schema.organization.domain, domain));
@@ -66,7 +66,7 @@ export function createOrganizationStore(connection: NodePgDatabase | SQLiteDatab
           ["organization", before.organizations.filter((o) => !after.organizations.some((current) => current.id === o.id))],
           ["team", before.teams.filter((t) => !after.teams.some((current) => current.id === t.id))],
         ] as const) {
-          if (removed.length) await tx.delete(schema.syncedVaultPermission).where(and(eq(schema.syncedVaultPermission.principalType, type), inArray(schema.syncedVaultPermission.principalId, removed.map((v) => v.id))));
+          if (removed.length) await tx.delete(schema.syncedWorkspacePermission).where(and(eq(schema.syncedWorkspacePermission.principalType, type), inArray(schema.syncedWorkspacePermission.principalId, removed.map((v) => v.id))));
         }
         validateAuthorization(await readAuthorization(tx, schema), before);
         return value;

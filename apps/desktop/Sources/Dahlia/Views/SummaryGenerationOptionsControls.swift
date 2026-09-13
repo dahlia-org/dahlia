@@ -2,13 +2,13 @@ import SwiftUI
 
 struct SummaryGenerationOptionsControls: View {
     @Binding var detailLevel: SummaryDetailLevel?
-    @Binding var exportsToVault: Bool
+    @Binding var exportsToWorkspace: Bool
     @Binding var exportsToGoogleDocs: Bool
     let isEnabled: Bool
 
     var body: some View {
         Picker(selection: $detailLevel) {
-            if AppSettings.shared.currentVault?.accountConnectionId != nil || detailLevel == nil {
+            if AppSettings.shared.currentWorkspace?.accountConnectionId != nil || detailLevel == nil {
                 Text(L10n.serverSummaryAccountDefault).tag(SummaryDetailLevel?.none)
             }
             ForEach(SummaryDetailLevel.allCases) { level in
@@ -21,10 +21,10 @@ struct SummaryGenerationOptionsControls: View {
         .pickerStyle(.menu)
         .disabled(!isEnabled)
 
-        if AppSettings.shared.currentVault?.accountConnectionId == nil {
-            Toggle(isOn: $exportsToVault) {
-                Text(L10n.exportBatchSummaryToVault)
-                Text(L10n.exportBatchSummaryToVaultDescription)
+        if AppSettings.shared.currentWorkspace?.accountConnectionId == nil {
+            Toggle(isOn: $exportsToWorkspace) {
+                Text(L10n.exportBatchSummaryToWorkspace)
+                Text(L10n.exportBatchSummaryToWorkspaceDescription)
             }
             .toggleStyle(.checkbox)
             .disabled(!isEnabled)

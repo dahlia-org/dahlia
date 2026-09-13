@@ -114,7 +114,7 @@ struct SearchSettingsView: View {
         .formStyle(.grouped)
         .onAppear {
             isAdvancedSettingsExpanded = false
-            benchmark.loadStoredJudgments(vaultID: settings.currentVault?.id)
+            benchmark.loadStoredJudgments(workspaceID: settings.currentWorkspace?.id)
         }
         .task {
             while !Task.isCancelled {
@@ -141,13 +141,13 @@ struct SearchSettingsView: View {
             } else {
                 if benchmark.judgmentList != nil {
                     Button(L10n.searchBenchmarkReevaluate) {
-                        benchmark.runWithStoredJudgments(vaultID: settings.currentVault?.id)
+                        benchmark.runWithStoredJudgments(workspaceID: settings.currentWorkspace?.id)
                     }
                     .buttonStyle(.dahlia())
                     .disabled(!isSearchIndexReady)
                 }
                 Button(L10n.searchBenchmarkRun) {
-                    benchmark.regenerateAndRun(vaultID: settings.currentVault?.id)
+                    benchmark.regenerateAndRun(workspaceID: settings.currentWorkspace?.id)
                 }
                 .buttonStyle(.dahlia(.primary))
                 .disabled(!isSearchIndexReady)

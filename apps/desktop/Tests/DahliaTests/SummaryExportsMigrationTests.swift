@@ -82,7 +82,7 @@ import GRDB
                 ),
                 SummaryExportRecord(
                     meetingId: validMeetingId,
-                    type: .vault,
+                    type: .workspace,
                     url: "vault:///Project/Summary.md",
                     createdAt: createdAt,
                     updatedAt: createdAt
@@ -106,18 +106,18 @@ import GRDB
         }
 
         @Test
-        func vaultURLRoundTripsRelativePathsWithReservedCharacters() throws {
-            let url = try #require(SummaryExportRecord.vaultURL(relativePath: "Project/My Summary #1.md"))
+        func workspaceURLRoundTripsRelativePathsWithReservedCharacters() throws {
+            let url = try #require(SummaryExportRecord.workspaceURL(relativePath: "Project/My Summary #1.md"))
             let record = SummaryExportRecord(
                 meetingId: .v7(),
-                type: .vault,
+                type: .workspace,
                 url: url,
                 createdAt: .now,
                 updatedAt: .now
             )
 
             #expect(url == "vault:///Project/My%20Summary%20%231.md")
-            #expect(record.vaultRelativePath == "Project/My Summary #1.md")
+            #expect(record.workspaceRelativePath == "Project/My Summary #1.md")
         }
 
         private func createV20SummaryDatabase(

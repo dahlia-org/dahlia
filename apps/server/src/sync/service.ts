@@ -1,4 +1,4 @@
-import { canWriteVault } from "../auth/vault-permissions";
+import { canWriteWorkspace } from "../auth/workspace-permissions";
 import { transcriptCheckpoint, waitForTranscript } from "./transcript-checkpoint";
 import { uuidSchema, transcriptChunkSchema, SCREENSHOT_DELETE_BATCH_SIZE, STORAGE_OPERATION_CONCURRENCY, QUERY_EMBEDDING_DEADLINE_MS, QUERY_EMBEDDING_CONCURRENCY, permissionPrincipalSchema, SYNC_READ_PAGE_SIZE, TRANSCRIPT_READ_PAGE_SIZE, meetingCursorSchema, screenshotCursorSchema, transcriptCursorSchema, uuidV7Schema, transactionSchema, transactionDataSchemas, SYNC_CHANGE_PAGE_SIZE } from "./schemas";
 import type { GeneratedTranscript } from "../summary/transcription";
@@ -31,7 +31,7 @@ import type {
   SyncSearchQuery,
   SyncHistoryTarget,
   SyncTransaction,
-  VaultPrincipalType,
+  WorkspacePrincipalType,
 } from "./types";
 import { decodeSyncCursor, encodeSyncCursor, SYNC_SNAPSHOT_ENTITIES, SyncTransactionError } from "./store";
 import { fileUploadSchema, filePatchSchema, fileResponse, fileStorageKey, fileVariantKey, imageContentTypes, type FileRecord } from "../files/model";
@@ -87,25 +87,25 @@ export class MeetingSyncService {
     return parsed.data;
   }
 
-  async vaultTransferAudience(identity: Identity, sourceVaultId: string, destinationVaultId: string) {
-    return this.store.withIdentity(identity, (scoped) => scoped.vaultTransferAudience(sourceVaultId, destinationVaultId));
+  async workspaceTransferAudience(identity: Identity, sourceWorkspaceId: string, destinationWorkspaceId: string) {
+    return this.store.withIdentity(identity, (scoped) => scoped.workspaceTransferAudience(sourceWorkspaceId, destinationWorkspaceId));
   }
 
-  async transferVault(identity: Identity, sourceVaultId: string, key: string | undefined, body: unknown) {
+  async transferWorkspace(identity: Identity, sourceWorkspaceId: string, key: string | undefined, body: unknown) {
     this.requireWritableIdentity(identity);
     const idempotencyKey = uuidV7Schema.safeParse(key);
-    const parsed = z.object({ destinationVaultId: uuidSchema, sourceRevision: z.number().int().positive(),
+    const parsed = z.object({ destinationWorkspaceId: uuidSchema, sourceRevision: z.number().int().positive(),
       destinationRevision: z.number().int().positive(), audienceHash: z.string().regex(/^[0-9a-f]{64}$/) }).strict().safeParse(body);
-    if (!idempotencyKey.success || !parsed.success) throw new RequestError(400, "invalid_vault_transfer");
-    const requestHash = await sha256(canonicalJson({ sourceVaultId, ...parsed.data }));
-    const result = await this.store.withIdentity(identity, (scoped) => scoped.transferVault({
-      sourceVaultId, ...parsed.data, idempotencyKey: idempotencyKey.data, requestHash,
+    if (!idempotencyKey.success || !parsed.success) throw new RequestError(400, "invalid_workspace_transfer");
+    const requestHash = await sha256(canonicalJson({ sourceWorkspaceId, ...parsed.data }));
+    const result = await this.store.withIdentity(identity, (scoped) => scoped.transferWorkspace({
+      sourceWorkspaceId, ...parsed.data, idempotencyKey: idempotencyKey.data, requestHash,
     }));
-    return { id: result.id, status: "committed" as const, sourceVaultId, destinationVaultId: result.destinationVaultId };
+    return { id: result.id, status: "committed" as const, sourceWorkspaceId, destinationWorkspaceId: result.destinationWorkspaceId };
   }
 
-  async getVaultRelocations(identity: Identity, vaultId: string) {
-    return this.store.withIdentity(identity, (scoped) => scoped.getVaultRelocations(vaultId));
+  async getWorkspaceRelocations(identity: Identity, workspaceId: string) {
+    return this.store.withIdentity(identity, (scoped) => scoped.getWorkspaceRelocations(workspaceId));
   }
 
   async resolveTransaction(identity: Identity, body: unknown) {
@@ -120,16 +120,16 @@ export class MeetingSyncService {
     this.requireWritableIdentity(identity);
     const { transcript, ...document } = result;
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockVault(job.vaultId);
-      if (!canWriteVault((await scoped.getVault(job.vaultId))?.role)) throw new SummaryError("summary_meeting_unavailable");
-      const meeting = await scoped.getMeeting(job.vaultId, job.meetingId);
+      await scoped.lockWorkspace(job.workspaceId);
+      if (!canWriteWorkspace((await scoped.getWorkspace(job.workspaceId))?.role)) throw new SummaryError("summary_meeting_unavailable");
+      const meeting = await scoped.getMeeting(job.workspaceId, job.meetingId);
       if (!meeting) throw new SummaryError("summary_meeting_unavailable");
       if ((meeting.summaryRevision ?? 0) !== job.summaryRevision) throw new SummaryError("summary_conflict");
-      if (await method.version(scoped, job.vaultId, job.meetingId, job.input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
+      if (await method.version(scoped, job.workspaceId, job.meetingId, job.input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
       const transcriptOperation = transcript ? await this.stageSummaryTranscript(scoped, job, transcript) : undefined;
       const summaryDocument = JSON.stringify(document);
       const transaction = await normalizeTransaction({
-        schemaVersion: 3, id: job.id, vaultId: job.vaultId, createdAt: job.createdAt.toISOString(),
+        schemaVersion: 3, id: job.id, workspaceId: job.workspaceId, createdAt: job.createdAt.toISOString(),
         operations: [
           ...(transcriptOperation ? [transcriptOperation.operation] : []),
           { id: uuidV7(), entity: "meeting", action: "update", entityId: job.meetingId, baseRevision: meeting.revision,
@@ -152,18 +152,18 @@ export class MeetingSyncService {
   async saveSummaryTranscript(identity: Identity, job: SummaryJob, transcript: GeneratedTranscript, method: SummaryMethod) {
     this.requireWritableIdentity(identity);
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockVault(job.vaultId);
-      if (!canWriteVault((await scoped.getVault(job.vaultId))?.role)) throw new SummaryError("summary_meeting_unavailable");
-      if (await method.version(scoped, job.vaultId, job.meetingId, job.input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
+      await scoped.lockWorkspace(job.workspaceId);
+      if (!canWriteWorkspace((await scoped.getWorkspace(job.workspaceId))?.role)) throw new SummaryError("summary_meeting_unavailable");
+      if (await method.version(scoped, job.workspaceId, job.meetingId, job.input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
       const staged = await this.stageSummaryTranscript(scoped, job, transcript);
-      const transaction = await normalizeTransaction({ schemaVersion: 3, id: uuidV7(), vaultId: job.vaultId,
+      const transaction = await normalizeTransaction({ schemaVersion: 3, id: uuidV7(), workspaceId: job.workspaceId,
         createdAt: new Date().toISOString(), operations: [staged.operation] });
       return scoped.completeSummaryTranscript(job, transaction, staged.transcriptId);
     });
   }
 
   private async stageSummaryTranscript(scoped: IdentitySyncStore, job: SummaryJob, transcript: GeneratedTranscript) {
-    const meeting = await scoped.getMeeting(job.vaultId, job.meetingId);
+    const meeting = await scoped.getMeeting(job.workspaceId, job.meetingId);
     if (!meeting || job.transcriptRevision === null || job.transcriptRevision === undefined
       || (meeting.transcriptRevision ?? 0) !== job.transcriptRevision) throw new SummaryError("summary_transcript_conflict");
     const patchId = uuidV7();
@@ -176,7 +176,7 @@ export class MeetingSyncService {
         createdAt: segment.createdAt?.toISOString() ?? null })), deletions: [] };
       const parsed = transcriptChunkSchema.parse(payload);
       const hash = await sha256(JSON.stringify(payload));
-      if (!await scoped.putTranscriptChunk(job.vaultId, job.meetingId, patchId, index, hash, parsed.segments, parsed.deletions)) {
+      if (!await scoped.putTranscriptChunk(job.workspaceId, job.meetingId, patchId, index, hash, parsed.segments, parsed.deletions)) {
         throw new SummaryError("summary_transcript_save_failed", true);
       }
       chunks.push({ index, sha256: hash, segmentCount: parsed.segments.length, deletionCount: 0 });
@@ -199,7 +199,7 @@ export class MeetingSyncService {
       caption: input.file.metadata.caption?.trim() ? input.file.metadata.caption : analysis.caption,
     };
     const transaction = await normalizeTransaction({
-      schemaVersion: 3, id: uuidV7(), vaultId: input.vaultId, createdAt: new Date().toISOString(),
+      schemaVersion: 3, id: uuidV7(), workspaceId: input.workspaceId, createdAt: new Date().toISOString(),
       operations: [{
         id: uuidV7(), entity: "file", action: "upsert", entityId: input.fileId,
         baseRevision: input.file.revision, data: { checksum: input.file.checksum, metadata: generatedMetadata },
@@ -234,7 +234,7 @@ export class MeetingSyncService {
             if (meeting === undefined) {
               meeting = operation.entity === "meeting" && operation.action === "create"
                 ? null
-                : await scoped.getMeeting(normalized.vaultId, operation.entityId);
+                : await scoped.getMeeting(normalized.workspaceId, operation.entityId);
             }
             const name = operation.entity === "meeting" && typeof data.name === "string" ? data.name : meeting?.name ?? "";
             const description = operation.entity === "meeting" && typeof data.description === "string"
@@ -251,7 +251,7 @@ export class MeetingSyncService {
             meetings.set(operation.entityId, {
               ...(meeting ?? {}),
               meetingId: operation.entityId,
-              vaultId: normalized.vaultId,
+              workspaceId: normalized.workspaceId,
               projectId: operation.entity === "meeting" ? data.projectId as string | null : meeting?.projectId ?? null,
               name,
               description,
@@ -283,7 +283,7 @@ export class MeetingSyncService {
           await this.store.withIdentity(identity, async (scoped) => {
             for (const operation of operations) {
               if (operation.entity === "transcript" && operation.action === "patch") {
-                await scoped.deleteTranscriptPatch(normalized.vaultId, operation.entityId, operation.id);
+                await scoped.deleteTranscriptPatch(normalized.workspaceId, operation.entityId, operation.id);
               }
             }
           });
@@ -309,7 +309,7 @@ export class MeetingSyncService {
       const targets = await this.store.listHistoryTargets(after);
       if (!targets.length) break;
       for (const target of targets) {
-        await this.store.expireRecordingUploads(target.vaultId, before);
+        await this.store.expireRecordingUploads(target.workspaceId, before);
       }
       after = targets.at(-1);
     }
@@ -367,19 +367,19 @@ export class MeetingSyncService {
     }
   }
 
-  async listChanges(identity: Identity, vaultId: string, cursor?: string, highWaterCursor?: string) {
+  async listChanges(identity: Identity, workspaceId: string, cursor?: string, highWaterCursor?: string) {
     const after = cursor ? decodeSyncCursor(cursor) : 0;
     const suppliedHighWater = highWaterCursor ? decodeSyncCursor(highWaterCursor) : undefined;
     if (suppliedHighWater !== undefined && suppliedHighWater < after) {
       throw new SyncTransactionError(400, "invalid_sync_cursor");
     }
     const { rows, highWater } = await this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockVault(vaultId);
-      await scoped.expireRecordingUploads(vaultId, new Date(Date.now() - 86_400_000));
-      const highWater = suppliedHighWater ?? await scoped.latestChangeSequence(vaultId);
-      const rows = await scoped.listChanges(vaultId, after, highWater, SYNC_CHANGE_PAGE_SIZE + 1);
+      await scoped.lockWorkspace(workspaceId);
+      await scoped.expireRecordingUploads(workspaceId, new Date(Date.now() - 86_400_000));
+      const highWater = suppliedHighWater ?? await scoped.latestChangeSequence(workspaceId);
+      const rows = await scoped.listChanges(workspaceId, after, highWater, SYNC_CHANGE_PAGE_SIZE + 1);
       for (const row of rows) {
-        row.record = (await metadataRecord({ entity: row.entity, id: row.entityId, revision: row.revision, record: row.record }, scoped, vaultId)).record;
+        row.record = (await metadataRecord({ entity: row.entity, id: row.entityId, revision: row.revision, record: row.record }, scoped, workspaceId)).record;
       }
       return { rows, highWater };
     });
@@ -394,81 +394,81 @@ export class MeetingSyncService {
     };
   }
 
-  async listSnapshot(identity: Identity, vaultId: string, cursor?: string, startCursor?: string) {
+  async listSnapshot(identity: Identity, workspaceId: string, cursor?: string, startCursor?: string) {
     const position = cursor ? z.tuple([z.enum(SYNC_SNAPSHOT_ENTITIES), uuidSchema]).safeParse(cursor.split(",")) : undefined;
     if ((position && !position.success) || (cursor && !startCursor)) {
       throw new SyncTransactionError(400, "invalid_snapshot_cursor");
     }
     const suppliedStart = startCursor ? decodeSyncCursor(startCursor) : undefined;
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockVault(vaultId);
-      if (!await scoped.getVault(vaultId)) throw new SyncTransactionError(404, "vault_not_found");
-      const latest = await scoped.latestChangeSequence(vaultId);
+      await scoped.lockWorkspace(workspaceId);
+      if (!await scoped.getWorkspace(workspaceId)) throw new SyncTransactionError(404, "workspace_not_found");
+      const latest = await scoped.latestChangeSequence(workspaceId);
       const start = suppliedStart ?? latest;
       if (start > latest) throw new SyncTransactionError(400, "invalid_snapshot_cursor");
-      await scoped.assertCursorAvailable(vaultId, start);
+      await scoped.assertCursorAvailable(workspaceId, start);
       const { items, hasMore } = await scoped.listSnapshot(
-        vaultId,
+        workspaceId,
         position?.success ? { entity: position.data[0], id: position.data[1] } : undefined,
         SYNC_CHANGE_PAGE_SIZE,
       );
       const last = items.at(-1);
       return {
-        items: await Promise.all(items.map((item) => metadataRecord(item, scoped, vaultId))),
+        items: await Promise.all(items.map((item) => metadataRecord(item, scoped, workspaceId))),
         startCursor: encodeSyncCursor(start),
         nextCursor: hasMore && last ? `${last.entity},${last.id}` : null,
       };
     });
   }
 
-  async latestSummary(identity: Identity, vaultId: string, meetingId: string, manifest?: string) {
+  async latestSummary(identity: Identity, workspaceId: string, meetingId: string, manifest?: string) {
     if (manifest !== undefined && manifest !== "1") throw new SyncTransactionError(400, "invalid_content_request");
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockVault(vaultId);
-      const meeting = await scoped.getMeeting(vaultId, meetingId);
+      await scoped.lockWorkspace(workspaceId);
+      const meeting = await scoped.getMeeting(workspaceId, meetingId);
       if (!meeting) throw new SyncTransactionError(404, "meeting_not_found");
-      return readTextContent(scoped, vaultId, "summary", meetingId, meeting.summaryRevision ?? 0, manifest === "1");
+      return readTextContent(scoped, workspaceId, "summary", meetingId, meeting.summaryRevision ?? 0, manifest === "1");
     });
   }
 
-  async summaryVersions(identity: Identity, vaultId: string, meetingId: string, cursor?: string, limitValue?: string) {
+  async summaryVersions(identity: Identity, workspaceId: string, meetingId: string, cursor?: string, limitValue?: string) {
     const integer = z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().nonnegative().max(2147483647));
     const parsed = z.object({ cursor: integer.optional(), limit: integer.pipe(z.number().min(1).max(100)).default(20) }).safeParse({ cursor, limit: limitValue });
     if (!parsed.success) throw new SyncTransactionError(400, "invalid_summary_versions_request");
     return this.store.withIdentity(identity, async (scoped) => {
-      if (!await scoped.getMeeting(vaultId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
-      const rows = await scoped.listSummaryVersions(vaultId, meetingId, parsed.data.limit + 1, parsed.data.cursor);
+      if (!await scoped.getMeeting(workspaceId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
+      const rows = await scoped.listSummaryVersions(workspaceId, meetingId, parsed.data.limit + 1, parsed.data.cursor);
       const items = rows.slice(0, parsed.data.limit);
       return { items, nextCursor: rows.length > parsed.data.limit ? String(items.at(-1)!.version) : null };
     });
   }
 
-  async summaryVersion(identity: Identity, vaultId: string, meetingId: string, version: string) {
+  async summaryVersion(identity: Identity, workspaceId: string, meetingId: string, version: string) {
     const versionNumber = Number(version);
     if (!/^\d+$/.test(version) || !Number.isSafeInteger(versionNumber) || versionNumber > 2147483647) {
       throw new SyncTransactionError(400, "invalid_summary_version");
     }
     return this.store.withIdentity(identity, async (scoped) => {
-      if (!await scoped.getMeeting(vaultId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
-      const version = await scoped.getSummaryVersion(vaultId, meetingId, versionNumber);
+      if (!await scoped.getMeeting(workspaceId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
+      const version = await scoped.getSummaryVersion(workspaceId, meetingId, versionNumber);
       if (!version) throw new SyncTransactionError(404, "summary_version_not_found");
       return version;
     });
   }
 
-  async transcriptVersions(identity: Identity, vaultId: string, meetingId: string, cursor?: string, limitValue?: string) {
+  async transcriptVersions(identity: Identity, workspaceId: string, meetingId: string, cursor?: string, limitValue?: string) {
     const integer = z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().nonnegative().max(2147483647));
     const parsed = z.object({ cursor: integer.optional(), limit: integer.pipe(z.number().min(1).max(100)).default(20) }).safeParse({ cursor, limit: limitValue });
     if (!parsed.success) throw new SyncTransactionError(400, "invalid_transcript_versions_request");
     return this.store.withIdentity(identity, async (scoped) => {
-      if (!await scoped.getMeeting(vaultId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
-      const rows = await scoped.listTranscriptVersions(vaultId, meetingId, parsed.data.limit + 1, parsed.data.cursor);
+      if (!await scoped.getMeeting(workspaceId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
+      const rows = await scoped.listTranscriptVersions(workspaceId, meetingId, parsed.data.limit + 1, parsed.data.cursor);
       const items = rows.slice(0, parsed.data.limit);
       return { items, nextCursor: rows.length > parsed.data.limit ? String(items.at(-1)!.version) : null };
     });
   }
 
-  async transcriptContent(identity: Identity, vaultId: string, meetingId: string, version: string,
+  async transcriptContent(identity: Identity, workspaceId: string, meetingId: string, version: string,
     manifest?: string, cursor?: string) {
     const number = Number(version);
     if ((version !== "latest" && (!/^\d+$/.test(version) || !Number.isSafeInteger(number) || number < 1 || number > 2147483647))
@@ -477,10 +477,10 @@ export class MeetingSyncService {
     }
     const after = cursor ? this.parseTranscriptCursor(cursor) : undefined;
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockVault(vaultId);
-      const meeting = await scoped.getMeeting(vaultId, meetingId);
+      await scoped.lockWorkspace(workspaceId);
+      const meeting = await scoped.getMeeting(workspaceId, meetingId);
       if (!meeting) throw new SyncTransactionError(404, "meeting_not_found");
-      return readTextContent(scoped, vaultId, "transcript", meetingId, meeting.transcriptRevision ?? 0,
+      return readTextContent(scoped, workspaceId, "transcript", meetingId, meeting.transcriptRevision ?? 0,
         manifest === "1", after, version === "latest" ? undefined : number);
     });
   }
@@ -488,12 +488,12 @@ export class MeetingSyncService {
   async searchAll(identity: Identity, body: unknown, signal?: AbortSignal): Promise<SearchResults> {
     const parsed = searchRequestSchema.safeParse(body);
     if (!parsed.success) throw new RequestError(400, "invalid_search_request");
-    const { vaultId, query, kind, limit, from, to, projectId } = parsed.data;
-    const allowed = await this.store.withIdentity(identity, (scoped) => scoped.getVault(vaultId));
-    if (!allowed) throw new RequestError(404, "vault_not_found");
+    const { workspaceId, query, kind, limit, from, to, projectId } = parsed.data;
+    const allowed = await this.store.withIdentity(identity, (scoped) => scoped.getWorkspace(workspaceId));
+    if (!allowed) throw new RequestError(404, "workspace_not_found");
     const hits = await this.search(identity, this.parseSearchQuery(query), async (scoped, prepared) => {
-      if (!await scoped.getVault(vaultId)) throw new RequestError(404, "vault_not_found");
-      const projects = await scoped.listProjects(vaultId);
+      if (!await scoped.getWorkspace(workspaceId)) throw new RequestError(404, "workspace_not_found");
+      const projects = await scoped.listProjects(workspaceId);
       const included = projectId ? new Set([projectId]) : undefined;
       if (included) {
         if (!projects.some((project) => project.projectId === projectId)) throw new RequestError(404, "project_not_found");
@@ -506,11 +506,11 @@ export class MeetingSyncService {
       // Each kind owns its FTS ranks; combining them would shift screenshot ranks.
       const search = prepared ? { ...prepared, ftsCandidateIds: undefined } : undefined;
       const [meetings, screenshots, activity] = await Promise.all([
-        !kind || kind === "meeting" ? scoped.listMeetings(vaultId, search, 100, undefined, undefined, undefined, filters) : [],
-        !kind || kind === "screenshot" ? scoped.listScreenshots(vaultId, undefined, search, 100, undefined, filters) : [],
-        !kind || kind === "project" ? scoped.searchProjectActivity(vaultId, filters) : [],
+        !kind || kind === "meeting" ? scoped.listMeetings(workspaceId, search, 100, undefined, undefined, undefined, filters) : [],
+        !kind || kind === "screenshot" ? scoped.listScreenshots(workspaceId, undefined, search, 100, undefined, filters) : [],
+        !kind || kind === "project" ? scoped.searchProjectActivity(workspaceId, filters) : [],
       ]);
-      const parents = screenshots.length ? await scoped.listMeetings(vaultId, undefined, 100, undefined, undefined, undefined,
+      const parents = screenshots.length ? await scoped.listMeetings(workspaceId, undefined, 100, undefined, undefined, undefined,
         { meetingIds: [...new Set(screenshots.map((item) => item.meetingId))] }) : [];
       const byMeeting = new Map(parents.map((meeting) => [meeting.meetingId, meeting]));
       const byProject = new Map(projects.map((project) => [project.projectId, project]));
@@ -553,12 +553,12 @@ export class MeetingSyncService {
       }
       return result;
     }, (hit) => hit.id, signal);
-    if (!await this.store.withIdentity(identity, (scoped) => scoped.getVault(vaultId))) throw new RequestError(404, "vault_not_found");
+    if (!await this.store.withIdentity(identity, (scoped) => scoped.getWorkspace(workspaceId))) throw new RequestError(404, "workspace_not_found");
     const meetings = hits.filter((hit) => hit.kind === "meeting");
     const screenshots = hits.filter((hit) => hit.kind === "screenshot");
     const projects = hits.filter((hit) => hit.kind === "project");
     return {
-      vaultId,
+      workspaceId,
       meetings: meetings.slice(0, limit),
       screenshots: screenshots.slice(0, limit),
       projects: projects.slice(0, limit),
@@ -570,7 +570,7 @@ export class MeetingSyncService {
     };
   }
 
-  async searchText(identity: Identity, vaultId: string, queryValue?: string, kindValue?: string, cursor?: string, limitValue?: string) {
+  async searchText(identity: Identity, workspaceId: string, queryValue?: string, kindValue?: string, cursor?: string, limitValue?: string) {
     const limit = limitValue === undefined ? 200 : Number(limitValue);
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new SyncTransactionError(400, "invalid_search_limit");
     const query = this.parseSearchQuery(queryValue);
@@ -580,18 +580,18 @@ export class MeetingSyncService {
     catch { throw new SyncTransactionError(400, "invalid_search_cursor"); }
     const position = cursor ? z.tuple([z.string(), z.string(), z.string(), z.number().int().nonnegative(), z.number().int().nonnegative()])
       .safeParse(parsedCursor) : undefined;
-    if (position && (!position.success || position.data[0] !== vaultId || position.data[1] !== kindValue || position.data[2] !== queryValue)) {
+    if (position && (!position.success || position.data[0] !== workspaceId || position.data[1] !== kindValue || position.data[2] !== queryValue)) {
       throw new SyncTransactionError(400, "invalid_search_cursor");
     }
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockVault(vaultId);
-      if (!await scoped.getVault(vaultId)) throw new SyncTransactionError(404, "vault_not_found");
-      const revision = await scoped.latestChangeSequence(vaultId);
+      await scoped.lockWorkspace(workspaceId);
+      if (!await scoped.getWorkspace(workspaceId)) throw new SyncTransactionError(404, "workspace_not_found");
+      const revision = await scoped.latestChangeSequence(workspaceId);
       if (position?.success && revision !== position.data[3]) throw new SyncTransactionError(409, "search_revision_changed");
       const offset = position?.success ? position.data[4] : 0;
-      const rows = await scoped.searchTextPage(vaultId, query, kindValue, offset, limit + 1);
+      const rows = await scoped.searchTextPage(workspaceId, query, kindValue, offset, limit + 1);
       return { version: TEXT_CONTENT_VERSION, scope: "server", items: rows.slice(0, limit),
-        nextCursor: rows.length > limit ? JSON.stringify([vaultId, kindValue, queryValue, revision, offset + limit]) : null };
+        nextCursor: rows.length > limit ? JSON.stringify([workspaceId, kindValue, queryValue, revision, offset + limit]) : null };
     });
   }
 
@@ -610,8 +610,8 @@ export class MeetingSyncService {
     const parsed = transcriptChunkSchema.safeParse(body);
     if (!parsed.success) throw new RequestError(400, "invalid_transcript_chunk");
     const accepted = await this.store.withIdentity(identity, async (scoped) => {
-      const vaultId = await scoped.resolveEntityVault("meeting", meetingId);
-      return vaultId ? scoped.putTranscriptChunk(vaultId, meetingId, patchId, chunkIndex,
+      const workspaceId = await scoped.resolveEntityWorkspace("meeting", meetingId);
+      return workspaceId ? scoped.putTranscriptChunk(workspaceId, meetingId, patchId, chunkIndex,
         contentHash, parsed.data.segments, parsed.data.deletions) : false;
     });
     if (!accepted) throw missingMeetingConflict(meetingId);
@@ -628,16 +628,16 @@ export class MeetingSyncService {
       throw new RequestError(415, "invalid_recording_format");
     }
     this.requireStorage();
-    const vaultId = await this.store.withIdentity(identity, async (scoped) => {
-      const vaultId = await scoped.resolveEntityVault("meeting", meetingId);
-      if (!vaultId || !await scoped.ensureUploadTarget(vaultId, meetingId)) throw new RequestError(404, "meeting_not_found");
-      await scoped.expireRecordingUploads(vaultId, new Date(Date.now() - 86_400_000));
-      return vaultId;
+    const workspaceId = await this.store.withIdentity(identity, async (scoped) => {
+      const workspaceId = await scoped.resolveEntityWorkspace("meeting", meetingId);
+      if (!workspaceId || !await scoped.ensureUploadTarget(workspaceId, meetingId)) throw new RequestError(404, "meeting_not_found");
+      await scoped.expireRecordingUploads(workspaceId, new Date(Date.now() - 86_400_000));
+      return workspaceId;
     });
     // Expiration must commit even when reservation waits for the queued physical deletion.
     this.scheduleStorageDeletes();
     const reservation = await this.store.withIdentity(identity, (scoped) =>
-      scoped.reserveRecording(vaultId, meetingId, sessionId.data, source));
+      scoped.reserveRecording(workspaceId, meetingId, sessionId.data, source));
     const key = recordingStorageKey(reservation, source);
     const generation = reservation.audio[source]!.generation;
     return this.withStorageOperation(key, () => this.store.withStorageKeyLock(key, async () => {
@@ -674,7 +674,7 @@ export class MeetingSyncService {
     const after = cursor === undefined ? 0 : Number(cursor);
     if (!Number.isSafeInteger(after) || after < 0) throw new RequestError(400, "invalid_recording_cursor");
     const records = await this.store.withIdentity(identity, async (scoped) => {
-      if (!await scoped.resolveEntityVault("meeting", meetingId)) throw new RequestError(404, "meeting_not_found");
+      if (!await scoped.resolveEntityWorkspace("meeting", meetingId)) throw new RequestError(404, "meeting_not_found");
       if (requireComplete && await scoped.hasPendingRecordings(meetingId)) throw new RequestError(409, "recording_upload_pending");
       return scoped.listRecordings(meetingId, after, SYNC_READ_PAGE_SIZE + 1);
     });
@@ -689,7 +689,7 @@ export class MeetingSyncService {
     if (!Number.isSafeInteger(number) || number < 1 || !parsedSource.success) throw new RequestError(400, "invalid_recording_target");
     const source = parsedSource.data;
     const authorize = () => this.store.withIdentity(identity, async (scoped) => {
-      if (!await scoped.resolveEntityVault("meeting", meetingId)) throw new RequestError(404, "meeting_not_found");
+      if (!await scoped.resolveEntityWorkspace("meeting", meetingId)) throw new RequestError(404, "meeting_not_found");
       const record = await scoped.getRecording(meetingId, number);
       if (!record?.audio[source]?.uploadedAt || (!record.audio[source].active && new Date(record.audio[source].createdAt).getTime() <= Date.now() - 86_400_000) || (!record.audio[source].active && !await scoped.getRecording(meetingId, number, true))) {
         throw new RequestError(404, "recording_not_found");
@@ -718,17 +718,17 @@ export class MeetingSyncService {
     if (!this.fileStorageRoot) throw new RequestError(503, "file_storage_not_configured");
     const parsed = fileUploadSchema.safeParse(body);
     if (!parsed.success) throw new RequestError(400, "invalid_file_upload");
-    const { id: fileId, vaultId, name, contentType, metadata } = parsed.data;
+    const { id: fileId, workspaceId, name, contentType, metadata } = parsed.data;
     const key = fileStorageKey(fileId);
     return this.withStorageOperation(key, () => this.store.withStorageKeyLock(key, async () => {
       const now = new Date();
       const result = await this.store.withIdentity(identity, async (scoped) => {
-        await scoped.expireFileUploads(vaultId, new Date(now.getTime() - 86_400_000));
+        await scoped.expireFileUploads(workspaceId, new Date(now.getTime() - 86_400_000));
         const previous = await scoped.getFile(fileId);
-        const file = await scoped.reserveFile({ fileId, vaultId, name, contentType, metadata,
+        const file = await scoped.reserveFile({ fileId, workspaceId, name, contentType, metadata,
           uri: `${this.fileStorageRoot}/${key}`, offset: 0, size: 0, checksum: "",
           active: false, uploadedAt: null, revision: 0, createdAt: now, updatedAt: now });
-        if (!file) throw new RequestError(404, "file_or_vault_not_found");
+        if (!file) throw new RequestError(404, "file_or_workspace_not_found");
         if (file.contentType !== contentType || file.name !== name || file.metadata.source !== metadata.source
           || file.metadata.width !== metadata.width || file.metadata.height !== metadata.height) {
           throw new RequestError(409, "file_id_conflict");
@@ -749,7 +749,7 @@ export class MeetingSyncService {
     return this.withStorageOperation(key, () => this.store.withStorageKeyLock(key, async () => {
       const file = await this.store.withIdentity(identity, async (scoped) => {
         const pending = await scoped.getFile(fileId);
-        if (!pending || !canWriteVault((await scoped.getVault(pending.vaultId))?.role)) {
+        if (!pending || !canWriteWorkspace((await scoped.getWorkspace(pending.workspaceId))?.role)) {
           throw new RequestError(404, "file_not_found");
         }
         return pending;
@@ -808,7 +808,7 @@ export class MeetingSyncService {
     const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId));
     if (!file?.active) throw new RequestError(404, "file_not_found");
     const response = await this.commitTransaction(identity, {
-      schemaVersion: 3, id: uuidV7(), vaultId: file.vaultId, createdAt: new Date().toISOString(),
+      schemaVersion: 3, id: uuidV7(), workspaceId: file.workspaceId, createdAt: new Date().toISOString(),
       operations: [{ id: uuidV7(), entity: "file", action: "upsert", entityId: fileId,
         baseRevision: parsed.data.baseRevision, data: { checksum: file.checksum, metadata: parsed.data.metadata } }],
     });
@@ -833,15 +833,15 @@ export class MeetingSyncService {
     return { ...file, contentUrl: `/api/v1/files/${file.id}/content`, variants };
   }
 
-  async listFiles(identity: Identity, vaultId: string, cursor?: string, meetingId?: string) {
+  async listFiles(identity: Identity, workspaceId: string, cursor?: string, meetingId?: string) {
     const after = cursor === undefined ? undefined : this.parseId(cursor);
     return this.store.withIdentity(identity, async (scoped) => {
       if (meetingId) {
-        const rows = await scoped.listMeetingAttachments(vaultId, meetingId, after, SYNC_READ_PAGE_SIZE + 1);
+        const rows = await scoped.listMeetingAttachments(workspaceId, meetingId, after, SYNC_READ_PAGE_SIZE + 1);
         const items = rows.slice(0, SYNC_READ_PAGE_SIZE).map(({ file, ...link }) => ({ ...link, file: this.fileMetadata(fileResponse(file)) }));
         return { items, nextCursor: rows.length > SYNC_READ_PAGE_SIZE ? items.at(-1)!.id : null };
       }
-      const rows = await scoped.listFiles(vaultId, after, SYNC_READ_PAGE_SIZE + 1);
+      const rows = await scoped.listFiles(workspaceId, after, SYNC_READ_PAGE_SIZE + 1);
       const items = rows.slice(0, SYNC_READ_PAGE_SIZE).map((file) => this.fileMetadata(fileResponse(file)));
       return { items, nextCursor: rows.length > SYNC_READ_PAGE_SIZE ? items.at(-1)!.id : null };
     });
@@ -877,9 +877,9 @@ export class MeetingSyncService {
     else this.activeStorageOperations -= 1;
   }
 
-  async readScreenshot(identity: Identity, vaultId: string, meetingId: string, screenshotId: string,
+  async readScreenshot(identity: Identity, workspaceId: string, meetingId: string, screenshotId: string,
     method: StorageReadMethod, request: Request): Promise<Response> {
-    const image = await this.store.withIdentity(identity, (scoped) => scoped.getScreenshot(vaultId, meetingId, screenshotId, true));
+    const image = await this.store.withIdentity(identity, (scoped) => scoped.getScreenshot(workspaceId, meetingId, screenshotId, true));
     if (!image) throw new RequestError(404, "screenshot_not_found");
     return this.readFile(identity, image.fileId, method, request);
   }
@@ -975,23 +975,23 @@ export class MeetingSyncService {
     }
   }
 
-  listGovernanceVaults(identity: Identity, organizationId: string, after?: string) {
+  listGovernanceWorkspaces(identity: Identity, organizationId: string, after?: string) {
     if (after) this.parseId(after);
-    return this.store.withIdentity(identity, (scoped) => scoped.listGovernanceVaults(organizationId, after));
+    return this.store.withIdentity(identity, (scoped) => scoped.listGovernanceWorkspaces(organizationId, after));
   }
 
-  confirmVaultDeletion(identity: Identity, organizationId: string, vaultId: string) {
-    return this.store.withIdentity(identity, (scoped) => scoped.confirmVaultDeletion(organizationId, vaultId));
+  confirmWorkspaceDeletion(identity: Identity, organizationId: string, workspaceId: string) {
+    return this.store.withIdentity(identity, (scoped) => scoped.confirmWorkspaceDeletion(organizationId, workspaceId));
   }
 
-  async forceDeleteVault(identity: Identity, organizationId: string, vaultId: string, body: unknown) {
+  async forceDeleteWorkspace(identity: Identity, organizationId: string, workspaceId: string, body: unknown) {
     this.requireWritableIdentity(identity);
     const parsed = z.object({ id: uuidV7Schema, revision: z.number().int().nonnegative(), changeCursor: z.string().min(1) }).strict().safeParse(body);
-    if (!parsed.success) throw new RequestError(400, "invalid_vault_deletion");
+    if (!parsed.success) throw new RequestError(400, "invalid_workspace_deletion");
     const { id, revision, changeCursor } = parsed.data;
-    const transaction: SyncTransaction = { schemaVersion: 3, id, vaultId, createdAt: new Date(), operations: [],
-      requestHash: await sha256(canonicalJson({ organizationId, vaultId, revision, changeCursor, action: "governance-delete" })) };
-    const response = await this.store.withIdentity(identity, (scoped) => scoped.forceDeleteVault(organizationId, transaction, revision, changeCursor));
+    const transaction: SyncTransaction = { schemaVersion: 3, id, workspaceId, createdAt: new Date(), operations: [],
+      requestHash: await sha256(canonicalJson({ organizationId, workspaceId, revision, changeCursor, action: "governance-delete" })) };
+    const response = await this.store.withIdentity(identity, (scoped) => scoped.forceDeleteWorkspace(organizationId, transaction, revision, changeCursor));
     this.scheduleStorageDeletes();
     return response;
   }
@@ -1000,42 +1000,42 @@ export class MeetingSyncService {
     return this.store.withIdentity(identity, (scoped) => scoped.listOrganizations());
   }
 
-  listVaults(identity: Identity, organizationId?: string) {
+  listWorkspaces(identity: Identity, organizationId?: string) {
     if (organizationId !== undefined) this.parseId(organizationId);
-    return this.store.withIdentity(identity, (scoped) => scoped.listVaults(organizationId));
+    return this.store.withIdentity(identity, (scoped) => scoped.listWorkspaces(organizationId));
   }
 
-  getVault(identity: Identity, vaultId: string) {
-    return this.store.withIdentity(identity, (scoped) => scoped.getVault(vaultId));
+  getWorkspace(identity: Identity, workspaceId: string) {
+    return this.store.withIdentity(identity, (scoped) => scoped.getWorkspace(workspaceId));
   }
 
-  listProjects(identity: Identity, vaultId: string) {
-    return this.store.withIdentity(identity, (scoped) => scoped.listProjects(vaultId));
+  listProjects(identity: Identity, workspaceId: string) {
+    return this.store.withIdentity(identity, (scoped) => scoped.listProjects(workspaceId));
   }
 
   async getProjectById(identity: Identity, projectId: string) {
-    const vaultId = await this.store.withIdentity(identity, (scoped) => scoped.resolveEntityVault("project", projectId));
-    return vaultId ? this.getProject(identity, vaultId, projectId) : null;
+    const workspaceId = await this.store.withIdentity(identity, (scoped) => scoped.resolveEntityWorkspace("project", projectId));
+    return workspaceId ? this.getProject(identity, workspaceId, projectId) : null;
   }
 
-  async meetingVault(identity: Identity, meetingId: string): Promise<string> {
-    const vaultId = await this.store.withIdentity(identity, (scoped) => scoped.resolveEntityVault("meeting", meetingId));
-    if (!vaultId) throw new RequestError(404, "meeting_not_found");
-    return vaultId;
+  async meetingWorkspace(identity: Identity, meetingId: string): Promise<string> {
+    const workspaceId = await this.store.withIdentity(identity, (scoped) => scoped.resolveEntityWorkspace("meeting", meetingId));
+    if (!workspaceId) throw new RequestError(404, "meeting_not_found");
+    return workspaceId;
   }
 
   async getMeetingById(identity: Identity, meetingId: string) {
-    const vaultId = await this.store.withIdentity(identity, (scoped) => scoped.resolveEntityVault("meeting", meetingId));
-    return vaultId ? this.getMeeting(identity, vaultId, meetingId) : null;
+    const workspaceId = await this.store.withIdentity(identity, (scoped) => scoped.resolveEntityWorkspace("meeting", meetingId));
+    return workspaceId ? this.getMeeting(identity, workspaceId, meetingId) : null;
   }
 
-  getProject(identity: Identity, vaultId: string, projectId: string) {
-    return this.store.withIdentity(identity, (scoped) => scoped.getProject(vaultId, projectId));
+  getProject(identity: Identity, workspaceId: string, projectId: string) {
+    return this.store.withIdentity(identity, (scoped) => scoped.getProject(workspaceId, projectId));
   }
 
   async listMeetings(
     identity: Identity,
-    vaultId: string,
+    workspaceId: string,
     query?: string,
     signal?: AbortSignal,
     projectId?: string,
@@ -1050,17 +1050,17 @@ export class MeetingSyncService {
     const scope = projectScope as "direct" | "unassigned" | undefined;
     const search = this.parseSearchQuery(query);
     if (search?.tokens.length && this.embedder
-      && !await this.store.withIdentity(identity, (scoped) => scoped.getVault(vaultId))) return { items: [] };
+      && !await this.store.withIdentity(identity, (scoped) => scoped.getWorkspace(workspaceId))) return { items: [] };
     if (search) {
       return {
         items: await this.search(identity, search, (scoped, prepared) =>
-          scoped.listMeetings(vaultId, prepared, 100, projectId, undefined, scope),
+          scoped.listMeetings(workspaceId, prepared, 100, projectId, undefined, scope),
         (meeting) => meeting.meetingId, signal),
       };
     }
     const parsedCursor = this.parseMeetingCursor(cursor);
     const records = await this.store.withIdentity(identity, (scoped) => scoped.listMeetings(
-      vaultId,
+      workspaceId,
       undefined,
       SYNC_READ_PAGE_SIZE + 1,
       projectId,
@@ -1084,11 +1084,11 @@ export class MeetingSyncService {
     return { createdAt: parsed.data[0], meetingId: parsed.data[1] };
   }
 
-  getMeeting(identity: Identity, vaultId: string, meetingId: string) {
-    return this.store.withIdentity(identity, (scoped) => scoped.getMeeting(vaultId, meetingId));
+  getMeeting(identity: Identity, workspaceId: string, meetingId: string) {
+    return this.store.withIdentity(identity, (scoped) => scoped.getMeeting(workspaceId, meetingId));
   }
 
-  async listTranscript(identity: Identity, vaultId: string, meetingId: string, cursor?: string,
+  async listTranscript(identity: Identity, workspaceId: string, meetingId: string, cursor?: string,
     options?: { after?: string; wait?: boolean; signal?: AbortSignal; authorize?: () => void | Promise<void> }) {
     if (cursor !== undefined && options?.after !== undefined) throw new RequestError(400, "after_and_cursor_are_exclusive");
     const parsedCursor = this.parseTranscriptCursor(cursor);
@@ -1097,11 +1097,11 @@ export class MeetingSyncService {
       options?.signal?.throwIfAborted();
       await options?.authorize?.();
       const result = await this.store.withIdentity(identity, async (scoped) => {
-        await scoped.lockVault(vaultId);
-        if (!await scoped.getMeeting(vaultId, meetingId)) throw new RequestError(404, "meeting_not_found");
-        const transcript = await scoped.getTranscript(vaultId, meetingId);
+        await scoped.lockWorkspace(workspaceId);
+        if (!await scoped.getMeeting(workspaceId, meetingId)) throw new RequestError(404, "meeting_not_found");
+        const transcript = await scoped.getTranscript(workspaceId, meetingId);
         // HTTP pagination keeps its bounded query; MCP also verifies the previously delivered prefix.
-        const records = await scoped.listTranscript(vaultId, meetingId,
+        const records = await scoped.listTranscript(workspaceId, meetingId,
           options ? undefined : TRANSCRIPT_READ_PAGE_SIZE + 1, options ? undefined : parsedCursor, transcript?.version);
         let page;
         if (options) {
@@ -1111,7 +1111,7 @@ export class MeetingSyncService {
               || (row.startedAt.getTime() === parsedCursor.startedAt.getTime() && row.segmentId > parsedCursor.segmentId));
             if (start < 0) start = records.length;
           }
-          page = await transcriptCheckpoint(vaultId, meetingId, transcript?.id ?? "none", records,
+          page = await transcriptCheckpoint(workspaceId, meetingId, transcript?.id ?? "none", records,
             options.after, start, TRANSCRIPT_READ_PAGE_SIZE);
         } else {
           page = { items: records.slice(0, TRANSCRIPT_READ_PAGE_SIZE), hasMore: records.length > TRANSCRIPT_READ_PAGE_SIZE };
@@ -1135,7 +1135,7 @@ export class MeetingSyncService {
 
   async listScreenshots(
     identity: Identity,
-    vaultId: string,
+    workspaceId: string,
     meetingId: string,
     query?: string,
     signal?: AbortSignal,
@@ -1143,17 +1143,17 @@ export class MeetingSyncService {
   ) {
     const search = this.parseSearchQuery(query);
     if (search?.tokens.length && this.embedder
-      && !await this.store.withIdentity(identity, (scoped) => scoped.getMeeting(vaultId, meetingId))) return { items: [] };
+      && !await this.store.withIdentity(identity, (scoped) => scoped.getMeeting(workspaceId, meetingId))) return { items: [] };
     if (search) {
       return {
         items: await this.search(identity, search, (scoped, prepared) =>
-          scoped.listScreenshots(vaultId, meetingId, prepared, 100),
+          scoped.listScreenshots(workspaceId, meetingId, prepared, 100),
         (screenshot) => screenshot.screenshotId, signal),
       };
     }
     const parsedCursor = this.parseScreenshotCursor(cursor);
     const records = await this.store.withIdentity(identity, (scoped) => scoped.listScreenshots(
-      vaultId,
+      workspaceId,
       meetingId,
       undefined,
       SYNC_READ_PAGE_SIZE + 1,
@@ -1176,50 +1176,50 @@ export class MeetingSyncService {
     return { capturedAt: parsed.data[0], screenshotId: parsed.data[1] };
   }
 
-  async searchPermissionTargets(identity: Identity, vaultId: string, query: string, cursor?: string) {
+  async searchPermissionTargets(identity: Identity, workspaceId: string, query: string, cursor?: string) {
     const offset = cursor === undefined ? 0 : Number(cursor);
     if (cursor !== undefined && (!/^(0|[1-9]\d*)$/.test(cursor) || !Number.isSafeInteger(offset))) {
       throw new RequestError(400, "invalid_permission_target_cursor");
     }
-    const page = await this.store.withIdentity(identity, (scoped) => scoped.searchPermissionTargets(vaultId, query, offset));
-    if (!page) throw new RequestError(404, "vault_not_found");
+    const page = await this.store.withIdentity(identity, (scoped) => scoped.searchPermissionTargets(workspaceId, query, offset));
+    if (!page) throw new RequestError(404, "workspace_not_found");
     return page;
   }
 
-  async listPermissions(identity: Identity, vaultId: string) {
-    const permissions = await this.store.withIdentity(identity, (scoped) => scoped.listPermissions(vaultId));
-    if (!permissions) throw new RequestError(404, "vault_not_found");
+  async listPermissions(identity: Identity, workspaceId: string) {
+    const permissions = await this.store.withIdentity(identity, (scoped) => scoped.listPermissions(workspaceId));
+    if (!permissions) throw new RequestError(404, "workspace_not_found");
     return permissions;
   }
 
   async putPermission(
     identity: Identity,
-    vaultId: string,
-    principalType: VaultPrincipalType,
+    workspaceId: string,
+    principalType: WorkspacePrincipalType,
     principalId: string,
-    role: import("./types").VaultRole,
+    role: import("./types").WorkspaceRole,
   ): Promise<void> {
     this.requireWritableIdentity(identity);
     if (!await this.store.withIdentity(
       identity,
-      (scoped) => scoped.putPermission(vaultId, principalType, principalId, role),
+      (scoped) => scoped.putPermission(workspaceId, principalType, principalId, role),
     )) {
-      throw new RequestError(404, "vault_or_permission_target_not_found");
+      throw new RequestError(404, "workspace_or_permission_target_not_found");
     }
   }
 
   async deletePermission(
     identity: Identity,
-    vaultId: string,
-    principalType: VaultPrincipalType,
+    workspaceId: string,
+    principalType: WorkspacePrincipalType,
     principalId: string,
   ): Promise<void> {
     this.requireWritableIdentity(identity);
     if (!await this.store.withIdentity(
       identity,
-      (scoped) => scoped.deletePermission(vaultId, principalType, principalId),
+      (scoped) => scoped.deletePermission(workspaceId, principalType, principalId),
     )) {
-      throw new RequestError(404, "vault_permission_not_found");
+      throw new RequestError(404, "workspace_permission_not_found");
     }
   }
 
@@ -1340,7 +1340,7 @@ async function normalizeTransaction(body: unknown): Promise<SyncTransaction> {
     const key = `${operation.entity}:${operation.action}` as keyof typeof transactionDataSchemas;
     const schema = transactionDataSchemas[key];
     const data = schema?.safeParse(operation.data ?? {});
-    if (!data?.success || (operation.entity === "vault" && operation.entityId !== parsed.data.vaultId)) {
+    if (!data?.success || (operation.entity === "workspace" && operation.entityId !== parsed.data.workspaceId)) {
       throw new SyncTransactionError(400, "invalid_sync_operation", [], operation.id);
     }
     operations.push({ ...operation, data: data.data });

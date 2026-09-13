@@ -2,7 +2,7 @@ import GRDB
 
 enum VaultAIAccountsMigration {
     static func migrate(in db: Database) throws {
-        guard try db.tableExists(VaultRecord.databaseTableName) else { return }
+        guard try db.tableExists("vaults") else { return }
         try addColumnIfNeeded("accountConnectionId", type: .blob, in: db) { column in
             column.references(DahliaAccountConnectionRecord.databaseTableName, onDelete: .setNull)
         }
@@ -26,7 +26,7 @@ enum VaultAIAccountsMigration {
         }
         try db.create(
             index: "vaults_on_accountConnectionId",
-            on: VaultRecord.databaseTableName,
+            on: "vaults",
             columns: ["accountConnectionId"],
             ifNotExists: true
         )
@@ -38,8 +38,8 @@ enum VaultAIAccountsMigration {
         in db: Database,
         configure: (ColumnDefinition) -> Void
     ) throws {
-        guard try !db.columns(in: VaultRecord.databaseTableName).contains(where: { $0.name == name }) else { return }
-        try db.alter(table: VaultRecord.databaseTableName) { table in
+        guard try !db.columns(in: "vaults").contains(where: { $0.name == name }) else { return }
+        try db.alter(table: "vaults") { table in
             configure(table.add(column: name, type))
         }
     }
@@ -47,10 +47,10 @@ enum VaultAIAccountsMigration {
 
 enum VaultAISettingsBackfillMigration {
     static func migrate(in db: Database) throws {
-        guard try db.tableExists(VaultRecord.databaseTableName),
-              try !db.columns(in: VaultRecord.databaseTableName).contains(where: { $0.name == "aiSettingsBackfilled" })
+        guard try db.tableExists("vaults"),
+              try !db.columns(in: "vaults").contains(where: { $0.name == "aiSettingsBackfilled" })
         else { return }
-        try db.alter(table: VaultRecord.databaseTableName) { table in
+        try db.alter(table: "vaults") { table in
             table.add(column: "aiSettingsBackfilled", .boolean).notNull().defaults(to: false)
         }
     }

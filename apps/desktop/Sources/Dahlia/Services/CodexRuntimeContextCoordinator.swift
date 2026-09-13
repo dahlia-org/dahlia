@@ -29,7 +29,7 @@ actor CodexRuntimeContextCoordinator {
         repository = MeetingRepository(dbQueue: dbQueue)
     }
 
-    func activate(_ settings: VaultAISettingsSnapshot) async throws {
+    func activate(_ settings: WorkspaceAISettingsSnapshot) async throws {
         let provider = CodexRuntimeProvider(
             accountConnectionID: settings.accountConnectionID,
             localProvider: settings.localProvider,

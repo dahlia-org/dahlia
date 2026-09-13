@@ -6,7 +6,7 @@ extension CodexChatSessionModel {
     var canSend: Bool {
         !isRestoring
             && !needsRestore
-            && isBoundToCurrentVault
+            && isBoundToCurrentWorkspace
             && pendingImagePreparationCount == 0
             && (attachedImages.isEmpty || selectedModelSupportsImages)
             && hasComposerContent
@@ -43,7 +43,7 @@ extension CodexChatSessionModel {
             : model.supportedReasoningEfforts
     }
 
-    var isBoundToCurrentVault: Bool {
-        vaultID != nil && vaultID == settings.currentVault?.id
+    var isBoundToCurrentWorkspace: Bool {
+        workspaceID != nil && workspaceID == settings.currentWorkspace?.id
     }
 }

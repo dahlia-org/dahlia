@@ -63,8 +63,8 @@ import GRDB
             let firstID = UUID.v7()
             let secondID = UUID.v7()
             try await fixture.manager.dbQueue.write { db in
-                try insertMeeting(id: firstID, vaultId: fixture.vault.id, name: "First", in: db)
-                try insertMeeting(id: secondID, vaultId: fixture.vault.id, name: "Second", in: db)
+                try insertMeeting(id: firstID, workspaceId: fixture.workspace.id, name: "First", in: db)
+                try insertMeeting(id: secondID, workspaceId: fixture.workspace.id, name: "Second", in: db)
             }
             let viewModel = fixture.makeViewModel()
             defer { viewModel.setAppDatabase(nil) }
@@ -90,7 +90,7 @@ import GRDB
             defer { fixture.stop() }
             let meetingID = UUID.v7()
             try await fixture.manager.dbQueue.write { db in
-                try insertMeeting(id: meetingID, vaultId: fixture.vault.id, name: "Stale", in: db)
+                try insertMeeting(id: meetingID, workspaceId: fixture.workspace.id, name: "Stale", in: db)
             }
             let viewModel = fixture.makeViewModel()
 
@@ -108,7 +108,7 @@ import GRDB
             defer { fixture.stop() }
             let meetingID = UUID.v7()
             try await fixture.manager.dbQueue.write { db in
-                try insertMeeting(id: meetingID, vaultId: fixture.vault.id, name: "Retry", in: db)
+                try insertMeeting(id: meetingID, workspaceId: fixture.workspace.id, name: "Retry", in: db)
             }
             let viewModel = fixture.makeViewModel()
             defer { viewModel.setAppDatabase(nil) }
@@ -130,12 +130,12 @@ import GRDB
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func meetingExistenceIsScopedToCurrentVault() async throws {
+        func meetingExistenceIsScopedToCurrentWorkspace() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer { fixture.stop() }
             let meetingID = UUID.v7()
             try await fixture.manager.dbQueue.write { db in
-                try insertMeeting(id: meetingID, vaultId: fixture.vault.id, name: "Current vault", in: db)
+                try insertMeeting(id: meetingID, workspaceId: fixture.workspace.id, name: "Current workspace", in: db)
             }
             let viewModel = fixture.makeViewModel()
             defer { viewModel.setAppDatabase(nil) }

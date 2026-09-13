@@ -20,7 +20,7 @@ import GRDB
                 for index in 0 ..< 51 {
                     try MeetingRecord(
                         id: .v7(),
-                        vaultId: fixture.vault.id,
+                        workspaceId: fixture.workspace.id,
                         projectId: nil,
                         name: "Meeting \(index)",
                         createdAt: Date(timeIntervalSince1970: 1_800_000_000 + TimeInterval(index)),
@@ -48,17 +48,17 @@ import GRDB
         }
 
         @Test
-        func refreshingVaultFilesystemServicesKeepsMeetingSelection() throws {
+        func refreshingWorkspaceFilesystemServicesKeepsMeetingSelection() throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer { fixture.stop() }
             let viewModel = fixture.makeViewModel()
             defer { viewModel.setAppDatabase(nil) }
             let meetingID = UUID.v7()
             viewModel.selectedMeetingIds = [meetingID]
-            var pathlessVault = fixture.vault
-            pathlessVault.path = nil
+            var pathlessWorkspace = fixture.workspace
+            pathlessWorkspace.path = nil
 
-            viewModel.refreshCurrentVaultFilesystemServices(pathlessVault)
+            viewModel.refreshCurrentWorkspaceFilesystemServices(pathlessWorkspace)
 
             #expect(viewModel.selectedMeetingIds == [meetingID])
         }
@@ -74,7 +74,7 @@ import GRDB
             try await fixture.manager.dbQueue.write { db in
                 try MeetingRecord(
                     id: olderMeetingID,
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     projectId: nil,
                     name: "Older meeting",
                     createdAt: start,
@@ -82,7 +82,7 @@ import GRDB
                 ).insert(db)
                 for index in 1 ... 50 {
                     try insertMeeting(
-                        vaultId: fixture.vault.id,
+                        workspaceId: fixture.workspace.id,
                         name: "Meeting \(index)",
                         createdAt: start.addingTimeInterval(TimeInterval(index)),
                         in: db
@@ -128,7 +128,7 @@ import GRDB
             try await fixture.manager.dbQueue.write { db in
                 try MeetingRecord(
                     id: metadataMeetingID,
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     projectId: nil,
                     name: "Needle planning",
                     createdAt: .now,
@@ -136,7 +136,7 @@ import GRDB
                 ).insert(db)
                 try MeetingRecord(
                     id: transcriptOnlyMeetingID,
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     projectId: nil,
                     name: "Transcript only",
                     createdAt: .now.addingTimeInterval(-1),
@@ -183,7 +183,7 @@ import GRDB
             try await fixture.manager.dbQueue.write { db in
                 for index in 0 ..< 51 {
                     try insertMeeting(
-                        vaultId: fixture.vault.id,
+                        workspaceId: fixture.workspace.id,
                         name: "Needle \(index)",
                         createdAt: start.addingTimeInterval(TimeInterval(index)),
                         in: db
@@ -191,7 +191,7 @@ import GRDB
                 }
                 for index in 0 ..< 60 {
                     try insertMeeting(
-                        vaultId: fixture.vault.id,
+                        workspaceId: fixture.workspace.id,
                         name: "Recent \(index)",
                         createdAt: start.addingTimeInterval(1000 + TimeInterval(index)),
                         in: db
@@ -237,7 +237,7 @@ import GRDB
             try await fixture.manager.dbQueue.write { db in
                 for index in 0 ... SidebarViewModel.meetingPageSize {
                     try insertMeeting(
-                        vaultId: fixture.vault.id,
+                        workspaceId: fixture.workspace.id,
                         name: "Needle \(index)",
                         createdAt: Date(timeIntervalSince1970: 1_800_000_000 + TimeInterval(index)),
                         in: db
@@ -271,8 +271,8 @@ import GRDB
                 fixture.stop()
             }
             try await fixture.manager.dbQueue.write { db in
-                try insertMeeting(vaultId: fixture.vault.id, name: "Alpha planning", in: db)
-                try insertMeeting(vaultId: fixture.vault.id, name: "Beta planning", in: db)
+                try insertMeeting(workspaceId: fixture.workspace.id, name: "Alpha planning", in: db)
+                try insertMeeting(workspaceId: fixture.workspace.id, name: "Beta planning", in: db)
             }
             await fixture.manager.searchIndexer.drain()
             let viewModel = fixture.makeViewModel()
@@ -301,7 +301,7 @@ import GRDB
             try await fixture.manager.dbQueue.write { db in
                 try MeetingRecord(
                     id: meetingID,
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     projectId: nil,
                     name: "Original target",
                     createdAt: .now,
@@ -339,7 +339,7 @@ import GRDB
             }
             #expect(updatedRevision > initialRevision)
             let currentPage = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: fixture.vault.id,
+                workspaceId: fixture.workspace.id,
                 query: "Original",
                 limit: 20,
                 dbQueue: fixture.manager.dbQueue
@@ -365,7 +365,7 @@ import GRDB
             try await fixture.manager.dbQueue.write { db in
                 try MeetingRecord(
                     id: selectedID,
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     projectId: nil,
                     name: "Old meeting",
                     createdAt: start,
@@ -373,7 +373,7 @@ import GRDB
                 ).insert(db)
                 for index in 1 ... 50 {
                     try insertMeeting(
-                        vaultId: fixture.vault.id,
+                        workspaceId: fixture.workspace.id,
                         name: "Meeting \(index)",
                         createdAt: start.addingTimeInterval(TimeInterval(index)),
                         in: db
@@ -412,7 +412,7 @@ import GRDB
             try await fixture.manager.dbQueue.write { db in
                 for index in 0 ... SidebarViewModel.maximumVisibleMeetings {
                     try insertMeeting(
-                        vaultId: fixture.vault.id,
+                        workspaceId: fixture.workspace.id,
                         name: "Meeting \(index)",
                         createdAt: Date(timeIntervalSince1970: 1_800_000_000 + TimeInterval(index)),
                         in: db
@@ -452,7 +452,7 @@ import GRDB
             try await fixture.manager.dbQueue.write { db in
                 try ProjectRecord(
                     id: projectID,
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     parentProjectId: nil,
                     name: "Project",
                     createdAt: .now,
@@ -460,7 +460,7 @@ import GRDB
                 ).insert(db)
                 for index in 0 ..< 16 {
                     try insertMeeting(
-                        vaultId: fixture.vault.id,
+                        workspaceId: fixture.workspace.id,
                         projectId: projectID,
                         name: "Meeting \(index)",
                         createdAt: start.addingTimeInterval(TimeInterval(index)),
@@ -522,7 +522,7 @@ import GRDB
             try await fixture.manager.dbQueue.write { db in
                 try ProjectRecord(
                     id: alphaProjectID,
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     parentProjectId: nil,
                     name: "Alpha",
                     createdAt: now,
@@ -530,28 +530,28 @@ import GRDB
                 ).insert(db)
                 try ProjectRecord(
                     id: zuluProjectID,
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     parentProjectId: nil,
                     name: "Zulu",
                     createdAt: now,
                     projectType: .undefined
                 ).insert(db)
                 try insertMeeting(
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     projectId: alphaProjectID,
                     name: "Alpha meeting",
                     createdAt: now.addingTimeInterval(-60),
                     in: db
                 )
                 try insertMeeting(
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     projectId: zuluProjectID,
                     name: "Zulu newest",
                     createdAt: now,
                     in: db
                 )
                 try insertMeeting(
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     name: "Newer unassigned meeting",
                     createdAt: now.addingTimeInterval(60),
                     in: db
@@ -579,7 +579,7 @@ import GRDB
             try await fixture.manager.dbQueue.write { db in
                 try ProjectRecord(
                     id: projectID,
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     parentProjectId: nil,
                     name: "Project",
                     createdAt: .now,
@@ -587,7 +587,7 @@ import GRDB
                 ).insert(db)
                 for index in 0 ... SidebarViewModel.maximumVisibleMeetings {
                     try insertMeeting(
-                        vaultId: fixture.vault.id,
+                        workspaceId: fixture.workspace.id,
                         projectId: projectID,
                         name: "Meeting \(index)",
                         createdAt: Date(timeIntervalSince1970: 1_800_000_000 + TimeInterval(index)),
@@ -604,7 +604,7 @@ import GRDB
             let loaded = try await fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchMeetingProjectPage(
                     key: key,
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     after: nil,
                     limit: SidebarViewModel.maximumVisibleMeetings - 5,
                     in: db
@@ -643,7 +643,7 @@ import GRDB
             try await fixture.manager.dbQueue.write { db in
                 try MeetingRecord(
                     id: includedID,
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     projectId: nil,
                     name: "Included",
                     createdAt: boundary,
@@ -651,7 +651,7 @@ import GRDB
                 ).insert(db)
                 try MeetingRecord(
                     id: .v7(),
-                    vaultId: fixture.vault.id,
+                    workspaceId: fixture.workspace.id,
                     projectId: nil,
                     name: "Excluded",
                     createdAt: boundary.addingTimeInterval(-1),
@@ -688,35 +688,35 @@ import GRDB
     @MainActor
     final class SidebarViewModelMeetingListFixture {
         let manager: AppDatabaseManager
-        let vault: VaultRecord
+        let workspace: WorkspaceRecord
 
         init() throws {
             manager = try AppDatabaseManager(path: ":memory:")
-            let vaultURL = FileManager.default.temporaryDirectory
+            let workspaceURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-sidebar-view-model-\(UUID.v7())", directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
-            vault = VaultRecord(
+            try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+            workspace = WorkspaceRecord(
                 id: .v7(),
-                path: vaultURL.path,
+                path: workspaceURL.path,
                 name: "Test",
                 createdAt: .now,
                 lastOpenedAt: .now
             )
             try manager.dbQueue.write { db in
-                try vault.insert(db)
+                try workspace.insert(db)
             }
         }
 
         func makeViewModel() -> SidebarViewModel {
             let settings = AppSettings()
-            settings.currentVault = vault
+            settings.currentWorkspace = workspace
             let viewModel = SidebarViewModel(settings: settings)
             viewModel.setAppDatabase(manager)
             return viewModel
         }
 
         func stop() {
-            if let url = vault.url {
+            if let url = workspace.url {
                 try? FileManager.default.removeItem(at: url)
             }
         }
@@ -724,7 +724,7 @@ import GRDB
 
     func insertMeeting(
         id: UUID = .v7(),
-        vaultId: UUID,
+        workspaceId: UUID,
         projectId: UUID? = nil,
         name: String,
         createdAt: Date = .now,
@@ -732,7 +732,7 @@ import GRDB
     ) throws {
         try MeetingRecord(
             id: id,
-            vaultId: vaultId,
+            workspaceId: workspaceId,
             projectId: projectId,
             name: name,
             createdAt: createdAt,

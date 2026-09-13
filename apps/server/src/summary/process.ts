@@ -1,4 +1,3 @@
-import { personalWorkspaceId } from "../auth/workspace";
 import type { MeetingSyncService } from "../sync/service";
 import { SummaryError, type SummaryMethod, type SummaryStage } from "./model";
 import type { SummaryJobReference, SummaryJobStore } from "./store";
@@ -19,7 +18,7 @@ export async function processSummaryJob(
   try {
     const method = methods.find((method) => method.id === job.method);
     if (!method) throw new SummaryError("summary_method_unavailable");
-    const identity = { userId: job.ownerUserId, workspaceId: personalWorkspaceId(job.ownerUserId), source: "accounts" as const };
+    const identity = { userId: job.ownerUserId, source: "accounts" as const };
     const advance = async (next: SummaryStage) => {
       signal.throwIfAborted();
       if (!await jobs.advance(job, next)) throw new SummaryError("summary_job_inactive");
@@ -40,7 +39,7 @@ export async function processSummaryJob(
     await advance(twoStage || job.method === "transcript" ? "summarizing" : "generating");
     const document = await generator.generate(job, signal).catch(processingFailure);
     await advance("saving");
-    const saved = await sync.completeSummary({ userId: job.ownerUserId, workspaceId: personalWorkspaceId(job.ownerUserId), source: "accounts" }, job, document, method);
+    const saved = await sync.completeSummary({ userId: job.ownerUserId, source: "accounts" }, job, document, method);
     console.info(JSON.stringify({ level: "info", event: saved ? "summary_job_succeeded" : "summary_job_lease_lost",
       attempt: job.attempts, durationMs: Date.now() - startedAt }));
   } catch (error) {

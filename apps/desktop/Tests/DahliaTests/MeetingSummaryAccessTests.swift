@@ -20,7 +20,7 @@ import GRDB
             }
 
             #expect(throws: MeetingAccessError.invalidSummaryDocument) {
-                try fixture.store(vaultID: fixture.primaryVaultID).meeting(id: fixture.firstMeetingID)
+                try fixture.store(workspaceID: fixture.primaryWorkspaceID).meeting(id: fixture.firstMeetingID)
             }
         }
 
@@ -42,7 +42,7 @@ import GRDB
             }
 
             #expect(throws: MeetingAccessError.invalidSummaryDocument) {
-                try fixture.store(vaultID: fixture.primaryVaultID).meeting(id: fixture.firstMeetingID)
+                try fixture.store(workspaceID: fixture.primaryWorkspaceID).meeting(id: fixture.firstMeetingID)
             }
         }
 
@@ -63,7 +63,7 @@ import GRDB
                     arguments: [document, fixture.firstMeetingID]
                 )
             }
-            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
 
             let firstID = try Self.firstSummaryBlockID(in: store.meeting(id: fixture.firstMeetingID))
             let secondID = try Self.firstSummaryBlockID(in: store.meeting(id: fixture.firstMeetingID))
@@ -88,7 +88,7 @@ import GRDB
                 )
             }
 
-            let detail = try fixture.store(vaultID: fixture.primaryVaultID).meeting(id: fixture.firstMeetingID)
+            let detail = try fixture.store(workspaceID: fixture.primaryWorkspaceID).meeting(id: fixture.firstMeetingID)
             #expect(detail.summary?.contains("Legacy screenshot caption [Transcript 00:00:09]") == true)
             guard case let .object(root)? = detail.summaryDocument,
                   case let .array(sections)? = root["sections"],

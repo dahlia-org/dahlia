@@ -12,33 +12,34 @@
             let suiteName = "MacInferenceSettingsTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
-            let model = VaultAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
+            let model = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
             model.localProvider = .databricks
             model.databricksProfile = "MAC"
-            var server = makeVault(openedAt: .now)
+            var server = makeWorkspace(openedAt: .now)
             server.accountConnectionId = .v7()
             server.organizationId = server.accountConnectionId == nil ? nil : (server.organizationId ?? .v7())
             server.summaryModelID = "not-the-mac-model"
-            model.activate(vault: server)
+            model.activate(workspace: server)
             #expect(await model.waitForRuntimeContext())
             let account = ServerAccountSettings(
                 processing: .init(location: .local), summary: .init(style: .concise),
                 outputLanguage: .fr, analysisLanguages: .init(scope: .all, identifiers: [])
             )
-            let captured = SummaryGenerationSettings.current(vaultAISettings: model, accountSettings: account)
+            let captured = SummaryGenerationSettings.current(workspaceAISettings: model, accountSettings: account)
             #expect(captured.modelID == AppSettings.shared.codexModelID.nilIfBlank)
             #expect(captured.reasoningEffort == AppSettings.shared.codexReasoningEffort)
             #expect(captured.runtimeProvider == .databricks(profile: "MAC"))
             #expect(captured.languageDisplayName == SummaryLanguage.fr.displayName)
             #expect(captured.detailLevelInstruction == SummaryDetailLevel.concise.instruction)
-            model.activate(vault: makeVault(openedAt: .now))
+            model.activate(workspace: makeWorkspace(openedAt: .now))
             #expect(await model.waitForRuntimeContext())
-            #expect(SummaryGenerationSettings.current(vaultAISettings: model, accountSettings: account).runtimeProvider == captured.runtimeProvider)
+            #expect(SummaryGenerationSettings.current(workspaceAISettings: model, accountSettings: account).runtimeProvider == captured
+                .runtimeProvider)
             #expect(captured.applying(detailLevel: .detailed).sourceAccountConnectionID == captured.sourceAccountConnectionID)
         }
 
         @Test
-        func inheritsTheLatestLocalVaultOnceAndKeepsExplicitChangesAfterRestart() async throws {
+        func inheritsTheLatestLocalWorkspaceOnceAndKeepsExplicitChangesAfterRestart() async throws {
             let suiteName = "LocalAccountAISettingsTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -46,13 +47,13 @@
             let connection = DahliaAccountConnectionRecord(
                 id: .v7(), origin: "https://server.example.com", clientID: "test", createdAt: .now
             )
-            let older = makeVault(openedAt: Date(timeIntervalSince1970: 1))
-            var latest = makeVault(openedAt: Date(timeIntervalSince1970: 2))
+            let older = makeWorkspace(openedAt: Date(timeIntervalSince1970: 1))
+            var latest = makeWorkspace(openedAt: Date(timeIntervalSince1970: 2))
             latest.localProvider = .databricks
             latest.databricksProfile = "LOCAL"
             latest.summaryModelID = "latest-summary"
             latest.summaryReasoningEffort = "max"
-            var server = makeVault(openedAt: Date(timeIntervalSince1970: 3))
+            var server = makeWorkspace(openedAt: Date(timeIntervalSince1970: 3))
             server.accountConnectionId = connection.id
             server.organizationId = server.accountConnectionId == nil ? nil : (server.organizationId ?? .v7())
             server.databricksProfile = "SERVER"
@@ -62,7 +63,7 @@
                 try latest.insert(db)
                 try server.insert(db)
             }
-            let model = VaultAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
+            let model = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
 
             model.configure(dbQueue: database.dbQueue)
             try await model.inheritLocalAccountSettings(from: database.dbQueue)
@@ -71,25 +72,25 @@
             #expect(defaults.string(forKey: LocalAccountAISettings.summaryModelKey) == "latest-summary")
             #expect(defaults.string(forKey: LocalAccountAISettings.summaryReasoningEffortKey) == "max")
             model.databricksProfile = "CHANGED"
-            let restored = VaultAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
+            let restored = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
             restored.configure(dbQueue: database.dbQueue)
             try await restored.inheritLocalAccountSettings(from: database.dbQueue)
             #expect(restored.localAccountSettings == .init(provider: .databricks, databricksProfile: "CHANGED"))
             let storedProfile = try await database.dbQueue.read { [id = latest.id] db in
-                try VaultRecord.fetchOne(db, key: id)?.databricksProfile
+                try WorkspaceRecord.fetchOne(db, key: id)?.databricksProfile
             }
             #expect(storedProfile == "LOCAL")
         }
 
         @Test
-        func retainsTheExistingAppSettingsWhenThereIsNoLocalVault() async throws {
+        func retainsTheExistingAppSettingsWhenThereIsNoLocalWorkspace() async throws {
             let suiteName = "LocalAccountAISettingsTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
             defaults.set(AIAccountProvider.databricks.rawValue, forKey: LocalAccountAISettings.providerKey)
             defaults.set("LEGACY", forKey: LocalAccountAISettings.databricksProfileKey)
             let database = try AppDatabaseManager(path: ":memory:")
-            let model = VaultAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
+            let model = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
 
             model.configure(dbQueue: database.dbQueue)
             try await model.inheritLocalAccountSettings(from: database.dbQueue)
@@ -100,19 +101,19 @@
         }
 
         @Test
-        func providerChangesAreSharedAcrossVaultsWithoutActivatingTheHostedRuntime() async throws {
+        func providerChangesAreSharedAcrossWorkspacesWithoutActivatingTheHostedRuntime() async throws {
             let suiteName = "LocalAccountAISettingsTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
-            let activations = Mutex<[VaultAISettingsSnapshot]>([])
-            let model = VaultAISettingsModel(setupDefaults: defaults) { snapshot in
+            let activations = Mutex<[WorkspaceAISettingsSnapshot]>([])
+            let model = WorkspaceAISettingsModel(setupDefaults: defaults) { snapshot in
                 activations.withLock { $0.append(snapshot) }
             }
-            var server = makeVault(openedAt: .now)
+            var server = makeWorkspace(openedAt: .now)
             server.accountConnectionId = .v7()
             server.organizationId = server.accountConnectionId == nil ? nil : (server.organizationId ?? .v7())
             server.summaryModelID = "hosted-summary"
-            model.activate(vault: server)
+            model.activate(workspace: server)
             #expect(await model.waitForRuntimeContext())
 
             model.localProvider = .databricks
@@ -122,9 +123,9 @@
             #expect(model.summaryModelID == "hosted-summary")
             #expect(LocalAccountAISettings(defaults: defaults) == model.localAccountSettings)
 
-            var local = makeVault(openedAt: .now)
+            var local = makeWorkspace(openedAt: .now)
             local.summaryModelID = "local-summary"
-            model.activate(vault: local)
+            model.activate(workspace: local)
             #expect(await model.waitForRuntimeContext())
             #expect(model.summaryModelID == "local-summary")
             #expect(activations.withLock { $0.last?.localProvider } == .databricks)
@@ -133,7 +134,7 @@
             #expect(await model.waitForRuntimeContext())
             #expect(activations.withLock { $0.last?.databricksProfile } == "NEW")
 
-            model.activate(vault: makeVault(openedAt: .now))
+            model.activate(workspace: makeWorkspace(openedAt: .now))
             #expect(await model.waitForRuntimeContext())
             #expect(model.localAccountSettings == .init(provider: .databricks, databricksProfile: "NEW"))
         }
@@ -145,17 +146,17 @@
             defer { defaults.removePersistentDomain(forName: suiteName) }
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            var vault = makeVault(openedAt: .now)
-            vault.aiSettingsBackfilled = false
-            try repository.insertVault(vault)
-            let model = VaultAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
+            var workspace = makeWorkspace(openedAt: .now)
+            workspace.aiSettingsBackfilled = false
+            try repository.insertWorkspace(workspace)
+            let model = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
             model.configure(dbQueue: database.dbQueue)
             try await database.dbQueue.write { db in
-                try db.execute(sql: "CREATE TRIGGER fail_backfill BEFORE UPDATE ON vaults BEGIN SELECT RAISE(ABORT, 'test failure'); END")
+                try db.execute(sql: "CREATE TRIGGER fail_backfill BEFORE UPDATE ON workspaces BEGIN SELECT RAISE(ABORT, 'test failure'); END")
             }
 
             await #expect(throws: DatabaseError.self) {
-                try await repository.backfillVaultAISettings(.init(
+                try await repository.backfillWorkspaceAISettings(.init(
                     localProvider: .databricks, databricksProfile: "LEGACY",
                     summaryModelID: "legacy", summaryReasoningEffort: "high",
                     chatModelID: "legacy", chatReasoningEffort: "high"
@@ -165,14 +166,14 @@
             try await database.dbQueue.write { db in
                 try db.execute(sql: "DROP TRIGGER fail_backfill")
             }
-            model.activate(vault: vault)
+            model.activate(workspace: workspace)
             model.summaryModelID = "updated"
             model.chatReasoningEffort = "low"
 
-            let vaultID = vault.id
+            let workspaceID = workspace.id
             #expect(await pollUntil {
                 let stored = try? await database.dbQueue.read { db in
-                    try VaultRecord.fetchOne(db, key: vaultID)
+                    try WorkspaceRecord.fetchOne(db, key: workspaceID)
                 }
                 return stored?.summaryModelID == "updated" && stored?.chatReasoningEffort == "low"
             })
@@ -182,25 +183,25 @@
         func savingModelSettingsPreservesLegacyProviderColumns() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            var vault = makeVault(openedAt: .now)
-            vault.localProvider = .databricks
-            vault.databricksProfile = "OLD"
-            try repository.insertVault(vault)
-            var snapshot = VaultAISettingsSnapshot(
-                vault: vault,
+            var workspace = makeWorkspace(openedAt: .now)
+            workspace.localProvider = .databricks
+            workspace.databricksProfile = "OLD"
+            try repository.insertWorkspace(workspace)
+            var snapshot = WorkspaceAISettingsSnapshot(
+                workspace: workspace,
                 localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
             )
             snapshot.summaryModelID = "new-model"
 
-            let updated = try #require(try await repository.updateVaultAISettings(snapshot))
+            let updated = try #require(try await repository.updateWorkspaceAISettings(snapshot))
 
             #expect(updated.localProvider == .databricks)
             #expect(updated.databricksProfile == "OLD")
             #expect(updated.summaryModelID == "new-model")
         }
 
-        private func makeVault(openedAt: Date) -> VaultRecord {
-            VaultRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: openedAt)
+        private func makeWorkspace(openedAt: Date) -> WorkspaceRecord {
+            WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: openedAt)
         }
     }
 #endif

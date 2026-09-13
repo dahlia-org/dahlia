@@ -123,25 +123,25 @@ import Foundation
         }
 
         @Test
-        func projectFolderSafetyRejectsAncestorSymlinkOutsideVault() throws {
+        func projectFolderSafetyRejectsAncestorSymlinkOutsideWorkspace() throws {
             let rootURL = URL.temporaryDirectory
                 .appending(path: "dahlia-project-folder-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
-            let vaultURL = rootURL.appending(path: "Vault", directoryHint: .isDirectory)
+            let workspaceURL = rootURL.appending(path: "Workspace", directoryHint: .isDirectory)
             let outsideURL = rootURL.appending(path: "Outside", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
-            try FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
             try FileManager.default.createDirectory(
                 at: outsideURL.appending(path: "Child", directoryHint: .isDirectory),
                 withIntermediateDirectories: true
             )
             try FileManager.default.createSymbolicLink(
-                at: vaultURL.appending(path: "Root", directoryHint: .isDirectory),
+                at: workspaceURL.appending(path: "Root", directoryHint: .isDirectory),
                 withDestinationURL: outsideURL
             )
 
             #expect(!ProjectFolderSafety.isSafeDirectory(
-                vaultURL.appending(path: "Root/Child", directoryHint: .isDirectory),
-                inside: vaultURL
+                workspaceURL.appending(path: "Root/Child", directoryHint: .isDirectory),
+                inside: workspaceURL
             ))
         }
 
@@ -149,27 +149,27 @@ import Foundation
         func projectFolderSafetyDistinguishesMissingAndAvailableDirectories() throws {
             let rootURL = URL.temporaryDirectory
                 .appending(path: "dahlia-project-folder-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
-            let vaultURL = rootURL.appending(path: "Vault", directoryHint: .isDirectory)
-            let availableURL = vaultURL.appending(path: "Existing", directoryHint: .isDirectory)
+            let workspaceURL = rootURL.appending(path: "Workspace", directoryHint: .isDirectory)
+            let availableURL = workspaceURL.appending(path: "Existing", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
             try FileManager.default.createDirectory(at: availableURL, withIntermediateDirectories: true)
 
-            #expect(ProjectFolderSafety.status(of: availableURL, inside: vaultURL) == .available)
+            #expect(ProjectFolderSafety.status(of: availableURL, inside: workspaceURL) == .available)
             #expect(ProjectFolderSafety.status(
-                of: vaultURL.appending(path: "Not Created", directoryHint: .isDirectory),
-                inside: vaultURL
+                of: workspaceURL.appending(path: "Not Created", directoryHint: .isDirectory),
+                inside: workspaceURL
             ) == .missing)
         }
 
         private func projects(named names: [String]) -> [ProjectRecord] {
             let ids = Dictionary(uniqueKeysWithValues: names.map { ($0, UUID.v7()) })
-            let vaultID = UUID.v7()
+            let workspaceID = UUID.v7()
             return names.map { name in
                 let components = name.split(separator: "/")
                 let parentPath = components.dropLast().joined(separator: "/")
                 return ProjectRecord(
                     id: ids[name]!,
-                    vaultId: vaultID,
+                    workspaceId: workspaceID,
                     parentProjectId: parentPath.isEmpty ? nil : ids[parentPath],
                     name: String(components.last!),
                     createdAt: Date(),

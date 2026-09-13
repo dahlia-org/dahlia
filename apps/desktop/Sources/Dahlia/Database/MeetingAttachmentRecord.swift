@@ -11,10 +11,10 @@ struct MeetingAttachmentRecord: Codable, FetchableRecord, PersistableRecord, Sen
     var sessionId: UUID?
     var createdAt: Date
 
-    static func applyCanonical(id: UUID, vaultId: UUID, value: SyncCanonicalPayload, in db: Database) throws {
+    static func applyCanonical(id: UUID, workspaceId: UUID, value: SyncCanonicalPayload, in db: Database) throws {
         guard let meetingId = value.meetingId, let fileId = value.fileId, let createdAt = value.createdAt,
-              try FileRecord.fetchOne(db, key: fileId)?.vaultId == vaultId,
-              try MeetingRecord.fetchOne(db, key: meetingId)?.vaultId == vaultId else {
+              try FileRecord.fetchOne(db, key: fileId)?.workspaceId == workspaceId,
+              try MeetingRecord.fetchOne(db, key: meetingId)?.workspaceId == workspaceId else {
             throw SyncTransactionQueueError.invalidReceipt
         }
         try Self(

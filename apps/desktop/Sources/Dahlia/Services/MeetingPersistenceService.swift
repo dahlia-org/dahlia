@@ -76,7 +76,7 @@ final class MeetingPersistenceService {
     static func createNew(
         store: TranscriptStore,
         dbQueue: DatabaseQueue,
-        vaultId: UUID,
+        workspaceId: UUID,
         projectId: UUID?,
         initialName: String,
         allowsCalendarSeriesProjectInheritance: Bool = true,
@@ -92,7 +92,7 @@ final class MeetingPersistenceService {
             MeetingPersistenceStarter.NewRequest(
                 meetingId: meetingId,
                 recordingSessionId: recordingSessionId,
-                vaultId: vaultId,
+                workspaceId: workspaceId,
                 requestedProjectId: projectId,
                 initialName: initialName,
                 allowsCalendarSeriesProjectInheritance: allowsCalendarSeriesProjectInheritance,
@@ -220,7 +220,7 @@ final class MeetingPersistenceService {
             if createsMeeting {
                 guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else { return }
                 try SyncTransactionRecorder.record(
-                    vaultId: meeting.vaultId,
+                    workspaceId: meeting.workspaceId,
                     operations: [SyncOperationDraft(entity: .meeting, action: .delete, entityId: meetingId)],
                     in: db
                 )
@@ -265,7 +265,7 @@ final class MeetingPersistenceService {
                     try operations.append(SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update, in: db))
                 }
                 try SyncTransactionRecorder.record(
-                    vaultId: meeting.vaultId,
+                    workspaceId: meeting.workspaceId,
                     operations: operations,
                     in: db
                 )
@@ -280,7 +280,7 @@ private enum MeetingPersistenceStarter {
     struct NewRequest {
         let meetingId: UUID
         let recordingSessionId: UUID
-        let vaultId: UUID
+        let workspaceId: UUID
         let requestedProjectId: UUID?
         let initialName: String
         let allowsCalendarSeriesProjectInheritance: Bool
@@ -323,14 +323,14 @@ private enum MeetingPersistenceStarter {
             let projectId = try MeetingRecord.resolvedProjectIdForNewMeeting(
                 requestedProjectId: request.requestedProjectId,
                 calendarEvent: request.calendarEvent,
-                vaultId: request.vaultId,
+                workspaceId: request.workspaceId,
                 allowsCalendarSeriesProjectInheritance: request.allowsCalendarSeriesProjectInheritance,
                 in: db
             )
             let calendarEventKey = request.calendarEvent?.key
             let meeting = MeetingRecord(
                 id: request.meetingId,
-                vaultId: request.vaultId,
+                workspaceId: request.workspaceId,
                 projectId: projectId,
                 name: request.initialName.trimmingCharacters(in: .whitespacesAndNewlines),
                 status: request.transcriptionMode == .realtime ? .ready : .transcriptNotFound,
@@ -342,7 +342,7 @@ private enum MeetingPersistenceStarter {
             )
             try meeting.insert(db)
             try SyncTransactionRecorder.record(
-                vaultId: request.vaultId,
+                workspaceId: request.workspaceId,
                 operations: [SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .create, in: db)],
                 in: db
             )
@@ -405,7 +405,7 @@ private enum MeetingPersistenceStarter {
                 meetingToUpdate.recordingStartedAt = resolvedRecordingStartTime
                 try meetingToUpdate.update(db)
                 try SyncTransactionRecorder.record(
-                    vaultId: meetingToUpdate.vaultId,
+                    workspaceId: meetingToUpdate.workspaceId,
                     operations: [SyncInitialSnapshotBuilder.meetingOperation(meetingToUpdate, action: .update, in: db)],
                     in: db
                 )

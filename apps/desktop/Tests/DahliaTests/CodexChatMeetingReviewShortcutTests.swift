@@ -18,8 +18,8 @@ import Foundation
         func sendsWithoutChangingComposer() async {
             let service = TestCodexChatService(mode: .staleRollout)
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             var telemetryEvents: [UsageTelemetryEvent] = []
             let reviewMeetingID = UUID.v7()
             let context = CodexChatContext.meeting(
@@ -42,7 +42,7 @@ import Foundation
             )
             let meeting = Self.meetingReference(name: "Keep reference")
             let attachment = CodexChatImageAttachment(data: Data([0x01]), mimeType: "image/png")
-            session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
+            session.updateAvailableMeetings([meeting], catalogWorkspaceID: workspace.id)
             session.addMeetingReference(meeting)
             session.attachedImages = [attachment]
             session.draft = "Keep draft"
@@ -65,8 +65,8 @@ import Foundation
         func retryResolvesTheCurrentMeetingContextAgain() async {
             let service = TestCodexChatService(mode: .failThenComplete)
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let contextProvider = TestCodexChatContextProvider(context: .meeting(
                 id: .v7(),
                 name: "Meeting selected after the click",
@@ -94,14 +94,14 @@ import Foundation
         }
 
         @Test
-        func requiresCurrentVaultAndIdleSession() async {
+        func requiresCurrentWorkspaceAndIdleSession() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
-            let boundVault = Self.testVault()
-            settings.currentVault = boundVault
+            let boundWorkspace = Self.testWorkspace()
+            settings.currentWorkspace = boundWorkspace
             var telemetryEvents: [UsageTelemetryEvent] = []
             let session = CodexChatSessionModel(
-                vaultID: boundVault.id,
+                workspaceID: boundWorkspace.id,
                 modelID: "default-model",
                 effort: "medium",
                 service: service,
@@ -115,12 +115,12 @@ import Foundation
             #expect(await service.sentTextBlocks.isEmpty)
             session.isTurnCleanupPending = false
 
-            settings.currentVault = Self.testVault()
+            settings.currentWorkspace = Self.testWorkspace()
             session.sendMeetingReviewShortcut()
             #expect(!session.isGenerating)
             #expect(await service.sentTextBlocks.isEmpty)
 
-            settings.currentVault = boundVault
+            settings.currentWorkspace = boundWorkspace
             session.sendMeetingReviewShortcut()
             #expect(await pollUntil { await service.sentTextBlocks.count == 1 })
             session.sendMeetingReviewShortcut()
@@ -135,10 +135,10 @@ import Foundation
         func unavailableWhileAHistoryThreadIsRestoring() async {
             let service = TestCodexChatService(mode: .staleRollout)
             let settings = AppSettings()
-            let vault = Self.testVault()
-            settings.currentVault = vault
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                vaultID: vault.id,
+                workspaceID: workspace.id,
                 backendThreadID: "history-thread",
                 modelID: "default-model",
                 effort: "medium",
@@ -155,10 +155,10 @@ import Foundation
             #expect(await service.sentTextBlocks.isEmpty)
         }
 
-        private static func testVault() -> VaultRecord {
-            VaultRecord(
+        private static func testWorkspace() -> WorkspaceRecord {
+            WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/chat-meeting-review-shortcut-test-vault",
+                path: "/tmp/chat-meeting-review-shortcut-test-workspace",
                 name: "Meeting Review Shortcut Test",
                 createdAt: .now,
                 lastOpenedAt: .now

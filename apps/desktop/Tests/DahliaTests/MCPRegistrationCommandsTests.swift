@@ -6,9 +6,9 @@ import Foundation
 
     struct MCPRegistrationCommandsTests {
         @Test
-        func unscopedRegistrationIsReadOnlyAndHasNoVaultArgument() throws {
-            let commands = MCPRegistrationCommands(helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"), vaultID: nil)
-            #expect(commands.registrationCommand(for: .codex, writeEnabled: false)?.contains("--vault") == false)
+        func unscopedRegistrationIsReadOnlyAndHasNoWorkspaceArgument() throws {
+            let commands = MCPRegistrationCommands(helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"), workspaceID: nil)
+            #expect(commands.registrationCommand(for: .codex, writeEnabled: false)?.contains("--workspace") == false)
             #expect(commands.registrationCommand(for: .codex, writeEnabled: true)?.hasSuffix(" --write") == true)
             #expect(commands.mcpJSONSample(writeEnabled: true)?.contains("--write") == true)
             let sample = try JSONDecoder().decode(MCPJSONSample.self, from: Data(#require(commands.mcpJSONSample(writeEnabled: false)).utf8))
@@ -16,32 +16,32 @@ import Foundation
         }
 
         @Test
-        func registrationCommandsAreVaultScopedAndQuoteArguments() throws {
-            let vaultID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
+        func registrationCommandsAreWorkspaceScopedAndQuoteArguments() throws {
+            let workspaceID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia's App.app/Contents/Helpers/dahlia-mcp"),
-                vaultID: vaultID
+                workspaceID: workspaceID
             )
 
             let quotedHelper = "'/Applications/Dahlia'\\''s App.app/Contents/Helpers/dahlia-mcp'"
-            let quotedVault = "'vlt_01kxk53k5yfks87c3ez5atkza1'"
+            let quotedWorkspace = "'ws_01kxk53k5yfks87c3ez5atkza1'"
             #expect(commands.registrationCommand(for: .codex, writeEnabled: false)
-                == "codex mcp add dahlia -- \(quotedHelper) --vault-id \(quotedVault)")
+                == "codex mcp add dahlia -- \(quotedHelper) --workspace-id \(quotedWorkspace)")
             #expect(commands.registrationCommand(for: .codex, writeEnabled: true)
-                == "codex mcp add dahlia -- \(quotedHelper) --vault-id \(quotedVault) --write")
+                == "codex mcp add dahlia -- \(quotedHelper) --workspace-id \(quotedWorkspace) --write")
             #expect(commands.registrationCommand(for: .claude, writeEnabled: false)
-                == "claude mcp add --scope user dahlia -- \(quotedHelper) --vault-id \(quotedVault)")
+                == "claude mcp add --scope user dahlia -- \(quotedHelper) --workspace-id \(quotedWorkspace)")
             #expect(commands.registrationCommand(for: .claude, writeEnabled: true)
-                == "claude mcp add --scope user dahlia -- \(quotedHelper) --vault-id \(quotedVault) --write")
+                == "claude mcp add --scope user dahlia -- \(quotedHelper) --workspace-id \(quotedWorkspace) --write")
             #expect(commands.registrationCommand(for: .mcpJSON, writeEnabled: false) == nil)
         }
 
         @Test
         func removalCommandsRemainAvailableSeparatelyForReRegistrationHelp() throws {
-            let vaultID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
+            let workspaceID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
-                vaultID: vaultID
+                workspaceID: workspaceID
             )
 
             #expect(commands.removalCommand(for: .codex) == "codex mcp remove dahlia")
@@ -50,11 +50,11 @@ import Foundation
         }
 
         @Test
-        func mcpJSONSampleReflectsTheSelectedVaultAndWriteAccess() throws {
-            let vaultID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
+        func mcpJSONSampleReflectsTheSelectedWorkspaceAndWriteAccess() throws {
+            let workspaceID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
-                vaultID: vaultID
+                workspaceID: workspaceID
             )
 
             let json = try #require(commands.mcpJSONSample(writeEnabled: true))
@@ -65,7 +65,7 @@ import Foundation
             let server = try #require(sample.mcpServers["dahlia"])
 
             #expect(server.command == "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp")
-            #expect(server.args == ["--vault-id", "vlt_01kxk53k5yfks87c3ez5atkza1", "--write"])
+            #expect(server.args == ["--workspace-id", "ws_01kxk53k5yfks87c3ez5atkza1", "--write"])
 
             let commandRange = try #require(json.range(of: "\"command\""))
             let argsRange = try #require(json.range(of: "\"args\""))
@@ -74,10 +74,10 @@ import Foundation
 
         @Test
         func developmentCommandsInvokeTheHelperDirectly() throws {
-            let vaultID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
+            let workspaceID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia Dev.app/Contents/Helpers/dahlia-mcp"),
-                vaultID: vaultID
+                workspaceID: workspaceID
             )
 
             let helper = "'/Applications/Dahlia Dev.app/Contents/Helpers/dahlia-mcp'"
@@ -85,8 +85,8 @@ import Foundation
             let claude = try #require(commands.registrationCommand(for: .claude, writeEnabled: false))
             let codexWrite = try #require(commands.registrationCommand(for: .codex, writeEnabled: true))
             let claudeWrite = try #require(commands.registrationCommand(for: .claude, writeEnabled: true))
-            #expect(codex.contains("-- \(helper) --vault-id"))
-            #expect(claude.contains("-- \(helper) --vault-id"))
+            #expect(codex.contains("-- \(helper) --workspace-id"))
+            #expect(claude.contains("-- \(helper) --workspace-id"))
             #expect(codexWrite.hasSuffix("--write"))
             #expect(claudeWrite.hasSuffix("--write"))
             #expect(!codex.contains("DAHLIA_RUNTIME_PROFILE"))
