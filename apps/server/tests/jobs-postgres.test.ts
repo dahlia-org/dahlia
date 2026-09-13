@@ -1,3 +1,5 @@
+import { seedPostgresIdentity } from "./public-test-client";
+import { testOrganizationID } from "./public-test-client";
 import { summaryStyleDetail } from "../src/account-settings-model";
 import { describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
@@ -26,7 +28,7 @@ describe.runIf(databaseUrl)("PostgreSQL targeted summary delivery", () => {
     }),
       version: () => Promise.resolve("v1"), generate: async () => {
         generations++;
-        if (scenario === "permission") await connection.db.execute(sql`delete from app.vault_permissions where vault_id = ${vaultId}`);
+        if (scenario === "permission") await store.sync.withIdentity(identity, (scoped) => scoped.deletePermission(vaultId, "user", userId));
         if (scenario === "conflict") await connection.db.transaction(async (tx) => {
           await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
           await tx.execute(sql`update app.meetings set summary_revision = summary_revision + 1 where meeting_id = ${meetingId}`);
@@ -35,12 +37,17 @@ describe.runIf(databaseUrl)("PostgreSQL targeted summary delivery", () => {
       } };
     const service = new SummaryService(store.sync, store.accountSettings, [method]);
     try {
-      await store.ensureIdentityUser(identity);
-      await sync.commitTransaction(identity, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: now, operations: [
-        { id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { name: "Synthetic", createdAt: now } },
+      await seedPostgresIdentity(store, databaseUrl!, identity);
+      await sync.commitTransaction(identity, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: now, operations: [
+        { id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Synthetic", createdAt: now } },
         { id: uuidV7(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
           data: { name: "Test", description: "", status: "READY", projectId: null, duration: 0, recordingStartedAt: null, createdAt: now, updatedAt: now } },
       ] });
+      if (scenario === "permission") {
+        const replacementId = uuidV7();
+        await seedPostgresIdentity(store, databaseUrl!, { userId: replacementId, workspaceId: `personal:${replacementId}`, source: "header" });
+        await store.sync.withIdentity(identity, (scoped) => scoped.putPermission(vaultId, "user", replacementId, "admin"));
+      }
       const accepted = await service.start(identity, vaultId, meetingId, { id: uuidV7() });
       const reference = { id: accepted.id, ownerUserId: userId };
       expect(await jobs.claim({ ...reference, ownerUserId: uuidV7() })).toBeNull();

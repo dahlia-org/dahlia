@@ -1,3 +1,4 @@
+import { canWriteVault } from "../auth/vault-permissions";
 import { transcriptCheckpoint, waitForTranscript } from "./transcript-checkpoint";
 import { uuidSchema, transcriptChunkSchema, SCREENSHOT_DELETE_BATCH_SIZE, STORAGE_OPERATION_CONCURRENCY, QUERY_EMBEDDING_DEADLINE_MS, QUERY_EMBEDDING_CONCURRENCY, permissionPrincipalSchema, SYNC_READ_PAGE_SIZE, TRANSCRIPT_READ_PAGE_SIZE, meetingCursorSchema, screenshotCursorSchema, transcriptCursorSchema, uuidV7Schema, transactionSchema, transactionDataSchemas, SYNC_CHANGE_PAGE_SIZE } from "./schemas";
 import type { GeneratedTranscript } from "../summary/transcription";
@@ -120,7 +121,7 @@ export class MeetingSyncService {
     const { transcript, ...document } = result;
     return this.store.withIdentity(identity, async (scoped) => {
       await scoped.lockVault(job.vaultId);
-      if ((await scoped.getVault(job.vaultId))?.role !== "owner") throw new SummaryError("summary_meeting_unavailable");
+      if (!canWriteVault((await scoped.getVault(job.vaultId))?.role)) throw new SummaryError("summary_meeting_unavailable");
       const meeting = await scoped.getMeeting(job.vaultId, job.meetingId);
       if (!meeting) throw new SummaryError("summary_meeting_unavailable");
       if ((meeting.summaryRevision ?? 0) !== job.summaryRevision) throw new SummaryError("summary_conflict");
@@ -128,7 +129,7 @@ export class MeetingSyncService {
       const transcriptOperation = transcript ? await this.stageSummaryTranscript(scoped, job, transcript) : undefined;
       const summaryDocument = JSON.stringify(document);
       const transaction = await normalizeTransaction({
-        schemaVersion: 2, id: job.id, vaultId: job.vaultId, createdAt: job.createdAt.toISOString(),
+        schemaVersion: 3, id: job.id, vaultId: job.vaultId, createdAt: job.createdAt.toISOString(),
         operations: [
           ...(transcriptOperation ? [transcriptOperation.operation] : []),
           { id: uuidV7(), entity: "meeting", action: "update", entityId: job.meetingId, baseRevision: meeting.revision,
@@ -152,10 +153,10 @@ export class MeetingSyncService {
     this.requireWritableIdentity(identity);
     return this.store.withIdentity(identity, async (scoped) => {
       await scoped.lockVault(job.vaultId);
-      if ((await scoped.getVault(job.vaultId))?.role !== "owner") throw new SummaryError("summary_meeting_unavailable");
+      if (!canWriteVault((await scoped.getVault(job.vaultId))?.role)) throw new SummaryError("summary_meeting_unavailable");
       if (await method.version(scoped, job.vaultId, job.meetingId, job.input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
       const staged = await this.stageSummaryTranscript(scoped, job, transcript);
-      const transaction = await normalizeTransaction({ schemaVersion: 2, id: uuidV7(), vaultId: job.vaultId,
+      const transaction = await normalizeTransaction({ schemaVersion: 3, id: uuidV7(), vaultId: job.vaultId,
         createdAt: new Date().toISOString(), operations: [staged.operation] });
       return scoped.completeSummaryTranscript(job, transaction, staged.transcriptId);
     });
@@ -198,7 +199,7 @@ export class MeetingSyncService {
       caption: input.file.metadata.caption?.trim() ? input.file.metadata.caption : analysis.caption,
     };
     const transaction = await normalizeTransaction({
-      schemaVersion: 2, id: uuidV7(), vaultId: input.vaultId, createdAt: new Date().toISOString(),
+      schemaVersion: 3, id: uuidV7(), vaultId: input.vaultId, createdAt: new Date().toISOString(),
       operations: [{
         id: uuidV7(), entity: "file", action: "upsert", entityId: input.fileId,
         baseRevision: input.file.revision, data: { checksum: input.file.checksum, metadata: generatedMetadata },
@@ -308,9 +309,7 @@ export class MeetingSyncService {
       const targets = await this.store.listHistoryTargets(after);
       if (!targets.length) break;
       for (const target of targets) {
-        await this.store.withIdentity({
-          userId: target.ownerUserId, workspaceId: `personal:${target.ownerUserId}`, source: "header",
-        }, (scoped) => scoped.expireRecordingUploads(target.vaultId, before));
+        await this.store.expireRecordingUploads(target.vaultId, before);
       }
       after = targets.at(-1);
     }
@@ -750,7 +749,7 @@ export class MeetingSyncService {
     return this.withStorageOperation(key, () => this.store.withStorageKeyLock(key, async () => {
       const file = await this.store.withIdentity(identity, async (scoped) => {
         const pending = await scoped.getFile(fileId);
-        if (!pending || (await scoped.getVault(pending.vaultId))?.role !== "owner") {
+        if (!pending || !canWriteVault((await scoped.getVault(pending.vaultId))?.role)) {
           throw new RequestError(404, "file_not_found");
         }
         return pending;
@@ -809,7 +808,7 @@ export class MeetingSyncService {
     const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId));
     if (!file?.active) throw new RequestError(404, "file_not_found");
     const response = await this.commitTransaction(identity, {
-      schemaVersion: 2, id: uuidV7(), vaultId: file.vaultId, createdAt: new Date().toISOString(),
+      schemaVersion: 3, id: uuidV7(), vaultId: file.vaultId, createdAt: new Date().toISOString(),
       operations: [{ id: uuidV7(), entity: "file", action: "upsert", entityId: fileId,
         baseRevision: parsed.data.baseRevision, data: { checksum: file.checksum, metadata: parsed.data.metadata } }],
     });
@@ -976,19 +975,34 @@ export class MeetingSyncService {
     }
   }
 
+  listGovernanceVaults(identity: Identity, organizationId: string, after?: string) {
+    if (after) this.parseId(after);
+    return this.store.withIdentity(identity, (scoped) => scoped.listGovernanceVaults(organizationId, after));
+  }
+
+  confirmVaultDeletion(identity: Identity, organizationId: string, vaultId: string) {
+    return this.store.withIdentity(identity, (scoped) => scoped.confirmVaultDeletion(organizationId, vaultId));
+  }
+
+  async forceDeleteVault(identity: Identity, organizationId: string, vaultId: string, body: unknown) {
+    this.requireWritableIdentity(identity);
+    const parsed = z.object({ id: uuidV7Schema, revision: z.number().int().nonnegative(), changeCursor: z.string().min(1) }).strict().safeParse(body);
+    if (!parsed.success) throw new RequestError(400, "invalid_vault_deletion");
+    const { id, revision, changeCursor } = parsed.data;
+    const transaction: SyncTransaction = { schemaVersion: 3, id, vaultId, createdAt: new Date(), operations: [],
+      requestHash: await sha256(canonicalJson({ organizationId, vaultId, revision, changeCursor, action: "governance-delete" })) };
+    const response = await this.store.withIdentity(identity, (scoped) => scoped.forceDeleteVault(organizationId, transaction, revision, changeCursor));
+    this.scheduleStorageDeletes();
+    return response;
+  }
+
   listOrganizations(identity: Identity) {
     return this.store.withIdentity(identity, (scoped) => scoped.listOrganizations());
   }
 
-  listVaults(identity: Identity, owner?: string, organizationId?: string) {
-    const valid = (value: string) => value.length > 0 && value.length <= 200
-      && value === value.trim() && !/[\s]/u.test(value) && ![...value].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
-    if ((owner !== undefined && organizationId !== undefined)
-      || (owner !== undefined && !valid(owner))
-      || (organizationId !== undefined && !valid(organizationId))) {
-      throw new RequestError(400, "invalid_vault_scope");
-    }
-    return this.store.withIdentity(identity, (scoped) => scoped.listVaults(organizationId, owner));
+  listVaults(identity: Identity, organizationId?: string) {
+    if (organizationId !== undefined) this.parseId(organizationId);
+    return this.store.withIdentity(identity, (scoped) => scoped.listVaults(organizationId));
   }
 
   getVault(identity: Identity, vaultId: string) {
@@ -1178,22 +1192,23 @@ export class MeetingSyncService {
     return permissions;
   }
 
-  async putMemberPermission(
+  async putPermission(
     identity: Identity,
     vaultId: string,
     principalType: VaultPrincipalType,
     principalId: string,
+    role: import("./types").VaultRole,
   ): Promise<void> {
     this.requireWritableIdentity(identity);
     if (!await this.store.withIdentity(
       identity,
-      (scoped) => scoped.putMemberPermission(vaultId, principalType, principalId),
+      (scoped) => scoped.putPermission(vaultId, principalType, principalId, role),
     )) {
       throw new RequestError(404, "vault_or_permission_target_not_found");
     }
   }
 
-  async deleteMemberPermission(
+  async deletePermission(
     identity: Identity,
     vaultId: string,
     principalType: VaultPrincipalType,
@@ -1202,7 +1217,7 @@ export class MeetingSyncService {
     this.requireWritableIdentity(identity);
     if (!await this.store.withIdentity(
       identity,
-      (scoped) => scoped.deleteMemberPermission(vaultId, principalType, principalId),
+      (scoped) => scoped.deletePermission(vaultId, principalType, principalId),
     )) {
       throw new RequestError(404, "vault_permission_not_found");
     }

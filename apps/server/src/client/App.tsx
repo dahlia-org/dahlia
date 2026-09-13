@@ -27,7 +27,7 @@ import {
   type DashboardCapabilities,
 } from "./routes";
 import { dashboardNavigationEvent, dashboardNavigationPath, navigateDashboard } from "./navigation";
-import { clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedProjectInfo } from "./api";
+import { canWriteVault, vaultRoleLabel, clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedProjectInfo } from "./api";
 import { DetailTabs, MeetingTabs, parseSummary, SummaryTags } from "./MeetingContent";
 import { FileDialog, FileLink, FileViewer } from "./FileViewer";
 import { MenuIcon, Sidebar, SidebarProvider, useSidebar } from "./Sidebar";
@@ -140,7 +140,7 @@ export async function commitSyncTransaction(vaultId: string, operations: SyncOpe
   const transactionId = encodeId("transaction", uuidV7());
   const request = {
     body: {
-      schemaVersion: 2 as const,
+      schemaVersion: 3 as const,
       id: transactionId,
       vaultId,
       createdAt: new Date().toISOString(),
@@ -467,7 +467,8 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
 
 export function Vaults({ home = false }: { home?: boolean }) {
   const { dialog, openDialog } = useActionDialog();
-  const { vaults, error: loadError, reload, organizationId, select } = useSidebar();
+  const { vaults, error: loadError, reload, organizationId, select, organizations } = useSidebar();
+  const teamOrganizations = organizations?.filter((organization) => organization.kind === "team") ?? [];
   const [recentVaultId, setRecentVaultId] = useState("");
   const recentVault = vaults?.find((vault) => vault.vaultId === recentVaultId) ?? vaults?.[0];
   useEffect(() => {
@@ -479,19 +480,20 @@ export function Vaults({ home = false }: { home?: boolean }) {
   const { data: encryptionCapabilities } = useLiveJSON<{ vaultEncryption?: { version: number } }>(apiQuery("getCapabilities", {}));
   const createVault = () => openDialog({
     title: uiText("New Vault", "保管庫を作成"),
-    description: (organizationId ? uiText("The new Vault is personally owned. You can share it with your organization from its details after creation.", "新しい保管庫は個人所有で作成します。作成後に詳細画面から組織へ共有できます。") + " " : "") + (encryptionCapabilities?.vaultEncryption
-      ? uiText("Server encryption protects database content except search data. All search text, vectors and indexes remain unencrypted, including titles, summaries and image text. File content and local copies are not encrypted by this setting.", "Server 暗号化は検索データを除く DB 内の内容を保護します。会議名・要約・画像の文字情報を含む検索用テキスト、ベクトル、索引はすべて暗号化対象外です。ファイル本体と端末内データは対象外です。")
-      : uiText("Keep related meetings together. Only you can access a new Vault until you share it.", "関連するミーティングをまとめる場所です。共有するまでは、あなたのみが閲覧できます。")),
+    description: uiText("Choose the Team Organization that will own this Vault. Sharing is configured after creation.", "保管庫を所有するTeam組織を選んでください。共有は作成後に設定できます。"),
     confirmLabel: uiText("Create Vault", "保管庫を作成"),
-    fields: [{ name: "name", label: uiText("Vault name", "保管庫名"), required: true },
+    fields: [{ name: "organizationId", label: uiText("Organization", "組織"), required: true,
+      value: teamOrganizations.some((organization) => organization.id === organizationId) ? organizationId : teamOrganizations[0]?.id,
+      options: teamOrganizations.map((organization) => ({ value: organization.id, label: organization.name })) },
+      { name: "name", label: uiText("Vault name", "保管庫名"), required: true },
       ...(encryptionCapabilities?.vaultEncryption ? [{ name: "encryption", label: uiText("Database encryption", "DB 内データの暗号化"), value: "none", options: [
         { value: "none", label: uiText("None", "暗号化しない") }, { value: "server", label: uiText("Server encryption (excluding search)", "Server 暗号化（検索データを除く）") },
       ] }] : [])],
-    onSubmit: async ({ name, encryption }) => {
+    onSubmit: async ({ name, encryption, organizationId: targetOrganizationId }) => {
       const id = encodeId("vault", uuidV7());
       await commitSyncTransaction(id, [{ entity: "vault", action: "create", entityId: id, baseRevision: null,
-        data: { name: name!.trim(), ...(encryption === "server" ? { encryption: "server" as const } : {}), createdAt: new Date().toISOString() } }], setRecovering);
-      if (organizationId) select("");
+        data: { organizationId: targetOrganizationId!, name: name!.trim(), ...(encryption === "server" ? { encryption: "server" as const } : {}), createdAt: new Date().toISOString() } }], setRecovering);
+      select(targetOrganizationId!);
       navigateDashboard(`/vaults/${id}`);
     },
   });
@@ -499,7 +501,7 @@ export function Vaults({ home = false }: { home?: boolean }) {
     {dialog}
     <PageHeader title={home ? uiText("Home", "ホーム") : uiText("Vaults", "保管庫")}
       description={home ? uiText("Pick up where your last conversation left off.", "前回の会話の続きから、始めましょう。") : uiText("Your meetings, organized in one place.", "ミーティングとその記録を、保管庫ごとに整理します。")}
-      actions={<button className="primary" onClick={createVault}><MenuIcon name="plus" />{uiText("New Vault", "保管庫を作成")}</button>} />
+      actions={<button className="primary" disabled={teamOrganizations.length === 0} onClick={createVault}><MenuIcon name="plus" />{uiText("New Vault", "保管庫を作成")}</button>} />
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
     <section className="section-block">
       <div className="collection-heading"><h2>{uiText("Your Vaults", "保管庫一覧")}</h2>{vaults && <span className="muted">{vaults.length}</span>}</div>
@@ -508,10 +510,10 @@ export function Vaults({ home = false }: { home?: boolean }) {
       {vaults?.length === 0 && <div className="welcome-empty">
         <span className="empty-symbol"><MenuIcon name="vault" /></span>
         <h2>{uiText("A home for your meetings", "ミーティングの記録を、ひとつの場所に")}</h2>
-        <p>{organizationId ? uiText("Vaults shared with this organization will appear here.", "この組織に共有された保管庫がここに表示されます。") : uiText("Create a Vault, then connect it in Dahlia for macOS to bring your meeting notes, transcripts and screenshots here.", "保管庫を作成して macOS 版 Dahlia で接続すると、ミーティングの要約・文字起こし・スクリーンショットをここで閲覧できます。")}</p>
+        <p>{organizationId ? uiText("Accessible Vaults owned by this organization will appear here.", "この組織が所有する、アクセス可能な保管庫がここに表示されます。") : uiText("Create a Vault, then connect it in Dahlia for macOS to bring your meeting notes, transcripts and screenshots here.", "保管庫を作成して macOS 版 Dahlia で接続すると、ミーティングの要約・文字起こし・スクリーンショットをここで閲覧できます。")}</p>
       </div>}
       <div className="vault-grid">{vaults?.map((vault) => <a className="vault-card" href={`/vaults/${vault.vaultId}`} key={vault.vaultId}>
-        <div className="vault-card-top"><span className="vault-symbol"><AppearanceIcon appearance={collectionAppearance(vault, "vault")} size={22} /></span><span className={`status${vault.role === "owner" ? "" : " shared"}`}>{vault.role === "owner" ? uiText("Personal", "個人") : uiText("Shared · read-only", "共有・閲覧のみ")}</span></div>
+        <div className="vault-card-top"><span className="vault-symbol"><AppearanceIcon appearance={collectionAppearance(vault, "vault")} size={22} /></span><span className={`status${vault.role === "admin" ? "" : " shared"}`}>{vaultRoleLabel(vault.role)}</span></div>
         <h3>{vault.name}</h3>
         <div className="vault-card-bottom"><span>{uiText("Updated", "更新日")} {new Date(vault.updatedAt ?? vault.createdAt).toLocaleDateString()}</span><MenuIcon name="arrow" /></div>
       </a>)}</div>
@@ -532,12 +534,11 @@ export function Vaults({ home = false }: { home?: boolean }) {
 
 function VaultTransfer({ vault }: { vault: SyncedVaultInfo }) {
   const { dialog, openDialog } = useActionDialog();
-  const { userId } = useSidebar();
-  const targets = useLiveJSON<{ items: SyncedVaultInfo[] }>(apiQuery("listVaults", { params: { query: { owner: userId } } }));
+  const targets = useLiveJSON<{ items: SyncedVaultInfo[] }>(apiQuery("listVaults", {}));
   const [destinationId, setDestinationId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const available = targets.data?.items.filter((item) => item.role === "owner" && item.vaultId !== vault.vaultId) ?? [];
+  const available = targets.data?.items.filter((item) => item.role === "admin" && item.vaultId !== vault.vaultId) ?? [];
   const destination = available.find((item) => item.vaultId === destinationId);
   async function confirm() {
     if (!destination || loading) return;
@@ -572,7 +573,7 @@ function VaultTransfer({ vault }: { vault: SyncedVaultInfo }) {
     finally { setLoading(false); }
   }
   return <section className="vault-settings"><h2>{uiText("Transfer content", "内容を移管")}</h2>
-    <p>{uiText("Move all saved content to another Vault you own.", "保存済みの全内容を、自分が所有する別の保管庫へ移します。")}</p>
+    <p>{uiText("Move all saved content to another Vault you administer.", "保存済みの全内容を、管理権限のある別の保管庫へ移します。")}</p>
     <div className="collection-heading"><Select aria-label={uiText("Destination Vault", "移管先の保管庫")} placeholder={uiText("Choose a Vault", "保管庫を選択")} menuLabel={uiText("Vaults", "保管庫")} value={destinationId} disabled={loading}
       onValueChange={(value) => setDestinationId(value)}>
       {available.map((item) => <option key={item.vaultId} value={item.vaultId}><AppearanceIcon appearance={collectionAppearance(item, "vault")} /><span>{item.name}</span></option>)}
@@ -612,6 +613,8 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
   const { dialog, openDialog } = useActionDialog();
   const vaultQuery = useLiveJSON<SyncedVaultInfo>(apiQuery("getVault", { params: { path: { vaultId: vaultId } } }));
   const vault = vaultQuery.data;
+  const { organizations } = useSidebar();
+  const personal = organizations?.some((organization) => organization.id === vault?.organizationId && organization.kind === "personal");
   const [recovering, setRecovering] = useState(false);
   const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { vaultId: vaultId } } }));
   const projects = vault ? projectsQuery.data?.items ?? [] : [];
@@ -643,7 +646,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
     });
   };
   const deleteVault = () => {
-    if (!vault || vault.role !== "owner") return;
+    if (!vault || vault.role !== "admin") return;
     openDialog({
       title: uiText("Delete Vault?", "保管庫を削除しますか？"),
       description: uiText(`Delete the empty Vault “${vault.name}”? This cannot be undone.`, `空の保管庫「${vault.name}」を削除します。この操作は取り消せません。`),
@@ -674,7 +677,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
     <header className="meeting-header">
       <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}><a href="/vaults">{uiText("All Vaults", "保管庫一覧")}</a></nav>
       <h1><AppearanceIcon appearance={collectionAppearance(vault, "vault")} size={28} />{vault?.name ?? uiText("Vault", "保管庫")}</h1>
-      {vault && <div className="meeting-metadata"><span className="metadata-chip">{vault.role === "owner" ? uiText("Owner", "所有者") : uiText("Read-only", "閲覧のみ")}</span></div>}
+      {vault && <div className="meeting-metadata"><span className="metadata-chip">{vaultRoleLabel(vault.role)}</span></div>}
     </header>
     {dialog}
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
@@ -694,7 +697,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
         {nextCursor && <button className="secondary load-more" disabled={loadingMore} onClick={meetingsQuery.loadMore}>{loadingMore ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}</button>}
       </> },
       { id: "projects", label: uiText("Projects", "プロジェクト"), content: <>
-        <div className="collection-heading"><h2>{uiText("Projects", "プロジェクト")}</h2>{vault?.role === "owner" && <button className="secondary" onClick={createProject}>{uiText("New Project", "プロジェクトを作成")}</button>}</div>
+        <div className="collection-heading"><h2>{uiText("Projects", "プロジェクト")}</h2>{canWriteVault(vault?.role) && <button className="secondary" onClick={createProject}>{uiText("New Project", "プロジェクトを作成")}</button>}</div>
         <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
         {projectsQuery.loading && !projectsQuery.data && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
         {projectsQuery.data && projects.length === 0 && <p className="content-empty">{uiText("No projects yet", "プロジェクトはまだありません")}</p>}
@@ -702,11 +705,11 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
           <span className="collection-project-name"><AppearanceIcon appearance={projectAppearance(project, projects.find((parent) => parent.projectId === project.parentProjectId))} /><strong>{project.path}</strong></span><span className="muted">{meetingCount(project.subtreeMeetingCount ?? 0)}</span>
         </a>)}</div>
       </> },
-      ...(session.capabilities.sharing && vault ? [{ id: "permissions", label: uiText("Permissions", "権限"), content: <VaultSharing vault={vault} accounts={session.capabilities.sessions} /> }] : []),
+      ...(session.capabilities.sharing && vault ? [{ id: "permissions", label: uiText("Permissions", "権限"), content: <VaultSharing vault={vault} /> }] : []),
       { id: "settings", label: uiText("Settings", "設定"), content: <>
-        <section className="vault-settings"><h2>{uiText("Vault details", "保管庫の詳細")}</h2><div className="collection-heading"><span>{vault?.name}</span>{vault?.role === "owner" && <button className="secondary" onClick={renameVault}>{uiText("Edit Vault", "保管庫を編集")}</button>}</div></section>
-        {vault?.role === "owner" && <VaultTransfer vault={vault} />}
-        {vault?.role === "owner" && <section className="vault-settings"><h2>{uiText("Delete Vault", "保管庫を削除")}</h2>
+        <section className="vault-settings"><h2>{uiText("Vault details", "保管庫の詳細")}</h2><div className="collection-heading"><span>{vault?.name}</span>{vault?.role === "admin" && <button className="secondary" onClick={renameVault}>{uiText("Edit Vault", "保管庫を編集")}</button>}</div></section>
+        {vault?.role === "admin" && <VaultTransfer vault={vault} />}
+        {vault?.role === "admin" && !personal && <section className="vault-settings"><h2>{uiText("Delete Vault", "保管庫を削除")}</h2>
           <div className="collection-heading"><p>{uiText("Only empty Vaults can be deleted. Transfer or delete all resources first.", "空の保管庫のみ削除できます。リソースが残っている場合は、先に移管または削除してください。")}</p>
           <button className="secondary danger-button" disabled={vault.hasResources !== false} onClick={deleteVault}>{uiText("Delete Vault", "保管庫を削除")}</button></div>
         </section>}
@@ -781,10 +784,10 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
         <section className="vault-settings">
           <h2>{uiText("Project details", "プロジェクトの詳細")}</h2>
           <div className="collection-heading"><span>{project?.name}</span>
-            {project && vault?.role === "owner" && <button className="secondary" onClick={editProject}>{uiText("Edit Project", "プロジェクトを編集")}</button>}
+            {project && canWriteVault(vault?.role) && <button className="secondary" onClick={editProject}>{uiText("Edit Project", "プロジェクトを編集")}</button>}
           </div>
         </section>
-        {project && vault?.role === "owner" && <section className="vault-settings">
+        {project && canWriteVault(vault?.role) && <section className="vault-settings">
           <h2>{uiText("Delete Project", "プロジェクトを削除")}</h2>
           <div className="collection-heading">
             <p>{uiText("Only empty projects can be deleted.", "削除できるのは空のプロジェクトのみです。")}</p>
@@ -892,9 +895,9 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
       <DataError error={meetingQuery.error} retry={meetingQuery.reload} />
       <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
       <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
-      {meeting && vault?.role === "owner" && <ServerSummaryGeneration key={meetingId} meetingId={meetingId} />}
+      {meeting && canWriteVault(vault?.role) && <ServerSummaryGeneration key={meetingId} meetingId={meetingId} />}
       {meeting && <MeetingTabs
-        actions={vault?.role === "owner" && <div className="meeting-actions">
+        actions={canWriteVault(vault?.role) && <div className="meeting-actions">
           <button className="action-trigger" aria-label={uiText("Meeting actions", "ミーティングの操作")} popoverTarget="meeting-actions"><span aria-hidden="true">⋯</span>{" "}<span className="action-label">{uiText("Actions", "操作")}</span></button>
           <div id="meeting-actions" popover="auto" className="action-menu">
             <button onClick={editMeeting}>{uiText("Edit Meeting", "ミーティングを編集")}</button>
@@ -950,6 +953,37 @@ export function ScreenshotFigure({ file, capturedAt, onOpen }: {
   </figure>;
 }
 
+function OrganizationVaults({ organization }: { organization: OrganizationInfo }) {
+  const query = useLivePage<import("./generated-api").components["schemas"]["GovernanceVault"]>(apiQuery("listGovernanceVaults", { params: { path: { organizationId: organization.id } } }));
+  const { dialog, openDialog } = useActionDialog();
+  const [error, setError] = useState<string>();
+  async function confirm(vaultId: string) {
+    setError(undefined);
+    try {
+      const current = await api.confirmVaultDeletion({ params: { path: { organizationId: organization.id, vaultId } } });
+      const id = encodeId("transaction", uuidV7());
+      openDialog({ title: uiText("Delete Vault and all content?", "保管庫とすべての内容を削除しますか？"),
+        description: uiText(`Permanently delete “${current.name}” and all its meetings, files and recordings. This cannot be undone.`, `「${current.name}」と、配下のすべての会議・ファイル・録音を削除します。この操作は取り消せません。`),
+        confirmLabel: uiText("Delete all content", "すべて削除"), destructive: true,
+        onSubmit: async () => {
+          await api.forceDeleteVault({ params: { path: { organizationId: organization.id, vaultId } }, body: { id, revision: current.revision, changeCursor: current.changeCursor } });
+          query.reload();
+        },
+      });
+    } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); }
+  }
+  return <section>{dialog}
+    <p>{uiText("Organization governance shows Vault metadata. Content requires a separate Vault permission.", "組織の管理用情報を表示しています。内容の閲覧には保管庫のアクセス権が必要です。")}</p>
+    {query.data?.items.map((vault) => <div className="row" key={vault.vaultId}>
+      <div><strong>{vault.name}</strong><span>{vault.vaultId}</span><small>{uiText("Creator", "作成者")}: {vault.creatorId} · revision {vault.revision}</small></div>
+      {organization.kind === "team" && <button className="secondary danger-button" onClick={() => void confirm(vault.vaultId)}>{uiText("Delete", "削除")}</button>}
+    </div>)}
+    {query.data?.items.length === 0 && <p>{uiText("No Vaults", "保管庫がありません")}</p>}
+    {query.data?.nextCursor && <button onClick={query.loadMore}>{uiText("Show more", "さらに表示")}</button>}
+    <DataError error={query.error} retry={query.reload} />{error && <p role="alert">{error}</p>}
+  </section>;
+}
+
 function OrganizationDetails({ organization, session }: { organization: OrganizationInfo; session: SessionInfo }) {
   const { dialog, openDialog } = useActionDialog();
   const [members, setMembers] = useState<OrganizationMember[]>();
@@ -965,23 +999,20 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
   const load = useCallback(async () => {
     setError(undefined);
     try {
-      const accounts = session.capabilities.sessions;
       const [memberPage, teamItems] = await Promise.all([
-        accounts ? json<{ members: OrganizationMember[] }>(`/api/auth/organization/list-members?organizationId=${organizationId}`)
-          : api.listOrganizationMembers({ params: { path: { organizationId: organization.id } } }).then(({ items }) => ({ members: items })),
-        accounts ? json<TeamInfo[]>(`/api/auth/organization/list-teams?organizationId=${organizationId}`)
-          : api.listTeams({ params: { path: { organizationId: organization.id } } }).then(({ items }) => items),
+        json<{ members: OrganizationMember[] }>(`/api/auth/organization/list-members?organizationId=${organizationId}`),
+        json<TeamInfo[]>(`/api/auth/organization/list-teams?organizationId=${organizationId}`),
       ]);
       setMembers(memberPage.members);
       const role = memberPage.members.find((member) => member.userId === session.user.id)?.role;
       const canManageTeams = ["owner", "admin"].includes(role ?? "");
       const [invitationItems, teamMemberEntries] = await Promise.all([
-        accounts && canManageTeams
+        canManageTeams
           ? json<OrganizationInvitation[]>(
               `/api/auth/organization/list-invitations?organizationId=${organizationId}`,
             )
           : Promise.resolve([]),
-        accounts && canManageTeams
+        canManageTeams
           ? Promise.all(memberPage.members.map(async (member) => ({
               member,
               teams: await json<TeamInfo[]>(
@@ -995,12 +1026,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
                 teamId: team.id,
               })),
             ]))
-          : accounts
-            ? Promise.resolve([] as [string, TeamMember[]][])
-            : Promise.all(teamItems.map(async (team): Promise<[string, TeamMember[]]> => [
-                team.id,
-                await api.listTeamMembers({ params: { path: { organizationId: organization.id, teamId: team.id } } }).then(({ items }) => items),
-              ])),
+          : Promise.resolve([] as [string, TeamMember[]][]),
       ]);
       setInvitations(invitationItems.filter((invitation) => invitation.status === "pending"));
       setTeams(teamItems);
@@ -1008,7 +1034,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load organization");
     }
-  }, [organizationId, session.capabilities.sessions, session.user.id]);
+  }, [organizationId, session.user.id]);
   useEffect(() => { void load(); }, [load]);
 
   function invite() {
@@ -1066,10 +1092,34 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
     }
   }
 
+  function renameOrganization() {
+    openDialog({ title: uiText("Rename organization", "組織名を変更"), confirmLabel: uiText("Save", "保存"),
+      fields: [{ name: "name", label: uiText("Name", "名前"), required: true, value: organization.name }],
+      onSubmit: async ({ name }) => { await json("/api/auth/organization/update", { method: "POST", body: JSON.stringify({ organizationId: organization.id, data: { name: name!.trim() } }) }); },
+    });
+  }
+
+  function changeMemberRole(member: OrganizationMember) {
+    openDialog({ title: uiText("Change organization role", "組織の権限を変更"), confirmLabel: uiText("Save", "保存"),
+      fields: [{ name: "role", label: uiText("Role", "権限"), value: member.role, options: [
+        { value: "owner", label: uiText("Owner", "所有者") }, { value: "admin", label: uiText("Admin", "管理者") }, { value: "member", label: uiText("Member", "メンバー") },
+      ] }],
+      onSubmit: async ({ role }) => { await json("/api/auth/organization/update-member-role", { method: "POST", body: JSON.stringify({ organizationId: organization.id, memberId: member.id, role }) }); await load(); },
+    });
+  }
+
+  function leaveOrganization() {
+    openDialog({ title: uiText("Leave organization?", "組織から脱退しますか？"),
+      description: uiText("Access through this organization and its teams will be removed.", "この組織とチームを通じたアクセス権を失います。"),
+      confirmLabel: uiText("Leave", "脱退"), destructive: true,
+      onSubmit: async () => { await json("/api/auth/organization/leave", { method: "POST", body: JSON.stringify({ organizationId: organization.id }) }); navigateDashboard("/organizations"); },
+    });
+  }
+
   function deleteOrganization() {
     openDialog({
       title: uiText("Delete organization?", "組織を削除しますか？"),
-      description: uiText(`“${organization.name}” and its teams will be deleted. Members will lose access to Vaults shared through this organization. The Vaults themselves will remain.`, `「${organization.name}」とそのチームを削除します。この組織を通じて共有している保管庫へのアクセスは失われますが、保管庫そのものは残ります。`),
+      description: uiText(`“${organization.name}” and its teams will be deleted. Members will lose access to Vaults shared through this organization. All owned Vaults must be deleted first.`, `「${organization.name}」とそのチームを削除します。この組織を通じて共有している保管庫へのアクセスは失われますが、事前に配下の保管庫をすべて削除する必要があります。`),
       confirmLabel: uiText("Delete organization", "組織を削除"), destructive: true,
       onSubmit: async () => {
         await json("/api/auth/organization/delete", { method: "POST", body: JSON.stringify({ organizationId: organization.id }) });
@@ -1085,21 +1135,9 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
       confirmLabel: uiText("Create team", "チームを作成"),
       fields: [{ name: "name", label: uiText("Team name", "チーム名"), required: true }],
       onSubmit: async ({ name }) => {
-        const team = session.capabilities.sessions ? await json<TeamInfo>("/api/auth/organization/create-team", {
+        await json<TeamInfo>("/api/auth/organization/create-team", {
           method: "POST", body: JSON.stringify({ name: name!.trim(), organizationId: organization.id }),
-        }) : await api.createTeam({ params: { path: { organizationId: organization.id } }, body: { name: name!.trim() } });
-        // Creation succeeded: a membership failure must not invite a duplicate team retry.
-        if (session.capabilities.sessions) {
-          try {
-            await json("/api/auth/organization/add-team-member", {
-              method: "POST", body: JSON.stringify({ teamId: team.id, userId: session.user.id, organizationId: organization.id }),
-            });
-          } catch {
-            await load();
-            setError(uiText("Team created. Add yourself from the team's member list.", "チームを作成しました。チームのメンバー一覧から自分を追加してください。"));
-            return;
-          }
-        }
+        });
         await load();
       },
     });
@@ -1111,9 +1149,9 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
       fields: [{ name: "name", label: uiText("Team name", "チーム名"), hideLabel: true, value: team.name, required: true }],
       onSubmit: async ({ name }) => {
         if (name!.trim() === team.name) return;
-        if (session.capabilities.sessions) await json("/api/auth/organization/update-team", {
+        await json("/api/auth/organization/update-team", {
           method: "POST", body: JSON.stringify({ teamId: team.id, data: { name: name!.trim(), organizationId: organization.id } }),
-        }); else await api.updateTeam({ params: { path: { organizationId: organization.id, teamId: team.id } }, body: { name: name!.trim() } });
+        });
         await load();
       },
     });
@@ -1125,9 +1163,9 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
       description: uiText(`“${team.name}” will be deleted. Members will lose access to Vaults shared through this team.`, `「${team.name}」を削除し、このチームを通じた保管庫へのアクセスを解除します。`),
       confirmLabel: uiText("Delete team", "チームを削除"), destructive: true,
       onSubmit: async () => {
-        if (session.capabilities.sessions) await json("/api/auth/organization/remove-team", {
+        await json("/api/auth/organization/remove-team", {
           method: "POST", body: JSON.stringify({ teamId: team.id, organizationId: organization.id }),
-        }); else await api.deleteTeam({ params: { path: { organizationId: organization.id, teamId: team.id } } });
+        });
         await load();
       },
     });
@@ -1138,12 +1176,9 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
     setPending(true);
     setError(undefined);
     try {
-      if (session.capabilities.sessions) await json(`/api/auth/organization/${enabled ? "add" : "remove"}-team-member`, {
+      await json(`/api/auth/organization/${enabled ? "add" : "remove"}-team-member`, {
         method: "POST", body: JSON.stringify({ teamId: team.id, userId, organizationId: organization.id }),
-      }); else {
-        const params = { path: { organizationId: organization.id, teamId: team.id, userId } };
-        await (enabled ? api.putTeamMember({ params }) : api.deleteTeamMember({ params }));
-      }
+      });
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update team membership");
@@ -1153,7 +1188,9 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
   }
 
   const currentRole = members?.find((member) => member.userId === session.user.id)?.role;
-  const canManage = ["owner", "admin"].includes(currentRole ?? "");
+  const personal = organization.kind === "personal";
+  const canGovern = ["owner", "admin"].includes(currentRole ?? "");
+  const canManage = canGovern && !personal;
   const teamMemberIds = useMemo(() => Object.fromEntries(
     Object.entries(teamMembers).map(([teamId, entries]) => [teamId, new Set(entries.map(({ userId }) => userId))]),
   ), [teamMembers]);
@@ -1163,10 +1200,11 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
       {dialog}
       <fieldset className="organization-controls" disabled={pending}>
       <DetailTabs label={uiText("Organization content", "組織の内容")} tabs={[
+        ...(canGovern ? [{ id: "vaults", label: uiText("Vault governance", "保管庫管理"), content: <OrganizationVaults organization={organization} /> }] : []),
         { id: "members", label: <>{uiText("Members", "メンバー")}{members && <> <span className="org-count">{members.length}</span></>}</>, content: <>
           <div className="org-section-header org-member-toolbar">
             {members && members.length > 0 && <input className="org-search" type="search" aria-label={uiText("Find members", "メンバーを検索")} placeholder={uiText("Search by name or email", "名前・メールアドレスで検索")} value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} />}
-            {session.capabilities.sessions && canManage && <button className="primary" onClick={invite}><MenuIcon name="plus" />{uiText("Invite member", "メンバーを招待")}</button>}
+            {canManage && <button className="primary" onClick={invite}><MenuIcon name="plus" />{uiText("Invite member", "メンバーを招待")}</button>}
           </div>
           {visibleMembers?.length === 0 && <p className="empty-state">{uiText("No matching members.", "該当するメンバーはいません。")}</p>}
           {!members && !error && <p className="muted">{uiText("Loading members…", "メンバーを読み込み中…")}</p>}
@@ -1174,12 +1212,13 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
             <div className="member-row organization-row" key={member.id}>
               <div className="org-person"><span className="org-avatar" aria-hidden="true">{(member.user.name || member.user.email).slice(0, 1).toLocaleUpperCase()}</span><div><strong>{member.user.name || member.user.email}{member.userId === session.user.id && <small className="org-you">{uiText("You", "あなた")}</small>}</strong><span>{member.user.email}</span></div></div>
               <span className="org-role">{member.role === "owner" ? uiText("Owner", "所有者") : member.role === "admin" ? uiText("Administrator", "管理者") : uiText("Member", "メンバー")}</span>
-              {session.capabilities.sessions && canManage && member.userId !== session.user.id && (
+              {canManage && <button className="secondary" onClick={() => changeMemberRole(member)}>{uiText("Change role", "権限を変更")}</button>}
+              {canManage && member.userId !== session.user.id && (
                 <button className="secondary danger-button" onClick={() => removeMember(member)}>{uiText("Remove", "解除")}</button>
               )}
             </div>
           ))}
-          {session.capabilities.sessions && canManage && (
+          {canManage && (
             <>
               <h3>{uiText("Pending invitations", "承認待ちの招待")}</h3>
               {invitations?.length === 0 && <p className="muted">{uiText("No pending invitations.", "承認待ちの招待はありません。")}</p>}
@@ -1213,7 +1252,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
                   </div>
                 )}
               </div>
-              {(!session.capabilities.sessions || canManage) && members?.map((member) => (
+              {canManage && members?.map((member) => (
                 <label className="share-row" key={`${team.id}-${member.userId}`}>
                   <span><strong>{member.user.name || member.user.email}</strong><small>{member.user.email}</small></span>
                   <input
@@ -1224,7 +1263,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
                   />
                 </label>
               ))}
-              {session.capabilities.sessions && !canManage && <p className="muted">{uiText("Ask an organization administrator to manage this team's members.", "メンバーの管理は組織の管理者にお問い合わせください。")}</p>}
+              {!canManage && <p className="muted">{uiText("Ask an organization administrator to manage this team's members.", "メンバーの管理は組織の管理者にお問い合わせください。")}</p>}
               </div>
             </details>
           ))}
@@ -1232,13 +1271,15 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
         { id: "settings", label: uiText("Settings", "設定"), content: <>
           <section className="org-settings-info">
             <h3>{uiText("General", "基本情報")}</h3>
+            {canGovern && <button className="secondary" onClick={renameOrganization}>{uiText("Rename", "名前を変更")}</button>}
             <dl className="org-settings-fields">
               <div><dt>{uiText("Organization name", "組織名")}</dt><dd>{organization.name}</dd></div>
               <div><dt>slug</dt><dd><code>{organization.slug}</code></dd></div>
             </dl>
           </section>
-          {session.capabilities.sessions && currentRole === "owner" && <section className="org-danger-zone">
-            <div><h3>{uiText("Delete organization", "組織を削除")}</h3><p>{uiText("Permanently delete this organization and its teams. Shared access will be removed; Vaults will remain.", "組織とチームを削除し、共有アクセスを解除します。保管庫そのものは残ります。この操作は取り消せません。")}</p></div>
+          {!personal && <button className="secondary" onClick={leaveOrganization}>{uiText("Leave organization", "組織から脱退")}</button>}
+          {!personal && organization.slug !== "external" && currentRole === "owner" && <section className="org-danger-zone">
+            <div><h3>{uiText("Delete organization", "組織を削除")}</h3><p>{uiText("Permanently delete this organization and its teams. Delete the organization only after removing its Vaults.", "所属する保管庫をすべて削除した後に、組織とチームを削除できます。この操作は取り消せません。")}</p></div>
             <button className="secondary danger-button" onClick={deleteOrganization}>{uiText("Delete organization", "組織を削除")}</button>
           </section>}
         </> },
@@ -1251,7 +1292,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
 }
 
 function Organization({ session, slug }: { session: SessionInfo; slug: string }) {
-  const query = useLiveJSON<OrganizationInfo[]>(session.capabilities.sessions ? "/api/auth/organization/list" : mapQuery(apiQuery("listOrganizations", {}), ({ items }) => items));
+  const query = useLiveJSON<OrganizationInfo[]>("/api/auth/organization/list");
   const organization = query.data?.find((item) => encodeURIComponent(item.slug) === slug);
   return <>
     <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}>
@@ -1274,10 +1315,8 @@ function Organizations({ session }: { session: SessionInfo }) {
   const load = useCallback(async () => {
     setError(undefined);
     try {
-      const accounts = session.capabilities.sessions;
       const [organizationItems, invitationItems] = await Promise.all([
-        accounts ? json<OrganizationInfo[]>("/api/auth/organization/list") : api.listOrganizations({}).then(({ items }) => items),
-        accounts ? json<OrganizationInvitation[]>("/api/auth/organization/list-user-invitations") : Promise.resolve([]),
+        json<OrganizationInfo[]>("/api/auth/organization/list"), json<OrganizationInvitation[]>("/api/auth/organization/list-user-invitations"),
       ]);
       setOrganizations(organizationItems);
       setInvitations(invitationItems.filter((invitation) => invitation.status === "pending"));

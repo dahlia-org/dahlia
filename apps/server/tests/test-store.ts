@@ -9,6 +9,8 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
   let searchWeights = { ...DEFAULT_SEARCH_SETTINGS };
   return {
     database: {} as AuthStore["database"],
+    organizations: { initializeUser: async () => {},
+      transaction: async () => { throw new Error("Organization mutations unavailable in this fixture"); }, addTeamCreator: async () => {}, assertTeamOrganization: async () => {} },
     searchSettings: {
       get: () => Promise.resolve({ ...searchWeights }),
       update: (weights) => { searchWeights = { ...weights }; return Promise.resolve({ ...searchWeights }); },
@@ -32,6 +34,7 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
       },
     },
     sync: {
+      expireRecordingUploads: async () => {},
       isAvailable: () => Promise.resolve(false),
       listHistoryTargets: () => Promise.resolve([]),
       pruneHistoryBatch: () => Promise.resolve({ changesDeleted: 0, receiptsCompacted: 0 }),
@@ -56,17 +59,6 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
     isAdminUser: () => Promise.resolve(false),
     addAdminUser: () => Promise.resolve(null),
     removeAdminUser: () => Promise.resolve("not_found"),
-    getExternalOrganization: () => Promise.resolve(null),
-    listExternalOrganizationMembers: () => Promise.resolve(null),
-    listExternalTeams: () => Promise.resolve(null),
-    createExternalTeam: () => Promise.resolve(null),
-    updateExternalTeam: () => Promise.resolve(null),
-    deleteExternalTeam: () => Promise.resolve(false),
-    listExternalTeamMembers: () => Promise.resolve(null),
-    addExternalTeamMember: () => Promise.resolve(false),
-    removeExternalTeamMember: () => Promise.resolve(false),
-    deleteVaultPermissionsForPrincipal: () => Promise.resolve(),
-    deleteVaultPermissionsForOrganization: () => Promise.resolve(),
     ...overrides,
   };
 }

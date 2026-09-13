@@ -188,7 +188,10 @@ import GRDB
                 try await fixture.database.dbQueue.write { db in
                     try connection.insert(db)
                     try db.execute(
-                        sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ? WHERE id = ?",
+                        sql: """
+                        UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'),
+                        syncConfirmedConnectionId = ? WHERE id = ?
+                        """,
                         arguments: [connection.id, connection.id, fixture.meeting.vaultId]
                     )
                     let archive = try #require(try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id))
@@ -341,7 +344,7 @@ import GRDB
             try await fixture.database.dbQueue.write { db in
                 try connection.insert(db)
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ? WHERE id = ?",
+                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'), syncConfirmedConnectionId = ? WHERE id = ?",
                     arguments: [connection.id, connection.id, fixture.meeting.vaultId]
                 )
                 #expect(try RemoteChangePolicy.permits(.recording, id: sessionId, record: payload, vaultId: fixture.meeting.vaultId, in: db))
@@ -406,7 +409,7 @@ import GRDB
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sync_operations WHERE entity = 'recording'") == 0)
                 #expect(try !RemoteChangePolicy.permits(.recording, id: sessionId, record: payload, vaultId: fixture.meeting.vaultId, in: db))
                 #expect(try !RemoteChangePolicy.permits(.recording, id: sessionId, action: "delete", vaultId: fixture.meeting.vaultId, in: db))
-                try db.execute(sql: "UPDATE vaults SET syncRole = 'member' WHERE id = ?", arguments: [fixture.meeting.vaultId])
+                try db.execute(sql: "UPDATE vaults SET syncRole = 'viewer' WHERE id = ?", arguments: [fixture.meeting.vaultId])
                 #expect(try !RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db))
             }
         }

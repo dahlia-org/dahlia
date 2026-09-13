@@ -69,6 +69,8 @@ import DahliaRuntimeSupport
                 try DahliaAccountConnectionRecord(id: target.connectionID, origin: target.origin, clientID: "test", createdAt: .now).insert(db)
                 var vault = VaultRecord(id: target.vaultID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
                 vault.accountConnectionId = detached ? nil : target.connectionID
+                if vault.syncRole == nil { vault.syncRole = "admin" }
+                vault.organizationId = vault.accountConnectionId == nil ? nil : .v7()
                 vault.syncConfirmedConnectionId = target.connectionID
                 vault.syncPullCursor = "before"
                 try vault.insert(db)
@@ -117,6 +119,8 @@ import DahliaRuntimeSupport
                 try DahliaAccountConnectionRecord(id: target.connectionID, origin: target.origin, clientID: "test", createdAt: .now).insert(db)
                 var vault = VaultRecord(id: target.vaultID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
                 vault.accountConnectionId = target.connectionID
+                if vault.syncRole == nil { vault.syncRole = "admin" }
+                vault.organizationId = vault.accountConnectionId == nil ? nil : .v7()
                 vault.syncConfirmedConnectionId = target.connectionID
                 vault.syncPullCursor = "before"
                 try vault.insert(db)
@@ -447,6 +451,8 @@ import DahliaRuntimeSupport
                 try DahliaAccountConnectionRecord(id: target.connectionID, origin: target.origin, clientID: "test", createdAt: .now).insert(db)
                 var vault = VaultRecord(id: target.vaultID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
                 vault.accountConnectionId = target.connectionID
+                if vault.syncRole == nil { vault.syncRole = "admin" }
+                vault.organizationId = vault.accountConnectionId == nil ? nil : .v7()
                 vault.syncConfirmedConnectionId = target.connectionID
                 vault.syncPullCursor = "ready"
                 try vault.insert(db)
@@ -502,7 +508,11 @@ import DahliaRuntimeSupport
             let bodies = Mutex<[Data]>([])
             ImageURLProtocol.register(origin: target.origin) { request in
                 if request.url!.path.hasSuffix("/capabilities") {
-                    return (200, [:], Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],"completeRecordings":true}}"#.utf8))
+                    return (
+                        200,
+                        [:],
+                        Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],"completeRecordings":true}}"#.utf8)
+                    )
                 }
                 if request.url!.path.hasSuffix("/recordings") {
                     return (200, [:], Data("""

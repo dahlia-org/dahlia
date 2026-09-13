@@ -1,3 +1,4 @@
+import { encodeSyncCursor } from "./sync/store";
 import type { Identity } from "./auth/identity";
 import type { ApplicationStore } from "./auth/store";
 import type { AppConfig } from "./config";
@@ -25,17 +26,19 @@ export function installDevelopmentSeed(config: AppConfig, store: ApplicationStor
 }
 
 async function seedEmptyAccount(identity: Identity, sync: MeetingSyncService): Promise<void> {
-  if ((await sync.listVaults(identity, identity.userId)).length) return;
+  const personal = (await sync.listOrganizations(identity)).find((organization) => organization.kind === "personal");
+  if (!personal) return;
+  const [vault] = await sync.listVaults(identity, personal.id);
+  if (!vault || (await sync.listSnapshot(identity, vault.vaultId)).startCursor !== encodeSyncCursor(0)) return;
   const now = new Date().toISOString();
-  const vaultId = uuidV7();
+  const vaultId = vault.vaultId;
   const projectId = uuidV7();
-  const operations = [{ id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null,
-    data: { name: "サンプル保管庫", createdAt: now } },
+  const operations = [
   { id: uuidV7(), entity: "project", action: "create", entityId: projectId, baseRevision: null,
     data: { name: "新サービス開発", description: "ローカル動作確認用のサンプルプロジェクト", parentProjectId: null, projectType: null, createdAt: now } }];
   const meetings = ["週次進捗ミーティング", "デザインレビュー", "顧客ヒアリング"];
   await sync.commitTransaction(identity, {
-    schemaVersion: 2, id: uuidV7(), vaultId, createdAt: now,
+    schemaVersion: 3, id: uuidV7(), vaultId, createdAt: now,
     operations: [...operations, ...meetings.flatMap((name, index) => {
       const meetingId = uuidV7();
       const createdAt = new Date(Date.now() - index * 86_400_000).toISOString();

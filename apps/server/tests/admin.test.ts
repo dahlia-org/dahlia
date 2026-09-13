@@ -145,7 +145,7 @@ it.each(["node", "worker"])("opens organization directory details only for admin
   const calls: unknown[] = [];
   store.getServerOrganization = (organizationId, limit, membersOffset, teamsOffset) => {
     calls.push([organizationId, limit, membersOffset, teamsOffset]);
-    return Promise.resolve(organizationId === id ? { id, name: "Other organization", slug: "other", members: Array.from({ length: 101 }, () => member), teams: [] } : null);
+    return Promise.resolve(organizationId === id ? { id, name: "Other organization", slug: "other", kind: "team", members: Array.from({ length: 101 }, () => member), teams: [] } : null);
   };
   const app = createApp({ config, authStore: store });
   const worker = createWorkerHandler(async () => app);

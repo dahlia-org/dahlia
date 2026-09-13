@@ -2206,7 +2206,7 @@ final class CaptionViewModel: ObservableObject {
         WHERE a.meetingId = ?
           AND ((a.connectionId IS NULL AND v.accountConnectionId IS NULL AND a.state = 'saved' AND a.preparedJSON <> '{}')
             OR (a.number IS NOT NULL AND a.audioJSON <> '{}' AND v.accountConnectionId = a.connectionId AND v.syncConfirmedConnectionId = a.connectionId))
-          AND COALESCE(v.syncRole, 'owner') = 'owner' AND v.syncRecoveryState IS NULL
+          AND (v.accountConnectionId IS NULL OR v.syncRole IN ('admin', 'editor')) AND v.syncRecoveryState IS NULL
           AND s.batchDiscardedAt IS NULL
         ORDER BY s.startedAt
         """, arguments: [meetingId])

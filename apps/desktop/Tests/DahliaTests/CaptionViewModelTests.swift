@@ -84,8 +84,10 @@ import os
                 lastOpenedAt: .now
             )
             vault.accountConnectionId = connectionID
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = connectionID
-            vault.syncRole = "member"
+            vault.syncRole = "viewer"
             try database.dbQueue.write { db in
                 try connection.insert(db)
                 try vault.insert(db)

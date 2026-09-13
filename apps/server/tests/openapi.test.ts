@@ -1,3 +1,4 @@
+import { seedHeaderIdentity, testOrganizationID, testUserID } from "./public-test-client";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -62,6 +63,7 @@ describe("generated Web client against the real SQLite Server", () => {
     const store = createNodeApplicationStore({ ...config, databaseUrl: `file:${join(directory, "server.sqlite")}` });
     try {
       await store.migrate();
+      await seedHeaderIdentity(store, join(directory, "server.sqlite"), { userId: testUserID("owner"), email: "owner@example.com", source: "header", workspaceId: `personal:${testUserID("owner")}` });
       const app = createApp({ config, authStore: store, objectStorage: new LocalObjectStorage(join(directory, "objects")) });
       const client = createClient<paths>({ baseUrl: config.baseUrl, headers, fetch: async (request: Request) => {
         const response = await app.request(request);
@@ -69,8 +71,8 @@ describe("generated Web client against the real SQLite Server", () => {
         return response;
       } });
       const vaultId = id(), meetingId = id(), fileId = id();
-      const transaction = { schemaVersion: 2 as const, id: id(), vaultId, createdAt: date, operations: [
-        { id: id(), entity: "vault" as const, action: "create" as const, entityId: vaultId, baseRevision: null, data: { name: "Vault", createdAt: date } },
+      const transaction = { schemaVersion: 3 as const, id: id(), vaultId, createdAt: date, operations: [
+        { id: id(), entity: "vault" as const, action: "create" as const, entityId: vaultId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Vault", createdAt: date } },
         { id: id(), entity: "meeting" as const, action: "create" as const, entityId: meetingId, baseRevision: null,
           data: { name: "Meeting", description: "", status: "READY" as const, projectId: null, duration: null, recordingStartedAt: null, createdAt: date, updatedAt: date } },
       ] };
@@ -105,7 +107,7 @@ describe("generated Web client against the real SQLite Server", () => {
       const upload = await client.PUT("/api/v1/file-uploads/{fileId}/content", { params: { path: { fileId }, header: { "content-type": "application/octet-stream", "content-length": "5" } },
         body: "hello", bodySerializer: (body) => body });
       expect(upload.response.status).toBe(201);
-      const activation = await client.POST("/api/v1/transactions", { body: { schemaVersion: 2, id: id(), vaultId, createdAt: date,
+      const activation = await client.POST("/api/v1/transactions", { body: { schemaVersion: 3, id: id(), vaultId, createdAt: date,
         operations: [{ id: id(), entity: "file", action: "upsert", entityId: fileId, baseRevision: null, data: { checksum: upload.data!.checksum, metadata: {} } }] } });
       expect(activation.response.status, JSON.stringify(activation.error)).toBe(200);
       await client.GET("/api/v1/files/{fileId}", { params: { path: { fileId } } });
@@ -117,14 +119,14 @@ describe("generated Web client against the real SQLite Server", () => {
       const stage = () => client.PUT("/api/v1/meetings/{meetingId}/transcript-uploads/{patchId}/chunks/{chunkIndex}", { params: chunkParams, body: chunk });
       expect((await stage()).response.status).toBe(204);
       expect((await stage()).response.status).toBe(204);
-      const deletion = await client.POST("/api/v1/transactions", { body: { schemaVersion: 2, id: id(), vaultId, createdAt: date,
+      const deletion = await client.POST("/api/v1/transactions", { body: { schemaVersion: 3, id: id(), vaultId, createdAt: date,
         operations: [{ id: id(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }] } });
       expect(deletion.response.status).toBe(200);
       const missing = await stage();
       expect(missing.response.status).toBe(409);
       expect(missing.error).toMatchObject({ code: "revision_conflict", conflicts: [{ entity: "meeting", id: meetingId,
         clientBaseRevision: null, serverRevision: null, record: null }] });
-      const restore = await client.POST("/api/v1/transactions", { body: { schemaVersion: 2, id: id(), vaultId, createdAt: date,
+      const restore = await client.POST("/api/v1/transactions", { body: { schemaVersion: 3, id: id(), vaultId, createdAt: date,
         operations: [{ ...transaction.operations[1]!, id: id() }] } });
       expect(restore.response.status).toBe(200);
       expect((await stage()).response.status).toBe(204);
@@ -190,7 +192,7 @@ it("shares metadata and authentication while retaining public and browser-only o
   expect(JSON.stringify(spec)).not.toContain("019f0d36-0520-7000-8000-000000000001");
   expect(JSON.stringify(spec)).not.toContain('"format":"uuid"');
   expect(schemas.Person).toMatchObject({ properties: { id: { pattern: "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$" } } });
-  expect(schemas.TeamMember).toMatchObject({ properties: { id: { pattern: "^tmem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$" } } });
+
 });
 
 it("shares error responses and nullable record DTOs without losing their contracts", () => {

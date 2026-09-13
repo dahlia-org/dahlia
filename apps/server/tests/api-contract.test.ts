@@ -48,7 +48,7 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     expect(permissions.headers.get("allow")).toBe("GET, HEAD");
     expect((await send("/api/v1/sessions", "POST", undefined, { ...identityHeaders, origin: config.baseUrl })).status).toBe(404);
     expect(await (await send("/api/v1/custom", "POST")).json()).toEqual({ extension: true });
-    expect(await (await send("/api/v1/vaults/custom", "POST")).json()).toEqual({ userId: testUserID("owner") });
+    expect(await (await send("/api/v1/vaults/custom", "POST")).json()).toEqual({ userId: testUserID("owner@example.com") });
     expect((await send("/api/v1/vaults/custom", "POST", undefined, {})).status).toBe(401);
     const mcp = await send("/mcp", "DELETE");
     expect(mcp.status).toBe(405);

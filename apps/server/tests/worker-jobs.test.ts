@@ -10,7 +10,7 @@ function setup(imageQueue?: JobQueue) {
   const sent: JobMessage[] = [];
   const queue = { send: vi.fn((body: JobMessage) => { sent.push(body); return Promise.resolve(); }),
     sendBatch: vi.fn((messages: { body: JobMessage }[]) => { sent.push(...messages.map((entry) => entry.body)); return Promise.resolve(); }) };
-  const stores = { listJobOwners: vi.fn(() => Promise.resolve(["owner"])),
+  const stores = { listJobScopes: vi.fn(() => Promise.resolve(["01990ab0-0000-7000-8000-000000000001"])),
     summaryJobs: { due: vi.fn(() => Promise.resolve([{ id: uuidV7(), ownerUserId: "owner" }])), claim: vi.fn(() => Promise.resolve(null)) },
   };
   const jobs = createQueueJobs({ DAHLIA_SUMMARY_QUEUE: queue, DAHLIA_IMAGE_QUEUE: imageQueue }, stores as unknown as WorkerJobStores,
@@ -52,7 +52,7 @@ describe("Worker job delivery", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
-  it("recovers a failed post-commit notification by enumerating owners and dispatching canonical due references", async () => {
+  it("recovers a failed post-commit notification by enumerating scopes and dispatching canonical due references", async () => {
     const { jobs, queue, sent, stores } = setup();
     vi.spyOn(console, "warn").mockImplementation(() => {});
     queue.send.mockRejectedValueOnce(new Error("unavailable"));

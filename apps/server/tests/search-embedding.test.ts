@@ -196,7 +196,7 @@ describe("search embeddings", () => {
     const document: SearchIndexDocumentRecord = {
       vaultId: "vault",
       documentId: "document",
-      ownerUserId: "owner",
+
       generation: 1,
       attempts: 0,
       claimedAt: new Date(),
@@ -224,7 +224,7 @@ describe("search embeddings", () => {
     const document: SearchIndexDocumentRecord = {
       vaultId: "vault",
       documentId: "document",
-      ownerUserId: "owner",
+
       generation: 1,
       attempts: 0,
       claimedAt: new Date(),

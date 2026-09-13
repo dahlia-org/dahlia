@@ -17,7 +17,7 @@ import { summaryResponseMetadataSchema } from "./metadata";
 import { summaryStyleDetail } from "../account-settings-model";
 import { resolveSummaryPreferences } from "./preferences";
 import { isAudioSummaryModel, isSummaryModel } from "./audio-model";
-import { boundedBytes, collectSummaryInput, fingerprint, summaryImageContent, summaryInstructions, summaryXMLText } from "./transcript";
+import { assertSummaryAccess, boundedBytes, collectSummaryInput, fingerprint, summaryImageContent, summaryInstructions, summaryXMLText } from "./transcript";
 
 interface AudioInput {
   recordingIndex: number; number: number; source: RecordingSource; startedAt: Date; endedAt: Date;
@@ -231,6 +231,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
         endpoint.pathname = cloudflare ? `${endpoint.pathname.replace(/\/v1\/?$/, "")}/run`
           : `${endpoint.pathname.replace(/\/$/, "")}/chat/completions`;
         const headers = await executionHeaders(job.ownerUserId);
+        await store.withIdentity(identity, (scoped) => assertSummaryAccess(scoped, job.vaultId));
         const iterator = requestBody();
         let sentBytes = 0;
         const encoder = new TextEncoder();

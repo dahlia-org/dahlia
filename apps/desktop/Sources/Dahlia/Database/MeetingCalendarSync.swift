@@ -64,7 +64,7 @@ struct MeetingCalendarSync: Codable, Equatable, Sendable {
         let meetings = try MeetingRecord.fetchAll(db, sql: """
         SELECT meetings.* FROM meetings JOIN vaults ON vaults.id = meetings.vaultId
         WHERE meetings.calendar_event_ical_uid = ? AND meetings.calendar_event_recurrence_id = ?
-            AND (vaults.accountConnectionId IS NULL OR coalesce(vaults.syncRole, 'owner') = 'owner')
+            AND (vaults.accountConnectionId IS NULL OR vaults.syncRole IN ('admin', 'editor'))
         """, arguments: [event.icalUid, event.recurrenceId])
         let updated = Self(icalUid: event.icalUid, recurrenceId: event.recurrenceId, calendarEvent: Event(event))
         for (vaultId, meetings) in Dictionary(grouping: meetings, by: \.vaultId) {

@@ -44,7 +44,7 @@ struct ServerConversationAnalyticsService: Sendable {
         )? in
             guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
                   let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId),
-                  vault.syncRole == "owner",
+                  vault.allowsCanonicalEdits,
                   let connectionID = vault.accountConnectionId,
                   vault.syncConfirmedConnectionId == connectionID,
                   let origin = try String.fetchOne(

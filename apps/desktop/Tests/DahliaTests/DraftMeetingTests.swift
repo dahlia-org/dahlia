@@ -183,8 +183,12 @@ import GRDB
                 createdAt: .now,
                 lastOpenedAt: .now
             )
-            vault.syncRole = "member"
+            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://calendar.invalid", clientID: "test", createdAt: .now)
+            vault.accountConnectionId = connection.id
+            vault.organizationId = .v7()
+            vault.syncRole = "viewer"
             try database.dbQueue.write { db in
+                try connection.insert(db)
                 try vault.insert(db)
             }
             let settings = AppSettings()

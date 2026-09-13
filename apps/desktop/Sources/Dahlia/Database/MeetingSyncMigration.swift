@@ -17,6 +17,8 @@ enum MeetingSyncMigration {
     }
 
     private static func migrateVault(in db: Database) throws {
+        // Published connections selected an AI account, not canonical Server ownership.
+        // Keep account credentials and AI settings; Server association requires explicit Organization selection.
         try db.execute(sql: """
         CREATE TABLE vaults_v42 (
             id BLOB PRIMARY KEY,
@@ -32,7 +34,8 @@ enum MeetingSyncMigration {
             chatModelID TEXT NOT NULL DEFAULT '',
             chatReasoningEffort TEXT NOT NULL DEFAULT 'medium',
             aiSettingsBackfilled INTEGER NOT NULL DEFAULT 0,
-            syncRole TEXT CHECK(syncRole IS NULL OR syncRole IN ('owner', 'member')),
+            organizationId BLOB,
+            syncRole TEXT CHECK(syncRole IS NULL OR syncRole IN ('admin', 'editor', 'viewer')),
             syncConfirmedConnectionId BLOB,
             syncPullCursor TEXT,
             syncLastCommittedCursor TEXT,
@@ -40,7 +43,9 @@ enum MeetingSyncMigration {
             syncMutationGeneration INTEGER NOT NULL DEFAULT 0,
             syncMeetingEventsVersion INTEGER NOT NULL DEFAULT 0,
             icon TEXT,
-            color TEXT
+            color TEXT,
+            CHECK ((accountConnectionId IS NULL AND organizationId IS NULL)
+                OR (accountConnectionId IS NOT NULL AND organizationId IS NOT NULL))
         );
         INSERT INTO vaults_v42 (
             id, path, name, createdAt, lastOpenedAt, accountConnectionId,
@@ -48,7 +53,7 @@ enum MeetingSyncMigration {
             chatModelID, chatReasoningEffort, aiSettingsBackfilled
         )
         SELECT
-            id, path, name, createdAt, lastOpenedAt, accountConnectionId,
+            id, path, name, createdAt, lastOpenedAt, NULL,
             localAIProvider, databricksProfile, summaryModelID, summaryReasoningEffort,
             chatModelID, chatReasoningEffort, aiSettingsBackfilled
         FROM vaults;
@@ -60,6 +65,23 @@ enum MeetingSyncMigration {
     }
 
     private static let schemaSQL = """
+    CREATE TABLE local_vault_imports (
+        id BLOB PRIMARY KEY NOT NULL,
+        sourceVaultId BLOB NOT NULL,
+        destinationVaultId BLOB NOT NULL,
+        connectionId BLOB NOT NULL,
+        backupPath TEXT NOT NULL,
+        createdAt DATETIME NOT NULL,
+        completedAt DATETIME
+    );
+    CREATE TABLE local_vault_import_operations (
+        operationId BLOB PRIMARY KEY NOT NULL,
+        importId BLOB NOT NULL REFERENCES local_vault_imports(id),
+        completedAt DATETIME,
+        replacementOperationId BLOB
+    );
+    CREATE INDEX local_vault_import_operations_import ON local_vault_import_operations(importId, completedAt);
+
     CREATE TABLE sync_transactions (
         sequence INTEGER PRIMARY KEY,
         id BLOB NOT NULL UNIQUE,

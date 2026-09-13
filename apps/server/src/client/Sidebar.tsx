@@ -1,4 +1,4 @@
-import { apiQuery, mapQuery } from "./live-data";
+import { apiQuery } from "./live-data";
 import { collectionAppearance, AppearanceIcon, projectAppearance, type Appearance } from "./AppearancePicker";
 import { MeetingHoverCard, HoverPreview } from "./MeetingHoverCard";
 import { Tooltip } from "./Tooltip";
@@ -27,9 +27,9 @@ export function selectedSidebarVault(vaults: SyncedVaultInfo[] | undefined, rout
   return selected ?? (routeVaultId ? undefined : vaults?.[0]);
 }
 
-function readSelection(key: string): string {
-  try { return sessionStorage.getItem(key) ?? ""; }
-  catch { return ""; }
+function readSelection(key: string, fallback = ""): string {
+  try { return sessionStorage.getItem(key) ?? fallback; }
+  catch { return fallback; }
 }
 
 function save(key: string, value: string) {
@@ -55,13 +55,16 @@ export function useSidebar() {
 }
 
 export function SidebarProvider({ session, children }: { session: SessionInfo; children: ReactNode }) {
-  const [organizationId, setOrganizationId] = useState(() => session.capabilities.sharing ? readSelection(`dahlia:sidebar:${session.user.id}:organization`) : "");
+  const [selectedOrganizationId, setOrganizationId] = useState(() => session.capabilities.sharing ? readSelection(`dahlia:sidebar:${session.user.id}:organization`, "personal") : "personal");
   const organizationsQuery = useLiveJSON<OrganizationInfo[]>(!session.capabilities.sharing ? undefined
-    : session.capabilities.sessions ? "/api/auth/organization/list" : mapQuery(apiQuery("listOrganizations", {}), ({ items }) => items));
+    : "/api/auth/organization/list");
   const organizations = organizationsQuery.data;
+  const organizationId = selectedOrganizationId === "personal"
+    ? organizations?.find((organization) => organization.kind === "personal")?.id ?? "personal"
+    : selectedOrganizationId;
   const organizationAllowed = !organizationId || organizations?.some(({ id }) => id === organizationId);
   const vaultsQuery = useLiveJSON<{ items: SyncedVaultInfo[] }>(session.capabilities.sync && organizationAllowed
-    ? apiQuery("listVaults", { params: { query: organizationId ? { organizationId } : { owner: session.user.id } } }) : undefined);
+    ? apiQuery("listVaults", { params: { query: organizationId ? { organizationId } : {} } }) : undefined);
   const select = (id: string) => {
     save(`dahlia:sidebar:${session.user.id}:organization`, id);
     setOrganizationId(id);
@@ -69,12 +72,12 @@ export function SidebarProvider({ session, children }: { session: SessionInfo; c
     navigateDashboard("/vaults");
   };
   useEffect(() => {
-    if (!organizationId) return;
+    if (!organizationId || organizationId === "personal") return;
     const membershipRemoved = organizations && !organizationAllowed;
     const accessDenied = vaultsQuery.error instanceof RequestError && vaultsQuery.error.status === 403;
     if (!membershipRemoved && !accessDenied) return;
-    save(`dahlia:sidebar:${session.user.id}:organization`, "");
-    setOrganizationId("");
+    save(`dahlia:sidebar:${session.user.id}:organization`, "personal");
+    setOrganizationId("personal");
     navigateDashboard("/vaults", true);
   }, [organizationId, organizations, organizationAllowed, vaultsQuery.error, session.user.id]);
   const reload = () => { organizationsQuery.reload(); vaultsQuery.reload(); };
@@ -82,7 +85,7 @@ export function SidebarProvider({ session, children }: { session: SessionInfo; c
   const vaultError = vaultsQuery.error?.message ?? (organizationId && !organizations ? organizationError : undefined);
   return <SidebarContext.Provider value={{ userId: session.user.id, organizationId, organizations,
     organizationError, vaults: vaultsQuery.data?.items, error: vaultError, select, reload }}>
-    <Fragment key={organizationId}>{children}</Fragment>
+    <Fragment key={selectedOrganizationId}>{children}</Fragment>
   </SidebarContext.Provider>;
 }
 
@@ -148,7 +151,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeVaultId: r
   const identity = session.user.name || session.user.email || session.user.id;
   const current = state.organizationId
     ? state.organizations?.find(({ id }) => id === state.organizationId)?.name ?? "Organization"
-    : uiText("No organization selected", "組織未選択");
+    : uiText("All accessible Vaults", "アクセス可能なすべての保管庫");
   const routeVaultId = resolvedVaultId ?? (typeof window === "undefined" ? undefined : window.location.pathname.match(/^\/vaults\/([^/]+)/)?.[1]);
   const selectionKey = `dahlia:sidebar:${session.user.id}:${state.organizationId || "personal"}:vault`;
   const routedVault = useLiveJSON<SyncedVaultInfo>(resolvedVaultId ? apiQuery("getVault", { params: { path: { vaultId: resolvedVaultId } } }) : undefined);
@@ -211,7 +214,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeVaultId: r
         {session.capabilities.sharing && <>
           <span className="nav-divider" />
           <strong>{uiText("Organizations", "組織")}</strong>
-          <button onClick={() => state.select("")} aria-pressed={!state.organizationId}><MenuIcon name="account" /><span>{uiText("No organization selected", "組織未選択")}</span>{!state.organizationId && <MenuIcon name="check" />}</button>
+          <button onClick={() => state.select("")} aria-pressed={!state.organizationId}><MenuIcon name="account" /><span>{uiText("All accessible Vaults", "アクセス可能なすべての保管庫")}</span>{!state.organizationId && <MenuIcon name="check" />}</button>
           {state.organizations?.map((organization) => <button key={organization.id} onClick={() => state.select(organization.id)} aria-pressed={state.organizationId === organization.id}>
             <MenuIcon name="organization" /><span>{organization.name}</span>{state.organizationId === organization.id && <MenuIcon name="check" />}
           </button>)}

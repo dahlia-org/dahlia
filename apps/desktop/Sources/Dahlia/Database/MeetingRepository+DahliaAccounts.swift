@@ -41,7 +41,7 @@ extension MeetingRepository {
         try Bool.fetchOne(
             db,
             sql: """
-            SELECT EXISTS (SELECT 1 FROM vaults WHERE syncConfirmedConnectionId = ?)
+            SELECT EXISTS (SELECT 1 FROM vaults WHERE accountConnectionId = ?)
                 OR EXISTS (SELECT 1 FROM sync_transactions WHERE connectionId = ?)
             """,
             arguments: [id, id]

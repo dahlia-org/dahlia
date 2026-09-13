@@ -1,3 +1,4 @@
+import { testOrganizationID } from "./public-test-client";
 import { seedHeaderIdentity, testUserID } from "./public-test-client";
 import { summaryStyleDetail } from "../src/account-settings-model";
 import { LocalObjectStorage } from "../src/storage/local";
@@ -37,8 +38,8 @@ async function setup() {
     baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1_048_576 };
   const store = createNodeApplicationStore(config); await store.migrate(); await seedHeaderIdentity(store, path, owner);
   const sync = new MeetingSyncService(store.sync, new LocalObjectStorage(join(dir, "recordings"))); const vaultId = uuidV7(); const meetingId = uuidV7();
-  await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [
-    { id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { name: "Vault", createdAt: new Date().toISOString() } },
+  await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [
+    { id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Vault", createdAt: new Date().toISOString() } },
     { id: uuidV7(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
       data: { name: "Meeting", description: "", status: "READY", projectId: null, duration: 60, recordingStartedAt: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } },
   ] });
@@ -137,7 +138,7 @@ describe("server summary jobs", () => {
       const metadata = { name: "Meeting", description: "", status: "READY", projectId: null, duration: 60, recordingStartedAt: before.meeting.recordingStartedAt?.toISOString() ?? null };
       expect((await summaryImageContent(before, sync, owner, new AbortController().signal)).content[0]!.text).not.toContain("<calendar_event>");
       const calendarEvent = { start: "2026-09-11T00:00:00+09:00", end: "2026-09-12T00:00:00+09:00", is_all_day: true };
-      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
+      await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
         id: uuidV7(), entity: "meeting", action: "update", entityId: meetingId, baseRevision: 1,
         data: { ...metadata, icalUid: "event<&", recurrenceId: "20260911", calendarEvent, updatedAt: new Date().toISOString() },
       }] });
@@ -155,7 +156,7 @@ describe("server summary jobs", () => {
       let previous = input;
       for (const change of [{ icalUid: "other", recurrenceId: "20260911" }, { icalUid: "other", recurrenceId: "" },
         { calendarEvent: { ...calendarEvent, is_all_day: false } }, { calendarEvent: null }]) {
-        await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
+        await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
           id: uuidV7(), entity: "meeting", action: "update", entityId: meetingId, baseRevision: revision++,
           data: { ...metadata, ...change, updatedAt: new Date().toISOString() },
         }] });
@@ -185,7 +186,7 @@ describe("server summary jobs", () => {
       };
       expect((await send(false)).status).toBe(401);
       expect(await (await send(true)).json()).toEqual({
-        sync: { version: 4 }, vaultTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 },
+        sync: { version: 5 }, vaultTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 },
         search: { version: 1 }, imageAnalysis: { version: 1 }, conversationAnalytics: { version: 1 },
         meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"], completeRecordings: true },
       });
@@ -225,7 +226,7 @@ describe("server summary jobs", () => {
       expect(manifest).not.toHaveProperty("record");
       const digest = new TextContentDigest(); digest.add(second.document);
       expect(manifest).toMatchObject({ revision: 2, sha256: digest.digestHex(), byteCount: digest.byteCount });
-      const transaction = { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
+      const transaction = { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
         id: uuidV7(), entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 2,
         data: { title: "Manual", document: JSON.stringify({ ...doc(), title: "Manual" }), createdAt: new Date().toISOString() },
       }] };
@@ -243,7 +244,7 @@ describe("server summary jobs", () => {
       expect((await sync.summaryVersions(owner, vaultId, meetingId, page.nextCursor!, "2")).items.map((row) => row.version)).toEqual([1]);
       await expect(sync.commitTransaction(owner, { ...transaction, id: uuidV7() })).rejects.toMatchObject({ status: 409 });
       expect((await sync.summaryVersions(owner, vaultId, meetingId)).items).toHaveLength(3);
-      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [
+      await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [
         { id: uuidV7(), entity: "summary", action: "delete", entityId: meetingId, baseRevision: 3, data: {} },
       ] });
       expect(await sync.latestSummary(owner, vaultId, meetingId)).toMatchObject({ revision: 4, present: false });
@@ -263,7 +264,7 @@ describe("server summary jobs", () => {
     const { store, sync, config, path, vaultId, meetingId } = await setup();
     const savedDocument = JSON.stringify(doc());
     try {
-      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
+      await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
         id: uuidV7(), entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 0,
         data: { title: "Saved", document: savedDocument, createdAt: new Date().toISOString() },
       }] });
@@ -279,7 +280,7 @@ describe("server summary jobs", () => {
       }
       const db = new DatabaseSync(path);
       try {
-        db.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', ?, 'member', ?, ?)").run(vaultId, testUserID("reader"), owner.userId, Date.now());
+        db.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', ?, 'viewer', ?, ?)").run(vaultId, testUserID("reader"), owner.userId, Date.now());
         for (const route of routes) {
           const response = await app.request(`${base}${route}`, { headers });
           expect(response.status).toBe(200);
@@ -322,7 +323,7 @@ describe("server summary jobs", () => {
   it("stores independent summary IDs and cascades meeting deletion", async () => {
     const { store, sync, path, vaultId, meetingId } = await setup();
     try {
-      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [
+      await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [
         { id: uuidV7(), entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 0,
           data: { title: "Summary", document: JSON.stringify(doc()), createdAt: new Date().toISOString() } },
       ] });
@@ -429,13 +430,34 @@ describe("server summary jobs", () => {
     } finally { await store.close?.(); }
   });
 
+  it.each(["before", "during"].flatMap((boundary) => ["editor", "viewer"].map((role) => ({ boundary, role }))))(
+    "checks requester write permission $boundary generation after Admin becomes $role", async ({ boundary, role }) => {
+      const { store, sync, method, service, vaultId, meetingId, path } = await setup();
+      const replacement: Identity = { userId: testUserID("replacement"), workspaceId: `personal:${testUserID("replacement")}`, source: "header" };
+      try {
+        await seedHeaderIdentity(store, path, replacement);
+        await store.sync.withIdentity(owner, (scoped) => scoped.putPermission(vaultId, "user", replacement.userId, "admin"));
+        const changeRole = () => store.sync.withIdentity(replacement, (scoped) => scoped.putPermission(vaultId, "user", owner.userId, role as "editor" | "viewer"));
+        let calls = 0;
+        method.generate = async () => { calls++; if (boundary === "during") await changeRole(); return doc(); };
+        if (boundary === "before" && role === "editor") await changeRole();
+        await service.start(owner, vaultId, meetingId, { id: uuidV7() });
+        if (boundary === "before" && role === "viewer") await changeRole();
+        await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+        expect(calls).toBe(boundary === "before" && role === "viewer" ? 0 : 1);
+        const versions = await store.sync.withIdentity(replacement, (scoped) => scoped.listSummaryVersions(vaultId, meetingId, 10));
+        expect(versions).toHaveLength(role === "editor" ? 1 : 0);
+      } finally { await store.close?.(); }
+    },
+  );
+
   it.each(["input", "summary", "deleted"])("preserves canonical data after %s changes", async (change) => {
     const { store, sync, method, service, vaultId, meetingId } = await setup();
     try {
       await service.start(owner, vaultId, meetingId, { id: uuidV7() });
       method.generate = async () => {
         if (change === "input") method.version = async () => "version2";
-        else await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
+        else await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
           id: uuidV7(), entity: change === "deleted" ? "meeting" : "summary", action: change === "deleted" ? "delete" : "upsert", entityId: meetingId,
           baseRevision: change === "deleted" ? 1 : 0, data: change === "deleted" ? null : { title: "Manual", document: JSON.stringify({ ...doc(), title: "Manual" }), createdAt: new Date().toISOString() },
         }] });
@@ -471,7 +493,7 @@ describe("server summary jobs", () => {
     const { store, service, config, meetingId } = await setup();
     try {
       const app = createApp({ config, authStore: store, summaryService: service });
-      const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": owner.userId, "content-type": "application/json" };
+      const headers = { "x-forwarded-email": `${owner.userId}@example.com`, "x-forwarded-user": owner.userId, "content-type": "application/json" };
       const path = `/api/v1/meetings/${meetingId}/summary-jobs`;
       expect((await app.request(`${path}/latest`)).status).toBe(401);
       expect((await app.request(`${path}/latest`, { headers: { ...headers, "x-forwarded-user": "other", "x-forwarded-email": "other@example.com" } })).status).toBe(404);
@@ -519,7 +541,7 @@ describe("server summary jobs", () => {
       (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
     const waitUntil: Promise<unknown>[] = [];
     const execution = { waitUntil: (task: Promise<unknown>) => { waitUntil.push(task); } } as unknown as ExecutionContext;
-    const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": owner.userId, "content-type": "application/json" };
+    const headers = { "x-forwarded-email": `${owner.userId}@example.com`, "x-forwarded-user": owner.userId, "content-type": "application/json" };
     const path = `/api/v1/meetings/${meetingId}/summary-jobs`;
     try {
       const original = await service.start(owner, vaultId, meetingId, { id: uuidV7() });
@@ -556,7 +578,7 @@ describe("server summary jobs", () => {
         segments: [{ segmentId: uuidV7(), startedAt: new Date().toISOString(), endedAt: null,
           text: "Ship next week < & > \" '", createdAt: null, audioSource: "mic", speakerLabel: "A&B" }], deletions: [],
       });
-      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
+      await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
         id: patchId, entity: "transcript", action: "patch", entityId: meetingId, baseRevision: 0,
         data: { transcript: { id: patchId, startedAt: null, endedAt: null, metadata: null }, mode: "replace", patchId, segmentCount: 1, deletionCount: 0, chunks: [{ index: 0, sha256: hash, segmentCount: 1, deletionCount: 0 }] },
       }] });
@@ -599,7 +621,7 @@ describe("server summary jobs", () => {
           reasoning: { effort: "medium" }, usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120,
             input_tokens_details: { cached_tokens: 10 }, output_tokens_details: { reasoning_tokens: 5 } } } : {}), status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] });
       });
-      const method = createTranscriptSummaryMethod(loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: cloudflare ? "cloudflare" : "databricks",
+      const method = createTranscriptSummaryMethod(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: cloudflare ? "cloudflare" : "databricks",
         OPENAI_API_KEY: "synthetic", OPENAI_BASE_URL: "https://api.cloudflare.com/client/v4/accounts/synthetic/ai/v1",
         DATABRICKS_HOST: "https://workspace.example", DATABRICKS_CLIENT_ID: "client", DATABRICKS_CLIENT_SECRET: "secret", DATABRICKS_MODEL_SCHEMA: "catalog.ai" }), store.sync, sync, transport)!;
       const service = new SummaryService(store.sync, store.accountSettings, [method]);
@@ -646,7 +668,7 @@ describe("server summary jobs", () => {
 async function addRecording(value: Awaited<ReturnType<typeof setup>>, sources: Array<"mic" | "system"> = ["mic", "system"], seconds = 60) {
   const { sync, vaultId, meetingId } = value;
   const sessionId = uuidV7(); const now = new Date().toISOString();
-  await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: now,
+  await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: now,
     operations: ["recording_started", "recording_ended"].map((kind) => ({ id: uuidV7(), entity: "meeting_event", action: "create",
       entityId: uuidV7(), baseRevision: null, data: { meetingId, sessionId, kind, occurredAt: now } })) });
   const audio = new Uint8Array([0, 0, 0, 20, 102, 116, 121, 112, 77, 52, 65, 32, 0, 0, 0, 0, 77, 52, 65, 32]);
@@ -655,7 +677,7 @@ async function addRecording(value: Awaited<ReturnType<typeof setup>>, sources: A
       `http://localhost:5173/api/v1/meetings/${meetingId}/recordings?sessionId=${sessionId}&source=${source}`, {
         method: "POST", headers: { "content-type": "audio/mp4", "content-length": String(audio.length) }, body: audio,
       }));
-    await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: now, operations: [{
+    await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: now, operations: [{
       id: uuidV7(), entity: "recording", action: "upsert", entityId: sessionId, baseRevision: uploaded.record.revision,
       data: { source, checksum: uploaded.record.checksum, manifest: { sampleRate: 16000, frameCount: seconds * 16000,
         ranges: [{ startFrame: 0, frameCount: seconds * 16000, sessionOffsetSeconds: 3, localeIdentifier: "ja-JP" }] } },
@@ -688,7 +710,7 @@ function audioMethod(value: Awaited<ReturnType<typeof setup>>, result?: (body: R
         }] } }), thoughtSignature: "do-not-persist" },
       ] } }] });
   });
-  const config = loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "databricks", DATABRICKS_HOST: "https://workspace.example",
+  const config = loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "databricks", DATABRICKS_HOST: "https://workspace.example",
     DATABRICKS_CLIENT_ID: "client", DATABRICKS_CLIENT_SECRET: "secret", DATABRICKS_MODEL_SCHEMA: "catalog.ai" });
   return { method: createAudioSummaryMethod(config, value.store.sync, value.sync, transport)!, calls, transport };
 }
@@ -717,7 +739,7 @@ describe("audio summary jobs", () => {
         .rejects.toMatchObject({ status: 409 });
       await service.cancel(owner, vaultId, meetingId, job.id);
       const sessionId = uuidV7(); const occurredAt = new Date().toISOString();
-      await value.sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: occurredAt,
+      await value.sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: occurredAt,
         operations: ["recording_started", "recording_ended"].map((kind) => ({ id: uuidV7(), entity: "meeting_event", action: "create",
           entityId: uuidV7(), baseRevision: null, data: { meetingId, sessionId, kind, occurredAt } })) });
       expect(await service.retry(owner, vaultId, meetingId, job.id, { id: uuidV7() }))
@@ -889,7 +911,7 @@ describe("audio summary jobs", () => {
       await addRecording(value, ["mic"]);
       const request = await recordingInput(value);
       const sessionId = uuidV7(); const createdAt = new Date().toISOString();
-      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt,
+      await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt,
         operations: ["recording_started", "recording_ended"].map((kind) => ({ id: uuidV7(), entity: "meeting_event", action: "create",
           entityId: uuidV7(), baseRevision: null, data: { meetingId, sessionId, kind, occurredAt: createdAt } })) });
       const { method } = audioMethod(value);
@@ -908,7 +930,7 @@ describe("audio summary jobs", () => {
       const service = new SummaryService(store.sync, store.accountSettings, [method]);
       const job = await service.start(owner, vaultId, meetingId, await audioRequest(value));
       const sessionId = uuidV7(); const occurredAt = new Date().toISOString();
-      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: occurredAt,
+      await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: occurredAt,
         operations: ["recording_started", "recording_ended"].map((kind) => ({ id: uuidV7(), entity: "meeting_event", action: "create",
           entityId: uuidV7(), baseRevision: null, data: { meetingId, sessionId, kind, occurredAt } })) });
       await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
@@ -935,7 +957,7 @@ describe("audio summary jobs", () => {
     const value = await setup(); const { store, sync, vaultId, meetingId } = value;
     try {
       await addRecording(value, ["mic"]);
-      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
+      await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
         id: uuidV7(), entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 0,
         data: { title: "Manual", document: JSON.stringify({ ...doc(), title: "Manual" }), createdAt: new Date().toISOString() },
       }] });
@@ -1163,7 +1185,7 @@ it("reads the exact transcript ID and historical version instead of silently sub
         createdAt: now, audioSource: "mic", speakerLabel: null }], deletions: [] };
       const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(payload)))), (byte) => byte.toString(16).padStart(2, "0")).join("");
       await sync.putTranscriptChunk(owner, meetingId, patchId, 0, hash, payload);
-      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: now, operations: [{
+      await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), vaultId, createdAt: now, operations: [{
         id: patchId, entity: "transcript", action: "patch", entityId: meetingId, baseRevision: index,
         data: { mode: "replace", patchId, segmentCount: 1, deletionCount: 0,
           chunks: [{ index: 0, sha256: hash, segmentCount: 1, deletionCount: 0 }],
@@ -1186,7 +1208,7 @@ describe("Cloudflare native audio summary", () => {
     const value = await setup(); const { store, sync, vaultId, meetingId } = value;
     try {
       await addRecording(value);
-      const config = loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "cloudflare", OPENAI_API_KEY: "test-token",
+      const config = loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "cloudflare", OPENAI_API_KEY: "test-token",
         OPENAI_BASE_URL: "https://api.cloudflare.com/client/v4/accounts/test/ai/v1" });
       let calls = 0;
       const transport: typeof fetch = async (url, init) => {

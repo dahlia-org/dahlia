@@ -1,3 +1,4 @@
+import { testOrganizationID } from "./public-test-client";
 import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -68,11 +69,11 @@ async function setup(mode: "none" | "server" = "server") {
   await seedHeaderIdentity(store, path, outsider);
   const vaultId = uuidV7();
   const transaction = (operations: SyncTransaction["operations"], vault = vaultId): SyncTransaction => ({
-    schemaVersion: 2, id: uuidV7(), vaultId: vault, createdAt: new Date(), requestHash: uuidV7(), operations,
+    schemaVersion: 3, id: uuidV7(), vaultId: vault, createdAt: new Date(), requestHash: uuidV7(), operations,
   });
   const commit = (tx: SyncTransaction) => store.sync.withIdentity(owner, (sync) => sync.commitTransaction(tx));
   await commit(transaction([{ id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null,
-    data: { name: "PRIVATE_VAULT_MARKER", encryption: mode, createdAt: new Date() } }]));
+    data: { organizationId: testOrganizationID, name: "PRIVATE_VAULT_MARKER", encryption: mode, createdAt: new Date() } }]));
   const db = new DatabaseSync(path);
   cleanups.push(async () => db.close());
   return { db, path, directory, vaultId, transaction, commit, config,
@@ -209,12 +210,12 @@ it("rejects mode changes and transfers, rolls back failed writes, and compacts e
   expect(f.db.prepare("SELECT count(*) AS n FROM projects").get()!.n).toBe(before);
   const destination = uuidV7();
   await f.commit(f.transaction([{ id: uuidV7(), entity: "vault", action: "create", entityId: destination, baseRevision: null,
-    data: { name: "Normal", createdAt: new Date() } }], destination));
+    data: { organizationId: testOrganizationID, name: "Normal", createdAt: new Date() } }], destination));
   await expect(f.store.sync.withIdentity(owner, async (sync) => sync.transferVault({ sourceVaultId: f.vaultId, destinationVaultId: destination,
     sourceRevision: 2, destinationRevision: 1, idempotencyKey: uuidV7(), requestHash: uuidV7(),
     audienceHash: (await sync.vaultTransferAudience(f.vaultId, destination)).audienceHash }))).rejects.toMatchObject({ code: "encrypted_vault_transfer_unsupported" });
   f.db.exec("UPDATE transaction_receipts SET created_at = 0");
-  expect(await f.store.sync.pruneHistoryBatch({ ownerUserId: owner.userId, vaultId: f.vaultId })).toMatchObject({ receiptsCompacted: 2 });
+  expect(await f.store.sync.pruneHistoryBatch({ vaultId: f.vaultId })).toMatchObject({ receiptsCompacted: 2 });
   const wrapped = f.db.prepare("SELECT wrapped_key FROM vault_keys WHERE vault_id = ?").get(f.vaultId)!.wrapped_key as string;
   const cipher = await createVaultCipher(f.vaultId, await unwrapDataKey(config1, f.vaultId, wrapped));
   const receipts = f.db.prepare("SELECT transaction_id, encrypted_payload FROM transaction_receipts WHERE vault_id = ?").all(f.vaultId);
@@ -288,7 +289,7 @@ it.each(["none", "server"] as const)("preserves file and job ID conflicts across
     data: { projectId: null, name: "Source", description: "", status: "READY", createdAt: now, updatedAt: now } }]));
   await f.commit(f.transaction([
     { id: uuidV7(), entity: "vault", action: "create", entityId: destination, baseRevision: null,
-      data: { name: "Destination", encryption: "server", createdAt: now } },
+      data: { organizationId: testOrganizationID, name: "Destination", encryption: "server", createdAt: now } },
     { id: uuidV7(), entity: "meeting", action: "create", entityId: targetMeetingId, baseRevision: null,
       data: { projectId: null, name: "Target", description: "", status: "READY", createdAt: now, updatedAt: now } },
   ], destination));

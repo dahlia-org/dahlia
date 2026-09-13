@@ -56,6 +56,10 @@
             "type": "string",
             "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
+          "organizationId": {
+            "type": "string",
+            "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
           "name": {
             "type": "string"
           },
@@ -97,8 +101,9 @@
           "role": {
             "type": "string",
             "enum": [
-              "owner",
-              "member"
+              "admin",
+              "editor",
+              "viewer"
             ]
           },
           "hasResources": {
@@ -107,10 +112,12 @@
         },
         "required": [
           "vaultId",
+          "organizationId",
           "name",
           "revision",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "role"
         ]
       },
       "Project": {
@@ -1637,6 +1644,10 @@
             "type": "string",
             "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
+          "organizationId": {
+            "type": "string",
+            "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
           "name": {
             "type": "string"
           },
@@ -1678,8 +1689,9 @@
           "role": {
             "type": "string",
             "enum": [
-              "owner",
-              "member"
+              "admin",
+              "editor",
+              "viewer"
             ]
           },
           "hasResources": {
@@ -1688,10 +1700,12 @@
         },
         "required": [
           "vaultId",
+          "organizationId",
           "name",
           "revision",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "role"
         ]
       },
       "NullableProjectRecord": {
@@ -2447,6 +2461,13 @@
           "slug": {
             "type": "string"
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "team"
+            ]
+          },
           "role": {
             "type": "string"
           }
@@ -2454,7 +2475,8 @@
         "required": [
           "id",
           "name",
-          "slug"
+          "slug",
+          "kind"
         ]
       },
       "AccountSettingsResponse": {
@@ -3803,7 +3825,7 @@
           "schemaVersion": {
             "type": "number",
             "enum": [
-              2
+              3
             ]
           },
           "id": {
@@ -4011,6 +4033,10 @@
                     "data": {
                       "type": "object",
                       "properties": {
+                        "organizationId": {
+                          "type": "string",
+                          "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                        },
                         "encryption": {
                           "type": "string",
                           "enum": [
@@ -4089,6 +4115,7 @@
                         }
                       },
                       "required": [
+                        "organizationId",
                         "name",
                         "createdAt"
                       ],
@@ -6686,6 +6713,12 @@
       "VaultPermission": {
         "type": "object",
         "properties": {
+          "name": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
           "vaultId": {
             "type": "string",
             "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
@@ -6707,8 +6740,9 @@
           "role": {
             "type": "string",
             "enum": [
-              "owner",
-              "member"
+              "admin",
+              "editor",
+              "viewer"
             ]
           },
           "createdAt": {
@@ -6724,84 +6758,31 @@
           "createdAt"
         ]
       },
-      "Team": {
+      "GovernanceVault": {
         "type": "object",
         "properties": {
-          "id": {
+          "vaultId": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 200,
-            "pattern": "^team_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "name": {
             "type": "string"
           },
-          "organizationId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200,
-            "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-          },
-          "memberCount": {
+          "revision": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
           },
-          "createdAt": {
+          "creatorId": {
             "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "organizationId",
-          "memberCount",
-          "createdAt",
-          "updatedAt"
-        ]
-      },
-      "TeamMember": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200,
-            "pattern": "^tmem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-          },
-          "userId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200,
             "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-          },
-          "teamId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200,
-            "pattern": "^team_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           }
         },
         "required": [
+          "vaultId",
           "name",
-          "email",
-          "id",
-          "userId",
-          "teamId"
+          "revision",
+          "creatorId"
         ]
       }
     },
@@ -7899,17 +7880,6 @@
           "vaults"
         ],
         "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": false,
-            "name": "owner",
-            "in": "query"
-          },
           {
             "schema": {
               "type": "string",
@@ -11771,7 +11741,7 @@
     "/api/v1/vaults/{vaultId}/transfer-audience": {
       "get": {
         "operationId": "getTransferAudience",
-        "summary": "Preview readers gaining or losing access; owner only",
+        "summary": "Preview readers gaining or losing access; admin only",
         "tags": [
           "vaults"
         ],
@@ -11837,7 +11807,7 @@
     "/api/v1/vaults/{vaultId}/transfer": {
       "post": {
         "operationId": "transferVault",
-        "summary": "Move all content after revision and audience checks; owner only",
+        "summary": "Move all content after revision and audience checks; admin only",
         "tags": [
           "vaults"
         ],
@@ -12020,7 +11990,7 @@
     "/api/v1/vaults/{vaultId}/permission-targets": {
       "get": {
         "operationId": "searchPermissionTargets",
-        "summary": "Search own organizations, their teams and co-members; owner only; 50 per type per page",
+        "summary": "Search own organizations, their teams and co-members; admin only; 50 per type per page",
         "tags": [
           "vaults"
         ],
@@ -12131,7 +12101,7 @@
     "/api/v1/vaults/{vaultId}/permissions/users/{userId}": {
       "put": {
         "operationId": "putUserPermission",
-        "summary": "Grant read-only access to a fellow organization member; owner only",
+        "summary": "Grant access to a known user; admin only",
         "tags": [
           "vaults"
         ],
@@ -12165,6 +12135,30 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "editor",
+                      "viewer"
+                    ]
+                  }
+                },
+                "required": [
+                  "role"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "204": {
             "description": "Success; no response body."
@@ -12176,7 +12170,7 @@
       },
       "delete": {
         "operationId": "deleteUserPermission",
-        "summary": "Revoke direct user access; owner only",
+        "summary": "Revoke direct user access; admin only",
         "tags": [
           "vaults"
         ],
@@ -12286,7 +12280,7 @@
     "/api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}": {
       "put": {
         "operationId": "putOrganizationPermission",
-        "summary": "Grant read-only organization access; owner only",
+        "summary": "Grant organization access; admin only",
         "tags": [
           "vaults"
         ],
@@ -12320,6 +12314,30 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "editor",
+                      "viewer"
+                    ]
+                  }
+                },
+                "required": [
+                  "role"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "204": {
             "description": "Success; no response body."
@@ -12331,7 +12349,7 @@
       },
       "delete": {
         "operationId": "deleteOrganizationPermission",
-        "summary": "Revoke organization access; owner only",
+        "summary": "Revoke organization access; admin only",
         "tags": [
           "vaults"
         ],
@@ -12378,7 +12396,7 @@
     "/api/v1/vaults/{vaultId}/permissions/teams/{teamId}": {
       "put": {
         "operationId": "putTeamPermission",
-        "summary": "Grant read-only team access; owner only",
+        "summary": "Grant team access; admin only",
         "tags": [
           "vaults"
         ],
@@ -12412,6 +12430,30 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "editor",
+                      "viewer"
+                    ]
+                  }
+                },
+                "required": [
+                  "role"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "204": {
             "description": "Success; no response body."
@@ -12423,7 +12465,7 @@
       },
       "delete": {
         "operationId": "deleteTeamPermission",
-        "summary": "Revoke team access; owner only",
+        "summary": "Revoke team access; admin only",
         "tags": [
           "vaults"
         ],
@@ -12467,7 +12509,292 @@
         }
       }
     },
+    "/api/v1/organizations/{organizationId}/vaults": {
+      "get": {
+        "operationId": "listGovernanceVaults",
+        "summary": "Organization Vault metadata; organization owner or admin only",
+        "tags": [
+          "organizations"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "organizationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Opaque cursor. Pass back unchanged with the original filters.",
+              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": false,
+            "description": "Opaque cursor. Pass back unchanged with the original filters.",
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GovernanceVault"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "description": "Opaque cursor. Pass back unchanged with the original filters.",
+                      "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{organizationId}/vaults/{vaultId}/deletion": {
+      "get": {
+        "operationId": "confirmVaultDeletion",
+        "summary": "Confirm the current Vault revision and content cursor",
+        "tags": [
+          "organizations"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "organizationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "vaultId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/GovernanceVault"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "changeCursor": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Opaque cursor. Pass back unchanged with the original filters."
+                        }
+                      },
+                      "required": [
+                        "changeCursor"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{organizationId}/vaults/{vaultId}": {
+      "delete": {
+        "operationId": "forceDeleteVault",
+        "summary": "Delete a Team Organization Vault after confirmation",
+        "tags": [
+          "organizations"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "organizationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^vlt_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "vaultId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^txn_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "changeCursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Opaque cursor. Pass back unchanged with the original filters."
+                  }
+                },
+                "required": [
+                  "id",
+                  "revision",
+                  "changeCursor"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionReceipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
     "/api/v1/organizations": {
+      "post": {
+        "operationId": "createOrganization",
+        "summary": "Create a Team Organization and creator membership through Better Auth",
+        "tags": [
+          "organizations"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "slug": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                  }
+                },
+                "required": [
+                  "name",
+                  "slug"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Organization"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
       "get": {
         "operationId": "listOrganizations",
         "summary": "Current organization memberships",
@@ -12504,609 +12831,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      }
-    },
-    "/api/v1/organizations/{organizationId}": {
-      "get": {
-        "operationId": "getOrganization",
-        "summary": "External organization (header mode only)",
-        "tags": [
-          "organizations"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "organizationId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Organization"
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      }
-    },
-    "/api/v1/organizations/{organizationId}/members": {
-      "get": {
-        "operationId": "listOrganizationMembers",
-        "summary": "External organization members (header mode only)",
-        "tags": [
-          "organizations"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "organizationId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200,
-                            "pattern": "^omem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                          },
-                          "userId": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200,
-                            "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                          },
-                          "role": {
-                            "type": "string"
-                          },
-                          "user": {
-                            "type": "object",
-                            "properties": {
-                              "name": {
-                                "type": "string"
-                              },
-                              "email": {
-                                "type": "string"
-                              }
-                            },
-                            "required": [
-                              "name",
-                              "email"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "id",
-                          "userId",
-                          "role",
-                          "user"
-                        ]
-                      }
-                    },
-                    "nextCursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "minLength": 1,
-                      "description": "Opaque cursor. Pass back unchanged with the original filters."
-                    }
-                  },
-                  "required": [
-                    "items",
-                    "nextCursor"
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      }
-    },
-    "/api/v1/organizations/{organizationId}/teams": {
-      "get": {
-        "operationId": "listTeams",
-        "summary": "External teams (header mode only)",
-        "tags": [
-          "organizations"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "organizationId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Team"
-                      }
-                    },
-                    "nextCursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "minLength": 1,
-                      "description": "Opaque cursor. Pass back unchanged with the original filters."
-                    }
-                  },
-                  "required": [
-                    "items",
-                    "nextCursor"
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      },
-      "post": {
-        "operationId": "createTeam",
-        "summary": "Create external team (header mode only)",
-        "tags": [
-          "organizations"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "organizationId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 100
-                  }
-                },
-                "required": [
-                  "name"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created. An identical replay returns 200.",
-            "headers": {
-              "Location": {
-                "description": "URI of the created representation or individual job.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Team"
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      }
-    },
-    "/api/v1/organizations/{organizationId}/teams/{teamId}": {
-      "patch": {
-        "operationId": "updateTeam",
-        "summary": "Rename external team (header mode only)",
-        "tags": [
-          "organizations"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "organizationId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^team_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "teamId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 100
-                  }
-                },
-                "required": [
-                  "name"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Team"
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      },
-      "delete": {
-        "operationId": "deleteTeam",
-        "summary": "Delete external team (header mode only)",
-        "tags": [
-          "organizations"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "organizationId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^team_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "teamId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Success; no response body."
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      }
-    },
-    "/api/v1/organizations/{organizationId}/teams/{teamId}/members": {
-      "get": {
-        "operationId": "listTeamMembers",
-        "summary": "External team members (header mode only)",
-        "tags": [
-          "organizations"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "organizationId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^team_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "teamId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/TeamMember"
-                      }
-                    },
-                    "nextCursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "minLength": 1,
-                      "description": "Opaque cursor. Pass back unchanged with the original filters."
-                    }
-                  },
-                  "required": [
-                    "items",
-                    "nextCursor"
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      }
-    },
-    "/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}": {
-      "put": {
-        "operationId": "putTeamMember",
-        "summary": "Add an organization member to an external team",
-        "tags": [
-          "organizations"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "organizationId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^team_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "teamId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "userId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Success; no response body."
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      },
-      "delete": {
-        "operationId": "deleteTeamMember",
-        "summary": "Remove an external team member",
-        "tags": [
-          "organizations"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "organizationId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^team_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "teamId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "userId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Success; no response body."
           },
           "default": {
             "$ref": "#/components/responses/Problem"

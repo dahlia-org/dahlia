@@ -2,14 +2,10 @@ export * from "./app";
 export * from "./auth/better-auth";
 export * from "./auth/identity";
 export {
-  createD1ApplicationStore,
-  createD1AuthStore,
   createSqliteApplicationStore,
   createSqliteAuthStore,
   type ApplicationStore,
   type AuthStore,
-  type D1DatabaseLike,
-  type D1PreparedStatementLike,
   type DahliaOAuthSession,
   type AdminUserRecord,
   type RemoveAdminResult,

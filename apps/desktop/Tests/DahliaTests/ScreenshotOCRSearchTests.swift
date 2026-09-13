@@ -18,6 +18,7 @@ import Synchronization
             )
             var vault = makeVault()
             vault.accountConnectionId = connection.id
+            vault.organizationId = vault.accountConnectionId == nil ? nil : (vault.organizationId ?? .v7())
             let meeting = makeMeeting(vaultID: vault.id)
             let screenshot = MeetingScreenshotRecord(
                 id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now, imageData: Data([1]), mimeType: "image/png"
@@ -34,7 +35,10 @@ import Synchronization
                 if capability == "detached" {
                     do {
                         try queue.write { db in
-                            try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL WHERE id = ?", arguments: [vaultID])
+                            try db.execute(
+                                sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?",
+                                arguments: [vaultID]
+                            )
                         }
                     } catch { Issue.record(error) }
                 }
@@ -99,7 +103,10 @@ import Synchronization
             let drainTask = Task { await database.searchIndexer.drain() }
             let started = await pollUntil { await analyzer.callSizes.count == 1 }
             try await database.dbQueue.write { db in
-                try db.execute(sql: "UPDATE vaults SET accountConnectionId = ? WHERE id = ?", arguments: [connection.id, vault.id])
+                try db.execute(
+                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id) WHERE id = ?",
+                    arguments: [connection.id, vault.id]
+                )
             }
             await analyzer.releaseFirstWave()
             await drainTask.value
@@ -155,6 +162,7 @@ import Synchronization
                 var vault = makeVault()
                 vault.path = nil
                 vault.accountConnectionId = connection.id
+                vault.organizationId = vault.accountConnectionId == nil ? nil : (vault.organizationId ?? .v7())
                 return vault
             }()
             let hostedMeeting = makeMeeting(vaultID: hostedVault.id)

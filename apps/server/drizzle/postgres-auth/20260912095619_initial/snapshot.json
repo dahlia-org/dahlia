@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "b7ea50be-ba58-4912-a661-6bf11007b8e3",
+  "id": "c7189980-a101-42d5-8138-394062bd138d",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -1946,6 +1946,32 @@
       "table": "organization"
     },
     {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'team'",
+      "generated": null,
+      "identity": null,
+      "name": "kind",
+      "entityType": "columns",
+      "schema": "auth",
+      "table": "organization"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "domain",
+      "entityType": "columns",
+      "schema": "auth",
+      "table": "organization"
+    },
+    {
       "type": "uuid",
       "typeSchema": null,
       "notNull": true,
@@ -2370,6 +2396,19 @@
       "generated": null,
       "identity": null,
       "name": "ban_expires",
+      "entityType": "columns",
+      "schema": "auth",
+      "table": "user"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'personal'",
+      "generated": null,
+      "identity": null,
+      "name": "registration_state",
       "entityType": "columns",
       "schema": "auth",
       "table": "user"
@@ -3611,6 +3650,17 @@
       ],
       "nullsNotDistinct": false,
       "name": "organization_slug_key",
+      "schema": "auth",
+      "table": "organization",
+      "entityType": "uniques"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "domain"
+      ],
+      "nullsNotDistinct": false,
+      "name": "organization_domain_key",
       "schema": "auth",
       "table": "organization",
       "entityType": "uniques"

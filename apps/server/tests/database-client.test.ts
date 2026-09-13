@@ -5,7 +5,6 @@ import { EventEmitter } from "node:events";
 import { Pool } from "pg";
 
 import type { AppConfig } from "../src/config";
-import { createD1ApplicationStore } from "../src/auth/store";
 import { connectApplicationDatabase, ensureSearchIndexes, migrateApplicationDatabase, postgresMigrationConfigs, readPostgresMigrations } from "../src/db/client";
 import { createPostgresPool } from "../src/db/postgres";
 import { postgresMigrations, serverMigrationManifest } from "../src/migrations";
@@ -93,11 +92,6 @@ describe("PostgreSQL migrations", () => {
     }
   });
 
-  it("fails D1 sync closed until writes use atomic D1 batches", async () => {
-    const store = createD1ApplicationStore({ batch: vi.fn(), prepare: vi.fn() });
-    expect(await store.sync.isAvailable()).toBe(false);
-  });
-
   it("migrates generated auth tables before application tables in every authentication mode", () => {
     expect(postgresMigrations(serverMigrationManifest).map(({ id }) => id))
       .toEqual(["auth", "server"]);
@@ -169,20 +163,20 @@ describe("PostgreSQL migrations", () => {
     const [authDirectory, applicationDirectory] = serverMigrationManifest.postgres.directories;
     const authMigrations = readPostgresMigrations({ migrationsFolder: authDirectory!.path });
     const applicationMigrations = readPostgresMigrations({ migrationsFolder: applicationDirectory!.path });
-    expect(authMigrations.map(({ name }) => name)).toEqual(["20260903034253_melodic_scalphunter"]);
+    expect(authMigrations.map(({ name }) => name)).toEqual(["20260912095619_initial"]);
     expect(applicationMigrations.map(({ name }) => `${name}/migration.sql`)).toEqual(applicationDirectory!.files);
     expect([...authMigrations, ...applicationMigrations].every(({ hash, sql }) => hash.length === 64 && sql.length > 0))
       .toBe(true);
     const authSql = authMigrations.flatMap((migration) => migration.sql).join("\n");
     const sql = applicationMigrations.flatMap((migration) => migration.sql).join("\n");
     const snapshot = readFileSync(
-      new URL("../drizzle/postgres/20260909134056_initial/snapshot.json", import.meta.url),
+      new URL("../drizzle/postgres/20260912095620_initial/snapshot.json", import.meta.url),
       "utf8",
     );
     expect(authSql).toContain('CREATE TABLE "auth"."user"');
     expect(authSql).not.toContain('CREATE SCHEMA "app"');
     expect(sql).not.toContain('CREATE SCHEMA "auth"');
-    expect(sql).toContain('FROM "auth"."member"');
+    expect(sql).toContain('FROM auth.member');
     expect(sql).not.toContain('CREATE TABLE "auth"."member"');
     expect(sql).not.toContain('model_alias');
     expect(sql).not.toContain('CREATE TABLE "app"."artifact"');
@@ -191,7 +185,7 @@ describe("PostgreSQL migrations", () => {
     expect(sql).toContain('"granted_by_user_id" uuid NOT NULL');
     expect(sql).not.toContain('"granted_by_principal_id"');
     expect(sql).toContain('CONSTRAINT "vault_permission_granted_by_user_fk"');
-    expect(sql).toContain('CONSTRAINT "search_index_job_owner_user_fk"');
+    expect(sql).not.toContain('CONSTRAINT "search_index_job_owner_user_fk"');
     expect(sql).toContain('REFERENCES "auth"."user"("id")');
     expect(sql).toContain('CREATE TABLE "app"."meetings"');
     expect(sql).toContain('CREATE TABLE "app"."transcript_segments"');
@@ -212,11 +206,11 @@ describe("PostgreSQL migrations", () => {
     expect(sql).toContain("CREATE POLICY");
     expect(sql).toContain("current_setting('app.user_id', true)");
     expect(sql).not.toContain("SET search_path = pg_catalog");
-    expect(sql).toContain('FROM "auth"."member"');
+    expect(sql).toContain('FROM auth.member');
     expect(sql).not.toContain("dahlia.organization_ids");
     expect(sql).not.toContain("dahlia.deployment_principal_id");
     expect(sql).not.toContain("dahlia.sync_sharing_enabled");
-    expect(sql).toContain('CREATE UNIQUE INDEX "vault_permission_single_owner_idx"');
+    expect(sql).not.toContain('CREATE UNIQUE INDEX "vault_permission_single_owner_idx"');
     expect(sql).toContain('CREATE UNIQUE INDEX "member_user_organization_idx" ON "auth"."member" ("user_id","organization_id")');
     expect(sql).toContain('CREATE UNIQUE INDEX "team_member_user_team_idx" ON "auth"."team_member" ("user_id","team_id")');
     expect(sql).toContain('"app"."current_identity_can_read_vault"("app"."vaults"."vault_id")');

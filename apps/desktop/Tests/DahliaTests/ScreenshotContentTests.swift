@@ -420,7 +420,7 @@
             )
             try await first.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ? WHERE id = ?",
+                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncConfirmedConnectionId = ? WHERE id = ?",
                     arguments: [first.connectionId, first.connectionId, second.vaultId]
                 )
                 try db.execute(
@@ -587,7 +587,7 @@
                 try await provider.content(id: fixture.screenshotId, dbQueue: fixture.dbQueue)
             }
             try await fixture.dbQueue.write { db in
-                try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL WHERE id = ?", arguments: [fixture.vaultId])
+                try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?", arguments: [fixture.vaultId])
             }
             await #expect(throws: ScreenshotContentError.authorizationRequired) {
                 try await provider.content(id: fixture.screenshotId, dbQueue: fixture.dbQueue)
@@ -617,7 +617,10 @@
             #expect(refreshes.withLock { $0 } == [false, true])
             let disconnecting = ScreenshotContentProvider(session: URLSession(configuration: config), tokenProvider: { _, _ in
                 try await fixture.dbQueue.write { db in
-                    try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL WHERE id = ?", arguments: [fixture.vaultId])
+                    try db.execute(
+                        sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?",
+                        arguments: [fixture.vaultId]
+                    )
                 }
                 return "test-token"
             })
@@ -811,7 +814,7 @@
             let local = try ScreenshotContentFixture(dbQueue: server.dbQueue)
             try await local.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = NULL, syncConfirmedConnectionId = NULL WHERE id = ?",
+                    sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL, syncRole = NULL, syncConfirmedConnectionId = NULL WHERE id = ?",
                     arguments: [local.vaultId]
                 )
             }
@@ -850,7 +853,7 @@
     /// Canonical text responses for cached bodies and the fixtures' empty transcripts.
     private func cachedTextResponse(_ request: URLRequest, queue: DatabaseQueue) -> (Int, [String: String], Data)? {
         guard let url = request.url else { return nil }
-        if url.path.hasSuffix("/capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4}}".utf8)) }
+        if url.path.hasSuffix("/capabilities") { return (200, [:], Data("{\"sync\":{\"version\":5}}".utf8)) }
         if url.path.hasSuffix("/changes") {
             return (
                 200,
@@ -955,6 +958,8 @@
             let connection = DahliaAccountConnectionRecord(id: connectionId, origin: source.origin, clientID: "test", createdAt: .now)
             var vault = VaultRecord(id: vaultId, path: nil, name: "Vault", createdAt: .now, lastOpenedAt: .now)
             vault.accountConnectionId = connectionId
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = connectionId
             vault.syncPullCursor = "cursor"
             let meeting = MeetingRecord(id: meetingId, vaultId: vaultId, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now)

@@ -1,9 +1,6 @@
-import { EXTERNAL_ORGANIZATION_ID } from "../src/auth/ids";
-import { encodeId } from "../src/typeid";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeSignature } from "better-auth/crypto";
 import { Client } from "pg";
 import { expect, it } from "vitest";
 
@@ -15,11 +12,11 @@ import type { AppConfig } from "../src/config";
 // PostgreSQL requires a dedicated empty database; this test installs its migrations.
 for (const databaseType of ["sqlite", "postgres"] as const) {
   it.runIf(databaseType === "sqlite" || process.env.TEST_AUTH_DATABASE_URL)(
-    `preserves default organization deletion across sessions and store restart on ${databaseType}`,
+    `preserves domain membership opt-out across sessions and store restart on ${databaseType}`,
     async () => {
       const directory = mkdtempSync(join(tmpdir(), "dahlia-default-organization-"));
       const config: AppConfig = {
-        authProvider: "accounts", authHeader: "X-Forwarded-Email", databaseType,
+        authProvider: "header", authHeader: "X-Forwarded-Email", databaseType,
         databaseUrl: databaseType === "sqlite" ? `file:${join(directory, "auth.sqlite")}` : process.env.TEST_AUTH_DATABASE_URL,
         baseUrl: "http://localhost:5173", googleClientId: "google-client", googleClientSecret: "google-secret",
         betterAuthSecret: "test-only-better-auth-secret-value", oauthRedirectUris: [], maxRequestBytes: 1024,
@@ -36,29 +33,26 @@ for (const databaseType of ["sqlite", "postgres"] as const) {
       try {
         await store.migrate();
         const auth = await initializeDahliaAuth(config, store);
-        const context = await auth.$context;
-        const user = await context.internalAdapter.createUser({ name: "First user", email: "first@example.com", emailVerified: true }, { method: "oauth", oauth: { providerId: "google", profile: {} } });
-        const session = await context.internalAdapter.createSession(user.id);
-        const cookie = `${context.authCookies.sessionToken.name}=${encodeURIComponent(`${session.token}.${await makeSignature(session.token, config.betterAuthSecret!)}`)}`;
-        const headers = { cookie, origin: config.baseUrl };
+        const signIn = async (email: string) => {
+          const response = await auth.handler(new Request(`${config.baseUrl}/api/auth/header/sign-in`, { method: "POST", headers: { origin: config.baseUrl, "X-Forwarded-Email": email } }));
+          expect(response.status).toBe(200);
+          return { cookie: response.headers.getSetCookie().map((v) => v.split(";")[0]).join("; "), origin: config.baseUrl, "X-Forwarded-Email": email };
+        };
+        const headers = await signIn("first@example.com");
+        const user = (await auth.api.getSession({ headers }))!.user;
         let app = createApp({ config, authStore: store, auth });
         expect((await app.request("/api/v1/session", { headers })).status).toBe(200);
-        expect(await store.getExternalOrganization(user.id)).toMatchObject({ id: EXTERNAL_ORGANIZATION_ID, role: "owner" });
-        const deleted = await app.request("/api/auth/organization/delete", {
-          method: "POST", headers: { ...headers, "content-type": "application/json" },
-          body: JSON.stringify({ organizationId: encodeId("organization", EXTERNAL_ORGANIZATION_ID) }),
-        });
-        expect(deleted.status, await deleted.text()).toBe(200);
-        expect(await store.listServerOrganizations(10, 0)).toEqual([]);
-        for (let attempt = 0; attempt < 2; attempt++) {
-          expect((await app.request("/api/v1/session", { headers })).status).toBe(200);
-          expect(await store.listServerOrganizations(10, 0)).toEqual([]);
-        }
+        const organization = (await auth.api.listOrganizations({ headers })).find((org) => org.domain === "example.com")!;
+        expect(await store.getServerOrganization(organization.id, 10, 0, 0)).toMatchObject({ members: [expect.objectContaining({ userId: user.id, role: "owner" })] });
+        const secondHeaders = await signIn("second@example.com");
+        await auth.api.leaveOrganization({ headers: secondHeaders, body: { organizationId: organization.id } });
+        await signIn("second@example.com");
+        expect((await store.getServerOrganization(organization.id, 10, 0, 0))?.members.map((member) => member.userId)).toEqual([user.id]);
         await store.close?.();
         store = createNodeAuthStore(config);
         app = createApp({ config, authStore: store, auth: await initializeDahliaAuth(config, store) });
-        expect((await app.request("/api/v1/session", { headers })).status).toBe(200);
-        expect(await store.listServerOrganizations(10, 0)).toEqual([]);
+        expect((await app.request("/api/v1/session", { headers: secondHeaders })).status).toBe(200);
+        expect((await store.getServerOrganization(organization.id, 10, 0, 0))?.members.map((member) => member.userId)).toEqual([user.id]);
       } finally {
         await store.close?.();
         rmSync(directory, { recursive: true, force: true });

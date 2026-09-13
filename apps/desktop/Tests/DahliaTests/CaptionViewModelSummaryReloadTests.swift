@@ -51,7 +51,10 @@ import GRDB
                 try connection.insert(db)
                 try SummaryExportRecord.setURL("https://docs.google.com/document/d/old/edit", meetingId: context.meetingID, type: .googleDocs, in: db)
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ?, syncPullCursor = 'ready' WHERE id = ?",
+                    sql: """
+                    UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'),
+                    syncConfirmedConnectionId = ?, syncPullCursor = 'ready' WHERE id = ?
+                    """,
                     arguments: [connection.id, connection.id, vaultId]
                 )
                 try db.execute(
@@ -103,7 +106,7 @@ import GRDB
             try await context.manager.dbQueue.write { db in
                 try connection.insert(db)
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ? WHERE id = ?",
+                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'), syncConfirmedConnectionId = ? WHERE id = ?",
                     arguments: [connection.id, connection.id, vaultId]
                 )
                 try TranscriptContent(
@@ -154,7 +157,10 @@ import GRDB
             try await queue.write { db in
                 try connection.insert(db)
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ?, syncPullCursor = 'ready'",
+                    sql: """
+                    UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'),
+                    syncConfirmedConnectionId = ?, syncPullCursor = 'ready'
+                    """,
                     arguments: [connection.id, connection.id]
                 )
                 try TranscriptContent(

@@ -18,6 +18,7 @@
                 createdAt: .now,
                 lastOpenedAt: .now,
                 accountConnectionId: connection.id,
+                organizationId: .v7(), syncRole: "admin",
                 syncConfirmedConnectionId: connection.id
             )
             let destination = VaultRecord(
@@ -27,6 +28,7 @@
                 createdAt: .now,
                 lastOpenedAt: .now,
                 accountConnectionId: connection.id,
+                organizationId: .v7(), syncRole: "admin",
                 syncConfirmedConnectionId: connection.id
             )
             let root = ProjectRecord(id: .v7(), vaultId: source.id, parentProjectId: nil, name: "Root", createdAt: .now, projectType: .undefined)
@@ -63,7 +65,13 @@
             }
             try AppDatabaseManager.migrator.migrate(queue)
             let relocation = VaultRelocation(
-                vaults: [.init(vaultId: destination.id, name: destination.name, createdAt: .now, role: "owner")],
+                vaults: [.init(
+                    vaultId: destination.id,
+                    organizationId: destination.organizationId ?? .v7(),
+                    name: destination.name,
+                    createdAt: .now,
+                    role: "admin"
+                )],
                 items: [
                     .init(entity: .meeting, id: meeting.id, vaultId: destination.id),
                     .init(entity: .project, id: child.id, vaultId: destination.id),
@@ -93,6 +101,7 @@
                 createdAt: .now,
                 lastOpenedAt: .now,
                 accountConnectionId: connection.id,
+                organizationId: .v7(), syncRole: "admin",
                 syncConfirmedConnectionId: connection.id
             )
             let meeting = MeetingRecord(id: .v7(), vaultId: source.id, projectId: nil, name: "Local", createdAt: .now, updatedAt: .now)
@@ -138,7 +147,7 @@
                 }
             }
             let relocation = VaultRelocation(
-                vaults: [.init(vaultId: target, name: "Destination", createdAt: .now, role: "owner")],
+                vaults: [.init(vaultId: target, organizationId: .v7(), name: "Destination", createdAt: .now, role: "admin")],
                 items: [.init(entity: .meeting, id: meeting.id, vaultId: target)]
             )
             let shouldPause = !["saved", "remote", "acknowledged"].contains(state)
@@ -165,7 +174,7 @@
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://example.com", clientID: "test", createdAt: .now)
             let source = VaultRecord(
                 id: .v7(), path: nil, name: "Source", createdAt: .now, lastOpenedAt: .now,
-                accountConnectionId: connection.id, syncConfirmedConnectionId: connection.id
+                accountConnectionId: connection.id, organizationId: .v7(), syncRole: "admin", syncConfirmedConnectionId: connection.id
             )
             var destination = source
             destination.id = .v7()
@@ -191,7 +200,13 @@
                     .insert(db)
             }
             let relocation = VaultRelocation(
-                vaults: [.init(vaultId: destination.id, name: "Destination", createdAt: .now, role: "owner")],
+                vaults: [.init(
+                    vaultId: destination.id,
+                    organizationId: destination.organizationId ?? .v7(),
+                    name: "Destination",
+                    createdAt: .now,
+                    role: "admin"
+                )],
                 items: [.init(entity: .meeting, id: meeting.id, vaultId: destination.id)]
             )
             if recordingVault == "local" {

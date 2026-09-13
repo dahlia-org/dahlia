@@ -18,7 +18,7 @@ struct VaultAppearanceButton: View {
                 .contentShape(.rect)
         }
         .buttonStyle(.borderless)
-        .disabled(!vault.allowsCanonicalEdits)
+        .disabled(!vault.allowsVaultManagement)
         .help(L10n.appearance)
         .accessibilityLabel(L10n.appearance)
         .popover(isPresented: $isPresented) {

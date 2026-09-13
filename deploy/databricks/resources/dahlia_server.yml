@@ -46,6 +46,10 @@ resources:
         env:
           - name: DAHLIA_AUTH_TYPE
             value: header
+          - name: DAHLIA_AUTH_PROVIDER_ID
+            value: databricks
+          - name: DAHLIA_AUTH_SECRET
+            value: test-only-better-auth-secret-value
           - name: DAHLIA_AI_BACKEND
             value: databricks
           - name: DATABRICKS_MODEL_SCHEMA

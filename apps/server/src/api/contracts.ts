@@ -79,6 +79,7 @@ export type OperationId =
   "getHealth" | "getOpenAPI" | "getSession" | "listSessions" | "revokeSession"
   | "listAdministrators" | "addAdministrator" | "removeAdministrator" | "listServerUsers" | "listServerOrganizations"
   | "getServerOrganization" | "getSearchSettings" | "updateSearchSettings"
+  | "listGovernanceVaults" | "confirmVaultDeletion" | "forceDeleteVault"
   | "getSettings" | "updateSettings" | "getCapabilities" | "listVaults" | "getVault"
   | "listProjects" | "getProject" | "listMeetings" | "getMeeting" | "listSummaries"
   | "getSummary" | "getLatestSummary" | "listTranscripts" | "getTranscript" | "getLatestTranscript"
@@ -90,8 +91,7 @@ export type OperationId =
   | "headFileContent" | "getFileVariant" | "headFileVariant" | "putRecordingContent" | "listRecordings"
   | "getRecordingContent" | "headRecordingContent" | "getTransferAudience" | "transferVault" | "getRelocations"
   | "searchPermissionTargets" | "putUserPermission" | "deleteUserPermission" | "listPermissions" | "putOrganizationPermission" | "deleteOrganizationPermission" | "putTeamPermission" | "deleteTeamPermission"
-  | "listOrganizations" | "getOrganization" | "listOrganizationMembers" | "listTeams" | "createTeam"
-  | "updateTeam" | "deleteTeam" | "listTeamMembers" | "putTeamMember" | "deleteTeamMember";
+  | "listOrganizations" | "createOrganization";
 export const contracts: Record<OperationId, RouteConfig & { operationId: string }> = {
   getHealth: createRoute({ method: "get", path: "/healthz", operationId: "getHealth", security: [], summary: "Process health", responses: { 200: json(z.object({ status: z.literal("ok") })) } }),
   getOpenAPI: createRoute({ method: "get", path: "/openapi.json", operationId: "getOpenAPI", security: [], summary: "Public OpenAPI 3.1 contract", responses: { 200: json(z.looseObject({ openapi: z.literal("3.1.0"), info: z.looseObject({ title: z.string(), version: z.string() }), paths: z.record(z.string(), z.unknown()) })) } }),
@@ -115,7 +115,7 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   getSettings: route("get", "/api/v1/account/settings", "getSettings", "Read current account settings", { 200: json(settingsEnvelope) }),
   updateSettings: route("patch", "/api/v1/account/settings", "updateSettings", "Merge supplied fields, including nested summary settings; maximum 8 KiB", { 200: json(settingsEnvelope) }, body(accountSettingsPatchSchema, { outputLanguage: "ja" })),
   getCapabilities: route("get", "/api/v1/capabilities", "getCapabilities", "Discover feature versions; unsupported features are omitted", { 200: json(S.capabilities) }),
-  listVaults: route("get", "/api/v1/vaults", "listVaults", "Accessible Vaults", { 200: json(S.page(S.vault)) }, { query: z.object({ owner: S.principalId.optional(), organizationId: S.principalId.optional() }).strict() }),
+  listVaults: route("get", "/api/v1/vaults", "listVaults", "Accessible Vaults", { 200: json(S.page(S.vault)) }, { query: z.object({ organizationId: S.principalId.optional() }).strict() }),
   getVault: route("get", v, "getVault", "Get Vault", { 200: json(S.vault) }),
   listProjects: route("get", `${v}/projects`, "listProjects", "Vault project tree", { 200: json(S.page(S.project)) }),
   getProject: route("get", "/api/v1/projects/{projectId}", "getProject", "Resolve and get an accessible Project", { 200: json(S.project) }),
@@ -160,27 +160,22 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   listRecordings: route("get", `${m}/recordings`, "listRecordings", "Committed recordings by meeting-local number; 200 per page", { 200: json(S.page(S.recording)) }, { query: S.pageQuery }),
   getRecordingContent: route("get", `${m}/recordings/{recordingId}/audio/{source}`, "getRecordingContent", "Stream recording audio", { ...binaryResponses, 200: { ...binary, content: { "audio/mp4": { schema: z.string().openapi({ format: "binary" }) } } }, 206: { ...binary, content: { "audio/mp4": { schema: z.string().openapi({ format: "binary" }) } } } }, { headers: readHeaders }),
   headRecordingContent: route("head", `${m}/recordings/{recordingId}/audio/{source}`, "headRecordingContent", "Recording headers; Range ignored; no body", { 200: { description: "Full representation headers", headers: binaryHeaders }, 304: empty }, { headers: readHeaders }),
-  getTransferAudience: route("get", `${v}/transfer-audience`, "getTransferAudience", "Preview readers gaining or losing access; owner only", { 200: json(z.object({ audienceHash: z.string(), removed: z.array(S.person), added: z.array(S.person) })) }, { query: z.object({ destinationVaultId: S.id }).strict() }),
-  transferVault: route("post", `${v}/transfer`, "transferVault", "Move all content after revision and audience checks; owner only", { 200: json(z.object({ id: S.id, status: z.literal("committed"), sourceVaultId: S.id, destinationVaultId: S.id })) }, { ...body(z.object({ destinationVaultId: S.id, sourceRevision: S.integer, destinationRevision: S.integer, audienceHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict()), headers: z.object({ "idempotency-key": z.uuidv7().meta({ format: "uuidv7" }) }) }),
+  getTransferAudience: route("get", `${v}/transfer-audience`, "getTransferAudience", "Preview readers gaining or losing access; admin only", { 200: json(z.object({ audienceHash: z.string(), removed: z.array(S.person), added: z.array(S.person) })) }, { query: z.object({ destinationVaultId: S.id }).strict() }),
+  transferVault: route("post", `${v}/transfer`, "transferVault", "Move all content after revision and audience checks; admin only", { 200: json(z.object({ id: S.id, status: z.literal("committed"), sourceVaultId: S.id, destinationVaultId: S.id })) }, { ...body(z.object({ destinationVaultId: S.id, sourceRevision: S.integer, destinationRevision: S.integer, audienceHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict()), headers: z.object({ "idempotency-key": z.uuidv7().meta({ format: "uuidv7" }) }) }),
   getRelocations: route("get", `${v}/relocations`, "getRelocations", "Resolve moved resources to currently accessible Vaults", { 200: json(z.object({ vaults: z.array(S.vault), items: z.array(z.object({ entity: z.enum(["project", "meeting", "file"]), id: S.id, vaultId: S.id })) })) }),
-  searchPermissionTargets: route("get", `${v}/permission-targets`, "searchPermissionTargets", "Search own organizations, their teams and co-members; owner only; 50 per type per page", { 200: json(S.page(S.permission.pick({ principalType: true, principalId: true }).extend({ name: z.string(), detail: z.string() }))) }, { query: z.object({ q: z.string().trim().max(200).optional(), cursor: S.cursor.optional() }).strict() }, browser),
-  putUserPermission: route("put", `${v}/permissions/users/{userId}`, "putUserPermission", "Grant read-only access to a fellow organization member; owner only", { 204: empty }, {}, browser),
-  deleteUserPermission: route("delete", `${v}/permissions/users/{userId}`, "deleteUserPermission", "Revoke direct user access; owner only", { 204: empty }, {}, browser),
+  searchPermissionTargets: route("get", `${v}/permission-targets`, "searchPermissionTargets", "Search own organizations, their teams and co-members; admin only; 50 per type per page", { 200: json(S.page(S.permission.pick({ principalType: true, principalId: true }).extend({ name: z.string(), detail: z.string() }))) }, { query: z.object({ q: z.string().trim().max(200).optional(), cursor: S.cursor.optional() }).strict() }, browser),
+  putUserPermission: route("put", `${v}/permissions/users/{userId}`, "putUserPermission", "Grant access to a known user; admin only", { 204: empty }, body(z.object({ role: S.permission.shape.role }).strict()), browser),
+  deleteUserPermission: route("delete", `${v}/permissions/users/{userId}`, "deleteUserPermission", "Revoke direct user access; admin only", { 204: empty }, {}, browser),
   listPermissions: route("get", `${v}/permissions`, "listPermissions", "Read Vault sharing permissions", { 200: json(S.page(S.permission)) }, {}, browser),
-  putOrganizationPermission: route("put", `${v}/permissions/organizations/{organizationId}`, "putOrganizationPermission", "Grant read-only organization access; owner only", { 204: empty }, {}, browser),
-  deleteOrganizationPermission: route("delete", `${v}/permissions/organizations/{organizationId}`, "deleteOrganizationPermission", "Revoke organization access; owner only", { 204: empty }, {}, browser),
-  putTeamPermission: route("put", `${v}/permissions/teams/{teamId}`, "putTeamPermission", "Grant read-only team access; owner only", { 204: empty }, {}, browser),
-  deleteTeamPermission: route("delete", `${v}/permissions/teams/{teamId}`, "deleteTeamPermission", "Revoke team access; owner only", { 204: empty }, {}, browser),
+  putOrganizationPermission: route("put", `${v}/permissions/organizations/{organizationId}`, "putOrganizationPermission", "Grant organization access; admin only", { 204: empty }, body(z.object({ role: S.permission.shape.role }).strict()), browser),
+  deleteOrganizationPermission: route("delete", `${v}/permissions/organizations/{organizationId}`, "deleteOrganizationPermission", "Revoke organization access; admin only", { 204: empty }, {}, browser),
+  putTeamPermission: route("put", `${v}/permissions/teams/{teamId}`, "putTeamPermission", "Grant team access; admin only", { 204: empty }, body(z.object({ role: S.permission.shape.role }).strict()), browser),
+  deleteTeamPermission: route("delete", `${v}/permissions/teams/{teamId}`, "deleteTeamPermission", "Revoke team access; admin only", { 204: empty }, {}, browser),
+  listGovernanceVaults: route("get", `${o}/vaults`, "listGovernanceVaults", "Organization Vault metadata; organization owner or admin only", { 200: json(S.page(S.governanceVault)) }, { query: S.pageQuery }, browser),
+  confirmVaultDeletion: route("get", `${o}/vaults/{vaultId}/deletion`, "confirmVaultDeletion", "Confirm the current Vault revision and content cursor", { 200: json(S.governanceVault.extend({ changeCursor: S.cursor })) }, {}, browser),
+  forceDeleteVault: route("delete", `${o}/vaults/{vaultId}`, "forceDeleteVault", "Delete a Team Organization Vault after confirmation", { 200: json(S.receipt) }, body(z.object({ id: S.id, revision: S.integer, changeCursor: S.cursor }).strict()), browser),
+  createOrganization: route("post", "/api/v1/organizations", "createOrganization", "Create a Team Organization and creator membership through Better Auth", { 201: json(S.organization) }, body(z.object({ name: z.string().trim().min(1).max(200), slug: z.string().min(1).max(200).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/) }).strict())),
   listOrganizations: route("get", "/api/v1/organizations", "listOrganizations", "Current organization memberships", { 200: json(S.page(S.organization)) }),
-  getOrganization: route("get", o, "getOrganization", "External organization (header mode only)", { 200: json(S.organization) }, {}, browser),
-  listOrganizationMembers: route("get", `${o}/members`, "listOrganizationMembers", "External organization members (header mode only)", { 200: json(S.page(z.object({ id: S.principalId, userId: S.principalId, role: z.string(), user: S.person.omit({ id: true }) }))) }, {}, browser),
-  listTeams: route("get", `${o}/teams`, "listTeams", "External teams (header mode only)", { 200: json(S.page(S.team)) }, {}, browser),
-  createTeam: route("post", `${o}/teams`, "createTeam", "Create external team (header mode only)", { 201: created(S.team) }, body(z.object({ name: z.string().trim().min(1).max(100) }).strict()), browser),
-  updateTeam: route("patch", `${o}/teams/{teamId}`, "updateTeam", "Rename external team (header mode only)", { 200: json(S.team) }, body(z.object({ name: z.string().trim().min(1).max(100) }).strict()), browser),
-  deleteTeam: route("delete", `${o}/teams/{teamId}`, "deleteTeam", "Delete external team (header mode only)", { 204: empty }, {}, browser),
-  listTeamMembers: route("get", `${o}/teams/{teamId}/members`, "listTeamMembers", "External team members (header mode only)", { 200: json(S.page(S.person.omit({ id: true }).extend({ id: S.principalId, userId: S.principalId, teamId: S.principalId }).openapi("TeamMember"))) }, {}, browser),
-  putTeamMember: route("put", `${o}/teams/{teamId}/members/{userId}`, "putTeamMember", "Add an organization member to an external team", { 204: empty }, {}, browser),
-  deleteTeamMember: route("delete", `${o}/teams/{teamId}/members/{userId}`, "deleteTeamMember", "Remove an external team member", { 204: empty }, {}, browser),
 };
 
 /** The route owns request validation and documentation; service methods own business validation.

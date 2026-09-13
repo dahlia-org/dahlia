@@ -202,7 +202,7 @@
             try await fixture.database.dbQueue.write { db in
                 try connection.insert(db)
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ? WHERE id = ?",
+                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'), syncConfirmedConnectionId = ? WHERE id = ?",
                     arguments: [connection.id, connection.id, fixture.meeting.vaultId]
                 )
             }

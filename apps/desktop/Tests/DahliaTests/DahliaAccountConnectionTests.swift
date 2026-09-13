@@ -50,11 +50,6 @@
             #expect(migrated.summaryModelID == "gpt-5.6-luna")
             #expect(!migrated.aiSettingsBackfilled)
 
-            _ = try await repository.adoptVaultForServerSync(
-                id: migrated.id,
-                connectionID: connection.id,
-                serverVault: nil
-            )
             try await repository.deleteDahliaAccountConnection(id: connection.id)
 
             migrated = try #require(try await queue.read { db in try VaultRecord.fetchOne(db, key: vault.id) })
@@ -78,7 +73,16 @@
             _ = try await repository.adoptVaultForServerSync(
                 id: vault.id,
                 connectionID: connection.id,
-                serverVault: nil
+                serverVault: .init(
+                    vaultId: vault.id,
+                    connectionId: connection.id,
+                    organizationId: .v7(),
+                    name: vault.name,
+                    createdAt: .now,
+                    revision: 1,
+                    role: "admin"
+                ),
+                expectedChanges: manager.dbQueue.read { $0.totalChangesCount }
             )
             _ = try await repository.updateVaultAISettings(staleSettings)
 
@@ -239,8 +243,10 @@
             )
             var vault = makeVault(name: "Server")
             vault.accountConnectionId = connection.id
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = connection.id
-            vault.syncRole = "owner"
+            vault.syncRole = "admin"
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertVault(vault)
             let queuedVault = vault
@@ -268,7 +274,7 @@
             let local = try #require(try repository.fetchAllVaults().first)
             #expect(local.accountConnectionId == connection.id)
             #expect(local.syncConfirmedConnectionId == connection.id)
-            #expect(local.syncRole == "owner")
+            #expect(local.syncRole == "admin")
             #expect(store.credential(for: connection.id) != nil)
             #expect(controller.errorMessage != nil)
             #expect(try await manager.dbQueue.read { db in
@@ -291,8 +297,10 @@
             )
             var vault = makeVault(name: "Server")
             vault.accountConnectionId = connection.id
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = connection.id
-            vault.syncRole = "member"
+            vault.syncRole = "viewer"
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertVault(vault)
             let store = CredentialStoreFake(values: [connection.id: credential])
@@ -319,8 +327,10 @@
             )
             var vault = makeVault(name: "Server")
             vault.accountConnectionId = connection.id
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = connection.id
-            vault.syncRole = "owner"
+            vault.syncRole = "admin"
             let meeting = MeetingRecord(
                 id: .v7(), vaultId: vault.id, projectId: nil, name: "Recording",
                 createdAt: .now, updatedAt: .now

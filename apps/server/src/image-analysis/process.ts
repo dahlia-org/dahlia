@@ -41,6 +41,10 @@ export async function processImageAnalysisJob(
     }));
     const bytes = new Uint8Array(await new Response(bounded).arrayBuffer());
     signal.throwIfAborted();
+    if (!await syncStore.withIdentity(identity, (scoped) => scoped.loadImageAnalysis(job))) {
+      await jobs.finish(job);
+      return true;
+    }
     const analysis = await captioner.analyze(bytes, settings, signal).catch((error: unknown) => {
       throw error instanceof ImageAnalysisError ? error : new ImageAnalysisError("captioning_processing_failed", true);
     });

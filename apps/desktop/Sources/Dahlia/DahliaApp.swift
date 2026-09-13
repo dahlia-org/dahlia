@@ -151,27 +151,17 @@ struct DahliaApp: App {
             ) {} message: {
                 Text(vaultManagementModel.errorMessage)
             }
-            .confirmationDialog(
-                vaultManagementModel.pendingServerAdoption.map {
-                    L10n.adoptVaultOnServerTitle($0.vault.name, serverVaultExists: $0.serverVault != nil)
-                } ?? "",
-                isPresented: Binding(
-                    get: { vaultManagementModel.pendingServerAdoption != nil },
-                    set: { if !$0 { cancelServerAdoption() } }
-                ),
-                titleVisibility: .visible
-            ) {
+            .overlay {
                 if let pending = vaultManagementModel.pendingServerAdoption {
-                    Button(pending.serverVault == nil ? L10n.moveVaultToServer : L10n.reconnectServerVault) {
-                        Task { await confirmServerAdoption(pending) }
-                    }
-                }
-                Button(L10n.keepLocalAccount, role: .cancel) {
-                    cancelServerAdoption()
-                }
-            } message: {
-                if let pending = vaultManagementModel.pendingServerAdoption {
-                    Text(L10n.adoptVaultOnServerDescription(serverVaultExists: pending.serverVault != nil))
+                    VaultImportView(
+                        pending: pending, isBusy: vaultManagementModel.updatingVaultAccountID != nil,
+                        onCancel: cancelServerAdoption,
+                        onReload: { await vaultManagementModel.reloadServerAdoption() },
+                        onCreateOrganization: { await vaultManagementModel.createAdoptionOrganization(name: $0) },
+                        onImport: { destinationId, organizationId in
+                            await confirmServerAdoption(pending, destinationId: destinationId, organizationId: organizationId)
+                        }
+                    )
                 }
             }
             .confirmationDialog(
@@ -480,8 +470,9 @@ struct DahliaApp: App {
         mainWindowNavigation.dismissDahliaSignIn()
     }
 
-    private func confirmServerAdoption(_ pending: PendingVaultServerAdoption) async {
-        guard let updated = await vaultManagementModel.confirmServerAdoption(pending) else {
+    private func confirmServerAdoption(_ pending: PendingVaultServerAdoption, destinationId: UUID?, organizationId: UUID?) async {
+        guard let updated = await vaultManagementModel.confirmServerAdoption(pending, destinationId: destinationId, organizationId: organizationId)
+        else {
             if vaultManagementModel.pendingServerAdoption == nil {
                 pendingSetupAdoptionVaultID = nil
             }

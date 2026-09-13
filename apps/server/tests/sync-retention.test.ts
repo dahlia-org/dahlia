@@ -1,3 +1,4 @@
+import { testOrganizationID } from "./public-test-client";
 import { testUserID, seedHeaderIdentity } from "./public-test-client";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -36,7 +37,7 @@ function id() {
 
 function body(vaultId: string, operations: Omit<SyncTransactionOperation, "id">[]) {
   return {
-    schemaVersion: 2, id: id(), vaultId, createdAt: new Date().toISOString(),
+    schemaVersion: 3, id: id(), vaultId, createdAt: new Date().toISOString(),
     operations: operations.map((operation) => ({ id: id(), ...operation })),
   };
 }
@@ -56,7 +57,7 @@ async function setup() {
   resources.push({ directory, store, raw });
   const service = new MeetingSyncService(store.sync);
   const vaultId = id();
-  const create = body(vaultId, [{ entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: {
+  const create = body(vaultId, [{ entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { organizationId: testOrganizationID,
     name: "Durable Vault", createdAt: new Date().toISOString(),
   } }]);
   const receipt = await service.commitTransaction(owner, create);
@@ -128,9 +129,9 @@ describe("sync history retention", () => {
 
   it("rolls back a failed SQLite prune and drains a ledger across bounded batches", async () => {
     const { store, raw, vaultId, receipt } = await setup();
-    const insert = raw.prepare("INSERT INTO sync_changes(owner_user_id, vault_id, entity, entity_id, action, revision, transaction_id) VALUES (?, ?, 'vault', ?, 'upsert', 1, ?)");
+    const insert = raw.prepare("INSERT INTO sync_changes(vault_id, entity, entity_id, action, revision, transaction_id) VALUES (?, 'vault', ?, 'upsert', 1, ?)");
     raw.exec("BEGIN");
-    for (let index = 0; index < 1_000; index++) insert.run(owner.userId, vaultId, vaultId, id());
+    for (let index = 0; index < 1_000; index++) insert.run(vaultId, vaultId, id());
     raw.prepare("UPDATE sync_vault_state SET latest_sequence = (SELECT max(sequence) FROM sync_changes) WHERE vault_id = ?").run(vaultId);
     raw.exec("COMMIT");
     expire(raw);
@@ -139,7 +140,7 @@ describe("sync history retention", () => {
     expect(raw.prepare("SELECT pruned_through FROM sync_vault_state").get()).toEqual({ pruned_through: 0 });
     expect(raw.prepare("SELECT count(*) AS count FROM sync_changes").get()).toEqual({ count: 1_001 });
     raw.exec("DROP TRIGGER fail_prune");
-    const first = await store.sync.pruneHistoryBatch({ ownerUserId: owner.userId, vaultId });
+    const first = await store.sync.pruneHistoryBatch({ vaultId });
     expect(first).toEqual({ changesDeleted: 1_000, receiptsCompacted: 1 });
     expect(await pruneSyncHistory(store.sync)).toEqual({ changesDeleted: 1, receiptsCompacted: 0 });
     expect(raw.prepare("SELECT latest_sequence = pruned_through AS complete FROM sync_vault_state").get()).toEqual({ complete: 1 });
@@ -157,16 +158,16 @@ describe("sync history retention", () => {
     raw.exec("COMMIT");
     expire(raw);
     const prepare = vi.spyOn(DatabaseSync.prototype, "prepare");
-    expect(await store.sync.pruneHistoryBatch({ ownerUserId: owner.userId, vaultId })).toMatchObject({ receiptsCompacted: 1_000 });
+    expect(await store.sync.pruneHistoryBatch({ vaultId })).toMatchObject({ receiptsCompacted: 1_000 });
     expect(prepare.mock.calls.filter(([query]) => /^update "transaction_receipts"/i.test(query))).toHaveLength(10);
     expect(raw.prepare("SELECT count(*) AS count FROM transaction_receipts WHERE response_json IS NOT NULL").get()).toEqual({ count: 0 });
     prepare.mockClear();
-    expect(await store.sync.pruneHistoryBatch({ ownerUserId: owner.userId, vaultId })).toEqual({ changesDeleted: 0, receiptsCompacted: 0 });
+    expect(await store.sync.pruneHistoryBatch({ vaultId })).toEqual({ changesDeleted: 0, receiptsCompacted: 0 });
     expect(prepare.mock.calls.filter(([query]) => /^update "transaction_receipts"/i.test(query))).toHaveLength(0);
   });
 
   it("keeps the exact 90-day boundary and compacts only older data", async () => {
-    const { store, raw } = await setup();
+    const { store, raw, vaultId } = await setup();
     const time = Date.now();
     vi.spyOn(Date, "now").mockReturnValue(time);
     expire(raw, time - SYNC_HISTORY_RETENTION_MS);
@@ -174,7 +175,7 @@ describe("sync history retention", () => {
     expire(raw, time - SYNC_HISTORY_RETENTION_MS - 1);
     expect(await pruneSyncHistory(store.sync)).toEqual({ changesDeleted: 1, receiptsCompacted: 1 });
     expect(await pruneSyncHistory(store.sync)).toEqual({ changesDeleted: 0, receiptsCompacted: 0 });
-    expect(raw.prepare("SELECT name FROM vaults").get()).toEqual({ name: "Durable Vault" });
+    expect(raw.prepare("SELECT name FROM vaults WHERE vault_id = ?").get(vaultId)).toEqual({ name: "Durable Vault" });
   });
 
   it("preserves cursors after deleting every change and bootstraps an old Vault from canonical rows", async () => {
@@ -328,7 +329,7 @@ describe("sync history retention", () => {
 
   it("reauthorizes each snapshot page after sharing is revoked", async () => {
     const { store, service, raw, vaultId } = await setup();
-    raw.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id) VALUES (?, 'user', ?, 'member', ?)")
+    raw.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id) VALUES (?, 'user', ?, 'viewer', ?)")
       .run(vaultId, member.userId, owner.userId);
     const snapshot = await service.listSnapshot(member, vaultId);
     expect(snapshot.items).toHaveLength(1);
@@ -340,7 +341,7 @@ describe("sync history retention", () => {
   it("registers authenticated, body-limited resolve and snapshot routes", async () => {
     const { store, config, vaultId, create, receipt } = await setup();
     const app = createApp({ config, authStore: store });
-    const headers = { "x-forwarded-user": owner.userId, "x-forwarded-email": "retention@example.com", "content-type": "application/json" };
+    const headers = { "x-forwarded-user": owner.userId, "x-forwarded-email": `${owner.userId}@example.com`, "content-type": "application/json" };
     const response = await app.request("/api/v1/transactions/resolve", { method: "POST", headers, body: JSON.stringify(create) });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ id: create.id, cursor: receipt.cursor });
@@ -445,7 +446,7 @@ describe("partial text content", () => {
     const { raw, service, vaultId } = await setup();
     const otherVaultId = id();
     await service.commitTransaction(owner, body(otherVaultId, [{ entity: "vault", action: "create", entityId: otherVaultId,
-      baseRevision: null, data: { name: "Other", createdAt: new Date().toISOString() } }]));
+      baseRevision: null, data: { organizationId: testOrganizationID, name: "Other", createdAt: new Date().toISOString() } }]));
     const meeting = raw.prepare("INSERT INTO meetings(meeting_id, vault_id, name, status, created_at, updated_at, active) VALUES (?, ?, 'Metadata', 'READY', 0, 0, 1)");
     const document = raw.prepare("INSERT INTO search_documents(document_id, vault_id, meeting_id, kind, summary_text, search_text, embedding_content_hash) VALUES (?, ?, ?, 'meeting', ?, ?, 'hash')");
     const ids = [id(), id()];

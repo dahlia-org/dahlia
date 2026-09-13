@@ -137,8 +137,8 @@ ChatGPT Subscription または Databricks AI Gateway を使い、Dahlia アカ�
 [Codex account context](docs/adr/desktop/accounts.md#codex-account-context)を正本とする。
 Better Auth、Gateway 管理 metadata、meeting sync は単一の Drizzle application database を共有する。PostgreSQL は生成済み認証 table を
 `auth`、Dahlia 所有の全テーブルを `app` schema に置き、参照は `app → auth` の方向とする。
-`DAHLIA_DATABASE_TYPE` は `sqlite`、`postgres`、`lakebase`、`hyperdrive`、`d1` から選び、SQLite／PostgreSQL の接続先は
-`DAHLIA_DATABASE_URL` で指定する。Node は SQLite／PostgreSQL／Lakebase、Workers は D1／Hyperdrive／PostgreSQL を扱う。
+`DAHLIA_DATABASE_TYPE` は `sqlite`、`postgres`、`lakebase`、`hyperdrive` から選び、SQLite／PostgreSQL の接続先は
+`DAHLIA_DATABASE_URL` で指定する。Node は SQLite／PostgreSQL／Lakebase、Workers は Hyperdrive／PostgreSQL を扱う。
 Lakebase は公式 `@databricks/lakebase` connector で OAuth credential を更新する。
 database 選択は認証および AI backend と独立する。`DAHLIA_AI_BACKEND` で Databricks、Cloudflare、OpenAI を選択し、Databricks Responses は Apps proxy の `X-Forwarded-Access-Token`、モデル発見は App service principal、その他は `OPENAI_API_KEY` と必要に応じて `OPENAI_BASE_URL` を使う。
 Databricks Apps の header identity は sessionless だが、認証・administrator・Server canonical data のため Lakebase を使用する。
@@ -158,7 +158,7 @@ Dahlia macOS / bundled Codex 0.148.0
         ↓ deployment credential or forwarded Databricks user token
     upstream Responses API
 
-Drizzle application store (SQLite, PostgreSQL, Lakebase, Hyperdrive, or D1)
+Drizzle application store (SQLite, PostgreSQL, Lakebase, or Hyperdrive)
     ├─ auth: 共通 user directory + session/OAuth/organization/Team membership
     └─ app: artifact + Vault + Project + principal permission + meetings + transcript_segments + screenshots
             + search projections + sync receipts / changes + jobs
@@ -170,7 +170,7 @@ Drizzle application store (SQLite, PostgreSQL, Lakebase, Hyperdrive, or D1)
     └─ local / S3 / R2 / Databricks Volume bytes → authenticated streaming relay
 /mcp
     ├─ owner-scoped artifact create / replace / visibility / delete tools
-    └─ owner-scoped synchronized meeting read tools
+    └─ Vault permission-scoped synchronized meeting read tools
 
 /api/v1/transactions
     └─ immutable Vault-scoped domain operations → atomic canonical commit
@@ -181,8 +181,8 @@ Drizzle application store (SQLite, PostgreSQL, Lakebase, Hyperdrive, or D1)
     └─ SSE invalidation + cursor-based canonical catch-up
 
 app.vault_permissions
-    ├─ raw user ID principal の単一 owner
-    └─ user / Better Auth organization / Team の read-only member
+    ├─ user / Better Auth organization / Team principal
+    └─ admin / editor / viewer（Organization所属だけではアクセスを付与しない）
 ```
 
 `/mcp` は MCP 2026-07-28 の stateless endpoint とし、accounts mode では DPoP-bound access token と exact resource audience を必須とする。`mcp` は全tool、`mcp:read` はread-only toolだけを許可する。Desktop が main API を呼ぶ capability scope は `all-apis` に統一する。Node の authorization server は CIMD を提供し、RFC 7591 DCR は開かない。Databricks Apps の header mode では Apps proxy が OAuth 認証を完了済みのため、転送 identity を owner として使い、artifact 操作で user access token を再利用しない。
@@ -192,21 +192,19 @@ Workers Static Assets が直接配信し、Worker 内から asset binding を呼
 `index.html` へ fallback する一方、API と discovery の未定義 path は Hono の 404 を維持する。
 
 Gateway、認証 store、upstream、artifact storage の停止は Server 操作だけを失敗させる。macOS の起動、録音、音声保存、文字起こし、
-閲覧、検索はこの runtime を待たない。Artifact API は明示的に渡された任意 asset だけを扱う。これとは別に、ServerアカウントのVault、Project、meeting、summary、transcript 原文、screenshot、OCR、AI captionはDesktopとWebが共有するServer canonical dataである。Desktop は既存の domain table を offline working-copy record cache とし、ローカル変更と immutable domain transaction の記録を同じ SQLite transaction で確定する。これはローカルからServer copyを作る一方向転送ではない。サインインはローカルVaultを暗黙に関連付けず、明示的にServerへ移したVaultは常時同期する。ログイン済み接続で権限のある既存Server保管庫もDesktopが自動発見し、取り込み操作なしで一覧と同期に参加する。サインアウトではServer canonical dataを変更せず、working copyを削除するかLocal Accountへ移す。owner が明示した場合だけ、
-複数の特定 Better Auth organization または Team へ read-only 共有する。header modeでは全proxy userを通常表示される固定`external` OrganizationへJIT登録し、同じpermission modelを使う。write、delete、共有設定変更は owner に限定する。
+閲覧、検索はこの runtime を待たない。Artifact API は明示的に渡された任意 asset だけを扱う。これとは別に、ServerアカウントのVault、Project、meeting、summary、transcript 原文、screenshot、OCR、AI captionはDesktopとWebが共有するServer canonical dataである。Desktop は既存の domain table を offline working-copy record cache とし、ローカル変更と immutable domain transaction の記録を同じ SQLite transaction で確定する。これはローカルからServer copyを作る一方向転送ではない。サインインはローカルVaultを暗黙に関連付けず、明示的にServerへ移したVaultは常時同期する。ログイン済み接続で権限のある既存Server保管庫もDesktopが自動発見し、取り込み操作なしで一覧と同期に参加する。サインアウトではServer canonical dataを変更せず、working copyを削除するかLocal Accountへ移す。Server Vaultの所有主体は変更不能なOrganizationとする。Vault Adminがuser／Organization／Teamへadmin・editor・viewerを付与し、Admin／Editorは内容を編集、AdminだけがVaultの設定・共有・削除・reset・全内容移管を行う。Personalは本人専用。Header認証では設定されたメールヘッダーを識別に使い、初回登録時だけドメイン組織を作成・参加する。
 PostgreSQL／LakebaseではBetter Authの機械生成migrationとDahlia application migrationを別ledgerに置き、認証方式によらず
-`auth`、`app`の順で適用する。Header identityは検証直後に`auth.user`へ射影するが、Better Auth runtimeは起動しない。Serverは各identity transactionで
+`auth`、`app`の順で適用する。Header identityは検証直後に`auth.user`へ射影し、Webはaccountsと共通のBetter Authセッション・Organization APIを使う。保護操作では検証済みHeaderを引き続き必須とし、Cookie本人不一致を拒否する。Serverは各identity transactionで
 `app.user_id`だけをtransaction-localに設定する。Vault/content RLSは`app.vault_permissions`を評価し、organizationとTeam membershipを
 `auth.member`と`auth.team_member`から直接解決する。
 Server は meeting の名前・説明・summary 表示本文と screenshot の OCR・caption を domain transaction 受理時に自前で token 化し、
 共通の `app.search_documents` projection を canonical row と同じ transaction で更新する。PostgreSQL は GIN、Lakebase は
-`lakebase_text`、SQLite／D1 は FTS5 を使う。Node で embedding model が設定されている場合だけ、App service principal による
+`lakebase_text`、SQLite は FTS5 を使う。Node で embedding model が設定されている場合だけ、App service principal による
 非同期 worker が summary／OCR／caption の自然文から再生成可能な vector projection を作る。Lakebase は `lakebase_vector`、
-その他の PostgreSQL は pgvector、SQLite は exact cosine を使い、D1 は FTS-only とする。query 時は FTS と vector の上位候補を
+その他の PostgreSQL は pgvector、SQLite は exact cosine を使う。query 時は FTS と vector の上位候補を
 RRF で統合し、embedding の未設定・未完成・障害時は FTS に縮退する。transcript と内部識別子は Server 検索対象に含めず、
-すべての検索 query は `vault_id` 経由の permission／RLS を通す。現時点の D1 adapter は domain transaction の複数 statement を
-atomic batch にできないため meeting sync capability を fail-closed とし、D1 の FTS-only 検索は atomic batch adapter 実装後の target state とする。
-Node の画像解析 worker は canonical 登録済みの会議画像をファイル単位で扱い、既存1280px variant と App service principal を使って不足する OCR・caption を生成する。現在の所有権・checksum・revision・lease を再確認し、正本・差分・検索 projection・embedding job を同じ transaction で更新する。Desktop は Local Account の画像だけを解析する。
+すべての検索 query は `vault_id` 経由の permission／RLS を通す。D1 adapterは削除し、WorkerはPostgreSQL／Hyperdriveを使用する。
+Node の画像解析 worker は canonical 登録済みの会議画像をファイル単位で扱い、既存1280px variant と App service principal を使って不足する OCR・caption を生成する。requesterの現在のAdmin／Editor権限・checksum・revision・lease を再確認し、正本・差分・検索 projection・embedding job を同じ transaction で更新する。Desktop は Local Account の画像だけを解析する。
 Server の出力言語・画像解析言語は本人の account settings API を正本とし、Desktop はメモリに保持する。SSE は invalidation のみ、再接続時に再取得する。設定用のローカル table・revision・再送 queue は作らず、設定や認証の取得を録音開始・継続・停止の前提にしない。文字起こしと要約は[処理場所の契約](docs/adr/shared/transcription-summary-processing.md)に従い、localではDesktop、remoteではServerが担当する。
 翻訳文、音声、SQLite file、note、tag、calendar、
 Project は階層参照と meeting 絞り込みのためだけに同期し、Server の全文・vector projection へは含めない。transcript の `audio_source` は `mic`／`system` の収録経路、nullable な `speaker_label` は将来の話者分離ラベルとし、音声特徴量は同期しない。runtime と data boundary の判断は次を正本とする。
@@ -532,3 +530,7 @@ New batch sessions enqueue a durable `recording_archives` job at session creatio
 ### ライブ MCP 配信
 
 ローカル stdio MCP は追加済み全 Vault を既定とし、任意の起動引数で読み書きの範囲を制限する。Local / Server の `get_meeting_transcript` は保存済みの確定文だけを読み、`after` で差分取得、`wait` で最大25秒の待機を行う。待機中に DB ロックを保持せず、Server は認証と Vault 共有権限を各読取で再確認する。未確定文の MCP 公開や専用ライブ HTTP / SSE は持たない。AI Chat のライブ自動投入は廃止し、通常チャットと履歴は維持する。契約は [MCP の差分取得と保管庫](docs/live-mcp.md) にまとめる。
+
+## Organization-owned Server Vaults
+
+[Organization ownership ADR](docs/adr/shared/organization-vaults.md) supersedes personal Server Vault ownership and read-only sharing. Organization membership and Vault access are separate; admin manages the Vault and permissions, admin/editor writes content, and viewer reads. Header/accounts share Better Auth browser sessions while retaining their identity-entry and machine-client boundaries. The sync ledger, search projection work, and encryption keys are Vault-scoped. Local migration reuses relocation and the durable sync queue, preserving recordings and newer edits.

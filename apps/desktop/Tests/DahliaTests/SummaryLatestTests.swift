@@ -84,7 +84,7 @@ import Synchronization
             let calls = Mutex(0)
             let syncs = Mutex(0)
             let provider = provider(fixture) { request in
-                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":4}}"#.utf8)) }
+                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8)) }
                 if request.url!.path.hasSuffix("/changes") {
                     syncs.withLock { $0 += 1 }
                     return (200, [:], changeData)

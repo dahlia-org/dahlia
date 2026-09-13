@@ -6,7 +6,7 @@
 
     @MainActor
     struct RemoteChangeAssociationTests {
-        @Test(arguments: ["owner", "member"])
+        @Test(arguments: ["admin", "viewer"])
         func missingVaultOnlyDeletesMemberAudio(role: String) async throws {
             let (database, originalVault) = try await syncedDatabase()
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("missing-vault-\(UUID().uuidString)")
@@ -41,7 +41,7 @@
                 VALUES (?, ?, 'mic', 'audio.caf', 'vault', 16000, 1, ?, ?)
                 """, arguments: [UUID.v7(), session.id, Date.now, Date.now])
             }
-            if role == "owner" {
+            if role == "admin" {
                 #expect(try await !RemoteChangeApplier.removeRevokedMemberVault(
                     vaultId: vault.id,
                     expectedConnectionId: connection,
@@ -55,7 +55,7 @@
                 dbQueue: database.dbQueue
             ))
             let saved = try await database.dbQueue.read { db in try VaultRecord.fetchOne(db, key: vault.id) }
-            if role == "owner" {
+            if role == "admin" {
                 #expect(saved?.accountConnectionId == connection)
                 #expect(saved?.syncConfirmedConnectionId == nil)
                 #expect(saved?.syncRecoveryState == nil)
@@ -101,7 +101,7 @@
                     try db.execute(sql: "UPDATE vaults SET syncConfirmedConnectionId = NULL WHERE id = ?", arguments: [vault.id])
                     try db.execute(sql: "UPDATE vaults SET syncConfirmedConnectionId = ? WHERE id = ?", arguments: [connection, vault.id])
                 default:
-                    try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL WHERE id = ?", arguments: [vault.id])
+                    try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?", arguments: [vault.id])
                 }
             }
             #expect(try await !RemoteChangeApplier.reconcileMissingVault(
@@ -117,7 +117,7 @@
         func revokedMemberVaultIsRemovedFromTheWorkingCopy() async throws {
             let (database, originalVault) = try await syncedDatabase()
             var memberVault = originalVault
-            memberVault.syncRole = "member"
+            memberVault.syncRole = "viewer"
             let vault = memberVault
             let meeting = MeetingRecord(
                 id: .v7(), vaultId: vault.id, projectId: nil, name: "Shared",
@@ -167,7 +167,7 @@
                 try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vault.id])
                 try db.execute(sql: "DELETE FROM sync_content_state WHERE vaultId = ?", arguments: [vault.id])
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = NULL, syncConfirmedConnectionId = NULL, syncPullCursor = NULL WHERE id = ?",
+                    sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL, syncConfirmedConnectionId = NULL, syncPullCursor = NULL WHERE id = ?",
                     arguments: [vault.id]
                 )
             }
@@ -251,7 +251,7 @@
             try await database.dbQueue.write { db in
                 try newConnection.insert(db)
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ?, syncRole = 'member' WHERE id = ?",
+                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncConfirmedConnectionId = ?, syncRole = 'viewer' WHERE id = ?",
                     arguments: [newConnection.id, newConnection.id, vault.id]
                 )
             }
@@ -291,6 +291,8 @@
                 id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now
             )
             vault.accountConnectionId = connection.id
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = connection.id
             let savedVault = vault
             try await database.dbQueue.write { db in

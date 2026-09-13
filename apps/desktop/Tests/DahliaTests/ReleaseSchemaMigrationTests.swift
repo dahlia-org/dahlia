@@ -13,15 +13,16 @@
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
             let vaultID = UUID.v7(), meetingID = UUID.v7(), segmentID = UUID.v7(), screenshotID = UUID.v7()
-            let previewID = UUID.v7()
+            let previewID = UUID.v7(), connectionID = UUID.v7()
             let sessionID = UUID.v7(), emptySessionID = UUID.v7(), completedSessionID = UUID.v7()
             let date = Date(timeIntervalSince1970: 1_780_000_000)
             let bytes = Data([1, 2, 3, 4])
             try queue.write { db in
+                try DahliaAccountConnectionRecord(id: connectionID, origin: "https://example.com", clientID: "desktop", createdAt: date).insert(db)
                 try db.execute(sql: """
-                INSERT INTO vaults(id, path, name, createdAt, lastOpenedAt, summaryModelID, aiSettingsBackfilled)
-                VALUES (?, '/tmp/released-vault', 'Released vault', ?, ?, 'saved-model', 1)
-                """, arguments: [vaultID, date, date])
+                INSERT INTO vaults(id, path, name, createdAt, lastOpenedAt, summaryModelID, aiSettingsBackfilled, accountConnectionId)
+                VALUES (?, '/tmp/released-vault', 'Released vault', ?, ?, 'saved-model', 1, ?)
+                """, arguments: [vaultID, date, date, connectionID])
                 try MeetingRecord(id: meetingID, vaultId: vaultID, projectId: nil, name: "Released meeting", createdAt: date, updatedAt: date)
                     .insert(db)
                 for (id, start, end, duration) in [
@@ -75,7 +76,9 @@
             try queue.read { db in
                 let vault = try #require(try VaultRecord.fetchOne(db, key: vaultID))
                 #expect(vault.path == "/tmp/released-vault" && vault.summaryModelID == "saved-model")
-                #expect(vault.syncRole == nil && vault.syncConfirmedConnectionId == nil)
+                #expect(vault.accountConnectionId == nil && vault.organizationId == nil && vault.syncRole == nil && vault
+                    .syncConfirmedConnectionId == nil)
+                #expect(try DahliaAccountConnectionRecord.fetchOne(db, key: connectionID) != nil)
                 #expect(try Int.fetchOne(db, sql: "SELECT syncMutationGeneration FROM vaults WHERE id = ?", arguments: [vaultID]) == 0)
                 #expect(try Int.fetchOne(db, sql: "SELECT syncMeetingEventsVersion FROM vaults WHERE id = ?", arguments: [vaultID]) == 0)
                 let segment = try #require(try fetchTranscriptContent(id: segmentID, in: db))
@@ -118,7 +121,7 @@
             let identifiers = AppDatabaseManager.migrationIdentifiers
             let releaseIndex = try #require(identifiers.firstIndex(of: "v41_vaultAISettingsBackfill"))
             #expect(Array(identifiers.dropFirst(releaseIndex + 1)) == [
-                "v42_localFirstSchema", "v43_meetingCalendarSync", "v44_removeCustomerIntelligence",
+                "v42_localFirstSchema",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
@@ -131,18 +134,15 @@
         @Test
         func customerIntelligenceRemovalKeepsMeetingsAndCalendarEvents() throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v43_meetingCalendarSync")
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
             let vaultID = UUID.v7()
             let meetingID = UUID.v7()
             let now = Date(timeIntervalSince1970: 1_789_000_000)
             try queue.write { db in
-                try VaultRecord(
-                    id: vaultID,
-                    path: nil,
-                    name: "Migration",
-                    createdAt: now,
-                    lastOpenedAt: now
-                ).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO vaults(id, path, name, createdAt, lastOpenedAt) VALUES (?, '/tmp/migration', 'Migration', ?, ?)",
+                    arguments: [vaultID, now, now]
+                )
                 try db.execute(sql: """
                 INSERT INTO calendar_events (
                     ical_uid, recurrence_id, created_at, updated_at, title, description,

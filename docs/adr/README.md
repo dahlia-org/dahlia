@@ -65,3 +65,5 @@ Desktop / Server / 外部 client 間の契約。
 ## 過去の記録
 
 2026-09-06 に66件の記録を22テーマへ統合し、旧番号と重複した説明を除いた。これは文書整理であり、新しい製品・設計判断ではない。統合前の詳細と旧パスは [Git 履歴の原文](https://github.com/dahlia-org/dahlia/tree/a84967776061c5db1be2e0f25bf135dcdc4e6ba7/docs/adr) で参照できる。
+
+- [Organization所有とVault権限](shared/organization-vaults.md): Organization所有、admin/editor/viewer、認証共通化、Local merge。

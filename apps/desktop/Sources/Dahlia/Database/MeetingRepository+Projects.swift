@@ -399,15 +399,20 @@ extension MeetingRepository {
                         syncOperations += meetingIds.map {
                             SyncOperationDraft(entity: .meeting, action: .delete, entityId: $0)
                         }
-                        _ = try MeetingRecord.filter(meetingIds.contains(Column("id"))).deleteAll(db)
                     }
                 }
 
                 for id in hierarchy.reversed().map(\.id) {
                     syncOperations.append(SyncOperationDraft(entity: .project, action: .delete, entityId: id))
+                }
+                // Record parent deletions while recording archives still identify the uploads they supersede.
+                try SyncTransactionRecorder.recordBatches(vaultId: vaultId, operations: syncOperations, in: db)
+                if meetingDisposition == .deleteMeetings, !meetingIds.isEmpty {
+                    _ = try MeetingRecord.filter(meetingIds.contains(Column("id"))).deleteAll(db)
+                }
+                for id in hierarchy.reversed().map(\.id) {
                     _ = try ProjectRecord.deleteOne(db, key: id)
                 }
-                try SyncTransactionRecorder.recordBatches(vaultId: vaultId, operations: syncOperations, in: db)
             }
         } catch let operationError {
             do {

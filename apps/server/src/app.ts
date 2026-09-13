@@ -1,3 +1,4 @@
+import { APIError } from "better-auth/api";
 import { EncryptionError } from "./encryption/crypto";
 import { personalWorkspaceId } from "./auth/workspace";
 import { installPublicIDs } from "./public-http";
@@ -39,7 +40,6 @@ import {
   MCP_SCOPE,
 } from "./auth/scopes";
 import type { AuthStore } from "./auth/store";
-import { EXTERNAL_ORGANIZATION_ID } from "./auth/ids";
 import { mcpResource, type AppConfig } from "./config";
 import { RequestError } from "./storage/upload";
 import type { ObjectStorage } from "./storage/storage";
@@ -54,7 +54,6 @@ import { gatewayError, GatewayRequestError, GatewayService } from "./ai-gateway/
 
 export const AUTH_MAX_REQUEST_BYTES = 64 * 1024;
 const SYNC_JSON_MAX_REQUEST_BYTES = 8 * 1024 * 1024;
-const teamInputSchema = z.object({ name: z.string().trim().min(1).max(100) }).strict();
 
 export const authBodyLimit = bodyLimit({
   maxSize: AUTH_MAX_REQUEST_BYTES,
@@ -160,8 +159,8 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   } });
   const store = dependencies.authStore;
   if (!store) throw new Error("The Dahlia application store must be initialized before creating the application");
-  const authStore = config.authProvider === "accounts" ? store : undefined;
-  const auth: DahliaAuth | undefined = config.authProvider === "accounts" ? dependencies.auth : undefined;
+  const authStore = store;
+  const auth: DahliaAuth | undefined = dependencies.auth;
   if (config.authProvider === "accounts" && (!auth || !authStore)) {
     throw new Error("Better Auth must be initialized before creating the application");
   }
@@ -183,12 +182,12 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   );
   const conversationAnalytics = new ConversationAnalyticsService(store.sync);
   const mcp = createServerMcpHandler(config, sync, async (request) => {
-    if (auth) await identities.verifyMcpAccessToken(request);
+    if (config.authProvider === "accounts") await identities.verifyMcpAccessToken(request);
     else await identities.fromMcpHeader(request);
   });
   const jobOwners = new WeakMap<Request, string>();
   const mcpMetadataUrl = `${config.baseUrl}/.well-known/oauth-protected-resource/mcp`;
-  const mcpRequestAuth = auth
+  const mcpRequestAuth = config.authProvider === "accounts" && auth
     ? (request: Request) => authenticateMcpRequest(
         request,
         (candidate) => identities.verifyMcpAccessToken(candidate),
@@ -235,11 +234,11 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   registerApi(app, "getHealth", (context) => context.json({ status: "ok" }));
 
   app.get("/.well-known/oauth-authorization-server", async (context) => {
-    if (!auth) return context.json({ error: "not_found" }, 404);
+    if (!auth || config.authProvider !== "accounts") return context.json({ error: "not_found" }, 404);
     return context.json(await auth.api.getOAuthServerConfig());
   });
   app.get("/.well-known/openid-configuration", async (context) => {
-    if (!auth) return context.json({ error: "not_found" }, 404);
+    if (!auth || config.authProvider !== "accounts") return context.json({ error: "not_found" }, 404);
     return context.json(await auth.api.getOpenIdConfig());
   });
   app.get("/.well-known/oauth-protected-resource", async (context) => {
@@ -266,13 +265,19 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
 
   app.use("/api/auth/*", authBodyLimit);
   for (const extension of extensions) extension.registerAuthRoutes?.(app, services);
-  app.on(["GET", "POST"], "/api/auth/*", (context) => {
+  app.on(["GET", "POST"], "/api/auth/*", async (context) => {
+    if (config.authProvider === "header") await identities.fromBrowser(context.req.raw);
     if (!auth) return context.json({ error: "not_found" }, 404);
     return auth.handler(context.req.raw);
   });
 
   app.use("/api/v1/session", async (context, next) => {
     context.set("identity", await identities.fromBrowser(context.req.raw));
+    if (config.authProvider === "header" && auth && !await auth.api.getSession({ headers: context.req.raw.headers })) {
+      const response = await auth.api.signInHeader({ headers: context.req.raw.headers, asResponse: true });
+      if (!response.ok) return response;
+      for (const cookie of response.headers.getSetCookie()) context.header("Set-Cookie", cookie, { append: true });
+    }
     await next();
   });
   registerApi(app, "getSession", async (context) => {
@@ -375,7 +380,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const identity = context.get("identity");
     const [current, sessions] = await Promise.all([
       auth.api.getSession({ headers: context.req.raw.headers }),
-      authStore!.listDahliaSessions(identity.userId),
+      authStore.listDahliaSessions(identity.userId),
     ]);
     return context.json({ items:
       sessions.map((session) => ({
@@ -389,7 +394,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   });
   registerApi(app, "revokeSession", async (context) => {
     if (!auth) return context.json({ error: "not_available_in_this_auth_mode" }, 404);
-    const revoked = await authStore!.revokeDahliaSession(
+    const revoked = await authStore.revokeDahliaSession(
       context.get("identity").userId,
       context.req.param("id")!,
     );
@@ -549,7 +554,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     if (!await store.sync.isAvailable()) return context.json({});
     const sources = dependencies.summaryService?.methods.map((method) => method.id) ?? [];
     return context.json({
-      sync: { version: 4 },
+      sync: { version: 5 },
       ...(config.encryption ? { vaultEncryption: { version: 1 } } : {}),
       vaultTransfers: { version: 1 },
       recordingArchive: { version: 1 },
@@ -697,9 +702,19 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.listFiles(identity, sync.parseId(context.req.param("vaultId")!), context.req.query("cursor")));
   });
+  registerApi(app, "listGovernanceVaults", async (context) => context.json(await sync.listGovernanceVaults(
+    await identities.fromBrowser(context.req.raw), sync.parseId(context.req.param("organizationId")!), context.req.query("cursor"))));
+  registerApi(app, "confirmVaultDeletion", async (context) => context.json(await sync.confirmVaultDeletion(
+    await identities.fromBrowser(context.req.raw), sync.parseId(context.req.param("organizationId")!), sync.parseId(context.req.param("vaultId")!))));
+  registerApi(app, "forceDeleteVault", syncBodyLimit, async (context) => {
+    if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
+    const identity = await syncIdentity(context.req.raw);
+    return context.json(await sync.forceDeleteVault(identity, sync.parseId(context.req.param("organizationId")!),
+      sync.parseId(context.req.param("vaultId")!), await context.req.json().catch(() => null)));
+  });
   registerApi(app, "listVaults", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json({ items: await sync.listVaults(identity, context.req.query("owner"), context.req.query("organizationId")), nextCursor: null });
+    return context.json({ items: await sync.listVaults(identity, context.req.query("organizationId")), nextCursor: null });
   });
   registerApi(app, "getVault", async (context) => {
     const identity = await syncIdentity(context.req.raw);
@@ -765,18 +780,19 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   registerApi(app, "putOrganizationPermission", async (context) => {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
-    await sync.putMemberPermission(
+    await sync.putPermission(
       identity,
       sync.parseId(context.req.param("vaultId")!),
       "organization",
       sync.parsePermissionPrincipal(context.req.param("organizationId")!),
+      (await context.req.json<{ role: "admin" | "editor" | "viewer" }>()).role,
     );
     return context.body(null, 204);
   });
   registerApi(app, "deleteOrganizationPermission", async (context) => {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
-    await sync.deleteMemberPermission(
+    await sync.deletePermission(
       identity,
       sync.parseId(context.req.param("vaultId")!),
       "organization",
@@ -787,18 +803,19 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   registerApi(app, "putTeamPermission", async (context) => {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
-    await sync.putMemberPermission(
+    await sync.putPermission(
       identity,
       sync.parseId(context.req.param("vaultId")!),
       "team",
       sync.parsePermissionPrincipal(context.req.param("teamId")!),
+      (await context.req.json<{ role: "admin" | "editor" | "viewer" }>()).role,
     );
     return context.body(null, 204);
   });
   registerApi(app, "deleteTeamPermission", async (context) => {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
-    await sync.deleteMemberPermission(
+    await sync.deletePermission(
       identity,
       sync.parseId(context.req.param("vaultId")!),
       "team",
@@ -809,18 +826,19 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   registerApi(app, "putUserPermission", async (context) => {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
-    await sync.putMemberPermission(
+    await sync.putPermission(
       identity,
       sync.parseId(context.req.param("vaultId")!),
       "user",
       sync.parsePermissionPrincipal(context.req.param("userId")!),
+      (await context.req.json<{ role: "admin" | "editor" | "viewer" }>()).role,
     );
     return context.body(null, 204);
   });
   registerApi(app, "deleteUserPermission", async (context) => {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
-    await sync.deleteMemberPermission(
+    await sync.deletePermission(
       identity,
       sync.parseId(context.req.param("vaultId")!),
       "user",
@@ -829,114 +847,21 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     return context.body(null, 204);
   });
 
+  registerApi(app, "createOrganization", authBodyLimit, async (context) => {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
+      return context.json({ error: "invalid_origin" }, 403);
+    }
+    const identity = await syncIdentity(context.req.raw);
+    if (identity.impersonated) return context.json({ error: "impersonation_read_only" }, 403);
+    if (!auth) return context.json({ error: "authentication_unavailable" }, 503);
+    const { name, slug } = await context.req.json<{ name: string; slug: string }>();
+    const organization = await auth.api.createOrganization({ body: { name, slug, userId: identity.userId } });
+    return context.json({ id: organization.id, name: organization.name, slug: organization.slug, kind: "team", role: "owner" }, 201);
+  });
   registerApi(app, "listOrganizations", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     return context.json({ items: await sync.listOrganizations(identity), nextCursor: null });
-  });
-  registerApi(app, "getOrganization", async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
-      return context.json({ error: "not_found" }, 404);
-    }
-    const identity = await identities.fromBrowser(context.req.raw);
-    const organization = await store.getExternalOrganization(identity.userId);
-    return organization ? context.json(organization) : context.json({ error: "not_found" }, 404);
-  });
-  registerApi(app, "listOrganizationMembers", async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
-      return context.json({ error: "not_found" }, 404);
-    }
-    const identity = await identities.fromBrowser(context.req.raw);
-    const members = await store.listExternalOrganizationMembers(identity.userId);
-    return members
-      ? context.json({ items: members.map((member) => ({
-          id: member.id,
-          userId: member.userId,
-          role: member.role,
-          user: { name: member.name, email: member.email },
-        })), nextCursor: null })
-      : context.json({ error: "not_found" }, 404);
-  });
-  registerApi(app, "listTeams", async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
-      return context.json({ error: "not_found" }, 404);
-    }
-    const identity = await identities.fromBrowser(context.req.raw);
-    const teams = await store.listExternalTeams(identity.userId);
-    return teams ? context.json({ items: teams, nextCursor: null }) : context.json({ error: "not_found" }, 404);
-  });
-  registerApi(app, "createTeam", authBodyLimit, async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
-      return context.json({ error: "not_found" }, 404);
-    }
-    if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
-    const input = teamInputSchema.safeParse(await context.req.json().catch(() => null));
-    if (!input.success) return context.json({ error: "invalid_team" }, 400);
-    const identity = await identities.fromBrowser(context.req.raw);
-    const team = await store.createExternalTeam(identity.userId, input.data.name);
-    return team ? context.json(team, 201, { Location: `/api/v1/organizations/${encodeURIComponent(team.organizationId)}/teams/${encodeURIComponent(team.id)}` }) : context.json({ error: "not_found" }, 404);
-  });
-  registerApi(app, "updateTeam", authBodyLimit, async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
-      return context.json({ error: "not_found" }, 404);
-    }
-    if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
-    const input = teamInputSchema.safeParse(await context.req.json().catch(() => null));
-    if (!input.success) return context.json({ error: "invalid_team" }, 400);
-    const identity = await identities.fromBrowser(context.req.raw);
-    const team = await store.updateExternalTeam(
-      identity.userId,
-      sync.parsePermissionPrincipal(context.req.param("teamId")!),
-      input.data.name,
-    );
-    return team ? context.json(team) : context.json({ error: "not_found" }, 404);
-  });
-  registerApi(app, "deleteTeam", async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
-      return context.json({ error: "not_found" }, 404);
-    }
-    if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
-    const identity = await identities.fromBrowser(context.req.raw);
-    return await store.deleteExternalTeam(
-      identity.userId,
-      sync.parsePermissionPrincipal(context.req.param("teamId")!),
-    ) ? context.body(null, 204) : context.json({ error: "not_found" }, 404);
-  });
-  registerApi(app, "listTeamMembers", async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
-      return context.json({ error: "not_found" }, 404);
-    }
-    const identity = await identities.fromBrowser(context.req.raw);
-    const members = await store.listExternalTeamMembers(
-      identity.userId,
-      sync.parsePermissionPrincipal(context.req.param("teamId")!),
-    );
-    return members
-      ? context.json({ items: members.map((member) => ({ ...member, teamId: context.req.param("teamId")! })), nextCursor: null })
-      : context.json({ error: "not_found" }, 404);
-  });
-  registerApi(app, "putTeamMember", async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
-      return context.json({ error: "not_found" }, 404);
-    }
-    if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
-    const identity = await identities.fromBrowser(context.req.raw);
-    return await store.addExternalTeamMember(
-      identity.userId,
-      sync.parsePermissionPrincipal(context.req.param("teamId")!),
-      sync.parsePermissionPrincipal(context.req.param("userId")!),
-    ) ? context.body(null, 204) : context.json({ error: "not_found" }, 404);
-  });
-  registerApi(app, "deleteTeamMember", async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
-      return context.json({ error: "not_found" }, 404);
-    }
-    if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
-    const identity = await identities.fromBrowser(context.req.raw);
-    return await store.removeExternalTeamMember(
-      identity.userId,
-      sync.parsePermissionPrincipal(context.req.param("teamId")!),
-      sync.parsePermissionPrincipal(context.req.param("userId")!),
-    ) ? context.body(null, 204) : context.json({ error: "not_found" }, 404);
   });
   for (const operation of ["getFileContent", "headFileContent"] as const) registerApi(app, operation, async (context) => {
     const identity = await syncIdentity(context.req.raw);
@@ -1042,7 +967,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   for (const path of methodPaths) {
     app.all(path, async (context) => {
       if ((path.startsWith("/api/v1/sessions") && !auth)
-        || (path.startsWith("/api/v1/organizations/") && config.authProvider !== "header")) {
+        ) {
         return context.json({ error: "not_found" }, 404);
       }
       if (path.startsWith("/mcp/resources/")) await identities.fromMcpResource(context.req.raw, MCP_READ_SCOPE);
@@ -1055,6 +980,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   app.all("/api/*", (context) => context.json({ error: "not_found" }, 404));
 
   app.onError((error, context) => {
+    if (error instanceof APIError) return problemResponse(error.statusCode, error.body?.code ?? "organization_operation_failed");
     if (error instanceof HTTPException) return context.json({ error: "invalid_request" }, error.status);
     if (error instanceof AuthenticationError) {
       const challenge = error.oauthChallenge

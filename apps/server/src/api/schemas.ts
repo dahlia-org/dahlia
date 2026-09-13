@@ -19,9 +19,10 @@ export const page = <T extends z.ZodType>(item: T) => z.object({ items: z.array(
 const appearance = { icon: z.string().nullable().optional(), color: z.string().nullable().optional() };
 const syncFields = { active: z.boolean().optional(), deletingAt: date.nullable().optional(), revision: integer };
 const contentFields = { contentOmitted: z.boolean().optional(), contentPresent: z.boolean().optional() };
-export const vault = z.object({ encryption: z.enum(["none", "server"]).optional(), vaultId: id, name: z.string(), ...appearance, ...syncFields,
-  createdAt: date, updatedAt: date, role: z.enum(["owner", "member"]).optional(), hasResources: z.boolean().optional(),
+export const vault = z.object({ encryption: z.enum(["none", "server"]).optional(), vaultId: id, organizationId: id, name: z.string(), ...appearance, ...syncFields,
+  createdAt: date, updatedAt: date, role: z.enum(["admin", "editor", "viewer"]), hasResources: z.boolean().optional(),
 }).openapi("Vault");
+export const governanceVault = vault.pick({ vaultId: true, name: true, revision: true }).extend({ creatorId: id }).openapi("GovernanceVault");
 export const project = z.object({ projectId: id, vaultId: id, parentProjectId: id.nullable(), name: z.string(), description: z.string(),
   projectType: z.enum(["customer", "internal", "personal", "undefined"]).nullable(), ...appearance, ...syncFields,
   createdAt: date, path: z.string().optional(), rootProjectId: id.optional(), effectiveType: z.string().optional(),
@@ -120,12 +121,12 @@ export const capabilities = z.object({
   }).optional(),
 }).openapi("Capabilities");
 export const person = z.object({ id: principalId, name: z.string(), email: z.string() }).openapi("Person");
-export const organization = z.object({ id: principalId, name: z.string(), slug: z.string(), role: z.string().optional() }).openapi("Organization");
+export const organization = z.object({ id: principalId, name: z.string(), slug: z.string(), kind: z.enum(["personal", "team"]), role: z.string().optional() }).openapi("Organization");
 export const team = z.object({ id: principalId, name: z.string(), organizationId: principalId, memberCount: integer,
   createdAt: date, updatedAt: date.nullable(),
 }).openapi("Team");
-export const permission = z.object({ vaultId: id, principalType: z.enum(["user", "organization", "team"]), principalId,
-  role: z.enum(["owner", "member"]), createdAt: date,
+export const permission = z.object({ name: z.string().optional(), detail: z.string().optional(), vaultId: id, principalType: z.enum(["user", "organization", "team"]), principalId,
+  role: z.enum(["admin", "editor", "viewer"]), createdAt: date,
 }).openapi("VaultPermission");
 export const searchHit = z.object({ id, kind: z.enum(["meeting", "screenshot", "project"]), title: z.string(), date: z.string(), snippet: z.string(),
   meetingId: id.optional(), projectId: id.optional(), projectPath: z.string().optional(), fileId: id.optional(), meetingCount: integer.optional(),

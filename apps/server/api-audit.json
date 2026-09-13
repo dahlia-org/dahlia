@@ -780,105 +780,6 @@
       ]
     },
     {
-      "operationId": "getOrganization",
-      "method": "GET",
-      "path": "/api/v1/organizations/{organizationId}",
-      "classification": "maintained",
-      "previous": "/api/v1/organizations/{organizationId}",
-      "reason": "External organization (header mode only)",
-      "consumers": [
-        "public API; no bundled caller"
-      ]
-    },
-    {
-      "operationId": "listOrganizationMembers",
-      "method": "GET",
-      "path": "/api/v1/organizations/{organizationId}/members",
-      "classification": "modified",
-      "previous": "/api/v1/organizations/{organizationId}/members",
-      "reason": "External organization members (header mode only)",
-      "consumers": [
-        "apps/server/src/client/App.tsx"
-      ]
-    },
-    {
-      "operationId": "listTeams",
-      "method": "GET",
-      "path": "/api/v1/organizations/{organizationId}/teams",
-      "classification": "modified",
-      "previous": "/api/v1/organizations/{organizationId}/teams",
-      "reason": "External teams (header mode only)",
-      "consumers": [
-        "apps/server/src/client/App.tsx"
-      ]
-    },
-    {
-      "operationId": "createTeam",
-      "method": "POST",
-      "path": "/api/v1/organizations/{organizationId}/teams",
-      "classification": "maintained",
-      "previous": "/api/v1/organizations/{organizationId}/teams",
-      "reason": "Create external team (header mode only)",
-      "consumers": [
-        "apps/server/src/client/App.tsx"
-      ]
-    },
-    {
-      "operationId": "updateTeam",
-      "method": "PATCH",
-      "path": "/api/v1/organizations/{organizationId}/teams/{teamId}",
-      "classification": "maintained",
-      "previous": "/api/v1/organizations/{organizationId}/teams/{teamId}",
-      "reason": "Rename external team (header mode only)",
-      "consumers": [
-        "apps/server/src/client/App.tsx"
-      ]
-    },
-    {
-      "operationId": "deleteTeam",
-      "method": "DELETE",
-      "path": "/api/v1/organizations/{organizationId}/teams/{teamId}",
-      "classification": "maintained",
-      "previous": "/api/v1/organizations/{organizationId}/teams/{teamId}",
-      "reason": "Delete external team (header mode only)",
-      "consumers": [
-        "apps/server/src/client/App.tsx"
-      ]
-    },
-    {
-      "operationId": "listTeamMembers",
-      "method": "GET",
-      "path": "/api/v1/organizations/{organizationId}/teams/{teamId}/members",
-      "classification": "modified",
-      "previous": "/api/v1/organizations/{organizationId}/teams/{teamId}/members",
-      "reason": "External team members (header mode only)",
-      "consumers": [
-        "apps/server/src/client/App.tsx"
-      ]
-    },
-    {
-      "operationId": "putTeamMember",
-      "method": "PUT",
-      "path": "/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}",
-      "classification": "maintained",
-      "previous": "/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}",
-      "reason": "Add an organization member to an external team",
-      "consumers": [
-        "apps/server/src/client/App.tsx"
-      ]
-    },
-    {
-      "operationId": "deleteTeamMember",
-      "method": "DELETE",
-      "path": "/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}",
-      "classification": "maintained",
-      "previous": "/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}",
-      "reason": "Remove an external team member",
-      "consumers": [
-        "apps/server/src/client/App.tsx"
-      ]
-    },
-    {
       "operationId": "getServerOrganization",
       "method": "GET",
       "path": "/api/v1/admin/organizations/{organizationId}",
@@ -920,6 +821,50 @@
       "reason": "Owner-managed read-only sharing with searchable organization-scoped targets",
       "consumers": [
         "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "listGovernanceVaults",
+      "method": "GET",
+      "path": "/api/v1/organizations/{organizationId}/vaults",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Organization governance metadata",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "confirmVaultDeletion",
+      "method": "GET",
+      "path": "/api/v1/organizations/{organizationId}/vaults/{vaultId}/deletion",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Confirmation for Vault deletion",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "forceDeleteVault",
+      "method": "DELETE",
+      "path": "/api/v1/organizations/{organizationId}/vaults/{vaultId}",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Confirmed Vault deletion",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "createOrganization",
+      "method": "POST",
+      "path": "/api/v1/organizations",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Desktop Organization creation uses the same atomic Better Auth operation.",
+      "consumers": [
+        "apps/desktop/Sources/Dahlia/Services/CloudVaultDiscovery.swift"
       ]
     }
   ],
@@ -1174,14 +1119,14 @@
       "method": "GET",
       "path": "/api/auth/get-session",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "getSession",
       "method": "POST",
       "path": "/api/auth/get-session",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "getJwks",
@@ -1398,217 +1343,217 @@
       "method": "POST",
       "path": "/api/auth/organization/accept-invitation",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "addTeamMember",
       "method": "POST",
       "path": "/api/auth/organization/add-team-member",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "cancelInvitation",
       "method": "POST",
       "path": "/api/auth/organization/cancel-invitation",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "checkOrganizationSlug",
       "method": "POST",
       "path": "/api/auth/organization/check-slug",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "createOrganization",
       "method": "POST",
       "path": "/api/auth/organization/create",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "createTeam",
       "method": "POST",
       "path": "/api/auth/organization/create-team",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "deleteOrganization",
       "method": "POST",
       "path": "/api/auth/organization/delete",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "getActiveMember",
       "method": "GET",
       "path": "/api/auth/organization/get-active-member",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "getActiveMemberRole",
       "method": "GET",
       "path": "/api/auth/organization/get-active-member-role",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "getFullOrganization",
       "method": "GET",
       "path": "/api/auth/organization/get-full-organization",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "getInvitation",
       "method": "GET",
       "path": "/api/auth/organization/get-invitation",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "getOrganization",
       "method": "GET",
       "path": "/api/auth/organization/get-organization",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "hasPermission",
       "method": "POST",
       "path": "/api/auth/organization/has-permission",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "createInvitation",
       "method": "POST",
       "path": "/api/auth/organization/invite-member",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "leaveOrganization",
       "method": "POST",
       "path": "/api/auth/organization/leave",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "listOrganizations",
       "method": "GET",
       "path": "/api/auth/organization/list",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "listInvitations",
       "method": "GET",
       "path": "/api/auth/organization/list-invitations",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "listMembers",
       "method": "GET",
       "path": "/api/auth/organization/list-members",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "listTeamMembers",
       "method": "GET",
       "path": "/api/auth/organization/list-team-members",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "listOrganizationTeams",
       "method": "GET",
       "path": "/api/auth/organization/list-teams",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "listUserInvitations",
       "method": "GET",
       "path": "/api/auth/organization/list-user-invitations",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "listUserTeams",
       "method": "GET",
       "path": "/api/auth/organization/list-user-teams",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "rejectInvitation",
       "method": "POST",
       "path": "/api/auth/organization/reject-invitation",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "removeMember",
       "method": "POST",
       "path": "/api/auth/organization/remove-member",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "removeTeam",
       "method": "POST",
       "path": "/api/auth/organization/remove-team",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "removeTeamMember",
       "method": "POST",
       "path": "/api/auth/organization/remove-team-member",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "setActiveOrganization",
       "method": "POST",
       "path": "/api/auth/organization/set-active",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "setActiveTeam",
       "method": "POST",
       "path": "/api/auth/organization/set-active-team",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "updateOrganization",
       "method": "POST",
       "path": "/api/auth/organization/update",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "updateMemberRole",
       "method": "POST",
       "path": "/api/auth/organization/update-member-role",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "updateTeam",
       "method": "POST",
       "path": "/api/auth/organization/update-team",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "refreshToken",
@@ -1685,7 +1630,7 @@
       "method": "POST",
       "path": "/api/auth/sign-out",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts; plugin privileges and session roles still apply"
+      "availability": "accounts and header"
     },
     {
       "operation": "signUpEmail",
@@ -1798,6 +1743,13 @@
       "path": "/mcp/resources/vaults/{vaultId}/meetings/{meetingId}/screenshots/{screenshotId}/content",
       "protocol": "MCP resource HTTP bytes",
       "availability": "current Vault read permission and MCP read scope"
+    },
+    {
+      "operation": "signInHeader",
+      "method": "POST",
+      "path": "/api/auth/header/sign-in",
+      "protocol": "Better Auth",
+      "availability": "header"
     }
   ],
   "mcp": {

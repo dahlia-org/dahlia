@@ -27,7 +27,7 @@ fetch ベースの既存 Responses adapter と Zod を使用し、Agents SDK は
 `Databricks-Ai-Gateway-Request-Tags` に設定する。Gateway の対話的 Responses は従来の OBO を維持する。
 設定をジョブ開始時に固定し、token・音声・文字起こし本文・provider 応答を queue やログに残さない。
 
-開始・状態取得は現在の Vault owner に限定する。UUIDv7 の開始 ID は冪等化に使い、異なる要求による再使用は409とする。
+開始・状態取得はrequester本人かつ現在のVault Admin／Editorに限定する。provider呼出前とcommit直前に書込権限を確認し、失効後の結果は公開しない。UUIDv7 の開始 ID は冪等化に使い、異なる要求による再使用は409とする。
 同じ会議には実行中ジョブを一つだけ置く。5分の lease に対し生成は4分で中止し、再起動で切れた lease も含め試行は最大3回。
 成功の状態更新と canonical transaction は一つの DB transaction に含め、古い lease の worker は保存できない。
 入力変更・要約 revision の競合・削除・所有権喪失では既存要約を保持する。競合を自動再実行して上書きしない。

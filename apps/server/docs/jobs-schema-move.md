@@ -32,4 +32,4 @@ COMMIT;
 4. 更新版を起動する前に、backup/復元コピーと各テーブルの件数・主キー・全列を比較する。owner identity を transaction-local に設定して要約ジョブを検査し、`encrypted_payload`、`input_version`、`request_hash` の値が完全一致することを確認する。RLS を解除して比較しない。`pg_class` の `relrowsecurity` / `relforcerowsecurity` は `jobs.summary` で両方 true、他の3テーブルは従来どおり false。`pg_policies`、`pg_constraint`、`pg_indexes` とテーブル ACL も移動前と照合する（schema/物理名と上記3主キー名以外は同じ）。
 5. 同じ暗号化キー設定の更新版で、既存要約ジョブの読取り・claim・再試行・キャンセルと期限切れ lease の再取得を復元コピー上で確認する。暗号化ポリシー、AAD の table 識別子、HMAC purpose は `jobs_summary` / `jobs_summary.inputVersion` / `jobs_summary.requestHash` のまま。settings・input・transcriptResult を再暗号化する必要はない。確認後に更新版の書き込み元を再開する。停止中に期限切れになった lease は従来の条件で再取得される。
 
-失敗時は transaction を ROLLBACK して原因を確認する。commit 後に旧コードへ戻す必要がある場合も、全書き込み元を停止し、同じ transaction で上記 rename と schema 移動を逆順に戻す。暗号文・lease を変更しない。SQLite / D1 とコード上の `summaryJob` 等の名前は変更しない。
+失敗時は transaction を ROLLBACK して原因を確認する。commit 後に旧コードへ戻す必要がある場合も、全書き込み元を停止し、同じ transaction で上記 rename と schema 移動を逆順に戻す。暗号文・lease を変更しない。SQLite とコード上の `summaryJob` 等の名前は変更しない。

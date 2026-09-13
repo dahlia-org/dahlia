@@ -614,6 +614,8 @@
             let vault: VaultRecord = {
                 var value = VaultRecord(id: .v7(), path: nil, name: "Offline", createdAt: .now, lastOpenedAt: .now)
                 value.accountConnectionId = connection.id
+                if value.syncRole == nil { value.syncRole = "admin" }
+                if value.organizationId == nil { value.organizationId = .v7() }
                 value.syncConfirmedConnectionId = connection.id
                 return value
             }()
@@ -683,6 +685,8 @@
             let vault: VaultRecord = {
                 var value = VaultRecord(id: .v7(), path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now)
                 value.accountConnectionId = connection.id
+                if value.syncRole == nil { value.syncRole = "admin" }
+                if value.organizationId == nil { value.organizationId = .v7() }
                 value.syncConfirmedConnectionId = connection.id
                 value.syncPullCursor = "ready"
                 return value

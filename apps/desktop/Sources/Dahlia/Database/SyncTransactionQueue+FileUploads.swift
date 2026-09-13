@@ -19,7 +19,7 @@ struct SyncFileUpload: Equatable, Sendable {
             WHERE o.id = ? AND t.id = ? AND t.vaultId = ? AND t.connectionId = ?
               AND c.origin = ? AND v.accountConnectionId = t.connectionId
               AND v.syncConfirmedConnectionId = t.connectionId
-              AND COALESCE(v.syncRole, 'owner') = 'owner'
+              AND v.syncRole IN ('admin', 'editor')
               AND (v.syncRecoveryState IS NULL OR v.syncRecoveryState IN ('pending', 'recovering'))
               AND t.blockedReason IS NULL
               AND NOT EXISTS (SELECT 1 FROM sync_transactions earlier

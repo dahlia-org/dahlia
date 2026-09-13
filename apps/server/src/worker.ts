@@ -1,4 +1,6 @@
-import { and, asc, eq, gt } from "drizzle-orm";
+import * as authSchema from "./db/auth-schema";
+import { vaultPermissions } from "./auth/vault-permissions";
+import { and, asc, gt, inArray } from "drizzle-orm";
 import { syncedVaultPermission } from "./db/auth-schema";
 import { createSummaryJobStore } from "./summary/store";
 import { createImageAnalysisStore } from "./image-analysis/store";
@@ -19,10 +21,8 @@ import { R2ObjectStorage, type R2BucketLike } from "./storage/r2";
 import { S3ObjectStorage } from "./storage/s3";
 import { initializeDahliaAuth } from "./auth/better-auth";
 import {
-  createD1ApplicationStore,
   createPostgresApplicationStore,
   type ApplicationStore,
-  type D1DatabaseLike,
 } from "./auth/store";
 import { loadConfig, type AppConfig } from "./config";
 import { connectPostgresUrl } from "./db/postgres";
@@ -31,13 +31,14 @@ import { createIntlSearchTokenizer } from "./search/tokenizer";
 export interface RuntimeSecrets {
   [key: `DAHLIA_ENCRYPTION_MASTER_KEY_${string}`]: string | undefined;
   DAHLIA_ENCRYPTION_ACTIVE_KEY_ID?: string;
-  BETTER_AUTH_SECRET?: string;
+  DAHLIA_AUTH_SECRET?: string;
   CODEX_AUTO_REVIEW_MODEL?: string;
   DAHLIA_AI_BACKEND?: string;
   DAHLIA_EMBEDDING_MODEL?: string;
   DAHLIA_SEARCH_EMBEDDING_DIMENSIONS?: string;
   DAHLIA_CAPTIONING_MODEL?: string;
   DAHLIA_AUTH_HEADER?: string;
+  DAHLIA_AUTH_PROVIDER_ID?: string;
   DAHLIA_AUTH_TYPE?: string;
   DAHLIA_APP_URL?: string;
   DAHLIA_DATABASE_TYPE?: string;
@@ -68,7 +69,6 @@ export interface WorkerEnv extends RuntimeSecrets, WorkerJobBindings {
   IMAGES?: Pick<ImagesBinding, "input">;
   DAHLIA_STORAGE?: R2BucketLike;
   HYPERDRIVE?: { connectionString: string };
-  dahlia_db_prod?: D1DatabaseLike;
 }
 export type WorkerApp = ReturnType<typeof createApp> & {
   jobs?: ReturnType<typeof createQueueJobs>;
@@ -82,25 +82,26 @@ healthApp.use("*", secureHeaders());
 healthApp.get("/healthz", (context) => context.json({ status: "ok" }));
 
 function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): ApplicationStore & { jobs?: WorkerJobStores } {
-  if (config.databaseType === "d1") {
-    if (!env.dahlia_db_prod) throw new Error("The dahlia_db_prod D1 binding is required");
-    return createD1ApplicationStore(env.dahlia_db_prod);
-  }
   if (config.databaseType === "hyperdrive" && !env.HYPERDRIVE) throw new Error("The HYPERDRIVE binding is required");
   const url = config.databaseType === "hyperdrive" ? env.HYPERDRIVE!.connectionString
     : config.databaseType === "postgres" ? config.databaseUrl : undefined;
-  if (!url) throw new Error("Worker storage supports DAHLIA_DATABASE_TYPE=d1, hyperdrive, or postgres");
+  if (!url) throw new Error("Worker storage supports DAHLIA_DATABASE_TYPE=hyperdrive or postgres");
   const connection = connectPostgresUrl(url, 5);
   const permissions = syncedVaultPermission;
-  return { ...createPostgresApplicationStore(connection.db, "postgres", config.searchEmbedding, config.encryption), close: connection.close,
+  return { ...createPostgresApplicationStore(connection.db, "postgres", config.searchEmbedding, config.encryption, config.authProviderId), close: connection.close,
     jobs: {
       summaryJobs: createSummaryJobStore(connection.db, true, config.encryption),
       imageAnalysis: createImageAnalysisStore(connection.db, true, config.encryption),
       searchIndex: createPostgresSearchIndexStore(connection.db),
-      async listJobOwners(after) {
-        const rows = await connection.db.selectDistinct({ id: permissions.principalId }).from(permissions)
-          .where(and(eq(permissions.principalType, "user"), eq(permissions.role, "owner"), after ? gt(permissions.principalId, after) : undefined))
-          .orderBy(asc(permissions.principalId)).limit(100);
+      async listJobScopes(kind, after, userId) {
+        if (kind !== "search") {
+          return (await connection.db.select({ id: authSchema.user.id }).from(authSchema.user)
+            .where(after ? gt(authSchema.user.id, after) : undefined).orderBy(asc(authSchema.user.id)).limit(100)).map((row) => row.id);
+        }
+        const rows = await connection.db.selectDistinct({ id: permissions.vaultId }).from(permissions)
+          .where(and(after ? gt(permissions.vaultId, after) : undefined,
+            userId ? and(vaultPermissions(connection.db, authSchema, userId).matchingPrincipal(), inArray(permissions.role, ["admin", "editor"])) : undefined))
+          .orderBy(asc(permissions.vaultId)).limit(100);
         return rows.map((row) => row.id);
       },
     },
@@ -111,13 +112,14 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
   const config = loadConfig({
     ...Object.fromEntries(Object.entries(env).filter(([name]) => name.startsWith("DAHLIA_ENCRYPTION_MASTER_KEY_"))) as Record<string, string | undefined>,
     DAHLIA_ENCRYPTION_ACTIVE_KEY_ID: env.DAHLIA_ENCRYPTION_ACTIVE_KEY_ID,
-    BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
+    DAHLIA_AUTH_SECRET: env.DAHLIA_AUTH_SECRET,
     CODEX_AUTO_REVIEW_MODEL: env.CODEX_AUTO_REVIEW_MODEL,
     DAHLIA_AI_BACKEND: env.DAHLIA_AI_BACKEND,
     DAHLIA_EMBEDDING_MODEL: env.DAHLIA_EMBEDDING_MODEL,
     DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: env.DAHLIA_SEARCH_EMBEDDING_DIMENSIONS,
     DAHLIA_CAPTIONING_MODEL: env.DAHLIA_CAPTIONING_MODEL,
     DAHLIA_AUTH_HEADER: env.DAHLIA_AUTH_HEADER,
+    DAHLIA_AUTH_PROVIDER_ID: env.DAHLIA_AUTH_PROVIDER_ID,
     DAHLIA_AUTH_TYPE: env.DAHLIA_AUTH_TYPE,
     DAHLIA_APP_URL: env.DAHLIA_APP_URL,
     DAHLIA_DATABASE_TYPE: env.DAHLIA_DATABASE_TYPE,
@@ -148,12 +150,10 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
   });
   const applicationStore = createWorkerApplicationStore(config, env);
   try {
-    const auth = config.authProvider === "accounts"
-      ? await initializeDahliaAuth(config, applicationStore)
-      : undefined;
     if (config.storageBackend === "local" || config.storageBackend === "databricks") {
       throw new Error(`Storage backend ${config.storageBackend} requires the Node runtime`);
     }
+    const auth = await initializeDahliaAuth(config, applicationStore);
     const objectStorage = config.storageBackend === "r2"
       ? new R2ObjectStorage(requiredR2Binding(env))
       : new S3ObjectStorage(config.storageS3!);

@@ -10,8 +10,18 @@ export function uiText(english: string, japanese: string): string {
   return globalThis.navigator?.language.startsWith("ja") ? japanese : english;
 }
 
+export const canWriteVault = (role: unknown) => role === "admin" || role === "editor";
+export const vaultRoleLabel = (role: SyncedVaultInfo["role"]) => role === "admin" ? uiText("Admin", "管理者")
+  : role === "editor" ? uiText("Editor", "編集者") : uiText("Viewer", "閲覧者");
+
 export function syncMessage(code: string, language = globalThis.navigator?.language ?? "en"): string | undefined {
   const messages: Record<string, [string, string]> = {
+    vault_delete_confirmation_stale: ["The Vault changed. Close this dialog and confirm deletion again.", "保管庫が変更されました。この画面を閉じ、削除内容を再確認してください。"],
+    last_vault_admin: ["Keep at least one Vault Admin.", "保管庫の管理者を最低1人残してください。"],
+    last_organization_owner: ["Keep at least one organization owner.", "組織の所有者を最低1人残してください。"],
+    last_team_member: ["Keep at least one team member.", "チームのメンバーを最低1人残してください。"],
+    personal_vault_immutable: ["The Personal Vault cannot be shared or deleted.", "Personal保管庫は共有・削除できません。"],
+    organization_delete_forbidden: ["This organization cannot be deleted.", "この組織は削除できません。"],
     transfer_audience_changed: ["Readers changed. Close this dialog and review the transfer again.", "閲覧者が変更されました。この画面を閉じ、移管内容を再確認してください。"],
     transfer_unsynced_data: ["Uploads or uncommitted data remain. Complete sync and try again.", "アップロード中または未確定のデータがあります。同期完了後に再試行してください。"],
     transfer_processing: ["Recording or processing is in progress. Try again when it finishes.", "録音または処理が進行中です。完了後に再試行してください。"],

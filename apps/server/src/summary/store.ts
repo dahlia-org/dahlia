@@ -1,3 +1,4 @@
+import { vaultPermissions } from "../auth/vault-permissions";
 import { createContentEncryption } from "../encryption/store";
 import type { EncryptionConfig } from "../encryption/crypto";
 import { and, asc, eq, lte, gt, or, sql } from "drizzle-orm";
@@ -35,8 +36,7 @@ export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabas
         .orderBy(asc(jobs.id)).limit(100));
     },
     async claim(reference) {
-      const owners = reference ? [{ id: reference.ownerUserId }] : await db.selectDistinct({ id: schema.syncedVaultPermission.principalId }).from(schema.syncedVaultPermission)
-        .where(and(eq(schema.syncedVaultPermission.principalType, "user"), eq(schema.syncedVaultPermission.role, "owner")));
+      const owners = reference ? [{ id: reference.ownerUserId }] : await db.select({ id: schema.user.id }).from(schema.user);
       for (const owner of owners) {
         const job = await withOwner(owner.id, async (connection) => {
           const now = new Date();
@@ -45,6 +45,12 @@ export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabas
           const query = connection.select().from(jobs).where(eligible).orderBy(asc(jobs.availableAt)).limit(1);
           const [stored] = isPostgres ? await query.for("update", { skipLocked: true }) : await query;
           if (!stored) return null;
+          const [writable] = await connection.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
+            .where(and(eq(schema.syncedVault.vaultId, stored.vaultId), vaultPermissions(connection, schema, owner.id).write(schema.syncedVault.vaultId))).limit(1);
+          if (!writable) {
+            await connection.update(jobs).set({ status: "failed", lastErrorCode: "summary_meeting_unavailable", claimedAt: null, leaseExpiresAt: null }).where(eq(jobs.id, stored.id));
+            return null;
+          }
           const [row] = await createContentEncryption(connection, schema, owner.id, encryption).read(jobs, [stored]);
           if (!row) return null;
           if (row.attempts >= 3) {

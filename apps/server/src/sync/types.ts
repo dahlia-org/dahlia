@@ -31,6 +31,7 @@ export interface SyncTranscriptCursor {
 }
 
 export interface SyncVaultRecord {
+  organizationId: string;
   encryption?: "none" | "server";
   hasResources?: boolean;
   icon?: string | null;
@@ -65,7 +66,7 @@ export interface SyncProjectView extends SyncProjectRecord {
   subtreeMeetingCount: number;
 }
 
-export type VaultRole = "owner" | "member";
+export type VaultRole = "admin" | "editor" | "viewer";
 export type VaultPrincipalType = "user" | "organization" | "team";
 export type SyncEntity = "vault" | "project" | "meeting" | "summary" | "transcript" | "file" | "meeting_attachment" | "meeting_event" | "recording";
 export type SyncAction = "create" | "update" | "delete" | "upsert" | "patch" | "reset";
@@ -80,7 +81,7 @@ export interface SyncTransactionOperation {
 }
 
 export interface SyncTransaction {
-  schemaVersion: 2;
+  schemaVersion: 3;
   id: string;
   vaultId: string;
   createdAt: Date;
@@ -114,7 +115,6 @@ export interface SyncRetentionResult {
 }
 
 export interface SyncHistoryTarget {
-  ownerUserId: string;
   vaultId: string;
 }
 
@@ -236,7 +236,13 @@ export interface VaultTransferRecord {
   manifest: { projects: string[]; meetings: string[]; files: string[] };
 }
 
+export interface GovernanceVault { vaultId: string; name: string; revision: number; creatorId: string }
+
 export interface IdentitySyncStore {
+  listGovernanceVaults(organizationId: string, after?: string): Promise<{ items: GovernanceVault[]; nextCursor: string | null }>;
+  confirmVaultDeletion(organizationId: string, vaultId: string): Promise<GovernanceVault & { changeCursor: string }>;
+  forceDeleteVault(organizationId: string, transaction: SyncTransaction, revision: number, changeCursor: string): Promise<SyncTransactionResponse>;
+
 
   vaultTransferAudience(sourceVaultId: string, destinationVaultId: string): Promise<{ audienceHash: string; removed: { id: string; name: string; email: string }[]; added: { id: string; name: string; email: string }[] }>;
   transferVault(request: VaultTransferRequest): Promise<VaultTransferRecord>;
@@ -294,8 +300,8 @@ export interface IdentitySyncStore {
   expireFileUploads(vaultId: string, before: Date): Promise<void>;
   listFiles(vaultId: string, after: string | undefined, limit: number): Promise<FileRecord[]>;
   listMeetingAttachments(vaultId: string, meetingId: string, after: string | undefined, limit: number): Promise<(MeetingAttachmentRecord & { file: FileRecord })[]>;
-  listOrganizations(): Promise<{ id: string; name: string; slug: string }[]>;
-  listVaults(organizationId?: string, owner?: string): Promise<SyncVaultRecord[]>;
+  listOrganizations(): Promise<{ id: string; name: string; slug: string; kind: string }[]>;
+  listVaults(organizationId?: string): Promise<SyncVaultRecord[]>;
   getVault(vaultId: string): Promise<SyncVaultRecord | null>;
   listProjects(vaultId: string): Promise<SyncProjectView[]>;
   searchProjectActivity(vaultId: string, filters: SyncSearchFilters): Promise<{ projectId: string | null; updatedAt: string }[]>;
@@ -328,11 +334,12 @@ export interface IdentitySyncStore {
   ): Promise<SyncScreenshotRecord[]>;
   searchPermissionTargets(vaultId: string, query: string, offset: number): Promise<{ items: Array<{ principalType: VaultPrincipalType; principalId: string; name: string; detail: string }>; nextCursor: string | null } | null>;
   listPermissions(vaultId: string): Promise<VaultPermissionRecord[] | null>;
-  putMemberPermission(vaultId: string, principalType: VaultPrincipalType, principalId: string): Promise<boolean>;
-  deleteMemberPermission(vaultId: string, principalType: VaultPrincipalType, principalId: string): Promise<boolean>;
+  putPermission(vaultId: string, principalType: VaultPrincipalType, principalId: string, role: VaultRole): Promise<boolean>;
+  deletePermission(vaultId: string, principalType: VaultPrincipalType, principalId: string): Promise<boolean>;
 }
 
 export interface MeetingSyncStore {
+  expireRecordingUploads(vaultId: string, before: Date): Promise<void>;
   isAvailable(): Promise<boolean>;
   listHistoryTargets(after?: SyncHistoryTarget): Promise<SyncHistoryTarget[]>;
   pruneHistoryBatch(target: SyncHistoryTarget): Promise<SyncRetentionResult>;

@@ -1,3 +1,4 @@
+import { canWriteVault } from "./auth/vault-permissions";
 import { z } from "@hono/zod-openapi";
 import type { Identity } from "./auth/identity";
 import type { RecordingAudio, RecordingRecord, RecordingSource } from "./recordings/model";
@@ -77,7 +78,7 @@ export class ConversationAnalyticsService {
 
   async get(identity: Identity, vaultId: string, meetingId: string, version: number): Promise<ConversationAnalyticsResponse> {
     return this.store.withIdentity(identity, async (scoped) => {
-      if ((await scoped.getVault(vaultId))?.role !== "owner" || !await scoped.getMeeting(vaultId, meetingId)) {
+      if (!canWriteVault((await scoped.getVault(vaultId))?.role) || !await scoped.getMeeting(vaultId, meetingId)) {
         throw new RequestError(404, "conversation_analytics_unavailable");
       }
       const transcript = await scoped.getTranscript(vaultId, meetingId, version);

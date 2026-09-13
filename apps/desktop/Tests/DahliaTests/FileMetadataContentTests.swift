@@ -25,7 +25,7 @@
             let changeData = try file.changes(revision: 2)
             let failedProvider = provider(fixture) { request in
                 #expect(request.url?.query?.contains("content=") != true)
-                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":4}}"#.utf8)) }
+                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8)) }
                 if request.url!.path.hasSuffix("/changes") { return (200, [:], changeData) }
                 #expect(request.url!.path == "/api/v1/files/\(file.id.uuidString.lowercased())")
                 return (503, [:], Data())
@@ -74,7 +74,7 @@
             let second = try file.body(revision: changesAgain ? 3 : 2)
             let calls = Mutex(0)
             let provider = provider(fixture) { request in
-                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":4}}"#.utf8)) }
+                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8)) }
                 if request.url!.path.hasSuffix("/changes") { return (200, [:], changes) }
                 let count = calls.withLock { $0 += 1
                     return $0
@@ -109,7 +109,7 @@
             if scenario == "checksum" { json["checksum"] = "SHA-256:" + String(repeating: "b", count: 64) }
             let body = try JSONSerialization.data(withJSONObject: json)
             let provider = provider(fixture) { request in
-                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":4}}"#.utf8)) }
+                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8)) }
                 if request.url!.path.hasSuffix("/changes") { return (
                     200,
                     [:],

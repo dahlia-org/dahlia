@@ -80,13 +80,17 @@ import GRDB
             )
             var ownerRecord = VaultRecord(id: .v7(), path: nil, name: "Owner", createdAt: .now, lastOpenedAt: .now)
             ownerRecord.accountConnectionId = connection.id
+            if ownerRecord.syncRole == nil { ownerRecord.syncRole = "admin" }
+            if ownerRecord.organizationId == nil { ownerRecord.organizationId = .v7() }
             ownerRecord.syncConfirmedConnectionId = connection.id
             let owner = ownerRecord
             let local = VaultRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
             var memberRecord = VaultRecord(id: .v7(), path: nil, name: "Member", createdAt: .now, lastOpenedAt: .now)
             memberRecord.accountConnectionId = connection.id
+            if memberRecord.syncRole == nil { memberRecord.syncRole = "admin" }
+            if memberRecord.organizationId == nil { memberRecord.organizationId = .v7() }
             memberRecord.syncConfirmedConnectionId = connection.id
-            memberRecord.syncRole = "member"
+            memberRecord.syncRole = "viewer"
             let member = memberRecord
             let ownerMeeting = UUID.v7(), localMeeting = UUID.v7(), memberMeeting = UUID.v7()
             let attendee = CalendarParticipant(

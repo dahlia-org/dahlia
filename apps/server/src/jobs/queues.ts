@@ -16,17 +16,17 @@ const kind = z.enum(["summary", "image", "search"]);
 const ownerUserId = z.string().min(1).max(500);
 const id = z.uuid();
 const cursor = z.union([id, z.string().regex(/^[0-9a-f-]{36}\/[0-9a-f-]{36}$/)]);
-const scan = z.object({ action: z.literal("scan"), kind, ownerUserId,
+const scan = z.object({ action: z.literal("scan"), kind, scopeId: id,
   phase: z.enum(["reconcile", "dispatch"]), after: cursor.optional() }).strict();
 export const jobMessageSchema = z.union([
-  z.object({ action: z.literal("owners"), kind, afterOwner: ownerUserId.optional() }).strict(),
+  z.object({ action: z.literal("scopes"), kind, after: id.optional(), userId: id.optional() }).strict(),
   scan.refine((value) => !value.after || (value.kind === "search") === value.after.includes("/")),
   z.object({ action: z.literal("run"), kind: z.literal("summary"),
     reference: z.object({ id, ownerUserId }).strict() }).strict(),
   z.object({ action: z.literal("run"), kind: z.literal("image"),
     reference: z.object({ fileId: id, ownerUserId, model: z.string().min(1).max(200) }).strict() }).strict(),
   z.object({ action: z.literal("run"), kind: z.literal("search"), references: z.array(z.object({
-    vaultId: id, documentId: id, ownerUserId, generation: z.number().int().positive(),
+    vaultId: id, documentId: id, generation: z.number().int().positive(),
   }).strict()).min(1).max(16) }).strict(),
 ]);
 export type JobMessage = z.infer<typeof jobMessageSchema>;
@@ -45,7 +45,7 @@ export interface WorkerJobStores {
   summaryJobs: SummaryJobQueueStore;
   imageAnalysis: ImageAnalysisQueueStore;
   searchIndex: SearchIndexQueueStore;
-  listJobOwners(after?: string): Promise<string[]>;
+  listJobScopes(kind: JobKind, after?: string, userId?: string): Promise<string[]>;
 }
 
 export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobStores,
@@ -56,21 +56,21 @@ export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobSt
     image: captioner ? bindings.DAHLIA_IMAGE_QUEUE : undefined,
     search: embedder ? bindings.DAHLIA_SEARCH_QUEUE : undefined,
   };
-  const scanMessage = (kind: JobKind, ownerUserId: string): JobMessage => ({
-    kind, action: "scan", ownerUserId, phase: kind === "summary" ? "dispatch" : "reconcile",
+  const scanMessage = (kind: JobKind, scopeId: string): JobMessage => ({
+    kind, action: "scan", scopeId, phase: kind === "summary" ? "dispatch" : "reconcile",
   });
   return {
     async notify(ownerUserId: string) {
       // This is a post-commit hint. Cron recovers a failed send from the canonical job tables.
       const results = await Promise.allSettled(Object.entries(queues).map(([kind, queue]) =>
-        queue?.send(scanMessage(kind as JobKind, ownerUserId)) ?? Promise.resolve()));
+        queue?.send(kind === "search" ? { action: "scopes", kind: "search", userId: ownerUserId } : scanMessage(kind as JobKind, ownerUserId)) ?? Promise.resolve()));
       if (results.some((result) => result.status === "rejected")) {
         console.warn(JSON.stringify({ level: "warn", event: "job_notification_failed" }));
       }
     },
     async schedule() {
       const results = await Promise.allSettled(Object.entries(queues).map(([kind, queue]) =>
-        queue?.send({ kind: kind as JobKind, action: "owners" }) ?? Promise.resolve()));
+        queue?.send({ kind: kind as JobKind, action: "scopes" }) ?? Promise.resolve()));
       const failure = results.find((result) => result.status === "rejected");
       if (failure) throw failure.reason;
     },
@@ -79,19 +79,19 @@ export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobSt
       const queue = queues[message.kind];
       if (!queue) throw new Error("job_queue_unavailable");
       signal.throwIfAborted();
-      if (message.action === "owners") {
-        const owners = await stores.listJobOwners(message.afterOwner);
-        if (owners.length) await queue.sendBatch(owners.map((owner) => ({ body: scanMessage(message.kind, owner) })));
-        if (owners.length === 100) await queue.send({ ...message, afterOwner: owners.at(-1)! });
+      if (message.action === "scopes") {
+        const scopes = await stores.listJobScopes(message.kind, message.after, message.userId);
+        if (scopes.length) await queue.sendBatch(scopes.map((id) => ({ body: scanMessage(message.kind, id) })));
+        if (scopes.length === 100) await queue.send({ ...message, after: scopes.at(-1)! });
         return;
       }
       if (message.action === "scan") {
         if (message.phase === "reconcile") {
           let after: string | undefined;
           if (message.kind === "image") {
-            after = await stores.imageAnalysis.reconcilePage(captioner!.model, message.ownerUserId, message.after);
+            after = await stores.imageAnalysis.reconcilePage(captioner!.model, message.scopeId, message.after);
           } else if (message.kind === "search") {
-            after = await stores.searchIndex.reconcilePage(embedder!.model, embedder!.dimensions, message.ownerUserId, message.after);
+            after = await stores.searchIndex.reconcilePage(embedder!.model, embedder!.dimensions, message.scopeId, message.after);
           }
           await queue.send({ ...message, after, phase: after ? "reconcile" : "dispatch" });
           return;
@@ -100,17 +100,17 @@ export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobSt
         let count: number;
         let after: string | undefined;
         if (message.kind === "summary") {
-          const rows = await stores.summaryJobs.due(message.ownerUserId, message.after);
+          const rows = await stores.summaryJobs.due(message.scopeId, message.after);
           messages = rows.map((reference) => ({ action: "run", kind: "summary", reference }));
           count = rows.length;
           after = rows.at(-1)?.id;
         } else if (message.kind === "image") {
-          const rows = await stores.imageAnalysis.due(captioner!.model, message.ownerUserId, message.after);
+          const rows = await stores.imageAnalysis.due(captioner!.model, message.scopeId, message.after);
           messages = rows.map((reference) => ({ action: "run", kind: "image", reference }));
           count = rows.length;
           after = rows.at(-1)?.fileId;
         } else {
-          const rows = await stores.searchIndex.due(embedder!.model, embedder!.dimensions, message.ownerUserId, message.after);
+          const rows = await stores.searchIndex.due(embedder!.model, embedder!.dimensions, message.scopeId, message.after);
           messages = [];
           for (let offset = 0; offset < rows.length; offset += 16) {
             messages.push({ action: "run", kind: "search", references: rows.slice(offset, offset + 16) });
@@ -132,7 +132,7 @@ export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobSt
       }
       // A generated summary, transcript, or caption can invalidate a search document.
       if (message.kind !== "search" && queues.search) {
-        await queues.search.send(scanMessage("search", message.reference.ownerUserId));
+        await queues.search.send({ action: "scopes", kind: "search", userId: message.reference.ownerUserId });
       }
     },
   };

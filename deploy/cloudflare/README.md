@@ -1,17 +1,17 @@
 # Deploy Dahlia Server on Cloudflare
 
-This target uses Hono only for the API Worker. React, JavaScript, CSS, and SPA navigation are served directly by Cloudflare Workers Static Assets. The default template selects `DAHLIA_DATABASE_TYPE=d1`; the alternate `wrangler.hyperdrive.example.jsonc` selects PostgreSQL through the `HYPERDRIVE` binding. Authentication and the OpenAI-compatible upstream are configured independently.
+This target uses Hono only for the API Worker. React, JavaScript, CSS, and SPA navigation are served directly by Cloudflare Workers Static Assets. The template selects PostgreSQL through the `HYPERDRIVE` binding. Authentication and the OpenAI-compatible upstream are configured independently.
 
 ```text
 browser ─────────────── Workers Static Assets ── React SPA / JS / CSS
    │ API, discovery, health
    ▼
-Hono API Worker ─┬──── D1 ── Better Auth and application metadata
+Hono API Worker ─┬──── Hyperdrive / PostgreSQL ── Better Auth and canonical data
                  ├──── R2 ── object storage
                  └──── HTTPS ── Cloudflare AI Gateway
 ```
 
-Copy either [`wrangler.example.jsonc`](wrangler.example.jsonc) for D1 or [`wrangler.hyperdrive.example.jsonc`](wrangler.hyperdrive.example.jsonc) for Hyperdrive to the ignored `apps/server/wrangler.jsonc`. The selected database stores Better Auth data, Model Aliases, and administrator emails.
+Copy [`wrangler.example.jsonc`](wrangler.example.jsonc) to the ignored `apps/server/wrangler.jsonc` and configure its Hyperdrive ID.
 
 ## Prerequisites
 
@@ -32,21 +32,22 @@ pnpm build:cloudflare
 
 ```bash
 cp ../../deploy/cloudflare/wrangler.example.jsonc wrangler.jsonc
-pnpm exec wrangler d1 create dahlia-db-prod
-pnpm exec wrangler d1 migrations apply dahlia_db_prod --remote
+DAHLIA_DATABASE_TYPE=postgres DAHLIA_DATABASE_URL=<migration-url> pnpm db:migrate
 ```
 
-Copy the database name and ID returned by the first command into `d1_databases[0]` in `apps/server/wrangler.jsonc`. Keep the binding name `dahlia_db_prod` and `migrations_dir=drizzle/d1` unchanged. `pnpm db:generate:sqlite` refreshes this Wrangler-compatible flat mirror from the Drizzle SQLite migrations. The real configuration stays local and is not committed.
+Create a Hyperdrive configuration for your PostgreSQL database, disable its query cache, and copy its ID into `hyperdrive[0].id`. Keep the binding name `HYPERDRIVE`. The real configuration stays local and is not committed.
 
 Set the bucket name in the `DAHLIA_STORAGE` binding. The Worker uses that binding for upload, download, metadata, and deletion; no S3 credentials are required for the `r2` backend.
 
-For Hyperdrive, start from the alternate template and replace its Hyperdrive ID, then apply the schema-qualified PostgreSQL SQL under `apps/server/drizzle/postgres`. The migrations create the `auth` and `app` schemas. Keep the binding name `HYPERDRIVE` unchanged.
+The migration command applies the registered Auth and application migrations in order, including RLS and runtime support.
 
 ## 3. Configure authentication
 
+Setting `DAHLIA_AUTH_SECRET` is recommended. Without it, the shared initializer reads or creates `dahlia-auth-secret` in the working directory. There is no Worker-specific required-variable check or alternate storage. Cloudflare's [virtual filesystem is temporary per request](https://developers.cloudflare.com/workers/runtime-apis/nodejs/fs/) and its default working directory is read-only; operators are responsible for providing a stable secret.
+
 ```bash
 pnpm exec wrangler secret put DAHLIA_APP_URL
-pnpm exec wrangler secret put BETTER_AUTH_SECRET
+pnpm exec wrangler secret put DAHLIA_AUTH_SECRET
 pnpm exec wrangler secret put GOOGLE_CLIENT_ID
 pnpm exec wrangler secret put GOOGLE_CLIENT_SECRET
 ```
@@ -89,17 +90,17 @@ Then sign in with Google, create a Model Alias, and complete a streaming Respons
 - `/.well-known/*`, `/api/*`, `/mcp`, and `/healthz` are the only `assets.run_worker_first` paths. They always reach Hono, including browser navigation, so protocol and OAuth errors cannot become the SPA shell.
 - The Worker does not advertise CIMD because the required DNS-resolve-once and connection-pinning transport is Node-only. Cloudflare `accounts` mode therefore cannot onboard a remote MCP client; use trusted-proxy `header` authentication for `/mcp`, and do not replace the transport with unrestricted Worker `fetch`.
 - Matching static files and `/dashboard/**` navigations are handled by Workers Static Assets. The Worker has no `ASSETS` binding and does not fetch assets programmatically.
-- Use `pnpm dev:cloudflare` for workerd, local D1, and production-equivalent asset routing. Local Worker secrets belong in the ignored `apps/server/.dev.vars`; regular `pnpm dev` uses `apps/server/.env.local` and Node.
+- Use `pnpm dev:cloudflare` for workerd with a development PostgreSQL connection and production-equivalent asset routing. Local Worker secrets belong in the ignored `apps/server/.dev.vars`; regular `pnpm dev` uses `apps/server/.env.local` and Node.
 - Responses requests are capped at 4 MiB on Workers to remain within the isolate memory budget.
-- Back up D1 for Better Auth, Model Alias, and administrator recovery. Provider credentials are recovered from the deployment secret store, not D1.
+- Back up PostgreSQL for authentication and canonical data recovery. Provider credentials are recovered from the deployment secret store.
 - Rotate Google and provider credentials independently and redeploy after changing non-secret configuration.
 
-The templates configure a once-per-minute Cron Trigger for recording staging expiration and queued object deletion. Keep `triggers.crons` enabled when adapting the configuration: the scheduled handler performs maintenance without any HTTP traffic, including after a cold start.
+The template configures a once-per-minute Cron Trigger for recording staging expiration and queued object deletion. Keep `triggers.crons` enabled when adapting the configuration: the scheduled handler performs maintenance without any HTTP traffic, including after a cold start.
 
 
 ## PostgreSQL background jobs
 
-The Hyperdrive template enables independent summary, image-analysis and search Queues, each with a DLQ, batch size 1 and concurrency 1. Create `dahlia-summary`, `dahlia-image`, `dahlia-search` and their `-dlq` queues before deploying (for example, `pnpm exec wrangler queues create dahlia-summary`). The `IMAGES` binding transforms private R2 screenshot streams to WebP without public URLs. D1 keeps its existing authentication/gateway features; meeting sync and these jobs require PostgreSQL or Hyperdrive.
+The template enables independent summary, image-analysis and search Queues, each with a DLQ, batch size 1 and concurrency 1. Create `dahlia-summary`, `dahlia-image`, `dahlia-search` and their `-dlq` queues before deploying (for example, `pnpm exec wrangler queues create dahlia-summary`). The `IMAGES` binding transforms private R2 screenshot streams to WebP without public URLs.
 
 Disable Hyperdrive query caching before using the binding: `pnpm exec wrangler hyperdrive update <id> --caching-disabled true`. This is Hyperdrive resource configuration, not a Wrangler binding field. Stale authorization and job reads are unsafe. Apply the registered PostgreSQL migrations using `DAHLIA_DATABASE_TYPE=postgres DAHLIA_DATABASE_URL=<migration-url> pnpm db:migrate`. Supply the same provider/embedding environment values used by the Worker when migrating. Semantic search requires the existing pgvector extension and its model/dimension-specific HNSW index; the migration command creates that index when embeddings are configured (the underlying column remains `real[]`).
 

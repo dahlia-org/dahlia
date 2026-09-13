@@ -92,7 +92,7 @@
                     return (
                         200,
                         [:],
-                        Data((meetingDeleted ? "{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}" : "{\"sync\":{\"version\":4}}").utf8)
+                        Data((meetingDeleted ? "{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}" : "{\"sync\":{\"version\":5}}").utf8)
                     )
                 }
                 if path == "/api/v1/transactions/resolve" {
@@ -235,7 +235,7 @@
                 )
                 try connection.insert(db)
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ? WHERE id = ?",
+                    sql: "UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = COALESCE(syncRole, 'admin'), syncConfirmedConnectionId = ? WHERE id = ?",
                     arguments: [connection.id, connection.id, fixture.meeting.vaultId]
                 )
                 try db.execute(sql: "UPDATE vaults SET syncMeetingEventsVersion = ? WHERE id = ?", arguments: [version, fixture.meeting.vaultId])

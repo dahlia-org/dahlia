@@ -1,5 +1,5 @@
 import { serverMigrationManifest } from "../src/migrations";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -35,7 +35,7 @@ describe("deployment routing", () => {
         not_found_handling: string;
         run_worker_first: string[];
       };
-      d1_databases: Array<{ binding: string; migrations_dir: string }>;
+      hyperdrive: Array<{ binding: string; id: string }>;
       r2_buckets: Array<{ binding: string; bucket_name: string }>;
       observability: { enabled: boolean; logs: { enabled: boolean; invocation_logs: boolean } };
       vars: Record<string, string>;
@@ -45,30 +45,19 @@ describe("deployment routing", () => {
       not_found_handling: "single-page-application",
       run_worker_first: ["/api/*", "/.well-known/*", "/mcp", "/healthz"],
     });
-    expect(wrangler.d1_databases).toContainEqual(expect.objectContaining({
-      binding: "dahlia_db_prod",
-      database_id: "00000000-0000-0000-0000-000000000000",
-      migrations_dir: "drizzle/d1",
-    }));
-    const d1Migrations = readdirSync(new URL("../drizzle/d1", import.meta.url)).toSorted();
-    expect(d1Migrations).toEqual(serverMigrationManifest.sqlite.files.map((file) => file.split("/").at(-2) + ".sql"));
-    for (const migration of d1Migrations) {
-      expect(readText(`../drizzle/d1/${migration}`))
-        .toBe(readText(`../drizzle/sqlite/${migration.replace(/\.sql$/, "")}/migration.sql`));
-    }
-    expect(wrangler.vars).toEqual({
+    expect(wrangler.vars).toMatchObject({
       DAHLIA_AI_BACKEND: "cloudflare",
       DAHLIA_STORAGE_BACKEND: "r2",
       DAHLIA_AUTH_TYPE: "accounts",
       DAHLIA_APP_URL: "https://{name}.{subdomain}.workers.dev",
-      DAHLIA_DATABASE_TYPE: "d1",
+      DAHLIA_DATABASE_TYPE: "hyperdrive",
       GOOGLE_CLIENT_ID: "replace-with-google-client-id",
     });
     expect(wrangler.r2_buckets).toEqual([{
       binding: "DAHLIA_STORAGE",
       bucket_name: "replace-with-r2-bucket-name",
     }]);
-    expect(wrangler).not.toHaveProperty("hyperdrive");
+    expect(wrangler).not.toHaveProperty("d1_databases");
     expect(wrangler.observability).toEqual({
       enabled: false,
       logs: { enabled: false, invocation_logs: false },
@@ -77,7 +66,7 @@ describe("deployment routing", () => {
   });
 
   it("provides a Hyperdrive configuration with the stable binding name", () => {
-    const wrangler = JSON.parse(readText("../../../deploy/cloudflare/wrangler.hyperdrive.example.jsonc")) as {
+    const wrangler = JSON.parse(readText("../../../deploy/cloudflare/wrangler.example.jsonc")) as {
       hyperdrive: Array<{ binding: string; id: string }>;
       vars: Record<string, string>;
     };
@@ -135,11 +124,11 @@ describe("deployment routing", () => {
   });
 
   it.each([
-    ["d1", "dahlia_db_prod D1 binding"],
     ["hyperdrive", "HYPERDRIVE binding"],
   ])("requires the selected %s Worker binding", async (databaseType, message) => {
     await expect(initializeWorkerApp({
       DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_AUTH_SECRET: "test-secret-with-at-least-32-characters",
       DAHLIA_DATABASE_TYPE: databaseType,
     })).rejects.toThrow(message);
   });
@@ -147,8 +136,9 @@ describe("deployment routing", () => {
   it("rejects local storage in the Worker runtime", async () => {
     await expect(initializeWorkerApp({
       DAHLIA_AUTH_TYPE: "header",
-      DAHLIA_DATABASE_TYPE: "d1",
-      dahlia_db_prod: {} as never,
+      DAHLIA_AUTH_SECRET: "test-secret-with-at-least-32-characters",
+      DAHLIA_DATABASE_TYPE: "hyperdrive",
+      HYPERDRIVE: { connectionString: "postgresql://localhost/test" },
     })).rejects.toThrow("Storage backend local requires the Node runtime");
   });
 
@@ -182,6 +172,7 @@ describe("deployment routing", () => {
   it("deploys the standalone Server package as a Databricks App backed by Lakebase", () => {
     const bundle = readText("../../../deploy/databricks/databricks.yml");
     const resource = readText("../../../deploy/databricks/resources/dahlia_server.yml");
+    expect(resource).toMatch(/name: DAHLIA_AUTH_PROVIDER_ID\s+value: databricks/);
     const serverPackage = JSON.parse(readText("../package.json")) as {
       exports: Record<string, unknown>;
       name: string;
@@ -244,6 +235,10 @@ describe("deployment routing", () => {
     expect(resource).not.toContain("resources.apps.dahlia_server.url");
     expect(resource).toContain("value: databricks");
     expect(resource).toContain("value_from: postgres");
+    expect(resource).toContain("name: DAHLIA_AUTH_SECRET\n            value: test-only-better-auth-secret-value");
+    expect(resource).not.toContain("  secrets:");
+    expect(resource).not.toContain("DAHLIA_AUTH_SECRET_DATABRICKS");
+    expect(bundle).not.toContain("auth_secret_value:");
     expect(resource).not.toContain("openai_api_key");
     expect(resource).toContain("permission: CAN_CONNECT_AND_CREATE");
     expect(resource).toContain("volume_type: MANAGED");
@@ -279,7 +274,7 @@ describe("deployment routing", () => {
 
   it("separates generated PostgreSQL auth DDL from the application baseline", () => {
     const sqlite = serverMigrationManifest.sqlite.files.map((file) => readText(`../${file}`)).join("\n");
-    const auth = readText("../drizzle/postgres-auth/20260903034253_melodic_scalphunter/migration.sql");
+    const auth = readText("../drizzle/postgres-auth/20260912095619_initial/migration.sql");
     const postgres = serverMigrationManifest.postgres.files.filter((file) => file.startsWith("drizzle/postgres/")).map((file) => readText(`../${file}`)).join("\n");
     for (const migration of [sqlite, `${auth}\n${postgres}`]) {
       expect(migration).not.toContain("model_alias");
@@ -305,8 +300,8 @@ describe("deployment routing", () => {
     expect(postgres).not.toContain('CREATE TABLE "app"."user"');
     expect(postgres).toContain("ROW LEVEL SECURITY");
     expect(postgres).toContain("CREATE POLICY");
-    expect(postgres).toContain('permission."principal_type" = \'team\'');
-    expect(postgres).toContain('FROM "auth"."team_member"');
+    expect(postgres).toContain('"current_identity_can_read_vault"');
+    expect(readFileSync(new URL("../drizzle/postgres/20260912180000_runtime_support/migration.sql", import.meta.url), "utf8")).toContain("FROM auth.team_member");
     expect(postgres).not.toContain("header_deployment");
     expect(sqlite).toContain("team_member_user_team_idx");
     expect(sqlite).not.toContain("header_deployment");

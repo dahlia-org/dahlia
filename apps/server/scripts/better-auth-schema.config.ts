@@ -13,6 +13,7 @@ if (provider !== "pg" && provider !== "sqlite") {
 export const auth = betterAuth({
   // The generator recognizes UUID column types only with this literal; runtime supplies UUIDv7.
   advanced: { database: { joins: false, generateId: "uuid" } },
+  user: { additionalFields: { registrationState: { type: "string", required: true, defaultValue: "personal", input: false, returned: false } } },
   baseURL: "https://dahlia.invalid",
   // Resource seeding is runtime-only, so schema generation needs no database connection.
   database: drizzleAdapter({}, {
@@ -28,6 +29,7 @@ export const auth = betterAuth({
       scopes: OAUTH_SCOPES,
     }),
     organization({
+      schema: { organization: { additionalFields: { kind: { type: "string", required: true, defaultValue: "team", input: false }, domain: { type: "string", required: false, unique: true, input: false } } } },
       cancelPendingInvitationsOnReInvite: true,
       requireEmailVerificationOnInvitation: true,
       sendInvitationEmail: async () => {},

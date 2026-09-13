@@ -29,7 +29,8 @@ import GRDB
                 try connection.insert(db)
                 var synced = other
                 synced.accountConnectionId = connection.id
-                synced.syncRole = "owner"
+                synced.organizationId = synced.accountConnectionId == nil ? nil : (synced.organizationId ?? .v7())
+                synced.syncRole = "admin"
                 synced.syncPullCursor = "keep-cursor"
                 try synced.insert(db)
                 try db.execute(
@@ -43,7 +44,10 @@ import GRDB
             try await fixture.database.dbQueue.write { db in
                 if mode == .newVault {
                     try db.execute(
-                        sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ?, syncRole = 'member', syncPullCursor = 'member-cursor' WHERE id = ?",
+                        sql: """
+                        UPDATE vaults SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id),
+                        syncConfirmedConnectionId = ?, syncRole = 'viewer', syncPullCursor = 'member-cursor' WHERE id = ?
+                        """,
                         arguments: [connection.id, connection.id, fixture.meeting.vaultId]
                     )
                 }
@@ -185,7 +189,7 @@ import GRDB
                 name: "Test"
             )
             try await fixture.database.dbQueue.write { db in
-                try db.execute(sql: "UPDATE vaults SET syncRole = 'owner'")
+                try db.execute(sql: "UPDATE vaults SET syncRole = 'admin'")
             }
             await #expect(throws: BackupServiceError.restoreTargetUnavailable) { try await service.prepareRestore(
                 from: generation,
@@ -243,7 +247,7 @@ import GRDB
             let metadata = try #require(model.generations.first?.metadata)
             #expect(model.canOverwrite(vaultId: metadata.vaults[0].id))
             #expect(!model.isBusy)
-            try await fixture.database.dbQueue.write { try $0.execute(sql: "UPDATE vaults SET syncRole = 'owner'") }
+            try await fixture.database.dbQueue.write { try $0.execute(sql: "UPDATE vaults SET syncRole = 'admin'") }
             await model.refresh()
             #expect(!model.canOverwrite(vaultId: metadata.vaults[0].id))
             await model.importBackup(from: fixture.testRootURL.appending(path: "missing.sqlite"))

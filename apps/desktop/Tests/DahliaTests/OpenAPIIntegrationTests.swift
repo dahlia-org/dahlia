@@ -16,12 +16,12 @@
             let rowID = "019f0d36-0520-7000-8000-000000000002"
             let origin = try #require(URL(string: "https://example.com"))
             let url = try #require(URL(string: "/api/v1/vaults/\(vaultID)/text-search", relativeTo: origin))
-            let cursor = String(decoding: try JSONSerialization.data(withJSONObject: [vaultID, kind, "needle", 1, 1]), as: UTF8.self)
+            let cursor = try String(decoding: JSONSerialization.data(withJSONObject: [vaultID, kind, "needle", 1, 1]), as: UTF8.self)
             let publicCursor = try #require(PublicIDWire.cursor(cursor, kind: "textSearch", direction: .encode) as? String)
-            let publicRowID = TypeID.encode(try #require(UUID(uuidString: rowID)), as: kind == "screenshot" ? .attachment : .meeting)
+            let publicRowID = try TypeID.encode(#require(UUID(uuidString: rowID)), as: kind == "screenshot" ? .attachment : .meeting)
             let requestData = try JSONSerialization.data(withJSONObject: ["kind": kind, "query": "needle", "cursor": cursor])
             let responseData = try JSONSerialization.data(withJSONObject: [
-                "items": [["id": publicRowID, "meetingId": TypeID.encode(try #require(UUID(uuidString: rowID)), as: .meeting)]],
+                "items": [["id": publicRowID, "meetingId": TypeID.encode(#require(UUID(uuidString: rowID)), as: .meeting)]],
                 "nextCursor": publicCursor,
             ])
             let capture = SyncJSONResponse()
@@ -83,7 +83,9 @@
         func sharedNullableDTOsPreserveRecordsAndTombstones(deleted: Bool) throws {
             let id = "019f0d36-0520-7000-8000-000000000001"
             let record = deleted ? "null" : """
-            {"vaultId":"\(id)","name":"Vault","revision":1,"createdAt":"2026-09-09T00:00:00Z","updatedAt":"2026-09-09T00:00:00Z"}
+            {"vaultId":"\(id)","organizationId":"\(
+                id
+            )","role":"admin","name":"Vault","revision":1,"createdAt":"2026-09-09T00:00:00Z","updatedAt":"2026-09-09T00:00:00Z"}
             """
             let expected = deleted ? nil : id
             let canonical = try SyncJSON.decoder.decode(Components.Schemas.CanonicalRecord.self, from: Data("""
@@ -187,14 +189,18 @@
             configuration.httpAdditionalHeaders = ["X-Forwarded-Email": "swift-test@example.com", "X-Forwarded-User": "swift-test"]
             let api = SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" })
             let connectionID = UUID.v7(), vaultID = UUID.v7().uuidString.lowercased(), meetingID = UUID.v7().uuidString.lowercased()
+            let organizations = try await api.perform(origin: origin, connectionId: connectionID) {
+                try await $0.listOrganizations().ok.body.json
+            }
+            let organizationID = try #require(organizations.items.first(where: { $0.kind == .team })?.id)
             let data = Data("""
-            {"schemaVersion":2,"id":"\(UUID.v7().uuidString
+            {"schemaVersion":3,"id":"\(UUID.v7().uuidString
                 .lowercased())","vaultId":"\(vaultID)","createdAt":"2026-09-09T00:00:00.001Z","operations":[
             {"id":"\(UUID.v7().uuidString
                 .lowercased(
                 ))","entity":"vault","action":"create","entityId":"\(
                 vaultID
-            )","baseRevision":null,"data":{"name":"Swift integration","createdAt":"2026-09-09T00:00:00.001Z"}},
+            )","baseRevision":null,"data":{"organizationId":"\(organizationID)","name":"Swift integration","createdAt":"2026-09-09T00:00:00.001Z"}},
             {"id":"\(UUID.v7().uuidString
                 .lowercased(
                 ))","entity":"meeting","action":"create","entityId":"\(
@@ -249,7 +255,7 @@
             #expect(uploaded.checksum == checksum)
             #expect(uploaded.size == bytes.count)
             let commit = Data("""
-            {"schemaVersion":2,"id":"\(UUID.v7().uuidString.lowercased())","vaultId":"\(vaultID)","createdAt":"2026-09-09T00:00:00Z","operations":[
+            {"schemaVersion":3,"id":"\(UUID.v7().uuidString.lowercased())","vaultId":"\(vaultID)","createdAt":"2026-09-09T00:00:00Z","operations":[
             {"id":"\(UUID.v7().uuidString
                 .lowercased(
                 ))","entity":"file","action":"upsert","entityId":"\(fileID)","baseRevision":null,"data":{"checksum":"\(checksum)","metadata":{}}}]}

@@ -11,7 +11,7 @@ import type { MeetingSyncStore } from "../src/sync/types";
 import type { MeetingSyncService } from "../src/sync/service";
 import { geminiChatResponse } from "../src/summary/gemini";
 
-const env = { DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "cloudflare", OPENAI_API_KEY: "test-token",
+const env = { DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "cloudflare", OPENAI_API_KEY: "test-token",
   OPENAI_BASE_URL: "https://api.cloudflare.com/client/v4/accounts/test/ai/v1", CLOUDFLARE_AI_GATEWAY_ID: "jobs",
   DAHLIA_EMBEDDING_MODEL: "@cf/baai/bge-m3", DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: "1024", DAHLIA_CAPTIONING_MODEL: "gpt-4.1" };
 const config = loadConfig(env);

@@ -291,13 +291,13 @@
                 continuation.yield(())
                 return memory.state.withLock { $0.connection }
             }
-            let releaseRefresh = DispatchSemaphore(value: 0)
+            let releaseRefresh = DatabricksAuthorizationGate()
             let refreshCount = Mutex(0)
             let session = makeSession { request in
                 #expect(form(request)["grant_type"] == "refresh_token")
                 refreshCount.withLock { $0 += 1 }
                 requestContinuation.yield(())
-                #expect(releaseRefresh.wait(timeout: .now() + 5) == .success)
+                await releaseRefresh.wait()
                 return (200, Self.token)
             }
             defer { session.invalidateAndCancel() }
@@ -314,7 +314,7 @@
             _ = await readIterator.next()
             original.cancel()
             if cancelAll { joined.cancel() }
-            releaseRefresh.signal()
+            await releaseRefresh.release()
             await #expect(throws: CancellationError.self) { try await original.value }
             if cancelAll {
                 await #expect(throws: CancellationError.self) { try await joined.value }
@@ -368,7 +368,7 @@
                 continuation.yield(())
                 return memory.state.withLock { $0.connection }
             }
-            let releaseRefresh = DispatchSemaphore(value: 0)
+            let releaseRefresh = DatabricksAuthorizationGate()
             let (requests, requestContinuation) = AsyncStream<Void>.makeStream()
             defer { requestContinuation.finish() }
             let logins = Mutex(0)
@@ -376,8 +376,8 @@
                 if request.url!.path.contains(".well-known") { return (404, "") }
                 if form(request)["grant_type"] == "refresh_token" {
                     requestContinuation.yield(())
-                    // URLProtocol's worker waits for the test's observable join, never MainActor.
-                    #expect(releaseRefresh.wait(timeout: .now() + 5) == .success)
+                    // Suspend the response until the other caller joins without blocking Foundation queues.
+                    await releaseRefresh.wait()
                 }
                 return (200, Self.token)
             }
@@ -394,7 +394,7 @@
             let signIn = Task { try await service.signIn(workspaceURL: Self.host) }
             _ = await readIterator.next() // signIn's existing-connection lookup
             _ = await readIterator.next() // accessToken joins the pending refresh
-            releaseRefresh.signal()
+            await releaseRefresh.release()
             #expect(try await refresh.value == "access")
             #expect(try await signIn.value == connection)
             #expect(logins.withLock { $0 } == 1)
@@ -458,7 +458,7 @@
             )
         }
 
-        private func makeSession(_ handler: @escaping @Sendable (URLRequest) throws -> (Int, String)) -> URLSession {
+        private func makeSession(_ handler: @escaping @Sendable (URLRequest) async throws -> (Int, String)) -> URLSession {
             DatabricksURLProtocol.handler.withLock { $0 = handler }
             let config = URLSessionConfiguration.ephemeral
             config.protocolClasses = [DatabricksURLProtocol.self]
@@ -487,25 +487,38 @@
     }
 
     private final class DatabricksURLProtocol: URLProtocol, @unchecked Sendable {
-        // URLProtocol callbacks run on Foundation queues; only the injected handler is mutable.
-        static let handler = Mutex<(@Sendable (URLRequest) throws -> (Int, String))?>(nil)
+        // Foundation callbacks and response tasks share only mutex-protected state.
+        static let handler = Mutex<(@Sendable (URLRequest) async throws -> (Int, String))?>(nil)
+        private let responseTask = Mutex<Task<Void, Never>?>(nil)
         override static func canInit(with _: URLRequest) -> Bool { true }
         override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
         override func startLoading() {
-            do {
-                let handle = Self.handler.withLock { $0! }
-                let (status, body) = try handle(request)
-                client?.urlProtocol(
-                    self,
-                    didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!,
-                    cacheStoragePolicy: .notAllowed
-                )
-                client?.urlProtocol(self, didLoad: Data(body.utf8))
-                client?.urlProtocolDidFinishLoading(self)
-            } catch { client?.urlProtocol(self, didFailWithError: error) }
+            let handle = Self.handler.withLock { $0! }
+            let task = Task {
+                do {
+                    let (status, body) = try await handle(request)
+                    try Task.checkCancellation()
+                    client?.urlProtocol(
+                        self,
+                        didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!,
+                        cacheStoragePolicy: .notAllowed
+                    )
+                    client?.urlProtocol(self, didLoad: Data(body.utf8))
+                    client?.urlProtocolDidFinishLoading(self)
+                } catch {
+                    if !Task.isCancelled { client?.urlProtocol(self, didFailWithError: error) }
+                }
+            }
+            responseTask.withLock { $0 = task }
         }
 
-        override func stopLoading() {}
+        override func stopLoading() {
+            let task = responseTask.withLock { task in
+                defer { task = nil }
+                return task
+            }
+            task?.cancel()
+        }
     }
 
     actor DatabricksAuthorizationGate {

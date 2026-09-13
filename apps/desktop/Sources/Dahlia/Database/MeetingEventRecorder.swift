@@ -46,7 +46,7 @@ enum MeetingEventRecorder {
               try Int.fetchOne(db, sql: "SELECT syncMeetingEventsVersion FROM vaults WHERE id = ?", arguments: [vault.id]) == 1,
               vault.accountConnectionId != nil,
               vault.accountConnectionId == vault.syncConfirmedConnectionId,
-              vault.syncRole != "member" else { return }
+              vault.allowsCanonicalEdits else { return }
         let payload = Payload(
             meetingId: meetingId.uuidString.lowercased(), kind: kind, occurredAt: occurredAt,
             sessionId: sessionId?.uuidString.lowercased(), relatedId: relatedId,

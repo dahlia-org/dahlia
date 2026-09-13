@@ -5,7 +5,7 @@ import { testStore } from "./test-store";
 
 describe("account settings API", () => {
   it("authenticates, validates partial updates and keeps initialization conditional", async () => {
-    const app = createApp({ config: loadConfig({ DAHLIA_AUTH_TYPE: "header" }), authStore: testStore() });
+    const app = createApp({ config: loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", DAHLIA_AUTH_TYPE: "header" }), authStore: testStore() });
     const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner", "content-type": "application/json" };
     const patch = (body: unknown, extra = {}) => app.request("/api/v1/account/settings", { method: "PATCH", headers: { ...headers, ...extra }, body: JSON.stringify(body) });
     expect((await app.request("/api/v1/account/settings")).status).toBe(401);
@@ -19,13 +19,13 @@ describe("account settings API", () => {
     expect((await patch({ analysisLanguages: { scope: "all" } })).status).toBe(400);
     expect((await patch({ outputLanguage: "ja" }, { origin: "https://evil.example" })).status).toBe(403);
     expect((await patch({ outputLanguage: "x".repeat(9000) })).status).toBe(413);
-    const another = await app.request("/api/v1/account/settings", { headers: { ...headers, "x-forwarded-user": "other" } });
+    const another = await app.request("/api/v1/account/settings", { headers: { ...headers, "x-forwarded-email": "other@example.com" } });
     expect(await another.json()).toEqual({ settings: null });
     expect(result.headers.get("cache-control")).toBe("no-store");
   });
 
   it("merges nested summary fields without defaults or legacy aliases", async () => {
-    const app = createApp({ config: loadConfig({ DAHLIA_AUTH_TYPE: "header" }), authStore: testStore() });
+    const app = createApp({ config: loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", DAHLIA_AUTH_TYPE: "header" }), authStore: testStore() });
     const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner", "content-type": "application/json" };
     const patch = (body: unknown) => app.request("/api/v1/account/settings", { method: "PATCH", headers, body: JSON.stringify(body) });
     expect(await (await app.request("/api/v1/capabilities", { headers })).json()).toEqual({});

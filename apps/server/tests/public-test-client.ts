@@ -1,3 +1,4 @@
+import { Client } from "pg";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { createApp as createPublicApp } from "../src/app";
@@ -6,17 +7,37 @@ import { uuidV7 } from "../src/id";
 import type { Identity } from "../src/auth/identity";
 import type { AuthStore } from "../src/auth/store";
 
+export const testOrganizationID = "01990ab0-0000-7000-8000-000000000001";
+
 export function testUserID(subject: string): string {
   return /^[0-9a-f-]{36}$/i.test(subject) ? subject : `01990ab0-0000-7000-8000-${createHash("sha256").update(subject).digest("hex").slice(0, 12)}`;
 }
 
 /** Seed the same external-account link as header auth, with stable IDs for domain fixtures. */
 export async function seedHeaderIdentity(store: AuthStore, path: string, identity: Identity): Promise<void> {
-  await store.ensureIdentityUser(identity);
   const database = new DatabaseSync(path);
+  database.prepare("INSERT OR IGNORE INTO user (id, name, email, email_verified, registration_state, created_at, updated_at) VALUES (?, ?, ?, 1, 'personal', ?, ?)")
+    .run(identity.userId, identity.name ?? identity.email ?? identity.userId, identity.email ?? `${identity.userId}@example.com`, Date.now(), Date.now());
+  await store.ensureIdentityUser(identity);
+  database.prepare("INSERT OR IGNORE INTO organization (id, name, slug, kind, created_at) VALUES (?, 'Test organization', 'test-organization', 'team', ?)").run(testOrganizationID, Date.now());
+  database.prepare("INSERT OR IGNORE INTO member (id, organization_id, user_id, role, created_at) VALUES (?, ?, ?, CASE WHEN EXISTS (SELECT 1 FROM member WHERE organization_id = ?) THEN 'member' ELSE 'owner' END, ?)").run(uuidV7(), testOrganizationID, identity.userId, testOrganizationID, Date.now());
   database.prepare("INSERT OR IGNORE INTO account (id, account_id, provider_id, issuer, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-    .run(uuidV7(), identity.userId, "header", "urn:dahlia:header", identity.userId, Date.now(), Date.now());
+    .run(uuidV7(), identity.email ?? `${identity.userId}@example.com`, "external", "urn:dahlia:header", identity.userId, Date.now(), Date.now());
   database.close();
+}
+
+/** Existing PostgreSQL domain scenarios retain stable user IDs through the real initializer. */
+export async function seedPostgresIdentity(store: AuthStore, databaseUrl: string, identity: Identity): Promise<void> {
+  const client = new Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    await client.query(`INSERT INTO auth."user" (id, name, email, email_verified, registration_state, created_at, updated_at)
+      VALUES ($1, $2, $3, true, 'personal', now(), now()) ON CONFLICT DO NOTHING`,
+    [identity.userId, identity.name ?? identity.userId, identity.email ?? `${identity.userId}@example.com`]);
+    await store.ensureIdentityUser(identity);
+    await client.query("INSERT INTO auth.organization (id, name, slug, kind, created_at) VALUES ($1, 'Test organization', 'test-organization', 'team', now()) ON CONFLICT DO NOTHING", [testOrganizationID]);
+    await client.query("INSERT INTO auth.member (id, organization_id, user_id, role, created_at) VALUES ($1, $2, $3, CASE WHEN EXISTS (SELECT 1 FROM auth.member WHERE organization_id = $2) THEN 'member' ELSE 'owner' END, now()) ON CONFLICT DO NOTHING", [uuidV7(), testOrganizationID, identity.userId]);
+  } finally { await client.end(); }
 }
 
 /** Existing domain scenarios use UUID fixtures; every request still crosses the real public adapter. */

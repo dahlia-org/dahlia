@@ -266,8 +266,10 @@
                     lastOpenedAt: .now
                 )
                 member.accountConnectionId = vault.accountConnectionId
+                if member.syncRole == nil { member.syncRole = "admin" }
+                if member.organizationId == nil { member.organizationId = .v7() }
                 member.syncConfirmedConnectionId = vault.accountConnectionId
-                member.syncRole = "member"
+                member.syncRole = "viewer"
                 try member.insert(db)
             }
 
@@ -407,6 +409,8 @@
             )
             var vault = VaultRecord(id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
             vault.accountConnectionId = connection.id
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = connection.id
             let savedVault = vault
             try await database.dbQueue.write { db in
@@ -426,7 +430,7 @@
                 try SyncTransactionQueue.discard(vaultId: savedVault.id, in: db)
                 try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [savedVault.id])
                 try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = NULL, syncConfirmedConnectionId = NULL, syncPullCursor = NULL WHERE id = ?",
+                    sql: "UPDATE vaults SET accountConnectionId = NULL, organizationId = NULL, syncConfirmedConnectionId = NULL, syncPullCursor = NULL WHERE id = ?",
                     arguments: [savedVault.id]
                 )
             }
@@ -793,6 +797,8 @@
                 var otherVault = VaultRecord(id: .v7(), path: nil, name: "Other", createdAt: .now, lastOpenedAt: .now)
                 if recordingVault == "server" {
                     otherVault.accountConnectionId = connection
+                    if otherVault.syncRole == nil { otherVault.syncRole = "admin" }
+                    if otherVault.organizationId == nil { otherVault.organizationId = .v7() }
                     otherVault.syncConfirmedConnectionId = connection
                 }
                 if recordingVault != "target" { try otherVault.insert(db) }
@@ -960,6 +966,8 @@
             )
             var vault = VaultRecord(id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
             vault.accountConnectionId = connection.id
+            if vault.syncRole == nil { vault.syncRole = "admin" }
+            if vault.organizationId == nil { vault.organizationId = .v7() }
             vault.syncConfirmedConnectionId = connection.id
             let savedVault = vault
             try await database.dbQueue.write { db in

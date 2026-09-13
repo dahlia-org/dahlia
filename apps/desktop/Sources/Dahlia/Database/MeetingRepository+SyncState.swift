@@ -143,7 +143,7 @@ extension MeetingRepository {
             WHERE meetingId = ? AND state = 'failed'
               AND EXISTS (SELECT 1 FROM vaults v WHERE v.id = recording_archives.vaultId
                 AND v.accountConnectionId IS recording_archives.connectionId
-                AND COALESCE(v.syncRole, 'owner') = 'owner' AND v.syncRecoveryState IS NULL)
+                AND (v.accountConnectionId IS NULL OR v.syncRole IN ('admin', 'editor')) AND v.syncRecoveryState IS NULL)
             """, arguments: [meetingId])
         }
     }

@@ -1657,3 +1657,19 @@
 "sync.unavailable" = "Sync progress is unavailable";
 "sync.syncing" = "Syncing";
 "sync.synced" = "Synced";
+
+"Finish recording and pending sync, then choose a writable Server Vault." = "Finish recording and pending sync, then choose a writable Server Vault.";
+"The Vault changed during preparation. Your data is preserved. Try again." = "The Vault changed during preparation. Your data is preserved. Try again.";
+"Some IDs already exist on the Server. No local data was moved." = "Some IDs already exist on the Server. No local data was moved.";
+"Import destination" = "Import destination";
+"Existing Server Vault" = "Existing Server Vault";
+"New Server Vault" = "New Server Vault";
+"Organization" = "Organization";
+"Create Organization" = "Create Organization";
+"Reload destinations" = "Reload destinations";
+"A backup is saved before importing. Existing Vault settings stay unchanged. The original Local Vault remains available." = "A backup is saved before importing. Existing Vault settings stay unchanged. The original Local Vault remains available.";
+"Import" = "Import";
+"Organization name" = "Organization name";
+
+"Vault Admin" = "Admin";
+"Vault Editor" = "Editor";
