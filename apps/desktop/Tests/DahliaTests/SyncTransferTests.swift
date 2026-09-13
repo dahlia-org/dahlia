@@ -257,7 +257,7 @@
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func boundedStagingReducesFixedLatencyTransferTime() async throws {
+        func boundedStagingOverlapsUploadsAndCompletesEveryFile() async throws {
             let serial = try SyncTransferFixture(), parallel = try SyncTransferFixture()
             defer { serial.close()
                 parallel.close()
@@ -266,27 +266,31 @@
                 for _ in 0 ..< 8 {
                     _ = try await fixture.addFile()
                 }
-                await fixture.server.setUploadDelay(.milliseconds(200))
             }
-            func measure(_ fixture: SyncTransferFixture, prefetch: Bool) async throws -> Duration {
+            func stage(_ fixture: SyncTransferFixture, prefetch: Bool) async throws {
                 let worker = fixture.worker()
                 let head = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue))
                 let candidates = try await fixture.queue.read { try SyncTransactionQueue.fileUploads(for: head, origin: fixture.origin, in: $0) }
-                let start = ContinuousClock.now
-                if prefetch { try await worker.prepareFileUploads(for: head, origin: fixture.origin) }
+                if prefetch {
+                    await fixture.server.holdUploads()
+                    try await worker.prepareFileUploads(for: head, origin: fixture.origin)
+                    for await count in fixture.server.uploadStarts where count == 4 {
+                        break
+                    }
+                    #expect(await fixture.server.maximumUploads == 4)
+                    await fixture.server.releaseUploads()
+                }
                 for candidate in candidates {
                     try await worker.stageFileUpload(candidate)
                 }
-                let duration = start.duration(to: .now)
                 await worker.stop()
-                return duration
+                #expect(await fixture.server.uploadCount == 8)
+                #expect(await fixture.server.cancelledUploads == 0)
             }
-            let serialTime = try await measure(serial, prefetch: false)
-            let parallelTime = try await measure(parallel, prefetch: true)
+            try await stage(serial, prefetch: false)
+            try await stage(parallel, prefetch: true)
             #expect(await serial.server.maximumUploads == 1)
             #expect(await parallel.server.maximumUploads == 4)
-            #expect(parallelTime < serialTime)
-            print("Sync upload benchmark (8 files, 200 ms/request): serial=\(serialTime), parallel=\(parallelTime)")
         }
 
         @Test(.timeLimit(.minutes(1)), arguments: [429, 503, 403, 409])
@@ -543,6 +547,8 @@
         var maximumUploads = 0
         private var activeUploads = 0
         private var uploadDelay = Duration.zero
+        private var uploadsHeld = false
+        private var uploadReleases: [AsyncStream<Void>.Continuation] = []
         private var commitFailure: Bool?
         private var expiredPullCursor = false
         private var compactReceipts = false
@@ -561,6 +567,12 @@
 
         func register(_ file: FileRecord) { files[file.id.uuidString.lowercased()] = file }
         func setUploadDelay(_ delay: Duration) { uploadDelay = delay }
+        func holdUploads() { uploadsHeld = true }
+        func releaseUploads() {
+            uploadsHeld = false
+            for release in uploadReleases { release.finish() }
+            uploadReleases.removeAll()
+        }
         func failNextCommit(afterSaving: Bool) { commitFailure = afterSaving }
         func failUpload(_ id: UUID, status: Int) { uploadFailures[id.uuidString.lowercased()] = status }
         func expirePullCursor() { expiredPullCursor = true }
@@ -591,6 +603,12 @@
                 started.yield(uploadCount)
                 defer { activeUploads -= 1 }
                 do {
+                    if uploadsHeld {
+                        let (release, continuation) = AsyncStream<Void>.makeStream()
+                        uploadReleases.append(continuation)
+                        for await _ in release {}
+                        try Task.checkCancellation()
+                    }
                     // Deliberate server latency, not a completion barrier for the test.
                     try await Task.sleep(for: uploadDelay)
                 } catch {

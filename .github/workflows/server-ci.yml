@@ -149,7 +149,7 @@ jobs:
       - name: Validate PostgreSQL Organization authorization
         run: |
           psql postgresql://postgres@127.0.0.1:5432/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE dahlia_organization_authorization OWNER dahlia'
-          pnpm exec vitest run tests/organization-vaults.test.ts
+          pnpm exec vitest run tests/organization-workspaces.test.ts
         env:
           TEST_ORGANIZATION_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia_organization_authorization
 
