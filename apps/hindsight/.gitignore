@@ -1,0 +1,11 @@
+.venv/
+.env
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+
+# Recreated from UPSTREAM.json + patches; never edit these as source.
+.upstream/
+.upstream-*/
