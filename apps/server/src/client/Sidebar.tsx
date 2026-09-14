@@ -198,7 +198,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
           <a key={href} href={href} aria-current={typeof window !== "undefined" && window.location.pathname === href ? "page" : undefined}><MenuIcon name={icon} /><span>{label}</span></a>)}
         {serverLinks}
       </nav> : session.capabilities.sharing && <nav className="server-navigation" aria-label={uiText("Organization settings", "組織設定")}>
-        <a href="/organizations" aria-current={typeof window !== "undefined" && (window.location.pathname === "/organizations" || window.location.pathname.startsWith("/organizations/")) ? "page" : undefined}><MenuIcon name="organization" /><span>{uiText("Organization settings", "組織設定")}</span></a>
+        <a href="/orgs" aria-current={typeof window !== "undefined" && (window.location.pathname === "/orgs" || window.location.pathname.startsWith("/orgs/")) ? "page" : undefined}><MenuIcon name="organization" /><span>{uiText("Organization settings", "組織設定")}</span></a>
       </nav>}
     </div>
     <div className="sidebar-footer">
@@ -220,7 +220,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
           </button>)}
           {!state.organizations && !state.organizationError && <p className="sidebar-status">{uiText("Loading organizations…", "組織を読み込み中…")}</p>}
           {state.organizationError && <Failure message={state.organizationError} retry={state.reload} />}
-          <a href="/organizations" aria-current={typeof window !== "undefined" && (window.location.pathname === "/organizations" || window.location.pathname.startsWith("/organizations/")) ? "page" : undefined}><MenuIcon name="organization" /><span>{uiText("Your organizations", "所属組織一覧")}</span><MenuIcon name="arrow" /></a>
+          <a href="/orgs" aria-current={typeof window !== "undefined" && (window.location.pathname === "/orgs" || window.location.pathname.startsWith("/orgs/")) ? "page" : undefined}><MenuIcon name="organization" /><span>{uiText("Your organizations", "所属組織一覧")}</span><MenuIcon name="arrow" /></a>
         </>}
         <span className="nav-divider" />
         {children}

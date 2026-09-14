@@ -16,7 +16,7 @@ const coreDashboardPaths = new Set([
   "/dashboard",
   "/dashboard/settings",
   "/workspaces",
-  "/organizations",
+  "/orgs",
   "/admin",
   "/admin/models",
   "/admin/members",
@@ -27,7 +27,7 @@ const coreDashboardPaths = new Set([
 
 export function isCoreDashboardPath(path: string): boolean {
   return coreDashboardPaths.has(path)
-    || /^\/(?:meetings|projects|files|organizations)\/[^/]+$/.test(path)
+    || /^\/(?:meetings|projects|files|orgs)\/[^/]+$/.test(path)
     || /^\/workspaces\/[^/]+(?:\/(?:meetings|projects)\/[^/]+)?$/.test(path)
     || /^\/admin\/organizations\/[^/]+$/.test(path)
     || /^\/accept-invitation\/[^/]+$/.test(path);
@@ -41,7 +41,6 @@ export type DashboardRoute = {
   meetingId?: string;
   projectId?: string;
   invitationId?: string;
-  organizationSlug?: string;
   organizationId?: string;
 };
 
@@ -52,14 +51,14 @@ export function resolveDashboardRoute(
   if (path === "/") return { redirect: "/dashboard" };
   if (path === "/sessions") return { redirect: "/dashboard/settings" };
   if (path === "/dashboard") return { page: "overview" };
-  if (path === "/organizations") {
+  if (path === "/orgs") {
     return capabilities.sharing
       ? { page: "organizations" }
       : { redirect: "/dashboard" };
   }
-  const organization = path.match(/^\/organizations\/([^/]+)$/);
-  if (organization) return capabilities.sharing
-    ? { page: "organization", organizationSlug: organization[1] }
+  const organization = path.match(/^\/orgs\/([^/]+)$/);
+  if (organization && validID("organization", organization[1])) return capabilities.sharing
+    ? { page: "organization", organizationId: organization[1] }
     : { redirect: "/dashboard" };
   const invitation = path.match(/^\/accept-invitation\/([^/]+)$/);
   if (invitation && validID("invitation", invitation[1])) {

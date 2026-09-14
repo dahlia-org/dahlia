@@ -43,8 +43,8 @@ Meeting and Project detail reads are unscoped (`/meetings/{meetingId}`, `/projec
 | Path | `accounts` | `header` |
 | --- | --- | --- |
 | `/`, `/sign-in`, `/dashboard/**`, `/workspaces/**` | Static SPA | Static SPA |
-| `/organizations` | Joined organizations and invitations; create an organization in a modal | Same Organization UI |
-| `/organizations/{slug}` | Members, Teams, and Settings tabs | Same Organization UI |
+| `/orgs` | Joined organizations and invitations; create an organization in a modal | Same Organization UI |
+| `/orgs/{organizationId}` | Organization TypeID (`org_…`); Members, Teams, and Settings tabs | Same Organization UI |
 | `/accept-invitation/**` | Better Auth invitation management | Same invitation management with verified proxy identity |
 | `/api/auth/**` | Browser sessions, Organization management, Google sign-in and OAuth 2.1 | Browser sessions and Organization management; Google/OAuth disabled |
 | `/api/v1/session` | Account session and capabilities | Validated email-header identity and capabilities |

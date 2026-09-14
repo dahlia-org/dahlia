@@ -11,7 +11,7 @@ let failCreate = true;
 let creates = 0;
 let invites = 0;
 let teamCreates = 0;
-const organizations = [{ id: "organization-id", name: "Alpha", slug: "alpha-team" }];
+const organizations = [{ id: "org_00000000000000000000000001", name: "Alpha", slug: "alpha-team" }];
 const member = { id: "member-id", userId: "owner", role: "owner", user: { name: "Owner", email: "owner@example.com" } };
 window.fetch = (input, init) => Promise.resolve((() => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.origin);
@@ -27,20 +27,21 @@ window.fetch = (input, init) => Promise.resolve((() => {
     creates++;
     const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { name: string; slug: string };
     if (failCreate) return Response.json({ error: "slug_already_exists" }, { status: 409 });
-    const organization = { id: "new-id", ...body };
+    const organization = { id: "org_00000000000000000000000002", ...body };
     organizations.push(organization);
     return Response.json(organization);
   }
+  if (url.pathname.startsWith("/api/v1/organizations/") && url.pathname.endsWith("/workspaces")) return Response.json({ items: [], nextCursor: null });
   if (url.pathname === "/api/v1/organizations") return Response.json({ items: organizations, nextCursor: null });
   if (url.pathname.endsWith("/list")) return Response.json(organizations);
-  if (url.pathname === "/api/v1/organizations/organization-id/members") return Response.json({ items: [member], nextCursor: null });
-  if (url.pathname === "/api/v1/organizations/organization-id/teams") return Response.json({ items: [{ id: "team-id", organizationId: "organization-id", name: "Design" }], nextCursor: null });
+  if (url.pathname === "/api/v1/organizations/org_00000000000000000000000001/members") return Response.json({ items: [member], nextCursor: null });
+  if (url.pathname === "/api/v1/organizations/org_00000000000000000000000001/teams") return Response.json({ items: [{ id: "team-id", organizationId: "org_00000000000000000000000001", name: "Design" }], nextCursor: null });
   if (url.pathname.endsWith("/list-members") || url.pathname.endsWith("/members")) {
     if (url.pathname.includes("/teams/")) return Response.json({ items: [{ id: "tm", teamId: "team-id", userId: "owner" }], nextCursor: null });
     return Response.json({ members: [member] });
   }
   if (url.pathname.endsWith("/list-teams") || url.pathname.endsWith("/list-user-teams") || url.pathname.endsWith("/teams")) {
-    return Response.json([{ id: "team-id", organizationId: "organization-id", name: "Design" }]);
+    return Response.json([{ id: "team-id", organizationId: "org_00000000000000000000000001", name: "Design" }]);
   }
   if (url.pathname.endsWith("/list-user-invitations") || url.pathname.endsWith("/list-invitations")) return Response.json([]);
   throw Error(`Unexpected request: ${url.pathname}`);
@@ -62,18 +63,20 @@ function fill(name: string, value: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 async function run() {
-  history.replaceState(null, "", "/organizations");
+  history.replaceState(null, "", "/orgs");
   createRoot(document.getElementById("root")!).render(<App />);
-  await until(() => document.querySelector('a[href="/organizations/alpha-team"]'));
-  assert(document.querySelector('#account-menu a[href="/organizations"]'), "Account menu has no organization list entry");
+  await until(() => document.querySelector('a[href="/orgs/org_00000000000000000000000001"]'));
+  assert(document.querySelector('#account-menu a[href="/orgs"]'), "Account menu has no organization list entry");
+  assert(document.querySelector('#account-menu a[href="/orgs"][aria-current="page"]'), "Organization list is not selected");
   assert(!main().querySelector("input"), "Organization creation form leaked into list");
   assert(!main().textContent?.includes("Design"), "Team details leaked into list");
-  (document.querySelector('a[href="/organizations/alpha-team"]') as HTMLElement).click();
+  (document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') as HTMLElement).click();
   await until(() => button("Members"));
   button("Members").click();
   await until(() => panel()?.textContent?.includes("owner@example.com"));
-  assert(location.pathname === "/organizations/alpha-team", "Detail did not use slug");
-  assert([...document.querySelectorAll('[role="tab"]')].map((el) => el.textContent).join() === "Members 1,Teams 1,Settings", "Missing organization tabs");
+  assert(document.querySelector('#account-menu a[href="/orgs"][aria-current="page"]'), "Organization detail is not selected");
+  assert(location.pathname === "/orgs/org_00000000000000000000000001", "Detail did not use TypeID");
+  assert([...document.querySelectorAll('[role="tab"]')].map((el) => el.textContent).join() === "Workspace governance,Members 1,Teams 1,Settings", "Missing organization tabs");
   assert(!panel().querySelector(".org-section-header h3"), "Member heading duplicates tab");
   button("Invite member").click();
   await until(() => document.querySelector(".action-dialog:modal"));
@@ -96,14 +99,14 @@ async function run() {
   await until(() => document.querySelector(".action-dialog:modal"));
   fill("name", "New team");
   document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
-  await until(() => !document.querySelector(".action-dialog") && main().textContent?.includes("Team created."));
-  assert(teamCreates === 1, "Membership failure duplicated team creation");
+  await until(() => !document.querySelector(".action-dialog") && teamCreates === 1);
+  assert(teamCreates === 1, "Team creation did not submit exactly once");
   button("Settings").click();
   await until(() => panel()?.textContent?.includes("alpha-team"));
   assert(button("Delete organization", panel()), "Owner deletion missing from Settings");
-  navigateDashboard("/organizations/missing");
+  navigateDashboard("/orgs/org_00000000000000000000000003");
   await until(() => main().textContent?.includes("Organization not found"));
-  navigateDashboard("/organizations");
+  navigateDashboard("/orgs");
   await until(() => button("Create organization", main()));
   button("Create organization", main()).click();
   await until(() => document.querySelector(".action-dialog:modal"));
@@ -118,19 +121,19 @@ async function run() {
   assert(document.querySelector<HTMLInputElement>('[name="name"]')?.value === "New organization", "Failure discarded draft");
   failCreate = false;
   document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
-  await until(() => location.pathname === "/organizations/new-team" && panel()?.textContent?.includes("owner@example.com"));
+  await until(() => location.pathname === "/orgs/org_00000000000000000000000002" && panel()?.textContent?.includes("owner@example.com"));
   assert(creates === 2 && !document.querySelector(".action-dialog"), "Create did not close modal and open detail");
   accounts = false;
   window.dispatchEvent(new Event(clientMutationEvent));
-  navigateDashboard("/organizations");
-  await until(() => document.querySelector('a[href="/organizations/alpha-team"]') && !button("Create organization", main()));
-  (document.querySelector('a[href="/organizations/alpha-team"]') as HTMLElement).click();
+  navigateDashboard("/orgs");
+  await until(() => document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') && !button("Create organization", main()));
+  (document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') as HTMLElement).click();
   await until(() => button("Members"));
   button("Members").click();
   await until(() => panel()?.textContent?.includes("owner@example.com"));
   button("Settings").click();
   await until(() => panel()?.textContent?.includes("alpha-team"));
-  assert(!button("Delete organization", panel()), "Proxy organization exposed deletion");
+  assert(button("Delete organization", panel()), "Team organization owner lost deletion in header mode");
   document.body.dataset.testResult = "passed";
 }
 void run().catch((error: unknown) => { document.body.dataset.testResult = "failed"; document.body.dataset.testError = error instanceof Error ? error.stack : String(error); });

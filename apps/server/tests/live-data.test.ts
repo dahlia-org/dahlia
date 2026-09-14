@@ -112,8 +112,8 @@ it("navigates within browser history and allows explicitly registered extension 
   expect(changed).not.toHaveBeenCalled();
   expect(browser.history.pushState).not.toHaveBeenCalled();
   expect(browser.history.replaceState).not.toHaveBeenCalled();
-  navigateDashboard("/organizations");
-  expect(browser.history.pushState).toHaveBeenCalledWith(null, "", "/organizations");
+  navigateDashboard("/orgs");
+  expect(browser.history.pushState).toHaveBeenCalledWith(null, "", "/orgs");
   navigateDashboard("/dashboard", true);
   expect(browser.history.replaceState).toHaveBeenCalledWith(null, "", "/dashboard");
   expect(changed).toHaveBeenCalledTimes(2);
