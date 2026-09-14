@@ -12,11 +12,11 @@ Better Auth の Organization role `owner | admin | member` と Workspace role �
 
 ## Organization
 
-`kind = personal | team` は不変。各 user の Personal Organization は `personal-{internal user UUID}` の不変 slug、初期名 Personal、本人の owner membership と Personal Workspace / direct admin permission を1組だけ持つ。名前は変更できるが共有・招待・Team・追加 Workspace・削除はできない。OAuth の `personal:<userId>` workspace claim は別概念である。
+`kind = personal | team` は不変。各 user の Personal Organization は メールの local part を小文字化し、英数字以外の各文字を `_` に置換した初期 slug、初期名 Personal、本人の owner membership と Personal Workspace / direct admin permission を1組だけ持つ。名前と slug は変更できるが共有・招待・Team・追加 Workspace・削除はできない。OAuth の `personal:<userId>` workspace claim は別概念である。
 
 Header 認証は `DAHLIA_AUTH_HEADER`（既定 `X-Forwarded-Email`、例 `Cf-Access-Authenticated-User-Email`）で指定した1つの検証済みメールヘッダーだけを識別に使う。前後空白除去・小文字化・メール検証を API / Better Auth で共用し、`account.account_id` に保存する。`X-Forwarded-User` や他ヘッダーへ fallback しない。内部 user ID は UUID、メール変更は別 identity とし自動統合しない。proxy の上書きと直接接続遮断が前提。
 
-Header の初回 user 登録時だけ、メールドメインと Organization の nullable / unique カスタムフィールド `domain` の完全一致で lookup し、なければ Team Organization を作る。表示名はドメイン、slug は UUID ベース。最初は owner、以後は member。domain は client 入力不可・変更不可。手動作成と Personal の domain は null。サブドメインと一般メールサービスも同じ規則を使う。Google は Personal 作成のみ。退会・除名後は再追加しない。ドメイン組織は通常 Team と同じ制約で削除でき、その後の新規登録時に再作成する。旧 Default 組織と有効化 flag は廃止する。
+Header の初回 user 登録時だけ、メールドメインと Organization の nullable / unique カスタムフィールド `domain` の完全一致で lookup し、なければ Team Organization を作る。表示名はドメイン、slug はドメインを小文字化し、英数字以外の各文字を `_` に置換する。最初は owner、以後は member。domain は client 入力不可・変更不可。手動作成と Personal の domain は null。サブドメインと一般メールサービスも同じ規則を使う。Google は Personal 作成のみ。退会・除名後は再追加しない。ドメイン組織は通常 Team と同じ制約で削除でき、その後の新規登録時に再作成する。旧 Default 組織と有効化 flag は廃止する。
 
 各 Workspace に最低1人の有効 Admin を残す。permission / membership / Team / Organization の変更を原子的に検証する。Team 経由の権限には親 Organization の現在 membership も要求する。最後の Organization owner / member、Team member の解除を拒否する。
 
@@ -41,3 +41,5 @@ Local から既存 Server Workspace への merge はバックアップ・ID 衝�
 Server は未リリース。Desktop は v0.21.0 / DB v41 までが公開済み。Server baseline と Desktop v42 以降を最終形へ再生成・統合し、v41 以前と公開済み backup の復元を維持する。未公開 DB への互換移行や旧 role alias は提供せず、稼働 DB を自動消去しない。新同期契約は capability 5 / transaction schema 3。D1 はサポート対象から外す。D1 の batch は原子的だが、アプリ側の判断を挟む対話的 transaction を Better Auth と共有できず、専用実装の保守を避けるため。Workers は PostgreSQL / Hyperdrive を維持する。
 
 公開版v41の `accountConnectionId` はAI利用先の設定で、Server Workspaceの所属ではない。v42ではアカウント接続レコードとWorkspaceのAI設定を保持し、Workspaceの接続をnilにする。Organizationを推測せずLocalとして移行し、Serverへの関連付けは移行画面で明示的に行う。Server WorkspaceはorganizationId必須、Local WorkspaceはnilをSQLite CHECKでも検証する。
+
+local single-user モードで元の文字列が空の場合は `organization` を初期値とする。自動作成 slug が既存 Organization と重複する場合は `_2`、`_3` の順で空いている値を認可 transaction 内で採番する。既存 slug は移行しない。Web の Settings から本人（Personal）または owner / admin（Team）が既存更新 API で変更できる。手動入力は `[a-z0-9_-]+`、重複は拒否し、`personal-` は Team 用に引き続き予約禁止とする。組織の URL は `/orgs/{organizationId}` を使うため、slug の変更では変わらない。slug の変更は ID、domain、所属に影響しない。

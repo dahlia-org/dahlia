@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import type { DBAdapterInstance } from "better-auth";
@@ -36,7 +36,19 @@ export function createOrganizationStore(connection: NodePgDatabase | SQLiteDatab
           await tx.insert(schema.account).values({ id: uuidV7(), userId, issuer: HEADER_IDENTITY_ISSUER,
             providerId: headerProviderId, accountId: email, createdAt: user.createdAt, updatedAt: user.updatedAt });
         }
-        await tx.insert(schema.organization).values({ id: userId, name: "Personal", slug: `personal-${userId}`, kind: "personal", createdAt: user.createdAt });
+        const availableSlug = async (source: string) => {
+          const base = source.toLowerCase().replace(/[^a-z0-9]/gu, "_") || "organization";
+          const pattern = `${base.replaceAll("_", "!_")}!_%`;
+          const existing = await tx.select({ slug: schema.organization.slug }).from(schema.organization)
+            .where(or(eq(schema.organization.slug, base), sql`${schema.organization.slug} like ${pattern} escape '!'`));
+          const occupied = new Set(existing.map(({ slug }) => slug));
+          let slug = base;
+          for (let suffix = 2; occupied.has(slug); suffix++) {
+            slug = `${base}_${suffix}`;
+          }
+          return slug;
+        };
+        await tx.insert(schema.organization).values({ id: userId, name: "Personal", slug: await availableSlug(user.email.split("@")[0]!), kind: "personal", createdAt: user.createdAt });
         await tx.insert(schema.member).values({ id: userId, userId, organizationId: userId, role: "owner", createdAt: user.createdAt });
         await tx.insert(schema.syncedWorkspace).values({ workspaceId: userId, organizationId: userId, createdBy: { id: user.id, name: user.name, email: user.email }, name: "Personal", createdAt: user.createdAt, updatedAt: user.createdAt });
         await tx.insert(schema.syncedWorkspacePermission).values({ workspaceId: userId, principalType: "user", principalId: userId, role: "admin", grantedByUserId: userId });
@@ -44,7 +56,7 @@ export function createOrganizationStore(connection: NodePgDatabase | SQLiteDatab
           const domain = user.email.slice(user.email.lastIndexOf("@") + 1);
           const [existing] = await tx.select({ id: schema.organization.id }).from(schema.organization).where(eq(schema.organization.domain, domain));
           const organizationId = existing?.id ?? uuidV7();
-          if (!existing) await tx.insert(schema.organization).values({ id: organizationId, name: domain, slug: `domain-${organizationId}`, kind: "team", domain, createdAt: user.createdAt });
+          if (!existing) await tx.insert(schema.organization).values({ id: organizationId, name: domain, slug: await availableSlug(domain), kind: "team", domain, createdAt: user.createdAt });
           await tx.insert(schema.member).values({ id: uuidV7(), userId, organizationId, role: existing ? "member" : "owner", createdAt: user.createdAt });
         }
         await tx.update(schema.user).set({ registrationState: "ready" }).where(eq(schema.user.id, userId));

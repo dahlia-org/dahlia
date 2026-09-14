@@ -1,4 +1,5 @@
 import { projectPublicIDs } from "./public-schema";
+import { organizationSlugPattern } from "../auth/organization-slug";
 import { problemResponse } from "./problem";
 import { createRoute, OpenAPIHono, z, type RouteConfig } from "@hono/zod-openapi";
 import type { Handler } from "hono";
@@ -173,7 +174,7 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   listGovernanceWorkspaces: route("get", `${o}/workspaces`, "listGovernanceWorkspaces", "Organization Workspace metadata; organization owner or admin only", { 200: json(S.page(S.governanceWorkspace)) }, { query: S.pageQuery }, browser),
   confirmWorkspaceDeletion: route("get", `${o}/workspaces/{workspaceId}/deletion`, "confirmWorkspaceDeletion", "Confirm the current Workspace revision and content cursor", { 200: json(S.governanceWorkspace.extend({ changeCursor: S.cursor })) }, {}, browser),
   forceDeleteWorkspace: route("delete", `${o}/workspaces/{workspaceId}`, "forceDeleteWorkspace", "Delete a Team Organization Workspace after confirmation", { 200: json(S.receipt) }, body(z.object({ id: S.id, revision: S.integer, changeCursor: S.cursor }).strict()), browser),
-  createOrganization: route("post", "/api/v1/organizations", "createOrganization", "Create a Team Organization and creator membership through Better Auth", { 201: json(S.organization) }, body(z.object({ name: z.string().trim().min(1).max(200), slug: z.string().min(1).max(200).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/) }).strict())),
+  createOrganization: route("post", "/api/v1/organizations", "createOrganization", "Create a Team Organization and creator membership through Better Auth", { 201: json(S.organization) }, body(z.object({ name: z.string().trim().min(1).max(200), slug: z.string().min(1).max(200).regex(organizationSlugPattern) }).strict())),
   listOrganizations: route("get", "/api/v1/organizations", "listOrganizations", "Current organization memberships", { 200: json(S.page(S.organization)) }),
 };
 

@@ -9,9 +9,10 @@ Object.defineProperty(navigator, "language", { value: "en-US", configurable: tru
 let accounts = true;
 let failCreate = true;
 let creates = 0;
+let edits = 0;
 let invites = 0;
 let teamCreates = 0;
-const organizations = [{ id: "org_00000000000000000000000001", name: "Alpha", slug: "alpha-team" }];
+const organizations = [{ id: "org_00000000000000000000000001", name: "Alpha", slug: "alpha-team", kind: "team" }];
 const member = { id: "member-id", userId: "owner", role: "owner", user: { name: "Owner", email: "owner@example.com" } };
 window.fetch = (input, init) => Promise.resolve((() => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.origin);
@@ -27,13 +28,21 @@ window.fetch = (input, init) => Promise.resolve((() => {
     creates++;
     const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { name: string; slug: string };
     if (failCreate) return Response.json({ error: "slug_already_exists" }, { status: 409 });
-    const organization = { id: "org_00000000000000000000000002", ...body };
+    const organization = { id: "org_00000000000000000000000002", kind: "team", ...body };
     organizations.push(organization);
     return Response.json(organization);
   }
-  if (url.pathname.startsWith("/api/v1/organizations/") && url.pathname.endsWith("/workspaces")) return Response.json({ items: [], nextCursor: null });
+  if (url.pathname === "/api/auth/organization/update") {
+    edits++;
+    const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { organizationId: string; data: { slug: string } };
+    if (edits === 1) return Response.json({ error: "slug_already_exists" }, { status: 400 });
+    const organization = organizations.find((item) => item.id === body.organizationId)!;
+    organization.slug = body.data.slug;
+    return Response.json(organization);
+  }
   if (url.pathname === "/api/v1/organizations") return Response.json({ items: organizations, nextCursor: null });
   if (url.pathname.endsWith("/list")) return Response.json(organizations);
+  if (url.pathname.endsWith("/workspaces")) return Response.json({ items: [], nextCursor: null });
   if (url.pathname === "/api/v1/organizations/org_00000000000000000000000001/members") return Response.json({ items: [member], nextCursor: null });
   if (url.pathname === "/api/v1/organizations/org_00000000000000000000000001/teams") return Response.json({ items: [{ id: "team-id", organizationId: "org_00000000000000000000000001", name: "Design" }], nextCursor: null });
   if (url.pathname.endsWith("/list-members") || url.pathname.endsWith("/members")) {
@@ -63,8 +72,10 @@ function fill(name: string, value: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 async function run() {
-  history.replaceState(null, "", "/orgs");
+  const preview = new URLSearchParams(location.search).has("preview");
+  history.replaceState(null, "", preview ? "/orgs/org_00000000000000000000000001" : "/orgs");
   createRoot(document.getElementById("root")!).render(<App />);
+  if (preview) return;
   await until(() => document.querySelector('a[href="/orgs/org_00000000000000000000000001"]'));
   assert(document.querySelector('#account-menu a[href="/orgs"]'), "Account menu has no organization list entry");
   assert(document.querySelector('#account-menu a[href="/orgs"][aria-current="page"]'), "Organization list is not selected");
@@ -74,9 +85,9 @@ async function run() {
   await until(() => button("Members"));
   button("Members").click();
   await until(() => panel()?.textContent?.includes("owner@example.com"));
-  assert(document.querySelector('#account-menu a[href="/orgs"][aria-current="page"]'), "Organization detail is not selected");
   assert(location.pathname === "/orgs/org_00000000000000000000000001", "Detail did not use TypeID");
-  assert([...document.querySelectorAll('[role="tab"]')].map((el) => el.textContent).join() === "Workspace governance,Members 1,Teams 1,Settings", "Missing organization tabs");
+  assert(document.querySelector('#account-menu a[href="/orgs"][aria-current="page"]'), "Organization detail is not selected");
+  await until(() => [...document.querySelectorAll('[role="tab"]')].map((el) => el.textContent).join() === "Workspace governance,Members 1,Teams 1,Settings");
   assert(!panel().querySelector(".org-section-header h3"), "Member heading duplicates tab");
   button("Invite member").click();
   await until(() => document.querySelector(".action-dialog:modal"));
@@ -99,11 +110,33 @@ async function run() {
   await until(() => document.querySelector(".action-dialog:modal"));
   fill("name", "New team");
   document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
-  await until(() => !document.querySelector(".action-dialog") && teamCreates === 1);
-  assert(teamCreates === 1, "Team creation did not submit exactly once");
+  await until(() => !document.querySelector(".action-dialog"));
+  assert(teamCreates === 1, "Team creation was duplicated");
   button("Settings").click();
   await until(() => panel()?.textContent?.includes("alpha-team"));
   assert(button("Delete organization", panel()), "Owner deletion missing from Settings");
+  assert(button("Rename", panel()).closest("dd")?.previousElementSibling?.textContent === "Organization name", "Rename is detached from its setting");
+  assert(button("Change slug", panel()).closest("dd")?.previousElementSibling?.textContent === "slug", "Slug edit is detached from its setting");
+  const settings = panel().querySelector<HTMLElement>(".org-settings")!;
+  assert(settings.scrollWidth <= settings.clientWidth, "Settings content overflows horizontally");
+  button("Change slug", panel()).click();
+  await until(() => document.querySelector(".action-dialog:modal"));
+  assert(document.querySelector<HTMLInputElement>('[name="slug"]')?.value === "alpha-team", "Slug editor did not show current value");
+  fill("slug", "Bad Slug");
+  document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
+  assert(edits === 0, "Invalid slug edit submitted");
+  fill("slug", "external");
+  document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
+  await until(() => document.querySelector(".action-dialog [role=alert]"));
+  assert(location.pathname === "/orgs/org_00000000000000000000000001", "Failed edit navigated");
+  assert(document.querySelector<HTMLInputElement>('[name="slug"]')?.value === "external", "Failure discarded slug draft");
+  document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
+  await until(() => location.pathname === "/orgs/org_00000000000000000000000001" && !document.querySelector(".action-dialog"));
+  assert(edits === 2, "Slug update did not complete");
+  assert(location.pathname === "/orgs/org_00000000000000000000000001", "Slug edit changed the TypeID URL");
+  button("Settings").click();
+  await until(() => panel()?.textContent?.includes("external"));
+  assert(button("Delete organization", panel()), "Changing the slug to external hid owner deletion");
   navigateDashboard("/orgs/org_00000000000000000000000003");
   await until(() => main().textContent?.includes("Organization not found"));
   navigateDashboard("/orgs");
@@ -114,14 +147,16 @@ async function run() {
   await until(() => document.querySelector<HTMLInputElement>('[name="slug"]')?.validity.patternMismatch);
   document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
   assert(creates === 0, "Invalid slug was submitted");
-  fill("slug", "new-team");
-  await until(() => document.querySelector<HTMLInputElement>('[name="slug"]')?.value === "new-team");
+  fill("slug", "new_team");
+  await until(() => document.querySelector<HTMLInputElement>('[name="slug"]')?.value === "new_team");
   document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
   await until(() => document.querySelector(".action-dialog [role=alert]"));
   assert(document.querySelector<HTMLInputElement>('[name="name"]')?.value === "New organization", "Failure discarded draft");
   failCreate = false;
   document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
-  await until(() => location.pathname === "/orgs/org_00000000000000000000000002" && panel()?.textContent?.includes("owner@example.com"));
+  await until(() => location.pathname === "/orgs/org_00000000000000000000000002" && button("Members"));
+  button("Members").click();
+  await until(() => panel()?.textContent?.includes("owner@example.com"));
   assert(creates === 2 && !document.querySelector(".action-dialog"), "Create did not close modal and open detail");
   accounts = false;
   window.dispatchEvent(new Event(clientMutationEvent));
@@ -132,8 +167,34 @@ async function run() {
   button("Members").click();
   await until(() => panel()?.textContent?.includes("owner@example.com"));
   button("Settings").click();
-  await until(() => panel()?.textContent?.includes("alpha-team"));
+  await until(() => panel()?.textContent?.includes("external"));
+  assert(button("Change slug", panel()), "Header organization slug editor missing");
   assert(button("Delete organization", panel()), "Team organization owner lost deletion in header mode");
+  organizations[0]!.kind = "personal";
+  navigateDashboard("/orgs");
+  await until(() => document.querySelector('a[href="/orgs/org_00000000000000000000000001"]'));
+  (document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') as HTMLElement).click();
+  await until(() => button("Settings"));
+  button("Settings").click();
+  await until(() => button("Change slug", panel()));
+  assert(!button("Delete organization", panel()), "Personal organization exposed deletion");
+  button("Change slug", panel()).click();
+  await until(() => document.querySelector(".action-dialog:modal"));
+  fill("slug", "personal_updated");
+  document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
+  await until(() => location.pathname === "/orgs/org_00000000000000000000000001" && !document.querySelector(".action-dialog"));
+  assert(edits === 3, "Personal slug update did not complete");
+  await until(() => panel()?.textContent?.includes("personal_updated"));
+  assert(location.pathname === "/orgs/org_00000000000000000000000001", "Personal slug edit changed the TypeID URL");
+  organizations[0]!.kind = "team";
+  member.role = "member";
+  navigateDashboard("/orgs");
+  await until(() => document.querySelector('a[href="/orgs/org_00000000000000000000000001"]'));
+  (document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') as HTMLElement).click();
+  await until(() => button("Settings"));
+  button("Settings").click();
+  await until(() => panel()?.textContent?.includes("personal_updated"));
+  assert(!button("Change slug", panel()), "Member can edit organization slug");
   document.body.dataset.testResult = "passed";
 }
 void run().catch((error: unknown) => { document.body.dataset.testResult = "failed"; document.body.dataset.testError = error instanceof Error ? error.stack : String(error); });

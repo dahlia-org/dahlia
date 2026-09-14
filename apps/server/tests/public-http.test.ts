@@ -80,7 +80,7 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
       .toMatchObject({ items: [{ id: encodeId("user", userID) }], nextCursor: null });
     const testOrganizationID = String(database.prepare("SELECT id FROM organization WHERE domain = 'example.com'").get()!.id);
     expect(await (await send("/api/v1/organizations")).json())
-      .toMatchObject({ items: expect.arrayContaining([{ id: encodeId("organization", testOrganizationID), name: "example.com", slug: `domain-${testOrganizationID}`, kind: "team" }]) as unknown, nextCursor: null });
+      .toMatchObject({ items: expect.arrayContaining([{ id: encodeId("organization", testOrganizationID), name: "example.com", slug: "example_com", kind: "team" }]) as unknown, nextCursor: null });
 
     const organizationID = encodeId("organization", testOrganizationID);
     const create = transaction([
@@ -266,6 +266,11 @@ it("keeps Better Auth sessions, organizations, teams and invitations typed at th
     expect(await (await send("/api/auth/get-session")).json()).toMatchObject({
       user: { id: encodeId("user", user.id) }, session: { id: encodeId("session", session.id), userId: encodeId("user", user.id), token: session.token },
     });
+    const publicOrganization = await send("/api/v1/organizations", { name: "Public Org", slug: "public_org-test" });
+    expect(publicOrganization.status).toBe(201);
+    expect(await publicOrganization.json()).toMatchObject({ slug: "public_org-test" });
+    expect((await send("/api/v1/organizations", { name: "Duplicate", slug: "public_org-test" })).status).toBe(400);
+    expect((await send("/api/v1/organizations", { name: "Invalid", slug: "public.org" })).status).toBe(400);
     const organization = await post("create", { name: "TypeID Org", slug: "typeid-org" });
     expect(organization.id).toMatch(/^org_/);
     const team = await post("create-team", { organizationId: organization.id, name: "Reviewers" });

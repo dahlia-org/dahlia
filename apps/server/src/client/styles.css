@@ -659,8 +659,8 @@ kbd { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; font-
 
 /* Organization management: overview first, membership controls on disclosure. */
 .org-section-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 24px 0 20px; }
-.org-section-header p, .org-danger-zone p, .org-invitation-result p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
-.org-section-header > button, .org-danger-zone > button { flex-shrink: 0; }
+.org-section-header p, .org-invitation-result p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.org-section-header > button { flex-shrink: 0; }
 .org-count { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; margin-left: 6px; padding: 2px 6px; border-radius: 6px; background: var(--canvas); color: var(--muted); font-size: 12px; font-weight: 500; }
 .org-search { width: min(100%, 360px); min-width: 0; }
 .organization-row { padding: 11px 0; gap: 16px; border-bottom: 1px solid var(--line); min-width: 0; }
@@ -686,13 +686,10 @@ kbd { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; font-
 .org-team-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; }
 .org-team-toolbar p { color: var(--muted); font-size: 12px; line-height: 1.6; }
 .org-team-content .share-row:last-child { border-bottom: 0; }
-.org-danger-zone { margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 32px; }
-.organization-card .org-danger-zone h3 { margin: 0; color: var(--ink); font-size: 14px; }
-.org-danger-zone > div { flex: 1; }
 .org-error { display: flex; align-items: center; gap: 16px; margin-top: 16px; }
 .org-error p { flex: 1; }
 @media (max-width: 640px) {
-  .org-section-header, .org-danger-zone, .org-team-toolbar { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .org-section-header, .org-team-toolbar { align-items: flex-start; flex-direction: column; gap: 12px; }
   .org-copy-row { flex-direction: column; }
   .organization-row { flex-wrap: wrap; }
   .organization-row > .org-person { flex-basis: calc(100% - 110px); }
@@ -704,15 +701,26 @@ kbd { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; font-
 .org-directory code { color: var(--muted); font-size: 12px; }
 .org-directory th:nth-child(n+3), .org-directory td:nth-child(n+3) { text-align: right; font-variant-numeric: tabular-nums; }
 
-.org-settings-info { padding: 24px 0 4px; }
-.organization-card .org-settings-info h3 { margin: 0 0 24px; color: var(--ink); font-size: 14px; font-weight: 600; }
-.org-settings-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 40px; max-width: 640px; margin: 0; }
-.org-settings-fields > div { min-width: 0; }
-.org-settings-fields dt { margin-bottom: 8px; color: var(--muted); font-size: 12px; }
-.org-settings-fields dd { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.org-settings { max-width: 760px; }
+.organization-card .org-settings h3 { margin: 0; color: var(--ink); font-size: 14px; font-weight: 600; }
+.org-settings-info > h3 { padding-bottom: 12px; }
+.org-settings-fields { margin: 0; }
+.org-settings-fields > div { display: grid; grid-template-columns: 160px minmax(0, 1fr); align-items: start; gap: 24px; padding: 20px 0; border-top: 1px solid var(--line); }
+.org-settings-fields dt { padding-top: 8px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.org-settings-fields dd { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 20px; min-width: 0; margin: 0; color: var(--ink); font-size: 14px; line-height: 1.6; }
+.org-settings-fields dd > :first-child { min-width: 0; padding-top: 6px; overflow-wrap: anywhere; }
 .org-settings-fields code { font-size: 13px; }
-@media (max-width: 520px) {
-  .org-settings-fields { grid-template-columns: 1fr; }
+.org-settings-fields p, .org-settings-action p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.org-settings-fields button, .org-settings-action > button { white-space: nowrap; }
+.org-settings-action { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 32px; padding: 24px 0; border-top: 1px solid var(--line); }
+.org-settings-info + .org-settings-action { margin-top: 24px; }
+.org-settings-action > div { min-width: 0; }
+@media (max-width: 600px) {
+  .org-settings-fields > div { grid-template-columns: 1fr; gap: 8px; padding: 16px 0; }
+  .org-settings-fields dt { padding-top: 0; }
+  .org-settings-fields dd { gap: 12px; }
+  .org-settings-action { grid-template-columns: 1fr; gap: 12px; }
+  .org-settings-action > button { justify-self: start; }
 }
 
 .org-section-header p { margin: 0; }
