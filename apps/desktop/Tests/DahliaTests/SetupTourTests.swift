@@ -30,11 +30,75 @@
                 signedInAccountConnectionIDs: [connectionID],
                 progressDefaults: defaults
             )
-            #expect(restored.currentStep == .workspace)
+            #expect(restored.currentStep == .permissions)
             #expect(!restored.isWorkspaceLocationConfirmed)
             model.selectAccountConnection(nil)
             #expect(model.selectedExistingWorkspaceID == nil)
             #expect(!model.isWorkspaceLocationConfirmed)
+        }
+
+        @Test
+        func initialTourSkipsWorkspaceAndRestoresLegacyWorkspaceStep() throws {
+            let suiteName = "SetupAutomaticWorkspace-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            SetupTourPresentationPolicy.saveProgress(
+                step: .workspace,
+                workspaceURL: URL(filePath: "/tmp/Unused"),
+                isWorkspaceConfirmed: false,
+                isAccountSelectionConfirmed: true,
+                in: defaults
+            )
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
+            #expect(model.currentStep == .workingLanguages)
+            #expect(!model.visibleSteps.contains(.workspace))
+            #expect(model.canContinue)
+            model.goBack()
+            #expect(model.currentStep == .account)
+        }
+
+        @Test
+        func preparationCanRetryWithoutBlockingOtherSteps() async {
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
+            model.selectAccountConnection(nil)
+            model.advance()
+            #expect(await model.prepareInitialWorkspace { nil } == nil)
+            #expect(model.canContinue)
+            #expect(!model.isPreparingWorkspace)
+            let workspace = WorkspaceRecord(id: .v7(), name: "Local", createdAt: .now, lastOpenedAt: .distantPast)
+            #expect(await model.prepareInitialWorkspace { workspace }?.id == workspace.id)
+            #expect(model.selectedExistingWorkspaceID == workspace.id)
+        }
+
+        @Test
+        func accountChangeDiscardsDelayedWorkspacePreparation() async throws {
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
+            let connectionID = UUID.v7()
+            model.selectAccountConnection(connectionID)
+            var remote = WorkspaceRecord(id: .v7(), name: "Personal", createdAt: .now, lastOpenedAt: .distantPast)
+            remote.accountConnectionId = connectionID
+            var finish: CheckedContinuation<WorkspaceRecord?, Never>?
+            var preparing: Task<WorkspaceRecord?, Never>?
+            await withCheckedContinuation { started in
+                preparing = Task {
+                    await model.prepareInitialWorkspace {
+                        await withCheckedContinuation {
+                            finish = $0
+                            started.resume()
+                        }
+                    }
+                }
+            }
+            #expect(model.isPreparingWorkspace)
+            #expect(model.canContinue)
+            model.selectAccountConnection(nil)
+            // Returning to the same account must still reject the earlier generation.
+            model.selectAccountConnection(connectionID)
+            try #require(finish).resume(returning: remote)
+            let result = await preparing?.value
+            #expect(result == nil)
+            #expect(model.selectedExistingWorkspaceID == nil)
+            #expect(!model.isPreparingWorkspace)
         }
 
         @Test
@@ -129,7 +193,7 @@
             model.advance()
 
             let restoredModel = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
-            #expect(restoredModel.currentStep == .workingLanguages)
+            #expect(restoredModel.currentStep == .permissions)
             #expect(restoredModel.selectedWorkspaceURL == selectedURL)
             #expect(restoredModel.isWorkspaceLocationConfirmed)
         }
@@ -159,14 +223,14 @@
 
             #expect(signedOutRestoredModel.currentStep == .account)
             #expect(!signedOutRestoredModel.isAccountSelectionConfirmed)
-            #expect(restoredModel.currentStep == .workspace)
+            #expect(restoredModel.currentStep == .workingLanguages)
             #expect(restoredModel.selectedAccountConnectionID == connectionID)
             #expect(restoredModel.isAccountSelectionConfirmed)
             #expect(!restoredModel.visibleSteps.contains(.modelProvider))
         }
 
         @Test
-        func incompleteWorkspaceProgressReturnsToWorkspaceConfirmation() throws {
+        func incompleteWorkspaceProgressKeepsTheRemainingSetupStep() throws {
             let suiteName = "SetupTourProgressTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -175,13 +239,13 @@
 
             let restoredModel = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
 
-            #expect(restoredModel.currentStep == .workspace)
+            #expect(restoredModel.currentStep == .modelProvider)
             #expect(!restoredModel.isWorkspaceLocationConfirmed)
         }
 
         @Test
-        func workspaceStepRequiresExplicitConfirmationBeforeAdvancing() {
-            let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
+        func manualWorkspaceStepRequiresExplicitConfirmationBeforeAdvancing() {
+            let model = SetupTourModel(mode: .manual, currentWorkspace: nil)
 
             model.selectAccountConnection(nil)
             model.advance()
@@ -251,8 +315,6 @@
             #expect(!model.canGoBack)
             model.selectAccountConnection(nil)
             model.advance()
-            model.confirmWorkspaceSelection()
-            model.advance()
             #expect(model.currentStep == .workingLanguages)
             #expect(model.canGoBack)
         }
@@ -261,8 +323,6 @@
         func navigationMovesSequentiallyAndNeverPastCompletion() {
             let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
             model.selectAccountConnection(nil)
-            model.advance()
-            model.confirmWorkspaceSelection()
             model.advance()
             model.advance()
             model.advance()
@@ -291,8 +351,6 @@
             let connectionID = UUID.v7()
 
             model.selectAccountConnection(connectionID)
-            model.advance()
-            model.confirmWorkspaceSelection()
             model.advance()
             model.advance()
             model.advance()

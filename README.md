@@ -30,7 +30,7 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - Swift 6.2
 - Xcode 26+ (for Swift toolchain)
 
-On a new installation, Dahlia creates `Documents/Dahlia`, registers it as the `Default` workspace, and opens it automatically. Existing workspace registrations are preserved. If automatic setup fails, Dahlia shows the workspace manager so you can select a folder manually.
+On a new installation, setup prepares a workspace automatically after account selection. A Local Account gets a `Local` workspace without an export folder; existing local workspaces are reused. Cloud and Server Accounts use workspaces discovered from the server, preferring `Personal`, without creating another workspace. You can continue configuring other settings while discovery runs; setup completes only after a workspace is available and opened. If preparation fails, retry from the completion screen. Manual setup and workspace management remain available in Settings.
 
 Dahlia keeps its bundled Codex state and authentication separate from other Codex apps and the Codex CLI. In **Settings → AI on this Mac → Model Provider**, choose a ChatGPT Subscription or connect a Databricks workspace by entering its HTTPS URL and signing in through the browser. One workspace is managed on this Mac; sign out before connecting to another workspace. Databricks CLI is not required, and its configuration and token cache are not imported: existing users must enter the workspace URL and sign in again. Dahlia stores Databricks OAuth credentials in the Mac's Keychain and provides access tokens to Codex through a dedicated `auth-helper`, separate from the MCP executable. ChatGPT login remains under Dahlia's Application Support directory.
 

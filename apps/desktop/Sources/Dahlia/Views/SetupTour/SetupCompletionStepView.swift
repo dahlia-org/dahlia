@@ -8,6 +8,7 @@ struct SetupCompletionStepView: View {
     var model: SetupTourModel
     let onReviewWorkspace: () -> Void
     let onReviewPermissions: () -> Void
+    let onRetry: () -> Void
 
     var body: some View {
         Form {
@@ -43,6 +44,12 @@ struct SetupCompletionStepView: View {
                 }
             }
 
+            if model.mode == .initial, model.isPreparingWorkspace {
+                Section {
+                    ProgressView(L10n.setupPreparingWorkspace)
+                }
+            }
+
             if let errorMessage = model.errorMessage {
                 Section {
                     SettingsStatusMessage(
@@ -51,8 +58,14 @@ struct SetupCompletionStepView: View {
                         tint: .red
                     )
 
-                    Button(L10n.edit, action: onReviewWorkspace)
-                        .buttonStyle(.dahlia())
+                    if model.mode == .initial {
+                        Button(L10n.retry, action: onRetry)
+                            .buttonStyle(.dahlia())
+                            .disabled(model.isCompleting)
+                    } else {
+                        Button(L10n.edit, action: onReviewWorkspace)
+                            .buttonStyle(.dahlia())
+                    }
                 }
             }
         }

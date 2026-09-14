@@ -1677,3 +1677,6 @@
 "Initial organization owner" = "初期owner";
 "Load more owners" = "owner候補をさらに読み込む";
 "Choose yourself as owner to import immediately. If you choose someone else, ask them to invite you before importing." = "すぐに取り込む場合は、自分をownerに指定してください。別の人を指定する場合は、取り込む前にその人から組織への招待を受けてください。";
+
+"setup.preparingWorkspace" = "ワークスペースを準備しています…";
+"setup.workspaceUnavailable" = "ワークスペースを準備できませんでした。接続を確認して再試行してください。";
