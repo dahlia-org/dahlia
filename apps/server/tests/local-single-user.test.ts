@@ -96,6 +96,21 @@ describe("local single-user header mode", () => {
     }
   });
 
+  it("allocates nonempty unique slugs for empty local identity parts and preserves them on retry", async () => {
+    const config = localConfig(true);
+    const store = createNodeAuthStore(config);
+    try {
+      await store.migrate();
+      for (const email of ["@local", "@other", "someone@", "@local", "someone@"]) {
+        expect(await store.resolveHeaderUser({ userId: email, email, name: email, source: "header" })).toBeTruthy();
+      }
+      const organizations = await store.listServerOrganizations(10, 0);
+      expect(organizations.map((org) => org.slug).sort()).toEqual(["organization", "organization_2", "organization_3", "someone"]);
+    } finally {
+      await store.close?.();
+    }
+  });
+
   it("keeps requiring the proxy header while it is disabled", async () => {
     const config = localConfig(false);
     const store = createNodeAuthStore(config);

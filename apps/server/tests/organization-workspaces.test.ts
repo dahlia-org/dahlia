@@ -171,7 +171,7 @@ describe("Organization-owned Workspaces", () => {
     const { store, auth, headers, read, user } = await setup();
     const [a, same] = await Promise.all([user("alice@example.com"), user("alice@example.com")]);
     expect(a.userId).toBe(same.userId);
-    expect((await read("SELECT kind, slug FROM organization WHERE id = ?", a.userId))[0]).toEqual({ kind: "personal", slug: `personal-${a.userId}` });
+    expect((await read("SELECT kind, slug FROM organization WHERE id = ?", a.userId))[0]).toEqual({ kind: "personal", slug: a.email!.split("@")[0]!.replace(/[^a-z0-9]/g, "_") });
     expect(await read("SELECT role FROM workspace_permissions WHERE workspace_id = ?", a.userId)).toEqual([{ role: "admin" }]);
     const domain = a.email!.split("@")[1]!;
     const [org] = await read("SELECT id FROM organization WHERE domain = ?", domain);
@@ -190,6 +190,82 @@ describe("Organization-owned Workspaces", () => {
     expect(replacement!.id).not.toBe(orgId);
     expect(await read("SELECT user_id, role FROM member WHERE organization_id = ?", String(replacement!.id))).toEqual([{ user_id: c.userId, role: "owner" }]);
     await expect(store.sync.withIdentity(a, (scoped) => scoped.commitTransaction(tx(a.userId, [{ id: uuidV7(), entity: "workspace", action: "reset", entityId: a.userId, baseRevision: 1, data: {} }])))).rejects.toThrow("personal_workspace_immutable");
+  });
+
+  it("preserves legacy slug syntax during name edits and sharing changes", async () => {
+    const env = await setup();
+    const { user, auth, headers, read, store } = env;
+    const owner = await user("legacy@example.com");
+    const recipient = await user("recipient@example.com");
+    const { org, workspaceId } = await teamWorkspace(env, owner);
+    const legacySlug = `legacy.${uuidV7()}`;
+    await read("UPDATE organization SET slug = ? WHERE id = ?", legacySlug, org.id);
+    const ownerHeaders = await headers(owner);
+    await auth.api.updateOrganization({ headers: ownerHeaders, body: { organizationId: org.id, data: { name: "Renamed" } } });
+    await expect(auth.api.updateOrganization({ headers: ownerHeaders, body: { organizationId: org.id, data: { slug: "new.invalid" } } })).rejects.toThrow("invalid_organization_slug");
+    expect(await store.sync.withIdentity(owner, (scoped) => scoped.putPermission(workspaceId, "user", recipient.userId, "viewer"))).toBe(true);
+    expect(await store.sync.withIdentity(owner, (scoped) => scoped.deletePermission(workspaceId, "user", recipient.userId))).toBe(true);
+    expect(await read("SELECT slug FROM organization WHERE id = ?", org.id)).toEqual([{ slug: legacySlug }]);
+  });
+
+  it("allocates readable slugs across concurrent registrations and normalized collisions", async () => {
+    const { user, read } = await setup();
+    const a = await user("kazuki.matsuda@example.com");
+    const base = a.email!.split("@")[0]!.replace(/[^a-z0-9]/g, "_");
+    const b = await user("kazuki_matsuda@other.com");
+    expect(await read("SELECT slug FROM organization WHERE id = ?", b.userId)).toEqual([{ slug: `${base}_2` }]);
+    const others = await Promise.all([user("kazuki.matsuda@third.com"), user("kazuki.matsuda@fourth.com")]);
+    const slugs = await Promise.all(others.map(async (actor) => (await read("SELECT slug FROM organization WHERE id = ?", actor.userId))[0]!.slug));
+    expect(slugs.sort()).toEqual([`${base}_3`, `${base}_4`]);
+    const domainOwner = await user("domain-a@a-b.example.com");
+    const conflictingDomainOwner = await user("domain-b@a.b.example.com");
+    const domain = domainOwner.email!.split("@")[1]!;
+    const domainSlug = domain.replace(/[^a-z0-9]/g, "_");
+    expect(await read("SELECT slug FROM organization WHERE domain = ?", domain)).toEqual([{ slug: domainSlug }]);
+    expect(await read("SELECT slug FROM organization WHERE domain = ?", conflictingDomainOwner.email!.split("@")[1]!)).toEqual([{ slug: `${domainSlug}_2` }]);
+  });
+
+  it.each(["header", "accounts"] as const)("validates slug edits and preserves ownership in %s mode", async (mode) => {
+    const { auth, user, headers, read, store } = await setup(mode);
+    const owner = await user("slug.owner@example.com");
+    const member = await user("slug.member@example.com");
+    const ownerHeaders = await headers(owner);
+    const memberHeaders = await headers(member);
+    const slug = `edited_${uuidV7()}`;
+    // Existing released slugs remain valid until explicitly changed.
+    await read("UPDATE organization SET slug = ? WHERE id = ?", `personal-${owner.userId}`, owner.userId);
+    await store.ensureIdentityUser(owner);
+    expect(await read("SELECT slug FROM organization WHERE id = ?", owner.userId)).toEqual([{ slug: `personal-${owner.userId}` }]);
+    const edit = (organizationId: string, value: string, requestHeaders = ownerHeaders) => auth.api.updateOrganization({ headers: requestHeaders, body: { organizationId, data: { slug: value } } });
+    await edit(owner.userId, slug);
+    await edit(owner.userId, slug);
+    expect(await read("SELECT slug, kind FROM organization WHERE id = ?", owner.userId)).toEqual([{ slug, kind: "personal" }]);
+    const org = await auth.api.createOrganization({ headers: ownerHeaders, body: { name: "Team", slug: `team_${uuidV7()}` } });
+    for (const invalid of ["", "BadSlug", "has.dot", "has space", "日本語"]) {
+      await expect(edit(owner.userId, invalid)).rejects.toThrow();
+      await expect(auth.api.createOrganization({ headers: ownerHeaders, body: { name: "Invalid", slug: invalid } })).rejects.toThrow();
+    }
+    await expect(edit(org.id, slug)).rejects.toThrow();
+    await expect(edit(org.id, `personal-${uuidV7()}`)).rejects.toThrow("reserved_organization_slug");
+    await expect(edit(owner.userId, `unauthorized_${uuidV7()}`, memberHeaders)).rejects.toThrow();
+    await expect(edit(org.id, `unauthorized_${uuidV7()}`, memberHeaders)).rejects.toThrow();
+    const teamSlug = `renamed_${uuidV7()}`;
+    await edit(org.id, teamSlug);
+    expect(await read("SELECT slug FROM organization WHERE id = ?", org.id)).toEqual([{ slug: teamSlug }]);
+    expect(await read("SELECT slug FROM organization WHERE id = ?", owner.userId)).toEqual([{ slug }]);
+    expect(await read("SELECT user_id, role FROM member WHERE organization_id = ?", owner.userId)).toEqual([{ user_id: owner.userId, role: "owner" }]);
+    if (mode === "header") {
+      const domain = owner.email!.split("@")[1]!;
+      const domainOrg = String((await read("SELECT id FROM organization WHERE domain = ?", domain))[0]!.id);
+      await expect(edit(domainOrg, `member_${uuidV7()}`, memberHeaders)).rejects.toThrow();
+      const [domainMember] = await read("SELECT id FROM member WHERE organization_id = ? AND user_id = ?", domainOrg, member.userId);
+      await auth.api.updateMemberRole({ headers: ownerHeaders, body: { organizationId: domainOrg, memberId: String(domainMember!.id), role: "admin" } });
+      const newDomainSlug = `domain_${uuidV7()}`;
+      await edit(domainOrg, newDomainSlug, memberHeaders);
+      const newcomer = await user("slug.newcomer@example.com");
+      expect(await read("SELECT slug FROM organization WHERE domain = ?", domain)).toEqual([{ slug: newDomainSlug }]);
+      expect(await read("SELECT role FROM member WHERE organization_id = ? AND user_id = ?", domainOrg, newcomer.userId)).toEqual([{ role: "member" }]);
+    }
   });
 
   it("rolls back failed domain enrollment and retries the complete registration", async () => {

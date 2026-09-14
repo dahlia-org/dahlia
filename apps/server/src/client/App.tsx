@@ -1,4 +1,5 @@
 import { WorkspaceSharing } from "./WorkspaceSharing";
+import { organizationSlugPattern } from "../auth/organization-slug";
 import { apiUrls } from "./generated-operations";
 import { DEFAULT_SEARCH_SETTINGS, SEARCH_FIELDS, searchSettingsSchema, type SearchSettings } from "../search/settings-model";
 import { encodeId } from "../typeid";
@@ -1098,6 +1099,16 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
     });
   }
 
+  function changeOrganizationSlug() {
+    openDialog({ title: uiText("Change slug", "slug を変更"), confirmLabel: uiText("Save", "保存"),
+      description: uiText("Use lowercase letters, numbers, underscores and hyphens. The organization URL will stay the same.", "半角英小文字・数字・アンダーバー・ハイフンを使用してください。変更しても組織の URL は変わりません。"),
+      fields: [{ name: "slug", label: "slug", required: true, pattern: organizationSlugPattern.source, value: organization.slug }],
+      onSubmit: async ({ slug }) => {
+        await json("/api/auth/organization/update", { method: "POST", body: JSON.stringify({ organizationId: organization.id, data: { slug } }) });
+      },
+    });
+  }
+
   function changeMemberRole(member: OrganizationMember) {
     openDialog({ title: uiText("Change organization role", "組織の権限を変更"), confirmLabel: uiText("Save", "保存"),
       fields: [{ name: "role", label: uiText("Role", "権限"), value: member.role, options: [
@@ -1267,21 +1278,29 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
             </details>
           ))}
         </> },
-        { id: "settings", label: uiText("Settings", "設定"), content: <>
-          <section className="org-settings-info">
+        { id: "settings", label: uiText("Settings", "設定"), content: <div className="org-settings">
+          <section className="org-settings-info" aria-label={uiText("General", "基本情報")}>
             <h3>{uiText("General", "基本情報")}</h3>
-            {canGovern && <button className="secondary" onClick={renameOrganization}>{uiText("Rename", "名前を変更")}</button>}
             <dl className="org-settings-fields">
-              <div><dt>{uiText("Organization name", "組織名")}</dt><dd>{organization.name}</dd></div>
-              <div><dt>slug</dt><dd><code>{organization.slug}</code></dd></div>
+              <div>
+                <dt>{uiText("Organization name", "組織名")}</dt>
+                <dd><span>{organization.name}</span>{canGovern && <button className="secondary" onClick={renameOrganization}>{uiText("Rename", "名前を変更")}</button>}</dd>
+              </div>
+              <div>
+                <dt>slug</dt>
+                <dd><code>{organization.slug}</code>{canGovern && <button className="secondary" onClick={changeOrganizationSlug}>{uiText("Change slug", "slug を変更")}</button>}</dd>
+              </div>
             </dl>
           </section>
-          {!personal && <button className="secondary" onClick={leaveOrganization}>{uiText("Leave organization", "組織から脱退")}</button>}
-          {!personal && organization.slug !== "external" && currentRole === "owner" && <section className="org-danger-zone">
+          {!personal && <section className="org-settings-action" aria-label={uiText("Leave organization", "組織から脱退")}>
+            <div><h3>{uiText("Leave organization", "組織から脱退")}</h3><p>{uiText("You will lose access granted through this organization and its teams.", "この組織とチームを通じたアクセス権を失います。")}</p></div>
+            <button className="secondary" onClick={leaveOrganization}>{uiText("Leave organization", "組織から脱退")}</button>
+          </section>}
+          {!personal && currentRole === "owner" && <section className="org-settings-action" aria-label={uiText("Delete organization", "組織を削除")}>
             <div><h3>{uiText("Delete organization", "組織を削除")}</h3><p>{uiText("Permanently delete this organization and its teams. Delete the organization only after removing its Workspaces.", "所属するワークスペースをすべて削除した後に、組織とチームを削除できます。この操作は取り消せません。")}</p></div>
             <button className="secondary danger-button" onClick={deleteOrganization}>{uiText("Delete organization", "組織を削除")}</button>
           </section>}
-        </> },
+        </div> },
       ]} />
       </fieldset>
       {pending && <p className="muted" role="status">{uiText("Saving changes…", "変更を保存中…")}</p>}
@@ -1328,10 +1347,10 @@ function Organizations({ session }: { session: SessionInfo }) {
   function create() {
     openDialog({
       title: uiText("Create organization", "組織を作成"),
-      description: uiText("Use lowercase letters, numbers and hyphens for the slug.", "slugには半角英小文字・数字・ハイフンを使用してください。"),
+      description: uiText("Use lowercase letters, numbers, underscores and hyphens for the slug.", "slugには半角英小文字・数字・アンダーバー・ハイフンを使用してください。"),
       confirmLabel: uiText("Create organization", "組織を作成"),
       fields: [{ name: "name", label: uiText("Name", "名前"), required: true },
-        { name: "slug", label: "slug", required: true, pattern: "(?:[a-z0-9]|-)+" }],
+        { name: "slug", label: "slug", required: true, pattern: organizationSlugPattern.source }],
       onSubmit: async ({ name, slug }) => {
         const organization = await json<OrganizationInfo>("/api/auth/organization/create", {
           method: "POST", body: JSON.stringify({ name: name!.trim(), slug: slug!.trim() }),
