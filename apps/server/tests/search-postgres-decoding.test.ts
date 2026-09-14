@@ -81,6 +81,7 @@ it.each(["postgres", "lakebase"] as const)("ranks integrated plaintext vectors i
     expect(text).toContain('from "search"."documents"');
     expect(text).toContain('"embedding_model"');
     expect(text).toContain('cardinality(');
+    expect(text).toContain('::public.vector(32)');
     expect(text).toContain('order by');
     expect(text).toContain('limit');
     expect(parameters).toContain("current");

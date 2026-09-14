@@ -36,7 +36,7 @@ describe.each(["sqlite", "postgres", "lakebase"] as const)("%s weighted search",
     let lakebase: Pool | undefined;
     if (backend === "lakebase") {
       // A cutoff of one catches accidental per-field top-K truncation before weighted ranking.
-      lakebase = new Pool({ connectionString: databaseUrl, max: 1, options: "-c search_path=app,auth -c lakebase_bm25.default_limit=1" });
+      lakebase = new Pool({ connectionString: databaseUrl, max: 1, options: "-c search_path=app,auth,public -c lakebase_bm25.default_limit=1" });
       const close = store.close!.bind(store);
       store.close = async () => { await lakebase!.end(); await close(); };
       await ensureSearchIndexes(lakebase, { ...config, databaseType: "lakebase" });
