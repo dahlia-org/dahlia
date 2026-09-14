@@ -490,6 +490,7 @@ CREATE TABLE `meetings` (
 	`transcript_revision` integer DEFAULT 0 NOT NULL,
 	`active` integer DEFAULT false NOT NULL,
 	`deleting_at` integer,
+	`deleted_at` integer,
 	CONSTRAINT `fk_meetings_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_meetings_workspace_id_project_id_projects_workspace_id_project_id_fk` FOREIGN KEY (`workspace_id`,`project_id`) REFERENCES `projects`(`workspace_id`,`project_id`),
 	CONSTRAINT `synced_meeting_workspace_meeting_unique` UNIQUE(`workspace_id`,`meeting_id`)
@@ -560,10 +561,12 @@ CREATE TABLE `workspaces` (
 	`icon` text,
 	`color` text,
 	`revision` integer DEFAULT 1 NOT NULL,
+	`meeting_deletion_grace_days` integer DEFAULT 7 NOT NULL,
 	`deleting_at` integer,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	CONSTRAINT `fk_workspaces_organization_id_organization_id_fk` FOREIGN KEY (`organization_id`) REFERENCES `organization`(`id`) ON DELETE RESTRICT
+	CONSTRAINT `fk_workspaces_organization_id_organization_id_fk` FOREIGN KEY (`organization_id`) REFERENCES `organization`(`id`) ON DELETE RESTRICT,
+	CONSTRAINT "workspace_meeting_deletion_grace_check" CHECK("meeting_deletion_grace_days" BETWEEN 1 AND 90)
 );
 --> statement-breakpoint
 CREATE TABLE `workspace_permissions` (
@@ -655,6 +658,7 @@ CREATE INDEX `teamMember_teamId_idx` ON `team_member` (`team_id`);--> statement-
 CREATE INDEX `teamMember_userId_idx` ON `team_member` (`user_id`);--> statement-breakpoint
 CREATE INDEX `verification_identifier_idx` ON `verification` (`identifier`);--> statement-breakpoint
 CREATE INDEX `image_analysis_job_claim_idx` ON `jobs_image_analysis` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
+CREATE INDEX `meeting_attachments_file_idx` ON `meeting_attachments` (`file_id`);--> statement-breakpoint
 CREATE INDEX `meeting_attachments_workspace_meeting_id_idx` ON `meeting_attachments` (`workspace_id`,`meeting_id`,`id`);--> statement-breakpoint
 CREATE INDEX `meeting_events_meeting_time_idx` ON `meeting_events` (`workspace_id`,`meeting_id`,`occurred_at`,`id`);--> statement-breakpoint
 CREATE INDEX `meeting_events_session_idx` ON `meeting_events` (`workspace_id`,`session_id`);--> statement-breakpoint
@@ -666,6 +670,7 @@ CREATE INDEX `summary_job_owner_created_idx` ON `jobs_summary` (`owner_user_id`,
 CREATE INDEX `sync_change_workspace_sequence_idx` ON `sync_changes` (`workspace_id`,`sequence`);--> statement-breakpoint
 CREATE INDEX `transaction_receipt_owner_created_idx` ON `transaction_receipts` (`owner_user_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `files_workspace_file_idx` ON `files` (`workspace_id`,`file_id`);--> statement-breakpoint
+CREATE INDEX `meetings_workspace_deleted_idx` ON `meetings` (`workspace_id`,`deleted_at`,`meeting_id`);--> statement-breakpoint
 CREATE INDEX `meetings_calendar_event_idx` ON `meetings` (`ical_uid`,`recurrence_id`);--> statement-breakpoint
 CREATE INDEX `synced_meeting_workspace_created_id_idx` ON `meetings` (`workspace_id`,`created_at`,`meeting_id`);--> statement-breakpoint
 CREATE INDEX `project_workspace_parent_name_idx` ON `projects` (`workspace_id`,`parent_project_id`,`name`);--> statement-breakpoint

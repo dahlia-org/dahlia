@@ -252,6 +252,7 @@ CREATE TABLE "app"."meetings" (
 	"transcript_revision" integer DEFAULT 0 NOT NULL,
 	"active" boolean DEFAULT false NOT NULL,
 	"deleting_at" timestamp,
+	"deleted_at" timestamp,
 	CONSTRAINT "synced_meeting_workspace_meeting_unique" UNIQUE("workspace_id","meeting_id")
 );
 --> statement-breakpoint
@@ -324,9 +325,11 @@ CREATE TABLE "app"."workspaces" (
 	"icon" text,
 	"color" text,
 	"revision" integer DEFAULT 1 NOT NULL,
+	"meeting_deletion_grace_days" integer DEFAULT 7 NOT NULL,
 	"deleting_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "workspace_meeting_deletion_grace_check" CHECK ("meeting_deletion_grace_days" BETWEEN 1 AND 90),
 	CONSTRAINT "workspace_encryption_check" CHECK ("encryption" IN ('none', 'server'))
 );
 --> statement-breakpoint
@@ -398,6 +401,8 @@ ALTER TABLE "app"."workspace_transfers" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 CREATE INDEX "image_analysis_job_claim_idx" ON "jobs"."image_analysis" ("status","available_at","lease_expires_at");
 --> statement-breakpoint
+CREATE INDEX "meeting_attachments_file_idx" ON "app"."meeting_attachments" ("file_id");
+--> statement-breakpoint
 CREATE INDEX "meeting_attachments_workspace_meeting_id_idx" ON "app"."meeting_attachments" ("workspace_id","meeting_id","id");
 --> statement-breakpoint
 CREATE INDEX "meeting_events_meeting_time_idx" ON "app"."meeting_events" ("workspace_id","meeting_id","occurred_at","id");
@@ -419,6 +424,8 @@ CREATE INDEX "sync_change_workspace_sequence_idx" ON "app"."sync_changes" ("work
 CREATE INDEX "transaction_receipt_owner_created_idx" ON "app"."transaction_receipts" ("owner_user_id","created_at");
 --> statement-breakpoint
 CREATE INDEX "files_workspace_file_idx" ON "app"."files" ("workspace_id","file_id");
+--> statement-breakpoint
+CREATE INDEX "meetings_workspace_deleted_idx" ON "app"."meetings" ("workspace_id","deleted_at","meeting_id");
 --> statement-breakpoint
 CREATE INDEX "meetings_calendar_event_idx" ON "app"."meetings" ("ical_uid","recurrence_id");
 --> statement-breakpoint

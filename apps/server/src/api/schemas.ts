@@ -4,7 +4,7 @@ import { recordingManifestSchema } from "../recordings/model";
 import { transcriptMetadataSchema } from "../sync/transcript";
 import { summaryMetadataSchema } from "../summary/metadata";
 import { summaryInputSchema, transcriptSettingsSchema } from "../summary/model";
-import { calendarEventSchema, transactionDataSchemas, transactionOperationSchema, transactionSchema } from "../sync/schemas";
+import { calendarEventSchema, meetingDeletionGraceDaysSchema, transactionDataSchemas, transactionOperationSchema, transactionSchema } from "../sync/schemas";
 
 export const id = z.string().uuid();
 export const principalId = z.string().min(1).max(200);
@@ -19,7 +19,7 @@ export const page = <T extends z.ZodType>(item: T) => z.object({ items: z.array(
 const appearance = { icon: z.string().nullable().optional(), color: z.string().nullable().optional() };
 const syncFields = { active: z.boolean().optional(), deletingAt: date.nullable().optional(), revision: integer };
 const contentFields = { contentOmitted: z.boolean().optional(), contentPresent: z.boolean().optional() };
-export const workspace = z.object({ encryption: z.enum(["none", "server"]).optional(), workspaceId: id, organizationId: id, name: z.string(), ...appearance, ...syncFields,
+export const workspace = z.object({ meetingDeletionGraceDays: meetingDeletionGraceDaysSchema, encryption: z.enum(["none", "server"]).optional(), workspaceId: id, organizationId: id, name: z.string(), ...appearance, ...syncFields,
   createdAt: date, updatedAt: date, role: z.enum(["admin", "editor", "viewer"]), hasResources: z.boolean().optional(),
 }).openapi("Workspace");
 export const governanceWorkspace = workspace.pick({ workspaceId: true, name: true, revision: true }).extend({ creatorId: id }).openapi("GovernanceWorkspace");
@@ -28,6 +28,7 @@ export const project = z.object({ projectId: id, workspaceId: id, parentProjectI
   createdAt: date, path: z.string().optional(), rootProjectId: id.optional(), effectiveType: z.string().optional(),
   typeOwnerProjectId: id.optional(), directMeetingCount: integer.optional(), subtreeMeetingCount: integer.optional(),
 }).openapi("Project");
+export const deletedMeeting = z.object({ meetingId: id, workspaceId: id, name: z.string(), deletedAt: date, revision: integer }).openapi("DeletedMeeting");
 export const meeting = z.object({ meetingId: id, workspaceId: id, projectId: id.nullable(), name: z.string(), description: z.string(),
   status: z.enum(["PROCESSING_TRANSCRIPT", "TRANSCRIPT_NOT_FOUND", "READY", "RECORDING"]), duration: z.number().nonnegative().nullable(), recordingStartedAt: date.nullable(), isRecording: z.boolean().optional(),
   icalUid: z.string().nullable(), recurrenceId: z.string().nullable(), calendarEvent: calendarEventSchema.nullable(),

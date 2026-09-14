@@ -80,6 +80,7 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | confirmWorkspaceDeletion | modified | GET `/api/v1/organizations/{organizationId}/workspaces/{workspaceId}/deletion` | `new public contract` | Confirmation for Workspace deletion | apps/server/src/client/App.tsx |
 | forceDeleteWorkspace | modified | DELETE `/api/v1/organizations/{organizationId}/workspaces/{workspaceId}` | `new public contract` | Confirmed Workspace deletion | apps/server/src/client/App.tsx |
 | createOrganization | modified | POST `/api/v1/organizations` | `new public contract` | Desktop Organization creation uses the same atomic Better Auth operation. | apps/desktop/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift |
+| listDeletedMeetings | modified | GET `/api/v1/workspaces/{workspaceId}/trash/meetings` | `new public contract` | List recoverable deleted meetings within the current Workspace permissions | Web trash |
 
 ## Delegated protocols
 

@@ -31,6 +31,7 @@ export interface SyncTranscriptCursor {
 }
 
 export interface SyncWorkspaceRecord {
+  meetingDeletionGraceDays: number;
   organizationId: string;
   encryption?: "none" | "server";
   hasResources?: boolean;
@@ -69,7 +70,7 @@ export interface SyncProjectView extends SyncProjectRecord {
 export type WorkspaceRole = "admin" | "editor" | "viewer";
 export type WorkspacePrincipalType = "user" | "organization" | "team";
 export type SyncEntity = "workspace" | "project" | "meeting" | "summary" | "transcript" | "file" | "meeting_attachment" | "meeting_event" | "recording";
-export type SyncAction = "create" | "update" | "delete" | "upsert" | "patch" | "reset";
+export type SyncAction = "create" | "update" | "delete" | "upsert" | "patch" | "reset" | "restore";
 
 export interface SyncTransactionOperation {
   id: string;
@@ -166,6 +167,14 @@ export interface SyncMeetingRecord {
   revision?: number;
   summaryRevision?: number;
   transcriptRevision?: number;
+}
+
+export interface DeletedMeetingRecord {
+  meetingId: string;
+  workspaceId: string;
+  name: string;
+  deletedAt: Date;
+  revision: number;
 }
 
 export interface SyncMeetingCursor {
@@ -294,7 +303,7 @@ export interface IdentitySyncStore {
     screenshotId: string,
     activeOnly?: boolean,
   ): Promise<SyncScreenshotRecord | null>;
-  getFile(fileId: string, activeOnly?: boolean): Promise<FileRecord | null>;
+  getFile(fileId: string, activeOnly?: boolean, includeDeleted?: boolean): Promise<FileRecord | null>;
   reserveFile(input: FileRecord): Promise<FileRecord | null>;
   markFileUploaded(file: FileRecord, size: number, checksum: string): Promise<FileRecord | null>;
   expireFileUploads(workspaceId: string, before: Date): Promise<void>;
@@ -307,6 +316,7 @@ export interface IdentitySyncStore {
   searchProjectActivity(workspaceId: string, filters: SyncSearchFilters): Promise<{ projectId: string | null; updatedAt: string }[]>;
   resolveEntityWorkspace(entity: "meeting" | "project", id: string): Promise<string | null>;
   getProject(workspaceId: string, projectId: string): Promise<SyncProjectView | null>;
+  listDeletedMeetings(workspaceId: string, limit: number, cursor?: SyncMeetingCursor): Promise<DeletedMeetingRecord[]>;
   listMeetings(
     workspaceId: string,
     query: SyncSearchQuery | undefined,
@@ -316,7 +326,7 @@ export interface IdentitySyncStore {
     projectScope?: "direct" | "unassigned",
     filters?: SyncSearchFilters,
   ): Promise<SyncMeetingRecord[]>;
-  getMeeting(workspaceId: string, meetingId: string): Promise<SyncMeetingRecord | null>;
+  getMeeting(workspaceId: string, meetingId: string, includeDeleted?: boolean): Promise<SyncMeetingRecord | null>;
   listTranscript(
     workspaceId: string,
     meetingId: string,
@@ -339,6 +349,7 @@ export interface IdentitySyncStore {
 }
 
 export interface MeetingSyncStore {
+  purgeDeletedMeetings(workspaceId: string, now: Date): Promise<number>;
   expireRecordingUploads(workspaceId: string, before: Date): Promise<void>;
   isAvailable(): Promise<boolean>;
   listHistoryTargets(after?: SyncHistoryTarget): Promise<SyncHistoryTarget[]>;

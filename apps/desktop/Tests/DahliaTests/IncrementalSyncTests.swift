@@ -11,6 +11,46 @@
     @MainActor
     struct IncrementalSyncTests {
         @Test
+        func restoredMeetingReappliesChildrenAtTheirOriginalRevision() async throws {
+            let fixture = try Fixture()
+            let context = try await fixture.context()
+            let deleted = [SyncEntity.meeting, .file, .meetingAttachment].map { entity in
+                SyncChangePage.Change(
+                    sequence: 2, entity: entity, entityId: entity == .meeting ? fixture.meetingId : fixture.fileId,
+                    action: "delete", revision: nil, record: nil
+                )
+            }
+            #expect(try await RemoteChangeApplier.apply(
+                deleted, screenshots: [:], transcripts: [:], cursor: "deleted", workspaceId: fixture.workspaceId,
+                expectedConnectionId: fixture.connectionId, dbQueue: fixture.queue, incrementalContext: context
+            ))
+            #expect(try await fixture.queue.read { try MeetingRecord.fetchOne($0, key: fixture.meetingId) } == nil)
+            let restored = try [
+                fixture.change(.meeting, id: fixture.meetingId, revision: 3, fields: [
+                    "name": "Restored", "status": "READY", "description": "Retained",
+                    "createdAt": "2026-09-07T00:00:00Z", "updatedAt": "2026-09-08T00:00:00Z",
+                ]),
+                fixture.fileChange(revision: 1),
+                fixture.change(.meetingAttachment, id: fixture.fileId, revision: 1, fields: [
+                    "meetingId": fixture.meetingId.uuidString, "fileId": fixture.fileId.uuidString,
+                    "capturedAt": "2026-09-07T00:00:00Z", "createdAt": "2026-09-07T00:00:00Z",
+                ]),
+            ]
+            for change in restored {
+                #expect(try await RemoteChangeApplier.apply(
+                    [change], screenshots: [:], transcripts: [:], cursor: "restored", workspaceId: fixture.workspaceId,
+                    expectedConnectionId: fixture.connectionId, dbQueue: fixture.queue, incrementalContext: context
+                ))
+            }
+            try await fixture.queue.read { db throws in
+                #expect(try MeetingRecord.fetchOne(db, key: fixture.meetingId)?.name == "Restored")
+                #expect(try FileRecord.fetchOne(db, key: fixture.fileId) != nil)
+                #expect(try MeetingAttachmentRecord.fetchOne(db, key: fixture.fileId)?.meetingId == fixture.meetingId)
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+            }
+        }
+
+        @Test
         func resetRechecksRelocationsAfterFetchingAllPages() async throws {
             let fixture = try Fixture()
             let destination = UUID.v7()
@@ -53,6 +93,7 @@
                 "workspaces": [[
                     "workspaceId": destination.uuidString,
                     "organizationId": destination.uuidString,
+                    "meetingDeletionGraceDays": 7,
                     "name": "Moved",
                     "createdAt": "2026-09-09T00:00:00Z",
                     "updatedAt": "2026-09-09T00:00:00Z",
@@ -198,6 +239,7 @@
                 "workspaces": [[
                     "workspaceId": destination.uuidString,
                     "organizationId": destination.uuidString,
+                    "meetingDeletionGraceDays": 7,
                     "name": "Moved",
                     "createdAt": "2026-09-09T00:00:00Z",
                     "updatedAt": "2026-09-09T00:00:00Z",
@@ -1058,6 +1100,7 @@
                     record["workspaceId"] = change.entityId.uuidString
                     record["organizationId"] = change.entityId.uuidString
                     record["role"] = "admin"
+                    record["meetingDeletionGraceDays"] = 7
                 case .project: record["projectId"] = change.entityId.uuidString
                 case .meeting: record["meetingId"] = change.entityId.uuidString
                 case .summary, .transcript: record["meetingId"] = change.entityId.uuidString

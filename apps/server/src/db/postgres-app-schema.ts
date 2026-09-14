@@ -61,6 +61,8 @@ export const accountSettings = appSchema.table("account_settings", {
 
 const governanceWorkspace = (workspaceId: AnyPgColumn) => sql`current_setting('app.maintenance', true) = 'governance-delete' AND ${workspaceId} = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid`;
 
+const meetingRetentionWorkspace = (workspaceId: AnyPgColumn) => sql`current_setting('app.maintenance', true) = 'meeting-retention' AND ${workspaceId} = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid`;
+
 export const syncedWorkspace = appSchema.table("workspaces", {
   encryption: text("encryption").$type<"none" | "server">().default("none").notNull(),
   encryptedPayload: text("encrypted_payload"),
@@ -71,14 +73,16 @@ export const syncedWorkspace = appSchema.table("workspaces", {
   icon: text("icon"),
   color: text("color"),
   revision: integer("revision").default(1).notNull(),
+  meetingDeletionGraceDays: integer("meeting_deletion_grace_days").default(7).notNull(),
   deletingAt: timestamp("deleting_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
+  check("workspace_meeting_deletion_grace_check", sql`${table.meetingDeletionGraceDays} BETWEEN 1 AND 90`),
   check("workspace_encryption_check", sql`${table.encryption} IN ('none', 'server')`),
   pgPolicy("workspace_select", {
     for: "select",
-    using: sql`"app"."current_identity_can_read_workspace"(${table.workspaceId}) OR (current_setting('app.maintenance', true) = 'search' AND ${table.workspaceId} = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) = 'authorization' OR (current_setting('app.maintenance', true) = 'governance' AND ${table.organizationId} = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid) OR (${governanceWorkspace(table.workspaceId)})`,
+    using: sql`(${meetingRetentionWorkspace(table.workspaceId)}) OR "app"."current_identity_can_read_workspace"(${table.workspaceId}) OR (current_setting('app.maintenance', true) = 'search' AND ${table.workspaceId} = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) = 'authorization' OR (current_setting('app.maintenance', true) = 'governance' AND ${table.organizationId} = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid) OR (${governanceWorkspace(table.workspaceId)})`,
   }),
   pgPolicy("workspace_insert", {
     for: "insert",
@@ -194,7 +198,9 @@ export const syncedMeeting = appSchema.table("meetings", {
   transcriptRevision: integer("transcript_revision").default(0).notNull(),
   active: boolean("active").default(false).notNull(),
   deletingAt: timestamp("deleting_at"),
+  deletedAt: timestamp("deleted_at"),
 }, (table) => [
+  index("meetings_workspace_deleted_idx").on(table.workspaceId, table.deletedAt, table.meetingId),
   index("meetings_calendar_event_idx").on(table.icalUid, table.recurrenceId),
   unique("synced_meeting_workspace_meeting_unique").on(table.workspaceId, table.meetingId),
   foreignKey({
@@ -210,8 +216,9 @@ export const syncedMeeting = appSchema.table("meetings", {
   index("synced_meeting_workspace_created_id_idx").on(table.workspaceId, table.createdAt, table.meetingId),
   pgPolicy("meeting_select", {
     for: "select",
-    using: sql`"app"."current_identity_can_read_workspace"(${table.workspaceId}) OR (current_setting('app.maintenance', true) IN ('search', 'storage', 'governance-delete') AND ${table.workspaceId} = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)`,
+    using: sql`(${meetingRetentionWorkspace(table.workspaceId)}) OR "app"."current_identity_can_read_workspace"(${table.workspaceId}) OR (current_setting('app.maintenance', true) IN ('search', 'storage', 'governance-delete') AND ${table.workspaceId} = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)`,
   }),
+  pgPolicy("meeting_retention_delete", { for: "delete", using: sql`(${meetingRetentionWorkspace(table.workspaceId)}) AND ${table.deletedAt} IS NOT NULL` }),
   pgPolicy("meeting_write", {
     for: "all",
     using: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId})`,
@@ -238,7 +245,8 @@ export const meetingEvent = appSchema.table("meeting_events", {
   index("meeting_events_session_idx").on(table.workspaceId, table.sessionId),
   check("meeting_events_kind_check", sql`${table.kind} IN ('meeting_created', 'meeting_updated', 'meeting_deleted', 'tag_added', 'tag_removed', 'recording_started', 'recording_ended', 'segment_rotated')`),
   check("meeting_events_source_check", sql`${table.audioSource} IN ('mic', 'system')`),
-  pgPolicy("meeting_event_select", { for: "select", using: sql`"app"."current_identity_can_read_workspace"(${table.workspaceId}) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.workspace_id = ${table.workspaceId} AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)` }),
+  pgPolicy("meeting_event_retention_update", { for: "update", using: meetingRetentionWorkspace(table.workspaceId), withCheck: meetingRetentionWorkspace(table.workspaceId) }),
+  pgPolicy("meeting_event_select", { for: "select", using: sql`(${meetingRetentionWorkspace(table.workspaceId)}) OR "app"."current_identity_can_read_workspace"(${table.workspaceId}) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.workspace_id = ${table.workspaceId} AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)` }),
   pgPolicy("meeting_event_write", { for: "all", using: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId}) OR current_setting('app.maintenance', true) = 'rotation'`, withCheck: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId}) OR current_setting('app.maintenance', true) = 'rotation'` }),
 ]).enableRLS();
 
@@ -364,7 +372,8 @@ export const syncedFile = appSchema.table("files", {
   check("files_size_check", sql`${table.size} >= 0`),
   check("files_metadata_ocr_text_length_check", sql`char_length(${table.metadata}->>'ocr_text') <= ${fileMetadataLimits.postgres.ocrText}`),
   check("files_metadata_caption_length_check", sql`char_length(${table.metadata}->>'caption') <= ${fileMetadataLimits.postgres.caption}`),
-  pgPolicy("file_select", { for: "select", using: sql`"app"."current_identity_can_read_workspace"(${table.workspaceId}) OR (${governanceWorkspace(table.workspaceId)}) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.workspace_id = ${table.workspaceId} AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)` }),
+  pgPolicy("file_select", { for: "select", using: sql`(${meetingRetentionWorkspace(table.workspaceId)}) OR "app"."current_identity_can_read_workspace"(${table.workspaceId}) OR (${governanceWorkspace(table.workspaceId)}) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.workspace_id = ${table.workspaceId} AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)` }),
+  pgPolicy("file_retention_delete", { for: "delete", using: meetingRetentionWorkspace(table.workspaceId) }),
   pgPolicy("file_write", { for: "all", using: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId})`, withCheck: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId})` })
 ]).enableRLS();
 
@@ -384,7 +393,7 @@ export const syncedRecording = appSchema.table("recordings", {
   unique("recordings_meeting_number_unique").on(table.meetingId, table.number),
   index("recordings_meeting_session_idx").on(table.meetingId, table.sessionId),
   check("recordings_number_check", sql`${table.number} > 0`),
-  pgPolicy("recording_select", { for: "select", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" WHERE "meeting_id" = ${table.meetingId} AND ("app"."current_identity_can_read_workspace"("workspace_id") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND "workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)))` }),
+  pgPolicy("recording_select", { for: "select", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" WHERE "meeting_id" = ${table.meetingId} AND ("app"."current_identity_can_read_workspace"("workspace_id") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete', 'meeting-retention') AND "workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)))` }),
   pgPolicy("recording_write", { for: "all", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" WHERE "meeting_id" = ${table.meetingId} AND ("app"."current_identity_can_write_workspace"("workspace_id") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND "workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)))`, withCheck: sql`EXISTS (SELECT 1 FROM "app"."meetings" WHERE "meeting_id" = ${table.meetingId} AND ("app"."current_identity_can_write_workspace"("workspace_id") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND "workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)))` }),
 ]).enableRLS();
 
@@ -401,8 +410,9 @@ export const meetingAttachment = appSchema.table("meeting_attachments", {
   foreignKey({ columns: [table.workspaceId, table.meetingId], foreignColumns: [syncedMeeting.workspaceId, syncedMeeting.meetingId] }).onDelete("cascade"),
   foreignKey({ columns: [table.workspaceId, table.fileId], foreignColumns: [syncedFile.workspaceId, syncedFile.fileId] }),
   unique("meeting_attachments_meeting_attachment_unique").on(table.meetingId, table.fileId),
+  index("meeting_attachments_file_idx").on(table.fileId),
   index("meeting_attachments_workspace_meeting_id_idx").on(table.workspaceId, table.meetingId, table.id),
-  pgPolicy("meeting_attachment_select", { for: "select", using: sql`"app"."current_identity_can_read_workspace"(${table.workspaceId}) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.workspace_id = ${table.workspaceId} AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)` }),
+  pgPolicy("meeting_attachment_select", { for: "select", using: sql`(${meetingRetentionWorkspace(table.workspaceId)}) OR "app"."current_identity_can_read_workspace"(${table.workspaceId}) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.workspace_id = ${table.workspaceId} AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)` }),
   pgPolicy("meeting_attachment_write", { for: "all", using: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId})`, withCheck: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId})` })
 ]).enableRLS();
 
@@ -618,6 +628,8 @@ export const summaryJob = jobsSchema.table("summary", {
   check("summary_job_status_check", sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled')`),
   uniqueIndex("summary_job_active_meeting_idx").on(table.meetingId).where(sql`${table.status} IN ('pending', 'processing')`),
   index("summary_job_owner_created_idx").on(table.ownerUserId, table.createdAt),
+  pgPolicy("summary_job_retention_select", { for: "select", using: meetingRetentionWorkspace(table.workspaceId) }),
+  pgPolicy("summary_job_retention_update", { for: "update", using: meetingRetentionWorkspace(table.workspaceId), withCheck: meetingRetentionWorkspace(table.workspaceId) }),
   pgPolicy("summary_job_owner", {
     for: "all", using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,
     withCheck: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,

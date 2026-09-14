@@ -43,6 +43,7 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
         schemaVersion: 3, id: crypto.randomUUID(), workspaceId, createdAt: new Date(), requestHash: "delete",
         operations: [{ id: crypto.randomUUID(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }],
       }));
+      await store.sync.purgeDeletedMeetings(workspaceId, new Date(Date.now() + 8 * 86_400_000));
       const recreated = await store.sync.withIdentity(identity, (sync) => sync.commitTransaction({
         schemaVersion: 3, id: crypto.randomUUID(), workspaceId, createdAt: new Date(), requestHash: "recreate",
         operations: [{ id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: meetingData }],
@@ -51,11 +52,13 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
       const first = await service.listChanges(identity, workspaceId, initial.cursor);
       expect(first.items).toHaveLength(100);
       expect(first.hasMore).toBe(true);
-      const second = await service.listChanges(identity, workspaceId, first.cursor, first.highWaterCursor);
-      expect(second.items).toHaveLength(8);
+      const middle = await service.listChanges(identity, workspaceId, first.cursor, first.highWaterCursor);
+      expect(middle.items).toHaveLength(100);
+      const second = await service.listChanges(identity, workspaceId, middle.cursor, first.highWaterCursor);
+      expect(second.items).toHaveLength(13);
       expect(second.hasMore).toBe(false);
       expect(second.cursor).toBe(recreated.cursor);
-      const items = [...first.items, ...second.items];
+      const items = [...first.items, ...middle.items, ...second.items];
       expect(items.filter(({ entity, action }) => entity === "meeting_attachment" && action === "delete")).toHaveLength(105);
       const summary = items.find(({ entity }) => entity === "summary");
       expect(summary).toMatchObject({ record: { contentOmitted: true, contentPresent: false } });
@@ -66,6 +69,64 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
       await raw.end();
       await store.close?.();
     }
+  });
+
+  it("retains jobs and content safely across restore/purge races under RLS", async () => {
+    const store = createNodeApplicationStore({ authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "postgres", databaseUrl,
+      baseUrl: "https://dahlia.example", oauthRedirectUris: [], maxRequestBytes: 1024 * 1024 });
+    const raw = new Client({ connectionString: databaseUrl });
+    await raw.connect();
+    const owner: Identity = { userId: crypto.randomUUID(), source: "header" };
+    const editor: Identity = { userId: crypto.randomUUID(), source: "header" };
+    const workspaceId = crypto.randomUUID(), meetingId = crypto.randomUUID();
+    const commit = (operations: import("../src/sync/types").SyncTransactionOperation[]) => store.sync.withIdentity(owner, (sync) => sync.commitTransaction({
+      schemaVersion: 3, id: crypto.randomUUID(), workspaceId, createdAt: new Date(), requestHash: crypto.randomUUID(), operations,
+    }));
+    const change = (action: "delete" | "restore", baseRevision: number) => commit([
+      { id: crypto.randomUUID(), entity: "meeting", entityId: meetingId, action, baseRevision, data: {} },
+    ]);
+    try {
+      await seedPostgresIdentity(store, databaseUrl!, owner);
+      await seedPostgresIdentity(store, databaseUrl!, editor);
+      await commit([
+        { id: crypto.randomUUID(), entity: "workspace", action: "create", entityId: workspaceId, baseRevision: null,
+          data: { organizationId: testOrganizationID, name: "Trash RLS", createdAt: new Date() } },
+        { id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
+          data: { projectId: null, name: "Retained", description: "content", status: "READY", duration: null, recordingStartedAt: null, createdAt: new Date(), updatedAt: new Date() } },
+      ]);
+      await store.sync.withIdentity(owner, (sync) => sync.putPermission(workspaceId, "user", editor.userId, "editor"));
+      await raw.query("BEGIN");
+      await raw.query("SELECT set_config('app.user_id', $1, true)", [editor.userId]);
+      await raw.query(`INSERT INTO jobs.summary(id, workspace_id, meeting_id, owner_user_id, method, settings, output_language,
+        status, created_at, available_at, claimed_at, lease_expires_at, summary_revision, input_version, request_hash)
+        VALUES (gen_random_uuid(), $1, $2, $3, 'transcript', '{}', 'en', 'processing', now(), now(), now(), now() + interval '1 day', 0, '1', 'test')`,
+      [workspaceId, meetingId, editor.userId]);
+      await raw.query("COMMIT");
+      await change("delete", 1);
+      expect((await raw.query("SELECT * FROM app.meetings WHERE meeting_id = $1", [meetingId])).rows).toEqual([]);
+      expect(await store.sync.withIdentity(editor, (sync) => sync.getMeeting(workspaceId, meetingId))).toBeNull();
+      await change("restore", 2);
+      expect(await store.sync.withIdentity(editor, (sync) => sync.getMeeting(workspaceId, meetingId))).toMatchObject({ name: "Retained", revision: 3 });
+      await raw.query("BEGIN");
+      await raw.query("SELECT set_config('app.user_id', $1, true)", [editor.userId]);
+      expect((await raw.query("SELECT status, claimed_at, lease_expires_at FROM jobs.summary WHERE meeting_id = $1", [meetingId])).rows)
+        .toEqual([{ status: "cancelled", claimed_at: null, lease_expires_at: null }]);
+      await raw.query("COMMIT");
+      await change("delete", 3);
+      const [restored, purged] = await Promise.allSettled([
+        change("restore", 4), store.sync.purgeDeletedMeetings(workspaceId, new Date(Date.now() + 8 * 86_400_000)),
+      ]);
+      expect(purged.status).toBe("fulfilled");
+      const current = await store.sync.withIdentity(owner, (sync) => sync.getMeeting(workspaceId, meetingId));
+      if (restored.status === "fulfilled") {
+        expect(current).toMatchObject({ name: "Retained", revision: 5 });
+        expect(purged).toMatchObject({ value: 0 });
+      } else {
+        expect(current).toBeNull();
+        expect(purged).toMatchObject({ value: 1 });
+        expect(restored.reason).toMatchObject({ code: "meeting_not_deleted" });
+      }
+    } finally { await raw.query("ROLLBACK"); await raw.end(); await store.close?.(); }
   });
 
   it("serializes pruning with commits and rolls back the floor with failed deletion under FORCE RLS", async () => {

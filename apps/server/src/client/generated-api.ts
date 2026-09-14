@@ -291,6 +291,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/trash/meetings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Deleted meetings, newest deletion first; recoverable until physical deletion */
+        get: operations["listDeletedMeetings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/meetings": {
         parameters: {
             query?: never;
@@ -1052,6 +1069,7 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         Workspace: {
+            meetingDeletionGraceDays: number;
             /** @enum {string} */
             encryption?: "none" | "server";
             workspaceId: string;
@@ -1384,6 +1402,7 @@ export interface components {
             record: components["schemas"]["NullableMeetingEventRecord"];
         };
         NullableWorkspaceRecord: {
+            meetingDeletionGraceDays: number;
             /** @enum {string} */
             encryption?: "none" | "server";
             workspaceId: string;
@@ -1637,6 +1656,14 @@ export interface components {
                 sources: ("transcript" | "audio")[];
                 completeRecordings?: boolean;
             };
+        };
+        DeletedMeeting: {
+            meetingId: string;
+            workspaceId: string;
+            name: string;
+            /** Format: date-time */
+            deletedAt: string;
+            revision: number;
         };
         SummaryContent: {
             /** @enum {number} */
@@ -1909,6 +1936,7 @@ export interface components {
                 entityId: string;
                 baseRevision: number | null;
                 data: {
+                    meetingDeletionGraceDays?: number;
                     organizationId: string;
                     /** @enum {string} */
                     encryption?: "none" | "server";
@@ -1929,6 +1957,7 @@ export interface components {
                 entityId: string;
                 baseRevision: number | null;
                 data: {
+                    meetingDeletionGraceDays?: number;
                     /** @enum {string} */
                     encryption?: "none" | "server";
                     /** @enum {string|null} */
@@ -2077,6 +2106,15 @@ export interface components {
                 entity: "meeting";
                 /** @enum {string} */
                 action: "delete";
+                entityId: string;
+                baseRevision: number | null;
+                data: Record<string, never>;
+            } | {
+                id: string;
+                /** @enum {string} */
+                entity: "meeting";
+                /** @enum {string} */
+                action: "restore";
                 entityId: string;
                 baseRevision: number | null;
                 data: Record<string, never>;
@@ -3030,6 +3068,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Project"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listDeletedMeetings: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor. Pass back unchanged with the original filters. */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["DeletedMeeting"][];
+                        /** @description Opaque cursor. Pass back unchanged with the original filters. */
+                        nextCursor: string | null;
+                    };
                 };
             };
             default: components["responses"]["Problem"];

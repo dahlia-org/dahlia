@@ -967,6 +967,17 @@
       ]
     },
     {
+      "path": "/api/v1/workspaces/:workspace/trash/meetings",
+      "response": "meetings",
+      "query": {
+        "cursor": "cursor:meeting"
+      },
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
+    },
+    {
       "path": "/api/v1/workspaces/:workspace/meetings",
       "response": "meetings",
       "query": {

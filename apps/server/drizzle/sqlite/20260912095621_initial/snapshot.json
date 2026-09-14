@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "8f731c85-7c5a-4f3a-b25b-c1f65e3675a2",
+  "id": "d765e0fa-025e-48ac-8e53-2af336da8c99",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -3581,6 +3581,16 @@
       "table": "meetings"
     },
     {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "deleted_at",
+      "entityType": "columns",
+      "table": "meetings"
+    },
+    {
       "type": "text",
       "notNull": false,
       "autoincrement": false,
@@ -3977,6 +3987,16 @@
       "default": "1",
       "generated": null,
       "name": "revision",
+      "entityType": "columns",
+      "table": "workspaces"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "7",
+      "generated": null,
+      "name": "meeting_deletion_grace_days",
       "entityType": "columns",
       "table": "workspaces"
     },
@@ -5885,6 +5905,20 @@
     {
       "columns": [
         {
+          "value": "file_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "meeting_attachments_file_idx",
+      "entityType": "indexes",
+      "table": "meeting_attachments"
+    },
+    {
+      "columns": [
+        {
           "value": "workspace_id",
           "isExpression": false
         },
@@ -6103,6 +6137,28 @@
       "name": "files_workspace_file_idx",
       "entityType": "indexes",
       "table": "files"
+    },
+    {
+      "columns": [
+        {
+          "value": "workspace_id",
+          "isExpression": false
+        },
+        {
+          "value": "deleted_at",
+          "isExpression": false
+        },
+        {
+          "value": "meeting_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "meetings_workspace_deleted_idx",
+      "entityType": "indexes",
+      "table": "meetings"
     },
     {
       "columns": [
@@ -6548,6 +6604,12 @@
       "name": "transcript_segment_normalized_character_count_check",
       "entityType": "checks",
       "table": "transcript_segments"
+    },
+    {
+      "value": "\"meeting_deletion_grace_days\" BETWEEN 1 AND 90",
+      "name": "workspace_meeting_deletion_grace_check",
+      "entityType": "checks",
+      "table": "workspaces"
     },
     {
       "value": "\"principal_type\" IN ('user', 'organization', 'team')",

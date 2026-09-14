@@ -38,10 +38,11 @@ export const syncedWorkspace = sqliteTable("workspaces", {
   icon: text("icon"),
   color: text("color"),
   revision: integer("revision").default(1).notNull(),
+  meetingDeletionGraceDays: integer("meeting_deletion_grace_days").default(7).notNull(),
   deletingAt: sqliteTimestamp("deleting_at"),
   createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
   updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
-});
+}, (table) => [check("workspace_meeting_deletion_grace_check", sql`${table.meetingDeletionGraceDays} BETWEEN 1 AND 90`)]);
 
 export const syncedProject = sqliteTable("projects", {
   encryptedPayload: text("encrypted_payload"),
@@ -115,7 +116,9 @@ export const syncedMeeting = sqliteTable("meetings", {
   transcriptRevision: integer("transcript_revision").default(0).notNull(),
   active: integer("active", { mode: "boolean" }).default(false).notNull(),
   deletingAt: sqliteTimestamp("deleting_at"),
+  deletedAt: sqliteTimestamp("deleted_at"),
 }, (table) => [
+  index("meetings_workspace_deleted_idx").on(table.workspaceId, table.deletedAt, table.meetingId),
   index("meetings_calendar_event_idx").on(table.icalUid, table.recurrenceId),
   unique("synced_meeting_workspace_meeting_unique").on(table.workspaceId, table.meetingId),
   foreignKey({
@@ -278,6 +281,7 @@ export const meetingAttachment = sqliteTable("meeting_attachments", {
   foreignKey({ columns: [table.workspaceId, table.meetingId], foreignColumns: [syncedMeeting.workspaceId, syncedMeeting.meetingId] }).onDelete("cascade"),
   foreignKey({ columns: [table.workspaceId, table.fileId], foreignColumns: [syncedFile.workspaceId, syncedFile.fileId] }),
   unique("meeting_attachments_meeting_attachment_unique").on(table.meetingId, table.fileId),
+  index("meeting_attachments_file_idx").on(table.fileId),
   index("meeting_attachments_workspace_meeting_id_idx").on(table.workspaceId, table.meetingId, table.id)
 ]);
 

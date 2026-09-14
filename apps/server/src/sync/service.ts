@@ -69,9 +69,8 @@ export class MeetingSyncService {
     private readonly fileStorageRoot?: string,
     private readonly automaticStorageMaintenance = true,
   ) {
-    if (storage) {
-      this.scheduleStorageDeletes();
-    }
+    if (storage) this.scheduleStorageDeletes();
+    else this.scheduleStorageDeleteRetry();
   }
 
   parseId(value: string): string {
@@ -234,7 +233,7 @@ export class MeetingSyncService {
             if (meeting === undefined) {
               meeting = operation.entity === "meeting" && operation.action === "create"
                 ? null
-                : await scoped.getMeeting(normalized.workspaceId, operation.entityId);
+                : await scoped.getMeeting(normalized.workspaceId, operation.entityId, operation.action === "restore");
             }
             const name = operation.entity === "meeting" && typeof data.name === "string" ? data.name : meeting?.name ?? "";
             const description = operation.entity === "meeting" && typeof data.description === "string"
@@ -266,7 +265,8 @@ export class MeetingSyncService {
             });
           } else if (["file", "meeting_attachment"].includes(operation.entity) && operation.action === "upsert") {
             const fileId = operation.entity === "file" ? operation.entityId : String(data.fileId);
-            const file = fileMetadata.get(fileId) ?? (await scoped.getFile(fileId))?.metadata;
+            // A preceding restore can make this retained file visible when the transaction commits.
+            const file = fileMetadata.get(fileId) ?? (await scoped.getFile(fileId, false, true))?.metadata;
             const metadata = { ...file, ...(operation.entity === "file" ? data.metadata as object : {}) };
             if (metadata.source) fileMetadata.set(fileId, metadata as FileRecord["metadata"]);
             Object.assign(data, await this.fileSearchData(metadata));
@@ -302,14 +302,14 @@ export class MeetingSyncService {
   }
 
   private async maintainStorage(): Promise<void> {
-    if (!this.storage) return;
     let after: SyncHistoryTarget | undefined;
     const before = new Date(Date.now() - 86_400_000);
     for (;;) {
       const targets = await this.store.listHistoryTargets(after);
       if (!targets.length) break;
       for (const target of targets) {
-        await this.store.expireRecordingUploads(target.workspaceId, before);
+        await this.store.purgeDeletedMeetings(target.workspaceId, new Date());
+        if (this.storage) await this.store.expireRecordingUploads(target.workspaceId, before);
       }
       after = targets.at(-1);
     }
@@ -1031,6 +1031,16 @@ export class MeetingSyncService {
 
   getProject(identity: Identity, workspaceId: string, projectId: string) {
     return this.store.withIdentity(identity, (scoped) => scoped.getProject(workspaceId, projectId));
+  }
+
+  async listDeletedMeetings(identity: Identity, workspaceId: string, cursor?: string) {
+    const records = await this.store.withIdentity(identity, async (scoped) => {
+      if (!await scoped.getWorkspace(workspaceId)) throw new RequestError(404, "workspace_not_found");
+      return scoped.listDeletedMeetings(workspaceId, SYNC_READ_PAGE_SIZE + 1, this.parseMeetingCursor(cursor));
+    });
+    const items = records.slice(0, SYNC_READ_PAGE_SIZE);
+    const last = items.at(-1);
+    return { items, nextCursor: records.length > SYNC_READ_PAGE_SIZE && last ? `${last.deletedAt.toISOString()},${last.meetingId}` : null };
   }
 
   async listMeetings(

@@ -127,7 +127,7 @@ describe("generated Web client against the real SQLite Server", () => {
       expect(missing.error).toMatchObject({ code: "revision_conflict", conflicts: [{ entity: "meeting", id: meetingId,
         clientBaseRevision: null, serverRevision: null, record: null }] });
       const restore = await client.POST("/api/v1/transactions", { body: { schemaVersion: 3, id: id(), workspaceId, createdAt: date,
-        operations: [{ ...transaction.operations[1]!, id: id() }] } });
+        operations: [{ id: id(), entity: "meeting", action: "restore", entityId: meetingId, baseRevision: 2, data: {} }] } });
       expect(restore.response.status).toBe(200);
       expect((await stage()).response.status).toBe(204);
       const foreign = await client.PUT("/api/v1/meetings/{meetingId}/transcript-uploads/{patchId}/chunks/{chunkIndex}", {

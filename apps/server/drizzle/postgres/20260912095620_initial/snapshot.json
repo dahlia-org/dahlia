@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "354fdd46-87e6-472a-bc83-d04db33854ca",
+  "id": "d005a40e-bad1-42c7-9f20-7a49264bc90a",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -2333,6 +2333,19 @@
       "table": "meetings"
     },
     {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "deleted_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "meetings"
+    },
+    {
       "type": "text",
       "typeSchema": null,
       "notNull": false,
@@ -2848,6 +2861,19 @@
       "generated": null,
       "identity": null,
       "name": "revision",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "workspaces"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "7",
+      "generated": null,
+      "identity": null,
+      "name": "meeting_deletion_grace_days",
       "entityType": "columns",
       "schema": "app",
       "table": "workspaces"
@@ -3372,6 +3398,27 @@
       "nameExplicit": true,
       "columns": [
         {
+          "value": "file_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "meeting_attachments_file_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "meeting_attachments"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
           "value": "workspace_id",
           "isExpression": false,
           "asc": true,
@@ -3717,6 +3764,41 @@
       "entityType": "indexes",
       "schema": "app",
       "table": "files"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "workspace_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "deleted_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "meeting_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "meetings_workspace_deleted_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "meetings"
     },
     {
       "nameExplicit": true,
@@ -4975,6 +5057,13 @@
       "table": "transcript_segments"
     },
     {
+      "value": "\"meeting_deletion_grace_days\" BETWEEN 1 AND 90",
+      "name": "workspace_meeting_deletion_grace_check",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "workspaces"
+    },
+    {
       "value": "\"encryption\" IN ('none', 'server')",
       "name": "workspace_encryption_check",
       "entityType": "checks",
@@ -5021,7 +5110,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"meeting_attachments\".\"workspace_id\") OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.workspace_id = \"app\".\"meeting_attachments\".\"workspace_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
+      "using": "(current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"meeting_attachments\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR \"app\".\"current_identity_can_read_workspace\"(\"app\".\"meeting_attachments\".\"workspace_id\") OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.workspace_id = \"app\".\"meeting_attachments\".\"workspace_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
       "withCheck": null,
       "name": "meeting_attachment_select",
       "entityType": "policies",
@@ -5043,11 +5132,24 @@
     },
     {
       "as": "PERMISSIVE",
+      "for": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "using": "current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"meeting_events\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid",
+      "withCheck": "current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"meeting_events\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid",
+      "name": "meeting_event_retention_update",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "meeting_events"
+    },
+    {
+      "as": "PERMISSIVE",
       "for": "SELECT",
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"meeting_events\".\"workspace_id\") OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.workspace_id = \"app\".\"meeting_events\".\"workspace_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
+      "using": "(current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"meeting_events\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR \"app\".\"current_identity_can_read_workspace\"(\"app\".\"meeting_events\".\"workspace_id\") OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.workspace_id = \"app\".\"meeting_events\".\"workspace_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
       "withCheck": null,
       "name": "meeting_event_select",
       "entityType": "policies",
@@ -5121,6 +5223,32 @@
     },
     {
       "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "current_setting('app.maintenance', true) = 'meeting-retention' AND \"jobs\".\"summary\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid",
+      "withCheck": null,
+      "name": "summary_job_retention_select",
+      "entityType": "policies",
+      "schema": "jobs",
+      "table": "summary"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "using": "current_setting('app.maintenance', true) = 'meeting-retention' AND \"jobs\".\"summary\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid",
+      "withCheck": "current_setting('app.maintenance', true) = 'meeting-retention' AND \"jobs\".\"summary\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid",
+      "name": "summary_job_retention_update",
+      "entityType": "policies",
+      "schema": "jobs",
+      "table": "summary"
+    },
+    {
+      "as": "PERMISSIVE",
       "for": "ALL",
       "roles": [
         "public"
@@ -5151,9 +5279,22 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"files\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"files\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.workspace_id = \"app\".\"files\".\"workspace_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
+      "using": "(current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"files\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR \"app\".\"current_identity_can_read_workspace\"(\"app\".\"files\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"files\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.workspace_id = \"app\".\"files\".\"workspace_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
       "withCheck": null,
       "name": "file_select",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "files"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "using": "current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"files\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid",
+      "withCheck": null,
+      "name": "file_retention_delete",
       "entityType": "policies",
       "schema": "app",
       "table": "files"
@@ -5177,9 +5318,22 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"meetings\".\"workspace_id\") OR (current_setting('app.maintenance', true) IN ('search', 'storage', 'governance-delete') AND \"app\".\"meetings\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
+      "using": "(current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"meetings\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR \"app\".\"current_identity_can_read_workspace\"(\"app\".\"meetings\".\"workspace_id\") OR (current_setting('app.maintenance', true) IN ('search', 'storage', 'governance-delete') AND \"app\".\"meetings\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
       "withCheck": null,
       "name": "meeting_select",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "meetings"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "using": "(current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"meetings\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) AND \"app\".\"meetings\".\"deleted_at\" IS NOT NULL",
+      "withCheck": null,
+      "name": "meeting_retention_delete",
       "entityType": "policies",
       "schema": "app",
       "table": "meetings"
@@ -5255,7 +5409,7 @@
       "roles": [
         "public"
       ],
-      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND (\"app\".\"current_identity_can_read_workspace\"(\"workspace_id\") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete') AND \"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)))",
+      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND (\"app\".\"current_identity_can_read_workspace\"(\"workspace_id\") OR (current_setting('app.maintenance', true) IN ('storage', 'governance-delete', 'meeting-retention') AND \"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)))",
       "withCheck": null,
       "name": "recording_select",
       "entityType": "policies",
@@ -5307,7 +5461,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"workspaces\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"app\".\"workspaces\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) = 'authorization' OR (current_setting('app.maintenance', true) = 'governance' AND \"app\".\"workspaces\".\"organization_id\" = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"workspaces\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
+      "using": "(current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"workspaces\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR \"app\".\"current_identity_can_read_workspace\"(\"app\".\"workspaces\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"app\".\"workspaces\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) = 'authorization' OR (current_setting('app.maintenance', true) = 'governance' AND \"app\".\"workspaces\".\"organization_id\" = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"workspaces\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
       "withCheck": null,
       "name": "workspace_select",
       "entityType": "policies",

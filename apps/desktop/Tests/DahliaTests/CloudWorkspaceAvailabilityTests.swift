@@ -57,6 +57,7 @@
                 "items": [
                     ["entity": "workspace", "id": remote.workspaceId.uuidString, "revision": 7, "record": [
                         "workspaceId": remote.workspaceId.uuidString, "organizationId": remote.organizationId.uuidString, "role": remote.role,
+                        "meetingDeletionGraceDays": 7,
                         "name": remote.name, "revision": 7,
                         "createdAt": "2023-11-14T22:13:20Z", "updatedAt": "2023-11-14T22:13:20Z",
                     ]],
@@ -258,6 +259,7 @@
             [
                 "workspaceId": workspace.workspaceId.uuidString,
                 "organizationId": workspace.organizationId.uuidString,
+                "meetingDeletionGraceDays": 7,
                 "name": workspace.name,
                 "icon": workspace.icon ?? "",
                 "color": workspace.color ?? "",

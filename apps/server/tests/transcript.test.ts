@@ -284,6 +284,8 @@ describe("transcript versions", () => {
       await sync.commitTransaction(owner, body([{ id: uuidV7(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }]));
       expect((await send("/latest", "owner")).status).toBe(404);
       const db = new DatabaseSync(databasePath);
+      expect(db.prepare("SELECT count(*) AS count FROM transcripts").get()).toMatchObject({ count: 1 });
+      await store.sync.purgeDeletedMeetings(workspaceId, new Date(Date.now() + 8 * 86_400_000));
       expect(db.prepare("SELECT count(*) AS count FROM transcripts").get()).toMatchObject({ count: 0 });
       expect(db.prepare("SELECT count(*) AS count FROM transcript_segments").get()).toMatchObject({ count: 0 });
       expect(db.prepare("pragma table_info(transcript_segments)").all().map((row) => row.name)).not.toContain("workspace_id");

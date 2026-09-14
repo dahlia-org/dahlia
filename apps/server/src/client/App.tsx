@@ -609,6 +609,46 @@ export function MeetingList({ meetings, loading, filtered = false, onClear }: { 
   </div>;
 }
 
+export function WorkspaceTrash({ workspace }: { workspace: SyncedWorkspaceInfo }) {
+  const query = useLivePage(apiQuery("listDeletedMeetings", { params: { path: { workspaceId: workspace.workspaceId } } }));
+  const [pending, setPending] = useState<string>();
+  const [error, setError] = useState<string>();
+  const [restored, setRestored] = useState<string>();
+  const [recovering, setRecovering] = useState(false);
+  async function restore(meeting: components["schemas"]["DeletedMeeting"]) {
+    if (pending) return;
+    setPending(meeting.meetingId);
+    setError(undefined);
+    setRestored(undefined);
+    try {
+      await commitSyncTransaction(workspace.workspaceId, [{ entity: "meeting", action: "restore", entityId: meeting.meetingId, baseRevision: meeting.revision, data: {} }], setRecovering);
+      setRestored(meeting.name);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : uiText("Could not restore the meeting.", "ミーティングを復旧できませんでした。"));
+      query.reload();
+    } finally { setPending(undefined); }
+  }
+  return <section aria-label={uiText("Deleted meetings", "削除済みミーティング")}>
+    <p className="muted">{uiText(`Meetings are permanently deleted after ${workspace.meetingDeletionGraceDays} days. They can be restored until cleanup runs.`, `ミーティングは削除から${workspace.meetingDeletionGraceDays}日後に完全削除の対象となります。削除処理が完了するまでは復旧できます。`)}</p>
+    <DataError error={query.error} retry={query.reload} />
+    {error && <p role="alert" className="dialog-error">{error}</p>}
+    <p role="status">{recovering ? syncMessage("sync_recovering") : restored ? uiText(`Restored “${restored}”.`, `「${restored}」を復旧しました。`) : ""}</p>
+    {query.loading && !query.data && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
+    {query.data?.items.length === 0 && <p className="content-empty">{uiText("Trash is empty", "ごみ箱は空です")}</p>}
+    <div className="collection-list">{query.data?.items.map((meeting) => {
+      const scheduled = new Date(new Date(meeting.deletedAt).getTime() + workspace.meetingDeletionGraceDays * 86_400_000);
+      return <div className="collection-heading" key={meeting.meetingId}>
+        <div><strong>{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</strong>
+          <p className="muted">{uiText("Deleted: ", "削除日時：")}<time dateTime={meeting.deletedAt}>{new Date(meeting.deletedAt).toLocaleString()}</time>{" · "}
+            {scheduled.getTime() <= Date.now() ? uiText("Awaiting deletion", "削除待ち") : <>{uiText("Scheduled for deletion: ", "削除予定：")}<time dateTime={scheduled.toISOString()}>{scheduled.toLocaleString()}</time></>}</p>
+        </div>
+        {canWriteWorkspace(workspace.role) && <button className="secondary" disabled={pending !== undefined} onClick={() => void restore(meeting)}>{pending === meeting.meetingId ? uiText("Restoring…", "復旧中…") : uiText("Restore", "復旧")}</button>}
+      </div>;
+    })}</div>
+    {query.data?.nextCursor && <button className="secondary load-more" disabled={query.loadingMore} onClick={query.loadMore}>{query.loadingMore ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}</button>}
+  </section>;
+}
+
 function WorkspaceMeetings({ session, workspaceId }: { session: SessionInfo; workspaceId: string }) {
   const { dialog, openDialog } = useActionDialog();
   const workspaceQuery = useLiveJSON<SyncedWorkspaceInfo>(apiQuery("getWorkspace", { params: { path: { workspaceId: workspaceId } } }));
@@ -637,11 +677,13 @@ function WorkspaceMeetings({ session, workspaceId }: { session: SessionInfo; wor
     if (!workspace) return;
     openDialog({
       title: uiText("Edit Workspace", "ワークスペースを編集"), confirmLabel: uiText("Save changes", "変更を保存"),
+      description: uiText("The deletion grace period also applies to meetings already in the trash. Shortening it may delete them at the next cleanup.", "削除の猶予期間は、ごみ箱内のミーティングにも適用されます。短縮すると、次の削除処理で完全に削除される場合があります。"),
       fields: [{ name: "name", label: uiText("Workspace name", "ワークスペース名"), value: workspace.name, required: true },
-        { name: "appearance", label: uiText("Appearance", "見た目"), appearance: "editable", value: JSON.stringify(collectionAppearance(workspace, "workspace")) }],
-      onSubmit: async ({ name, appearance }) => {
+        { name: "appearance", label: uiText("Appearance", "見た目"), appearance: "editable", value: JSON.stringify(collectionAppearance(workspace, "workspace")) },
+        { name: "meetingDeletionGraceDays", label: uiText("Deletion grace period (days)", "削除の猶予期間（日）"), type: "number", min: 1, max: 90, required: true, value: String(workspace.meetingDeletionGraceDays) }],
+      onSubmit: async ({ name, appearance, meetingDeletionGraceDays }) => {
         await commitSyncTransaction(workspaceId, [{ entity: "workspace", action: "update", entityId: workspaceId,
-          baseRevision: workspace.revision, data: { name: name!.trim(), ...(JSON.parse(appearance!) as Appearance) } }], setRecovering);
+          baseRevision: workspace.revision, data: { meetingDeletionGraceDays: Number(meetingDeletionGraceDays), name: name!.trim(), ...(JSON.parse(appearance!) as Appearance) } }], setRecovering);
       },
     });
   };
@@ -705,12 +747,13 @@ function WorkspaceMeetings({ session, workspaceId }: { session: SessionInfo; wor
           <span className="collection-project-name"><AppearanceIcon appearance={projectAppearance(project, projects.find((parent) => parent.projectId === project.parentProjectId))} /><strong>{project.path}</strong></span><span className="muted">{meetingCount(project.subtreeMeetingCount ?? 0)}</span>
         </a>)}</div>
       </> },
+      ...(workspace ? [{ id: "trash", label: uiText("Trash", "ごみ箱"), content: <WorkspaceTrash workspace={workspace} /> }] : []),
       ...(session.capabilities.sharing && workspace ? [{ id: "permissions", label: uiText("Permissions", "権限"), content: <WorkspaceSharing workspace={workspace} /> }] : []),
       { id: "settings", label: uiText("Settings", "設定"), content: <>
         <section className="workspace-settings"><h2>{uiText("Workspace details", "ワークスペースの詳細")}</h2><div className="collection-heading"><span>{workspace?.name}</span>{workspace?.role === "admin" && <button className="secondary" onClick={renameWorkspace}>{uiText("Edit Workspace", "ワークスペースを編集")}</button>}</div></section>
         {workspace?.role === "admin" && <WorkspaceTransfer workspace={workspace} />}
         {workspace?.role === "admin" && !personal && <section className="workspace-settings"><h2>{uiText("Delete Workspace", "ワークスペースを削除")}</h2>
-          <div className="collection-heading"><p>{uiText("Only empty Workspaces can be deleted. Transfer or delete all resources first.", "空のワークスペースのみ削除できます。リソースが残っている場合は、先に移管または削除してください。")}</p>
+          <div className="collection-heading"><p>{uiText("Only empty Workspaces can be deleted. Transfer resources or wait for meetings in the trash to be permanently deleted.", "空のワークスペースのみ削除できます。ごみ箱内のミーティングを含むリソースが残っている場合は、先に移管または削除完了を待ってください。")}</p>
           <button className="secondary danger-button" disabled={workspace.hasResources !== false} onClick={deleteWorkspace}>{uiText("Delete Workspace", "ワークスペースを削除")}</button></div>
         </section>}
       </> },
@@ -835,6 +878,17 @@ export function SyncedMeeting({ workspaceId, meetingId }: { workspaceId: string;
       },
     });
   };
+  const deleteMeeting = () => {
+    if (!meeting || !workspace) return;
+    openDialog({ title: uiText("Move meeting to trash?", "ミーティングをごみ箱に移動しますか？"),
+      description: uiText(`“${meeting.name}” will be eligible for permanent deletion after ${workspace.meetingDeletionGraceDays} days. Restore it from this Workspace's trash before cleanup.`, `「${meeting.name}」は${workspace.meetingDeletionGraceDays}日後に完全削除の対象となります。削除処理前であれば、ワークスペースのごみ箱から復旧できます。`),
+      confirmLabel: uiText("Move to trash", "ごみ箱に移動"), destructive: true,
+      onSubmit: async () => {
+        await commitSyncTransaction(workspaceId, [{ entity: "meeting", action: "delete", entityId: meetingId, baseRevision: meeting.revision, data: {} }], setRecovering);
+        navigateDashboard(`/workspaces/${workspaceId}`);
+      },
+    });
+  };
   const visibleScreenshots = useMemo(() => screenshots?.filter((screenshot) => screenshot.file.metadata.source === "screenshot"), [screenshots]);
   const previewIndex = screenshotPreview ? visibleScreenshots?.findIndex((screenshot) => screenshot.file.id === screenshotPreview.fileId) ?? -1 : -1;
   const previousScreenshot = previewIndex > 0 ? visibleScreenshots?.[previewIndex - 1] : undefined;
@@ -901,6 +955,7 @@ export function SyncedMeeting({ workspaceId, meetingId }: { workspaceId: string;
           <button className="action-trigger" aria-label={uiText("Meeting actions", "ミーティングの操作")} popoverTarget="meeting-actions"><span aria-hidden="true">⋯</span>{" "}<span className="action-label">{uiText("Actions", "操作")}</span></button>
           <div id="meeting-actions" popover="auto" className="action-menu">
             <button onClick={editMeeting}>{uiText("Edit Meeting", "ミーティングを編集")}</button>
+            <button className="danger-button" onClick={deleteMeeting}>{uiText("Move to trash", "ごみ箱に移動")}</button>
           </div>
         </div>}
         summary={<>
