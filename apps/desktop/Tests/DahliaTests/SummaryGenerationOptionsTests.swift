@@ -54,6 +54,12 @@
                 from: Data(#"{"exportOptions":{"exportsToWorkspace":true,"exportsToGoogleDocs":false},"detailLevel":"high"}"#.utf8)
             )
             #expect(legacy.source == nil)
+            #expect(legacy.useSavedTranscript == nil)
+            let offline = SummaryGenerationOptions(exportOptions: .manual, useSavedTranscript: true)
+            #expect(try JSONDecoder().decode(SummaryGenerationOptions.self, from: JSONEncoder().encode(offline)).useSavedTranscript == true)
+            #expect(SummaryGenerationOptions.merging([offline, legacy]).useSavedTranscript != true)
+            #expect(SummaryGenerationOptions.merging([offline, offline]).useSavedTranscript == true)
+            #expect(SummaryGenerationOptions.merging([]).useSavedTranscript != true)
 
             let merged = SummaryGenerationOptions.merging([
                 legacy,

@@ -1683,3 +1683,6 @@
 "Generation defaults are shared by everyone in this workspace. Only admins can change them." = "Generation defaults are shared by everyone in this workspace. Only admins can change them.";
 "For this generation only" = "For this generation only";
 "Workspace default" = "Workspace default";
+
+"summary.source.useSaved" = "Use the saved transcript";
+"summary.source.useSaved.description" = "Generate from the copy saved on this Mac without fetching the latest server version. It may be outdated. Select this when working offline.";

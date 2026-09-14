@@ -6,6 +6,7 @@ struct SummaryGenerationConfirmationView: View {
     @State private var detailLevel: SummaryDetailLevel?
     @State private var selectedProjectId: UUID?
     @State private var selectedSource: SummaryGenerationSource?
+    @State private var useSavedTranscript = false
     @State private var sourceAvailability: SummaryGenerationSourceAvailability?
     @State private var isLoadingSources = true
     @State private var sourceErrorMessage: String?
@@ -67,6 +68,13 @@ struct SummaryGenerationConfirmationView: View {
                         isLoading: isLoadingSources,
                         errorMessage: sourceErrorMessage
                     )
+                    if !usesRemote, sourceAvailability?.hasServerConnection == true, selectedSource == .transcript {
+                        Toggle(isOn: $useSavedTranscript) {
+                            Text(L10n.summaryUseSavedTranscript)
+                            Text(L10n.summaryUseSavedTranscriptDescription)
+                        }
+                        .toggleStyle(.checkbox)
+                    }
                 }
 
                 Section(L10n.generationOverrides) {
@@ -156,7 +164,8 @@ struct SummaryGenerationConfirmationView: View {
                 location: location,
                 model: model.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) },
                 reasoningEffort: effort
-            )
+            ),
+            useSavedTranscript: !usesRemote && useSavedTranscript ? true : nil
         ), selectedProjectId)
         if errorMessage == nil {
             onCancel()

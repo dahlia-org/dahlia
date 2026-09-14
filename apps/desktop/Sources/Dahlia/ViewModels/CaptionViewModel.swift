@@ -4864,12 +4864,12 @@ final class CaptionViewModel: ObservableObject {
             if preparedRequest.options.source == .audio, !usesServerSummary {
                 throw ServerSummaryService.Failure.unavailable
             }
-            if preparedRequest.options.source == .transcript, !usesServerSummary, target != nil {
+            if !usesServerSummary, target != nil, sessionID == nil || preparedRequest.options.source == .transcript {
                 try await MeetingContentProvider.shared.ensure(
                     entity: .transcript,
                     id: preparedRequest.meetingId,
                     dbQueue: preparedRequest.dbQueue,
-                    refresh: false
+                    refreshIfStale: preparedRequest.options.useSavedTranscript != true
                 )
             }
             try Task.checkCancellation()

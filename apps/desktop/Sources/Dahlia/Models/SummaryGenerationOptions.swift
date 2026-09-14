@@ -3,6 +3,7 @@ struct SummaryGenerationOptions: Codable, Equatable {
     let detailLevel: SummaryDetailLevel?
     let source: SummaryGenerationSource?
     var overrides: Overrides?
+    let useSavedTranscript: Bool?
 
     struct Overrides: Codable, Equatable {
         var outputLanguage: SummaryLanguage?
@@ -30,12 +31,14 @@ struct SummaryGenerationOptions: Codable, Equatable {
         exportOptions: SummaryExportOptions,
         detailLevel: SummaryDetailLevel? = nil,
         source: SummaryGenerationSource? = nil,
-        overrides: Overrides? = nil
+        overrides: Overrides? = nil,
+        useSavedTranscript: Bool? = nil
     ) {
         self.exportOptions = exportOptions
         self.detailLevel = detailLevel
         self.source = source
         self.overrides = overrides
+        self.useSavedTranscript = useSavedTranscript
     }
 
     static let manual = Self(exportOptions: .manual)
@@ -45,7 +48,8 @@ struct SummaryGenerationOptions: Codable, Equatable {
             exportOptions: .merging(options.map(\.exportOptions)),
             detailLevel: options.compactMap(\.detailLevel).max { $0.mergePriority < $1.mergePriority },
             source: options.compactMap(\.source).first,
-            overrides: options.compactMap(\.overrides).first
+            overrides: options.compactMap(\.overrides).first,
+            useSavedTranscript: !options.isEmpty && options.allSatisfy { $0.useSavedTranscript == true } ? true : nil
         )
     }
 }

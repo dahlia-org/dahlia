@@ -1116,6 +1116,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var summarySourceAudioDescription: String { String(localized: "summary.source.audio.description", bundle: bundle) }
     static var summarySourceChecking: String { String(localized: "summary.source.checking", bundle: bundle) }
     static var summarySourceCheckFailed: String { String(localized: "summary.source.checkFailed", bundle: bundle) }
+    static var summaryUseSavedTranscript: String { String(localized: "summary.source.useSaved", bundle: bundle) }
+    static var summaryUseSavedTranscriptDescription: String { String(localized: "summary.source.useSaved.description", bundle: bundle) }
     static var summarySourceUnsupported: String { String(localized: "summary.source.unsupported", bundle: bundle) }
     static var summarySourceTranscriptUnavailable: String { String(
         localized: "summary.source.transcript.unavailable",

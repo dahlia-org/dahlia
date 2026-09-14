@@ -1683,3 +1683,6 @@
 "Generation defaults are shared by everyone in this workspace. Only admins can change them." = "生成の既定値はこのワークスペースの全員で共有します。変更できるのは管理者のみです。";
 "For this generation only" = "今回の生成のみ";
 "Workspace default" = "ワークスペース設定";
+
+"summary.source.useSaved" = "保存済みの文字起こしを使う";
+"summary.source.useSaved.description" = "サーバーの最新版を取得せず、このMacに保存された版から生成します。内容が古い可能性があります。オフライン時に選択できます。";
