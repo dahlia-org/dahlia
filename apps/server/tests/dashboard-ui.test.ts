@@ -192,8 +192,8 @@ describe("desktop-style meeting layout", () => {
     expect(footer).toContain("Sign out");
     expect(footer).not.toContain("personal:");
     expect(footer).not.toContain("Local account");
-    expect(footer).toContain('href="/organizations"');
-    expect(navigation).toContain('href="/organizations"');
+    expect(footer).toContain('href="/orgs"');
+    expect(navigation).toContain('href="/orgs"');
     expect(footer).toContain("Settings");
     expect(footer).not.toContain("sidebar-settings");
     expect(footer).not.toContain("Artifacts");
@@ -225,7 +225,7 @@ describe("desktop-style meeting layout", () => {
       expect(footer).not.toContain(`href="${path}"`);
     }
     expect(navigation).toContain("サーバー設定");
-    expect(footer?.includes('href="/organizations"')).toBe(sharing);
+    expect(footer?.includes('href="/orgs"')).toBe(sharing);
     if (sharing) expect(footer).toContain("所属組織一覧");
     expect(footer).toContain("設定");
   });
@@ -387,21 +387,27 @@ describe("dashboard navigation", () => {
 
   it("gates organization and invitation routes with session capabilities", () => {
     const enabled = { admin: false, sessions: true, sharing: true };
-    expect(resolveDashboardRoute("/organizations", enabled)).toEqual({ page: "organizations" });
-    expect(resolveDashboardRoute("/organizations/alpha-team", enabled))
-      .toEqual({ page: "organization", organizationSlug: "alpha-team" });
-    expect(dashboardNavigationPath("/organizations/alpha-team", "https://example.com/organizations"))
-      .toBe("/organizations/alpha-team");
-    expect(resolveDashboardRoute("/organizations/alpha-team", { ...enabled, sharing: false }))
+    const organization = encodeId("organization", "01990ab0-0000-7000-8000-000000000001");
+    expect(resolveDashboardRoute("/orgs", enabled)).toEqual({ page: "organizations" });
+    expect(resolveDashboardRoute(`/orgs/${organization}`, enabled))
+      .toEqual({ page: "organization", organizationId: organization });
+    expect(dashboardNavigationPath(`/orgs/${organization}`, "https://example.com/orgs"))
+      .toBe(`/orgs/${organization}`);
+    expect(resolveDashboardRoute(`/orgs/${organization}`, { ...enabled, sharing: false }))
       .toEqual({ redirect: "/dashboard" });
-    expect(resolveDashboardRoute("/organizations/external", { ...enabled, sessions: false }))
-      .toEqual({ page: "organization", organizationSlug: "external" });
+    expect(resolveDashboardRoute(`/orgs/${organization}`, { ...enabled, sessions: false }))
+      .toEqual({ page: "organization", organizationId: organization });
+    for (const path of ["/organizations", "/organizations/alpha-team", "/orgs/alpha-team", "/orgs/org_invalid", `/orgs/${encodeId("team", "01990ab0-0000-7000-8000-000000000001")}`]) {
+      expect(resolveDashboardRoute(path, enabled)).toEqual({ redirect: "/dashboard" });
+    }
+    expect(dashboardNavigationPath("/organizations", "https://example.com/orgs")).toBeUndefined();
+    expect(dashboardNavigationPath("/organizations/alpha-team", "https://example.com/orgs")).toBeUndefined();
     const invitation = encodeId("invitation", "01990ab0-0000-7000-8000-000000000001");
     expect(resolveDashboardRoute(`/accept-invitation/${invitation}`, enabled))
       .toEqual({ page: "invitation", invitationId: invitation });
-    expect(resolveDashboardRoute("/organizations", { ...enabled, sharing: false }))
+    expect(resolveDashboardRoute("/orgs", { ...enabled, sharing: false }))
       .toEqual({ redirect: "/dashboard" });
-    expect(resolveDashboardRoute("/organizations", { ...enabled, sessions: false }))
+    expect(resolveDashboardRoute("/orgs", { ...enabled, sessions: false }))
       .toEqual({ page: "organizations" });
   });
 

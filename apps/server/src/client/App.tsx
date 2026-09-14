@@ -1111,7 +1111,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
     openDialog({ title: uiText("Leave organization?", "組織から脱退しますか？"),
       description: uiText("Access through this organization and its teams will be removed.", "この組織とチームを通じたアクセス権を失います。"),
       confirmLabel: uiText("Leave", "脱退"), destructive: true,
-      onSubmit: async () => { await json("/api/auth/organization/leave", { method: "POST", body: JSON.stringify({ organizationId: organization.id }) }); navigateDashboard("/organizations"); },
+      onSubmit: async () => { await json("/api/auth/organization/leave", { method: "POST", body: JSON.stringify({ organizationId: organization.id }) }); navigateDashboard("/orgs"); },
     });
   }
 
@@ -1122,7 +1122,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
       confirmLabel: uiText("Delete organization", "組織を削除"), destructive: true,
       onSubmit: async () => {
         await json("/api/auth/organization/delete", { method: "POST", body: JSON.stringify({ organizationId: organization.id }) });
-        navigateDashboard("/organizations");
+        navigateDashboard("/orgs");
       },
     });
   }
@@ -1290,12 +1290,12 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
   );
 }
 
-function Organization({ session, slug }: { session: SessionInfo; slug: string }) {
+function Organization({ session, organizationId }: { session: SessionInfo; organizationId: string }) {
   const query = useLiveJSON<OrganizationInfo[]>("/api/auth/organization/list");
-  const organization = query.data?.find((item) => encodeURIComponent(item.slug) === slug);
+  const organization = query.data?.find((item) => item.id === organizationId);
   return <>
     <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}>
-      <a className="text-link" href="/organizations">{uiText("Your organizations", "所属組織")}</a>
+      <a className="text-link" href="/orgs">{uiText("Your organizations", "所属組織")}</a>
     </nav>
     <PageHeader title={organization?.name ?? uiText("Organization", "組織")} />
     <DataError error={query.error} retry={query.reload} />
@@ -1336,7 +1336,7 @@ function Organizations({ session }: { session: SessionInfo }) {
         const organization = await json<OrganizationInfo>("/api/auth/organization/create", {
           method: "POST", body: JSON.stringify({ name: name!.trim(), slug: slug!.trim() }),
         });
-        navigateDashboard(`/organizations/${encodeURIComponent(organization.slug)}`);
+        navigateDashboard(`/orgs/${encodeURIComponent(organization.id)}`);
       },
     });
   }
@@ -1384,7 +1384,7 @@ function Organizations({ session }: { session: SessionInfo }) {
         {!organizations && !error && <p className="muted">{uiText("Loading organizations…", "組織を読み込み中…")}</p>}
         {organizations?.length === 0 && <div className="panel empty-state"><strong>{uiText("No organizations", "参加している組織はありません")}</strong><span>{uiText("Create an organization or ask its administrator for an invitation link.", "組織を作成するか、管理者から招待リンクを受け取って参加してください。")}</span></div>}
         <div className="collection-list">{organizations?.map((organization) => (
-          <a className="collection-row" href={`/organizations/${encodeURIComponent(organization.slug)}`} key={organization.id}>
+          <a className="collection-row" href={`/orgs/${encodeURIComponent(organization.id)}`} key={organization.id}>
             <span className="collection-icon"><MenuIcon name="organization" /></span>
             <span className="collection-copy"><strong>{organization.name}</strong><small>{organization.slug}</small></span>
             <MenuIcon name="arrow" />
@@ -1415,7 +1415,7 @@ function Invitation({ invitationId }: { invitationId: string }) {
         method: "POST",
         body: JSON.stringify({ invitationId }),
       });
-      navigateDashboard("/organizations");
+      navigateDashboard("/orgs");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update invitation");
     } finally {
@@ -1451,7 +1451,7 @@ function AdminDirectory({ kind }: { kind: "users" | "organizations" }) {
   return <>
     <PageHeader title={organizations ? uiText("Organization management", "組織管理") : uiText("User management", "ユーザー管理")}
       description={organizations ? uiText("All organizations on this server, including those you have not joined.", "所属していない組織を含む、サーバー内のすべての組織です。") : uiText("All users registered on this server.", "このサーバーに登録されているすべてのユーザーです。")}
-      actions={organizations && <a className="secondary" href="/organizations">{uiText("Manage your organizations", "所属組織を管理")}</a>} />
+      actions={organizations && <a className="secondary" href="/orgs">{uiText("Manage your organizations", "所属組織を管理")}</a>} />
     <section className="section-block">
       <DataError error={query.error} retry={query.reload} />
       {query.loading && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
@@ -1488,7 +1488,7 @@ export function AdminOrganization({ organizationId, session }: { organizationId:
   return <>
     <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}><a href="/admin/organizations">{uiText("Organization management", "組織管理")}</a></nav>
     <PageHeader title={organization?.name ?? uiText("Organization", "組織")} description={organization?.slug}
-      actions={joined && <a className="secondary" href={`/organizations/${encodeURIComponent(joined.slug)}`}>{uiText("Manage organization", "組織を管理")}</a>} />
+      actions={joined && <a className="secondary" href={`/orgs/${encodeURIComponent(joined.id)}`}>{uiText("Manage organization", "組織を管理")}</a>} />
     <DataError error={query.error} retry={query.reload} />
     {query.loading && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
     {organization && <DetailTabs label={uiText("Organization content", "組織の内容")} tabs={[
@@ -1717,7 +1717,7 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   else if (route.page === "project") page = detailWorkspaceId ? <SyncedProject workspaceId={detailWorkspaceId} projectId={route.projectId!} /> : null;
   else if (route.page === "file") page = <FileViewer fileId={route.fileId!} />;
   else if (route.page === "organizations") page = <Organizations session={session} />;
-  else if (route.page === "organization") page = <Organization session={session} slug={route.organizationSlug!} />;
+  else if (route.page === "organization") page = <Organization session={session} organizationId={route.organizationId!} />;
   else if (route.page === "invitation") page = <Invitation invitationId={route.invitationId!} />;
   else if (route.page === "settings") page = <Settings session={session} extensions={extensions} />;
   else page = <Overview session={session} />;
