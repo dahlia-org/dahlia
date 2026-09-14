@@ -41,6 +41,7 @@ final class WorkspaceManagementModel {
     private let cloudWorkspaceFetcher: CloudWorkspaceFetcher?
     private let organizationFetcher: ((DahliaAccountConnectionRecord) async throws -> CloudOrganizationDirectory)?
     private let organizationOwnerFetcher: ((DahliaAccountConnectionRecord, Int) async throws -> (items: [CloudOrganizationOwner], hasMore: Bool))?
+    @ObservationIgnored private var initialLocalWorkspaceTask: Task<WorkspaceRecord?, Never>?
     private var syncObservation: AnyDatabaseCancellable?
 
     init(
@@ -120,6 +121,49 @@ final class WorkspaceManagementModel {
         await configure(appDatabase: appDatabase)
         guard hasLoadedWorkspaces else { return nil }
         return workspaces.first(where: { $0.lastOpenedAt != .distantPast })
+    }
+
+    func resolveInitialWorkspace(
+        accountConnectionID: UUID?,
+        discover: () async throws -> Void
+    ) async -> WorkspaceRecord? {
+        if let accountConnectionID {
+            do {
+                try await discover()
+                try Task.checkCancellation()
+                await loadWorkspaces()
+                guard hasLoadedWorkspaces, let repository,
+                      let connection = try await repository.fetchDahliaAccountConnection(id: accountConnectionID)
+                else { return nil }
+                let organizations = try await fetchOrganizations(connection)
+                try Task.checkCancellation()
+                let personalOrganizationIDs = Set(organizations.items.filter { $0.kind == .personal }.compactMap { UUID(uuidString: $0.id) })
+                return workspaces.filter {
+                    $0.accountConnectionId == accountConnectionID && $0.syncConfirmedConnectionId == accountConnectionID
+                }.min {
+                    let firstIsPersonal = $0.organizationId.map { personalOrganizationIDs.contains($0) } ?? false
+                    let secondIsPersonal = $1.organizationId.map { personalOrganizationIDs.contains($0) } ?? false
+                    if firstIsPersonal != secondIsPersonal { return firstIsPersonal }
+                    if $0.createdAt != $1.createdAt { return $0.createdAt < $1.createdAt }
+                    return $0.id.uuidString < $1.id.uuidString
+                }
+            } catch {
+                return nil
+            }
+        }
+        // Keep a committed Local workspace reusable even if account selection changes during creation.
+        if let initialLocalWorkspaceTask { return await initialLocalWorkspaceTask.value }
+        let task = Task<WorkspaceRecord?, Never> { @MainActor in
+            await self.loadWorkspaces()
+            guard self.hasLoadedWorkspaces else { return nil }
+            if let existing = self.workspaces.first(where: { $0.accountConnectionId == nil }) {
+                return existing
+            }
+            return await self.createWorkspace(named: "Local")
+        }
+        initialLocalWorkspaceTask = task
+        defer { initialLocalWorkspaceTask = nil }
+        return await task.value
     }
 
     func createWorkspace(at url: URL) async -> WorkspaceRecord? {

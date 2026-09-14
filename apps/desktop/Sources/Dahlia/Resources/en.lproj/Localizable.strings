@@ -1677,3 +1677,6 @@
 "Initial organization owner" = "Initial owner";
 "Load more owners" = "Load more owners";
 "Choose yourself as owner to import immediately. If you choose someone else, ask them to invite you before importing." = "Choose yourself as owner to import immediately. If you choose someone else, ask them to invite you before importing.";
+
+"setup.preparingWorkspace" = "Preparing your workspace…";
+"setup.workspaceUnavailable" = "Your workspace is not ready yet. Check your connection and retry.";

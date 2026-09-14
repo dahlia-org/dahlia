@@ -19,6 +19,9 @@ final class SetupTourModel {
     private(set) var selectedAccountConnectionID: UUID?
     private(set) var isAccountSelectionConfirmed: Bool
     private let progressDefaults: UserDefaults?
+    private(set) var isPreparingWorkspace = false
+    @ObservationIgnored private var preparationTask: Task<WorkspaceRecord?, Never>?
+    private var preparationGeneration = 0
 
     init(
         mode: SetupTourMode,
@@ -45,10 +48,10 @@ final class SetupTourModel {
                 && (restoredConnectionID.map(signedInAccountConnectionIDs.contains) ?? true)
             currentStep = if !restoredAccountConfirmed {
                 .account
-            } else if restoredStep != .account,
-                      restoredStep != .workspace,
-                      !restoredWorkspaceConfirmed {
-                .workspace
+            } else if restoredStep == .workspace {
+                .workingLanguages
+            } else if restoredStep == .modelProvider, restoredConnectionID != nil {
+                .calendar
             } else {
                 restoredStep
             }
@@ -76,18 +79,50 @@ final class SetupTourModel {
     }
 
     var visibleSteps: [SetupTourStep] {
-        SetupTourStep.allCases.filter { selectedAccountConnectionID == nil || $0 != .modelProvider }
+        SetupTourStep.allCases.filter {
+            (mode != .initial || $0 != .workspace)
+                && (selectedAccountConnectionID == nil || $0 != .modelProvider)
+        }
     }
 
     func selectAccountConnection(_ connectionID: UUID?) {
-        if connectionID != selectedAccountConnectionID, selectedExistingWorkspaceID != nil {
-            selectedExistingWorkspaceID = nil
-            isWorkspaceLocationConfirmed = false
+        if connectionID != selectedAccountConnectionID {
+            preparationGeneration += 1
+            preparationTask?.cancel()
+            preparationTask = nil
+            isPreparingWorkspace = false
+            if mode == .initial || selectedExistingWorkspaceID != nil {
+                selectedExistingWorkspaceID = nil
+                isWorkspaceLocationConfirmed = false
+            }
         }
         selectedAccountConnectionID = connectionID
         isAccountSelectionConfirmed = true
         errorMessage = nil
         persistProgress()
+    }
+
+    func prepareInitialWorkspace(
+        resolve: @escaping @MainActor () async -> WorkspaceRecord?
+    ) async -> WorkspaceRecord? {
+        guard mode == .initial, isAccountSelectionConfirmed else { return nil }
+        let task: Task<WorkspaceRecord?, Never>
+        if let preparationTask {
+            task = preparationTask
+        } else {
+            preparationGeneration += 1
+            task = Task { await resolve() }
+            preparationTask = task
+            isPreparingWorkspace = true
+        }
+        let generation = preparationGeneration
+        let workspace = await task.value
+        guard generation == preparationGeneration else { return nil }
+        preparationTask = nil
+        isPreparingWorkspace = false
+        guard let workspace, workspace.accountConnectionId == selectedAccountConnectionID else { return nil }
+        selectExistingWorkspace(workspace)
+        return workspace
     }
 
     func selectWorkspaceURL(_ url: URL) {

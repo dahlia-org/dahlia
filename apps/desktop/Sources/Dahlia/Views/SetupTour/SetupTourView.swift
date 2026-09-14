@@ -132,6 +132,10 @@ struct SetupTourView: View {
                 onContinue: continueTour
             )
         }
+        .task(id: model.isAccountSelectionConfirmed ? model.selectedAccountConnectionID?.uuidString ?? "local" : nil) {
+            guard model.mode == .initial, model.isAccountSelectionConfirmed else { return }
+            _ = await prepareInitialWorkspace()
+        }
         .id(settings.appLanguage)
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityElement(children: .contain)
@@ -173,7 +177,8 @@ struct SetupTourView: View {
             SetupCompletionStepView(
                 model: model,
                 onReviewWorkspace: { model.returnToStep(.workspace) },
-                onReviewPermissions: { model.returnToStep(.permissions) }
+                onReviewPermissions: { model.returnToStep(.permissions) },
+                onRetry: completeTour
             )
         }
     }
@@ -230,7 +235,20 @@ struct SetupTourView: View {
         return accountController.signedInConnection(matching: configuration)
     }
 
+    private func prepareInitialWorkspace() async -> WorkspaceRecord? {
+        let connectionID = model.selectedAccountConnectionID
+        return await model.prepareInitialWorkspace {
+            let workspace = await workspaceManagementModel.resolveInitialWorkspace(accountConnectionID: connectionID) {
+                guard let syncWorker = accountController.syncWorker else { throw DahliaCloudError.notConfigured }
+                try await syncWorker.discoverCloudWorkspaces()
+            }
+            if workspace == nil { workspaceManagementModel.isShowingError = false }
+            return workspace
+        }
+    }
+
     private func completeTour() {
+        guard !model.isCompleting else { return }
         guard !requiresWorkspaceSwitch || canComplete() else {
             model.finishCompletion(errorMessage: L10n.workspaceOperationFailed)
             return
@@ -241,7 +259,9 @@ struct SetupTourView: View {
                 model.finishCompletion(errorMessage: L10n.workspaceOperationFailed)
                 return
             }
-            let workspace: WorkspaceRecord? = if let selectedID = model.selectedExistingWorkspaceID {
+            let workspace: WorkspaceRecord? = if model.mode == .initial {
+                await prepareInitialWorkspace()
+            } else if let selectedID = model.selectedExistingWorkspaceID {
                 workspaceManagementModel.workspaces.first { $0.id == selectedID && $0.accountConnectionId == model.selectedAccountConnectionID }
             } else if let originalWorkspace = model.originalWorkspace,
                       model.keepsOriginalWorkspace {
@@ -254,7 +274,14 @@ struct SetupTourView: View {
             guard let workspace else {
                 workspaceManagementModel.isShowingError = false
                 let errorMessage = workspaceManagementModel.errorMessage
-                model.finishCompletion(errorMessage: errorMessage.isEmpty ? L10n.workspaceOperationFailed : errorMessage)
+                let completionError = if model.mode == .initial {
+                    L10n.setupWorkspaceUnavailable
+                } else if errorMessage.isEmpty {
+                    L10n.workspaceOperationFailed
+                } else {
+                    errorMessage
+                }
+                model.finishCompletion(errorMessage: completionError)
                 return
             }
             guard await onComplete(workspace, model.selectedAccountConnectionID) else {
