@@ -15,6 +15,10 @@ dependencies = [
 [tool.uv.sources]
 hindsight-api-slim = { path = ".upstream/hindsight-api-slim", editable = true }
 
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true
+
 [dependency-groups]
 dev = ["pytest>=9", "pytest-asyncio>=1", "ruff>=0.14"]
 

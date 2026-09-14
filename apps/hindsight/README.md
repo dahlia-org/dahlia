@@ -30,8 +30,8 @@ CREATE EXTENSION IF NOT EXISTS lakebase_vector WITH SCHEMA public CASCADE;
 `slim` 構成なので、例では外部 embedding プロバイダーを使い、ローカル機械学習モデルの依存は追加していません。
 HTTP API・認証設定は [upstream のドキュメント](https://hindsight.vectorize.io/)を参照してください。
 
-この環境の `uv.lock` は設定済みの PyPI プロキシを使って解決されています。
-別のレジストリへ移す場合は `uv lock --default-index https://pypi.org/simple` で再解決し、差分を確認してください。
+`pyproject.toml` で公開 PyPI を既定のレジストリに指定しています。
+`uv.lock` の参照先も公開 PyPI に統一し、固定済みのバージョンと配布ファイルのハッシュは維持しています。
 
 ## バックエンドの選択
 
