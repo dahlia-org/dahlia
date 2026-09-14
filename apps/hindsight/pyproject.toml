@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hindsight-lakebase"
+version = "0.1.0"
+requires-python = ">=3.11,<3.15"
+dependencies = [
+  "hindsight-api-slim==0.9.2",
+  "SudachiPy>=0.6.10,<0.7",
+  "sudachidict_core>=20250515",
+]
+
+[tool.uv.sources]
+hindsight-api-slim = { path = ".upstream/hindsight-api-slim", editable = true }
+
+[dependency-groups]
+dev = ["pytest>=9", "pytest-asyncio>=1", "ruff>=0.14"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+  "lakebase: requires HINDSIGHT_TEST_LAKEBASE_URL pointing to a dedicated test database",
+  "postgres: requires HINDSIGHT_TEST_POSTGRES_URL pointing to a dedicated test database",
+  "memory_backend_incompatible: upstream PostgreSQL SQL contract tests",
+]
+
+[tool.ruff]
+src = ["src"]
+line-length = 120
+exclude = [".upstream", ".upstream-*"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+
+[tool.ruff.lint.isort]
+known-first-party = ["hindsight_lakebase"]
