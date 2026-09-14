@@ -45,7 +45,7 @@
         "organizationId":"\(TypeID.encode(
             UUID(uuidString: "019d3f46-7e0d-7d21-98d9-f1456c0bfb51")!,
             as: .organization
-        ))","revision":1,"createdAt":"2026-09-03T00:00:00.000Z","updatedAt":"2026-09-03T00:00:00.000Z","role":"\(role)"}],"nextCursor":null}
+        ))","meetingDeletionGraceDays":7,"revision":1,"createdAt":"2026-09-03T00:00:00.000Z","updatedAt":"2026-09-03T00:00:00.000Z","role":"\(role)"}],"nextCursor":null}
         """
     }
 

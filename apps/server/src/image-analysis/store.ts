@@ -50,7 +50,7 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
             .innerJoin(schema.syncedMeeting, and(
               eq(schema.syncedMeeting.workspaceId, schema.meetingAttachment.workspaceId),
               eq(schema.syncedMeeting.meetingId, schema.meetingAttachment.meetingId),
-            )).where(and(eq(schema.meetingAttachment.fileId, files.fileId), isNull(schema.syncedMeeting.deletingAt)))),
+            )).where(and(eq(schema.meetingAttachment.fileId, files.fileId), isNull(schema.syncedMeeting.deletingAt), isNull(schema.syncedMeeting.deletedAt)))),
         )).orderBy(asc(files.fileId)).limit(batchSize));
       const missing = page.filter((row) => needsImageAnalysis(row.metadata));
       if (missing.length) {

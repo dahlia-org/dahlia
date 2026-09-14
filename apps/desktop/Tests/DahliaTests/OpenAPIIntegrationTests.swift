@@ -85,7 +85,7 @@
             let record = deleted ? "null" : """
             {"workspaceId":"\(id)","organizationId":"\(
                 id
-            )","role":"admin","name":"Workspace","revision":1,"createdAt":"2026-09-09T00:00:00Z","updatedAt":"2026-09-09T00:00:00Z"}
+            )","role":"admin","name":"Workspace","meetingDeletionGraceDays":7,"revision":1,"createdAt":"2026-09-09T00:00:00Z","updatedAt":"2026-09-09T00:00:00Z"}
             """
             let expected = deleted ? nil : id
             let canonical = try SyncJSON.decoder.decode(Components.Schemas.CanonicalRecord.self, from: Data("""

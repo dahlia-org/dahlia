@@ -996,6 +996,17 @@
         "Private Web",
         "Desktop"
       ]
+    },
+    {
+      "operationId": "listDeletedMeetings",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/trash/meetings",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "List recoverable deleted meetings within the current Workspace permissions",
+      "consumers": [
+        "Web trash"
+      ]
     }
   ],
   "delegated": [

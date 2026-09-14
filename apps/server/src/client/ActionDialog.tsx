@@ -13,7 +13,9 @@ export interface DialogField {
   appearance?: "editable" | "inherited";
   required?: boolean;
   pattern?: string;
-  type?: "email";
+  type?: "email" | "number";
+  min?: number;
+  max?: number;
   options?: Array<{ value: string; label: string }>;
 }
 
@@ -138,7 +140,7 @@ export function ActionDialog({ title, description, confirmLabel, destructive, fi
           return <label className="dialog-field" key={field.name}>
             {!field.hideLabel && <span>{field.label}{!field.required && <small>{uiText("Optional", "任意")}</small>}</span>}
             <Control aria-label={field.hideLabel ? field.label : undefined} name={field.name} value={values[field.name]} required={field.required}
-              pattern={field.pattern} type={field.multiline ? undefined : field.type}
+              pattern={field.pattern} type={field.multiline ? undefined : field.type} min={field.min} max={field.max} step={field.type === "number" ? 1 : undefined}
               rows={field.multiline ? 5 : undefined} disabled={pending}
               onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))} />
           </label>;

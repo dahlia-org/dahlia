@@ -84,7 +84,7 @@ export type OperationId =
   | "getServerOrganization" | "getSearchSettings" | "updateSearchSettings"
   | "listGovernanceWorkspaces" | "confirmWorkspaceDeletion" | "forceDeleteWorkspace"
   | "getSettings" | "updateSettings" | "getCapabilities" | "listWorkspaces" | "getWorkspace"
-  | "listProjects" | "getProject" | "listMeetings" | "getMeeting" | "listSummaries"
+  | "listProjects" | "getProject" | "listMeetings" | "listDeletedMeetings" | "getMeeting" | "listSummaries"
   | "getSummary" | "getLatestSummary" | "listTranscripts" | "getTranscript" | "getLatestTranscript"
   | "getConversationAnalytics"
   | "startSummaryJob" | "getLatestSummaryJob" | "getSummaryJob" | "cancelSummaryJob" | "retrySummaryJob"
@@ -122,6 +122,7 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   getWorkspace: route("get", v, "getWorkspace", "Get Workspace", { 200: json(S.workspace) }),
   listProjects: route("get", `${v}/projects`, "listProjects", "Workspace project tree", { 200: json(S.page(S.project)) }),
   getProject: route("get", "/api/v1/projects/{projectId}", "getProject", "Resolve and get an accessible Project", { 200: json(S.project) }),
+  listDeletedMeetings: route("get", `${v}/trash/meetings`, "listDeletedMeetings", "Deleted meetings, newest deletion first; recoverable until physical deletion", { 200: json(S.page(S.deletedMeeting)) }, { query: S.pageQuery }),
   listMeetings: route("get", `${v}/meetings`, "listMeetings", "Meetings by creation time and ID; 200 per page", { 200: json(S.page(S.meeting)) }, { query: S.pageQuery.extend({ query: z.string().max(500).optional(), projectId: S.id.optional(), projectScope: z.enum(["direct", "unassigned"]).optional() }).strict() }),
   getMeeting: route("get", m, "getMeeting", "Resolve and get meeting metadata", { 200: json(S.meeting) }),
   listSummaries: route("get", `${m}/summaries`, "listSummaries", "Summary versions, newest first; bodies omitted", { 200: json(S.page(S.summary.omit({ document: true }))) }, { query: S.historyQuery }),

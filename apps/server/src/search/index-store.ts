@@ -93,7 +93,7 @@ function createSearchIndexStore(
       exists(transaction.select({ value: sql`1` }).from(schema.syncedMeeting).where(and(
         eq(schema.syncedMeeting.workspaceId, schema.searchDocument.workspaceId),
         eq(schema.syncedMeeting.meetingId, schema.searchDocument.meetingId),
-        isNull(schema.syncedMeeting.deletingAt),
+        isNull(schema.syncedMeeting.deletingAt), isNull(schema.syncedMeeting.deletedAt),
       ))),
       exists(transaction.select({ value: sql`1` }).from(schema.syncedWorkspace).where(and(
         eq(schema.syncedWorkspace.workspaceId, schema.searchDocument.workspaceId),
@@ -196,6 +196,7 @@ function createSearchIndexStore(
         ))
         .where(and(
           eq(schema.searchDocument.workspaceId, workspaceId),
+          ...liveDocumentParentFilters(transaction),
           isNotNull(schema.searchDocument.embeddingContentHash),
           or(isNull(schema.searchDocument.embedding), isNull(schema.searchDocument.embeddingModel),
             ne(schema.searchDocument.embeddingModel, model),

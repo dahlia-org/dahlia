@@ -736,6 +736,11 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     return context.json({ items: await sync.listProjects(identity, sync.parseId(context.req.param("workspaceId")!)), nextCursor: null });
   });
 
+  registerApi(app, "listDeletedMeetings", async (context) => {
+    const identity = await syncIdentity(context.req.raw);
+    return context.json(await sync.listDeletedMeetings(identity, sync.parseId(context.req.param("workspaceId")!), context.req.query("cursor")));
+  });
+
   registerApi(app, "listMeetings", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     const workspaceId = sync.parseId(context.req.param("workspaceId")!);

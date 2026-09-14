@@ -51,7 +51,7 @@ function ScopeProbe() {
   return <><output id="scope">{organizationId}</output><button id="all-workspaces" onClick={() => select("")}>All Workspaces</button></>;
 }
 async function run() {
-  const workspace: SyncedWorkspaceInfo = { workspaceId: "workspace", organizationId: "org", name: "Shared", role: "admin", revision: 1,
+  const workspace: SyncedWorkspaceInfo = { meetingDeletionGraceDays: 7, workspaceId: "workspace", organizationId: "org", name: "Shared", role: "admin", revision: 1,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   sessionStorage.removeItem("dahlia:sidebar:me:organization");
   const fixture = <SidebarProvider session={{ user: { id: "me" },

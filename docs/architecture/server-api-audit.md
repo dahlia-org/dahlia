@@ -91,6 +91,7 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | approveOrganizationJoinRequest | modified | POST `/api/v1/organization-join-requests/{requestId}/approve` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
 | rejectOrganizationJoinRequest | modified | POST `/api/v1/organization-join-requests/{requestId}/reject` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
 | deleteOrganization | modified | DELETE `/api/v1/admin/organizations/{organizationId}` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
+| listDeletedMeetings | modified | GET `/api/v1/workspaces/{workspaceId}/trash/meetings` | `new public contract` | List recoverable deleted meetings within the current Workspace permissions | Web trash |
 
 ## Delegated protocols
 

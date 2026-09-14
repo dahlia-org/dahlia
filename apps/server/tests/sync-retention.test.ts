@@ -71,7 +71,7 @@ function expire(raw: DatabaseSync, time = Date.now() - SYNC_HISTORY_RETENTION_MS
 describe("sync history retention", () => {
   it.each(["deleted", "recreated-empty", "recreated-summary", "updated"])(
     "keeps child invalidations complete when a snapshotted meeting is %s", async (scenario) => {
-      const { service, raw, workspaceId } = await setup();
+      const { service, store, raw, workspaceId } = await setup();
       const meetingId = id();
       const screenshotId = id();
       const createdAt = new Date().toISOString();
@@ -97,7 +97,10 @@ describe("sync history retention", () => {
         }]));
       } else {
         await service.commitTransaction(owner, body(workspaceId, [{ entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }]));
-        if (scenario !== "deleted") await service.commitTransaction(owner, body(workspaceId, [createMeeting]));
+        if (scenario !== "deleted") {
+          await store.sync.purgeDeletedMeetings(workspaceId, new Date(Date.now() + 8 * 86_400_000));
+          await service.commitTransaction(owner, body(workspaceId, [createMeeting]));
+        }
         if (scenario === "recreated-summary") await service.commitTransaction(owner, body(workspaceId, [{
           entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 0,
           data: { title: "Replacement summary", document: "{}", createdAt },
@@ -122,7 +125,7 @@ describe("sync history retention", () => {
       } else {
         expect(summary).toMatchObject({ action: "upsert", record: { contentOmitted: true, contentPresent: false } });
       }
-      expect(delta.items).toHaveLength(4);
+      expect(delta.items).toHaveLength(5);
     },
   );
 

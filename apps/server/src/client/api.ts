@@ -17,6 +17,8 @@ export const workspaceRoleLabel = (role: SyncedWorkspaceInfo["role"]) => role ==
 export function syncMessage(code: string, language = globalThis.navigator?.language ?? "en"): string | undefined {
   const messages: Record<string, [string, string]> = {
     workspace_delete_confirmation_stale: ["The Workspace changed. Close this dialog and confirm deletion again.", "ワークスペースが変更されました。この画面を閉じ、削除内容を再確認してください。"],
+    meeting_not_deleted: ["This meeting has already been restored or permanently deleted. Refresh the trash.", "このミーティングは復旧済み、または完全に削除されています。ごみ箱を更新してください。"],
+    meeting_deleted: ["This meeting is in the trash. Restore it before editing.", "このミーティングはごみ箱にあります。編集するには復旧してください。"],
     last_workspace_admin: ["Keep at least one Workspace Admin.", "ワークスペースの管理者を最低1人残してください。"],
     invalid_organization_domain: ["Enter up to 10 distinct valid domains, without @, URLs or wildcards.", "重複しない有効なドメインを10件以内で入力してください。@、URL、ワイルドカードは使用できません。"],
     shared_email_domain: ["Shared email domains cannot be registered.", "共有メールドメインは登録できません。"],

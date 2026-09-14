@@ -103,7 +103,7 @@ export const uuidV7Schema = z.string()
 export const transactionOperationSchema = z.object({
   id: uuidV7Schema,
   entity: z.enum(["workspace", "project", "meeting", "summary", "transcript", "file", "meeting_attachment", "meeting_event", "recording"]),
-  action: z.enum(["create", "update", "delete", "upsert", "patch", "reset"]),
+  action: z.enum(["create", "update", "delete", "upsert", "patch", "reset", "restore"]),
   entityId: uuidSchema,
   baseRevision: z.number().int().nonnegative().nullable(),
   data: z.record(z.string(), z.unknown()).nullable(),
@@ -115,6 +115,7 @@ export const transactionSchema = z.object({
   createdAt: dateSchema,
   operations: z.array(transactionOperationSchema).min(1).max(10_000),
 }).strict();
+export const meetingDeletionGraceDaysSchema = z.number().int().min(1).max(90);
 export const appearanceFields = {
   icon: appearanceSchema.shape.icon.nullable().optional(),
   color: appearanceSchema.shape.color.nullable().optional(),
@@ -125,8 +126,8 @@ export const transactionDataSchemas = {
     z.object({ meetingId: uuidSchema, kind: z.enum(["recording_started", "recording_ended"]), occurredAt: dateSchema, sessionId: uuidSchema }).strict(),
     z.object({ meetingId: uuidSchema, kind: z.literal("segment_rotated"), occurredAt: dateSchema, sessionId: uuidSchema, relatedId: uuidSchema, audioSource: z.enum(["mic", "system"]), segmentIndex: z.number().int().positive().max(2147483647) }).strict(),
   ]),
-  "workspace:create": z.object({ organizationId: uuidSchema, encryption: z.enum(["none", "server"]).optional(), ...appearanceFields, name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
-  "workspace:update": z.object({ encryption: z.enum(["none", "server"]).optional(), ...appearanceFields, name: z.string().trim().min(1) }).strict(),
+  "workspace:create": z.object({ meetingDeletionGraceDays: meetingDeletionGraceDaysSchema.optional(), organizationId: uuidSchema, encryption: z.enum(["none", "server"]).optional(), ...appearanceFields, name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
+  "workspace:update": z.object({ meetingDeletionGraceDays: meetingDeletionGraceDaysSchema.optional(), encryption: z.enum(["none", "server"]).optional(), ...appearanceFields, name: z.string().trim().min(1) }).strict(),
   "workspace:reset": z.object({ preservePermissions: z.boolean().optional() }).strict(),
   "project:create": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),
   "project:update": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),
@@ -134,6 +135,7 @@ export const transactionDataSchemas = {
   "meeting:create": z.object({ ...calendarIdentityFields, projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, createdAt: dateSchema, updatedAt: dateSchema }).strict().refine(pairedCalendarIdentity, "Calendar UID and recurrence ID must be supplied together"),
   "meeting:update": z.object({ ...calendarIdentityFields, projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, updatedAt: dateSchema }).strict().refine(pairedCalendarIdentity, "Calendar UID and recurrence ID must be supplied together"),
   "meeting:delete": z.object({}).strict(),
+  "meeting:restore": z.object({}).strict(),
   "summary:upsert": z.object({ title: z.string(), document: summaryDocumentSchema, createdAt: dateSchema }).strict(),
   "summary:delete": z.object({}).strict(),
   "transcript:patch": z.object({

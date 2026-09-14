@@ -145,12 +145,61 @@ describe("SQLite canonical sync", () => {
       const delayed = await claim("third-model");
       await service.commitTransaction(owner, wire([{ entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 2, data: {} }]));
       expect(await index.save(delayed, "third-model", 32, vector)).toBe(false);
+      expect(projection()).toBeDefined();
+      await store.sync.purgeDeletedMeetings(workspaceId, new Date(Date.now() + 8 * 86_400_000));
       expect(projection()).toBeUndefined();
       const columns = raw.prepare("PRAGMA table_info(search_documents)").all().map((row) => row.name);
       expect(columns).toEqual(expect.arrayContaining(["embedding", "embedding_model", "embedding_content_hash"]));
       expect(columns).not.toEqual(expect.arrayContaining(["embedding_text"]));
       expect(columns).not.toContain("embedding_dimensions");
       expect(raw.prepare("SELECT name FROM sqlite_master WHERE name = 'search_embeddings'").get()).toBeUndefined();
+    } finally { raw.close(); await store.close?.(); }
+  });
+
+  it("does not requeue retained meeting and image projections until restore", async () => {
+    const { store, service, publish, attach, file, databasePath } = await fileSetup("caption-model");
+    const raw = new DatabaseSync(databasePath);
+    const index = store.searchIndex!;
+    try {
+      await publish(); await attach();
+      await service.patchFile(owner, file.id, { baseRevision: 1, metadata: { ocrText: "Retained image" } });
+      await service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId, baseRevision: 1,
+        data: { name: "Meeting", description: "", status: "READY", duration: 60, projectId: null, updatedAt: now.toISOString(), recordingStartedAt: now.toISOString() } }]));
+      await service.commitTransaction(owner, wire([{ entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 2, data: {} }]));
+      raw.exec("UPDATE jobs_search_index SET available_at = 0");
+      const stale = await index.claim("embedding", 32, 100);
+      expect(stale.map((job) => job.documentId).sort()).toEqual([meetingId, file.id].sort());
+      expect(await index.loadMany(stale)).toEqual([]);
+      for (const job of stale) await index.discard(job);
+      await index.reconcile("embedding", 32);
+      expect(raw.prepare("SELECT count(*) AS n FROM jobs_search_index").get()?.n).toBe(0);
+      await service.commitTransaction(owner, wire([{ entity: "meeting", action: "restore", entityId: meetingId, baseRevision: 3, data: {} }]));
+      await index.reconcile("embedding", 32);
+      raw.exec("UPDATE jobs_search_index SET available_at = 0");
+      const restored = await index.claim("embedding", 32, 100);
+      expect((await index.loadMany(restored)).map((job) => job.documentId).sort()).toEqual([meetingId, file.id].sort());
+    } finally { raw.close(); await store.close?.(); }
+  });
+
+  it.each(["file", "meeting_attachment"] as const)("preserves image search text when restoring and updating %s atomically", async (entity) => {
+    const { store, service, publish, attach, file, databasePath } = await fileSetup();
+    const raw = new DatabaseSync(databasePath);
+    try {
+      await publish(); await attach();
+      await service.patchFile(owner, file.id, { baseRevision: 1, metadata: { ocrText: "Retained budget", caption: "Diagram" } });
+      await service.commitTransaction(owner, wire([{ entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }]));
+      await expect(service.getFile(owner, file.id)).rejects.toMatchObject({ status: 404 });
+      await expect(service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 2,
+        data: { checksum: file.checksum, metadata: {} } }]))).rejects.toMatchObject({ code: "file_parent_deleted" });
+      await service.commitTransaction(owner, wire([
+        { entity: "meeting", action: "restore", entityId: meetingId, baseRevision: 2, data: {} },
+        entity === "file"
+          ? { entity, action: "upsert", entityId: file.id, baseRevision: 2, data: { checksum: file.checksum, metadata: {}, name: "Renamed image" } }
+          : { entity, action: "upsert", entityId: file.id, baseRevision: 1,
+              data: { fileId: file.id, meetingId, capturedAt: now.toISOString(), sessionId: null, createdAt: now.toISOString() } },
+      ]));
+      expect(raw.prepare("SELECT search_text FROM search_documents WHERE document_id = ?").get(file.id)?.search_text).toBe("retained budget diagram");
+      expect((await service.listScreenshots(owner, workspaceId, meetingId, "budget")).items).toHaveLength(1);
     } finally { raw.close(); await store.close?.(); }
   });
 
@@ -673,6 +722,8 @@ describe("SQLite canonical sync", () => {
     expect(await store.sync.withIdentity(owner, (scoped) => scoped.markRecordingUploaded(sessionId, "system", oldGeneration, bytes.length, uploaded.checksum))).toBeNull();
     expect(await storage.exists(`meetings/${meetingId}/recordings/audio_system_01.m4a`)).toBe(true);
     await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }]));
+    expect(await store.sync.hasStorageDelete(`meetings/${meetingId}/recordings/audio_mic_01.m4a`)).toBe(false);
+    await store.sync.purgeDeletedMeetings(workspaceId, new Date(Date.now() + 8 * 86_400_000));
     expect(await store.sync.hasStorageDelete(`meetings/${meetingId}/recordings/audio_mic_01.m4a`)).toBe(true);
     expect((await send(uploaded.contentUrl)).status).toBe(404);
     await store.close?.();
@@ -761,7 +812,7 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
-  it("keeps content-free history after meeting deletion and removes it with the Workspace", async () => {
+  it("keeps content-free history after physical meeting deletion and removes it with the Workspace", async () => {
     const { store, databasePath } = await setup();
     await createWorkspace(store);
     await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { ...meetingData(), projectId: null } }]));
@@ -773,6 +824,7 @@ describe("SQLite canonical sync", () => {
     await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting_event", action: "create", entityId: freshId(), baseRevision: null, data: { meetingId, kind: "tag_added", relatedId: "42", occurredAt: now } }]));
     await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting_event", action: "create", entityId: freshId(), baseRevision: null, data: { meetingId, kind: "recording_started", sessionId: freshId(), occurredAt: now } }]));
     await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 3, data: {} }]));
+    await store.sync.purgeDeletedMeetings(workspaceId, new Date(Date.now() + 8 * 86_400_000));
     const rows = db.prepare("SELECT * FROM meeting_events").all();
     expect(rows.map((row) => row.kind).sort()).toEqual(["meeting_created", "meeting_deleted", "meeting_updated", "recording_started", "tag_added"]);
     expect(JSON.stringify(rows)).not.toContain("Private renamed title");
@@ -789,6 +841,7 @@ describe("SQLite canonical sync", () => {
     await expect(commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "workspace", action: "reset", entityId: workspaceId, baseRevision: 1, data: {} }]))).rejects.toMatchObject({ status: 409, code: "workspace_not_empty" });
     expect(await store.sync.withIdentity(owner, (sync) => sync.getMeeting(workspaceId, meetingId))).not.toBeNull();
     await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }]));
+    await store.sync.purgeDeletedMeetings(workspaceId, new Date(Date.now() + 8 * 86_400_000));
     expect(await store.sync.withIdentity(owner, (sync) => sync.getWorkspace(workspaceId))).toMatchObject({ hasResources: false });
     await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "workspace", action: "reset", entityId: workspaceId, baseRevision: 1, data: {} }]));
     expect(db.prepare("SELECT count(*) AS count FROM meeting_events").get()).toMatchObject({ count: 0 });
@@ -1154,8 +1207,8 @@ describe("SQLite canonical sync", () => {
     await expect(service.commitTransaction(owner, wire([link]))).rejects.toMatchObject({ status: 409, code: "revision_conflict",
       conflicts: expect.arrayContaining([{ entity: "meeting", id: meetingId, clientBaseRevision: null, serverRevision: null, record: null }]) as unknown });
     await service.commitTransaction(owner, wire([
-      { entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { ...meetingData(), projectId: null, recordingStartedAt: now.toISOString(), createdAt: now.toISOString(), updatedAt: now.toISOString() } },
-      { ...link, baseRevision: null },
+      { entity: "meeting", action: "restore", entityId: meetingId, baseRevision: 2, data: {} },
+      { ...link, baseRevision: existing ? 1 : null },
     ]));
     expect(await service.listFiles(owner, workspaceId, undefined, meetingId)).toMatchObject({ items: [{ id: file.id }] });
     await store.close?.();
@@ -1184,7 +1237,7 @@ describe("SQLite canonical sync", () => {
     await expect(service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 2,
       data: { checksum: file.checksum, metadata: { source: "upload" } } }]))).rejects.toMatchObject({ code: "file_source_immutable" });
     await expect(service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 2, data: {} }]))).rejects.toMatchObject({ code: "file_in_use" });
-    await service.commitTransaction(owner, wire([{ entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }]));
+    await service.commitTransaction(owner, wire([{ entity: "meeting_attachment", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
     expect(await service.listFiles(owner, workspaceId)).toMatchObject({ items: [{ id: file.id }] });
     expect(await storage.exists(fileStorageKey(file.id))).toBe(true);
     await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 2, data: {} }]));
@@ -2373,6 +2426,7 @@ describe("SQLite canonical sync", () => {
       baseRevision: 1,
       data: {},
     }]));
+    await store.sync.purgeDeletedMeetings(workspaceId, new Date(Date.now() + 8 * 86_400_000));
     await commit(store, owner, transaction("019d4a01-1160-7000-8000-000000000114", [{
       id: "019d4a01-1160-7000-8000-000000000115",
       entity: "meeting",

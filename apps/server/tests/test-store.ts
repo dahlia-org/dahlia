@@ -34,6 +34,7 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
       },
     },
     sync: {
+      purgeDeletedMeetings: () => Promise.resolve(0),
       expireRecordingUploads: async () => {},
       isAvailable: () => Promise.resolve(false),
       listHistoryTargets: () => Promise.resolve([]),

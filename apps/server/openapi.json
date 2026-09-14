@@ -45,6 +45,11 @@
       "Workspace": {
         "type": "object",
         "properties": {
+          "meetingDeletionGraceDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 90
+          },
           "encryption": {
             "type": "string",
             "enum": [
@@ -111,6 +116,7 @@
           }
         },
         "required": [
+          "meetingDeletionGraceDays",
           "workspaceId",
           "organizationId",
           "name",
@@ -1613,6 +1619,11 @@
           "null"
         ],
         "properties": {
+          "meetingDeletionGraceDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 90
+          },
           "encryption": {
             "type": "string",
             "enum": [
@@ -1679,6 +1690,7 @@
           }
         },
         "required": [
+          "meetingDeletionGraceDays",
           "workspaceId",
           "organizationId",
           "name",
@@ -2729,6 +2741,38 @@
             ]
           }
         }
+      },
+      "DeletedMeeting": {
+        "type": "object",
+        "properties": {
+          "meetingId": {
+            "type": "string",
+            "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "workspaceId": {
+            "type": "string",
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "meetingId",
+          "workspaceId",
+          "name",
+          "deletedAt",
+          "revision"
+        ]
       },
       "SummaryContent": {
         "type": "object",
@@ -4013,6 +4057,11 @@
                     "data": {
                       "type": "object",
                       "properties": {
+                        "meetingDeletionGraceDays": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 90
+                        },
                         "organizationId": {
                           "type": "string",
                           "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
@@ -4145,6 +4194,11 @@
                     "data": {
                       "type": "object",
                       "properties": {
+                        "meetingDeletionGraceDays": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 90
+                        },
                         "encryption": {
                           "type": "string",
                           "enum": [
@@ -4965,6 +5019,52 @@
                       "type": "string",
                       "enum": [
                         "delete"
+                      ]
+                    },
+                    "entityId": {
+                      "type": "string",
+                      "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                    },
+                    "baseRevision": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {},
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "entity",
+                    "action",
+                    "entityId",
+                    "baseRevision",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^op_[0-7][0-9abcdefghjkmnpqrstvwxyz]{9}[ef][0-9abcdefghjkmnpqrstvwxyz]{2}[89abrstv][0-9abcdefghjkmnpqrstvwxyz]{12}$"
+                    },
+                    "entity": {
+                      "type": "string",
+                      "enum": [
+                        "meeting"
+                      ]
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "restore"
                       ]
                     },
                     "entityId": {
@@ -8126,6 +8226,72 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/trash/meetings": {
+      "get": {
+        "operationId": "listDeletedMeetings",
+        "summary": "Deleted meetings, newest deletion first; recoverable until physical deletion",
+        "tags": [
+          "workspaces"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Opaque cursor. Pass back unchanged with the original filters."
+            },
+            "required": false,
+            "description": "Opaque cursor. Pass back unchanged with the original filters.",
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DeletedMeeting"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "description": "Opaque cursor. Pass back unchanged with the original filters."
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
                 }
               }
             }
