@@ -862,15 +862,15 @@
       "path": "/api/v1/organizations",
       "classification": "modified",
       "previous": "new public contract",
-      "reason": "Desktop Organization creation uses the same atomic Better Auth operation.",
+      "reason": "Server administrators create a Team Organization with an explicit initial owner through the shared OrganizationStore.",
       "consumers": [
         "apps/desktop/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift"
       ]
     },
     {
-      "operationId": "getAutoJoinDomains",
+      "operationId": "getOrganizationDomains",
       "method": "GET",
-      "path": "/api/v1/organizations/{organizationId}/auto-join-domains",
+      "path": "/api/v1/organizations/{organizationId}/domains",
       "classification": "modified",
       "previous": "none",
       "reason": "Expose domain enrollment settings to organization members.",
@@ -879,14 +879,122 @@
       ]
     },
     {
-      "operationId": "updateAutoJoinDomains",
+      "operationId": "updateOrganizationDomains",
       "method": "PUT",
-      "path": "/api/v1/organizations/{organizationId}/auto-join-domains",
+      "path": "/api/v1/organizations/{organizationId}/domains",
       "classification": "modified",
       "previous": "none",
-      "reason": "Owner/admin manages unique non-shared domains for initial Header enrollment.",
+      "reason": "Owner/admin manages up to 10 domains and participation policies for verified Header and Google identities.",
       "consumers": [
         "Private Web"
+      ]
+    },
+    {
+      "operationId": "listOrganizationCandidates",
+      "method": "GET",
+      "path": "/api/v1/organization-candidates",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Organization participation and Server administrator lifecycle",
+      "consumers": [
+        "Private Web",
+        "Desktop"
+      ]
+    },
+    {
+      "operationId": "listMyJoinRequests",
+      "method": "GET",
+      "path": "/api/v1/organization-join-requests",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Organization participation and Server administrator lifecycle",
+      "consumers": [
+        "Private Web",
+        "Desktop"
+      ]
+    },
+    {
+      "operationId": "listOrganizationJoinRequests",
+      "method": "GET",
+      "path": "/api/v1/organizations/{organizationId}/join-requests",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Organization participation and Server administrator lifecycle",
+      "consumers": [
+        "Private Web",
+        "Desktop"
+      ]
+    },
+    {
+      "operationId": "joinOrganization",
+      "method": "POST",
+      "path": "/api/v1/organizations/{organizationId}/join",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Organization participation and Server administrator lifecycle",
+      "consumers": [
+        "Private Web",
+        "Desktop"
+      ]
+    },
+    {
+      "operationId": "requestOrganizationJoin",
+      "method": "POST",
+      "path": "/api/v1/organizations/{organizationId}/join-requests",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Organization participation and Server administrator lifecycle",
+      "consumers": [
+        "Private Web",
+        "Desktop"
+      ]
+    },
+    {
+      "operationId": "cancelOrganizationJoinRequest",
+      "method": "POST",
+      "path": "/api/v1/organization-join-requests/{requestId}/cancel",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Organization participation and Server administrator lifecycle",
+      "consumers": [
+        "Private Web",
+        "Desktop"
+      ]
+    },
+    {
+      "operationId": "approveOrganizationJoinRequest",
+      "method": "POST",
+      "path": "/api/v1/organization-join-requests/{requestId}/approve",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Organization participation and Server administrator lifecycle",
+      "consumers": [
+        "Private Web",
+        "Desktop"
+      ]
+    },
+    {
+      "operationId": "rejectOrganizationJoinRequest",
+      "method": "POST",
+      "path": "/api/v1/organization-join-requests/{requestId}/reject",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Organization participation and Server administrator lifecycle",
+      "consumers": [
+        "Private Web",
+        "Desktop"
+      ]
+    },
+    {
+      "operationId": "deleteOrganization",
+      "method": "DELETE",
+      "path": "/api/v1/admin/organizations/{organizationId}",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Organization participation and Server administrator lifecycle",
+      "consumers": [
+        "Private Web",
+        "Desktop"
       ]
     }
   ],
@@ -1393,7 +1501,7 @@
       "method": "POST",
       "path": "/api/auth/organization/create",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts and header"
+      "availability": "disabled in accounts and header; use the Dahlia-owned administrator operation"
     },
     {
       "operation": "createTeam",
@@ -1407,7 +1515,7 @@
       "method": "POST",
       "path": "/api/auth/organization/delete",
       "protocol": "Better Auth / OAuth / OIDC",
-      "availability": "accounts and header"
+      "availability": "disabled in accounts and header; use the Dahlia-owned administrator operation"
     },
     {
       "operation": "getActiveMember",

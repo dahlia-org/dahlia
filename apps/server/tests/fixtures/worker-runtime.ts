@@ -8,6 +8,10 @@ import { createSearchEmbedder } from "../../src/search/embedding";
 import { createImageCaptioner } from "../../src/image-analysis/captioner";
 import { DEFAULT_ACCOUNT_SETTINGS } from "../../src/account-settings";
 import { sql } from "drizzle-orm";
+import assert from "node:assert/strict";
+import { createPostgresApplicationStore } from "../../src/auth/store";
+import { initializeDahliaAuth } from "../../src/auth/better-auth";
+import { uuidV7 } from "../../src/id";
 
 // Synthetic, local-only routes; this module is never a deployment entry point.
 const handler = createWorkerHandler(async (env) => {
@@ -52,6 +56,54 @@ export default {
       const object = await env.DAHLIA_STORAGE!.get("image");
       const output = await createWorkerScreenshotTransformer(env.IMAGES!)(object!.body!, 480);
       return new Response(output, { headers: { "content-type": "image/webp" } });
+    }
+    if (path === "/runtime/organization-participation") {
+      const connection = connectPostgresUrl(env.DAHLIA_DATABASE_URL!, 1);
+      try {
+        const store = createPostgresApplicationStore(connection.db);
+        const config = loadConfig({ DAHLIA_AUTH_TYPE: "accounts", DAHLIA_APP_URL: "http://localhost:5173", DAHLIA_AUTH_SECRET: env.DAHLIA_AUTH_SECRET,
+          GOOGLE_CLIENT_ID: "synthetic", GOOGLE_CLIENT_SECRET: "synthetic" });
+        const auth = await initializeDahliaAuth(config, store);
+        const context = await auth.$context;
+        const domain = `${uuidV7()}.example.com`;
+        const register = async (name: string, emailVerified = true) => {
+          const user = await context.internalAdapter.createUser({ name, email: `${name}@${domain}`, emailVerified }, { method: "oauth", oauth: { providerId: "google", profile: {} } });
+          return { userId: user.id, source: "accounts" as const, email: user.email };
+        };
+        const owner = await register("owner"), existing = await register("existing");
+        await store.addAdminUser(owner.email);
+        const create = async (name: string) => store.organizations.create(owner, { name, slug: `${name}-${uuidV7()}`, initialOwnerUserId: owner.userId });
+        const automatic = await create("auto"), another = await create("another"), approval = await create("approval"), invitationOnly = await create("invitation");
+        for (const org of [automatic, another]) await store.organizations.updateDomains(owner, org.id, { domains: [{ domain, joinPolicy: "auto_join" }] });
+        await store.organizations.updateDomains(owner, approval.id, { domains: [{ domain, joinPolicy: "need_approval" }] });
+        await store.organizations.updateDomains(owner, invitationOnly.id, { domains: [{ domain }] });
+        assert.equal((await store.organizations.getDomains(owner, invitationOnly.id)).domains[0]?.joinPolicy, "invite_only");
+        const verified = await register("verified"), unverified = await register("unverified", false);
+        assert(await store.organizations.hasMember(verified.userId, automatic.id));
+        assert(await store.organizations.hasMember(verified.userId, another.id));
+        assert(!await store.organizations.hasMember(unverified.userId, automatic.id));
+        assert(!await store.organizations.hasMember(existing.userId, automatic.id));
+        assert.equal((await store.organizations.candidates(existing)).length, 3);
+        assert.deepEqual(await store.organizations.candidates(unverified), []);
+        await assert.rejects(store.organizations.join(unverified, automatic.id, false));
+        await assert.rejects(store.organizations.join(existing, invitationOnly.id, false));
+        await Promise.all([store.organizations.join(existing, approval.id, true), store.organizations.join(existing, approval.id, true)]);
+        const requests = await store.organizations.requests(existing);
+        assert.equal(requests.length, 1);
+        await store.organizations.resolveRequest(owner, requests[0]!.id, "approved");
+        assert(await store.organizations.hasMember(existing.userId, approval.id));
+        await store.organizations.join(existing, automatic.id, false);
+        assert(await store.organizations.hasMember(existing.userId, automatic.id));
+        await assert.rejects(store.organizations.updateDomains(owner, automatic.id, { domains: Array.from({ length: 11 }, (_, i) => ({ domain: `${i}.${domain}`, joinPolicy: "auto_join" })) }));
+        await assert.rejects(store.organizations.create(existing, { name: "Denied", slug: `denied-${uuidV7()}`, initialOwnerUserId: owner.userId }));
+        await assert.rejects(store.organizations.delete(owner, owner.userId));
+        const session = await context.internalAdapter.createSession(owner.userId);
+        await connection.db.execute(sql`UPDATE auth.session SET active_organization_id = ${invitationOnly.id} WHERE id = ${session.id}`);
+        await store.organizations.delete(owner, invitationOnly.id);
+        const cleared = await connection.db.execute(sql`SELECT active_organization_id FROM auth.session WHERE id = ${session.id}`);
+        assert.equal(cleared.rows[0]?.active_organization_id, null);
+        return Response.json({ passed: true });
+      } finally { await connection.close(); }
     }
     if (path === "/runtime/database") {
       const connection = connectPostgresUrl(env.DAHLIA_DATABASE_URL!, 1);

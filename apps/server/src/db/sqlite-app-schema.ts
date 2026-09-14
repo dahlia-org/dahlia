@@ -15,10 +15,29 @@ import { user as authUser, organization as authOrganization } from "./generated/
 const sqliteTimestamp = (name: string) => integer(name, { mode: "timestamp_ms" });
 
 // Authorization metadata, protected by OrganizationStore like workspace_permissions.
-export const organizationAutoJoinDomain = sqliteTable("organization_auto_join_domains", {
-  domain: text("domain").primaryKey(),
+export const organizationDomain = sqliteTable("organization_domains", {
   organizationId: text("organization_id").notNull().references(() => authOrganization.id, { onDelete: "cascade" }),
-}, (table) => [index("organization_auto_join_domains_organization_idx").on(table.organizationId)]);
+  domain: text("domain").notNull(),
+  joinPolicy: text("join_policy").$type<"invite_only" | "need_approval" | "auto_join">().default("invite_only").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.organizationId, table.domain] }),
+  index("organization_domains_domain_idx").on(table.domain),
+  check("organization_domains_policy_check", sql`${table.joinPolicy} IN ('invite_only', 'need_approval', 'auto_join')`),
+]);
+
+export const organizationJoinRequest = sqliteTable("organization_join_requests", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull().references(() => authOrganization.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  status: text("status").$type<"pending" | "approved" | "rejected" | "cancelled">().notNull(),
+  createdAt: sqliteTimestamp("created_at").notNull(),
+  resolvedAt: sqliteTimestamp("resolved_at"),
+  resolvedBy: text("resolved_by").references(() => authUser.id, { onDelete: "set null" }),
+}, (table) => [
+  uniqueIndex("organization_join_requests_pending_idx").on(table.organizationId, table.userId).where(sql`${table.status} = 'pending'`),
+  index("organization_join_requests_user_idx").on(table.userId),
+  check("organization_join_requests_status_check", sql`${table.status} IN ('pending', 'approved', 'rejected', 'cancelled')`),
+]);
 
 export const serverSettings = sqliteTable("server_settings", {
   id: integer("id").primaryKey(),

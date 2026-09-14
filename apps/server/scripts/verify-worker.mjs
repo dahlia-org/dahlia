@@ -72,16 +72,17 @@ try {
     const membership = await database.query(`SELECT o.kind FROM auth.member m JOIN auth.organization o ON o.id = m.organization_id
       WHERE m.user_id = $1`, [session.user.id]);
     assert.deepEqual(membership.rows, [{ kind: 'personal' }]);
-    const organizationResponse = await mf.dispatchFetch('http://localhost:5173/api/auth/organization/create', {
+    await database.query("UPDATE auth.user SET role = 'admin' WHERE id = $1", [session.user.id]);
+    const organizationResponse = await mf.dispatchFetch('http://localhost:5173/api/v1/organizations', {
       method: 'POST', headers: { ...identityHeaders, cookie, 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Worker team', slug: `worker-${crypto.randomUUID()}` }),
+      body: JSON.stringify({ name: 'Worker team', slug: `worker-${crypto.randomUUID()}`, initialOwnerUserId: identity.user.id }),
     });
-    assert.equal(organizationResponse.status, 200, await organizationResponse.clone().text());
+    assert.equal(organizationResponse.status, 201, await organizationResponse.clone().text());
     const organization = await organizationResponse.json();
-    const settingsUrl = `http://localhost:5173/api/v1/organizations/${organization.id}/auto-join-domains`;
+    const settingsUrl = `http://localhost:5173/api/v1/organizations/${organization.id}/domains`;
     const save = (domains) => mf.dispatchFetch(settingsUrl, { method: 'PUT',
-      headers: { ...identityHeaders, cookie, 'content-type': 'application/json' }, body: JSON.stringify({ domains }) });
-    for (const [domain, code] of [['gmail.com', 'shared_email_domain'], ['https://example.com', 'invalid_auto_join_domain']]) {
+      headers: { ...identityHeaders, cookie, 'content-type': 'application/json' }, body: JSON.stringify({ domains: domains.map((domain) => ({ domain, joinPolicy: 'auto_join' })) }) });
+    for (const [domain, code] of [['gmail.com', 'shared_email_domain'], ['https://example.com', 'invalid_organization_domain']]) {
       const deniedDomain = await save([domain]);
       assert.equal(deniedDomain.status, 400, await deniedDomain.clone().text());
       assert.equal((await deniedDomain.json()).code, code);
@@ -89,10 +90,10 @@ try {
     const domain = `${crypto.randomUUID()}.example.com`;
     const saved = await save([domain]);
     assert.equal(saved.status, 200, await saved.clone().text());
-    assert.deepEqual(await saved.json(), { domains: [domain] });
+    assert.deepEqual(await saved.json(), { domains: [{ domain, joinPolicy: 'auto_join' }] });
     const settings = await mf.dispatchFetch(settingsUrl, { headers: { ...identityHeaders, cookie } });
     assert.equal(settings.status, 200, await settings.clone().text());
-    assert.deepEqual(await settings.json(), { domains: [domain] });
+    assert.deepEqual(await settings.json(), { domains: [{ domain, joinPolicy: 'auto_join' }] });
     await database.query("UPDATE auth.user SET role = 'admin' WHERE id = $1", [session.user.id]);
     const createdEmail = `provisioned-${crypto.randomUUID()}@${domain}`;
     const createdResponse = await mf.dispatchFetch('http://localhost:5173/api/auth/admin/create-user', {
@@ -112,10 +113,13 @@ try {
     });
     assert.equal(provisioned.status, 200, await provisioned.clone().text());
     assert.equal((await provisioned.json()).user.id, created.user.id);
-    const enrolled = await database.query(`SELECT m.role FROM auth.member m JOIN app.organization_auto_join_domains d ON d.organization_id = m.organization_id
+    const enrolled = await database.query(`SELECT m.role FROM auth.member m JOIN app.organization_domains d ON d.organization_id = m.organization_id
       JOIN auth.account a ON a.user_id = m.user_id WHERE a.account_id = $1 AND d.domain = $2`, [createdEmail, domain]);
     assert.deepEqual(enrolled.rows, [{ role: 'member' }]);
   } finally { await database.end(); }
+  const participation = await mf.dispatchFetch('http://localhost:5173/runtime/organization-participation');
+  assert.equal(participation.status, 200, await participation.clone().text());
+  assert.deepEqual(await participation.json(), { passed: true });
   assert.equal(await (await mf.dispatchFetch('http://localhost:5173/runtime/audio')).text(), 'AQIDBAU=');
   for (const backend of ['cloudflare', 'databricks']) {
     const result = await (await mf.dispatchFetch(`http://localhost:5173/runtime/provider?backend=${backend}`)).json();
@@ -135,5 +139,5 @@ try {
   }
   assert(completed, 'native Queue consumer did not complete');
   assert.equal(await completed.text(), 'ok');
-  console.log(JSON.stringify({ runtime: 'workerd', checks: ['configured-email-identity-and-domain-enrollment', 'native-header-user-provisioning', 'postgres-event-isolation', 'fetch-lifecycle', 'R2-audio-stream', 'Images-WebP', 'queue-handler', 'Cloudflare-and-Databricks-adapters'], bundleBytes: Buffer.byteLength(script), gzipBytes: gzipSync(script).length, startupMs }));
+  console.log(JSON.stringify({ runtime: 'workerd', checks: ['configured-email-identity-and-domain-enrollment', 'native-header-user-provisioning', 'verified-google-organization-policies', 'organization-request-and-lifecycle-authorization', 'postgres-event-isolation', 'fetch-lifecycle', 'R2-audio-stream', 'Images-WebP', 'queue-handler', 'Cloudflare-and-Databricks-adapters'], bundleBytes: Buffer.byteLength(script), gzipBytes: gzipSync(script).length, startupMs }));
 } finally { await mf?.dispose(); await rm(directory, { recursive: true, force: true }); }

@@ -103,4 +103,4 @@ Header は設定されたメールヘッダーを外部 identity に使い、初
 
 Better Auth runtime の `generateId` は UUIDv7 callback を使う。schema 生成だけは `generateId: "uuid"` とし、生成器が native uuid 型を選べるようにする。生成後に PostgreSQL の UUIDv4 default を除去し、runtime が ID を供給する。新規 mapping table は追加しない。
 
-2026-09-14: `organization.domain` を削除し、Dahlia 所有の `organization_auto_join_domains` に正規化済み domain（主キー）と Organization 外部キーを保持する。共有権限と同様に認可メタデータとして共通 OrganizationStore がアクセスを検査する。設定更新・新規参加・Organization 削除は既存の認可ロックで直列化する。ユーザー承認により未リリース Server の initial migration を最終 schema から再生成して統合する。旧 `domain` 列を経由する差分は設けず、空 DB を対象として設定は空で開始する。既存 DB の自動変換・削除は行わず、Desktop migration は変更しない。
+2026-09-14: 上記の初回参加を確認済みGoogleメールにも拡張する。`registrationState` は信頼済みHeaderと確認済みGoogle登録で `domain`、その他は `personal`、初期化完了後は `ready` とする。`organization.domain` と未公開の `organization_auto_join_domains` を `organization_domains`（組織・ドメイン複合主キーと参加方式）に置き換え、`organization_join_requests`（pendingの部分一意制約と処理履歴）を追加する。いずれも認可メタデータとして共通OrganizationStoreが認可を検査し、設定・参加・申請処理と作成・削除を既存の認可ロックで直列化する。ユーザー承認により現行Drizzle schemaから空DB専用のinitialを再生成する。既存DBの自動変換・削除、Desktop migrationの変更は行わない。既存のruntime_supportは維持する。

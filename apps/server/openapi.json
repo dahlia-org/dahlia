@@ -6764,6 +6764,77 @@
           "revision",
           "creatorId"
         ]
+      },
+      "OrganizationJoinRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^ojr_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "organizationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "cancelled"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolvedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "resolvedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "userName": {
+            "type": "string"
+          },
+          "userEmail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "userId",
+          "status",
+          "createdAt",
+          "resolvedAt",
+          "resolvedBy",
+          "organizationName",
+          "userName",
+          "userEmail"
+        ]
       }
     },
     "parameters": {},
@@ -7355,6 +7426,9 @@
         ],
         "security": [
           {
+            "bearerAuth": []
+          },
+          {
             "browserSession": []
           },
           {
@@ -7644,6 +7718,34 @@
                 }
               }
             }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteOrganization",
+        "summary": "Delete an empty Team Organization; Server administrator only",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "organizationId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success; no response body."
           },
           "default": {
             "$ref": "#/components/responses/Problem"
@@ -12724,10 +12826,377 @@
         }
       }
     },
+    "/api/v1/organization-candidates": {
+      "get": {
+        "operationId": "listOrganizationCandidates",
+        "summary": "Eligible organizations; no membership or Workspace information",
+        "tags": [
+          "organization-candidates"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Opaque cursor. Pass back unchanged with the original filters.",
+              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": false,
+            "description": "Opaque cursor. Pass back unchanged with the original filters.",
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "logo": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "joinPolicy": {
+                            "type": "string",
+                            "enum": [
+                              "need_approval",
+                              "auto_join"
+                            ]
+                          },
+                          "requestStatus": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "logo",
+                          "joinPolicy",
+                          "requestStatus"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "description": "Opaque cursor. Pass back unchanged with the original filters.",
+                      "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/organization-join-requests": {
+      "get": {
+        "operationId": "listMyJoinRequests",
+        "summary": "Own organization join request history",
+        "tags": [
+          "organization-join-requests"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Opaque cursor. Pass back unchanged with the original filters.",
+              "pattern": "^ojr_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": false,
+            "description": "Opaque cursor. Pass back unchanged with the original filters.",
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OrganizationJoinRequest"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "description": "Opaque cursor. Pass back unchanged with the original filters.",
+                      "pattern": "^ojr_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{organizationId}/join-requests": {
+      "get": {
+        "operationId": "listOrganizationJoinRequests",
+        "summary": "Organization join request history; owner/admin only",
+        "tags": [
+          "organizations"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "organizationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Opaque cursor. Pass back unchanged with the original filters.",
+              "pattern": "^ojr_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": false,
+            "description": "Opaque cursor. Pass back unchanged with the original filters.",
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OrganizationJoinRequest"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "description": "Opaque cursor. Pass back unchanged with the original filters.",
+                      "pattern": "^ojr_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "post": {
+        "operationId": "requestOrganizationJoin",
+        "summary": "Apply to an eligible organization",
+        "tags": [
+          "organizations"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "organizationId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success; no response body."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{organizationId}/join": {
+      "post": {
+        "operationId": "joinOrganization",
+        "summary": "Join an eligible auto-join organization",
+        "tags": [
+          "organizations"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "organizationId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success; no response body."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/organization-join-requests/{requestId}/cancel": {
+      "post": {
+        "operationId": "cancelOrganizationJoinRequest",
+        "summary": "Cancel own pending request",
+        "tags": [
+          "organization-join-requests"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ojr_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "requestId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success; no response body."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/organization-join-requests/{requestId}/approve": {
+      "post": {
+        "operationId": "approveOrganizationJoinRequest",
+        "summary": "Approve pending request; owner/admin only",
+        "tags": [
+          "organization-join-requests"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ojr_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "requestId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success; no response body."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/organization-join-requests/{requestId}/reject": {
+      "post": {
+        "operationId": "rejectOrganizationJoinRequest",
+        "summary": "Reject pending request; owner/admin only",
+        "tags": [
+          "organization-join-requests"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ojr_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "requestId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success; no response body."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
     "/api/v1/organizations": {
       "post": {
         "operationId": "createOrganization",
-        "summary": "Create a Team Organization and creator membership through Better Auth",
+        "summary": "Create a Team Organization with an explicit initial owner; Server administrator only",
         "tags": [
           "organizations"
         ],
@@ -12748,11 +13217,16 @@
                     "minLength": 1,
                     "maxLength": 200,
                     "pattern": "^(?:[a-z0-9_]|-)+$"
+                  },
+                  "initialOwnerUserId": {
+                    "type": "string",
+                    "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                   }
                 },
                 "required": [
                   "name",
-                  "slug"
+                  "slug",
+                  "initialOwnerUserId"
                 ],
                 "additionalProperties": false
               }
@@ -12802,11 +13276,15 @@
                       ],
                       "minLength": 1,
                       "description": "Opaque cursor. Pass back unchanged with the original filters."
+                    },
+                    "canCreateOrganizations": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "items",
-                    "nextCursor"
+                    "nextCursor",
+                    "canCreateOrganizations"
                   ]
                 }
               }
@@ -12818,9 +13296,9 @@
         }
       }
     },
-    "/api/v1/organizations/{organizationId}/auto-join-domains": {
+    "/api/v1/organizations/{organizationId}/domains": {
       "get": {
-        "operationId": "getAutoJoinDomains",
+        "operationId": "getOrganizationDomains",
         "summary": "Read organization auto-join domains; member only",
         "tags": [
           "organizations"
@@ -12857,11 +13335,29 @@
                     "domains": {
                       "type": "array",
                       "items": {
-                        "type": "string",
-                        "maxLength": 253,
-                        "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+                        "type": "object",
+                        "properties": {
+                          "domain": {
+                            "type": "string",
+                            "maxLength": 253,
+                            "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+                          },
+                          "joinPolicy": {
+                            "type": "string",
+                            "enum": [
+                              "invite_only",
+                              "need_approval",
+                              "auto_join"
+                            ],
+                            "default": "invite_only"
+                          }
+                        },
+                        "required": [
+                          "domain"
+                        ],
+                        "additionalProperties": false
                       },
-                      "maxItems": 50
+                      "maxItems": 10
                     }
                   },
                   "required": [
@@ -12878,7 +13374,7 @@
         }
       },
       "put": {
-        "operationId": "updateAutoJoinDomains",
+        "operationId": "updateOrganizationDomains",
         "summary": "Replace organization auto-join domains; owner/admin only",
         "tags": [
           "organizations"
@@ -12914,11 +13410,29 @@
                   "domains": {
                     "type": "array",
                     "items": {
-                      "type": "string",
-                      "maxLength": 253,
-                      "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+                      "type": "object",
+                      "properties": {
+                        "domain": {
+                          "type": "string",
+                          "maxLength": 253,
+                          "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+                        },
+                        "joinPolicy": {
+                          "type": "string",
+                          "enum": [
+                            "invite_only",
+                            "need_approval",
+                            "auto_join"
+                          ],
+                          "default": "invite_only"
+                        }
+                      },
+                      "required": [
+                        "domain"
+                      ],
+                      "additionalProperties": false
                     },
-                    "maxItems": 50
+                    "maxItems": 10
                   }
                 },
                 "required": [
@@ -12940,11 +13454,29 @@
                     "domains": {
                       "type": "array",
                       "items": {
-                        "type": "string",
-                        "maxLength": 253,
-                        "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+                        "type": "object",
+                        "properties": {
+                          "domain": {
+                            "type": "string",
+                            "maxLength": 253,
+                            "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+                          },
+                          "joinPolicy": {
+                            "type": "string",
+                            "enum": [
+                              "invite_only",
+                              "need_approval",
+                              "auto_join"
+                            ],
+                            "default": "invite_only"
+                          }
+                        },
+                        "required": [
+                          "domain"
+                        ],
+                        "additionalProperties": false
                       },
-                      "maxItems": 50
+                      "maxItems": 10
                     }
                   },
                   "required": [

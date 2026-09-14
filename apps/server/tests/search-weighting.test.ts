@@ -2,7 +2,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { initializeDahliaAuth } from "../src/auth/better-auth";
 import { createNodeApplicationStore, type NodeApplicationStore } from "../src/auth/node-store";
 import { uuidV7 } from "../src/id";
 import { MeetingSyncService } from "../src/sync/service";
@@ -48,8 +47,8 @@ describe.each(["sqlite", "postgres", "lakebase"] as const)("%s weighted search",
     const userId = (await store.resolveHeaderUser({ userId: externalId,  source: "header", email: `${externalId}@example.test` }))!;
     const owner = { userId,  source: "header" as const };
     await store.ensureIdentityUser(owner);
-    const auth = await initializeDahliaAuth({ ...config, betterAuthSecret: "search-test-secret-at-least-32-characters" }, store);
-    const testOrganizationID = (await auth.api.createOrganization({ body: { name: "Search", slug: `search-${uuidV7()}`, userId } })).id;
+    await store.addAdminUser(`${externalId}@example.test`);
+    const testOrganizationID = (await store.organizations.create(owner, { name: "Search", slug: `search-${uuidV7()}`, initialOwnerUserId: userId })).id;
     const workspaceId = uuidV7();
     const service = new MeetingSyncService(store.sync);
     const commit = (operations: Array<Record<string, unknown>>) => service.commitTransaction(owner, {

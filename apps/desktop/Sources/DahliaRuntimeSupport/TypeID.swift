@@ -6,6 +6,7 @@ public enum TypeID {
         case workspace = "ws", project = "proj", meeting = "mtg", file, attachment = "att"
         case summary = "sum", transcript, segment = "seg", recording = "rec", event = "evt"
         case summaryJob = "sjob"
+        case organizationJoinRequest = "ojr"
         case user, organization = "org", team, organizationMember = "omem", teamMember = "tmem"
         case invitation = "inv", session = "sess", transaction = "txn", operation = "op", patch
     }

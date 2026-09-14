@@ -1673,3 +1673,7 @@
 
 "Workspace Admin" = "Admin";
 "Workspace Editor" = "Editor";
+
+"Initial organization owner" = "Initial owner";
+"Load more owners" = "Load more owners";
+"Choose yourself as owner to import immediately. If you choose someone else, ask them to invite you before importing." = "Choose yourself as owner to import immediately. If you choose someone else, ask them to invite you before importing.";

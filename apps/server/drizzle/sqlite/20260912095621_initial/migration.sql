@@ -312,10 +312,27 @@ CREATE TABLE `meeting_events` (
 	CONSTRAINT "meeting_events_source_check" CHECK("audio_source" IN ('mic', 'system'))
 );
 --> statement-breakpoint
-CREATE TABLE `organization_auto_join_domains` (
-	`domain` text PRIMARY KEY,
+CREATE TABLE `organization_domains` (
 	`organization_id` text NOT NULL,
-	CONSTRAINT `fk_organization_auto_join_domains_organization_id_organization_id_fk` FOREIGN KEY (`organization_id`) REFERENCES `organization`(`id`) ON DELETE CASCADE
+	`domain` text NOT NULL,
+	`join_policy` text DEFAULT 'invite_only' NOT NULL,
+	CONSTRAINT `organization_domains_pk` PRIMARY KEY(`organization_id`, `domain`),
+	CONSTRAINT `fk_organization_domains_organization_id_organization_id_fk` FOREIGN KEY (`organization_id`) REFERENCES `organization`(`id`) ON DELETE CASCADE,
+	CONSTRAINT "organization_domains_policy_check" CHECK("join_policy" IN ('invite_only', 'need_approval', 'auto_join'))
+);
+--> statement-breakpoint
+CREATE TABLE `organization_join_requests` (
+	`id` text PRIMARY KEY,
+	`organization_id` text NOT NULL,
+	`user_id` text NOT NULL,
+	`status` text NOT NULL,
+	`created_at` integer NOT NULL,
+	`resolved_at` integer,
+	`resolved_by` text,
+	CONSTRAINT `fk_organization_join_requests_organization_id_organization_id_fk` FOREIGN KEY (`organization_id`) REFERENCES `organization`(`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_organization_join_requests_user_id_user_id_fk` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_organization_join_requests_resolved_by_user_id_fk` FOREIGN KEY (`resolved_by`) REFERENCES `user`(`id`) ON DELETE SET NULL,
+	CONSTRAINT "organization_join_requests_status_check" CHECK("status" IN ('pending', 'approved', 'rejected', 'cancelled'))
 );
 --> statement-breakpoint
 CREATE TABLE `search_documents` (
@@ -663,7 +680,9 @@ CREATE INDEX `image_analysis_job_claim_idx` ON `jobs_image_analysis` (`status`,`
 CREATE INDEX `meeting_attachments_workspace_meeting_id_idx` ON `meeting_attachments` (`workspace_id`,`meeting_id`,`id`);--> statement-breakpoint
 CREATE INDEX `meeting_events_meeting_time_idx` ON `meeting_events` (`workspace_id`,`meeting_id`,`occurred_at`,`id`);--> statement-breakpoint
 CREATE INDEX `meeting_events_session_idx` ON `meeting_events` (`workspace_id`,`session_id`);--> statement-breakpoint
-CREATE INDEX `organization_auto_join_domains_organization_idx` ON `organization_auto_join_domains` (`organization_id`);--> statement-breakpoint
+CREATE INDEX `organization_domains_domain_idx` ON `organization_domains` (`domain`);--> statement-breakpoint
+CREATE UNIQUE INDEX `organization_join_requests_pending_idx` ON `organization_join_requests` (`organization_id`,`user_id`) WHERE "organization_join_requests"."status" = 'pending';--> statement-breakpoint
+CREATE INDEX `organization_join_requests_user_idx` ON `organization_join_requests` (`user_id`);--> statement-breakpoint
 CREATE INDEX `search_document_workspace_kind_meeting_document_idx` ON `search_documents` (`workspace_id`,`kind`,`meeting_id`,`document_id`);--> statement-breakpoint
 CREATE INDEX `search_index_job_claim_idx` ON `jobs_search_index` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
 CREATE INDEX `storage_delete_job_claim_idx` ON `jobs_storage_delete` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
