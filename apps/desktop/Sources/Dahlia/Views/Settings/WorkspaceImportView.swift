@@ -5,7 +5,8 @@ struct WorkspaceImportView: View {
     let isBusy: Bool
     let onCancel: () -> Void
     let onReload: () async -> Void
-    let onCreateOrganization: (String) async -> Void
+    let onCreateOrganization: (String, String, String) async -> Void
+    let onLoadOwners: (Int) async -> (items: [CloudOrganizationOwner], hasMore: Bool)
     let onImport: (UUID?, UUID?) async -> Void
 
     @State private var useExisting = true
@@ -13,6 +14,11 @@ struct WorkspaceImportView: View {
     @State private var organizationId: UUID?
     @State private var organizationName = ""
     @State private var isCreating = false
+    @State private var organizationSlug = ""
+    @State private var ownerId = ""
+    @State private var owners: [CloudOrganizationOwner] = []
+    @State private var hasMoreOwners = true
+    @State private var isLoadingOwners = false
 
     private var destinations: [CloudWorkspaceRecord] {
         pending.serverWorkspaces.filter { $0.workspaceId != pending.workspace.id && ["admin", "editor"].contains($0.role) }
@@ -49,16 +55,32 @@ struct WorkspaceImportView: View {
                             Text(organization.name).tag(UUID(uuidString: organization.id))
                         }
                     }
-                    HStack {
+                    if pending.canCreateOrganizations {
                         TextField(L10n.workspaceImportName, text: $organizationName)
+                        TextField("slug", text: $organizationSlug)
+                        Picker(L10n.organizationInitialOwner, selection: $ownerId) {
+                            Text("—").tag("")
+                            ForEach(owners) { owner in
+                                Text(owner.name + " (" + owner.email + ")").tag(owner.id)
+                            }
+                        }
+                        Text(L10n.organizationOwnerImportRequirement)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if hasMoreOwners {
+                            Button(L10n.organizationLoadOwners) { Task { await loadOwners() } }
+                                .disabled(isLoadingOwners)
+                        }
                         Button(L10n.workspaceImportCreateOrganization) {
                             isCreating = true
                             Task {
-                                await onCreateOrganization(organizationName)
-                                organizationName = ""
+                                await onCreateOrganization(organizationName, organizationSlug, ownerId)
                                 isCreating = false
                             }
-                        }.disabled(organizationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isCreating)
+                        }
+                        .disabled(organizationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || organizationSlug.isEmpty || ownerId
+                            .isEmpty || isCreating)
                     }
                 }
                 HStack {
@@ -82,6 +104,18 @@ struct WorkspaceImportView: View {
             destinationId = destinations.first?.workspaceId
             organizationId = pending.organizations.first(where: { $0.kind == .team }).flatMap { UUID(uuidString: $0.id) }
             useExisting = !destinations.isEmpty
+            if pending.canCreateOrganizations { await loadOwners() }
         }
     }
+
+    private func loadOwners() async {
+        guard !isLoadingOwners else { return }
+        isLoadingOwners = true
+        defer { isLoadingOwners = false }
+        let page = await onLoadOwners(owners.count)
+        guard !Task.isCancelled else { return }
+        owners.append(contentsOf: page.items.filter { candidate in !owners.contains(where: { $0.id == candidate.id }) })
+        hasMoreOwners = page.hasMore
+    }
+
 }

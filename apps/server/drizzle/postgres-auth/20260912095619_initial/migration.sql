@@ -175,8 +175,7 @@ CREATE TABLE "auth"."organization" (
 	"logo" text,
 	"created_at" timestamp NOT NULL,
 	"metadata" text,
-	"kind" text DEFAULT 'team' NOT NULL,
-	"domain" text UNIQUE
+	"kind" text DEFAULT 'team' NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."session" (

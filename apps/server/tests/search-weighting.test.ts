@@ -47,7 +47,8 @@ describe.each(["sqlite", "postgres", "lakebase"] as const)("%s weighted search",
     const userId = (await store.resolveHeaderUser({ userId: externalId,  source: "header", email: `${externalId}@example.test` }))!;
     const owner = { userId,  source: "header" as const };
     await store.ensureIdentityUser(owner);
-    const testOrganizationID = (await store.listServerOrganizations(100, 0)).find((org) => org.name === "example.test")!.id;
+    await store.addAdminUser(`${externalId}@example.test`);
+    const testOrganizationID = (await store.organizations.create(owner, { name: "Search", slug: `search-${uuidV7()}`, initialOwnerUserId: userId })).id;
     const workspaceId = uuidV7();
     const service = new MeetingSyncService(store.sync);
     const commit = (operations: Array<Record<string, unknown>>) => service.commitTransaction(owner, {

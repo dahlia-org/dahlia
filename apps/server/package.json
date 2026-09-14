@@ -39,6 +39,8 @@
     "./openapi.json": "./openapi.json"
   },
   "files": [
+    "Free-email-domains-LICENSE",
+    "Free-email-domains-NOTICE.txt",
     "Codex-LICENSE",
     "Codex-NOTICE.txt",
     "dist/client",

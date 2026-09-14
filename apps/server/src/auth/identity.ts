@@ -56,7 +56,7 @@ export class IdentityService {
     const identity = await this.fromHeader(request);
     const session = await this.auth?.api.getSession({ headers: request.headers });
     if (session && session.user.id !== identity.userId) throw new AuthenticationError("proxy_session_mismatch");
-    return identity;
+    return session?.session.impersonatedBy ? { ...identity, impersonated: true } : identity;
   }
 
   async fromGateway(

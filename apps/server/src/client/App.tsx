@@ -1039,6 +1039,64 @@ function OrganizationWorkspaces({ organization }: { organization: OrganizationIn
   </section>;
 }
 
+function joinPolicyLabel(policy: string) {
+  switch (policy) {
+    case "auto_join": return uiText("Auto join", "自動参加");
+    case "need_approval": return uiText("Approval required", "承認制");
+    default: return uiText("Invitation only", "招待のみ");
+  }
+}
+
+function OrganizationDomains({ organizationId, canManage }: { organizationId: string; canManage: boolean }) {
+  const query = useLiveJSON(apiQuery("getOrganizationDomains", { params: { path: { organizationId } } }));
+  const { dialog, openDialog } = useActionDialog();
+  function edit(index?: number) {
+    const current = index === undefined ? undefined : query.data!.domains[index];
+    openDialog({ title: uiText("Organization domain", "組織ドメイン"), confirmLabel: uiText("Save", "保存"),
+      fields: [{ name: "domain", label: uiText("Domain", "ドメイン"), value: current?.domain ?? "", required: true },
+        { name: "joinPolicy", label: uiText("Join policy", "参加方式"), value: current?.joinPolicy ?? "invite_only", options: ["invite_only", "need_approval", "auto_join"].map((value) => ({ value, label: joinPolicyLabel(value) })) }],
+      onSubmit: async ({ domain, joinPolicy }) => {
+        const domains = [...query.data!.domains];
+        const row = { domain: domain!, joinPolicy: joinPolicy as "invite_only" | "need_approval" | "auto_join" };
+        if (index === undefined) domains.push(row); else domains[index] = row;
+        await api.updateOrganizationDomains({ params: { path: { organizationId } }, body: { domains } });
+      },
+    });
+  }
+  function remove(index: number) {
+    openDialog({ title: uiText("Remove domain?", "ドメインを削除しますか？"), confirmLabel: uiText("Remove", "削除"), destructive: true,
+      onSubmit: async () => { await api.updateOrganizationDomains({ params: { path: { organizationId } }, body: { domains: query.data!.domains.filter((_, i) => i !== index) } }); } });
+  }
+  return <section className="org-settings-info" aria-label={uiText("Organization domains", "組織ドメイン")}>
+    {dialog}<h3>{uiText("Organization domains", "組織ドメイン")}</h3>
+    <p>{uiText("Up to 10 domains. Verified email addresses must match exactly. Shared email services are excluded. Changing a policy does not change existing memberships.", "最大10ドメイン。確認済みメールのドメインと完全一致で判定します。共有メールサービスは登録できません。方式を変更しても既存の所属は変わりません。")}</p>
+    {query.data?.domains.length === 0 && <p>{uiText("No domains configured", "ドメイン未設定")}</p>}
+    {query.data?.domains.map((row, index) => <div className="row" key={row.domain}><span>{row.domain} · {joinPolicyLabel(row.joinPolicy)}</span>{canManage && <div><button className="secondary" onClick={() => edit(index)}>{uiText("Edit", "編集")}</button><button className="secondary" onClick={() => remove(index)}>{uiText("Remove", "削除")}</button></div>}</div>)}
+    {canManage && query.data && query.data.domains.length < 10 && <button className="secondary" onClick={() => edit()}>{uiText("Add domain", "ドメインを追加")}</button>}
+    <DataError error={query.error} retry={query.reload} />
+  </section>;
+}
+
+function OrganizationJoinRequests({ organizationId }: { organizationId?: string }) {
+  const query = useLivePage<import("./generated-api").components["schemas"]["OrganizationJoinRequest"]>(organizationId ? apiQuery("listOrganizationJoinRequests", { params: { path: { organizationId } } }) : apiQuery("listMyJoinRequests", {}));
+  const { dialog, openDialog } = useActionDialog();
+  function resolve(requestId: string, action: "approve" | "reject" | "cancel") {
+    const label = action === "approve" ? uiText("Approve", "承認") : action === "reject" ? uiText("Reject", "却下") : uiText("Cancel request", "申請を取り消す");
+    openDialog({ title: label, confirmLabel: label, onSubmit: async () => {
+      const input = { params: { path: { requestId } } };
+      if (action === "approve") await api.approveOrganizationJoinRequest(input);
+      else if (action === "reject") await api.rejectOrganizationJoinRequest(input);
+      else await api.cancelOrganizationJoinRequest(input);
+    } });
+  }
+  const statusLabel = (status: string) => ({ pending: uiText("Pending", "承認待ち"), approved: uiText("Approved", "承認済み"), rejected: uiText("Rejected", "却下"), cancelled: uiText("Cancelled", "取り消し済み") })[status];
+  return <section>{dialog}<h3>{uiText("Join requests", "参加申請")}</h3>
+    {query.data?.items.map((request) => <div className="row" key={request.id}><span>{organizationId ? `${request.userName} (${request.userEmail})` : request.organizationName} · {statusLabel(request.status)}</span>{request.status === "pending" && <div>{organizationId ? <><button onClick={() => resolve(request.id, "approve")}>{uiText("Approve", "承認")}</button><button onClick={() => resolve(request.id, "reject")}>{uiText("Reject", "却下")}</button></> : <button onClick={() => resolve(request.id, "cancel")}>{uiText("Cancel request", "申請を取り消す")}</button>}</div>}</div>)}
+    {query.data?.nextCursor && <button className="secondary" onClick={query.loadMore}>{uiText("Show more", "さらに表示")}</button>}
+    <DataError error={query.error} retry={query.reload} />
+  </section>;
+}
+
 function OrganizationDetails({ organization, session }: { organization: OrganizationInfo; session: SessionInfo }) {
   const { dialog, openDialog } = useActionDialog();
   const [members, setMembers] = useState<OrganizationMember[]>();
@@ -1178,18 +1236,6 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
       description: uiText("Access through this organization and its teams will be removed.", "この組織とチームを通じたアクセス権を失います。"),
       confirmLabel: uiText("Leave", "脱退"), destructive: true,
       onSubmit: async () => { await json("/api/auth/organization/leave", { method: "POST", body: JSON.stringify({ organizationId: organization.id }) }); navigateDashboard("/orgs"); },
-    });
-  }
-
-  function deleteOrganization() {
-    openDialog({
-      title: uiText("Delete organization?", "組織を削除しますか？"),
-      description: uiText(`“${organization.name}” and its teams will be deleted. Members will lose access to Workspaces shared through this organization. All owned Workspaces must be deleted first.`, `「${organization.name}」とそのチームを削除します。この組織を通じて共有しているワークスペースへのアクセスは失われますが、事前に配下のワークスペースをすべて削除する必要があります。`),
-      confirmLabel: uiText("Delete organization", "組織を削除"), destructive: true,
-      onSubmit: async () => {
-        await json("/api/auth/organization/delete", { method: "POST", body: JSON.stringify({ organizationId: organization.id }) });
-        navigateDashboard("/orgs");
-      },
     });
   }
 
@@ -1347,14 +1393,13 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
               </div>
             </dl>
           </section>
+          {!personal && canManage && <OrganizationJoinRequests organizationId={organization.id} />}
+          {!personal && <OrganizationDomains organizationId={organization.id} canManage={canManage} />}
           {!personal && <section className="org-settings-action" aria-label={uiText("Leave organization", "組織から脱退")}>
             <div><h3>{uiText("Leave organization", "組織から脱退")}</h3><p>{uiText("You will lose access granted through this organization and its teams.", "この組織とチームを通じたアクセス権を失います。")}</p></div>
             <button className="secondary" onClick={leaveOrganization}>{uiText("Leave organization", "組織から脱退")}</button>
           </section>}
-          {!personal && currentRole === "owner" && <section className="org-settings-action" aria-label={uiText("Delete organization", "組織を削除")}>
-            <div><h3>{uiText("Delete organization", "組織を削除")}</h3><p>{uiText("Permanently delete this organization and its teams. Delete the organization only after removing its Workspaces.", "所属するワークスペースをすべて削除した後に、組織とチームを削除できます。この操作は取り消せません。")}</p></div>
-            <button className="secondary danger-button" onClick={deleteOrganization}>{uiText("Delete organization", "組織を削除")}</button>
-          </section>}
+
         </div> },
       ]} />
       </fieldset>
@@ -1380,6 +1425,10 @@ function Organization({ session, organizationId }: { session: SessionInfo; organ
 }
 
 function Organizations({ session }: { session: SessionInfo }) {
+  const [choosingOwner, setChoosingOwner] = useState(false);
+  const [ownerOffset, setOwnerOffset] = useState(0);
+  const owners = useLiveJSON(choosingOwner && session.capabilities.admin ? apiQuery("listServerUsers", { params: { query: { offset: String(ownerOffset) } } }) : undefined);
+  const candidates = useLivePage<operations["listOrganizationCandidates"]["responses"][200]["content"]["application/json"]["items"][number]>(apiQuery("listOrganizationCandidates", {}));
   const [organizations, setOrganizations] = useState<OrganizationInfo[]>();
   const [invitations, setInvitations] = useState<OrganizationInvitation[]>();
   const { dialog, openDialog } = useActionDialog();
@@ -1396,21 +1445,16 @@ function Organizations({ session }: { session: SessionInfo }) {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load organizations");
     }
-  }, [session.capabilities.sessions]);
+  }, []);
   useEffect(() => { void load(); }, [load]);
 
-  function create() {
-    openDialog({
-      title: uiText("Create organization", "組織を作成"),
-      description: uiText("Use lowercase letters, numbers, underscores and hyphens for the slug.", "slugには半角英小文字・数字・アンダーバー・ハイフンを使用してください。"),
-      confirmLabel: uiText("Create organization", "組織を作成"),
-      fields: [{ name: "name", label: uiText("Name", "名前"), required: true },
-        { name: "slug", label: "slug", required: true, pattern: organizationSlugPattern.source }],
+  function create(owner: { id: string; name: string; email: string }) {
+    openDialog({ title: uiText("Create organization", "組織を作成"), confirmLabel: uiText("Create organization", "組織を作成"),
+      description: `${uiText("Initial owner", "初期owner")}: ${owner.name} (${owner.email})`,
+      fields: [{ name: "name", label: uiText("Name", "名前"), required: true }, { name: "slug", label: "slug", required: true, pattern: organizationSlugPattern.source }],
       onSubmit: async ({ name, slug }) => {
-        const organization = await json<OrganizationInfo>("/api/auth/organization/create", {
-          method: "POST", body: JSON.stringify({ name: name!.trim(), slug: slug!.trim() }),
-        });
-        navigateDashboard(`/orgs/${encodeURIComponent(organization.id)}`);
+        await api.createOrganization({ body: { name: name!.trim(), slug: slug!.trim(), initialOwnerUserId: owner.id } });
+        navigateDashboard("/admin/organizations");
       },
     });
   }
@@ -1436,7 +1480,13 @@ function Organizations({ session }: { session: SessionInfo }) {
     <>
       {dialog}
       <PageHeader title={uiText("Your organizations", "所属組織")} description={uiText("Choose an organization to manage its members and teams.", "組織を選んで、メンバーやチームを管理します。")}
-        actions={session.capabilities.sessions && <button className="primary" onClick={create}><MenuIcon name="plus" />{uiText("Create organization", "組織を作成")}</button>} />
+        actions={session.capabilities.admin && <button className="primary" onClick={() => { setOwnerOffset(0); setChoosingOwner(true); }}><MenuIcon name="plus" />{uiText("Create organization", "組織を作成")}</button>} />
+      {choosingOwner && session.capabilities.admin && <section className="section-block"><h2>{uiText("Choose the initial owner", "初期ownerを選択")}</h2>
+        {owners.loading && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
+        {owners.data?.items.map((owner) => <div className="row" key={owner.id}><span>{owner.name} ({owner.email})</span><button className="secondary" onClick={() => create(owner)}>{uiText("Choose owner", "ownerに指定")}</button></div>)}
+        <DataError error={owners.error} retry={owners.reload} />
+        <div className="row-actions"><button className="secondary" disabled={ownerOffset === 0 || owners.loading} onClick={() => setOwnerOffset(ownerOffset - 100)}>{uiText("Previous", "前へ")}</button><button className="secondary" disabled={!owners.data?.hasMore || owners.loading} onClick={() => setOwnerOffset(ownerOffset + 100)}>{uiText("Next", "次へ")}</button><button className="secondary" onClick={() => setChoosingOwner(false)}>{uiText("Cancel", "キャンセル")}</button></div>
+      </section>}
       {invitations && invitations.length > 0 && (
         <section className="section-block">
           <h2 className="section-label">{uiText("Invitations", "招待")}</h2>
@@ -1453,6 +1503,35 @@ function Organizations({ session }: { session: SessionInfo }) {
           </div>
         </section>
       )}
+      <section>
+        <h2>{uiText("Organizations you can join", "参加できる組織")}</h2>
+        {candidates.data?.items.map((candidate) => {
+          const autoJoin = candidate.joinPolicy === "auto_join";
+          const requestPending = candidate.requestStatus === "pending";
+          const actionLabel = autoJoin ? uiText("Join", "参加") : uiText("Apply", "申請");
+          function join() {
+            openDialog({
+              title: candidate.name,
+              confirmLabel: actionLabel,
+              onSubmit: async () => {
+                const input = { params: { path: { organizationId: candidate.id } } };
+                if (autoJoin) await api.joinOrganization(input);
+                else await api.requestOrganizationJoin(input);
+                await load();
+              },
+            });
+          }
+          return <div className="row" key={candidate.id}>
+            {candidate.logo && <img src={candidate.logo} alt="" width={32} height={32} loading="lazy" referrerPolicy="no-referrer" />}
+            <strong>{candidate.name}</strong>
+            <span>{joinPolicyLabel(candidate.joinPolicy)}</span>
+            <button disabled={requestPending} onClick={join}>{requestPending ? uiText("Pending", "承認待ち") : actionLabel}</button>
+          </div>;
+        })}
+        {candidates.data?.nextCursor && <button className="secondary" onClick={candidates.loadMore}>{uiText("Show more", "さらに表示")}</button>}
+        <DataError error={candidates.error} retry={candidates.reload} />
+      </section>
+      <OrganizationJoinRequests />
       <section className="section-block organization-list">
         <h2 className="section-label">{uiText("Your organizations", "参加している組織")}</h2>
         {!organizations && !error && <p className="muted">{uiText("Loading organizations…", "組織を読み込み中…")}</p>}
@@ -1546,6 +1625,7 @@ function AdminDirectory({ kind }: { kind: "users" | "organizations" }) {
 }
 
 export function AdminOrganization({ organizationId, session }: { organizationId: string; session: SessionInfo }) {
+  const { dialog, openDialog } = useActionDialog();
   const [membersOffset, setMembersOffset] = useState(0);
   const [teamsOffset, setTeamsOffset] = useState(0);
   const query = useLiveJSON<operations["getServerOrganization"]["responses"][200]["content"]["application/json"]>(apiQuery("getServerOrganization", {
@@ -1559,7 +1639,9 @@ export function AdminOrganization({ organizationId, session }: { organizationId:
     <button className="secondary" disabled={query.loading || offset === 0} onClick={() => select(offset - 100)}>{uiText("Previous", "前へ")}</button>
     <button className="secondary" disabled={query.loading || !hasMore} onClick={() => select(offset + 100)}>{uiText("Next", "次へ")}</button>
   </div>;
-  return <>
+  return <>{dialog}
+    {organization?.kind === "team" && <button className="secondary danger-button" onClick={() => openDialog({ title: uiText("Delete organization?", "組織を削除しますか？"), description: uiText("All owned Workspaces must be removed first. Memberships and teams will be deleted.", "配下のワークスペースをすべて削除した後に実行できます。所属とチームを削除します。"), confirmLabel: uiText("Delete", "削除"), destructive: true, onSubmit: async () => { await api.deleteOrganization({ params: { path: { organizationId } } }); navigateDashboard("/admin/organizations"); } })}>{uiText("Delete organization", "組織を削除")}</button>}
+
     <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}><a href="/admin/organizations">{uiText("Organization management", "組織管理")}</a></nav>
     <PageHeader title={organization?.name ?? uiText("Organization", "組織")} description={organization?.slug}
       actions={joined && <a className="secondary" href={`/orgs/${encodeURIComponent(joined.id)}`}>{uiText("Manage organization", "組織を管理")}</a>} />

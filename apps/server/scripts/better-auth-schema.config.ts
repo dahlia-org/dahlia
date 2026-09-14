@@ -29,7 +29,7 @@ export const auth = betterAuth({
       scopes: OAUTH_SCOPES,
     }),
     organization({
-      schema: { organization: { additionalFields: { kind: { type: "string", required: true, defaultValue: "team", input: false }, domain: { type: "string", required: false, unique: true, input: false } } } },
+      schema: { organization: { additionalFields: { kind: { type: "string", required: true, defaultValue: "team", input: false } } } },
       cancelPendingInvitationsOnReInvite: true,
       requireEmailVerificationOnInvitation: true,
       sendInvitationEmail: async () => {},

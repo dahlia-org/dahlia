@@ -39,6 +39,31 @@ export const jobsSchema = pgSchema("jobs");
 export const searchSchema = pgSchema("search");
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
+// Authorization metadata, protected by OrganizationStore like workspace_permissions.
+export const organizationDomain = appSchema.table("organization_domains", {
+  organizationId: uuid("organization_id").notNull().references(() => authOrganization.id, { onDelete: "cascade" }),
+  domain: text("domain").notNull(),
+  joinPolicy: text("join_policy").$type<"invite_only" | "need_approval" | "auto_join">().default("invite_only").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.organizationId, table.domain] }),
+  index("organization_domains_domain_idx").on(table.domain),
+  check("organization_domains_policy_check", sql`${table.joinPolicy} IN ('invite_only', 'need_approval', 'auto_join')`),
+]);
+
+export const organizationJoinRequest = appSchema.table("organization_join_requests", {
+  id: uuid("id").primaryKey(),
+  organizationId: uuid("organization_id").notNull().references(() => authOrganization.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  status: text("status").$type<"pending" | "approved" | "rejected" | "cancelled">().notNull(),
+  createdAt: timestamp("created_at").notNull(),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedBy: uuid("resolved_by").references(() => authUser.id, { onDelete: "set null" }),
+}, (table) => [
+  uniqueIndex("organization_join_requests_pending_idx").on(table.organizationId, table.userId).where(sql`${table.status} = 'pending'`),
+  index("organization_join_requests_user_idx").on(table.userId),
+  check("organization_join_requests_status_check", sql`${table.status} IN ('pending', 'approved', 'rejected', 'cancelled')`),
+]);
+
 export const serverSettings = appSchema.table("server_settings", {
   id: integer("id").primaryKey(),
   searchWeights: jsonb("search_weights").$type<SearchSettings>().default(DEFAULT_SEARCH_SETTINGS).notNull(),

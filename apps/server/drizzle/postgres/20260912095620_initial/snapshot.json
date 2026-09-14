@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "d005a40e-bad1-42c7-9f20-7a49264bc90a",
+  "id": "bf5e91fb-da18-4707-9006-f0b587ab12d1",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -43,6 +43,18 @@
     {
       "isRlsEnabled": true,
       "name": "meeting_events",
+      "entityType": "tables",
+      "schema": "app"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "organization_domains",
+      "entityType": "tables",
+      "schema": "app"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "organization_join_requests",
       "entityType": "tables",
       "schema": "app"
     },
@@ -633,6 +645,136 @@
       "entityType": "columns",
       "schema": "app",
       "table": "meeting_events"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "organization_domains"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "domain",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "organization_domains"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'invite_only'",
+      "generated": null,
+      "identity": null,
+      "name": "join_policy",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "organization_domains"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "organization_join_requests"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "organization_join_requests"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "organization_join_requests"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "status",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "organization_join_requests"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "organization_join_requests"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "resolved_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "organization_join_requests"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "resolved_by",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "organization_join_requests"
     },
     {
       "type": "uuid",
@@ -3524,6 +3666,76 @@
       "nameExplicit": true,
       "columns": [
         {
+          "value": "domain",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "organization_domains_domain_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "organization_domains"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "organization_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "user_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": "\"status\" = 'pending'",
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "organization_join_requests_pending_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "organization_join_requests"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "user_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "organization_join_requests_user_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "organization_join_requests"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
           "value": "workspace_id",
           "isExpression": false,
           "asc": true,
@@ -4200,6 +4412,74 @@
       "table": "meeting_events"
     },
     {
+      "nameExplicit": false,
+      "columns": [
+        "organization_id"
+      ],
+      "schemaTo": "auth",
+      "tableTo": "organization",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "organization_domains_organization_id_organization_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "organization_domains"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "organization_id"
+      ],
+      "schemaTo": "auth",
+      "tableTo": "organization",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "organization_join_requests_organization_id_organization_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "organization_join_requests"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "user_id"
+      ],
+      "schemaTo": "auth",
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "organization_join_requests_user_id_user_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "organization_join_requests"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "resolved_by"
+      ],
+      "schemaTo": "auth",
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "SET NULL",
+      "name": "organization_join_requests_resolved_by_user_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "organization_join_requests"
+    },
+    {
       "nameExplicit": true,
       "columns": [
         "workspace_id",
@@ -4549,6 +4829,17 @@
     },
     {
       "columns": [
+        "organization_id",
+        "domain"
+      ],
+      "nameExplicit": false,
+      "name": "organization_domains_pkey",
+      "entityType": "pks",
+      "schema": "app",
+      "table": "organization_domains"
+    },
+    {
+      "columns": [
         "workspace_id",
         "document_id"
       ],
@@ -4653,6 +4944,16 @@
       "name": "meeting_events_pkey",
       "schema": "app",
       "table": "meeting_events",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "organization_join_requests_pkey",
+      "schema": "app",
+      "table": "organization_join_requests",
       "entityType": "pks"
     },
     {
@@ -4922,6 +5223,20 @@
       "entityType": "checks",
       "schema": "app",
       "table": "meeting_events"
+    },
+    {
+      "value": "\"join_policy\" IN ('invite_only', 'need_approval', 'auto_join')",
+      "name": "organization_domains_policy_check",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "organization_domains"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'approved', 'rejected', 'cancelled')",
+      "name": "organization_join_requests_status_check",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "organization_join_requests"
     },
     {
       "value": "\"embedding\" IS NULL OR cardinality(\"embedding\") BETWEEN 32 AND 1024",

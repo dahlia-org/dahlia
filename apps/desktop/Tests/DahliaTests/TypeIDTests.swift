@@ -64,6 +64,33 @@
             #expect(try PublicIDWire.url(filter, direction: .decode).contains(uuid.uuidString.lowercased()))
         }
 
+        @Test func organizationCreationAndJoinRequestsKeepTypedIDs() throws {
+            let owner = UUID(), organization = UUID(), requestId = UUID()
+            var request = try URLRequest(url: #require(URL(string: "https://dahlia.example/api/v1/organizations")))
+            request.httpMethod = "POST"
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "name": "Team",
+                "slug": "team",
+                "initialOwnerUserId": owner.uuidString.lowercased(),
+            ])
+            let publicRequest = try PublicIDWire.request(request)
+            let body = try JSONSerialization.jsonObject(with: #require(publicRequest.httpBody)) as? [String: String]
+            #expect(body?["initialOwnerUserId"] == TypeID.encode(owner, as: .user))
+            let source: [String: Any] = [
+                "items": [[
+                    "id": requestId.uuidString.lowercased(),
+                    "organizationId": organization.uuidString.lowercased(),
+                    "userId": owner.uuidString.lowercased(),
+                    "resolvedBy": NSNull(),
+                ]],
+                "nextCursor": requestId.uuidString.lowercased(),
+            ]
+            let encoded = try #require(PublicIDWire.transform(source, shape: "organizationJoinRequestPage", direction: .encode) as? [String: Any])
+            #expect(encoded["nextCursor"] as? String == TypeID.encode(requestId, as: .organizationJoinRequest))
+            let decoded = try #require(PublicIDWire.transform(encoded, shape: "organizationJoinRequestPage", direction: .decode) as? [String: Any])
+            #expect(NSDictionary(dictionary: decoded) == NSDictionary(dictionary: source))
+        }
+
         @Test func documentRoundTrip() throws {
             let uuid = "01990ab0-0000-7000-8000-000000000001"
             let source = "{ \"sections\": [{\"blocks\":[{\"screenshot_id\":\"\(uuid)\",\"content\":{\"text\":\"\(uuid)\"}}]}] }"

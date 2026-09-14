@@ -2,7 +2,7 @@ import { Client } from "pg";
 import { makeSignature } from "better-auth/crypto";
 import { encryptionConfig } from "../src/encryption/crypto";
 import { AUTH_MAX_REQUEST_BYTES, createApp } from "../src/app";
-import { encodeId } from "../src/typeid";
+import { decodeId, encodeId } from "../src/typeid";
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -61,14 +61,21 @@ async function setup(authProvider: "header" | "accounts" = "header", authProvide
     expect(response.status).toBe(200);
     return new Headers({ [config.authHeader]: actor.email!, origin: config.baseUrl, cookie: response.headers.getSetCookie().map((v) => v.split(";")[0]).join("; ") });
   };
-  return { store, auth, read, user, config, headers };
+  const createOrganization = async (owner: Identity, name = "Team", slug = `team-${uuidV7()}`) => {
+    const [previous] = await read('SELECT role FROM "user" WHERE id = ?', owner.userId);
+    await read('UPDATE "user" SET role = ? WHERE id = ?', "admin", owner.userId);
+    try { return await store.organizations.create(owner, { name, slug, initialOwnerUserId: owner.userId }); }
+    finally { await read('UPDATE "user" SET role = ? WHERE id = ?', String(previous?.role ?? "user"), owner.userId); }
+  };
+  return { store, auth, read, user, config, headers, createOrganization };
 }
+const autoDomains = (domains: readonly string[]) => domains.map((domain) => ({ domain, joinPolicy: "auto_join" as const }));
 function tx(workspaceId: string, operations: SyncTransaction["operations"]): SyncTransaction {
   return { schemaVersion: 3, id: uuidV7(), workspaceId, operations, requestHash: uuidV7(), createdAt: new Date() };
 }
 async function teamWorkspace(env: Awaited<ReturnType<typeof setup>>, actor: Identity, encryption: "none" | "server" = "none") {
-  const { store, auth, headers } = env;
-  const org = await auth.api.createOrganization({ headers: await headers(actor), body: { name: "Team", slug: `team-${uuidV7()}` } });
+  const { store, createOrganization } = env;
+  const org = await createOrganization(actor, "Team", `team-${uuidV7()}`);
   const workspaceId = uuidV7();
   await store.sync.withIdentity(actor, (scoped) => scoped.commitTransaction(tx(workspaceId, [{ id: uuidV7(), entity: "workspace", action: "create", entityId: workspaceId,
     baseRevision: null, data: { organizationId: org.id, encryption, name: "Team workspace", createdAt: new Date() } }])));
@@ -79,6 +86,7 @@ describe("Organization-owned Workspaces", () => {
   it.each([true, false])("rejects oversized organization JSON before validation (content length: %s)", async (knownLength) => {
     const { store, auth, config, user, read } = await setup();
     const actor = await user("creator@example.com");
+    await store.addAdminUser(actor.email!);
     const app = createApp({ config, auth, authStore: store });
     const body = new TextEncoder().encode(JSON.stringify({ name: "x".repeat(AUTH_MAX_REQUEST_BYTES), slug: "oversized" }));
     const headers = new Headers({ [config.authHeader]: actor.email!, "content-type": "application/json" });
@@ -122,10 +130,7 @@ describe("Organization-owned Workspaces", () => {
     requestHeaders.set("cookie", response.headers.getSetCookie().map((v) => v.split(";")[0]).join("; "));
     expect((await service.fromBrowser(new Request(config.baseUrl, { headers: requestHeaders }))).userId).toBe(actor.userId);
     expect(await read("SELECT account_id, provider_id FROM account WHERE user_id = ?", actor.userId)).toEqual([{ account_id: email, provider_id: "databricks" }]);
-    const orgs = await read("SELECT id, name FROM organization WHERE domain = ?", domain);
-    expect(orgs).toHaveLength(1);
-    expect(orgs[0]!.name).toBe(domain);
-    expect(await read("SELECT role FROM member WHERE organization_id = ? AND user_id = ?", String(orgs[0]!.id), actor.userId)).toEqual([{ role: "owner" }]);
+    expect(await read("SELECT organization_id FROM member WHERE user_id = ?", actor.userId)).toEqual([{ organization_id: actor.userId }]);
     for (const invalid of [null, "invalid", "a@@example.com", "a@example.com,b@example.com"]) {
       const rejected = new Headers({ "X-Forwarded-User": email, origin: config.baseUrl });
       if (authHeader !== "X-Forwarded-Email") rejected.set("X-Forwarded-Email", email);
@@ -136,59 +141,135 @@ describe("Organization-owned Workspaces", () => {
     expect(await read("SELECT id FROM account WHERE account_id = ?", email)).toHaveLength(1);
   });
 
-  it("keeps domains distinct and prevents clients from claiming or changing them", async () => {
-    const { auth, read, user, headers, store } = await setup();
-    const [a, b, c] = await Promise.all([user("alice@example.com"), user("bob@example.com"), user("carol@sub.example.com")]);
-    const domain = a.email!.split("@")[1]!;
-    const [org] = await read("SELECT id FROM organization WHERE domain = ?", domain);
-    const orgId = String(org!.id);
-    const members = await read("SELECT role FROM member WHERE organization_id = ?", orgId);
-    expect(members.filter((m) => m.role === "owner")).toHaveLength(1);
-    expect(members.filter((m) => m.role === "member")).toHaveLength(1);
-    const [other] = await read("SELECT id FROM organization WHERE domain = ?", c.email!.split("@")[1]!);
-    expect(other!.id).not.toBe(orgId);
-    const [owner] = await read("SELECT user_id FROM member WHERE organization_id = ? AND role = 'owner'", orgId);
-    const actor = owner!.user_id === a.userId ? a : b;
-    const removed = actor.userId === a.userId ? b : a;
+  it("manages normalized domains through the public API and enrolls only new Header users", async () => {
+    const { user, auth, headers, store, config, read, createOrganization } = await setup();
+    const owner = await user("owner@example.com");
+    const existing = await user("existing@example.com");
+    const org = await createOrganization(owner, "Team", `team-${uuidV7()}`);
+    const domain = owner.email!.split("@")[1]!;
+    const otherDomain = `another-${uuidV7()}.com`;
+    const app = createApp({ config, auth, authStore: store });
+    const path = `/api/v1/organizations/${encodeId("organization", org.id)}/domains`;
+    const send = (method: string, actor = owner, domains?: unknown, origin = config.baseUrl) => app.request(path, {
+      method, headers: { [config.authHeader]: actor.email!, origin, "content-type": "application/json" },
+      ...(method === "PUT" ? { body: JSON.stringify({ domains: Array.isArray(domains) ? autoDomains(domains) : domains }) } : {}),
+    });
+    expect(await (await send("GET")).json()).toEqual({ domains: autoDomains([]) });
+    const saved = await send("PUT", owner, [` ${domain.toUpperCase()} `, otherDomain]);
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toEqual({ domains: autoDomains([domain, otherDomain].sort()) });
+    await user("existing@example.com");
+    expect(await read("SELECT organization_id FROM member WHERE user_id = ?", existing.userId)).toEqual([{ organization_id: existing.userId }]);
+    const newcomer = await user("new@example.com");
+    expect(await read("SELECT role FROM member WHERE organization_id = ? AND user_id = ?", org.id, newcomer.userId)).toEqual([{ role: "member" }]);
+    const secondId = await store.resolveHeaderUser({ source: "header", userId: `second@${otherDomain}`, email: `second@${otherDomain}` });
+    expect(await read("SELECT role FROM member WHERE organization_id = ? AND user_id = ?", org.id, secondId!)).toEqual([{ role: "member" }]);
+    expect((await send("GET", newcomer)).status).toBe(200);
+    expect((await send("GET", existing)).status).toBe(403);
+    expect((await send("PUT", newcomer, [])).status).toBe(403);
+    expect((await send("PUT", owner, [], "https://untrusted.example")).status).toBe(403);
+    const [membership] = await read("SELECT id FROM member WHERE organization_id = ? AND user_id = ?", org.id, newcomer.userId);
+    await auth.api.updateMemberRole({ headers: await headers(owner), body: { organizationId: org.id, memberId: String(membership!.id), role: "admin" } });
+    expect((await send("PUT", newcomer, [domain])).status).toBe(200);
+    await expect(store.organizations.updateDomains({ ...owner, impersonated: true }, org.id, { domains: autoDomains([]) }))
+      .rejects.toMatchObject({ statusCode: 403 });
+    await expect(store.organizations.updateDomains(owner, owner.userId, { domains: autoDomains([domain]) }))
+      .rejects.toThrow("personal_organization_immutable");
+    for (const [code, cases] of [
+      ["shared_email_domain", [["gmail.com"], ["GMAIL.COM"], ["mail.gmail.com"], ["yahoo.co.jp"], ["outlook.com"], ["icloud.com"]]],
+      ["invalid_organization_domain", [["me@example.com"], ["https://example.com"], ["*.example.com"], ["bad..com"], ["localhost"], Array(11).fill(domain)]],
+    ] as const) {
+      for (const invalid of cases) {
+        const response = await send("PUT", owner, invalid);
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({ code });
+        expect(await (await send("GET")).json()).toEqual({ domains: autoDomains([domain]) });
+      }
+    }
+    // A domain added by an older snapshot must also be blocked at enrollment.
+    await read("INSERT INTO organization_domains (domain, organization_id, join_policy) VALUES (?, ?, 'auto_join')", "gmail.com", org.id);
+    const shared = await store.resolveHeaderUser({ source: "header", userId: `shared-${uuidV7()}@gmail.com` });
+    expect(await read("SELECT organization_id FROM member WHERE user_id = ?", shared!)).toEqual([{ organization_id: shared }]);
+    expect((await send("PUT", owner, [])).status).toBe(200);
+    const later = await user("later@example.com");
+    expect(await read("SELECT organization_id FROM member WHERE user_id = ?", later.userId)).toEqual([{ organization_id: later.userId }]);
+    expect(await read("SELECT role FROM member WHERE organization_id = ? AND user_id = ?", org.id, newcomer.userId)).toEqual([{ role: "admin" }]);
+  });
+
+  it("allows domains across organizations and rolls back a failed replacement", async () => {
+    const { user, store, read, config, createOrganization } = await setup();
+    const owner = await user("owner@example.com");
+    const a = await createOrganization(owner, "Team", `team-${uuidV7()}`);
+    const b = await createOrganization(owner, "Second", `team-${uuidV7()}`);
+    const domain = owner.email!.split("@")[1]!;
+    const claims = await Promise.allSettled([a, b].map((org) => store.organizations.updateDomains(owner, org.id, { domains: autoDomains([domain]) })));
+    expect(claims.filter((result) => result.status === "fulfilled")).toHaveLength(2);
+    const winner = claims[0]!.status === "fulfilled" ? a : b;
+    const loser = winner.id === a.id ? b : a;
+    expect(await store.organizations.getDomains(owner, loser.id)).toEqual({ domains: autoDomains([domain]) });
+    const newcomer = await user("both@example.com");
+    expect(await read("SELECT id FROM member WHERE user_id = ?", newcomer.userId)).toHaveLength(3);
+    const postgres = config.databaseType === "postgres";
+    if (postgres) {
+      await read("CREATE FUNCTION app.fail_auto_join() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'domain save failed'; END $$");
+      await read("CREATE TRIGGER fail_auto_join BEFORE INSERT ON app.organization_domains FOR EACH ROW EXECUTE FUNCTION app.fail_auto_join()");
+    } else await read("CREATE TRIGGER fail_auto_join BEFORE INSERT ON organization_domains BEGIN SELECT RAISE(ABORT, 'domain save failed'); END");
+    try {
+      await expect(store.organizations.updateDomains(owner, winner.id, { domains: autoDomains([`new-${domain}`]) })).rejects.toThrow();
+      expect(await store.organizations.getDomains(owner, winner.id)).toEqual({ domains: autoDomains([domain]) });
+    } finally {
+      await read(postgres ? "DROP TRIGGER fail_auto_join ON app.organization_domains" : "DROP TRIGGER fail_auto_join");
+      if (postgres) await read("DROP FUNCTION app.fail_auto_join()");
+    }
+    await store.addAdminUser(owner.email!);
+    await store.organizations.delete(owner, winner.id);
+    expect(await store.organizations.updateDomains(owner, loser.id, { domains: autoDomains([domain]) })).toEqual({ domains: autoDomains([domain]) });
+  });
+
+  it("keeps domains distinct and prevents legacy fields from claiming them", async () => {
+    const { user, auth, headers, store, read, createOrganization } = await setup();
+    const actor = await user("owner@example.com");
     const ah = await headers(actor);
-    const claimed = await auth.handler(new Request(`${(await auth.$context).baseURL}/organization/create`, { method: "POST", headers: { ...Object.fromEntries(ah), "content-type": "application/json" }, body: JSON.stringify({ name: "Claim", slug: `claim-${uuidV7()}`, domain: `claim-${domain}` }) }));
-    expect(claimed.status).toBe(200);
-    expect(await read("SELECT id FROM organization WHERE domain = ?", `claim-${domain}`)).toHaveLength(0);
-    const updated = await auth.handler(new Request(`${(await auth.$context).baseURL}/organization/update`, { method: "POST", headers: { ...Object.fromEntries(ah), "content-type": "application/json" }, body: JSON.stringify({ organizationId: orgId, data: { name: "Unclaimed", domain: `changed-${domain}` } }) }));
+    const org = await createOrganization(actor, "Team", `team-${uuidV7()}`);
+    const domain = actor.email!.split("@")[1]!;
+    await store.organizations.updateDomains(actor, org.id, { domains: autoDomains([domain]) });
+    const removed = await user("member@example.com");
+    const other = await user("other@sub.example.com");
+    expect(await read("SELECT organization_id FROM member WHERE user_id = ?", other.userId)).toEqual([{ organization_id: other.userId }]);
+    const updated = await auth.handler(new Request(`${(await auth.$context).baseURL}/organization/update`, {
+      method: "POST", headers: { ...Object.fromEntries(ah), "content-type": "application/json" },
+      body: JSON.stringify({ organizationId: org.id, data: { name: "Renamed", domain: `changed-${domain}` } }),
+    }));
     expect(updated.status).toBe(200);
-    await expect(store.organizations.transaction(async (database) => {
-      await database((await auth.$context).options).update({ model: "organization", where: [{ field: "id", value: orgId }], update: { domain: `changed-${domain}` } });
-    })).rejects.toThrow("organization_domain_immutable");
-    expect(await read("SELECT domain FROM organization WHERE id = ?", orgId)).toEqual([{ domain }]);
-    await auth.api.updateOrganization({ headers: ah, body: { organizationId: orgId, data: { name: "Renamed" } } });
-    await auth.api.removeMember({ headers: ah, body: { organizationId: orgId, memberIdOrEmail: removed.email! } });
+    expect(await store.organizations.getDomains(actor, org.id)).toEqual({ domains: autoDomains([domain]) });
+    await auth.api.removeMember({ headers: ah, body: { organizationId: org.id, memberIdOrEmail: removed.email! } });
     await headers(removed);
-    expect(await read("SELECT id FROM member WHERE organization_id = ? AND user_id = ?", orgId, removed.userId)).toHaveLength(0);
+    expect(await read("SELECT id FROM member WHERE organization_id = ? AND user_id = ?", org.id, removed.userId)).toHaveLength(0);
     expect(await store.sync.withIdentity(removed, (scoped) => scoped.getWorkspace(actor.userId))).toBeNull();
   });
 
   it("initializes Personal once and joins a domain only at user creation", async () => {
-    const { store, auth, headers, read, user } = await setup();
+    const { store, auth, headers, read, user, createOrganization } = await setup();
     const [a, same] = await Promise.all([user("alice@example.com"), user("alice@example.com")]);
     expect(a.userId).toBe(same.userId);
     expect((await read("SELECT kind, slug FROM organization WHERE id = ?", a.userId))[0]).toEqual({ kind: "personal", slug: a.email!.split("@")[0]!.replace(/[^a-z0-9]/g, "_") });
     expect(await read("SELECT role FROM workspace_permissions WHERE workspace_id = ?", a.userId)).toEqual([{ role: "admin" }]);
     const domain = a.email!.split("@")[1]!;
-    const [org] = await read("SELECT id FROM organization WHERE domain = ?", domain);
-    const orgId = String(org!.id);
+    const org = await createOrganization(a, "Team", `team-${uuidV7()}`);
+    const orgId = org.id;
+    await store.organizations.updateDomains(a, orgId, { domains: autoDomains([domain]) });
     expect(await read("SELECT role FROM member WHERE organization_id = ?", orgId)).toEqual([{ role: "owner" }]);
     const b = await user("bob@example.com");
     await auth.api.leaveOrganization({ headers: await headers(b), body: { organizationId: orgId } });
     await store.ensureIdentityUser(b);
     await user("bob@example.com");
     expect(await read("SELECT id FROM member WHERE organization_id = ? AND user_id = ?", orgId, b.userId)).toHaveLength(0);
-    await auth.api.deleteOrganization({ headers: await headers(a), body: { organizationId: orgId } });
+    await store.addAdminUser(a.email!);
+    await store.organizations.delete(a, orgId);
     await user("alice@example.com");
-    expect(await read("SELECT id FROM organization WHERE domain = ?", domain)).toHaveLength(0);
+    expect(await read("SELECT domain FROM organization_domains WHERE domain = ?", domain)).toHaveLength(0);
     const c = await user("carol@example.com");
-    const [replacement] = await read("SELECT id FROM organization WHERE domain = ?", domain);
-    expect(replacement!.id).not.toBe(orgId);
-    expect(await read("SELECT user_id, role FROM member WHERE organization_id = ?", String(replacement!.id))).toEqual([{ user_id: c.userId, role: "owner" }]);
+    expect(await read("SELECT organization_id FROM member WHERE user_id = ?", c.userId)).toEqual([{ organization_id: c.userId }]);
     await expect(store.sync.withIdentity(a, (scoped) => scoped.commitTransaction(tx(a.userId, [{ id: uuidV7(), entity: "workspace", action: "reset", entityId: a.userId, baseRevision: 1, data: {} }])))).rejects.toThrow("personal_workspace_immutable");
   });
 
@@ -217,16 +298,11 @@ describe("Organization-owned Workspaces", () => {
     const others = await Promise.all([user("kazuki.matsuda@third.com"), user("kazuki.matsuda@fourth.com")]);
     const slugs = await Promise.all(others.map(async (actor) => (await read("SELECT slug FROM organization WHERE id = ?", actor.userId))[0]!.slug));
     expect(slugs.sort()).toEqual([`${base}_3`, `${base}_4`]);
-    const domainOwner = await user("domain-a@a-b.example.com");
-    const conflictingDomainOwner = await user("domain-b@a.b.example.com");
-    const domain = domainOwner.email!.split("@")[1]!;
-    const domainSlug = domain.replace(/[^a-z0-9]/g, "_");
-    expect(await read("SELECT slug FROM organization WHERE domain = ?", domain)).toEqual([{ slug: domainSlug }]);
-    expect(await read("SELECT slug FROM organization WHERE domain = ?", conflictingDomainOwner.email!.split("@")[1]!)).toEqual([{ slug: `${domainSlug}_2` }]);
+
   });
 
   it.each(["header", "accounts"] as const)("validates slug edits and preserves ownership in %s mode", async (mode) => {
-    const { auth, user, headers, read, store } = await setup(mode);
+    const { auth, user, headers, read, store, createOrganization } = await setup(mode);
     const owner = await user("slug.owner@example.com");
     const member = await user("slug.member@example.com");
     const ownerHeaders = await headers(owner);
@@ -240,7 +316,7 @@ describe("Organization-owned Workspaces", () => {
     await edit(owner.userId, slug);
     await edit(owner.userId, slug);
     expect(await read("SELECT slug, kind FROM organization WHERE id = ?", owner.userId)).toEqual([{ slug, kind: "personal" }]);
-    const org = await auth.api.createOrganization({ headers: ownerHeaders, body: { name: "Team", slug: `team_${uuidV7()}` } });
+    const org = await createOrganization(owner, "Team", `team_${uuidV7()}`);
     for (const invalid of ["", "BadSlug", "has.dot", "has space", "日本語"]) {
       await expect(edit(owner.userId, invalid)).rejects.toThrow();
       await expect(auth.api.createOrganization({ headers: ownerHeaders, body: { name: "Invalid", slug: invalid } })).rejects.toThrow();
@@ -256,20 +332,25 @@ describe("Organization-owned Workspaces", () => {
     expect(await read("SELECT user_id, role FROM member WHERE organization_id = ?", owner.userId)).toEqual([{ user_id: owner.userId, role: "owner" }]);
     if (mode === "header") {
       const domain = owner.email!.split("@")[1]!;
-      const domainOrg = String((await read("SELECT id FROM organization WHERE domain = ?", domain))[0]!.id);
+      const domainOrg = org.id;
+      await store.organizations.updateDomains(owner, domainOrg, { domains: autoDomains([domain]) });
+      await auth.api.addMember({ body: { organizationId: domainOrg, userId: member.userId, role: "member" } });
       await expect(edit(domainOrg, `member_${uuidV7()}`, memberHeaders)).rejects.toThrow();
       const [domainMember] = await read("SELECT id FROM member WHERE organization_id = ? AND user_id = ?", domainOrg, member.userId);
       await auth.api.updateMemberRole({ headers: ownerHeaders, body: { organizationId: domainOrg, memberId: String(domainMember!.id), role: "admin" } });
       const newDomainSlug = `domain_${uuidV7()}`;
       await edit(domainOrg, newDomainSlug, memberHeaders);
       const newcomer = await user("slug.newcomer@example.com");
-      expect(await read("SELECT slug FROM organization WHERE domain = ?", domain)).toEqual([{ slug: newDomainSlug }]);
+      expect(await read("SELECT slug FROM organization WHERE id = ?", domainOrg)).toEqual([{ slug: newDomainSlug }]);
       expect(await read("SELECT role FROM member WHERE organization_id = ? AND user_id = ?", domainOrg, newcomer.userId)).toEqual([{ role: "member" }]);
     }
   });
 
   it("rolls back failed domain enrollment and retries the complete registration", async () => {
-    const { read, user, config } = await setup();
+    const { read, user, config, store, createOrganization } = await setup();
+    const owner = await user("owner@example.com");
+    const org = await createOrganization(owner, "Team", `team-${uuidV7()}`);
+    await store.organizations.updateDomains(owner, org.id, { domains: autoDomains([owner.email!.split("@")[1]!]) });
     const postgres = config.databaseType === "postgres";
     const address = `interrupted-${uuidV7()}@example.com`;
     if (postgres) {
@@ -289,18 +370,23 @@ describe("Organization-owned Workspaces", () => {
     expect(await read("SELECT workspace_id FROM workspaces WHERE organization_id = ?", a.userId)).toEqual([{ workspace_id: a.userId }]);
   });
 
-  it("does not automatically enroll Google users in domain organizations", async () => {
-    const { user, read } = await setup("accounts");
+  it("automatically enrolls verified Google users in domain organizations", async () => {
+    const { user, read, store, createOrganization } = await setup("accounts");
+    const owner = await user("owner@example.com");
+    const org = await createOrganization(owner, "Team", `team-${uuidV7()}`);
+    await store.organizations.updateDomains(owner, org.id, { domains: autoDomains([owner.email!.split("@")[1]!]) });
     const a = await user("google@example.com");
-    expect(await read("SELECT id FROM organization WHERE domain = ?", a.email!.split("@")[1]!)).toHaveLength(0);
-    expect(await read("SELECT organization_id FROM member WHERE user_id = ?", a.userId)).toEqual([{ organization_id: a.userId }]);
+
+    expect(await read("SELECT organization_id FROM member WHERE user_id = ?", a.userId)).toEqual(expect.arrayContaining([{ organization_id: a.userId }, { organization_id: org.id }]));
   });
 
   it.each([undefined, "native-admin-test-password"])("projects native Header user provisioning with password %s", async (password) => {
-    const { store, auth, config, read, user, headers } = await setup("header", "databricks");
+    const { store, auth, config, read, user, headers, createOrganization } = await setup("header", "databricks");
     const administrator = await user("administrator@example.com");
     await store.addAdminUser(administrator.email!);
     const email = `created-${uuidV7()}@${uuidV7()}.example.com`;
+    const org = await createOrganization(administrator, "Team", `team-${uuidV7()}`);
+    await store.organizations.updateDomains(administrator, org.id, { domains: autoDomains([email.split("@")[1]!]) });
     const created = await auth.api.createUser({ headers: await headers(administrator), body: { email, name: "Created", password } });
     const app = createApp({ config, auth, authStore: store });
     const response = await app.request("/api/v1/session", { headers: { [config.authHeader]: email } });
@@ -538,20 +624,22 @@ describe("Organization-owned Workspaces", () => {
     const app = createApp({ config, authStore: store, auth });
     const response = await app.request(`/api/v1/organizations/${encodeId("organization", org.id)}/workspaces`, { headers: ah });
     expect(response.status, await response.clone().text()).toBe(200);
-    await auth.api.deleteOrganization({ headers: ah, body: { organizationId: org.id } });
+    await store.addAdminUser(a.email!);
+    await store.organizations.delete(a, org.id);
   });
 
   it.each(["header", "accounts"] as const)("creates a Team Organization through the public API in %s mode", async (mode) => {
     const { config, auth, store, user, headers } = await setup(mode);
     const actor = await user("creator@example.com");
+    await store.addAdminUser(actor.email!);
     const app = createApp({ config, authStore: store, auth });
     const requestHeaders = await headers(actor);
     requestHeaders.set("content-type", "application/json");
     const response = await app.request("/api/v1/organizations", { method: "POST", headers: requestHeaders,
-      body: JSON.stringify({ name: "Created inside migration", slug: `created-${uuidV7()}` }) });
+      body: JSON.stringify({ name: "Created inside migration", slug: `created-${uuidV7()}`, initialOwnerUserId: encodeId("user", actor.userId) }) });
     expect(response.status, await response.clone().text()).toBe(201);
     const created = await response.json<{ id: string }>();
-    expect(created).toMatchObject({ kind: "team", role: "owner" });
+    expect(created).toMatchObject({ kind: "team" });
     expect(created.id).toMatch(/^org_/);
     const listed = await app.request("/api/v1/organizations", { headers: requestHeaders });
     expect(await listed.json()).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ id: created.id, kind: "team" })]) as unknown });
@@ -574,12 +662,275 @@ describe("Organization-owned Workspaces", () => {
     await expect(service.fromBrowser(new Request(config.baseUrl, { headers: { cookie, "X-Forwarded-Email": "bob@example.com" } }))).rejects.toThrow("proxy_session_mismatch");
     const created = await auth.handler(new Request(`${config.baseUrl}/api/auth/organization/create`, { method: "POST",
       headers: { ...headers, cookie, "content-type": "application/json" }, body: JSON.stringify({ name: "Team", slug: `team-${uuidV7()}` }) }));
-    expect(created.status).toBe(200);
-    const organization = await created.json<{ members: unknown[] }>();
-    expect(organization).toMatchObject({ kind: "team" });
-    expect(organization.members).toHaveLength(1);
+    expect(created.status).toBe(403);
     const forged = await auth.handler(new Request(`${config.baseUrl}/api/auth/organization/create`, { method: "POST",
       headers: { ...headers, origin: "https://attacker.example", cookie, "content-type": "application/json" }, body: JSON.stringify({ name: "Bad", slug: "bad" }) }));
     expect(forged.status).toBe(403);
   });
+  it.each(["header", "accounts"] as const)("applies all join policies, verified email and explicit rejoining in %s mode", async (mode) => {
+    const { user, store, auth, headers, read, createOrganization } = await setup(mode);
+    const owner = await user("owner@example.com");
+    const existing = await user("existing@example.com");
+    const invite = await createOrganization(owner, "Invitation");
+    const approval = await createOrganization(owner, "Approval");
+    const automatic = await createOrganization(owner, "Automatic");
+    const another = await createOrganization(owner, "Another automatic");
+    const domain = owner.email!.split("@")[1]!;
+    for (const [org, joinPolicy] of [[invite, "invite_only"], [approval, "need_approval"], [automatic, "auto_join"], [another, "auto_join"]] as const) {
+      await store.organizations.updateDomains(owner, org.id, { domains: [{ domain, joinPolicy }] });
+    }
+    expect(await store.organizations.candidates(existing)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: approval.id, joinPolicy: "need_approval", requestStatus: null }),
+      expect.objectContaining({ id: automatic.id, joinPolicy: "auto_join" }),
+      expect.objectContaining({ id: another.id, joinPolicy: "auto_join" }),
+    ]));
+    expect((await store.organizations.candidates(existing)).map((org) => org.id)).not.toContain(invite.id);
+    const newcomer = await user("newcomer@example.com");
+    expect(await read("SELECT organization_id FROM member WHERE user_id = ?", newcomer.userId)).toHaveLength(3);
+    expect(await read("SELECT role FROM member WHERE user_id = ? AND organization_id = ?", newcomer.userId, automatic.id)).toEqual([{ role: "member" }]);
+    await headers(existing);
+    expect(await read("SELECT organization_id FROM member WHERE user_id = ?", existing.userId)).toHaveLength(1);
+    await expect(store.organizations.join(existing, invite.id, false)).rejects.toMatchObject({ statusCode: 403 });
+    await expect(store.organizations.join(existing, approval.id, false)).rejects.toMatchObject({ statusCode: 403 });
+    await expect(store.organizations.join({ ...existing, impersonated: true }, automatic.id, false)).rejects.toMatchObject({ statusCode: 403 });
+    await expect(store.organizations.requests(existing, approval.id)).rejects.toMatchObject({ statusCode: 403 });
+    await store.organizations.join(existing, automatic.id, false);
+    await store.organizations.join(existing, automatic.id, false);
+    expect(await read("SELECT id FROM member WHERE user_id = ? AND organization_id = ?", existing.userId, automatic.id)).toHaveLength(1);
+    await auth.api.leaveOrganization({ headers: await headers(existing), body: { organizationId: automatic.id } });
+    await store.organizations.join(existing, automatic.id, false);
+    await auth.api.removeMember({ headers: await headers(owner), body: { organizationId: automatic.id, memberIdOrEmail: existing.email! } });
+    await headers(existing);
+    expect(await read("SELECT id FROM member WHERE user_id = ? AND organization_id = ?", existing.userId, automatic.id)).toHaveLength(0);
+    await store.organizations.join(existing, automatic.id, false);
+    expect(await read("SELECT id FROM member WHERE user_id = ? AND organization_id = ?", existing.userId, automatic.id)).toHaveLength(1);
+    // A verified flag is required even if a persisted address matches.
+    await read('UPDATE "user" SET email_verified = false WHERE id = ?', existing.userId);
+    expect(await store.organizations.candidates(existing)).toEqual([]);
+    await expect(store.organizations.join(existing, another.id, false)).rejects.toMatchObject({ statusCode: 403 });
+    await expect(store.organizations.join(existing, approval.id, true)).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it.each(["header", "accounts"] as const)("serializes duplicate requests, approval races, cancellation and reapplication in %s mode", async (mode) => {
+    const { user, store, read, createOrganization } = await setup(mode);
+    const owner = await user("owner@example.com"), applicant = await user("applicant@example.com"), other = await user("other@example.com");
+    const org = await createOrganization(owner);
+    const domain = owner.email!.split("@")[1]!;
+    await store.organizations.updateDomains(owner, org.id, { domains: [{ domain, joinPolicy: "need_approval" }] });
+    await Promise.all([store.organizations.join(applicant, org.id, true), store.organizations.join(applicant, org.id, true)]);
+    const [first] = await store.organizations.requests(applicant);
+    expect(first?.status).toBe("pending");
+    expect(await store.organizations.requests(applicant)).toHaveLength(1);
+    expect(await store.organizations.candidates(applicant)).toMatchObject([{ id: org.id, requestStatus: "pending" }]);
+    await expect(store.organizations.resolveRequest(other, first!.id, "cancelled")).rejects.toMatchObject({ statusCode: 403 });
+    await expect(store.organizations.resolveRequest(applicant, first!.id, "approved")).rejects.toMatchObject({ statusCode: 403 });
+    await expect(store.organizations.resolveRequest({ ...owner, impersonated: true }, first!.id, "approved")).rejects.toMatchObject({ statusCode: 403 });
+    await store.organizations.resolveRequest(applicant, first!.id, "cancelled");
+    await store.organizations.resolveRequest(applicant, first!.id, "cancelled");
+    await store.organizations.join(applicant, org.id, true);
+    const second = (await store.organizations.requests(applicant)).find((request) => request.status === "pending")!;
+    await store.organizations.resolveRequest(owner, second.id, "rejected");
+    await store.organizations.join(applicant, org.id, true);
+    const third = (await store.organizations.requests(applicant)).find((request) => request.status === "pending")!;
+    const race = await Promise.allSettled([store.organizations.resolveRequest(owner, third.id, "approved"), store.organizations.resolveRequest(owner, third.id, "rejected")]);
+    expect(race.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(race.filter((result) => result.status === "rejected")).toMatchObject([{ reason: { statusCode: 409 } }]);
+    const resolved = (await store.organizations.requests(applicant)).find((request) => request.id === third.id)!;
+    expect(await read("SELECT id FROM member WHERE user_id = ? AND organization_id = ?", applicant.userId, org.id)).toHaveLength(resolved.status === "approved" ? 1 : 0);
+    expect((await store.organizations.requests(owner, org.id)).map((request) => request.status)).toEqual(expect.arrayContaining(["cancelled", "rejected", resolved.status]));
+    expect(resolved.resolvedBy).toBe(owner.userId);
+  });
+
+  it("cancels only ineligible pending requests and rolls back failed approvals", async () => {
+    const { user, store, read, config, createOrganization } = await setup();
+    const owner = await user("owner@example.com"), applicant = await user("applicant@example.com");
+    const org = await createOrganization(owner);
+    const domain = owner.email!.split("@")[1]!;
+    await store.organizations.updateDomains(owner, org.id, { domains: [{ domain, joinPolicy: "need_approval" }] });
+    await store.organizations.join(applicant, org.id, true);
+    const [request] = await store.organizations.requests(applicant);
+    await store.organizations.updateDomains(owner, org.id, { domains: [{ domain, joinPolicy: "need_approval" }, { domain: `other-${domain}`, joinPolicy: "invite_only" }] });
+    expect((await store.organizations.requests(applicant))[0]?.status).toBe("pending");
+    const postgres = config.databaseType === "postgres";
+    if (postgres) {
+      await read("CREATE FUNCTION app.fail_join_resolution() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'resolution failed'; END $$");
+      await read("CREATE TRIGGER fail_join_resolution BEFORE UPDATE ON app.organization_join_requests FOR EACH ROW EXECUTE FUNCTION app.fail_join_resolution()");
+    } else await read("CREATE TRIGGER fail_join_resolution BEFORE UPDATE ON organization_join_requests BEGIN SELECT RAISE(ABORT, 'resolution failed'); END");
+    try {
+      await expect(store.organizations.resolveRequest(owner, request!.id, "approved")).rejects.toThrow();
+      expect(await read("SELECT id FROM member WHERE user_id = ? AND organization_id = ?", applicant.userId, org.id)).toHaveLength(0);
+      expect((await store.organizations.requests(applicant))[0]?.status).toBe("pending");
+      await expect(store.organizations.updateDomains(owner, org.id, { domains: [] })).rejects.toThrow();
+      expect((await store.organizations.getDomains(owner, org.id)).domains).toHaveLength(2);
+    } finally {
+      await read(postgres ? "DROP TRIGGER fail_join_resolution ON app.organization_join_requests" : "DROP TRIGGER fail_join_resolution");
+      if (postgres) await read("DROP FUNCTION app.fail_join_resolution()");
+    }
+    for (const joinPolicy of ["auto_join", "invite_only"] as const) {
+      await store.organizations.updateDomains(owner, org.id, { domains: [{ domain, joinPolicy }] });
+      expect((await store.organizations.requests(applicant)).every((request) => request.status === "cancelled")).toBe(true);
+      await store.organizations.updateDomains(owner, org.id, { domains: [{ domain, joinPolicy: "need_approval" }] });
+      await store.organizations.join(applicant, org.id, true);
+    }
+    await store.organizations.updateDomains(owner, org.id, { domains: [] });
+    expect((await store.organizations.requests(applicant)).every((request) => request.status === "cancelled")).toBe(true);
+    expect(await read("SELECT role FROM member WHERE organization_id = ?", org.id)).toEqual([{ role: "owner" }]);
+  });
+
+  it.each(["header", "accounts"] as const)("reuses invited membership without demotion and applies invited teams in %s mode", async (mode) => {
+    const { user, store, auth, headers, read, createOrganization } = await setup(mode);
+    const owner = await user("owner@example.com"), recipient = await user("recipient@example.com");
+    const org = await createOrganization(owner);
+    const domain = owner.email!.split("@")[1]!;
+    const ownerHeaders = await headers(owner);
+    const recipientHeaders = await headers(recipient);
+    const team = await auth.api.createTeam({ headers: ownerHeaders, body: { name: "Invited team", organizationId: org.id } });
+    const invitation = await auth.api.createInvitation({ headers: ownerHeaders, body: { email: recipient.email!, organizationId: org.id, role: "member", teamId: team.id } });
+    await store.organizations.updateDomains(owner, org.id, { domains: [{ domain, joinPolicy: "need_approval" }] });
+    await store.organizations.join(recipient, org.id, true);
+    const [request] = await store.organizations.requests(recipient);
+    await store.organizations.resolveRequest(owner, request!.id, "approved");
+    const [member] = await read("SELECT id FROM member WHERE user_id = ? AND organization_id = ?", recipient.userId, org.id);
+    await auth.api.updateMemberRole({ headers: ownerHeaders, body: { organizationId: org.id, memberId: String(member!.id), role: "admin" } });
+    const accepted = await auth.api.acceptInvitation({ headers: recipientHeaders, body: { invitationId: invitation.id } });
+    expect(accepted.member).toMatchObject({ id: member!.id, role: "admin" });
+    expect(await read("SELECT id FROM member WHERE user_id = ? AND organization_id = ?", recipient.userId, org.id)).toHaveLength(1);
+    expect(await read("SELECT user_id FROM team_member WHERE team_id = ? AND user_id = ?", team.id, recipient.userId)).toHaveLength(1);
+    const racing = await user("racing@example.com");
+    const racingHeaders = await headers(racing);
+    const racingInvitation = await auth.api.createInvitation({ headers: ownerHeaders, body: { email: racing.email!, organizationId: org.id, role: "admin", teamId: team.id } });
+    await store.organizations.join(racing, org.id, true);
+    const [racingRequest] = await store.organizations.requests(racing);
+    await Promise.all([store.organizations.resolveRequest(owner, racingRequest!.id, "approved"), auth.api.acceptInvitation({ headers: racingHeaders, body: { invitationId: racingInvitation.id } })]);
+    expect(await read("SELECT role FROM member WHERE user_id = ? AND organization_id = ?", racing.userId, org.id)).toEqual([{ role: "admin" }]);
+    expect(await read("SELECT user_id FROM team_member WHERE team_id = ? AND user_id = ?", team.id, racing.userId)).toHaveLength(1);
+  });
+
+  it.each(["header", "accounts"] as const)("separates Server administrators from initial owners and rejects lifecycle bypasses in %s mode", async (mode) => {
+    const { user, store, auth, headers, read, config } = await setup(mode);
+    const administrator = await user("server-admin@example.com"), owner = await user("owner@example.com"), ordinary = await user("ordinary@example.com");
+    await store.addAdminUser(administrator.email!);
+    const input = { name: "Managed", slug: `managed-${uuidV7()}`, initialOwnerUserId: owner.userId };
+    for (const actor of [owner, ordinary, { ...administrator, impersonated: true }]) {
+      await expect(store.organizations.create(actor, input)).rejects.toMatchObject({ statusCode: 403 });
+    }
+    await expect(store.organizations.create(administrator, { ...input, initialOwnerUserId: uuidV7() })).rejects.toMatchObject({ statusCode: 400 });
+    const org = await store.organizations.create(administrator, input);
+    expect(await read("SELECT user_id, role FROM member WHERE organization_id = ?", org.id)).toEqual([{ user_id: owner.userId, role: "owner" }]);
+    await expect(store.organizations.delete(owner, org.id)).rejects.toMatchObject({ statusCode: 403 });
+    await expect(store.organizations.delete({ ...administrator, impersonated: true }, org.id)).rejects.toMatchObject({ statusCode: 403 });
+    const app = createApp({ config, authStore: store, auth });
+    for (const actor of [administrator, owner, ordinary]) {
+      const actorHeaders = await headers(actor);
+      actorHeaders.set("content-type", "application/json");
+      for (const route of ["/api/auth/organization/create", "/api/v1/organizations"]) {
+        const response = await app.request(route, { method: "POST", headers: actorHeaders, body: JSON.stringify({ name: "Forbidden personal", slug: `forbidden-${uuidV7()}`, kind: "personal", userId: encodeId("user", administrator.userId), initialOwnerUserId: encodeId("user", administrator.userId) }) });
+        expect(response.status).toBeGreaterThanOrEqual(400);
+      }
+      await expect(auth.api.createOrganization({ body: { userId: administrator.userId, name: "Bypass", slug: `bypass-${uuidV7()}` } })).rejects.toMatchObject({ statusCode: 403 });
+      await expect(auth.api.deleteOrganization({ headers: actorHeaders, body: { organizationId: org.id } })).rejects.toMatchObject({ statusCode: 404 });
+    }
+    await expect(store.organizations.delete(administrator, administrator.userId)).rejects.toThrow("personal_organization_immutable");
+    const ownerHeaders = await headers(owner); // Include a second device session.
+    const activeTeam = await auth.api.createTeam({ headers: ownerHeaders, body: { name: "Active", organizationId: org.id } });
+    await read("UPDATE session SET active_organization_id = ?, active_team_id = ? WHERE user_id = ?", org.id, activeTeam.id, owner.userId);
+    await auth.api.removeTeam({ headers: await headers(owner), body: { teamId: activeTeam.id, organizationId: org.id } });
+    expect(await read("SELECT active_team_id FROM session WHERE user_id = ? AND active_organization_id = ?", owner.userId, org.id))
+      .toEqual([{ active_team_id: null }, { active_team_id: null }]);
+    const remainingTeam = await auth.api.createTeam({ headers: ownerHeaders, body: { name: "Remaining", organizationId: org.id } });
+    await read("UPDATE session SET active_team_id = ? WHERE user_id = ?", remainingTeam.id, owner.userId);
+    await read("UPDATE session SET active_organization_id = ? WHERE user_id = ?", ordinary.userId, ordinary.userId);
+    const response = await app.request(`/api/v1/admin/organizations/${encodeId("organization", org.id)}`, { method: "DELETE", headers: await headers(administrator) });
+    expect(response.status, await response.clone().text()).toBe(204);
+    expect(await read("SELECT id FROM organization WHERE id = ?", org.id)).toHaveLength(0);
+    const sessions = await read("SELECT active_organization_id, active_team_id FROM session WHERE user_id = ?", owner.userId);
+    expect(sessions.length).toBeGreaterThanOrEqual(2);
+    expect(sessions.every((session) => session.active_organization_id === null && session.active_team_id === null)).toBe(true);
+    expect(await read("SELECT active_organization_id FROM session WHERE user_id = ?", ordinary.userId)).toEqual([{ active_organization_id: ordinary.userId }]);
+  });
+
+  it("rejects organization deletion with owned Workspaces or the last effective Workspace admin", async () => {
+    const env = await setup();
+    const { user, store, read, createOrganization } = env;
+    const administrator = await user("server-admin@example.com"), owner = await user("owner@example.com");
+    await store.addAdminUser(administrator.email!);
+    const { org: owning, workspaceId } = await teamWorkspace(env, owner);
+    await expect(store.organizations.delete(administrator, owning.id)).rejects.toThrow("organization_has_workspaces");
+    const shared = await createOrganization(owner);
+    await store.sync.withIdentity(owner, (scoped) => scoped.putPermission(workspaceId, "organization", shared.id, "admin"));
+    await store.sync.withIdentity(owner, (scoped) => scoped.deletePermission(workspaceId, "user", owner.userId));
+    await env.headers(owner);
+    await read("UPDATE session SET active_organization_id = ? WHERE user_id = ?", shared.id, owner.userId);
+    await expect(store.organizations.delete(administrator, shared.id)).rejects.toThrow("last_workspace_admin");
+    expect(await read("SELECT active_organization_id FROM session WHERE user_id = ?", owner.userId)).toEqual([{ active_organization_id: shared.id }]);
+    expect(await read("SELECT id FROM organization WHERE id = ?", shared.id)).toHaveLength(1);
+    expect(await read("SELECT principal_id FROM workspace_permissions WHERE workspace_id = ?", workspaceId)).toEqual([{ principal_id: shared.id }]);
+    await store.sync.withIdentity(owner, (scoped) => scoped.putPermission(workspaceId, "user", owner.userId, "admin"));
+    await store.organizations.delete(administrator, shared.id);
+    expect(await read("SELECT principal_id FROM workspace_permissions WHERE workspace_id = ?", workspaceId)).toEqual([{ principal_id: owner.userId }]);
+  });
+
+  it.each(["header", "accounts"] as const)("keeps participation metadata and join request IDs scoped over HTTP in %s mode", async (mode) => {
+    const { user, store, auth, headers, config, createOrganization } = await setup(mode);
+    const owner = await user("owner@example.com"), applicant = await user("applicant@example.com");
+    const org = await createOrganization(owner);
+    const organizationId = encodeId("organization", org.id);
+    const app = createApp({ config, authStore: store, auth });
+    const send = async (actor: Identity, path: string, method = "GET", body?: unknown) => {
+      const requestHeaders = await headers(actor);
+      requestHeaders.set("content-type", "application/json");
+      return app.request(path, { method, headers: requestHeaders, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    };
+    const domain = owner.email!.split("@")[1]!;
+    expect((await send(owner, `/api/v1/organizations/${organizationId}/domains`, "PUT", { domains: [{ domain }] })).status).toBe(200);
+    expect(await (await send(applicant, "/api/v1/organization-candidates")).json()).toEqual({ items: [], nextCursor: null });
+    expect((await send(owner, `/api/v1/organizations/${organizationId}/domains`, "PUT", { domains: [{ domain, joinPolicy: "need_approval" }] })).status).toBe(200);
+    expect(await (await send(applicant, "/api/v1/organization-candidates")).json()).toEqual({ items: [{ id: organizationId, name: "Team", logo: null, joinPolicy: "need_approval", requestStatus: null }], nextCursor: null });
+    expect((await send(applicant, `/api/v1/organizations/${organizationId}/join-requests`, "POST")).status).toBe(204);
+    const own = await (await send(applicant, "/api/v1/organization-join-requests")).json<{ items: { id: string; userId: string; organizationId: string }[] }>();
+    const requestId = own.items[0]!.id;
+    expect(requestId).toMatch(/^ojr_/);
+    expect(own.items[0]).toMatchObject({ userId: encodeId("user", applicant.userId), organizationId, status: "pending", organizationName: "Team", userName: applicant.name, userEmail: applicant.email });
+    expect((await send(applicant, `/api/v1/organizations/${organizationId}/join-requests`)).status).toBe(403);
+    expect((await send(applicant, `/api/v1/organization-join-requests/${requestId}/approve`, "POST")).status).toBe(403);
+    expect((await send(applicant, `/api/v1/organization-join-requests/${requestId}/cancel`, "POST")).status).toBe(204);
+    expect((await send(applicant, `/api/v1/organizations/${organizationId}/join-requests`, "POST")).status).toBe(204);
+    const pending = (await store.organizations.requests(applicant)).find((request) => request.status === "pending")!;
+    expect((await send(owner, `/api/v1/organization-join-requests/${encodeId("organizationJoinRequest", pending.id)}/approve`, "POST")).status).toBe(204);
+    expect(await (await send(applicant, "/api/v1/organization-candidates")).json()).toEqual({ items: [], nextCursor: null });
+    expect((await send(owner, `/api/v1/organization-join-requests/${encodeId("organization", pending.id)}/approve`, "POST")).status).toBe(400);
+    expect(await (await send(owner, `/api/v1/organizations/${organizationId}/join-requests`)).json()).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ id: encodeId("organizationJoinRequest", pending.id), status: "approved", resolvedBy: encodeId("user", owner.userId) })]) as unknown });
+    expect(await store.sync.withIdentity(applicant, (scoped) => scoped.getWorkspace(owner.userId))).toBeNull();
+  });
+
+  it("accepts scoped Desktop bearer tokens for creation, owner lookup and deletion", async () => {
+    const { user, store, auth, config, read } = await setup("accounts");
+    const administrator = await user("server-admin@example.com"), owner = await user("owner@example.com");
+    await store.addAdminUser(administrator.email!);
+    const app = createApp({ config, authStore: store, auth });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      const request = new Request(input, init);
+      if (new URL(request.url).pathname === "/api/auth/jwks") return app.request(request);
+      throw new Error("Unexpected token verification request");
+    };
+    try {
+      const token = async (actor: Identity, impersonated = false) => (await auth.api.signJWT({ body: { payload: { sub: actor.userId, email: actor.email, aud: `${config.baseUrl}/api/v1`, scope: "all-apis", impersonated } } })).token;
+      const requestHeaders = { authorization: `Bearer ${await token(administrator)}`, "content-type": "application/json" };
+      expect((await app.request("/api/v1/admin/users", { headers: requestHeaders })).status).toBe(200);
+      expect(await (await app.request("/api/v1/organizations", { headers: requestHeaders })).json()).toMatchObject({ canCreateOrganizations: true });
+      const created = await app.request("/api/v1/organizations", { method: "POST", headers: requestHeaders,
+        body: JSON.stringify({ name: "Desktop", slug: `desktop-${uuidV7()}`, initialOwnerUserId: encodeId("user", owner.userId) }) });
+      expect(created.status, await created.clone().text()).toBe(201);
+      const org = await created.json<{ id: string }>();
+      expect(await read("SELECT user_id, role FROM member WHERE organization_id = ?", decodeId("organization", org.id))).toEqual([{ user_id: owner.userId, role: "owner" }]);
+      const ordinaryHeaders = { authorization: `Bearer ${await token(owner)}` };
+      expect((await app.request("/api/v1/admin/users", { headers: ordinaryHeaders })).status).toBe(403);
+      expect(await (await app.request("/api/v1/organizations", { headers: ordinaryHeaders })).json()).toMatchObject({ canCreateOrganizations: false });
+      expect((await app.request(`/api/v1/admin/organizations/${org.id}`, { method: "DELETE", headers: ordinaryHeaders })).status).toBe(403);
+      expect((await app.request("/api/v1/admin/users", { headers: { authorization: `Bearer ${await token(administrator, true)}` } })).status).toBe(401);
+      expect((await app.request(`/api/v1/admin/organizations/${org.id}`, { method: "DELETE", headers: requestHeaders })).status).toBe(204);
+    } finally { globalThis.fetch = originalFetch; }
+  });
+
 });

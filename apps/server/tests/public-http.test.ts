@@ -78,7 +78,9 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
     expect(userID).toMatch(/^[0-9a-f-]{14}7[0-9a-f-]{21}$/);
     expect(await (await send("/api/v1/admin/members")).json())
       .toMatchObject({ items: [{ id: encodeId("user", userID) }], nextCursor: null });
-    const testOrganizationID = String(database.prepare("SELECT id FROM organization WHERE domain = 'example.com'").get()!.id);
+    const testOrganizationID = uuidV7();
+    database.prepare("INSERT INTO organization (id, name, slug, created_at, kind) VALUES (?, 'example.com', 'example_com', ?, 'team')").run(testOrganizationID, Date.now());
+    database.prepare("INSERT INTO member (id, user_id, organization_id, role, created_at) VALUES (?, ?, ?, 'owner', ?)").run(uuidV7(), userID, testOrganizationID, Date.now());
     expect(await (await send("/api/v1/organizations")).json())
       .toMatchObject({ items: expect.arrayContaining([{ id: encodeId("organization", testOrganizationID), name: "example.com", slug: "example_com", kind: "team" }]) as unknown, nextCursor: null });
 
@@ -266,13 +268,15 @@ it("keeps Better Auth sessions, organizations, teams and invitations typed at th
     expect(await (await send("/api/auth/get-session")).json()).toMatchObject({
       user: { id: encodeId("user", user.id) }, session: { id: encodeId("session", session.id), userId: encodeId("user", user.id), token: session.token },
     });
-    const publicOrganization = await send("/api/v1/organizations", { name: "Public Org", slug: "public_org-test" });
+    await store.addAdminUser(user.email);
+    const publicOrganization = await send("/api/v1/organizations", { name: "Public Org", slug: "public_org-test", initialOwnerUserId: encodeId("user", user.id) });
     expect(publicOrganization.status).toBe(201);
     expect(await publicOrganization.json()).toMatchObject({ slug: "public_org-test" });
-    expect((await send("/api/v1/organizations", { name: "Duplicate", slug: "public_org-test" })).status).toBe(400);
+    expect((await send("/api/v1/organizations", { name: "Duplicate", slug: "public_org-test", initialOwnerUserId: encodeId("user", user.id) })).status).toBe(409);
     expect((await send("/api/v1/organizations", { name: "Invalid", slug: "public.org" })).status).toBe(400);
-    const organization = await post("create", { name: "TypeID Org", slug: "typeid-org" });
+    const organization = z.object({ id: z.string() }).parse(await (await send("/api/v1/organizations", { name: "TypeID Org", slug: "typeid-org", initialOwnerUserId: encodeId("user", user.id) })).json());
     expect(organization.id).toMatch(/^org_/);
+    expect((await send("/api/auth/organization/set-active", { organizationId: organization.id })).status).toBe(200);
     const team = await post("create-team", { organizationId: organization.id, name: "Reviewers" });
     expect(team.id).toMatch(/^team_/);
     const teamMember = await post("add-team-member", { teamId: team.id, userId: encodeId("user", user.id) });

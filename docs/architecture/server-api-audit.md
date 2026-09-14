@@ -79,7 +79,18 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | listGovernanceWorkspaces | modified | GET `/api/v1/organizations/{organizationId}/workspaces` | `new public contract` | Organization governance metadata | apps/server/src/client/App.tsx |
 | confirmWorkspaceDeletion | modified | GET `/api/v1/organizations/{organizationId}/workspaces/{workspaceId}/deletion` | `new public contract` | Confirmation for Workspace deletion | apps/server/src/client/App.tsx |
 | forceDeleteWorkspace | modified | DELETE `/api/v1/organizations/{organizationId}/workspaces/{workspaceId}` | `new public contract` | Confirmed Workspace deletion | apps/server/src/client/App.tsx |
-| createOrganization | modified | POST `/api/v1/organizations` | `new public contract` | Desktop Organization creation uses the same atomic Better Auth operation. | apps/desktop/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift |
+| createOrganization | modified | POST `/api/v1/organizations` | `new public contract` | Server administrators create a Team Organization with an explicit initial owner through the shared OrganizationStore. | apps/desktop/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift |
+| getOrganizationDomains | modified | GET `/api/v1/organizations/{organizationId}/domains` | `none` | Expose domain enrollment settings to organization members. | Private Web |
+| updateOrganizationDomains | modified | PUT `/api/v1/organizations/{organizationId}/domains` | `none` | Owner/admin manages up to 10 domains and participation policies for verified Header and Google identities. | Private Web |
+| listOrganizationCandidates | modified | GET `/api/v1/organization-candidates` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
+| listMyJoinRequests | modified | GET `/api/v1/organization-join-requests` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
+| listOrganizationJoinRequests | modified | GET `/api/v1/organizations/{organizationId}/join-requests` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
+| joinOrganization | modified | POST `/api/v1/organizations/{organizationId}/join` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
+| requestOrganizationJoin | modified | POST `/api/v1/organizations/{organizationId}/join-requests` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
+| cancelOrganizationJoinRequest | modified | POST `/api/v1/organization-join-requests/{requestId}/cancel` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
+| approveOrganizationJoinRequest | modified | POST `/api/v1/organization-join-requests/{requestId}/approve` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
+| rejectOrganizationJoinRequest | modified | POST `/api/v1/organization-join-requests/{requestId}/reject` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
+| deleteOrganization | modified | DELETE `/api/v1/admin/organizations/{organizationId}` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
 | listDeletedMeetings | modified | GET `/api/v1/workspaces/{workspaceId}/trash/meetings` | `new public contract` | List recoverable deleted meetings within the current Workspace permissions | Web trash |
 
 ## Delegated protocols
@@ -159,9 +170,9 @@ These concrete endpoints preserve Better Auth/OAuth/OIDC, OpenAI and MCP formats
 | addTeamMember | POST `/api/auth/organization/add-team-member` | Better Auth / OAuth / OIDC | accounts and header |
 | cancelInvitation | POST `/api/auth/organization/cancel-invitation` | Better Auth / OAuth / OIDC | accounts and header |
 | checkOrganizationSlug | POST `/api/auth/organization/check-slug` | Better Auth / OAuth / OIDC | accounts and header |
-| createOrganization | POST `/api/auth/organization/create` | Better Auth / OAuth / OIDC | accounts and header |
+| createOrganization | POST `/api/auth/organization/create` | Better Auth / OAuth / OIDC | disabled in accounts and header; use the Dahlia-owned administrator operation |
 | createTeam | POST `/api/auth/organization/create-team` | Better Auth / OAuth / OIDC | accounts and header |
-| deleteOrganization | POST `/api/auth/organization/delete` | Better Auth / OAuth / OIDC | accounts and header |
+| deleteOrganization | POST `/api/auth/organization/delete` | Better Auth / OAuth / OIDC | disabled in accounts and header; use the Dahlia-owned administrator operation |
 | getActiveMember | GET `/api/auth/organization/get-active-member` | Better Auth / OAuth / OIDC | accounts and header |
 | getActiveMemberRole | GET `/api/auth/organization/get-active-member-role` | Better Auth / OAuth / OIDC | accounts and header |
 | getFullOrganization | GET `/api/auth/organization/get-full-organization` | Better Auth / OAuth / OIDC | accounts and header |

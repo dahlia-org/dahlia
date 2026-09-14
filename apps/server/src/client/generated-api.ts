@@ -182,7 +182,8 @@ export interface paths {
         get: operations["getServerOrganization"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete an empty Team Organization; Server administrator only */
+        delete: operations["deleteOrganization"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1046,6 +1047,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organization-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Eligible organizations; no membership or Workspace information */
+        get: operations["listOrganizationCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organization-join-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Own organization join request history */
+        get: operations["listMyJoinRequests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/join-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Organization join request history; owner/admin only */
+        get: operations["listOrganizationJoinRequests"];
+        put?: never;
+        /** Apply to an eligible organization */
+        post: operations["requestOrganizationJoin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Join an eligible auto-join organization */
+        post: operations["joinOrganization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organization-join-requests/{requestId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel own pending request */
+        post: operations["cancelOrganizationJoinRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organization-join-requests/{requestId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve pending request; owner/admin only */
+        post: operations["approveOrganizationJoinRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organization-join-requests/{requestId}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject pending request; owner/admin only */
+        post: operations["rejectOrganizationJoinRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations": {
         parameters: {
             query?: never;
@@ -1056,8 +1177,26 @@ export interface paths {
         /** Current organization memberships */
         get: operations["listOrganizations"];
         put?: never;
-        /** Create a Team Organization and creator membership through Better Auth */
+        /** Create a Team Organization with an explicit initial owner; Server administrator only */
         post: operations["createOrganization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organizationId}/domains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read organization auto-join domains; member only */
+        get: operations["getOrganizationDomains"];
+        /** Replace organization auto-join domains; owner/admin only */
+        put: operations["updateOrganizationDomains"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2484,6 +2623,21 @@ export interface components {
             revision: number;
             creatorId: string;
         };
+        OrganizationJoinRequest: {
+            id: string;
+            organizationId: string;
+            userId: string;
+            /** @enum {string} */
+            status: "pending" | "approved" | "rejected" | "cancelled";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            resolvedAt: string | null;
+            resolvedBy: string | null;
+            organizationName: string;
+            userName: string;
+            userEmail: string;
+        };
     };
     responses: {
         /** @description Request failed. Use the HTTP status and Problem.code; 409 conflicts require reconciliation before retrying. */
@@ -2872,6 +3026,27 @@ export interface operations {
                         hasMoreTeams: boolean;
                     };
                 };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteOrganization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success; no response body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Problem"];
         };
@@ -4881,6 +5056,204 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    listOrganizationCandidates: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor. Pass back unchanged with the original filters. */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            name: string;
+                            logo: string | null;
+                            /** @enum {string} */
+                            joinPolicy: "need_approval" | "auto_join";
+                            requestStatus: string | null;
+                        }[];
+                        /** @description Opaque cursor. Pass back unchanged with the original filters. */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listMyJoinRequests: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor. Pass back unchanged with the original filters. */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["OrganizationJoinRequest"][];
+                        /** @description Opaque cursor. Pass back unchanged with the original filters. */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listOrganizationJoinRequests: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor. Pass back unchanged with the original filters. */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["OrganizationJoinRequest"][];
+                        /** @description Opaque cursor. Pass back unchanged with the original filters. */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    requestOrganizationJoin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success; no response body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    joinOrganization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success; no response body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    cancelOrganizationJoinRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success; no response body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    approveOrganizationJoinRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success; no response body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    rejectOrganizationJoinRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success; no response body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     listOrganizations: {
         parameters: {
             query?: never;
@@ -4900,6 +5273,7 @@ export interface operations {
                         items: components["schemas"]["Organization"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
                         nextCursor: string | null;
+                        canCreateOrganizations: boolean;
                     };
                 };
             };
@@ -4918,6 +5292,7 @@ export interface operations {
                 "application/json": {
                     name: string;
                     slug: string;
+                    initialOwnerUserId: string;
                 };
             };
         };
@@ -4929,6 +5304,83 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Organization"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getOrganizationDomains: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        domains: {
+                            domain: string;
+                            /**
+                             * @default invite_only
+                             * @enum {string}
+                             */
+                            joinPolicy: "invite_only" | "need_approval" | "auto_join";
+                        }[];
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateOrganizationDomains: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organizationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    domains: {
+                        domain: string;
+                        /**
+                         * @default invite_only
+                         * @enum {string}
+                         */
+                        joinPolicy?: "invite_only" | "need_approval" | "auto_join";
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        domains: {
+                            domain: string;
+                            /**
+                             * @default invite_only
+                             * @enum {string}
+                             */
+                            joinPolicy: "invite_only" | "need_approval" | "auto_join";
+                        }[];
+                    };
                 };
             };
             default: components["responses"]["Problem"];

@@ -147,6 +147,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   const app = new OpenAPIHono<{ Variables: AppVariables }>({ defaultHook: async (result, context) => {
     if (!result.success) {
       if (result.target === "header" && result.error.issues.some((issue) => issue.path[0] === "content-length") && !context.req.header("content-length")) return problemResponse(411, "content_length_required");
+      if (result.target === "json" && /^\/api\/v1\/organizations\/[^/]+\/domains$/.test(context.req.path)) return problemResponse(400, "invalid_organization_domain");
       if (result.target === "json" && ["/api/v1/transactions", "/api/v1/transactions/resolve"].includes(context.req.path)) {
         const index = result.error.issues.find((issue) => issue.path[0] === "operations" && typeof issue.path[1] === "number")?.path[1];
         const input = z.object({ operations: z.array(z.object({ id: z.unknown().optional() }).loose()) }).safeParse(await context.req.json());
@@ -306,10 +307,11 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
 
   app.use("/api/v1/admin/*", authBodyLimit);
   app.use("/api/v1/admin/*", async (context, next) => {
-    if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) {
+    const publicManagement = (context.req.method === "GET" && context.req.path === "/api/v1/admin/users") || (context.req.method === "DELETE" && /^\/api\/v1\/admin\/organizations\/[^/]+$/.test(context.req.path));
+    if (!(publicManagement && context.req.header("authorization")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
-    const identity = await identities.fromBrowser(context.req.raw);
+    const identity = publicManagement ? await syncIdentity(context.req.raw) : await identities.fromBrowser(context.req.raw);
     if (!await isAdministrator(store, identity)) {
       return context.json({ error: "forbidden" }, 403);
     }
@@ -850,6 +852,38 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     return context.body(null, 204);
   });
 
+  registerApi(app, "getOrganizationDomains", async (context) => {
+    const identity = await identities.fromBrowser(context.req.raw);
+    return context.json(await store.organizations.getDomains(identity, sync.parseId(context.req.param("organizationId")!)));
+  });
+  registerApi(app, "updateOrganizationDomains", authBodyLimit, async (context) => {
+    if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
+    const identity = await identities.fromBrowser(context.req.raw);
+    return context.json(await store.organizations.updateDomains(identity,
+      sync.parseId(context.req.param("organizationId")!), await context.req.json()));
+  });
+
+  registerApi(app, "listOrganizationCandidates", async (context) => {
+    const cursor = context.req.query("cursor");
+    const items = await store.organizations.candidates(await syncIdentity(context.req.raw), cursor ? sync.parseId(cursor) : undefined);
+    return context.json({ items: items.slice(0, 100), nextCursor: items.length > 100 ? items[99]!.id : null });
+  });
+  for (const operation of ["listMyJoinRequests", "listOrganizationJoinRequests"] as const) registerApi(app, operation, async (context) => {
+    const id = context.req.param("organizationId");
+    const cursor = context.req.query("cursor");
+    const items = await store.organizations.requests(await syncIdentity(context.req.raw), id ? sync.parseId(id) : undefined, cursor ? sync.parseId(cursor) : undefined);
+    return context.json({ items: items.slice(0, 100), nextCursor: items.length > 100 ? items[99]!.id : null });
+  });
+  for (const operation of ["joinOrganization", "requestOrganizationJoin", "cancelOrganizationJoinRequest", "approveOrganizationJoinRequest", "rejectOrganizationJoinRequest", "deleteOrganization"] as const) registerApi(app, operation, async (context) => {
+    const browserRequest = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((browserRequest || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
+    const identity = await syncIdentity(context.req.raw);
+    if (operation === "deleteOrganization") await store.organizations.delete(identity, sync.parseId(context.req.param("organizationId")!));
+    else if (operation === "joinOrganization" || operation === "requestOrganizationJoin") await store.organizations.join(identity, sync.parseId(context.req.param("organizationId")!), operation === "requestOrganizationJoin");
+    else await store.organizations.resolveRequest(identity, sync.parseId(context.req.param("requestId")!), operation === "approveOrganizationJoinRequest" ? "approved" : operation === "rejectOrganizationJoinRequest" ? "rejected" : "cancelled");
+    return context.body(null, 204);
+  });
+
   registerApi(app, "createOrganization", authBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
@@ -857,14 +891,12 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     }
     const identity = await syncIdentity(context.req.raw);
     if (identity.impersonated) return context.json({ error: "impersonation_read_only" }, 403);
-    if (!auth) return context.json({ error: "authentication_unavailable" }, 503);
-    const { name, slug } = await context.req.json<{ name: string; slug: string }>();
-    const organization = await auth.api.createOrganization({ body: { name, slug, userId: identity.userId } });
-    return context.json({ id: organization.id, name: organization.name, slug: organization.slug, kind: "team", role: "owner" }, 201);
+    const input = await context.req.json<{ name: string; slug: string; initialOwnerUserId: string }>();
+    return context.json(await store.organizations.create(identity, input), 201);
   });
   registerApi(app, "listOrganizations", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json({ items: await sync.listOrganizations(identity), nextCursor: null });
+    return context.json({ items: await sync.listOrganizations(identity), nextCursor: null, canCreateOrganizations: !identity.impersonated && await isAdministrator(store, identity) });
   });
   for (const operation of ["getFileContent", "headFileContent"] as const) registerApi(app, operation, async (context) => {
     const identity = await syncIdentity(context.req.raw);

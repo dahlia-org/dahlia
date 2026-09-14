@@ -608,6 +608,23 @@
     },
     "workspaceDeletion": {
       "id": "id:transaction"
+    },
+    "organizationJoinRequest": {
+      "id": "id:organizationJoinRequest",
+      "organizationId": "id:organization",
+      "userId": "id:user",
+      "resolvedBy": "id:user"
+    },
+    "organizationJoinRequestPage": {
+      "items": "array:organizationJoinRequest",
+      "nextCursor": "id:organizationJoinRequest"
+    },
+    "createOrganization": {
+      "initialOwnerUserId": "id:user"
+    },
+    "organizationCandidatePage": {
+      "items": "array:organization",
+      "nextCursor": "id:organization"
     }
   },
   "routes": [
@@ -1009,6 +1026,13 @@
       "methods": [
         "PUT",
         "DELETE"
+      ]
+    },
+    {
+      "path": "/api/v1/organizations/:organization/domains",
+      "methods": [
+        "GET",
+        "PUT"
       ]
     },
     {
@@ -1938,6 +1962,74 @@
     {
       "path": "/api/v1/organizations",
       "response": "organization",
+      "methods": [
+        "POST"
+      ],
+      "request": "createOrganization",
+      "limit": 65536
+    },
+    {
+      "path": "/api/v1/organization-candidates",
+      "methods": [
+        "GET"
+      ],
+      "response": "organizationCandidatePage",
+      "query": {
+        "cursor": "id:organization"
+      }
+    },
+    {
+      "path": "/api/v1/organization-join-requests",
+      "methods": [
+        "GET"
+      ],
+      "response": "organizationJoinRequestPage",
+      "query": {
+        "cursor": "id:organizationJoinRequest"
+      }
+    },
+    {
+      "path": "/api/v1/organizations/:organization/join-requests",
+      "methods": [
+        "GET"
+      ],
+      "response": "organizationJoinRequestPage",
+      "query": {
+        "cursor": "id:organizationJoinRequest"
+      }
+    },
+    {
+      "path": "/api/v1/organizations/:organization/join-requests",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/organizations/:organization/join",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/admin/organizations/:organization",
+      "methods": [
+        "DELETE"
+      ]
+    },
+    {
+      "path": "/api/v1/organization-join-requests/:organizationJoinRequest/cancel",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/organization-join-requests/:organizationJoinRequest/approve",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/v1/organization-join-requests/:organizationJoinRequest/reject",
       "methods": [
         "POST"
       ]
