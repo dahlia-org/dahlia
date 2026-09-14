@@ -18,6 +18,10 @@ export function syncMessage(code: string, language = globalThis.navigator?.langu
   const messages: Record<string, [string, string]> = {
     workspace_delete_confirmation_stale: ["The Workspace changed. Close this dialog and confirm deletion again.", "ワークスペースが変更されました。この画面を閉じ、削除内容を再確認してください。"],
     last_workspace_admin: ["Keep at least one Workspace Admin.", "ワークスペースの管理者を最低1人残してください。"],
+    invalid_auto_join_domain: ["Enter up to 50 valid domains, without @, URLs or wildcards.", "有効なドメインを50件以内で入力してください。@、URL、ワイルドカードは使用できません。"],
+    shared_email_domain: ["Shared email domains cannot be used for auto-join.", "共有メールドメインは自動参加に使用できません。"],
+    auto_join_domain_in_use: ["A domain is already assigned to another organization.", "別の組織に登録済みのドメインが含まれています。"],
+    organization_access_denied: ["You do not have permission to manage this organization.", "この組織を管理する権限がありません。"],
     invalid_organization_slug: ["Use lowercase letters, numbers, underscores and hyphens for the slug.", "slugには半角英小文字・数字・アンダーバー・ハイフンを使用してください。"],
     last_organization_owner: ["Keep at least one organization owner.", "組織の所有者を最低1人残してください。"],
     last_team_member: ["Keep at least one team member.", "チームのメンバーを最低1人残してください。"],

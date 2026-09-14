@@ -866,6 +866,28 @@
       "consumers": [
         "apps/desktop/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift"
       ]
+    },
+    {
+      "operationId": "getAutoJoinDomains",
+      "method": "GET",
+      "path": "/api/v1/organizations/{organizationId}/auto-join-domains",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Expose domain enrollment settings to organization members.",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "updateAutoJoinDomains",
+      "method": "PUT",
+      "path": "/api/v1/organizations/{organizationId}/auto-join-domains",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Owner/admin manages unique non-shared domains for initial Header enrollment.",
+      "consumers": [
+        "Private Web"
+      ]
     }
   ],
   "delegated": [

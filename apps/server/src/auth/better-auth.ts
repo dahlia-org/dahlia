@@ -39,7 +39,7 @@ function buildDahliaAuth(
   const resource = gatewayResource(config);
   const mcp = mcpResource(config);
   const organizationPlugin = organization({
-        schema: { organization: { additionalFields: { kind: { type: "string", required: true, defaultValue: "team", input: false }, domain: { type: "string", required: false, unique: true, input: false } } } },
+        schema: { organization: { additionalFields: { kind: { type: "string", required: true, defaultValue: "team", input: false } } } },
         organizationHooks: {
           beforeCreateOrganization: ({ organization }) => {
             if (organization.slug?.toLowerCase().startsWith("personal-")) authorizationConflict("reserved_organization_slug");

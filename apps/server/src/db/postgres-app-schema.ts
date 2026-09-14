@@ -39,6 +39,12 @@ export const jobsSchema = pgSchema("jobs");
 export const searchSchema = pgSchema("search");
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
+// Authorization metadata, protected by OrganizationStore like workspace_permissions.
+export const organizationAutoJoinDomain = appSchema.table("organization_auto_join_domains", {
+  domain: text("domain").primaryKey(),
+  organizationId: uuid("organization_id").notNull().references(() => authOrganization.id, { onDelete: "cascade" }),
+}, (table) => [index("organization_auto_join_domains_organization_idx").on(table.organizationId)]);
+
 export const serverSettings = appSchema.table("server_settings", {
   id: integer("id").primaryKey(),
   searchWeights: jsonb("search_weights").$type<SearchSettings>().default(DEFAULT_SEARCH_SETTINGS).notNull(),

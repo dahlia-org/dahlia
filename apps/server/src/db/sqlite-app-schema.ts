@@ -14,6 +14,12 @@ import { user as authUser, organization as authOrganization } from "./generated/
 
 const sqliteTimestamp = (name: string) => integer(name, { mode: "timestamp_ms" });
 
+// Authorization metadata, protected by OrganizationStore like workspace_permissions.
+export const organizationAutoJoinDomain = sqliteTable("organization_auto_join_domains", {
+  domain: text("domain").primaryKey(),
+  organizationId: text("organization_id").notNull().references(() => authOrganization.id, { onDelete: "cascade" }),
+}, (table) => [index("organization_auto_join_domains_organization_idx").on(table.organizationId)]);
+
 export const serverSettings = sqliteTable("server_settings", {
   id: integer("id").primaryKey(),
   searchWeights: text("search_weights", { mode: "json" }).$type<SearchSettings>().default(DEFAULT_SEARCH_SETTINGS).notNull(),

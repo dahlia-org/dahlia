@@ -147,6 +147,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   const app = new OpenAPIHono<{ Variables: AppVariables }>({ defaultHook: async (result, context) => {
     if (!result.success) {
       if (result.target === "header" && result.error.issues.some((issue) => issue.path[0] === "content-length") && !context.req.header("content-length")) return problemResponse(411, "content_length_required");
+      if (result.target === "json" && /^\/api\/v1\/organizations\/[^/]+\/auto-join-domains$/.test(context.req.path)) return problemResponse(400, "invalid_auto_join_domain");
       if (result.target === "json" && ["/api/v1/transactions", "/api/v1/transactions/resolve"].includes(context.req.path)) {
         const index = result.error.issues.find((issue) => issue.path[0] === "operations" && typeof issue.path[1] === "number")?.path[1];
         const input = z.object({ operations: z.array(z.object({ id: z.unknown().optional() }).loose()) }).safeParse(await context.req.json());
@@ -843,6 +844,17 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       sync.parsePermissionPrincipal(context.req.param("userId")!),
     );
     return context.body(null, 204);
+  });
+
+  registerApi(app, "getAutoJoinDomains", async (context) => {
+    const identity = await identities.fromBrowser(context.req.raw);
+    return context.json(await store.organizations.getAutoJoinDomains(identity, sync.parseId(context.req.param("organizationId")!)));
+  });
+  registerApi(app, "updateAutoJoinDomains", authBodyLimit, async (context) => {
+    if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
+    const identity = await identities.fromBrowser(context.req.raw);
+    return context.json(await store.organizations.updateAutoJoinDomains(identity,
+      sync.parseId(context.req.param("organizationId")!), await context.req.json()));
   });
 
   registerApi(app, "createOrganization", authBodyLimit, async (context) => {

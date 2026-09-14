@@ -1,3 +1,4 @@
+import { autoJoinDomainsSchema } from "../auth/auto-join-domains";
 import { projectPublicIDs } from "./public-schema";
 import { organizationSlugPattern } from "../auth/organization-slug";
 import { problemResponse } from "./problem";
@@ -92,7 +93,7 @@ export type OperationId =
   | "headFileContent" | "getFileVariant" | "headFileVariant" | "putRecordingContent" | "listRecordings"
   | "getRecordingContent" | "headRecordingContent" | "getTransferAudience" | "transferWorkspace" | "getRelocations"
   | "searchPermissionTargets" | "putUserPermission" | "deleteUserPermission" | "listPermissions" | "putOrganizationPermission" | "deleteOrganizationPermission" | "putTeamPermission" | "deleteTeamPermission"
-  | "listOrganizations" | "createOrganization";
+  | "listOrganizations" | "createOrganization" | "getAutoJoinDomains" | "updateAutoJoinDomains";
 export const contracts: Record<OperationId, RouteConfig & { operationId: string }> = {
   getHealth: createRoute({ method: "get", path: "/healthz", operationId: "getHealth", security: [], summary: "Process health", responses: { 200: json(z.object({ status: z.literal("ok") })) } }),
   getOpenAPI: createRoute({ method: "get", path: "/openapi.json", operationId: "getOpenAPI", security: [], summary: "Public OpenAPI 3.1 contract", responses: { 200: json(z.looseObject({ openapi: z.literal("3.1.0"), info: z.looseObject({ title: z.string(), version: z.string() }), paths: z.record(z.string(), z.unknown()) })) } }),
@@ -175,6 +176,8 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   confirmWorkspaceDeletion: route("get", `${o}/workspaces/{workspaceId}/deletion`, "confirmWorkspaceDeletion", "Confirm the current Workspace revision and content cursor", { 200: json(S.governanceWorkspace.extend({ changeCursor: S.cursor })) }, {}, browser),
   forceDeleteWorkspace: route("delete", `${o}/workspaces/{workspaceId}`, "forceDeleteWorkspace", "Delete a Team Organization Workspace after confirmation", { 200: json(S.receipt) }, body(z.object({ id: S.id, revision: S.integer, changeCursor: S.cursor }).strict()), browser),
   createOrganization: route("post", "/api/v1/organizations", "createOrganization", "Create a Team Organization and creator membership through Better Auth", { 201: json(S.organization) }, body(z.object({ name: z.string().trim().min(1).max(200), slug: z.string().min(1).max(200).regex(organizationSlugPattern) }).strict())),
+  getAutoJoinDomains: route("get", `${o}/auto-join-domains`, "getAutoJoinDomains", "Read organization auto-join domains; member only", { 200: json(autoJoinDomainsSchema) }, {}, browser),
+  updateAutoJoinDomains: route("put", `${o}/auto-join-domains`, "updateAutoJoinDomains", "Replace organization auto-join domains; owner/admin only", { 200: json(autoJoinDomainsSchema) }, body(autoJoinDomainsSchema), browser),
   listOrganizations: route("get", "/api/v1/organizations", "listOrganizations", "Current organization memberships", { 200: json(S.page(S.organization)) }),
 };
 

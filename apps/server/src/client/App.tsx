@@ -984,6 +984,28 @@ function OrganizationWorkspaces({ organization }: { organization: OrganizationIn
   </section>;
 }
 
+function OrganizationAutoJoinDomains({ organizationId, canManage }: { organizationId: string; canManage: boolean }) {
+  const query = useLiveJSON(apiQuery("getAutoJoinDomains", { params: { path: { organizationId } } }));
+  const { dialog, openDialog } = useActionDialog();
+  function edit() {
+    openDialog({ title: uiText("Auto-join domains", "自動参加ドメイン"), confirmLabel: uiText("Save", "保存"),
+      description: uiText("Separate domains with commas. Leave empty to disable auto-join.", "ドメインをカンマで区切って入力してください。空にすると自動参加を無効にします。"),
+      fields: [{ name: "domains", label: uiText("Domains", "ドメイン"), value: query.data!.domains.join(", ") }],
+      onSubmit: async ({ domains }) => {
+        await api.updateAutoJoinDomains({ params: { path: { organizationId } },
+          body: { domains: domains?.trim() ? domains.split(",").map((domain) => domain.trim()) : [] } });
+      },
+    });
+  }
+  return <section className="org-settings-info" aria-label={uiText("Auto-join domains", "自動参加ドメイン")}>
+    {dialog}<h3>{uiText("Auto-join domains", "自動参加ドメイン")}</h3>
+    <p>{uiText("New users signing in through Header authentication join as members when their email domain matches. Shared email domains such as gmail.com are not allowed.", "Header 認証で初めて登録するユーザーを、メールドメインが一致する場合にメンバーとして追加します。gmail.com などの共有メールドメインは登録できません。")}</p>
+    {query.data && <><p>{query.data.domains.join(", ") || uiText("Disabled", "無効")}</p>
+      {canManage && <button className="secondary" onClick={edit}>{uiText("Edit domains", "ドメインを編集")}</button>}</>}
+    <DataError error={query.error} retry={query.reload} />
+  </section>;
+}
+
 function OrganizationDetails({ organization, session }: { organization: OrganizationInfo; session: SessionInfo }) {
   const { dialog, openDialog } = useActionDialog();
   const [members, setMembers] = useState<OrganizationMember[]>();
@@ -1292,6 +1314,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
               </div>
             </dl>
           </section>
+          {!personal && <OrganizationAutoJoinDomains organizationId={organization.id} canManage={canManage} />}
           {!personal && <section className="org-settings-action" aria-label={uiText("Leave organization", "組織から脱退")}>
             <div><h3>{uiText("Leave organization", "組織から脱退")}</h3><p>{uiText("You will lose access granted through this organization and its teams.", "この組織とチームを通じたアクセス権を失います。")}</p></div>
             <button className="secondary" onClick={leaveOrganization}>{uiText("Leave organization", "組織から脱退")}</button>
@@ -1324,7 +1347,7 @@ function Organization({ session, organizationId }: { session: SessionInfo; organ
   </>;
 }
 
-function Organizations({ session }: { session: SessionInfo }) {
+function Organizations() {
   const [organizations, setOrganizations] = useState<OrganizationInfo[]>();
   const [invitations, setInvitations] = useState<OrganizationInvitation[]>();
   const { dialog, openDialog } = useActionDialog();
@@ -1341,7 +1364,7 @@ function Organizations({ session }: { session: SessionInfo }) {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load organizations");
     }
-  }, [session.capabilities.sessions]);
+  }, []);
   useEffect(() => { void load(); }, [load]);
 
   function create() {
@@ -1381,7 +1404,7 @@ function Organizations({ session }: { session: SessionInfo }) {
     <>
       {dialog}
       <PageHeader title={uiText("Your organizations", "所属組織")} description={uiText("Choose an organization to manage its members and teams.", "組織を選んで、メンバーやチームを管理します。")}
-        actions={session.capabilities.sessions && <button className="primary" onClick={create}><MenuIcon name="plus" />{uiText("Create organization", "組織を作成")}</button>} />
+        actions={<button className="primary" onClick={create}><MenuIcon name="plus" />{uiText("Create organization", "組織を作成")}</button>} />
       {invitations && invitations.length > 0 && (
         <section className="section-block">
           <h2 className="section-label">{uiText("Invitations", "招待")}</h2>
@@ -1735,7 +1758,7 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   else if (route.page === "meeting") page = detailWorkspaceId ? <SyncedMeeting workspaceId={detailWorkspaceId} meetingId={route.meetingId!} /> : null;
   else if (route.page === "project") page = detailWorkspaceId ? <SyncedProject workspaceId={detailWorkspaceId} projectId={route.projectId!} /> : null;
   else if (route.page === "file") page = <FileViewer fileId={route.fileId!} />;
-  else if (route.page === "organizations") page = <Organizations session={session} />;
+  else if (route.page === "organizations") page = <Organizations />;
   else if (route.page === "organization") page = <Organization session={session} organizationId={route.organizationId!} />;
   else if (route.page === "invitation") page = <Invitation invitationId={route.invitationId!} />;
   else if (route.page === "settings") page = <Settings session={session} extensions={extensions} />;

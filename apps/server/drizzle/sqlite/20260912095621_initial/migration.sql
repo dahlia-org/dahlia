@@ -190,8 +190,7 @@ CREATE TABLE `organization` (
 	`logo` text,
 	`created_at` integer NOT NULL,
 	`metadata` text,
-	`kind` text DEFAULT 'team' NOT NULL,
-	`domain` text UNIQUE
+	`kind` text DEFAULT 'team' NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `session` (
@@ -311,6 +310,12 @@ CREATE TABLE `meeting_events` (
 	CONSTRAINT `fk_meeting_events_owner_user_id_user_id_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
 	CONSTRAINT "meeting_events_kind_check" CHECK("kind" IN ('meeting_created', 'meeting_updated', 'meeting_deleted', 'tag_added', 'tag_removed', 'recording_started', 'recording_ended', 'segment_rotated')),
 	CONSTRAINT "meeting_events_source_check" CHECK("audio_source" IN ('mic', 'system'))
+);
+--> statement-breakpoint
+CREATE TABLE `organization_auto_join_domains` (
+	`domain` text PRIMARY KEY,
+	`organization_id` text NOT NULL,
+	CONSTRAINT `fk_organization_auto_join_domains_organization_id_organization_id_fk` FOREIGN KEY (`organization_id`) REFERENCES `organization`(`id`) ON DELETE CASCADE
 );
 --> statement-breakpoint
 CREATE TABLE `search_documents` (
@@ -658,6 +663,7 @@ CREATE INDEX `image_analysis_job_claim_idx` ON `jobs_image_analysis` (`status`,`
 CREATE INDEX `meeting_attachments_workspace_meeting_id_idx` ON `meeting_attachments` (`workspace_id`,`meeting_id`,`id`);--> statement-breakpoint
 CREATE INDEX `meeting_events_meeting_time_idx` ON `meeting_events` (`workspace_id`,`meeting_id`,`occurred_at`,`id`);--> statement-breakpoint
 CREATE INDEX `meeting_events_session_idx` ON `meeting_events` (`workspace_id`,`session_id`);--> statement-breakpoint
+CREATE INDEX `organization_auto_join_domains_organization_idx` ON `organization_auto_join_domains` (`organization_id`);--> statement-breakpoint
 CREATE INDEX `search_document_workspace_kind_meeting_document_idx` ON `search_documents` (`workspace_id`,`kind`,`meeting_id`,`document_id`);--> statement-breakpoint
 CREATE INDEX `search_index_job_claim_idx` ON `jobs_search_index` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
 CREATE INDEX `storage_delete_job_claim_idx` ON `jobs_storage_delete` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint

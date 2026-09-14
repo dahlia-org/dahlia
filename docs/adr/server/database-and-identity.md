@@ -38,7 +38,7 @@ proxy は client-supplied identity header を除去・上書きし、Server へ�
 
 Header mode でも `auth.user` を作り、`DAHLIA_AUTH_HEADER`（既定 `X-Forwarded-Email`）の検証・正規化済み email を `account.account_id` として request 開始時に内部 UUID へ JIT 射影する。`X-Forwarded-User` は使わない。name は更新し、email の変更は別 identity として自動統合しない。Better Auth runtime / Web sessionは両モードで有効にし、GoogleログインとOAuth provider endpointだけをaccounts限定にする。Header Web操作でもproxy identityを毎回確認し、Cookie本人との不一致を拒否する。
 
-Header mode で管理者がユーザーを事前作成する場合も、作成 transaction 内で Header account と Personal/domain Organization を初期化する。後の proxy ログインはその account を参照し、既存の別認証方式のユーザーを email だけで自動統合しない。
+Header mode で管理者がユーザーを事前作成する場合も、作成 transaction 内で Header account と Personal Organization を初期化し、設定済みドメインのOrganizationへmemberとして参加させる。後の proxy ログインはその account を参照し、既存の別認証方式のユーザーを email だけで自動統合しない。
 
 `app.workspace_permissions.granted_by_user_id` は `auth.user.id` を参照する。search jobはWorkspace単位で、summary／image jobのuser IDはrequesterである。polymorphic な principal ID は type と組で扱い、単独の外部キーにしない。proxy の ID・認証方式変更による既存 permission の対応付けは自動化しない。
 
@@ -97,8 +97,10 @@ PostgreSQL / Lakebase のジョブは `jobs.search_index`、`jobs.storage_delete
 
 ## 初回組織登録（2026-09-12）
 
-Header は設定されたメールヘッダーを外部 identity に使い、初回だけ domain Organization に参加する。[組織の決定](../shared/organization-vaults.md#organization)に従う。Personal の作成も共通初期化に含め、user 内の非公開 `registrationState`（Header は `domain`、Google は `personal`、完了後 `ready`）で中断を再開する。処理は transaction 内で行い、完了後の再ログインで脱退を取り消さず、参加履歴 table は設けない。
+Header は設定されたメールヘッダーを外部 identity に使い、初回だけ明示的に設定されたドメインの Organization に参加する。[組織の決定](../shared/organization-vaults.md#organization)に従う。Personal の作成も共通初期化に含め、user 内の非公開 `registrationState`（Header は `domain`、Google は `personal`、完了後 `ready`）で中断を再開する。処理は transaction 内で行い、完了後の再ログインで脱退を取り消さず、参加履歴 table は設けない。
 
 `server_settings` は SQLite の認可変更を直列化する singleton として保持し、廃止した Default 有効化列は持たない。PostgreSQL の advisory lock も維持する。
 
 Better Auth runtime の `generateId` は UUIDv7 callback を使う。schema 生成だけは `generateId: "uuid"` とし、生成器が native uuid 型を選べるようにする。生成後に PostgreSQL の UUIDv4 default を除去し、runtime が ID を供給する。新規 mapping table は追加しない。
+
+2026-09-14: `organization.domain` を削除し、Dahlia 所有の `organization_auto_join_domains` に正規化済み domain（主キー）と Organization 外部キーを保持する。共有権限と同様に認可メタデータとして共通 OrganizationStore がアクセスを検査する。設定更新・新規参加・Organization 削除は既存の認可ロックで直列化する。ユーザー承認により未リリース Server の initial migration を最終 schema から再生成して統合する。旧 `domain` 列を経由する差分は設けず、空 DB を対象として設定は空で開始する。既存 DB の自動変換・削除は行わず、Desktop migration は変更しない。

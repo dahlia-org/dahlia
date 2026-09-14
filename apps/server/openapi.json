@@ -12817,6 +12817,149 @@
           }
         }
       }
+    },
+    "/api/v1/organizations/{organizationId}/auto-join-domains": {
+      "get": {
+        "operationId": "getAutoJoinDomains",
+        "summary": "Read organization auto-join domains; member only",
+        "tags": [
+          "organizations"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "organizationId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "domains": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 253,
+                        "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+                      },
+                      "maxItems": 50
+                    }
+                  },
+                  "required": [
+                    "domains"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateAutoJoinDomains",
+        "summary": "Replace organization auto-join domains; owner/admin only",
+        "tags": [
+          "organizations"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "organizationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "domains": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 253,
+                      "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+                    },
+                    "maxItems": 50
+                  }
+                },
+                "required": [
+                  "domains"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "domains": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 253,
+                        "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+                      },
+                      "maxItems": 50
+                    }
+                  },
+                  "required": [
+                    "domains"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
     }
   },
   "webhooks": {}

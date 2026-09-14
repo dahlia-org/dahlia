@@ -80,6 +80,8 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | confirmWorkspaceDeletion | modified | GET `/api/v1/organizations/{organizationId}/workspaces/{workspaceId}/deletion` | `new public contract` | Confirmation for Workspace deletion | apps/server/src/client/App.tsx |
 | forceDeleteWorkspace | modified | DELETE `/api/v1/organizations/{organizationId}/workspaces/{workspaceId}` | `new public contract` | Confirmed Workspace deletion | apps/server/src/client/App.tsx |
 | createOrganization | modified | POST `/api/v1/organizations` | `new public contract` | Desktop Organization creation uses the same atomic Better Auth operation. | apps/desktop/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift |
+| getAutoJoinDomains | modified | GET `/api/v1/organizations/{organizationId}/auto-join-domains` | `none` | Expose domain enrollment settings to organization members. | Private Web |
+| updateAutoJoinDomains | modified | PUT `/api/v1/organizations/{organizationId}/auto-join-domains` | `none` | Owner/admin manages unique non-shared domains for initial Header enrollment. | Private Web |
 
 ## Delegated protocols
 

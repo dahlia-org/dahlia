@@ -1001,6 +1001,13 @@
       ]
     },
     {
+      "path": "/api/v1/organizations/:organization/auto-join-domains",
+      "methods": [
+        "GET",
+        "PUT"
+      ]
+    },
+    {
       "path": "/api/v1/organizations",
       "response": "organizationPage",
       "methods": [

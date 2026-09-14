@@ -1,4 +1,5 @@
 // Open /tests/browser/organizations.html under pnpm dev:client. All requests are mocked.
+import { z } from "zod";
 import { createRoot } from "react-dom/client";
 import { App } from "../../src/client/App";
 import { navigateDashboard } from "../../src/client/navigation";
@@ -14,8 +15,17 @@ let invites = 0;
 let teamCreates = 0;
 const organizations = [{ id: "org_00000000000000000000000001", name: "Alpha", slug: "alpha-team", kind: "team" }];
 const member = { id: "member-id", userId: "owner", role: "owner", user: { name: "Owner", email: "owner@example.com" } };
-window.fetch = (input, init) => Promise.resolve((() => {
+let autoJoinDomains: string[] = [];
+window.fetch = async (input, init) => {
+  const requestBody = input instanceof Request && input.method === "PUT" ? z.object({ domains: z.array(z.string()) }).parse(await input.clone().json()) : undefined;
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.origin);
+  if (url.pathname.endsWith("/auto-join-domains")) {
+    if (requestBody) {
+      if (requestBody.domains.includes("gmail.com")) return Response.json({ code: "shared_email_domain" }, { status: 400 });
+      autoJoinDomains = requestBody.domains;
+    }
+    return Response.json({ domains: autoJoinDomains });
+  }
   if (url.pathname === "/api/v1/session") return Response.json({ user: { id: "owner", name: "Owner" },
     capabilities: { sessions: accounts, sharing: true, sync: false, admin: false } });
   if (url.pathname.endsWith("/invite-member")) {
@@ -54,7 +64,7 @@ window.fetch = (input, init) => Promise.resolve((() => {
   }
   if (url.pathname.endsWith("/list-user-invitations") || url.pathname.endsWith("/list-invitations")) return Response.json([]);
   throw Error(`Unexpected request: ${url.pathname}`);
-})());
+};
 const assert = (value: unknown, message: string) => { if (!value) throw Error(message); };
 async function until(predicate: () => unknown) {
   const deadline = performance.now() + 5000;
@@ -161,7 +171,7 @@ async function run() {
   accounts = false;
   window.dispatchEvent(new Event(clientMutationEvent));
   navigateDashboard("/orgs");
-  await until(() => document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') && !button("Create organization", main()));
+  await until(() => document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') && button("Create organization", main()));
   (document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') as HTMLElement).click();
   await until(() => button("Members"));
   button("Members").click();
@@ -169,6 +179,20 @@ async function run() {
   button("Settings").click();
   await until(() => panel()?.textContent?.includes("external"));
   assert(button("Change slug", panel()), "Header organization slug editor missing");
+  await until(() => button("Edit domains", panel()));
+  button("Edit domains", panel()).click();
+  await until(() => document.querySelector('.action-dialog input[name="domains"]'));
+  fill("domains", "gmail.com");
+  document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
+  await until(() => document.querySelector(".action-dialog")?.textContent?.includes("Shared email domains cannot"));
+  fill("domains", "company.example, subsidiary.example");
+  document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
+  await until(() => !document.querySelector(".action-dialog") && panel()?.textContent?.includes("company.example, subsidiary.example"));
+  button("Edit domains", panel()).click();
+  await until(() => document.querySelector('.action-dialog input[name="domains"]'));
+  fill("domains", "");
+  document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
+  await until(() => !document.querySelector(".action-dialog") && panel()?.textContent?.includes("Disabled"));
   assert(button("Delete organization", panel()), "Team organization owner lost deletion in header mode");
   organizations[0]!.kind = "personal";
   navigateDashboard("/orgs");
@@ -177,6 +201,7 @@ async function run() {
   await until(() => button("Settings"));
   button("Settings").click();
   await until(() => button("Change slug", panel()));
+  assert(!button("Edit domains", panel()), "Personal organization exposed auto-join settings");
   assert(!button("Delete organization", panel()), "Personal organization exposed deletion");
   button("Change slug", panel()).click();
   await until(() => document.querySelector(".action-dialog:modal"));
@@ -194,6 +219,8 @@ async function run() {
   await until(() => button("Settings"));
   button("Settings").click();
   await until(() => panel()?.textContent?.includes("personal_updated"));
+  await until(() => panel()?.textContent?.includes("Disabled"));
+  assert(!button("Edit domains", panel()), "Member can edit auto-join settings");
   assert(!button("Change slug", panel()), "Member can edit organization slug");
   document.body.dataset.testResult = "passed";
 }

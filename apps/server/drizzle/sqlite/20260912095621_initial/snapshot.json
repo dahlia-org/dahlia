@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "8f731c85-7c5a-4f3a-b25b-c1f65e3675a2",
+  "id": "591bcc91-8842-4927-9d77-6177566f8bb9",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -88,6 +88,10 @@
     },
     {
       "name": "meeting_events",
+      "entityType": "tables"
+    },
+    {
+      "name": "organization_auto_join_domains",
       "entityType": "tables"
     },
     {
@@ -1596,16 +1600,6 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "domain",
-      "entityType": "columns",
-      "table": "organization"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "id",
       "entityType": "columns",
       "table": "session"
@@ -2359,6 +2353,26 @@
       "name": "changed_fields",
       "entityType": "columns",
       "table": "meeting_events"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "domain",
+      "entityType": "columns",
+      "table": "organization_auto_join_domains"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "table": "organization_auto_join_domains"
     },
     {
       "type": "text",
@@ -4791,6 +4805,21 @@
     },
     {
       "columns": [
+        "organization_id"
+      ],
+      "tableTo": "organization",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_organization_auto_join_domains_organization_id_organization_id_fk",
+      "entityType": "fks",
+      "table": "organization_auto_join_domains"
+    },
+    {
+      "columns": [
         "workspace_id",
         "meeting_id"
       ],
@@ -5346,6 +5375,15 @@
       "nameExplicit": false,
       "name": "meeting_events_pk",
       "table": "meeting_events",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "domain"
+      ],
+      "nameExplicit": false,
+      "name": "organization_auto_join_domains_pk",
+      "table": "organization_auto_join_domains",
       "entityType": "pks"
     },
     {
@@ -5951,6 +5989,20 @@
     {
       "columns": [
         {
+          "value": "organization_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "organization_auto_join_domains_organization_idx",
+      "entityType": "indexes",
+      "table": "organization_auto_join_domains"
+    },
+    {
+      "columns": [
+        {
           "value": "workspace_id",
           "isExpression": false
         },
@@ -6383,15 +6435,6 @@
       "name": "oauth_resource_identifier_unique",
       "entityType": "uniques",
       "table": "oauth_resource"
-    },
-    {
-      "columns": [
-        "domain"
-      ],
-      "nameExplicit": false,
-      "name": "organization_domain_unique",
-      "entityType": "uniques",
-      "table": "organization"
     },
     {
       "columns": [
