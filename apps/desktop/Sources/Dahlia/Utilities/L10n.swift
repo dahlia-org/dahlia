@@ -3170,6 +3170,12 @@ extension L10n {
     static var workspaceImportExisting: String { String(localized: "Existing Server Workspace", bundle: bundle) }
     static var workspaceImportNew: String { String(localized: "New Server Workspace", bundle: bundle) }
     static var workspaceImportOrganization: String { String(localized: "Organization", bundle: bundle) }
+    static var organizationInitialOwner: String { String(localized: "Initial organization owner", bundle: bundle) }
+    static var organizationLoadOwners: String { String(localized: "Load more owners", bundle: bundle) }
+    static var organizationOwnerImportRequirement: String { String(
+        localized: "Choose yourself as owner to import immediately. If you choose someone else, ask them to invite you before importing.",
+        bundle: bundle
+    ) }
     static var workspaceImportCreateOrganization: String { String(localized: "Create Organization", bundle: bundle) }
     static var workspaceImportRefresh: String { String(localized: "Reload destinations", bundle: bundle) }
     static var workspaceImportDescription: String { String(

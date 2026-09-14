@@ -1,0 +1,5 @@
+free-email-domains by Kiko Beats
+Source: https://github.com/Kikobeats/free-email-domains
+Commit: 2cf32515a23c9a127863f12cb53760159fd54067
+Vendored domains.json; MIT license in Free-email-domains-LICENSE.
+Update by replacing the JSON from a reviewed commit and recording its revision here.

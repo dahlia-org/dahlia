@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "c7189980-a101-42d5-8138-394062bd138d",
+  "id": "43e4f00c-9561-40ce-bd1d-4fa31da6795f",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -1959,19 +1959,6 @@
       "table": "organization"
     },
     {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "domain",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "organization"
-    },
-    {
       "type": "uuid",
       "typeSchema": null,
       "notNull": true,
@@ -3650,17 +3637,6 @@
       ],
       "nullsNotDistinct": false,
       "name": "organization_slug_key",
-      "schema": "auth",
-      "table": "organization",
-      "entityType": "uniques"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
-        "domain"
-      ],
-      "nullsNotDistinct": false,
-      "name": "organization_domain_key",
       "schema": "auth",
       "table": "organization",
       "entityType": "uniques"

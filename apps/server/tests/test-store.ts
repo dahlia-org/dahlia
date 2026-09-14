@@ -9,7 +9,7 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
   let searchWeights = { ...DEFAULT_SEARCH_SETTINGS };
   return {
     database: {} as AuthStore["database"],
-    organizations: { initializeUser: async () => {},
+    organizations: { hasMember: async () => false, candidates: async () => [], requests: async () => [], join: async () => {}, resolveRequest: async () => {}, create: async () => { throw new Error("Unavailable"); }, delete: async () => {}, getDomains: async () => ({ domains: [] }), updateDomains: async () => ({ domains: [] }), initializeUser: async () => {},
       transaction: async () => { throw new Error("Organization mutations unavailable in this fixture"); }, addTeamCreator: async () => {}, assertTeamOrganization: async () => {} },
     searchSettings: {
       get: () => Promise.resolve({ ...searchWeights }),

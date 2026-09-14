@@ -1,5 +1,6 @@
+import { organizationDomainsSchema } from "../auth/organization-domains";
 import { projectPublicIDs } from "./public-schema";
-import { organizationSlugPattern } from "../auth/organization-slug";
+import { createOrganizationSchema } from "../auth/organization-slug";
 import { problemResponse } from "./problem";
 import { createRoute, OpenAPIHono, z, type RouteConfig } from "@hono/zod-openapi";
 import type { Handler } from "hono";
@@ -75,6 +76,7 @@ const uploadBody = { body: { required: true, content: { "application/octet-strea
 const m = "/api/v1/meetings/{meetingId}";
 const v = "/api/v1/workspaces/{workspaceId}";
 const o = "/api/v1/organizations/{organizationId}";
+const joinRequest = z.object({ id: S.id, organizationId: S.principalId, userId: S.principalId, status: z.enum(["pending", "approved", "rejected", "cancelled"]), createdAt: S.date, resolvedAt: S.date.nullable(), resolvedBy: S.principalId.nullable(), organizationName: z.string(), userName: z.string(), userEmail: z.string() }).openapi("OrganizationJoinRequest");
 const j = `${m}/summary-jobs`;
 export type OperationId =
   "getHealth" | "getOpenAPI" | "getSession" | "listSessions" | "revokeSession"
@@ -92,7 +94,8 @@ export type OperationId =
   | "headFileContent" | "getFileVariant" | "headFileVariant" | "putRecordingContent" | "listRecordings"
   | "getRecordingContent" | "headRecordingContent" | "getTransferAudience" | "transferWorkspace" | "getRelocations"
   | "searchPermissionTargets" | "putUserPermission" | "deleteUserPermission" | "listPermissions" | "putOrganizationPermission" | "deleteOrganizationPermission" | "putTeamPermission" | "deleteTeamPermission"
-  | "listOrganizations" | "createOrganization";
+  | "listOrganizationCandidates" | "listMyJoinRequests" | "listOrganizationJoinRequests" | "joinOrganization" | "requestOrganizationJoin" | "cancelOrganizationJoinRequest" | "approveOrganizationJoinRequest" | "rejectOrganizationJoinRequest" | "deleteOrganization"
+  | "listOrganizations" | "createOrganization" | "getOrganizationDomains" | "updateOrganizationDomains";
 export const contracts: Record<OperationId, RouteConfig & { operationId: string }> = {
   getHealth: createRoute({ method: "get", path: "/healthz", operationId: "getHealth", security: [], summary: "Process health", responses: { 200: json(z.object({ status: z.literal("ok") })) } }),
   getOpenAPI: createRoute({ method: "get", path: "/openapi.json", operationId: "getOpenAPI", security: [], summary: "Public OpenAPI 3.1 contract", responses: { 200: json(z.looseObject({ openapi: z.literal("3.1.0"), info: z.looseObject({ title: z.string(), version: z.string() }), paths: z.record(z.string(), z.unknown()) })) } }),
@@ -106,7 +109,7 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   updateSearchSettings: route("put", "/api/v1/admin/search-settings", "updateSearchSettings", "Replace all six search weights (integers 1–10); applies to subsequent searches", { 200: json(searchSettingsSchema) }, body(searchSettingsSchema), browser),
   addAdministrator: route("post", "/api/v1/admin/members", "addAdministrator", "Grant administrator access to an existing user", { 201: created(admin) }, body(z.object({ email: z.string().trim().pipe(z.email()).openapi({ format: "email", example: "person@example.com" }) }).strict()), browser),
   removeAdministrator: route("delete", "/api/v1/admin/members/{userId}", "removeAdministrator", "Revoke administrator access; retain the last administrator", { 204: empty }, {}, browser),
-  listServerUsers: route("get", "/api/v1/admin/users", "listServerUsers", "Administrator directory; ordered by name and ID", { 200: json(z.object({ items: z.array(S.person.extend({ createdAt: S.date, role: z.string().nullable() })), hasMore: z.boolean() })) }, { query: z.object({ offset: z.string().regex(/^\d+$/).optional().openapi({ description: "0–1000000. Fixed page size 100." }) }).strict() }, browser),
+  listServerUsers: route("get", "/api/v1/admin/users", "listServerUsers", "Administrator directory; ordered by name and ID", { 200: json(z.object({ items: z.array(S.person.extend({ createdAt: S.date, role: z.string().nullable() })), hasMore: z.boolean() })) }, { query: z.object({ offset: z.string().regex(/^\d+$/).optional().openapi({ description: "0–1000000. Fixed page size 100." }) }).strict() }, bearer),
   listServerOrganizations: route("get", "/api/v1/admin/organizations", "listServerOrganizations", "Administrator organization directory", { 200: json(z.object({ items: z.array(S.organization.extend({ memberCount: S.integer, teamCount: S.integer })), hasMore: z.boolean() })) }, { query: z.object({ offset: z.string().regex(/^\d+$/).optional() }).strict() }, browser),
   getServerOrganization: route("get", "/api/v1/admin/organizations/{organizationId}", "getServerOrganization", "Organization directory details; administrator only, independent of membership", { 200: json(S.organization.extend({
     members: z.array(z.object({ id: S.principalId, userId: S.principalId, role: z.string(), name: z.string(), email: z.string() })),
@@ -174,8 +177,19 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   listGovernanceWorkspaces: route("get", `${o}/workspaces`, "listGovernanceWorkspaces", "Organization Workspace metadata; organization owner or admin only", { 200: json(S.page(S.governanceWorkspace)) }, { query: S.pageQuery }, browser),
   confirmWorkspaceDeletion: route("get", `${o}/workspaces/{workspaceId}/deletion`, "confirmWorkspaceDeletion", "Confirm the current Workspace revision and content cursor", { 200: json(S.governanceWorkspace.extend({ changeCursor: S.cursor })) }, {}, browser),
   forceDeleteWorkspace: route("delete", `${o}/workspaces/{workspaceId}`, "forceDeleteWorkspace", "Delete a Team Organization Workspace after confirmation", { 200: json(S.receipt) }, body(z.object({ id: S.id, revision: S.integer, changeCursor: S.cursor }).strict()), browser),
-  createOrganization: route("post", "/api/v1/organizations", "createOrganization", "Create a Team Organization and creator membership through Better Auth", { 201: json(S.organization) }, body(z.object({ name: z.string().trim().min(1).max(200), slug: z.string().min(1).max(200).regex(organizationSlugPattern) }).strict())),
-  listOrganizations: route("get", "/api/v1/organizations", "listOrganizations", "Current organization memberships", { 200: json(S.page(S.organization)) }),
+  listOrganizationCandidates: route("get", "/api/v1/organization-candidates", "listOrganizationCandidates", "Eligible organizations; no membership or Workspace information", { 200: json(S.page(z.object({ id: S.principalId, name: z.string(), logo: z.string().nullable(), joinPolicy: z.enum(["need_approval", "auto_join"]), requestStatus: z.string().nullable() }))) }, { query: S.pageQuery }),
+  listMyJoinRequests: route("get", "/api/v1/organization-join-requests", "listMyJoinRequests", "Own organization join request history", { 200: json(S.page(joinRequest)) }, { query: S.pageQuery }),
+  listOrganizationJoinRequests: route("get", `${o}/join-requests`, "listOrganizationJoinRequests", "Organization join request history; owner/admin only", { 200: json(S.page(joinRequest)) }, { query: S.pageQuery }),
+  joinOrganization: route("post", `${o}/join`, "joinOrganization", "Join an eligible auto-join organization", { 204: empty }),
+  requestOrganizationJoin: route("post", `${o}/join-requests`, "requestOrganizationJoin", "Apply to an eligible organization", { 204: empty }),
+  cancelOrganizationJoinRequest: route("post", "/api/v1/organization-join-requests/{requestId}/cancel", "cancelOrganizationJoinRequest", "Cancel own pending request", { 204: empty }),
+  approveOrganizationJoinRequest: route("post", "/api/v1/organization-join-requests/{requestId}/approve", "approveOrganizationJoinRequest", "Approve pending request; owner/admin only", { 204: empty }),
+  rejectOrganizationJoinRequest: route("post", "/api/v1/organization-join-requests/{requestId}/reject", "rejectOrganizationJoinRequest", "Reject pending request; owner/admin only", { 204: empty }),
+  deleteOrganization: route("delete", "/api/v1/admin/organizations/{organizationId}", "deleteOrganization", "Delete an empty Team Organization; Server administrator only", { 204: empty }),
+  createOrganization: route("post", "/api/v1/organizations", "createOrganization", "Create a Team Organization with an explicit initial owner; Server administrator only", { 201: json(S.organization) }, body(createOrganizationSchema)),
+  getOrganizationDomains: route("get", `${o}/domains`, "getOrganizationDomains", "Read organization auto-join domains; member only", { 200: json(organizationDomainsSchema) }, {}, browser),
+  updateOrganizationDomains: route("put", `${o}/domains`, "updateOrganizationDomains", "Replace organization auto-join domains; owner/admin only", { 200: json(organizationDomainsSchema) }, body(organizationDomainsSchema), browser),
+  listOrganizations: route("get", "/api/v1/organizations", "listOrganizations", "Current organization memberships", { 200: json(S.page(S.organization).extend({ canCreateOrganizations: z.boolean() })) }),
 };
 
 /** The route owns request validation and documentation; service methods own business validation.

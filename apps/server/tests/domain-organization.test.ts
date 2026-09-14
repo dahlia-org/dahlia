@@ -42,7 +42,9 @@ for (const databaseType of ["sqlite", "postgres"] as const) {
         const user = (await auth.api.getSession({ headers }))!.user;
         let app = createApp({ config, authStore: store, auth });
         expect((await app.request("/api/v1/session", { headers })).status).toBe(200);
-        const organization = (await auth.api.listOrganizations({ headers })).find((org) => org.domain === "example.com")!;
+        await store.addAdminUser(user.email);
+        const organization = await store.organizations.create({ userId: user.id, source: "header" }, { name: "Team", slug: "team", initialOwnerUserId: user.id });
+        await store.organizations.updateDomains({ userId: user.id, source: "header" }, organization.id, { domains: [{ domain: "example.com", joinPolicy: "auto_join" }] });
         expect(await store.getServerOrganization(organization.id, 10, 0, 0)).toMatchObject({ members: [expect.objectContaining({ userId: user.id, role: "owner" })] });
         const secondHeaders = await signIn("second@example.com");
         await auth.api.leaveOrganization({ headers: secondHeaders, body: { organizationId: organization.id } });

@@ -27,7 +27,7 @@ try {
   for (const path of [
     "src", "drizzle", "scripts", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml",
     "tsconfig.json", "tsup.config.ts", "tsup.client.config.ts", "vite.config.ts", "worker-configuration.d.ts",
-    "openapi.json", "index.html", "README.md", "Codex-LICENSE", "Codex-NOTICE.txt",
+    "Free-email-domains-LICENSE", "Free-email-domains-NOTICE.txt", "openapi.json", "index.html", "README.md", "Codex-LICENSE", "Codex-NOTICE.txt",
   ]) {
     await cp(new URL(`../${path}`, import.meta.url), join(source, path), { recursive: true });
   }
@@ -45,6 +45,8 @@ try {
     encoding: "utf8",
   });
   if (extracted.status !== 0) throw new Error(extracted.stderr || extracted.stdout || "tar extraction failed");
+  await readFile(join(installedPackage, "Free-email-domains-LICENSE"));
+  await readFile(join(installedPackage, "Free-email-domains-NOTICE.txt"));
   const workspaceModules = fileURLToPath(new URL("../node_modules", import.meta.url));
   for (const dependency of [
     ...Object.keys(packageJson.dependencies),

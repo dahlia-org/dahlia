@@ -43,6 +43,8 @@ it("creates canonical tables, defaults, and cascading relationships on SQLite", 
         created_at, available_at, summary_revision, input_version, request_hash)
         VALUES ('summary-job', 'workspace', 'meeting', 'owner', 'transcript', '{"model":"saved"}', 'ja', 'pending', 1, 1, 3, 'input', 'request');
     `);
+    expect(db.prepare("PRAGMA table_info(organization)").all().map((column) => column.name)).not.toContain("domain");
+    expect(db.prepare("SELECT * FROM organization_domains").all()).toEqual([]);
     expect(db.prepare("SELECT name FROM sqlite_master WHERE name IN ('artifact', 'summary_versions', 'screenshots')").all()).toEqual([]);
     expect(db.prepare("SELECT revision, summary, processing FROM account_settings").get()).toEqual({
       revision: 19, summary: JSON.stringify({ style: "detailed" }),

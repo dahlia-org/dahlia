@@ -61,7 +61,7 @@ describe("SQLite Better Auth store", () => {
       expect(await Promise.all([store.ensureIdentityUser(identity), store.ensureIdentityUser(identity)])).toEqual([true, true]);
       expect(database.prepare("SELECT role FROM member WHERE organization_id = ?").all(id)).toEqual([{ role: "owner" }]);
       expect(database.prepare("SELECT workspace_id, organization_id FROM workspaces WHERE organization_id = ?").all(id)).toEqual([{ workspace_id: id, organization_id: id }]);
-      expect(database.prepare("SELECT id FROM organization WHERE domain IS NOT NULL").all()).toEqual([]);
+      expect(database.prepare("SELECT id FROM organization WHERE kind = 'team'").all()).toEqual([]);
       expect(await store.isAdminUser(id)).toBe(true);
     } finally { database.close(); await store.close?.(); }
   });
@@ -110,7 +110,7 @@ describe("SQLite Better Auth store", () => {
     } finally { raw.close(); await store.close?.(); }
   });
 
-  it("creates one external organization owner under concurrent first header access", async () => {
+  it("creates only Personal organizations under concurrent first header access", async () => {
     const directory = mkdtempSync(join(tmpdir(), "dahlia-header-concurrent-"));
     directories.push(directory);
     const path = join(directory, "header.sqlite");
@@ -125,9 +125,8 @@ describe("SQLite Better Auth store", () => {
       } }))));
     expect(responses.map(({ status }) => status)).toEqual([200, 200]);
     const database = new DatabaseSync(path);
-    expect(database.prepare("SELECT count(*) AS count FROM organization WHERE domain = 'example.com'").get()).toEqual({ count: 1 });
-    expect(database.prepare("SELECT count(*) AS count FROM member WHERE organization_id = (SELECT id FROM organization WHERE domain = 'example.com') AND role = 'owner'").get())
-      .toEqual({ count: 1 });
+    expect(database.prepare("SELECT count(*) AS count FROM organization WHERE kind = 'team'").get()).toEqual({ count: 0 });
+    expect(database.prepare("SELECT count(*) AS count FROM member WHERE role = 'owner'").get()).toEqual({ count: 2 });
     expect(database.prepare("SELECT count(*) AS count FROM team WHERE id = '01990ab0-0000-7000-8000-000000000002'").get()).toEqual({ count: 0 });
     expect(database.prepare("SELECT count(*) AS count FROM team_member WHERE team_id = '01990ab0-0000-7000-8000-000000000002'").get())
       .toEqual({ count: 0 });
@@ -167,9 +166,9 @@ describe("SQLite Better Auth store", () => {
       email_verified: 1,
       role: "admin",
     });
-    const organizationId = String(database.prepare("SELECT id FROM organization WHERE domain = 'example.com'").get()!.id);
-    expect(database.prepare('SELECT name, domain FROM organization WHERE id = ?').get(organizationId))
-      .toEqual({ name: "example.com", domain: "example.com" });
+    const organizationId = userID;
+    expect(database.prepare('SELECT name, kind FROM organization WHERE id = ?').get(organizationId))
+      .toEqual({ name: "Personal", kind: "personal" });
     expect(database.prepare('SELECT user_id, role FROM member WHERE organization_id = ?').get(organizationId))
       .toEqual({ user_id: userID, role: "owner" });
     expect(database.prepare('SELECT id, name, organization_id FROM team WHERE id = ?').get("external-default"))
@@ -200,7 +199,7 @@ describe("SQLite Better Auth store", () => {
     } })).status).toBe(200);
     const secondID = String(database.prepare("SELECT user_id FROM account WHERE account_id = ?").get("second@example.com")!.user_id);
     expect(database.prepare('SELECT role FROM member WHERE organization_id = ? AND user_id = ?')
-      .get(organizationId, secondID)).toEqual({ role: "member" });
+      .get(organizationId, secondID)).toBeUndefined();
     expect(database.prepare('SELECT 1 FROM team_member WHERE team_id = ? AND user_id = ?')
       .get("01990ab0-0000-7000-8000-000000000002", secondID)).toBeUndefined();
     expect((await app.request("/api/v1/session", { headers: {

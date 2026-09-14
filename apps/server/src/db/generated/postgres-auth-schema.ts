@@ -310,7 +310,6 @@ export const organization = authSchema.table(
     createdAt: timestamp("created_at").notNull(),
     metadata: text("metadata"),
     kind: text("kind").default("team").notNull(),
-    domain: text("domain").unique(),
   },
   (table) => [uniqueIndex("organization_slug_uidx").on(table.slug)],
 );

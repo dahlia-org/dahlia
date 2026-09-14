@@ -25,7 +25,6 @@ export function validateAuthorization(state: AuthorizationState, before?: Author
   for (const previous of before?.organizations ?? []) {
     const current = state.organizations.find((o) => o.id === previous.id);
     if (!current && previous.kind === "personal") authorizationConflict("organization_delete_forbidden");
-    if (current && current.domain !== previous.domain) authorizationConflict("organization_domain_immutable");
     if (current && (current.kind !== previous.kind || (previous.kind === "personal" && (current.logo !== previous.logo || current.metadata !== previous.metadata)))) authorizationConflict("personal_organization_immutable");
   }
   for (const team of state.teams) {

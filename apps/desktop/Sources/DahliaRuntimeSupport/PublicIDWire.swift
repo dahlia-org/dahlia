@@ -33,7 +33,8 @@ public enum PublicIDWire {
         "workspace": .workspace, "project": .project, "meeting": .meeting, "file": .file, "attachment": .attachment,
         "summary": .summary, "transcript": .transcript, "segment": .segment, "recording": .recording,
         "event": .event, "summaryJob": .summaryJob, "user": .user, "organization": .organization, "team": .team,
-        "organizationMember": .organizationMember, "teamMember": .teamMember, "invitation": .invitation,
+        "organizationJoinRequest": .organizationJoinRequest, "organizationMember": .organizationMember, "teamMember": .teamMember,
+        "invitation": .invitation,
         "session": .session, "transaction": .transaction, "operation": .operation, "patch": .patch,
     ]
     private static let entityKinds: [String: TypeID.Kind] = [

@@ -64,6 +64,25 @@ CREATE TABLE "app"."meeting_events" (
 --> statement-breakpoint
 ALTER TABLE "app"."meeting_events" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
+CREATE TABLE "app"."organization_domains" (
+	"organization_id" uuid,
+	"domain" text,
+	"join_policy" text DEFAULT 'invite_only' NOT NULL,
+	CONSTRAINT "organization_domains_pkey" PRIMARY KEY("organization_id","domain"),
+	CONSTRAINT "organization_domains_policy_check" CHECK ("join_policy" IN ('invite_only', 'need_approval', 'auto_join'))
+);
+--> statement-breakpoint
+CREATE TABLE "app"."organization_join_requests" (
+	"id" uuid PRIMARY KEY,
+	"organization_id" uuid NOT NULL,
+	"user_id" uuid NOT NULL,
+	"status" text NOT NULL,
+	"created_at" timestamp NOT NULL,
+	"resolved_at" timestamp,
+	"resolved_by" uuid,
+	CONSTRAINT "organization_join_requests_status_check" CHECK ("status" IN ('pending', 'approved', 'rejected', 'cancelled'))
+);
+--> statement-breakpoint
 CREATE TABLE "search"."documents" (
 	"document_id" uuid,
 	"workspace_id" uuid,
@@ -404,6 +423,12 @@ CREATE INDEX "meeting_events_meeting_time_idx" ON "app"."meeting_events" ("works
 --> statement-breakpoint
 CREATE INDEX "meeting_events_session_idx" ON "app"."meeting_events" ("workspace_id","session_id");
 --> statement-breakpoint
+CREATE INDEX "organization_domains_domain_idx" ON "app"."organization_domains" ("domain");
+--> statement-breakpoint
+CREATE UNIQUE INDEX "organization_join_requests_pending_idx" ON "app"."organization_join_requests" ("organization_id","user_id") WHERE "status" = 'pending';
+--> statement-breakpoint
+CREATE INDEX "organization_join_requests_user_idx" ON "app"."organization_join_requests" ("user_id");
+--> statement-breakpoint
 CREATE INDEX "search_document_workspace_kind_meeting_document_idx" ON "search"."documents" ("workspace_id","kind","meeting_id","document_id");
 --> statement-breakpoint
 CREATE INDEX "search_index_job_claim_idx" ON "jobs"."search_index" ("status","available_at","lease_expires_at");
@@ -451,6 +476,14 @@ ALTER TABLE "app"."meeting_attachments" ADD CONSTRAINT "meeting_attachments_hqOE
 ALTER TABLE "app"."meeting_events" ADD CONSTRAINT "meeting_events_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;
 --> statement-breakpoint
 ALTER TABLE "app"."meeting_events" ADD CONSTRAINT "meeting_events_owner_user_id_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;
+--> statement-breakpoint
+ALTER TABLE "app"."organization_domains" ADD CONSTRAINT "organization_domains_organization_id_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "auth"."organization"("id") ON DELETE CASCADE;
+--> statement-breakpoint
+ALTER TABLE "app"."organization_join_requests" ADD CONSTRAINT "organization_join_requests_organization_id_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "auth"."organization"("id") ON DELETE CASCADE;
+--> statement-breakpoint
+ALTER TABLE "app"."organization_join_requests" ADD CONSTRAINT "organization_join_requests_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;
+--> statement-breakpoint
+ALTER TABLE "app"."organization_join_requests" ADD CONSTRAINT "organization_join_requests_resolved_by_user_id_fkey" FOREIGN KEY ("resolved_by") REFERENCES "auth"."user"("id") ON DELETE SET NULL;
 --> statement-breakpoint
 ALTER TABLE "search"."documents" ADD CONSTRAINT "search_document_meeting_fk" FOREIGN KEY ("workspace_id","meeting_id") REFERENCES "app"."meetings"("workspace_id","meeting_id") ON DELETE CASCADE;
 --> statement-breakpoint

@@ -111,10 +111,10 @@ describe("local single-user header mode", () => {
       // "garbage" carries no domain, so only the Personal Organization exists.
       expect(await store.listServerOrganizations(10, 0)).toMatchObject([{ name: "Personal", kind: "personal" }]);
 
-      // An address with a domain still enrolls into its domain Organization.
+      // An address with no configured domain also gets only Personal.
       expect((await app.request("/api/v1/session", { headers: { "X-Forwarded-Email": "person@example.com" } })).status).toBe(200);
       expect(await store.listServerOrganizations(10, 0))
-        .toMatchObject([{ name: "Personal", kind: "personal" }, { name: "Personal", kind: "personal" }, { name: "example.com", kind: "team" }]);
+        .toMatchObject([{ name: "Personal", kind: "personal" }, { name: "Personal", kind: "personal" }]);
     } finally {
       await store.close?.();
     }
@@ -129,7 +129,7 @@ describe("local single-user header mode", () => {
         expect(await store.resolveHeaderUser({ userId: email, email, name: email, source: "header" })).toBeTruthy();
       }
       const organizations = await store.listServerOrganizations(10, 0);
-      expect(organizations.map((org) => org.slug).sort()).toEqual(["organization", "organization_2", "organization_3", "someone"]);
+      expect(organizations.map((org) => org.slug).sort()).toEqual(["organization", "organization_2", "someone"]);
     } finally {
       await store.close?.();
     }

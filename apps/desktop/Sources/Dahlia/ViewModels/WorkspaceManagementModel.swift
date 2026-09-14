@@ -4,10 +4,12 @@ import GRDB
 import Observation
 
 struct PendingWorkspaceServerAdoption: Identifiable {
+    let generation = UUID()
     let workspace: WorkspaceRecord
     let connection: DahliaAccountConnection
     let serverWorkspaces: [CloudWorkspaceRecord]
     let organizations: [Components.Schemas.Organization]
+    var canCreateOrganizations = false
 
     var id: UUID { workspace.id }
 }
@@ -37,15 +39,18 @@ final class WorkspaceManagementModel {
     private(set) var hasLoadedWorkspaces = false
     private var repository: MeetingRepository?
     private let cloudWorkspaceFetcher: CloudWorkspaceFetcher?
-    private let organizationFetcher: ((DahliaAccountConnectionRecord) async throws -> [Components.Schemas.Organization])?
+    private let organizationFetcher: ((DahliaAccountConnectionRecord) async throws -> CloudOrganizationDirectory)?
+    private let organizationOwnerFetcher: ((DahliaAccountConnectionRecord, Int) async throws -> (items: [CloudOrganizationOwner], hasMore: Bool))?
     private var syncObservation: AnyDatabaseCancellable?
 
     init(
         cloudWorkspaceFetcher: CloudWorkspaceFetcher? = nil,
-        organizationFetcher: ((DahliaAccountConnectionRecord) async throws -> [Components.Schemas.Organization])? = nil
+        organizationFetcher: ((DahliaAccountConnectionRecord) async throws -> CloudOrganizationDirectory)? = nil,
+        organizationOwnerFetcher: ((DahliaAccountConnectionRecord, Int) async throws -> (items: [CloudOrganizationOwner], hasMore: Bool))? = nil
     ) {
         self.cloudWorkspaceFetcher = cloudWorkspaceFetcher
         self.organizationFetcher = organizationFetcher
+        self.organizationOwnerFetcher = organizationOwnerFetcher
     }
 
     func configure(appDatabase: AppDatabaseManager?) async {
@@ -306,7 +311,8 @@ final class WorkspaceManagementModel {
                 workspace: workspace,
                 connection: connection,
                 serverWorkspaces: serverWorkspaces,
-                organizations: organizations
+                organizations: organizations.items,
+                canCreateOrganizations: organizations.canCreateOrganizations
             )
         } catch is CancellationError {
             return
@@ -315,7 +321,7 @@ final class WorkspaceManagementModel {
         }
     }
 
-    private func fetchOrganizations(_ connection: DahliaAccountConnectionRecord) async throws -> [Components.Schemas.Organization] {
+    private func fetchOrganizations(_ connection: DahliaAccountConnectionRecord) async throws -> CloudOrganizationDirectory {
         if let organizationFetcher { return try await organizationFetcher(connection) }
         return try await CloudWorkspaceDiscovery.organizations(connection: connection, api: SyncAPIClient(session: .shared))
     }
@@ -325,11 +331,28 @@ final class WorkspaceManagementModel {
         await requestServerAdoption(for: pending.workspace, connection: pending.connection)
     }
 
-    func createAdoptionOrganization(name: String) async {
-        guard let pending = pendingServerAdoption, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    func adoptionOrganizationOwners(offset: Int) async -> (items: [CloudOrganizationOwner], hasMore: Bool) {
+        guard let pending = pendingServerAdoption, pending.canCreateOrganizations else { return ([], false) }
+        do {
+            if let organizationOwnerFetcher { return try await organizationOwnerFetcher(pending.connection.record, offset) }
+            return try await CloudWorkspaceDiscovery.organizationOwners(
+                connection: pending.connection.record,
+                api: SyncAPIClient(session: .shared),
+                offset: offset
+            )
+        } catch {
+            guard !Task.isCancelled, pendingServerAdoption?.generation == pending.generation else { return ([], false) }
+            presentError(L10n.workspaceOperationFailed, error: error, source: "adoptionOrganizationOwners")
+            return ([], true)
+        }
+    }
+
+    func createAdoptionOrganization(name: String, slug: String, initialOwnerUserId: String) async {
+        guard let pending = pendingServerAdoption, pending.canCreateOrganizations, !initialOwnerUserId.isEmpty,
+              !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         do {
             try await CloudWorkspaceDiscovery.createOrganization(
-                name: name,
+                name: name, slug: slug, initialOwnerUserId: initialOwnerUserId,
                 connection: pending.connection.record,
                 api: SyncAPIClient(session: .shared)
             )
@@ -362,7 +385,7 @@ final class WorkspaceManagementModel {
             } else {
                 guard let organizationId,
                       try await fetchOrganizations(connection)
-                      .contains(where: { $0.id == organizationId.uuidString.lowercased() && $0.kind == .team }) else {
+                      .items.contains(where: { $0.id == organizationId.uuidString.lowercased() && $0.kind == .team }) else {
                     throw LocalWorkspaceImportError.unavailable
                 }
                 let fence = try await repository.dbQueue.read { db in

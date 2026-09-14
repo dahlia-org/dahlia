@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "8f731c85-7c5a-4f3a-b25b-c1f65e3675a2",
+  "id": "591bcc91-8842-4927-9d77-6177566f8bb9",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -88,6 +88,14 @@
     },
     {
       "name": "meeting_events",
+      "entityType": "tables"
+    },
+    {
+      "name": "organization_domains",
+      "entityType": "tables"
+    },
+    {
+      "name": "organization_join_requests",
       "entityType": "tables"
     },
     {
@@ -1596,16 +1604,6 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "domain",
-      "entityType": "columns",
-      "table": "organization"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "id",
       "entityType": "columns",
       "table": "session"
@@ -2359,6 +2357,106 @@
       "name": "changed_fields",
       "entityType": "columns",
       "table": "meeting_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "table": "organization_domains"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "domain",
+      "entityType": "columns",
+      "table": "organization_domains"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'invite_only'",
+      "generated": null,
+      "name": "join_policy",
+      "entityType": "columns",
+      "table": "organization_domains"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "organization_join_requests"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "table": "organization_join_requests"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "table": "organization_join_requests"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "organization_join_requests"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "organization_join_requests"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "resolved_at",
+      "entityType": "columns",
+      "table": "organization_join_requests"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "resolved_by",
+      "entityType": "columns",
+      "table": "organization_join_requests"
     },
     {
       "type": "text",
@@ -4791,6 +4889,66 @@
     },
     {
       "columns": [
+        "organization_id"
+      ],
+      "tableTo": "organization",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_organization_domains_organization_id_organization_id_fk",
+      "entityType": "fks",
+      "table": "organization_domains"
+    },
+    {
+      "columns": [
+        "organization_id"
+      ],
+      "tableTo": "organization",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_organization_join_requests_organization_id_organization_id_fk",
+      "entityType": "fks",
+      "table": "organization_join_requests"
+    },
+    {
+      "columns": [
+        "user_id"
+      ],
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_organization_join_requests_user_id_user_id_fk",
+      "entityType": "fks",
+      "table": "organization_join_requests"
+    },
+    {
+      "columns": [
+        "resolved_by"
+      ],
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "SET NULL",
+      "nameExplicit": false,
+      "name": "fk_organization_join_requests_resolved_by_user_id_fk",
+      "entityType": "fks",
+      "table": "organization_join_requests"
+    },
+    {
+      "columns": [
         "workspace_id",
         "meeting_id"
       ],
@@ -5099,6 +5257,16 @@
     },
     {
       "columns": [
+        "organization_id",
+        "domain"
+      ],
+      "nameExplicit": false,
+      "name": "organization_domains_pk",
+      "entityType": "pks",
+      "table": "organization_domains"
+    },
+    {
+      "columns": [
         "workspace_id",
         "document_id"
       ],
@@ -5346,6 +5514,15 @@
       "nameExplicit": false,
       "name": "meeting_events_pk",
       "table": "meeting_events",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "organization_join_requests_pk",
+      "table": "organization_join_requests",
       "entityType": "pks"
     },
     {
@@ -5951,6 +6128,52 @@
     {
       "columns": [
         {
+          "value": "domain",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "organization_domains_domain_idx",
+      "entityType": "indexes",
+      "table": "organization_domains"
+    },
+    {
+      "columns": [
+        {
+          "value": "organization_id",
+          "isExpression": false
+        },
+        {
+          "value": "user_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"organization_join_requests\".\"status\" = 'pending'",
+      "origin": "manual",
+      "name": "organization_join_requests_pending_idx",
+      "entityType": "indexes",
+      "table": "organization_join_requests"
+    },
+    {
+      "columns": [
+        {
+          "value": "user_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "organization_join_requests_user_idx",
+      "entityType": "indexes",
+      "table": "organization_join_requests"
+    },
+    {
+      "columns": [
+        {
           "value": "workspace_id",
           "isExpression": false
         },
@@ -6386,15 +6609,6 @@
     },
     {
       "columns": [
-        "domain"
-      ],
-      "nameExplicit": false,
-      "name": "organization_domain_unique",
-      "entityType": "uniques",
-      "table": "organization"
-    },
-    {
-      "columns": [
         "token"
       ],
       "nameExplicit": false,
@@ -6446,6 +6660,18 @@
       "name": "meeting_events_source_check",
       "entityType": "checks",
       "table": "meeting_events"
+    },
+    {
+      "value": "\"join_policy\" IN ('invite_only', 'need_approval', 'auto_join')",
+      "name": "organization_domains_policy_check",
+      "entityType": "checks",
+      "table": "organization_domains"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'approved', 'rejected', 'cancelled')",
+      "name": "organization_join_requests_status_check",
+      "entityType": "checks",
+      "table": "organization_join_requests"
     },
     {
       "value": "\"embedding\" IS NULL OR (length(\"embedding\") BETWEEN 128 AND 4096 AND length(\"embedding\") % 4 = 0)",

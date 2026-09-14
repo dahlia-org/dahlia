@@ -376,8 +376,8 @@
             #expect(try repository.fetchAllWorkspaces().first?.name == "Shared")
         }
 
-        @Test
-        func serverAdoptionWaitsForConfirmation() async throws {
+        @Test(arguments: [false, true])
+        func serverAdoptionWaitsForConfirmation(canCreateOrganizations: Bool) async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
             let connection = DahliaAccountConnectionRecord(
@@ -389,7 +389,10 @@
             let workspace = makeWorkspace(name: "Local", lastOpenedAt: .now)
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertWorkspace(workspace)
-            let model = WorkspaceManagementModel(cloudWorkspaceFetcher: { _ in [] }, organizationFetcher: { _ in [] })
+            let model = WorkspaceManagementModel(
+                cloudWorkspaceFetcher: { _ in [] },
+                organizationFetcher: { _ in .init(items: [], canCreateOrganizations: canCreateOrganizations) }
+            )
             await model.configure(appDatabase: database)
             let account = DahliaAccountConnection(
                 record: connection,
@@ -399,10 +402,60 @@
             )
             await model.requestServerAdoption(for: workspace, connection: account)
             #expect(model.pendingServerAdoption?.serverWorkspaces.isEmpty == true)
+            #expect(model.pendingServerAdoption?.canCreateOrganizations == canCreateOrganizations)
             #expect(try repository.fetchAllWorkspaces().first?.accountConnectionId == nil)
             model.cancelServerAdoption()
             #expect(model.pendingServerAdoption == nil)
             #expect(try repository.fetchAllWorkspaces().first?.accountConnectionId == nil)
+        }
+
+        @Test(arguments: ["failure", "cancelled", "dismissed", "reloaded"])
+        func organizationOwnerLoadingPreservesRetryAndIgnoresObsoleteErrors(outcome: String) async {
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(),
+                origin: "https://server.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
+            )
+            var fail = true
+            var replacePending: () async -> Void = {}
+            let model = WorkspaceManagementModel(
+                cloudWorkspaceFetcher: { _ in [] },
+                organizationFetcher: { _ in .init(items: [], canCreateOrganizations: true) },
+                organizationOwnerFetcher: { _, _ in
+                    if fail {
+                        if outcome == "cancelled" { withUnsafeCurrentTask { $0?.cancel() } }
+                        if outcome == "dismissed" || outcome == "reloaded" { await replacePending() }
+                        throw URLError(.networkConnectionLost)
+                    }
+                    return ([CloudOrganizationOwner(id: "owner", name: "Owner", email: "owner@example.com")], false)
+                }
+            )
+            let account = DahliaAccountConnection(
+                record: connection,
+                account: DahliaCloudAccount(id: "user", name: "User", email: nil),
+                isCloud: false,
+                grantedScopes: ["all-apis"]
+            )
+            await model.requestServerAdoption(for: makeWorkspace(name: "Local", lastOpenedAt: .now), connection: account)
+            replacePending = {
+                if outcome == "reloaded" {
+                    await model.reloadServerAdoption()
+                } else {
+                    model.cancelServerAdoption()
+                }
+            }
+            let page = await Task { await model.adoptionOrganizationOwners(offset: 0) }.value
+            replacePending = {}
+            #expect(page.items.isEmpty)
+            #expect(model.isShowingError == (outcome == "failure"))
+            #expect(page.hasMore == (outcome == "failure"))
+            if outcome == "failure" {
+                fail = false
+                let retry = await model.adoptionOrganizationOwners(offset: 0)
+                #expect(retry.items.map(\.id) == ["owner"])
+                #expect(!retry.hasMore)
+            }
         }
 
         @Test(arguments: ["viewer", "editor"])
@@ -454,7 +507,10 @@
             var responses = [[remote], []]
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertWorkspace(workspace)
-            let model = WorkspaceManagementModel(cloudWorkspaceFetcher: { _ in responses.removeFirst() }, organizationFetcher: { _ in [] })
+            let model = WorkspaceManagementModel(
+                cloudWorkspaceFetcher: { _ in responses.removeFirst() },
+                organizationFetcher: { _ in .init(items: [], canCreateOrganizations: false) }
+            )
             await model.configure(appDatabase: database)
             let account = DahliaAccountConnection(
                 record: connection,

@@ -7,7 +7,6 @@ import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError, createAuthEndpoint, formCsrfMiddleware, getSessionFromCtx } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import { admin, jwt, organization } from "better-auth/plugins";
-import { authorizationConflict } from "./authorization";
 
 import { gatewayResource, mcpResource, type AppConfig } from "../config";
 import type { AuthStore } from "./store";
@@ -39,12 +38,12 @@ function buildDahliaAuth(
   const resource = gatewayResource(config);
   const mcp = mcpResource(config);
   const organizationPlugin = organization({
-        schema: { organization: { additionalFields: { kind: { type: "string", required: true, defaultValue: "team", input: false }, domain: { type: "string", required: false, unique: true, input: false } } } },
+        allowUserToCreateOrganization: false,
+        disableOrganizationDeletion: true,
+        membershipLimit: async (user, org) => await authStore.organizations.hasMember(user.id, org.id) ? Number.MAX_SAFE_INTEGER : 100,
+        schema: { organization: { additionalFields: { kind: { type: "string", required: true, defaultValue: "team", input: false } } } },
         organizationHooks: {
-          beforeCreateOrganization: ({ organization }) => {
-            if (organization.slug?.toLowerCase().startsWith("personal-")) authorizationConflict("reserved_organization_slug");
-            return Promise.resolve();
-          },
+          beforeCreateOrganization: () => { throw new APIError("FORBIDDEN", { code: "use_organization_management_api" }); },
           beforeCreateTeam: async ({ organization }) => { await authStore.organizations.assertTeamOrganization(organization.id); },
           afterCreateTeam: async ({ team, user }) => { if (user) await authStore.organizations.addTeamCreator(team.id, user.id); },
           beforeCreateInvitation: async ({ organization }) => { await authStore.organizations.assertTeamOrganization(organization.id); },
@@ -74,7 +73,7 @@ function buildDahliaAuth(
     } : {},
     databaseHooks: { user: {
       create: {
-        before: (user) => Promise.resolve({ data: { ...user, registrationState: config.authProvider === "header" ? "domain" : "personal" } }),
+        before: (user) => Promise.resolve({ data: { ...user, emailVerified: config.authProvider === "header" || user.emailVerified, registrationState: config.authProvider === "header" || user.emailVerified ? "domain" : "personal" } }),
         after: async (user) => { await authStore.organizations.initializeUser(user.id, config.authProvider === "header" ? config.authProviderId ?? "external" : undefined); },
       },
       update: { before: (user) => {
@@ -182,9 +181,29 @@ const authorizationMutationNames = new Set(authorizationMutations.map(([name]) =
 
 export function createDahliaAuth(config: AppConfig, authStore: AuthStore, extensions: readonly DahliaAuthExtension[] = []): DahliaAuth {
   const auth = buildDahliaAuth(config, authStore, extensions);
-  async function atomic<T>(run: (scoped: DahliaAuth) => Promise<T>): Promise<T> {
+  async function atomic<T>(run: (scoped: DahliaAuth) => Promise<T>, acceptingInvitation = false, requestHeaders?: HeadersInit): Promise<T> {
     return authStore.organizations.transaction(async (database, organizations) => {
-      const scoped = buildDahliaAuth(config, { ...authStore, database, organizations }, extensions);
+      const invitationDatabase: typeof database = (options) => {
+        const adapter = database(options);
+        const wrapped: typeof adapter = { ...adapter, transaction: async (callback) => callback(wrapped), create: (async (input: Parameters<typeof adapter.create>[0]) => {
+          if (input.model === "member") {
+            const data = input.data as unknown as { userId: string; organizationId: string; role: string };
+            const where = [{ field: "userId", value: data.userId }, { field: "organizationId", value: data.organizationId }];
+            const existing = await adapter.findOne<{ id: string; role: string }>({ model: "member", where });
+            if (existing) {
+              const roles = ["member", "admin", "owner"];
+              const role = roles.indexOf(existing.role) >= roles.indexOf(data.role) ? existing.role : data.role;
+              return adapter.update({ model: "member", where, update: { role } });
+            }
+          }
+          return adapter.create(input);
+        }) as typeof adapter.create };
+        return wrapped;
+      };
+      const scoped = buildDahliaAuth(config, { ...authStore, database: acceptingInvitation ? invitationDatabase : database, organizations }, extensions);
+      if (acceptingInvitation && (await scoped.api.getSession({ headers: new Headers(requestHeaders) }))?.session.impersonatedBy) {
+        throw new APIError("FORBIDDEN", { code: "impersonation_read_only" });
+      }
       const result = await run(scoped);
       if (result instanceof Response && !result.ok) throw new AuthResponseRollback(result);
       return result;
@@ -199,7 +218,7 @@ export function createDahliaAuth(config: AppConfig, authStore: AuthStore, extens
     handler: async (request) => {
       const path = new URL(request.url).pathname;
       if (request.method !== "POST" || !["/api/auth/organization/", "/api/auth/admin/"].some((prefix) => path.startsWith(prefix))) return auth.handler(request);
-      try { return await atomic((scoped) => scoped.handler(request)); } catch (error) { return response(error); }
+      try { return await atomic((scoped) => scoped.handler(request), path === "/api/auth/organization/accept-invitation", request.headers); } catch (error) { return response(error); }
     },
     api: new Proxy(auth.api, {
       get(target, property, receiver) {
@@ -207,7 +226,7 @@ export function createDahliaAuth(config: AppConfig, authStore: AuthStore, extens
         const endpoint = Reflect.get(target, property, receiver) as { path: string; options: unknown };
         return Object.assign(async (...args: unknown[]) => {
           try {
-            return await atomic((scoped) => (Reflect.get(scoped.api, property) as (...args: unknown[]) => Promise<unknown>)(...args));
+            return await atomic((scoped) => (Reflect.get(scoped.api, property) as (...args: unknown[]) => Promise<unknown>)(...args), property === "acceptInvitation", (args[0] as { headers?: HeadersInit } | undefined)?.headers);
           } catch (error) {
             if ((args[0] as { asResponse?: boolean } | undefined)?.asResponse) return response(error);
             if (error instanceof AuthResponseRollback) return error.response;
