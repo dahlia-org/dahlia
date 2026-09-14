@@ -935,9 +935,7 @@ function createIdentityStore(
           || left.documentId.localeCompare(right.documentId))
         .slice(0, SEARCH_CANDIDATE_LIMIT).map(({ documentId }) => documentId);
     }
-    const vectorType = sql.raw(
-      `${searchBackend === "postgres" ? "public." : ""}vector(${embedding.dimensions})`,
-    );
+    const vectorType = sql.raw(`public.vector(${embedding.dimensions})`);
     const distance = sql<number>`(
       ${schema.searchDocument.embedding}::${vectorType}
       <=> ${JSON.stringify(embedding.vector)}::${vectorType}

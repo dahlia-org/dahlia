@@ -138,7 +138,7 @@ export async function migrateApplicationDatabase(
 
 export async function ensureSearchIndexes(pool: Pick<Pool, "query">, config: AppConfig): Promise<void> {
   if (config.databaseType === "lakebase") {
-    await pool.query("CREATE EXTENSION IF NOT EXISTS lakebase_text");
+    await pool.query("CREATE EXTENSION IF NOT EXISTS lakebase_text WITH SCHEMA public");
     await pool.query(
       "CREATE INDEX IF NOT EXISTS search_documents_search_bm25 ON search.documents USING lakebase_bm25 (search_vector)",
     );
@@ -152,18 +152,16 @@ export async function ensureSearchIndexes(pool: Pick<Pool, "query">, config: App
   }
   const embedding = config.searchEmbedding;
   if (!embedding || (config.databaseType !== "postgres" && config.databaseType !== "lakebase")) return;
-  const extension = config.databaseType === "lakebase" ? "lakebase_vector CASCADE" : "vector";
+  const extension = config.databaseType === "lakebase" ? "lakebase_vector WITH SCHEMA public CASCADE" : "vector WITH SCHEMA public";
   await pool.query(`CREATE EXTENSION IF NOT EXISTS ${extension}`);
   const modelLiteral = (await pool.query<{ value: string }>("select quote_literal($1) as value", [embedding.model])).rows[0]!.value;
   const suffix = createHash("sha256").update(embedding.model).digest("hex").slice(0, 8);
   const method = config.databaseType === "lakebase" ? "lakebase_ann" : "hnsw";
-  const vectorType = config.databaseType === "lakebase" ? "vector" : "public.vector";
-  const operatorClass = config.databaseType === "lakebase" ? "vector_cosine_ops" : "public.vector_cosine_ops";
   const indexName = `search_documents_${method}_${embedding.dimensions}_${suffix}`;
   await pool.query(`
     CREATE INDEX IF NOT EXISTS ${indexName}
     ON search.documents USING ${method}
-      ((embedding::${vectorType}(${embedding.dimensions})) ${operatorClass})
+      ((embedding::public.vector(${embedding.dimensions})) public.vector_cosine_ops)
     WHERE embedding_model = ${modelLiteral} AND cardinality(embedding) = ${embedding.dimensions}
   `);
 }

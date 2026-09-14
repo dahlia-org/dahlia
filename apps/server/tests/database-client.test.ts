@@ -27,7 +27,7 @@ describe("PostgreSQL migrations", () => {
       });
       expect(() => pool.emit("error", error, error.client)).not.toThrow();
       expect(log.mock.calls).toEqual([[JSON.stringify({ level: "error", event: "database_pool_idle_error" })]]);
-      expect(pool.options.options).toBe("-c search_path=app,auth");
+      expect(pool.options.options).toBe("-c search_path=app,auth,public");
       if (databaseType === "lakebase") {
         expect(pool.options.password).toBeTypeOf("function");
         expect(pool.options.ssl).toEqual({ rejectUnauthorized: true });
@@ -120,13 +120,13 @@ describe("PostgreSQL migrations", () => {
 
   it("uses the application schemas in dependency order", async () => {
     const pool = createPostgresPool("postgresql://dahlia@127.0.0.1:5432/dahlia", 1);
-    expect(pool.options.options).toBe("-c search_path=app,auth");
+    expect(pool.options.options).toBe("-c search_path=app,auth,public");
     await pool.end();
   });
 
   it.each([
-    ["lakebase", "lakebase_vector CASCADE", "lakebase_ann"],
-    ["postgres", "vector", "hnsw"],
+    ["lakebase", "lakebase_vector WITH SCHEMA public CASCADE", "lakebase_ann"],
+    ["postgres", "vector WITH SCHEMA public", "hnsw"],
   ] as const)("uses the native %s vector extension and index", async (databaseType, extension, method) => {
     const query = vi.fn(async (statement: string) => statement.startsWith("select quote_literal")
       ? { rows: [{ value: "'model'" }] }
@@ -137,13 +137,11 @@ describe("PostgreSQL migrations", () => {
     } as AppConfig);
     const statements = query.mock.calls.map(([statement]) => statement);
     expect(statements).toContain(`CREATE EXTENSION IF NOT EXISTS ${extension}`);
-    const vectorType = databaseType === "lakebase" ? "vector(32)" : "public.vector(32)";
-    const operatorClass = databaseType === "lakebase" ? "vector_cosine_ops" : "public.vector_cosine_ops";
     expect(statements.some((statement) => statement.includes(`USING ${method}`)
-      && statement.includes(`embedding::${vectorType}`)
-      && statement.includes(operatorClass))).toBe(true);
+      && statement.includes("embedding::public.vector(32)")
+      && statement.includes("public.vector_cosine_ops"))).toBe(true);
     if (databaseType === "lakebase") {
-      expect(statements).toContain("CREATE EXTENSION IF NOT EXISTS lakebase_text");
+      expect(statements).toContain("CREATE EXTENSION IF NOT EXISTS lakebase_text WITH SCHEMA public");
       expect(statements.some((statement) => statement.includes("USING lakebase_bm25"))).toBe(true);
     } else {
       expect(statements.some((statement) => statement.includes("USING gin"))).toBe(true);
