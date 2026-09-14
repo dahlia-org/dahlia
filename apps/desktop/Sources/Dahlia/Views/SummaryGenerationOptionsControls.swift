@@ -5,12 +5,11 @@ struct SummaryGenerationOptionsControls: View {
     @Binding var exportsToWorkspace: Bool
     @Binding var exportsToGoogleDocs: Bool
     let isEnabled: Bool
+    let usesServerSummary: Bool
 
     var body: some View {
         Picker(selection: $detailLevel) {
-            if AppSettings.shared.currentWorkspace?.accountConnectionId != nil || detailLevel == nil {
-                Text(L10n.serverSummaryAccountDefault).tag(SummaryDetailLevel?.none)
-            }
+            Text(L10n.workspaceGenerationDefault).tag(SummaryDetailLevel?.none)
             ForEach(SummaryDetailLevel.allCases) { level in
                 Text(level.displayName).tag(Optional(level))
             }
@@ -21,7 +20,7 @@ struct SummaryGenerationOptionsControls: View {
         .pickerStyle(.menu)
         .disabled(!isEnabled)
 
-        if AppSettings.shared.currentWorkspace?.accountConnectionId == nil {
+        if !usesServerSummary {
             Toggle(isOn: $exportsToWorkspace) {
                 Text(L10n.exportBatchSummaryToWorkspace)
                 Text(L10n.exportBatchSummaryToWorkspaceDescription)

@@ -1,3 +1,5 @@
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../src/workspace-generation-settings";
+import { updateGenerationSettings } from "./workspace-settings-helpers";
 import { makeSignature } from "better-auth/crypto";
 import { testOrganizationID } from "./public-test-client";
 import { encodeId } from "../src/typeid";
@@ -44,6 +46,68 @@ afterEach(() => {
 });
 
 describe("SQLite canonical sync", () => {
+  it("shares generation defaults through Workspace reads, receipts and deltas with admin-only writes", async () => {
+    const { store } = await setup();
+    const service = new MeetingSyncService(store.sync);
+    try {
+      await createWorkspace(store);
+      const initial = await store.sync.withIdentity(owner, (scoped) => scoped.getWorkspace(workspaceId));
+      expect(initial?.generationSettings).toEqual(DEFAULT_WORKSPACE_GENERATION_SETTINGS);
+      const settings = { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, outputLanguage: "fr" as const,
+        local: { model: "shared-local", reasoningEffort: "high" as const } };
+      const transaction = wire([{ entity: "workspace", action: "update", entityId: workspaceId,
+        baseRevision: initial!.revision!, data: { name: initial!.name, generationSettings: settings } }]);
+      const receipt = await service.commitTransaction(owner, transaction);
+      expect(receipt.records[0]?.record?.generationSettings).toEqual(settings);
+      expect(await service.commitTransaction(owner, transaction)).toEqual(receipt);
+      for (const role of ["viewer", "editor"] as const) {
+        await service.putPermission(owner, workspaceId, "user", other.userId, role);
+        const shared = await store.sync.withIdentity(other, (scoped) => scoped.getWorkspace(workspaceId));
+        expect(shared?.generationSettings).toEqual(settings);
+        const forbidden = wire([{ entity: "workspace", action: "update", entityId: workspaceId,
+          baseRevision: shared!.revision!, data: { name: initial!.name, generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS } }]);
+        await expect(service.commitTransaction(other, forbidden)).rejects.toMatchObject({ status: role === "viewer" ? 409 : 403 });
+      }
+      expect((await service.listSnapshot(other, workspaceId)).items.find((entry) => entry.entity === "workspace")?.record?.generationSettings).toEqual(settings);
+      expect((await service.listChanges(other, workspaceId)).items.find((entry) => entry.entity === "workspace")?.record?.generationSettings).toEqual(settings);
+      await expect(service.commitTransaction(owner, wire([{ entity: "workspace", action: "update", entityId: workspaceId,
+        baseRevision: initial!.revision!, data: { name: initial!.name, generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS } }]))).rejects.toMatchObject({ status: 409 });
+      const unrelated = freshId();
+      await service.commitTransaction(owner, { ...wire([]), workspaceId: unrelated, operations: [{ id: freshId(), entity: "workspace", action: "create", entityId: unrelated,
+        baseRevision: null, data: { organizationId: testOrganizationID, name: "Other workspace", createdAt: now.toISOString() } }] });
+      expect((await store.sync.withIdentity(owner, (scoped) => scoped.getWorkspace(unrelated)))?.generationSettings).toEqual(DEFAULT_WORKSPACE_GENERATION_SETTINGS);
+    } finally { await store.close?.(); }
+  });
+
+  it("rejects invalid shared generation settings at the transaction boundary", async () => {
+    const { store } = await setup();
+    const service = new MeetingSyncService(store.sync);
+    try {
+      await createWorkspace(store);
+      for (const patch of [{ outputLanguage: "xx" }, { local: { model: "", reasoningEffort: "high" } },
+        { local: { model: "model", reasoningEffort: "unknown" } }, { processing: { location: "remote", remote: { workflow: "invalid" } } },
+        { extra: true }]) {
+        await expect(service.commitTransaction(owner, wire([{ entity: "workspace", action: "update", entityId: workspaceId,
+          baseRevision: 1, data: { name: "Workspace", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, ...patch } } }]))).rejects.toMatchObject({ status: 400 });
+      }
+    } finally { await store.close?.(); }
+  });
+
+  it("freezes image output language across retries after shared settings change", async () => {
+    const { store, publish, attach, file } = await fileSetup("gpt-5-6-luna");
+    try {
+      await publish(); await attach();
+      await updateGenerationSettings(store, owner, file.workspaceId, { outputLanguage: "en" });
+      const jobs = store.imageAnalysis!;
+      await jobs.reconcile("gpt-5-6-luna");
+      const first = await jobs.claim("gpt-5-6-luna");
+      expect(first?.outputLanguage).toBe("en");
+      await updateGenerationSettings(store, owner, file.workspaceId, { outputLanguage: "fr" });
+      await jobs.finish(first!, { code: "retry", retryAt: new Date(0) });
+      expect((await jobs.claim("gpt-5-6-luna"))?.outputLanguage).toBe("en");
+    } finally { await store.close?.(); }
+  });
+
   it("round trips calendar occurrence identity and preserves it when an editor omits it", async () => {
     const { store } = await setup();
     await createWorkspace(store);
@@ -924,7 +988,7 @@ describe("SQLite canonical sync", () => {
     };
     try {
       expect(await nextSettingsEvent()).toContain("data: {}");
-      await store.accountSettings.update(owner.userId, { outputLanguage: "fr" });
+      await store.accountSettings.update(owner.userId, { analysisLanguages: { scope: "selected", identifiers: ["fr"] } });
       const event = await nextSettingsEvent();
       expect(event).toContain("data: {}");
       expect(event).not.toContain("outputLanguage");
@@ -951,49 +1015,31 @@ describe("SQLite canonical sync", () => {
     await reopened.close?.();
   });
 
-  it("initializes account settings once and merges only specified fields across clients", async () => {
+  it("initializes account recognition languages once and isolates users", async () => {
     const { store } = await setup();
-    expect(await store.accountSettings.get(owner.userId)).toBeNull();
-    const initial = { ...DEFAULT_ACCOUNT_SETTINGS, outputLanguage: "en" as const, analysisLanguages: { scope: "selected" as const, identifiers: ["en", "ja"] } };
-    await store.accountSettings.update(owner.userId, initial, true);
-    expect(await store.accountSettings.update(owner.userId, { ...initial, outputLanguage: "ja" }, true)).toEqual(initial);
-    await Promise.all([
-      store.accountSettings.update(owner.userId, { outputLanguage: "fr" }),
-      store.accountSettings.update(owner.userId, { analysisLanguages: { scope: "all", identifiers: [] } }),
-    ]);
-    expect(await store.accountSettings.get(owner.userId)).toEqual({ ...DEFAULT_ACCOUNT_SETTINGS, outputLanguage: "fr", analysisLanguages: { scope: "all", identifiers: [] } });
-    await Promise.all([
-      store.accountSettings.update(owner.userId, { processing: { remote: { summaryModel: "saved-model" } } }),
-      store.accountSettings.update(owner.userId, { summary: { style: "concise" } }),
-    ]);
-    expect(await store.accountSettings.get(owner.userId)).toMatchObject({ summary: { style: "concise" }, processing: {
-      location: "local", remote: { ...DEFAULT_ACCOUNT_SETTINGS.processing.remote, summaryModel: "saved-model" },
-    } });
-    const version = await store.accountSettings.getRevision(owner.userId);
-    await store.accountSettings.update(owner.userId, { summary: { style: "concise" } });
-    expect(await store.accountSettings.getRevision(owner.userId)).toBe(version);
-    await Promise.all([
-      store.accountSettings.update(owner.userId, { processing: { remote: { summaryModel: "audio-model" } } }),
-      store.accountSettings.update(owner.userId, { processing: { remote: { reasoningEffort: "high" } } }),
-    ]);
-    expect((await store.accountSettings.get(owner.userId))?.processing.remote).toMatchObject({ summaryModel: "audio-model", reasoningEffort: "high" });
-    expect(await store.accountSettings.getRevision(owner.userId)).toBe(version! + 2);
-    await store.accountSettings.update(owner.userId, { summary: { style: "standard" } });
-    await store.accountSettings.update(owner.userId, { summary: { style: "detailed" } });
-    expect((await store.accountSettings.get(owner.userId))?.summary.style).toBe("detailed");
-    expect(await store.accountSettings.get(other.userId)).toBeNull();
-    await store.close?.();
+    try {
+      const initial = { analysisLanguages: { scope: "selected" as const, identifiers: ["en", "ja"] } };
+      expect(await store.accountSettings.get(owner.userId)).toBeNull();
+      await store.accountSettings.update(owner.userId, initial, true);
+      expect(await store.accountSettings.update(owner.userId, DEFAULT_ACCOUNT_SETTINGS, true)).toEqual(initial);
+      await store.accountSettings.update(owner.userId, DEFAULT_ACCOUNT_SETTINGS);
+      const revision = await store.accountSettings.getRevision(owner.userId);
+      await store.accountSettings.update(owner.userId, DEFAULT_ACCOUNT_SETTINGS);
+      expect(await store.accountSettings.getRevision(owner.userId)).toBe(revision);
+      expect(await store.accountSettings.get(owner.userId)).toEqual(DEFAULT_ACCOUNT_SETTINGS);
+      expect(await store.accountSettings.get(other.userId)).toBeNull();
+    } finally { await store.close?.(); }
   });
 
   it("analyzes only published attached files and commits text, delta and embeddings atomically", async () => {
     const { store, service, publish, attach, file, databasePath } = await fileSetup("catalog.ai.gpt-5-6-luna");
     const jobs = store.imageAnalysis!;
-    const analyze = vi.fn(async (_bytes: Uint8Array, settings: AccountSettings) => {
+    const analyze = vi.fn(async (_bytes: Uint8Array, settings: AccountSettings & { outputLanguage: string }) => {
       expect(settings.outputLanguage).toBe("en");
       return { ocr_text: "", caption: "Architecture diagram" };
     });
     const captioner: ImageCaptioner = { model: "catalog.ai.gpt-5-6-luna", analyze };
-    await store.accountSettings.update(owner.userId, { outputLanguage: "en" });
+    await updateGenerationSettings(store, owner, file.workspaceId, { outputLanguage: "en" });
     const worker = new ImageAnalysisWorker(jobs, captioner, store.sync, service, store.accountSettings);
     await jobs.reconcile(captioner.model);
     expect(await worker.processOne()).toBe(false);

@@ -2,7 +2,7 @@
 import { createRoot } from "react-dom/client";
 import "../../src/client/styles.css";
 import { ServerSummaryGeneration } from "../../src/client/SummaryGeneration";
-import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../../src/account-settings-model";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "../../src/workspace-generation-settings";
 import { modelList } from "../../src/ai-gateway/models";
 import type { SummaryRequest } from "../../src/summary/service";
 
@@ -12,9 +12,9 @@ let uploaded = false;
 let reject = true;
 let transcriptVersion = 1;
 const bodies: SummaryRequest[] = [];
-const settings: AccountSettings = {
-  ...DEFAULT_ACCOUNT_SETTINGS, processing: { ...DEFAULT_ACCOUNT_SETTINGS.processing, location: "remote", remote: {
-    ...DEFAULT_ACCOUNT_SETTINGS.processing.remote,
+const settings: WorkspaceGenerationSettings = {
+  ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing, location: "remote", remote: {
+    ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing.remote,
     summaryModel: "gpt-5-6-luna",
     reasoningEffort: "high",
   } },
@@ -26,7 +26,7 @@ window.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   if (path === "/api/v1/capabilities") return Response.json({
     meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"], completeRecordings: true },
   });
-  if (path === "/api/v1/account/settings") return Response.json({ settings });
+  if (path === "/api/v1/workspaces/workspace") return Response.json({ workspaceId: "workspace", generationSettings: settings, role: "editor" });
   if (path === "/api/v1/models") return Response.json(modelList([{ id: "gpt-5-6-luna" }]));
   if (path.endsWith("/transcripts/latest")) return Response.json({
     formatVersion: 1, version: transcriptVersion, entityId: "meeting", present: true, count: 1, byteCount: 10,
@@ -60,7 +60,7 @@ async function start(count: number) {
   await until(() => bodies.length === count && !button()!.disabled);
 }
 async function run() {
-  createRoot(document.getElementById("root")!).render(<ServerSummaryGeneration meetingId="meeting" />);
+  createRoot(document.getElementById("root")!).render(<ServerSummaryGeneration workspaceId="workspace" meetingId="meeting" />);
   await until(() => document.querySelector<HTMLInputElement>('input[value="transcript"]')?.checked);
   assert(document.querySelector<HTMLInputElement>('input[value="audio"]')?.disabled, "Uploading audio must be disabled");
   await start(1);
@@ -90,9 +90,9 @@ async function run() {
     && audioRequest.input.recordings[0]!.systemFileId === "system", "Audio request did not include every recording track");
   assert("preferences" in audioRequest && audioRequest.preferences.processing.remote.workflow === "combined",
     "Audio request did not force combined processing");
-  assert("preferences" in audioRequest && audioRequest.preferences.processing.remote.summaryModel === undefined
-    && audioRequest.preferences.processing.remote.reasoningEffort === undefined,
-  "Incompatible audio model and reasoning effort were not reset for this run");
+  assert("preferences" in audioRequest && audioRequest.preferences.processing.remote.summaryModel === settings.processing.remote.summaryModel
+    && audioRequest.preferences.processing.remote.reasoningEffort === settings.processing.remote.reasoningEffort,
+  "Explicit model and reasoning effort must remain unchanged");
   document.getElementById("result")!.textContent = "PASS: source selection, rejected refresh, and uncertain replay";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });

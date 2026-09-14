@@ -1,3 +1,4 @@
+import type { WorkspaceGenerationSettings } from "../workspace-generation-settings";
 import type { CalendarEventSnapshot } from "./schemas";
 import type { TranscriptVersion } from "./transcript";
 import type { SummaryVersion } from "../summary/metadata";
@@ -32,6 +33,7 @@ export interface SyncTranscriptCursor {
 
 export interface SyncWorkspaceRecord {
   meetingDeletionGraceDays: number;
+  generationSettings: WorkspaceGenerationSettings;
   organizationId: string;
   encryption?: "none" | "server";
   hasResources?: boolean;

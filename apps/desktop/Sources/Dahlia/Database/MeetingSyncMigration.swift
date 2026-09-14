@@ -29,8 +29,6 @@ enum MeetingSyncMigration {
             accountConnectionId BLOB REFERENCES dahlia_account_connections(id) ON DELETE SET NULL,
             localAIProvider TEXT NOT NULL DEFAULT 'chatGPTSubscription',
             databricksProfile TEXT NOT NULL DEFAULT '',
-            summaryModelID TEXT NOT NULL DEFAULT 'gpt-5.6-luna',
-            summaryReasoningEffort TEXT NOT NULL DEFAULT 'high',
             chatModelID TEXT NOT NULL DEFAULT '',
             chatReasoningEffort TEXT NOT NULL DEFAULT 'medium',
             aiSettingsBackfilled INTEGER NOT NULL DEFAULT 0,
@@ -49,12 +47,12 @@ enum MeetingSyncMigration {
         );
         INSERT INTO vaults_v42 (
             id, path, name, createdAt, lastOpenedAt, accountConnectionId,
-            localAIProvider, databricksProfile, summaryModelID, summaryReasoningEffort,
+            localAIProvider, databricksProfile,
             chatModelID, chatReasoningEffort, aiSettingsBackfilled
         )
         SELECT
             id, path, name, createdAt, lastOpenedAt, NULL,
-            localAIProvider, databricksProfile, summaryModelID, summaryReasoningEffort,
+            localAIProvider, databricksProfile,
             chatModelID, chatReasoningEffort, aiSettingsBackfilled
         FROM vaults;
         DROP TABLE vaults;

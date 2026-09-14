@@ -84,7 +84,7 @@ describe("generated Web client against the real SQLite Server", () => {
       await client.GET("/api/v1/session");
       await client.GET("/api/v1/capabilities");
       await client.GET("/api/v1/account/settings");
-      await client.PATCH("/api/v1/account/settings", { body: { outputLanguage: "ja" } });
+      await client.PATCH("/api/v1/account/settings", { body: { analysisLanguages: { scope: "all", identifiers: [] } } });
       await client.GET("/api/v1/workspaces");
       await client.GET("/api/v1/organizations");
       await client.GET("/api/v1/workspaces/{workspaceId}", { params: { path: { workspaceId } } });

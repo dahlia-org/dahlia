@@ -1,5 +1,5 @@
 import { z } from "@hono/zod-openapi";
-import { normalizeSummaryDetail } from "../account-settings-model";
+import { normalizeSummaryDetail } from "../workspace-generation-settings";
 
 const reasoning = z.object({ effort: z.string().max(100).nullish(), summary: z.string().max(100).nullish() });
 const tokens = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullish();

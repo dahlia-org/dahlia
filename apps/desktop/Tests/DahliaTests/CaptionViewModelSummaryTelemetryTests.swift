@@ -54,7 +54,7 @@ import GRDB
             await fixture.select(fixture.first, in: viewModel, note: "note")
             #expect(await waitUntil { viewModel.canGenerateSummary })
             #expect(viewModel.triggerManualSummary(options: options))
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
             try await fixture.database.dbQueue.write { db in
                 try db.execute(sql: "DROP TABLE summaries")
             }

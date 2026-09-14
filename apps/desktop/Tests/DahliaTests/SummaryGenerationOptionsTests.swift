@@ -7,23 +7,20 @@
     @MainActor
     struct SummaryGenerationOptionsTests {
         @Test
-        func batchDefaultsUseAccountStyleInEitherLocationWithoutChangingExports() {
-            let local = AppSettings.shared.batchSummaryGenerationOptions()
-            var server = ServerAccountSettings.initialValues()
-            server.processing = .init(location: .remote)
-            server.summary = .init(style: .standard)
-            let options = AppSettings.shared.batchSummaryGenerationOptions(serverSettings: server)
-            #expect(options.detailLevel == .standard)
-            #expect(options.exportOptions == local.exportOptions)
-            #expect(local.detailLevel == AppSettings.shared.summaryDetailLevel)
-            let unavailable = AppSettings.shared.batchSummaryGenerationOptions(serverSettings: nil)
-            #expect(unavailable.detailLevel == nil)
-            #expect(unavailable.exportOptions == local.exportOptions)
-            let loaded = SummaryGenerationSettings.current(accountSettings: server)
-                .applying(accountSettings: server, connectionID: .v7(), detailLevel: unavailable.detailLevel)
-            #expect(loaded.detailLevelInstruction == SummaryDetailLevel.standard.instruction)
-            server.processing?.location = .local
-            #expect(AppSettings.shared.batchSummaryGenerationOptions(serverSettings: server).detailLevel == .standard)
+        func oneOffOverridesKeepSharedDefaultsUnchanged() {
+            let shared = WorkspaceGenerationSettings()
+            let options = SummaryGenerationOptions(
+                exportOptions: .manual,
+                detailLevel: .concise,
+                overrides: .init(outputLanguage: .fr, location: .remote, model: "chosen", reasoningEffort: "low")
+            )
+            let effective = options.applying(to: shared)
+            #expect(effective.outputLanguage == .fr)
+            #expect(effective.summary.style == .concise)
+            #expect(effective.processing.location == .remote)
+            #expect(effective.processing.remote.summaryModel == "chosen")
+            #expect(effective.processing.remote.reasoningEffort == "low")
+            #expect(shared == WorkspaceGenerationSettings())
         }
 
         @Test

@@ -113,7 +113,7 @@ enum CloudWorkspaceDiscovery {
             guard let workspaceId = UUID(uuidString: item.workspaceId),
                   let organizationId = UUID(uuidString: item.organizationId) else { throw URLError(.cannotParseResponse) }
             guard seen.insert(workspaceId).inserted else { return nil }
-            return CloudWorkspaceRecord(
+            return try CloudWorkspaceRecord(
                 workspaceId: workspaceId,
                 connectionId: connection.id,
                 organizationId: organizationId,
@@ -121,7 +121,8 @@ enum CloudWorkspaceDiscovery {
                 name: item.name,
                 createdAt: item.createdAt,
                 revision: item.revision,
-                role: item.role.rawValue
+                role: item.role.rawValue,
+                generationSettings: JSONDecoder().decode(WorkspaceGenerationSettings.self, from: JSONEncoder().encode(item.generationSettings))
             )
         }
     }

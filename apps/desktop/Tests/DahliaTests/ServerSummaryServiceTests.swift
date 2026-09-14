@@ -145,10 +145,11 @@ import DahliaRuntimeSupport
                 try TranscriptRecord(meetingId: target.meetingID, info: info).insert(db)
             }
             let posts = Mutex<[Data]>([])
-            let legacySettings = try JSONDecoder().decode(ServerAccountSettings.self, from: Data("""
-            {"summary":{"method":"transcript","detail":"high","methodSettings":{"transcript":{"model":"gpt-5.4","reasoningEffort":"medium"}}},
-             "outputLanguage":"ja","analysisLanguages":{"scope":"all","identifiers":[]}}
-            """.utf8))
+            let workspaceSettings = WorkspaceGenerationSettings(
+                processing: .init(location: .remote, remote: .init(
+                    summaryModel: "gpt-5.4", reasoningEffort: "medium"
+                ))
+            )
             var processing = RecordingProcessing(
                 id: id,
                 automatic: true,
@@ -163,7 +164,7 @@ import DahliaRuntimeSupport
                     languageDisplayName: "Japanese",
                     runtimeProvider: .chatGPTSubscription
                 ),
-                serverSettings: legacySettings
+                workspaceSettings: workspaceSettings
             )
             processing.serverRequest = .init(
                 id: id.uuidString.lowercased(), input: .init(type: "transcript", version: "1"),
@@ -318,38 +319,15 @@ import DahliaRuntimeSupport
         }
 
         @Test
-        func decodesAccountMethodSettingsWithoutChangingLanguagePatch() throws {
-            let body = Data(
-                """
-                {"settings":{"outputLanguage":"ja","analysisLanguages":{"scope":"all","identifiers":[]},
-                "summary":{"method":"transcript","detail":"detailed","methodSettings":{"transcript":{"model":"catalog.ai.model","reasoningEffort":"high"}}}}}
-                """.utf8
-            )
-            let response = try JSONDecoder().decode(ServerAccountSettings.Response.self, from: body)
-            #expect(response.settings?.processing?.remote.summaryModel == "catalog.ai.model")
-            #expect(response.settings?.processing?.location == .local)
-            let patch = try JSONEncoder().encode(ServerAccountSettings.Patch(outputLanguage: .en))
-            let json = try #require(JSONSerialization.jsonObject(with: patch) as? [String: String])
-            #expect(json == ["outputLanguage": "en"])
-        }
-
-        @Test
-        func summaryDetailIsIndependentOfMethod() throws {
-            let body = Data(
-                """
-                {"outputLanguage":"ja","analysisLanguages":{"scope":"all","identifiers":[]},"summary":{"method":"audio","detail":"standard","methodSettings":{
-                  "transcript":{"model":"gpt-5.4","reasoningEffort":"high"},
-                  "audio":{"model":"gemini-3-8-flash","reasoningEffort":"medium"}
-                }}}
-                """.utf8
-            )
-            var settings = try JSONDecoder().decode(ServerAccountSettings.self, from: body)
-            #expect(settings.processing?.remote.summaryModel == "gemini-3-8-flash")
-            #expect(settings.processing?.remote.reasoningEffort == "medium")
-            #expect(settings.processing?.location == .remote)
-            #expect(settings.summary?.detailLevel == .standard)
-            settings.processing?.location = .local
-            #expect(settings.summary?.detailLevel == .standard)
+        func workspaceSettingsRoundTripPreservesStyleInEitherLocation() throws {
+            var settings = WorkspaceGenerationSettings()
+            settings.summary.style = .standard
+            settings.processing.remote.summaryModel = "saved"
+            settings.processing.location = .remote
+            let restored = try JSONDecoder().decode(WorkspaceGenerationSettings.self, from: JSONEncoder().encode(settings))
+            #expect(restored == settings)
+            settings.processing.location = .local
+            #expect(settings.summary.detailLevel == .standard)
         }
 
         @Test
@@ -432,16 +410,6 @@ import DahliaRuntimeSupport
             #expect(try await service.manualMethods(connectionID: .v7(), origin: origin) == ["transcript"])
         }
 
-        @Test
-        func encodesAccountStylePatch() throws {
-            let patch = ServerAccountSettings.Patch(summary: .init(style: .concise))
-            let data = try JSONEncoder().encode(patch)
-            let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: [String: String]])
-            #expect(json == ["summary": ["style": "concise"]])
-            let response = try JSONDecoder().decode(ServerAccountSettings.Response.self, from: Data(#"{"settings":null}"#.utf8))
-            #expect(response.settings == nil)
-        }
-
         @Test(arguments: ["succeeded", "failed", "cancelled"])
         func cloudProcessingKeepsItsCapturedRecordingAndMarksOnlyThatSessionComplete(status: String) async throws {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
@@ -501,13 +469,12 @@ import DahliaRuntimeSupport
                     state: "saved"
                 ).insert(db)
             }
-            let settings = ServerAccountSettings(
+            let settings = WorkspaceGenerationSettings(
                 processing: .init(location: .remote, remote: .init(
                     summaryModel: "summary-model", transcriptionModel: "gemini-audio", reasoningEffort: "low"
                 )),
                 summary: .init(style: .eventTimeline),
-                outputLanguage: .en,
-                analysisLanguages: .init(scope: .all, identifiers: [])
+                outputLanguage: .en
             )
             var processing = RecordingProcessing(
                 id: jobID,
@@ -523,7 +490,7 @@ import DahliaRuntimeSupport
                     languageDisplayName: "Japanese",
                     runtimeProvider: .chatGPTSubscription
                 ),
-                serverSettings: settings
+                workspaceSettings: settings
             )
             processing.sessionIDs = [first]
             let bodies = Mutex<[Data]>([])

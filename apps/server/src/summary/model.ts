@@ -2,12 +2,11 @@ import type { GeneratedTranscript } from "./transcription";
 import type { SummaryMetadata } from "./metadata";
 import type { GenerationPreferences } from "./preferences";
 import { z } from "zod";
-import type { AccountSettings } from "../account-settings";
 import { uuidV7 } from "../id";
 import type { IdentitySyncStore } from "../sync/types";
 
-import { normalizeSummaryDetail, summaryDetailSchema, summaryModelSettingsSchema } from "../account-settings-model";
-export { summaryDetailSchema } from "../account-settings-model";
+import { normalizeSummaryDetail, summaryDetailSchema, summaryModelSettingsSchema } from "../workspace-generation-settings";
+export { summaryDetailSchema } from "../workspace-generation-settings";
 export const transcriptSettingsSchema = summaryModelSettingsSchema.extend({ detail: summaryDetailSchema, transcriptionReasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional() });
 // Accepted jobs retain their captured settings across API contract changes.
 export const storedTranscriptSettingsSchema = transcriptSettingsSchema.extend({
@@ -82,7 +81,7 @@ export function summaryDocument(value: unknown, imageIds: ReadonlySet<string>) {
 export type SummaryDocument = ReturnType<typeof summaryDocument> & { metadata?: SummaryMetadata };
 export interface SummaryMethod {
   readonly id: SummaryJob["method"];
-  captureSettings(settings: AccountSettings, detail?: z.infer<typeof summaryDetailSchema>): SummaryJob["settings"];
+  captureSettings(settings: GenerationPreferences, detail?: z.infer<typeof summaryDetailSchema>): SummaryJob["settings"];
   resolvePreferences?(preferences: GenerationPreferences, input: SummaryInput): Promise<{ settings: TranscriptSettings; input: SummaryInput }>;
   validateSettings?(settings: TranscriptSettings, input?: SummaryInput): Promise<void>;
   version(store: IdentitySyncStore, workspaceId: string, meetingId: string, input?: SummaryInput | null,

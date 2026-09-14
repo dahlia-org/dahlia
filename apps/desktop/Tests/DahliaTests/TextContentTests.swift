@@ -1224,6 +1224,11 @@
             let fixture = try textFixture()
             let connectionId = try await fixture.queue.write { db in
                 try db.execute(sql: "UPDATE workspaces SET syncPullCursor = 'before'")
+                var workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                workspace.generationSettings.processing.location = .remote
+                workspace.generationSettings.outputLanguage = .en
+                workspace.generationSettings.local.model = "custom-model"
+                try workspace.update(db)
                 return try #require(try UUID.fetchOne(db, sql: "SELECT accountConnectionId FROM workspaces"))
             }
             var emptyDigest = TextContentDigest()
@@ -1283,6 +1288,10 @@
             }
             try await fixture.queue.read { db throws in
                 #expect(try UUID.fetchOne(db, sql: "SELECT accountConnectionId FROM workspaces") == (fail ? connectionId : nil))
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                #expect(workspace.generationSettings.processing.location == (fail ? .remote : .local))
+                #expect(workspace.generationSettings.outputLanguage == .en)
+                #expect(workspace.generationSettings.local.model == "custom-model")
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM transcript_segment_bodies") == (scenario == "textFailure" ? 0 : 2))
                 if !fail { #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_content_state") == 0) }
                 if fail {
@@ -1296,6 +1305,7 @@
                 try await repository.resolveWorkspacesForSignOut(connectionID: connectionId, disposition: .moveToLocalAccount, textContent: provider)
                 #expect(changeRequests.withLock { $0 } == 4)
                 #expect(try await fixture.queue.read { try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.accountConnectionId } == nil)
+                #expect(try await fixture.queue.read { try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.generationSettings.processing.location } == .local)
             }
         }
 

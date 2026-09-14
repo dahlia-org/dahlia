@@ -6,6 +6,7 @@ struct ScreenshotAnalysisInput: Sendable {
     let imageData: Data?
     let mimeType: String
     let runtimeProvider: CodexRuntimeProvider
+    var outputLanguage: SummaryLanguage = .ja
 }
 
 struct ScreenshotAnalysis: Equatable, Sendable {
@@ -46,12 +47,12 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
             let languages = settings.appLanguageScope == .all
                 ? "all languages"
                 : settings.enabledLanguageIdentifiers.sorted().joined(separator: ", ")
-            return (settings.llmSummaryLanguage.displayName, languages)
+            return (screenshots[0].outputLanguage.displayName, languages)
         }
         if let connectionID = screenshots[0].runtimeProvider.accountConnectionID,
            let settings = try? await accountSettings(connectionID) {
             promptContext = (
-                settings.outputLanguage.displayName,
+                screenshots[0].outputLanguage.displayName,
                 settings.analysisLanguages.scope == .all ? "all languages" : settings.analysisLanguages.identifiers.sorted().joined(separator: ", ")
             )
         }

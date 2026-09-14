@@ -8,15 +8,13 @@ CREATE SCHEMA "search";
 --> statement-breakpoint
 CREATE TABLE "app"."account_settings" (
 	"user_id" uuid PRIMARY KEY,
-	"summary" jsonb DEFAULT '{"style":"detailed"}' NOT NULL,
-	"processing" jsonb DEFAULT '{"location":"local","remote":{"workflow":"transcribeThenSummarize"}}' NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
-	"output_language" text NOT NULL,
 	"analysis_languages" jsonb NOT NULL
 );
 --> statement-breakpoint
 ALTER TABLE "app"."account_settings" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "jobs"."image_analysis" (
+	"output_language" text,
 	"file_id" uuid PRIMARY KEY,
 	"workspace_id" uuid NOT NULL,
 	"owner_user_id" uuid NOT NULL,
@@ -323,6 +321,7 @@ CREATE TABLE "app"."transcript_segments" (
 --> statement-breakpoint
 ALTER TABLE "app"."transcript_segments" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."workspaces" (
+	"generation_settings" jsonb DEFAULT '{"outputLanguage":"ja","processing":{"location":"local","remote":{"workflow":"transcribeThenSummarize"}},"summary":{"style":"detailed"},"local":{"model":"gpt-5.6-luna","reasoningEffort":"high"}}' NOT NULL,
 	"encryption" text DEFAULT 'none' NOT NULL,
 	"encrypted_payload" text,
 	"workspace_id" uuid PRIMARY KEY,

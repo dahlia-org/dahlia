@@ -295,6 +295,15 @@ final class AppDatabaseManager: Sendable {
             try addColumnIfNeeded(in: db, table: "meetings", column: "calendarSyncMetadata", type: .blob)
             try CustomerIntelligenceRemovalMigration.migrate(in: db)
             try WorkspaceNamingMigration.migrate(in: db)
+            try addColumnIfNeeded(in: db, table: "jobs_search_index", column: "captionLanguage", type: .text)
+            if try db.tableExists("workspaces") {
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.sortedKeys]
+                let generationDefaults = try String(decoding: encoder.encode(WorkspaceGenerationSettings()), as: UTF8.self)
+                try db.alter(table: "workspaces") { table in
+                    table.add(column: "generationSettings", .text).notNull().defaults(to: generationDefaults)
+                }
+            }
         }
 
         return migrator

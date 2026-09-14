@@ -47,10 +47,11 @@ private struct SummaryGenerationConfirmationPresentationModifier: ViewModifier {
         return viewModel.currentMeetingId.map { [$0] } ?? []
     }
 
-    private func loadSourceAvailability() async throws -> SummaryGenerationSourceAvailability {
+    private func loadSourceAvailability(location: WorkspaceGenerationSettings.SummaryMode?) async throws -> SummaryGenerationSourceAvailability {
         try await viewModel.summaryGenerationSourceAvailability(
             meetingIDs: meetingIDs,
-            dbQueue: isBulk ? sidebarViewModel.dbQueue : nil
+            dbQueue: isBulk ? sidebarViewModel.dbQueue : nil,
+            location: location
         )
     }
 

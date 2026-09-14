@@ -68,7 +68,7 @@
                 workspace: workspace,
                 localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
             )
-            staleSettings.summaryModelID = "new-summary-model"
+            staleSettings.generationSettings.local.model = "new-summary-model"
 
             _ = try await repository.adoptWorkspaceForServerSync(
                 id: workspace.id,
@@ -123,8 +123,6 @@
             try await repository.backfillWorkspaceAISettings(WorkspaceAISettingsLegacyValues(
                 localProvider: .databricks,
                 databricksProfile: "work",
-                summaryModelID: "summary-model",
-                summaryReasoningEffort: "medium",
                 chatModelID: "chat-model",
                 chatReasoningEffort: "low"
             ))
@@ -133,7 +131,7 @@
             #expect(workspaces.count == 2)
             #expect(workspaces.allSatisfy { $0.localProvider == .databricks })
             #expect(workspaces.allSatisfy { $0.databricksProfile == "work" })
-            #expect(workspaces.allSatisfy { $0.summaryModelID == "summary-model" })
+            #expect(workspaces.allSatisfy { $0.generationSettings == WorkspaceGenerationSettings() })
             #expect(workspaces.allSatisfy { $0.chatModelID == "chat-model" })
             let allAISettingsBackfilled = workspaces.allSatisfy(\.aiSettingsBackfilled)
             #expect(allAISettingsBackfilled)
@@ -141,14 +139,12 @@
             try await repository.backfillWorkspaceAISettings(WorkspaceAISettingsLegacyValues(
                 localProvider: .chatGPTSubscription,
                 databricksProfile: "ignored",
-                summaryModelID: "ignored",
-                summaryReasoningEffort: "low",
                 chatModelID: "ignored",
                 chatReasoningEffort: "high"
             ))
             let unchanged = try await repository.fetchAllWorkspacesAsync()
             #expect(unchanged.allSatisfy { $0.localProvider == .databricks })
-            #expect(unchanged.allSatisfy { $0.summaryModelID == "summary-model" })
+            #expect(unchanged.allSatisfy { $0.generationSettings == WorkspaceGenerationSettings() })
         }
 
         @Test
@@ -165,14 +161,12 @@
                 }),
                 localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
             )
-            settings.summaryModelID = "explicit-model"
+            settings.generationSettings.local.model = "explicit-model"
 
             _ = try await repository.updateWorkspaceAISettings(settings)
             try await repository.backfillWorkspaceAISettings(WorkspaceAISettingsLegacyValues(
                 localProvider: .databricks,
                 databricksProfile: "legacy",
-                summaryModelID: "legacy-model",
-                summaryReasoningEffort: "low",
                 chatModelID: "legacy-chat",
                 chatReasoningEffort: "low"
             ))

@@ -82,10 +82,13 @@
         @Test(arguments: [false, true])
         func sharedNullableDTOsPreserveRecordsAndTombstones(deleted: Bool) throws {
             let id = "019f0d36-0520-7000-8000-000000000001"
+            let settings = try String(decoding: JSONEncoder().encode(WorkspaceGenerationSettings()), as: UTF8.self)
             let record = deleted ? "null" : """
             {"workspaceId":"\(id)","organizationId":"\(
                 id
-            )","role":"admin","name":"Workspace","meetingDeletionGraceDays":7,"revision":1,"createdAt":"2026-09-09T00:00:00Z","updatedAt":"2026-09-09T00:00:00Z"}
+            )","role":"admin","name":"Workspace","meetingDeletionGraceDays":7,"generationSettings":\(
+                settings
+            ),"revision":1,"createdAt":"2026-09-09T00:00:00Z","updatedAt":"2026-09-09T00:00:00Z"}
             """
             let expected = deleted ? nil : id
             let canonical = try SyncJSON.decoder.decode(Components.Schemas.CanonicalRecord.self, from: Data("""

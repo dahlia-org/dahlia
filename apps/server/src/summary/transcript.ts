@@ -1,6 +1,6 @@
 import { canWriteWorkspace } from "../auth/workspace-permissions";
 import { summaryResponseMetadataSchema } from "./metadata";
-import { summaryStyleDetail } from "../account-settings-model";
+import { summaryStyleDetail } from "../workspace-generation-settings";
 import { resolveSummaryPreferences } from "./preferences";
 import { Buffer } from "node:buffer";
 import { z } from "zod";

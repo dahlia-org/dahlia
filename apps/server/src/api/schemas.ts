@@ -1,3 +1,4 @@
+import { workspaceGenerationSettingsSchema } from "../workspace-generation-settings";
 import { z } from "@hono/zod-openapi";
 import { fileWireResponseMetadataSchema } from "../files/model";
 import { recordingManifestSchema } from "../recordings/model";
@@ -19,7 +20,7 @@ export const page = <T extends z.ZodType>(item: T) => z.object({ items: z.array(
 const appearance = { icon: z.string().nullable().optional(), color: z.string().nullable().optional() };
 const syncFields = { active: z.boolean().optional(), deletingAt: date.nullable().optional(), revision: integer };
 const contentFields = { contentOmitted: z.boolean().optional(), contentPresent: z.boolean().optional() };
-export const workspace = z.object({ meetingDeletionGraceDays: meetingDeletionGraceDaysSchema, encryption: z.enum(["none", "server"]).optional(), workspaceId: id, organizationId: id, name: z.string(), ...appearance, ...syncFields,
+export const workspace = z.object({ meetingDeletionGraceDays: meetingDeletionGraceDaysSchema, generationSettings: workspaceGenerationSettingsSchema, encryption: z.enum(["none", "server"]).optional(), workspaceId: id, organizationId: id, name: z.string(), ...appearance, ...syncFields,
   createdAt: date, updatedAt: date, role: z.enum(["admin", "editor", "viewer"]), hasResources: z.boolean().optional(),
 }).openapi("Workspace");
 export const governanceWorkspace = workspace.pick({ workspaceId: true, name: true, revision: true }).extend({ creatorId: id }).openapi("GovernanceWorkspace");

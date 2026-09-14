@@ -38,14 +38,14 @@ describe("server image captioning", () => {
   it.each([429, 503, 400, 403])("classifies HTTP %s without exposing response content", async (status) => {
     const transport = vi.fn(async (url: RequestInfo | URL) => String(url).endsWith("/token")
       ? Response.json({ access_token: "app-token", expires_in: 3600 }) : new Response("private response", { status }));
-    await expect(createImageCaptioner(loadConfig(environment), transport)!.analyze(new Uint8Array(), DEFAULT_ACCOUNT_SETTINGS))
+    await expect(createImageCaptioner(loadConfig(environment), transport)!.analyze(new Uint8Array(), { ...DEFAULT_ACCOUNT_SETTINGS, outputLanguage: "ja" }))
       .rejects.toMatchObject({ code: `captioning_http_${status}`, retryable: status === 429 || status >= 500 });
   });
 
   it.each([{}, { status: "incomplete", output: [] }, { status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: '{"ocr_text":"","caption":""}' }] }] }])("rejects malformed, truncated and empty captions", async (body) => {
     const transport = vi.fn(async (url: RequestInfo | URL) => String(url).endsWith("/token")
       ? Response.json({ access_token: "app-token", expires_in: 3600 }) : Response.json(body));
-    await expect(createImageCaptioner(loadConfig(environment), transport)!.analyze(new Uint8Array(), DEFAULT_ACCOUNT_SETTINGS))
+    await expect(createImageCaptioner(loadConfig(environment), transport)!.analyze(new Uint8Array(), { ...DEFAULT_ACCOUNT_SETTINGS, outputLanguage: "ja" }))
       .rejects.toMatchObject({ code: "captioning_invalid_response" });
   });
 

@@ -13,6 +13,7 @@ struct BatchTranscriptionOptionsForm: View {
     let projects: [FlatProjectRow]
     @Binding var selectedProjectId: UUID?
     var processingMethod: RecordingProcessingMethod?
+    let usesServerSummary: Bool
 
     var body: some View {
         Form {
@@ -63,7 +64,8 @@ struct BatchTranscriptionOptionsForm: View {
                     detailLevel: $summaryDetailLevel,
                     exportsToWorkspace: $exportBatchSummaryToWorkspace,
                     exportsToGoogleDocs: $exportBatchSummaryToGoogleDocs,
-                    isEnabled: processingMethod != nil || generateSummaryAfterBatchTranscription
+                    isEnabled: processingMethod != nil || generateSummaryAfterBatchTranscription,
+                    usesServerSummary: usesServerSummary
                 )
             }
         }

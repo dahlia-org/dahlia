@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { expect, it } from "vitest";
 import { serverMigrationManifest } from "../src/migrations";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../src/workspace-generation-settings";
 
 it("creates canonical tables, defaults, and cascading relationships on SQLite", () => {
   const db = new DatabaseSync(":memory:");
@@ -32,8 +33,8 @@ it("creates canonical tables, defaults, and cascading relationships on SQLite", 
       INSERT INTO meeting_attachments(id, workspace_id, meeting_id, file_id) VALUES ('link', 'workspace', 'meeting', 'file');
       INSERT INTO recordings(session_id, meeting_id, number, started_at, ended_at, audio, revision, created_at, updated_at)
         VALUES ('session', 'meeting', 1, 1, 2, '{"mic":{"generation":"upload-token","active":false}}', 7, 1, 2);
-      INSERT INTO account_settings(user_id, output_language, analysis_languages, revision)
-        VALUES ('owner', 'ja', '{"scope":"automatic"}', 19);
+      INSERT INTO account_settings(user_id, analysis_languages, revision)
+        VALUES ('owner', '{"scope":"all","identifiers":[]}', 19);
       INSERT INTO jobs_search_index(workspace_id, document_id, model, dimensions, generation, status, attempts, claimed_at)
         VALUES ('workspace', 'document', 'model', 32, 4, 'processing', 2, 123);
       INSERT INTO jobs_storage_delete(storage_key, status, attempts, claimed_at) VALUES ('old-file', 'processing', 3, 124);
@@ -46,10 +47,11 @@ it("creates canonical tables, defaults, and cascading relationships on SQLite", 
     expect(db.prepare("PRAGMA table_info(organization)").all().map((column) => column.name)).not.toContain("domain");
     expect(db.prepare("SELECT * FROM organization_domains").all()).toEqual([]);
     expect(db.prepare("SELECT name FROM sqlite_master WHERE name IN ('artifact', 'summary_versions', 'screenshots')").all()).toEqual([]);
-    expect(db.prepare("SELECT revision, summary, processing FROM account_settings").get()).toEqual({
-      revision: 19, summary: JSON.stringify({ style: "detailed" }),
-      processing: JSON.stringify({ location: "local", remote: { workflow: "transcribeThenSummarize" } }),
+    expect(db.prepare("SELECT revision, analysis_languages FROM account_settings").get()).toEqual({
+      revision: 19, analysis_languages: JSON.stringify({ scope: "all", identifiers: [] }),
     });
+    const workspace = db.prepare("SELECT generation_settings FROM workspaces").get();
+    expect(JSON.parse(String(workspace?.generation_settings))).toEqual(DEFAULT_WORKSPACE_GENERATION_SETTINGS);
     expect(db.prepare("SELECT revision, icon, color FROM projects").get()).toEqual({ revision: 8, icon: null, color: null });
     expect(db.prepare("SELECT icon, color FROM workspaces").get()).toEqual({ icon: null, color: null });
     expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);

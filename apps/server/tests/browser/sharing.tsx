@@ -1,3 +1,4 @@
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../../src/workspace-generation-settings";
 // Open /tests/browser/sharing.html with pnpm dev:client. All requests are mocked.
 import { createRoot } from "react-dom/client";
 import { SidebarProvider, useSidebar } from "../../src/client/Sidebar";
@@ -51,7 +52,7 @@ function ScopeProbe() {
   return <><output id="scope">{organizationId}</output><button id="all-workspaces" onClick={() => select("")}>All Workspaces</button></>;
 }
 async function run() {
-  const workspace: SyncedWorkspaceInfo = { meetingDeletionGraceDays: 7, workspaceId: "workspace", organizationId: "org", name: "Shared", role: "admin", revision: 1,
+  const workspace: SyncedWorkspaceInfo = { meetingDeletionGraceDays: 7, generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS, workspaceId: "workspace", organizationId: "org", name: "Shared", role: "admin", revision: 1,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   sessionStorage.removeItem("dahlia:sidebar:me:organization");
   const fixture = <SidebarProvider session={{ user: { id: "me" },

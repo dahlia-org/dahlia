@@ -553,7 +553,12 @@ enum SyncInitialSnapshotBuilder {
     }
 
     static func workspaceOperation(_ workspace: WorkspaceRecord, action: SyncAction) throws -> SyncOperationDraft {
-        var payload: [String: Any] = ["name": workspace.name, "icon": json(workspace.icon), "color": json(workspace.color)]
+        var payload: [String: Any] = try [
+            "name": workspace.name,
+            "icon": json(workspace.icon),
+            "color": json(workspace.color),
+            "generationSettings": JSONSerialization.jsonObject(with: JSONEncoder().encode(workspace.generationSettings)),
+        ]
         if action == .create {
             guard let organizationId = workspace.organizationId else { throw SyncTransactionQueueError.invalidReceipt }
             payload["organizationId"] = json(organizationId)

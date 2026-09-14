@@ -2,6 +2,9 @@ import Foundation
 import GRDB
 
 struct SummaryGenerationSourceAvailability: Equatable, Sendable {
+    var generationSettings: WorkspaceGenerationSettings?
+    var hasServerConnection = false
+    var sourceCheckFailed = false
     let meetingCount: Int
     let transcriptCount: Int
     let audioCount: Int

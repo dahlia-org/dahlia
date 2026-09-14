@@ -21,19 +21,17 @@
             server.summaryModelID = "not-the-mac-model"
             model.activate(workspace: server)
             #expect(await model.waitForRuntimeContext())
-            let account = ServerAccountSettings(
-                processing: .init(location: .local), summary: .init(style: .concise),
-                outputLanguage: .fr, analysisLanguages: .init(scope: .all, identifiers: [])
-            )
-            let captured = SummaryGenerationSettings.current(workspaceAISettings: model, accountSettings: account)
-            #expect(captured.modelID == AppSettings.shared.codexModelID.nilIfBlank)
-            #expect(captured.reasoningEffort == AppSettings.shared.codexReasoningEffort)
+            server.generationSettings.summary.style = .concise
+            server.generationSettings.outputLanguage = .fr
+            let captured = SummaryGenerationSettings.current(workspaceAISettings: model, workspace: server)
+            #expect(captured.modelID == "not-the-mac-model")
+            #expect(captured.reasoningEffort == "high")
             #expect(captured.runtimeProvider == .databricks(profile: "MAC"))
             #expect(captured.languageDisplayName == SummaryLanguage.fr.displayName)
             #expect(captured.detailLevelInstruction == SummaryDetailLevel.concise.instruction)
             model.activate(workspace: makeWorkspace(openedAt: .now))
             #expect(await model.waitForRuntimeContext())
-            #expect(SummaryGenerationSettings.current(workspaceAISettings: model, accountSettings: account).runtimeProvider == captured
+            #expect(SummaryGenerationSettings.current(workspaceAISettings: model, workspace: server).runtimeProvider == captured
                 .runtimeProvider)
             #expect(captured.applying(detailLevel: .detailed).sourceAccountConnectionID == captured.sourceAccountConnectionID)
         }
@@ -69,8 +67,8 @@
             try await model.inheritLocalAccountSettings(from: database.dbQueue)
 
             #expect(model.localAccountSettings == .init(provider: .databricks, databricksProfile: "LOCAL"))
-            #expect(defaults.string(forKey: LocalAccountAISettings.summaryModelKey) == "latest-summary")
-            #expect(defaults.string(forKey: LocalAccountAISettings.summaryReasoningEffortKey) == "max")
+            #expect(defaults.string(forKey: LocalAccountAISettings.summaryModelKey) == nil)
+            #expect(defaults.string(forKey: LocalAccountAISettings.summaryReasoningEffortKey) == nil)
             model.databricksProfile = "CHANGED"
             let restored = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
             restored.configure(dbQueue: database.dbQueue)
@@ -97,7 +95,7 @@
 
             #expect(model.localAccountSettings == .init(provider: .databricks, databricksProfile: "LEGACY"))
             #expect(defaults.bool(forKey: LocalAccountAISettings.migrationKey))
-            #expect(defaults.bool(forKey: LocalAccountAISettings.summaryMigrationKey))
+            #expect(!defaults.bool(forKey: LocalAccountAISettings.summaryMigrationKey))
         }
 
         @Test
@@ -158,7 +156,6 @@
             await #expect(throws: DatabaseError.self) {
                 try await repository.backfillWorkspaceAISettings(.init(
                     localProvider: .databricks, databricksProfile: "LEGACY",
-                    summaryModelID: "legacy", summaryReasoningEffort: "high",
                     chatModelID: "legacy", chatReasoningEffort: "high"
                 ))
             }
@@ -191,7 +188,7 @@
                 workspace: workspace,
                 localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
             )
-            snapshot.summaryModelID = "new-model"
+            snapshot.generationSettings.local.model = "new-model"
 
             let updated = try #require(try await repository.updateWorkspaceAISettings(snapshot))
 

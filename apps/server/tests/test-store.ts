@@ -20,15 +20,8 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
       get: (userId) => Promise.resolve(settings.get(userId) ?? null),
       update: (userId, patch, initialize) => {
         const current = settings.get(userId) ?? DEFAULT_ACCOUNT_SETTINGS;
-        const remote = { ...current.processing.remote, ...patch.processing?.remote };
-        for (const key of ["summaryModel", "transcriptionModel", "reasoningEffort"] as const) {
-          if (remote[key] === null) delete remote[key];
-        }
         const value = initialize && settings.has(userId) ? settings.get(userId)!
-          : accountSettingsSchema.parse({ ...current, ...patch,
-            summary: { ...current.summary, ...patch.summary },
-            processing: { ...current.processing, ...patch.processing, remote },
-          });
+          : accountSettingsSchema.parse({ ...current, ...patch });
         settings.set(userId, value);
         return Promise.resolve(value);
       },

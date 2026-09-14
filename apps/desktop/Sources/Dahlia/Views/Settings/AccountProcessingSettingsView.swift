@@ -1,76 +1,36 @@
 import SwiftUI
 
-struct AccountProcessingSettingsView: View {
-    @Binding var connectionID: UUID?
+struct WorkspaceProcessingSettingsView: View {
     let onOpenMacInference: () -> Void
     let onOpenLanguageSettings: () -> Void
 
     @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
     @Bindable private var accountSettings = ServerAccountSettingsModel.shared
-    @State private var accountController = DahliaCloudAccountController.shared
 
-    private var state: ServerAccountSettingsModel.State? { connectionID.map(accountSettings.state(for:)) }
-    private var location: ServerAccountSettings.SummaryMode { state?.settings?.processing?.location ?? .local }
-    private var canSelectRemote: Bool { state?.summaryMethods.contains("audio") == true }
-    private var connection: DahliaAccountConnection? { accountController.connections.first { $0.id == connectionID } }
-    private var style: SummaryStyle {
-        connectionID == nil ? SummaryStyle(detailLevel: settings.summaryDetailLevel) : state?.settings?.summary?.style ?? .detailed
-    }
+    private var workspace: WorkspaceRecord? { settings.currentWorkspace }
+    private var connectionID: UUID? { workspace?.accountConnectionId }
+    private var canEdit: Bool { workspace?.allowsWorkspaceManagement == true }
+    private var location: WorkspaceGenerationSettings.SummaryMode { workspaceSettings.generationSettings.processing.location }
+    private var canSelectRemote: Bool { connectionID.map { accountSettings.state(for: $0).summaryMethods.contains("audio") } == true }
 
     var body: some View {
         Form {
             Section {
-                Picker(L10n.appliesToAccount, selection: $connectionID) {
-                    Text(L10n.localAccount).tag(UUID?.none)
-                    if let connectionID, connection == nil {
-                        Text(L10n.dahliaAccount).tag(Optional(connectionID))
-                    }
-                    ForEach(accountController.connections) { connection in
-                        Text("\(connection.displayName) · \(connection.origin)").tag(Optional(connection.id))
-                    }
-                }
-                if connectionID != nil {
-                    Text(connection?.isSignedIn == true ? L10n.syncedAccountScopeDescription : L10n.signInRequired)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(L10n.localAccountScopeDescription).foregroundStyle(.secondary)
-                }
-            } footer: {
-                Text(L10n.settingsAccountSelectionDescription)
-            }
-
-            if let connectionID {
-                if connection?.isSignedIn == false {
-                    Section {
-                        Button(L10n.reauthenticate) { accountController.startReauthentication(connectionID: connectionID) }
-                            .disabled(accountController.isBusy)
-                    }
-                } else {
-                    Section {
-                        if state?.isSaving == true {
-                            ProgressView(L10n.saving).controlSize(.small)
-                        } else if state?.isLoading == true {
-                            ProgressView(L10n.settingsLoading).controlSize(.small)
-                        } else if let error = state?.errorMessage {
-                            SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange)
-                            Button(L10n.retry) { accountSettings.refresh(connectionID: connectionID) }
-                        } else if state?.settings == nil {
-                            Text(L10n.serverAccountSettingsNotLoaded).foregroundStyle(.secondary)
-                            Button(L10n.retry) { accountSettings.refresh(connectionID: connectionID) }
-                        } else {
-                            Text(L10n.settingsApplyNextGeneration).foregroundStyle(.secondary)
-                        }
-                    }
+                LabeledContent(L10n.workspace, value: workspace?.name ?? L10n.noWorkspaces)
+                Text(L10n.workspaceGenerationSettingsDescription).foregroundStyle(.secondary)
+                if let error = workspaceSettings.errorMessage {
+                    SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange)
                 }
             }
 
-            if connectionID == nil || state?.settings != nil {
+            if workspace != nil {
                 Section {
-                    Picker(L10n.summaryStyle, selection: styleSelection) {
+                    Picker(L10n.summaryStyle, selection: $workspaceSettings.generationSettings.summary.style) {
                         ForEach(SummaryStyle.allCases) { Text($0.displayName).tag($0) }
                     }
-                    Text(style.description).foregroundStyle(.secondary)
-                    Picker(L10n.summaryOutputLanguage, selection: outputLanguageSelection) {
+                    Text(workspaceSettings.generationSettings.summary.style.description).foregroundStyle(.secondary)
+                    Picker(L10n.summaryOutputLanguage, selection: $workspaceSettings.generationSettings.outputLanguage) {
                         ForEach(SummaryLanguage.allCases) { Text($0.displayName).tag($0) }
                     }
                 } header: {
@@ -78,21 +38,18 @@ struct AccountProcessingSettingsView: View {
                 } footer: {
                     Text(L10n.settingsOutputLanguageDescription)
                 }
-                .disabled(connectionID != nil && state?.canEdit != true)
+                .disabled(!canEdit)
 
                 Section {
-                    if let connectionID {
-                        Picker(L10n.processingLocation, selection: Binding(
-                            get: { location },
-                            set: { accountSettings.save(.init(processing: .init(location: $0)), connectionID: connectionID) }
-                        )) {
-                            Text(L10n.localProcessing).tag(ServerAccountSettings.SummaryMode.local)
+                    if connectionID != nil {
+                        Picker(L10n.processingLocation, selection: $workspaceSettings.generationSettings.processing.location) {
+                            Text(L10n.localProcessing).tag(WorkspaceGenerationSettings.SummaryMode.local)
                             if canSelectRemote || location == .remote {
-                                Text(L10n.remoteProcessing).tag(ServerAccountSettings.SummaryMode.remote)
+                                Text(L10n.remoteProcessing).tag(WorkspaceGenerationSettings.SummaryMode.remote)
                                     .disabled(!canSelectRemote)
                             }
                         }
-                        .disabled(state?.canEdit != true)
+                        .disabled(!canEdit)
                     } else {
                         LabeledContent(L10n.processingLocation, value: L10n.localProcessing)
                     }
@@ -108,11 +65,12 @@ struct AccountProcessingSettingsView: View {
                     Text(location == .local ? L10n.usesMacInferencePreferences : L10n.settingsServerProcessingDescription)
                 }
 
+                if location == .local {
+                    LocalSummarySettingsSection(canEdit: canEdit)
+                } else if let connectionID {
+                    ServerSummarySettingsSection(connectionID: connectionID).disabled(!canEdit)
+                }
                 if let connectionID {
-                    if location == .remote {
-                        ServerSummarySettingsSection(connectionID: connectionID)
-                            .id("server-summary-\(connectionID)")
-                    }
                     ServerAccountLanguageSettingsSection(connectionID: connectionID)
                         .id("server-languages-\(connectionID)")
                 } else {
@@ -130,28 +88,5 @@ struct AccountProcessingSettingsView: View {
         .task(id: connectionID) {
             if let connectionID, let task = accountSettings.refresh(connectionID: connectionID) { await task.value }
         }
-        .onChange(of: accountController.connections.map(\.id)) { _, ids in
-            if let connectionID, !ids.contains(connectionID) { self.connectionID = nil }
-        }
-    }
-
-    private var styleSelection: Binding<SummaryStyle> {
-        Binding(get: { style }, set: { value in
-            if let connectionID {
-                accountSettings.save(.init(summary: .init(style: value)), connectionID: connectionID)
-            } else {
-                settings.summaryDetailLevel = value.detailLevel
-            }
-        })
-    }
-
-    private var outputLanguageSelection: Binding<SummaryLanguage> {
-        Binding(get: { connectionID == nil ? settings.llmSummaryLanguage : state?.settings?.outputLanguage ?? .ja }, set: { value in
-            if let connectionID {
-                accountSettings.save(.init(outputLanguage: value), connectionID: connectionID)
-            } else {
-                settings.llmSummaryLanguage = value
-            }
-        })
     }
 }

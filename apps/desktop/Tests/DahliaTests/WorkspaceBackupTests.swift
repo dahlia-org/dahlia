@@ -9,6 +9,29 @@ import GRDB
 
     @MainActor
     struct WorkspaceBackupTests {
+        @Test
+        func portableWorkspaceUsesLocalGenerationAndPreservesPreferences() {
+            var workspace = WorkspaceRecord(id: .v7(), path: "/tmp/workspace", name: "Remote", createdAt: .now, lastOpenedAt: .now)
+            workspace.accountConnectionId = .v7()
+            workspace.organizationId = .v7()
+            workspace.syncRole = "admin"
+            workspace.syncConfirmedConnectionId = workspace.accountConnectionId
+            workspace.syncPullCursor = "cursor"
+            workspace.syncLastCommittedCursor = "committed"
+            workspace.generationSettings.processing.location = .remote
+            workspace.generationSettings.processing.remote.summaryModel = "remote-model"
+            workspace.generationSettings.outputLanguage = .en
+            workspace.generationSettings.local.model = "local-model"
+            workspace.generationSettings.local.reasoningEffort = "medium"
+            let portable = WorkspaceBackupTransfer.portableWorkspace(workspace)
+            var expected = workspace.generationSettings
+            expected.processing.location = .local
+            #expect(portable.generationSettings == expected)
+            #expect(portable.accountConnectionId == nil && portable.organizationId == nil && portable.syncRole == nil)
+            #expect(portable.syncConfirmedConnectionId == nil && portable.syncPullCursor == nil && portable.syncLastCommittedCursor == nil)
+            #expect(portable.path == nil)
+        }
+
         @Test(arguments: [WorkspaceBackupRestoreRequest.Mode.overwrite, .newWorkspace])
         func restoresOnlySelectedWorkspace(mode: WorkspaceBackupRestoreRequest.Mode) async throws {
             let fixture = try BatchAudioTestFixture(name: "WorkspaceRestore", endedAt: .now, batchCompletedAt: .now)
@@ -94,6 +117,7 @@ import GRDB
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sync_transactions") == 1)
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: targetID))
                 #expect(workspace.accountConnectionId == nil)
+                #expect(workspace.generationSettings.processing.location == .local)
                 #expect(workspace.path == (mode == .overwrite ? fixture.workspaceURL.path : nil))
                 let meeting = try #require(try MeetingRecord.filter(Column("workspace_id") == targetID).fetchOne(db))
                 #expect(meeting.name == fixture.meeting.name)

@@ -1,3 +1,4 @@
+import { workspaceGenerationSettingsSchema } from "../workspace-generation-settings";
 import { z } from "@hono/zod-openapi";
 import { appearanceSchema } from "../appearance-model";
 import { transcriptWriteSchema } from "./transcript";
@@ -126,8 +127,8 @@ export const transactionDataSchemas = {
     z.object({ meetingId: uuidSchema, kind: z.enum(["recording_started", "recording_ended"]), occurredAt: dateSchema, sessionId: uuidSchema }).strict(),
     z.object({ meetingId: uuidSchema, kind: z.literal("segment_rotated"), occurredAt: dateSchema, sessionId: uuidSchema, relatedId: uuidSchema, audioSource: z.enum(["mic", "system"]), segmentIndex: z.number().int().positive().max(2147483647) }).strict(),
   ]),
-  "workspace:create": z.object({ meetingDeletionGraceDays: meetingDeletionGraceDaysSchema.optional(), organizationId: uuidSchema, encryption: z.enum(["none", "server"]).optional(), ...appearanceFields, name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
-  "workspace:update": z.object({ meetingDeletionGraceDays: meetingDeletionGraceDaysSchema.optional(), encryption: z.enum(["none", "server"]).optional(), ...appearanceFields, name: z.string().trim().min(1) }).strict(),
+  "workspace:create": z.object({ meetingDeletionGraceDays: meetingDeletionGraceDaysSchema.optional(), generationSettings: workspaceGenerationSettingsSchema.optional(), organizationId: uuidSchema, encryption: z.enum(["none", "server"]).optional(), ...appearanceFields, name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
+  "workspace:update": z.object({ meetingDeletionGraceDays: meetingDeletionGraceDaysSchema.optional(), generationSettings: workspaceGenerationSettingsSchema.optional(), encryption: z.enum(["none", "server"]).optional(), ...appearanceFields, name: z.string().trim().min(1) }).strict(),
   "workspace:reset": z.object({ preservePermissions: z.boolean().optional() }).strict(),
   "project:create": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),
   "project:update": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),

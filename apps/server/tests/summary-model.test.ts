@@ -2,15 +2,15 @@ import { expect, it } from "vitest";
 import { z } from "zod";
 import { summaryDocument, summaryResponseSchema } from "../src/summary/model";
 import { summaryStartSchema } from "../src/summary/service";
-import { DEFAULT_ACCOUNT_SETTINGS } from "../src/account-settings-model";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../src/workspace-generation-settings";
 import { uuidV7 } from "../src/id";
 
 it("excludes transcription overrides structurally from preference inputs while preserving legacy requests", () => {
   const input = { type: "recording", recordings: [{ micFileId: uuidV7(), systemFileId: null }] };
   const request = { id: uuidV7(), input, preferences: {
-    processing: DEFAULT_ACCOUNT_SETTINGS.processing,
-    summary: DEFAULT_ACCOUNT_SETTINGS.summary,
-    outputLanguage: DEFAULT_ACCOUNT_SETTINGS.outputLanguage,
+    processing: DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing,
+    summary: DEFAULT_WORKSPACE_GENERATION_SETTINGS.summary,
+    outputLanguage: DEFAULT_WORKSPACE_GENERATION_SETTINGS.outputLanguage,
   } };
   expect(summaryStartSchema.safeParse(request).success).toBe(true);
   const overridden = { ...input, transcriptionModel: "gemini-3-8-flash" };
@@ -47,17 +47,17 @@ it("omits maxItems and accepts arrays beyond every former limit", () => {
 
 
 it("normalizes legacy details without changing their meaning or reasoning effort", async () => {
-  const { summaryDetailSchema, normalizeSummaryDetail, summaryDetails, DEFAULT_ACCOUNT_SETTINGS, accountSettingsPatchSchema } = await import("../src/account-settings-model");
+  const { summaryDetailSchema, normalizeSummaryDetail, summaryDetails, DEFAULT_WORKSPACE_GENERATION_SETTINGS, workspaceGenerationSettingsSchema } = await import("../src/workspace-generation-settings");
   for (const [old, canonical] of [["concise", "low"], ["standard", "medium"], ["detailed", "high"], ["eventSession", "xhigh"]]) {
     expect(normalizeSummaryDetail(old!)).toBe(canonical);
-    expect(accountSettingsPatchSchema.safeParse({ summary: { remote: { detail: old } } }).success).toBe(false);
+    expect(workspaceGenerationSettingsSchema.safeParse({ summary: { remote: { detail: old } } }).success).toBe(false);
   }
-  expect(DEFAULT_ACCOUNT_SETTINGS.summary.style).toBe("detailed");
+  expect(DEFAULT_WORKSPACE_GENERATION_SETTINGS.summary.style).toBe("detailed");
   expect(summaryDetails).toEqual(["low", "medium", "high", "xhigh", "max"]);
   for (const value of summaryDetails) expect(summaryDetailSchema.parse(value)).toBe(value);
   expect(summaryDetailSchema.safeParse("unknown").success).toBe(false);
-  expect(accountSettingsPatchSchema.parse({ summary: { style: "eventTimeline" }, processing: { remote: { reasoningEffort: "low" } } }))
-    .toEqual({ summary: { style: "eventTimeline" }, processing: { remote: { reasoningEffort: "low" } } });
+  expect(workspaceGenerationSettingsSchema.parse({ ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, summary: { style: "eventTimeline" }, processing: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing, remote: { workflow: "combined", reasoningEffort: "low" } } }))
+    .toMatchObject({ summary: { style: "eventTimeline" }, processing: { remote: { reasoningEffort: "low" } } });
   const { summaryInstructions } = await import("../src/summary/transcript");
   expect(summaryInstructions("en", "max")).toContain("event play-by-play");
 });

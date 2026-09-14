@@ -1,7 +1,7 @@
 import { canWriteWorkspace } from "../auth/workspace-permissions";
 import { z } from "zod";
-import { generationPreferencesSchema, normalizeSummaryDetail, outputLanguageSchema, summaryModelSettingsSchema } from "../account-settings-model";
-import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettingsStore } from "../account-settings";
+import { generationPreferencesSchema, normalizeSummaryDetail, outputLanguageSchema, summaryModelSettingsSchema } from "../workspace-generation-settings";
+
 import type { Identity } from "../auth/identity";
 import { RequestError } from "../storage/upload";
 import type { MeetingSyncStore } from "../sync/types";
@@ -23,7 +23,7 @@ export const summaryStartSchema = z.union([
 export type SummaryRequest = z.infer<typeof summaryStartSchema>;
 
 export class SummaryService {
-  constructor(private readonly store: MeetingSyncStore, private readonly settings: AccountSettingsStore,
+  constructor(private readonly store: MeetingSyncStore,
     readonly methods: readonly SummaryMethod[]) {}
 
   async status(identity: Identity, workspaceId: string, meetingId: string, id?: string): Promise<SummaryJob | null> {
@@ -90,7 +90,13 @@ export class SummaryService {
     if (identity.impersonated) throw new RequestError(403, "impersonation_read_only");
     const parsed = summaryStartSchema.safeParse(body);
     if (!parsed.success) throw new RequestError(400, "invalid_summary_request");
-    const settings = await this.settings.get(identity.userId) ?? DEFAULT_ACCOUNT_SETTINGS;
+    const settings = await this.store.withIdentity(identity, async (scoped) => {
+      const workspace = await scoped.getWorkspace(workspaceId);
+      if (!canWriteWorkspace(workspace?.role) || !await scoped.getMeeting(workspaceId, meetingId)) {
+        throw new RequestError(404, "summary_meeting_unavailable");
+      }
+      return workspace.generationSettings;
+    });
     const request = parsed.data;
     let input: SummaryInput | undefined = "input" in request ? request.input : undefined;
     const requestHash = "preferences" in request ? JSON.stringify({ workspaceId, meetingId, input, preferences: request.preferences }) : JSON.stringify({ workspaceId, meetingId,

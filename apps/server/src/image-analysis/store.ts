@@ -58,7 +58,7 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
           fileId, workspaceId, ownerUserId: userId, model,
         }))).onConflictDoUpdate({
           target: jobs.fileId,
-          set: { model, status: "pending", attempts: 0, availableAt: new Date(), claimedAt: null, leaseExpiresAt: null, lastErrorCode: null },
+          set: { model, outputLanguage: null, status: "pending", attempts: 0, availableAt: new Date(), claimedAt: null, leaseExpiresAt: null, lastErrorCode: null },
           setWhere: ne(jobs.model, model),
         });
       }
@@ -96,10 +96,15 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
         )).orderBy(asc(jobs.availableAt), asc(jobs.fileId)).limit(1);
         const [row] = isPostgres ? await query.for("update", { skipLocked: true }) : await query;
         if (!row) return null;
+        if (isPostgres) await transaction.execute(sql`select set_config('app.user_id', ${row.ownerUserId}, true)`);
+        const [workspace] = await transaction.select({ settings: schema.syncedWorkspace.generationSettings })
+          .from(schema.syncedWorkspace).where(eq(schema.syncedWorkspace.workspaceId, row.workspaceId));
+        if (!workspace) { await transaction.delete(jobs).where(eq(jobs.fileId, row.fileId)); return null; }
+        const outputLanguage = row.outputLanguage ?? workspace.settings.outputLanguage;
         await transaction.update(jobs).set({
-          status: "processing", claimedAt: now, leaseExpiresAt: new Date(now.getTime() + 300_000),
+          outputLanguage, status: "processing", claimedAt: now, leaseExpiresAt: new Date(now.getTime() + 300_000),
         }).where(eq(jobs.fileId, row.fileId));
-        return { ...row, claimedAt: now };
+        return { ...row, outputLanguage, claimedAt: now };
       });
     },
     async finish(claim, error) {

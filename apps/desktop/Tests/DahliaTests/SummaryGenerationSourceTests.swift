@@ -278,15 +278,14 @@ import DahliaRuntimeSupport
                     connectionId: target.connectionID, number: 1, audioJSON: Self.archivedAudioJSON, state: "remote"
                 ).insert(db)
             }
-            let settings = ServerAccountSettings(
+            let settings = WorkspaceGenerationSettings(
                 processing: .init(location: .remote, remote: .init(
                     workflow: .transcribeThenSummarize,
                     summaryModel: "gpt-text",
                     reasoningEffort: "high"
                 )),
                 summary: .init(style: .detailed),
-                outputLanguage: .ja,
-                analysisLanguages: .init(scope: .all, identifiers: [])
+                outputLanguage: .ja
             )
             ImageURLProtocol.register(origin: target.origin) { request in
                 let path = request.url!.path
@@ -374,7 +373,7 @@ import DahliaRuntimeSupport
                 detail: nil,
                 dbQueue: queue,
                 source: source,
-                accountSettings: settings,
+                workspaceSettings: settings,
                 onPrepared: { request in prepared.withLock { $0 = request } }
             )
 
@@ -413,8 +412,8 @@ import DahliaRuntimeSupport
                 #expect(request.input.type == "recording")
                 #expect(Set(request.input.recordings?.compactMap(\.micFileId) ?? []) == fileIDs)
                 #expect(request.preferences?.processing.remote.workflow == .combined)
-                #expect(request.preferences?.processing.remote.summaryModel == nil)
-                #expect(request.preferences?.processing.remote.reasoningEffort == nil)
+                #expect(request.preferences?.processing.remote.summaryModel == "gpt-text")
+                #expect(request.preferences?.processing.remote.reasoningEffort == "high")
             }
         }
 
@@ -423,14 +422,14 @@ import DahliaRuntimeSupport
             service: ServerSummaryService,
             target: ServerSummaryService.Target,
             queue: DatabaseQueue,
-            settings: ServerAccountSettings,
+            settings: WorkspaceGenerationSettings,
             source: SummaryGenerationSource,
             jobID: UUID,
             postRequests: borrowing Mutex<[Data]>
         ) async throws {
             try await service.generate(
                 target, id: jobID, detail: nil, dbQueue: queue, source: source,
-                preparedRequest: request, accountSettings: settings
+                preparedRequest: request, workspaceSettings: settings
             )
             let posts = postRequests.withLock { $0 }
             #expect(posts.count == 2)
@@ -440,7 +439,7 @@ import DahliaRuntimeSupport
         private func assertPendingAudioFailsBeforeStarting(
             target: ServerSummaryService.Target,
             queue: DatabaseQueue,
-            settings: ServerAccountSettings,
+            settings: WorkspaceGenerationSettings,
             postRequests: borrowing Mutex<[Data]>
         ) async throws {
             let pendingSessionID = UUID.v7()
@@ -466,7 +465,7 @@ import DahliaRuntimeSupport
             )
             do {
                 try await service.generate(
-                    target, id: .v7(), detail: nil, dbQueue: queue, source: .audio, accountSettings: settings
+                    target, id: .v7(), detail: nil, dbQueue: queue, source: .audio, workspaceSettings: settings
                 )
                 Issue.record("Manual audio generation should fail while a synchronized recording is pending")
             } catch ServerSummaryService.Failure.syncPending {
@@ -478,17 +477,17 @@ import DahliaRuntimeSupport
             service: ServerSummaryService,
             target: ServerSummaryService.Target,
             queue: DatabaseQueue,
-            settings: ServerAccountSettings,
+            settings: WorkspaceGenerationSettings,
             source: SummaryGenerationSource,
             jobID: UUID
         ) async throws {
             var settings = settings
-            var processing = try #require(settings.processing)
+            var processing = settings.processing
             processing.remote.summaryModel = "missing-model"
             settings.processing = processing
             let prepared = Mutex<ServerSummaryService.Request?>(nil)
             try await service.generate(
-                target, id: jobID, detail: nil, dbQueue: queue, source: source, accountSettings: settings,
+                target, id: jobID, detail: nil, dbQueue: queue, source: source, workspaceSettings: settings,
                 onPrepared: { request in prepared.withLock { $0 = request } }
             )
             let request = try #require(prepared.withLock { $0 })
@@ -581,24 +580,41 @@ import DahliaRuntimeSupport
             let service = ServerSummaryService(client: SyncAPIClient(
                 session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" }
             ))
-            let viewModel = CaptionViewModel(
-                summaryAccountSettingsLoader: { _ in
-                    ServerAccountSettings(
-                        processing: .init(location: .remote), summary: .init(style: .standard),
-                        outputLanguage: .ja, analysisLanguages: .init(scope: .all, identifiers: [])
-                    )
-                },
-                serverSummaryService: service
-            )
-
-            await #expect(throws: (any Error).self) {
-                try await viewModel.summaryGenerationSourceAvailability(
-                    meetingIDs: [target.meetingID], dbQueue: queue
-                )
+            try await queue.write { db in
+                var workspace = try WorkspaceRecord.fetchOne(db, key: target.workspaceID)!
+                workspace.generationSettings.processing.location = .remote
+                try workspace.update(db)
             }
+            let viewModel = CaptionViewModel(serverSummaryService: service)
+
             var availability = try await viewModel.summaryGenerationSourceAvailability(
                 meetingIDs: [target.meetingID], dbQueue: queue
             )
+            #expect(availability.sourceCheckFailed)
+            #expect(availability.hasServerConnection)
+            #expect(availability.generationSettings?.processing.location == .remote)
+            #expect(availability.preferredSource == nil)
+
+            try await queue.write { db in
+                try TranscriptContent(
+                    from: TranscriptSegment(startTime: .now, text: "Cached transcript", isConfirmed: true),
+                    meetingId: target.meetingID
+                ).insert(db)
+            }
+            let local = try await viewModel.summaryGenerationSourceAvailability(
+                meetingIDs: [target.meetingID], dbQueue: queue, location: .local
+            )
+            #expect(!local.sourceCheckFailed && !local.usesServer)
+            #expect(local.hasServerConnection && local.preferredSource == .transcript)
+            #expect(local.generationSettings?.processing.location == .remote)
+            #expect(capabilityRequests.withLock { $0 } == 1)
+            #expect(transcriptRequests.withLock { $0 } == 0)
+            #expect(recordingRequests.withLock { $0 } == 0)
+
+            availability = try await viewModel.summaryGenerationSourceAvailability(
+                meetingIDs: [target.meetingID], dbQueue: queue
+            )
+            #expect(!availability.sourceCheckFailed)
             #expect(availability.preferredSource == .transcript)
             #expect(capabilityRequests.withLock { $0 } == 2)
             #expect(transcriptRequests.withLock { $0 } == 2)
@@ -622,6 +638,15 @@ import DahliaRuntimeSupport
             #expect(recordingRequests.withLock { $0 } == 2)
 
             audioOnly.withLock { $0 = true }
+            availability = try await viewModel.summaryGenerationSourceAvailability(
+                meetingIDs: [target.meetingID], dbQueue: queue
+            )
+            #expect(availability.sourceCheckFailed && availability.hasServerConnection)
+            #expect(availability.preferredSource == nil)
+
+            try await queue.write { db in
+                try db.execute(sql: "UPDATE workspaces SET syncRole = 'viewer' WHERE id = ?", arguments: [target.workspaceID])
+            }
             await #expect(throws: (any Error).self) {
                 try await viewModel.summaryGenerationSourceAvailability(
                     meetingIDs: [target.meetingID], dbQueue: queue

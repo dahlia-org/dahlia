@@ -153,6 +153,7 @@ final class MeetingRepository {
                 workspace.syncConfirmedConnectionId = connection.id
                 workspace.syncRole = cloud.role
                 workspace.organizationId = cloud.organizationId
+                workspace.generationSettings = cloud.generationSettings
                 try workspace.insert(db)
                 try db.execute(
                     sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, ?)",
@@ -203,8 +204,17 @@ final class MeetingRepository {
     nonisolated func updateWorkspaceAISettings(_ settings: WorkspaceAISettingsSnapshot) async throws -> WorkspaceRecord? {
         try await dbQueue.write { db in
             guard var workspace = try WorkspaceRecord.fetchOne(db, key: settings.workspaceID) else { return nil }
+            let changesGeneration = workspace.generationSettings != settings.generationSettings
+            if changesGeneration, !workspace.allowsWorkspaceManagement { throw SyncTransactionQueueError.readOnlyWorkspace }
             settings.applyAISettings(to: &workspace)
             try workspace.update(db)
+            if changesGeneration {
+                try SyncTransactionRecorder.record(
+                    workspaceId: workspace.id,
+                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
+                    in: db
+                )
+            }
             return workspace
         }
     }
@@ -411,15 +421,10 @@ final class MeetingRepository {
                     sql: "DELETE FROM sync_entity_state WHERE workspace_id IN (\(workspaceIds.map { _ in "?" }.joined(separator: ",")))",
                     arguments: StatementArguments(workspaceIds)
                 )
-                try db.execute(
-                    sql: """
-                    UPDATE workspaces SET accountConnectionId = NULL, syncRole = NULL, organizationId = NULL,
-                        syncConfirmedConnectionId = NULL, syncPullCursor = NULL,
-                        syncLastCommittedCursor = NULL
-                    WHERE accountConnectionId = ?
-                    """,
-                    arguments: [connectionID]
-                )
+                for var workspace in try WorkspaceRecord.filter(Column("accountConnectionId") == connectionID).fetchAll(db) {
+                    workspace.moveToLocalAccount()
+                    try workspace.update(db)
+                }
             }
             return
         }

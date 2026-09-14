@@ -13,7 +13,7 @@ import { cloudTranscriptionSchema, combinedSummaryResponseSchema, generatedTrans
 import type { RecordingManifest, RecordingSource, RecordingRecord } from "../recordings/model";
 import { SummaryError, summaryDocument, summaryResponseSchema, type SummaryMethod, type SummaryJob, type SummaryInput, type SummaryGenerationResult } from "./model";
 import { summaryResponseMetadataSchema } from "./metadata";
-import { summaryStyleDetail } from "../account-settings-model";
+import { summaryStyleDetail } from "../workspace-generation-settings";
 import { resolveSummaryPreferences } from "./preferences";
 import { isAudioSummaryModel, isSummaryModel } from "./audio-model";
 import { assertSummaryAccess, boundedBytes, collectSummaryInput, fingerprint, summaryImageContent, summaryInstructions, summaryXMLText } from "./transcript";

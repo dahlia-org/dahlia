@@ -8,54 +8,53 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
     let languageDisplayName: String
     let runtimeProvider: CodexRuntimeProvider
     var accountConnectionID: UUID?
+    var workspaceID: UUID?
+    var workspacePreferences: WorkspaceGenerationSettings?
 
     var sourceAccountConnectionID: UUID? { accountConnectionID ?? runtimeProvider.accountConnectionID }
 
     @MainActor
     static func current(
-        _ settings: AppSettings = .shared,
+        _: AppSettings = .shared,
         workspaceAISettings: WorkspaceAISettingsModel = .shared,
         detailLevel: SummaryDetailLevel? = nil,
-        accountSettings: ServerAccountSettings? = nil
+        workspace: WorkspaceRecord? = nil
     ) -> Self {
-        let account = accountSettings ?? settings.currentWorkspace?.accountConnectionId.flatMap {
-            ServerAccountSettingsModel.shared.state(for: $0).settings
-        }
+        let preferences = workspace?.generationSettings ?? WorkspaceGenerationSettings()
         return Self(
-            modelID: settings.codexModelID.nilIfBlank,
-            reasoningEffort: settings.codexReasoningEffort,
-            detailLevelInstruction: (detailLevel ?? account?.summary?.detailLevel ?? settings.summaryDetailLevel).instruction,
-            languageDisplayName: (account?.outputLanguage ?? settings.llmSummaryLanguage).displayName,
+            modelID: preferences.local.model,
+            reasoningEffort: preferences.local.reasoningEffort,
+            detailLevelInstruction: (detailLevel ?? preferences.summary.detailLevel).instruction,
+            languageDisplayName: preferences.outputLanguage.displayName,
             runtimeProvider: CodexRuntimeProvider(
                 accountConnectionID: nil,
                 localProvider: workspaceAISettings.localProvider,
                 databricksProfile: workspaceAISettings.databricksProfile
             ),
-            accountConnectionID: settings.currentWorkspace?.accountConnectionId
+            accountConnectionID: workspace?.accountConnectionId,
+            workspaceID: workspace?.id,
+            workspacePreferences: workspace?.generationSettings
         )
     }
 
     func applying(detailLevel: SummaryDetailLevel?) -> Self {
         guard let detailLevel else { return self }
         return Self(
-            modelID: modelID,
-            reasoningEffort: reasoningEffort,
-            detailLevelInstruction: detailLevel.instruction,
-            languageDisplayName: languageDisplayName,
-            runtimeProvider: runtimeProvider,
-            accountConnectionID: accountConnectionID
+            modelID: modelID, reasoningEffort: reasoningEffort,
+            detailLevelInstruction: detailLevel.instruction, languageDisplayName: languageDisplayName,
+            runtimeProvider: runtimeProvider, accountConnectionID: accountConnectionID,
+            workspaceID: workspaceID, workspacePreferences: workspacePreferences
         )
     }
 
-    func applying(accountSettings: ServerAccountSettings, connectionID: UUID, detailLevel: SummaryDetailLevel?) -> Self {
-        Self(
-            modelID: modelID,
-            reasoningEffort: reasoningEffort,
-            detailLevelInstruction: (detailLevel ?? accountSettings.summary?.detailLevel)?.instruction ?? detailLevelInstruction,
-            languageDisplayName: accountSettings.outputLanguage.displayName,
-            runtimeProvider: runtimeProvider,
-            accountConnectionID: connectionID
+    func applying(workspace: WorkspaceRecord, options: SummaryGenerationOptions) -> Self {
+        let preferences = options.applying(to: workspace.generationSettings)
+        return Self(
+            modelID: preferences.local.model, reasoningEffort: preferences.local.reasoningEffort,
+            detailLevelInstruction: preferences.summary.detailLevel.instruction,
+            languageDisplayName: preferences.outputLanguage.displayName,
+            runtimeProvider: runtimeProvider, accountConnectionID: workspace.accountConnectionId,
+            workspaceID: workspace.id, workspacePreferences: preferences
         )
     }
-
 }

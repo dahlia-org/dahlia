@@ -1,3 +1,4 @@
+import type { WorkspaceGenerationSettings } from "../workspace-generation-settings";
 import type { CalendarEventSnapshot } from "./schemas";
 import { createContentEncryption } from "../encryption/store";
 import { readAuthorization, validateAuthorization } from "../auth/authorization";
@@ -725,7 +726,7 @@ function createIdentityStore(
     const workspaces: WorkspaceRelocations["workspaces"] = [];
     for (const id of new Set(destinations.values())) {
       const [workspace] = await content.read(schema.syncedWorkspace, await db.select({ encryption: schema.syncedWorkspace.encryption, encryptedPayload: schema.syncedWorkspace.encryptedPayload, workspaceId: schema.syncedWorkspace.workspaceId, organizationId: schema.syncedWorkspace.organizationId, name: schema.syncedWorkspace.name,
-        icon: schema.syncedWorkspace.icon, color: schema.syncedWorkspace.color, meetingDeletionGraceDays: schema.syncedWorkspace.meetingDeletionGraceDays, revision: schema.syncedWorkspace.revision,
+        generationSettings: schema.syncedWorkspace.generationSettings, icon: schema.syncedWorkspace.icon, color: schema.syncedWorkspace.color, meetingDeletionGraceDays: schema.syncedWorkspace.meetingDeletionGraceDays, revision: schema.syncedWorkspace.revision,
         createdAt: schema.syncedWorkspace.createdAt, updatedAt: schema.syncedWorkspace.updatedAt, role: workspaceRole(schema.syncedWorkspace.workspaceId),
       }).from(schema.syncedWorkspace).where(and(eq(schema.syncedWorkspace.workspaceId, id), readable(schema.syncedWorkspace.workspaceId), isNull(schema.syncedWorkspace.deletingAt))).limit(1));
       if (!workspace) throw new SyncTransactionError(403, "transfer_access_required");
@@ -1578,6 +1579,7 @@ function createIdentityStore(
             const [restored] = await db.update(schema.syncedWorkspace).set(await content.write(schema.syncedWorkspace, {
               name: String(data.name),
               meetingDeletionGraceDays: data.meetingDeletionGraceDays as number | undefined,
+              generationSettings: data.generationSettings as WorkspaceGenerationSettings | undefined,
               icon: data.icon as string | null | undefined,
               color: data.color as string | null | undefined,
               revision: 1,
@@ -1605,6 +1607,7 @@ function createIdentityStore(
               workspaceId: transaction.workspaceId,
               name: String(data.name),
               meetingDeletionGraceDays: data.meetingDeletionGraceDays as number | undefined,
+              generationSettings: data.generationSettings as WorkspaceGenerationSettings | undefined,
               icon: data.icon as string | null | undefined,
               color: data.color as string | null | undefined,
               revision: 1,
@@ -1633,6 +1636,7 @@ function createIdentityStore(
           await db.update(schema.syncedWorkspace).set(await content.write(schema.syncedWorkspace, {
             name: String(data.name),
             meetingDeletionGraceDays: data.meetingDeletionGraceDays as number | undefined,
+              generationSettings: data.generationSettings as WorkspaceGenerationSettings | undefined,
             icon: data.icon as string | null | undefined,
             color: data.color as string | null | undefined,
             revision: sql`${schema.syncedWorkspace.revision} + 1`,
@@ -2611,6 +2615,7 @@ function createIdentityStore(
         workspaceId: schema.syncedWorkspace.workspaceId,
         organizationId: schema.syncedWorkspace.organizationId,
         name: schema.syncedWorkspace.name,
+        generationSettings: schema.syncedWorkspace.generationSettings,
         icon: schema.syncedWorkspace.icon, color: schema.syncedWorkspace.color,
         meetingDeletionGraceDays: schema.syncedWorkspace.meetingDeletionGraceDays,
         revision: schema.syncedWorkspace.revision,
@@ -2629,6 +2634,7 @@ function createIdentityStore(
         workspaceId: schema.syncedWorkspace.workspaceId,
         organizationId: schema.syncedWorkspace.organizationId,
         name: schema.syncedWorkspace.name,
+        generationSettings: schema.syncedWorkspace.generationSettings,
         hasResources: workspaceHasResources(schema.syncedWorkspace.workspaceId).mapWith(Boolean),
         icon: schema.syncedWorkspace.icon, color: schema.syncedWorkspace.color,
         meetingDeletionGraceDays: schema.syncedWorkspace.meetingDeletionGraceDays,

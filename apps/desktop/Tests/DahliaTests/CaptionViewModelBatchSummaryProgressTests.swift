@@ -118,7 +118,7 @@ import Foundation
                 meetingId: fixture.first.id,
                 state: .completed(sessionId: secondSessionID)
             ))
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
 
             #expect(job.progress.transcription.isTerminal)
             #expect(!job.progress.transcription.isFailed)

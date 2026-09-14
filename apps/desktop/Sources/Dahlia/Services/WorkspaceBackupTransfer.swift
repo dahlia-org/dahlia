@@ -154,12 +154,7 @@ enum WorkspaceBackupTransfer {
     static func portableWorkspace(_ workspace: WorkspaceRecord) -> WorkspaceRecord {
         var result = workspace
         result.path = nil
-        result.accountConnectionId = nil
-        result.syncRole = nil
-        result.organizationId = nil
-        result.syncConfirmedConnectionId = nil
-        result.syncPullCursor = nil
-        result.syncLastCommittedCursor = nil
+        result.moveToLocalAccount()
         result.syncRecoveryState = nil
         result.databricksProfile = ""
         return result

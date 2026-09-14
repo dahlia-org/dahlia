@@ -30,8 +30,17 @@ struct WorkspaceRecord: Codable, FetchableRecord, PersistableRecord, Identifiabl
     var accountConnectionId: UUID?
     var localAIProvider: String = AIAccountProvider.chatGPTSubscription.rawValue
     var databricksProfile = ""
-    var summaryModelID = "gpt-5.6-luna"
-    var summaryReasoningEffort = "high"
+    var generationSettings = WorkspaceGenerationSettings()
+    var summaryModelID: String {
+        get { generationSettings.local.model }
+        set { generationSettings.local.model = newValue }
+    }
+
+    var summaryReasoningEffort: String {
+        get { generationSettings.local.reasoningEffort }
+        set { generationSettings.local.reasoningEffort = newValue }
+    }
+
     var chatModelID = ""
     var chatReasoningEffort: String = CodexReasoningEffortOption.defaultValue
     var aiSettingsBackfilled = true
@@ -54,6 +63,16 @@ struct WorkspaceRecord: Codable, FetchableRecord, PersistableRecord, Identifiabl
 }
 
 extension WorkspaceRecord {
+    mutating func moveToLocalAccount() {
+        accountConnectionId = nil
+        organizationId = nil
+        syncRole = nil
+        syncConfirmedConnectionId = nil
+        syncPullCursor = nil
+        syncLastCommittedCursor = nil
+        generationSettings.processing.location = .local
+    }
+
     var isAwaitingInitialSync: Bool {
         accountConnectionId != nil && syncConfirmedConnectionId == accountConnectionId && syncPullCursor == nil
     }
@@ -81,6 +100,8 @@ struct CloudWorkspaceRecord: Identifiable, Equatable, Sendable {
     var createdAt: Date
     var revision: Int
     var role: String
+
+    var generationSettings = WorkspaceGenerationSettings()
 
     var id: String { "\(connectionId.uuidString):\(workspaceId.uuidString)" }
 }

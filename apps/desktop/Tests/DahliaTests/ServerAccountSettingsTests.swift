@@ -21,21 +21,21 @@
             let model = model()
             model.updateConnections([account])
             await model.refresh(connectionID: account.id)?.value
-            #expect(model.state(for: account.id).settings?.outputLanguage == .en)
+            #expect(model.state(for: account.id).settings?.analysisLanguages.identifiers == ["en"])
             #expect(requests.withLock { $0.filter { $0 == "PATCH" }.count } == 1)
             await model.refresh(connectionID: account.id)?.value
             #expect(requests.withLock { $0.filter { $0 == "PATCH" }.count } == 1)
             ImageURLProtocol.register(origin: account.origin) { _ in (503, [:], Data()) }
             await model.refresh(connectionID: account.id)?.value
             #expect(!model.state(for: account.id).canEdit)
-            #expect(model.state(for: account.id).settings?.outputLanguage == .en)
+            #expect(model.state(for: account.id).settings?.analysisLanguages.identifiers == ["en"])
             model.networkAvailabilityChanged(false)
-            #expect(model.save(.init(outputLanguage: .ja), connectionID: account.id) == nil)
+            #expect(model.save(.init(analysisLanguages: .init(scope: .selected, identifiers: ["ja"])), connectionID: account.id) == nil)
             #expect(model.refresh(connectionID: account.id) == nil)
             ImageURLProtocol.register(origin: account.origin) { _ in (200, [:], Data(Self.response("fr").utf8)) }
             model.networkAvailabilityChanged(true)
             await model.refresh(connectionID: account.id)?.value
-            #expect(model.state(for: account.id).settings?.outputLanguage == .fr)
+            #expect(model.state(for: account.id).settings?.analysisLanguages.identifiers == ["fr"])
             #expect(model.state(for: account.id).canEdit)
             model.updateConnections([])
             #expect(model.states.isEmpty)
@@ -70,10 +70,10 @@
             )
             model.updateConnections([changesAccount ? replacement : account])
             await model.refresh(connectionID: account.id)?.value
-            #expect(model.state(for: account.id).settings?.outputLanguage == .en)
+            #expect(model.state(for: account.id).settings?.analysisLanguages.identifiers == ["en"])
             await gate.release()
             await oldRequest?.value
-            #expect(model.state(for: account.id).settings?.outputLanguage == .en)
+            #expect(model.state(for: account.id).settings?.analysisLanguages.identifiers == ["en"])
             model.updateConnections([])
             #expect(model.states.isEmpty)
         }
@@ -116,7 +116,7 @@
             if changesAccount {
                 await #expect(throws: URLError.self) { try await reader.value }
             } else {
-                #expect(try await reader.value.outputLanguage == .fr)
+                #expect(try await reader.value.analysisLanguages.identifiers == ["fr"])
             }
             await model.refresh(connectionID: account.id)?.value
             model.updateConnections([])
@@ -144,7 +144,7 @@
             model.updateConnections([account])
             _ = try await model.loadedSettings(connectionID: account.id)
             await model.refresh(connectionID: account.id)?.value
-            await model.save(.init(outputLanguage: .en), connectionID: account.id)?.value
+            await model.save(.init(analysisLanguages: .init(scope: .selected, identifiers: ["en"])), connectionID: account.id)?.value
             _ = try await model.loadedSettings(connectionID: account.id)
             #expect(requests.withLock { $0.filter { $0 == "/api/v1/models" }.count } == 1)
             #expect(requests.withLock { $0.filter { $0 == "/api/v1/capabilities" }.count } == 1)
@@ -222,12 +222,12 @@
             configuration.protocolClasses = [ImageURLProtocol.self]
             return ServerAccountSettingsModel(
                 client: SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: tokenProvider),
-                initialValues: { .init(outputLanguage: .en, analysisLanguages: .init(scope: .all, identifiers: [])) }
+                initialValues: { .init(analysisLanguages: .init(scope: .all, identifiers: [])) }
             )
         }
 
         private nonisolated static func response(_ language: String) -> String {
-            "{\"settings\":{\"summary\":{\"style\":\"detailed\"},\"processing\":{\"location\":\"local\",\"remote\":{\"workflow\":\"transcribeThenSummarize\"}},\"outputLanguage\":\"\(language)\",\"analysisLanguages\":{\"scope\":\"all\",\"identifiers\":[]}}}"
+            "{\"settings\":{\"analysisLanguages\":{\"scope\":\"selected\",\"identifiers\":[\"\(language)\"]}}}"
         }
     }
 

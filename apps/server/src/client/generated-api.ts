@@ -203,7 +203,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Merge supplied fields, including nested summary settings; maximum 8 KiB */
+        /** Update account recognition languages; maximum 8 KiB */
         patch: operations["updateSettings"];
         trace?: never;
     };
@@ -1209,6 +1209,31 @@ export interface components {
     schemas: {
         Workspace: {
             meetingDeletionGraceDays: number;
+            generationSettings: {
+                /** @enum {string} */
+                outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
+                processing: {
+                    /** @enum {string} */
+                    location: "local" | "remote";
+                    remote: {
+                        /** @enum {string} */
+                        workflow: "transcribeThenSummarize" | "combined";
+                        summaryModel?: string;
+                        transcriptionModel?: string;
+                        /** @enum {string} */
+                        reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                    };
+                };
+                summary: {
+                    /** @enum {string} */
+                    style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
+                };
+                local: {
+                    model: string;
+                    /** @enum {string} */
+                    reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                };
+            };
             /** @enum {string} */
             encryption?: "none" | "server";
             workspaceId: string;
@@ -1542,6 +1567,31 @@ export interface components {
         };
         NullableWorkspaceRecord: {
             meetingDeletionGraceDays: number;
+            generationSettings: {
+                /** @enum {string} */
+                outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
+                processing: {
+                    /** @enum {string} */
+                    location: "local" | "remote";
+                    remote: {
+                        /** @enum {string} */
+                        workflow: "transcribeThenSummarize" | "combined";
+                        summaryModel?: string;
+                        transcriptionModel?: string;
+                        /** @enum {string} */
+                        reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                    };
+                };
+                summary: {
+                    /** @enum {string} */
+                    style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
+                };
+                local: {
+                    model: string;
+                    /** @enum {string} */
+                    reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                };
+            };
             /** @enum {string} */
             encryption?: "none" | "server";
             workspaceId: string;
@@ -1740,24 +1790,6 @@ export interface components {
         };
         AccountSettingsResponse: {
             settings: {
-                /** @enum {string} */
-                outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
-                processing: {
-                    /** @enum {string} */
-                    location: "local" | "remote";
-                    remote: {
-                        /** @enum {string} */
-                        workflow: "transcribeThenSummarize" | "combined";
-                        summaryModel?: string;
-                        transcriptionModel?: string;
-                        /** @enum {string} */
-                        reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-                    };
-                };
-                summary: {
-                    /** @enum {string} */
-                    style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
-                };
                 analysisLanguages: {
                     /** @enum {string} */
                     scope: "all" | "selected";
@@ -2076,6 +2108,31 @@ export interface components {
                 baseRevision: number | null;
                 data: {
                     meetingDeletionGraceDays?: number;
+                    generationSettings?: {
+                        /** @enum {string} */
+                        outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
+                        processing: {
+                            /** @enum {string} */
+                            location: "local" | "remote";
+                            remote: {
+                                /** @enum {string} */
+                                workflow: "transcribeThenSummarize" | "combined";
+                                summaryModel?: string;
+                                transcriptionModel?: string;
+                                /** @enum {string} */
+                                reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                            };
+                        };
+                        summary: {
+                            /** @enum {string} */
+                            style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
+                        };
+                        local: {
+                            model: string;
+                            /** @enum {string} */
+                            reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                        };
+                    };
                     organizationId: string;
                     /** @enum {string} */
                     encryption?: "none" | "server";
@@ -2097,6 +2154,31 @@ export interface components {
                 baseRevision: number | null;
                 data: {
                     meetingDeletionGraceDays?: number;
+                    generationSettings?: {
+                        /** @enum {string} */
+                        outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
+                        processing: {
+                            /** @enum {string} */
+                            location: "local" | "remote";
+                            remote: {
+                                /** @enum {string} */
+                                workflow: "transcribeThenSummarize" | "combined";
+                                summaryModel?: string;
+                                transcriptionModel?: string;
+                                /** @enum {string} */
+                                reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                            };
+                        };
+                        summary: {
+                            /** @enum {string} */
+                            style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
+                        };
+                        local: {
+                            model: string;
+                            /** @enum {string} */
+                            reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                        };
+                    };
                     /** @enum {string} */
                     encryption?: "none" | "server";
                     /** @enum {string|null} */
@@ -3083,32 +3165,17 @@ export interface operations {
             content: {
                 /**
                  * @example {
-                 *       "outputLanguage": "ja"
+                 *       "analysisLanguages": {
+                 *         "scope": "all",
+                 *         "identifiers": []
+                 *       }
                  *     }
                  */
                 "application/json": {
-                    /** @enum {string} */
-                    outputLanguage?: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
-                    analysisLanguages?: {
+                    analysisLanguages: {
                         /** @enum {string} */
                         scope: "all" | "selected";
                         identifiers: string[];
-                    };
-                    summary?: {
-                        /** @enum {string} */
-                        style?: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
-                    };
-                    processing?: {
-                        /** @enum {string} */
-                        location?: "local" | "remote";
-                        remote?: {
-                            /** @enum {string} */
-                            workflow?: "transcribeThenSummarize" | "combined";
-                            summaryModel?: string | null;
-                            transcriptionModel?: string | null;
-                            /** @enum {string|null} */
-                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | null;
-                        };
                     };
                     initialize?: boolean;
                 };

@@ -3,10 +3,11 @@ import SwiftUI
 struct ServerSummarySettingsSection: View {
     let connectionID: UUID
     @Bindable private var model = ServerAccountSettingsModel.shared
+    @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
     @State private var isExpanded = false
     @State private var isHeaderHovered = false
     private var state: ServerAccountSettingsModel.State { model.state(for: connectionID) }
-    private var remote: ServerAccountSettings.RemoteProcessing { state.settings?.processing?.remote ?? .init() }
+    private var remote: WorkspaceGenerationSettings.RemoteProcessing { workspaceSettings.generationSettings.processing.remote }
     private var transcribesFirst: Bool { remote.workflow == .transcribeThenSummarize }
     private var models: [ServerSummaryService.Model] {
         state.summaryModels.filter { $0.supportsSummary(method: transcribesFirst ? "transcript" : "audio") }
@@ -53,8 +54,8 @@ struct ServerSummarySettingsSection: View {
 
             if isExpanded {
                 Picker(L10n.processingWorkflow, selection: workflowSelection) {
-                    Text(L10n.transcribeThenSummarize).tag(ServerAccountSettings.Workflow.transcribeThenSummarize)
-                    Text(L10n.combinedTranscriptionSummary).tag(ServerAccountSettings.Workflow.combined)
+                    Text(L10n.transcribeThenSummarize).tag(WorkspaceGenerationSettings.Workflow.transcribeThenSummarize)
+                    Text(L10n.combinedTranscriptionSummary).tag(WorkspaceGenerationSettings.Workflow.combined)
                 }
                 Picker(L10n.summaryModel, selection: summaryModelSelection) {
                     Text(L10n.automaticModelPreference).tag("")
@@ -88,35 +89,32 @@ struct ServerSummarySettingsSection: View {
                 Text(L10n.automaticModelPreferenceDescription).foregroundStyle(.secondary)
             }
         }
-        .disabled(!state.canEdit)
+        .disabled(AppSettings.shared.currentWorkspace?.allowsWorkspaceManagement != true)
     }
 
-    private var workflowSelection: Binding<ServerAccountSettings.Workflow> {
-        Binding(get: { remote.workflow }, set: { save(.init(workflow: $0)) })
+    private var workflowSelection: Binding<WorkspaceGenerationSettings.Workflow> {
+        Binding(get: { remote.workflow }, set: { workspaceSettings.generationSettings.processing.remote.workflow = $0 })
     }
 
     private var summaryModelSelection: Binding<String> {
         Binding(
             get: { selectedModel?.id ?? remote.summaryModel ?? "" },
-            set: { save(.init(summaryModel: .some($0.nilIfBlank))) }
+            set: { workspaceSettings.generationSettings.processing.remote.summaryModel = $0.nilIfBlank }
         )
     }
 
     private var effortSelection: Binding<String> {
         Binding(
             get: { remote.reasoningEffort ?? "" },
-            set: { save(.init(reasoningEffort: .some($0.nilIfBlank))) }
+            set: { workspaceSettings.generationSettings.processing.remote.reasoningEffort = $0.nilIfBlank }
         )
     }
 
     private var transcriptionModelSelection: Binding<String> {
         Binding(
             get: { selectedTranscriptionModel?.id ?? remote.transcriptionModel ?? "" },
-            set: { save(.init(transcriptionModel: .some($0.nilIfBlank))) }
+            set: { workspaceSettings.generationSettings.processing.remote.transcriptionModel = $0.nilIfBlank }
         )
     }
 
-    private func save(_ remote: ServerAccountSettings.Patch.Remote) {
-        model.save(.init(processing: .init(remote: remote)), connectionID: connectionID)
-    }
 }

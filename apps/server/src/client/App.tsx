@@ -435,7 +435,6 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
           <div><dt>{uiText("Email address", "メールアドレス")}</dt><dd>{session.user.email || "—"}</dd></div>
         </dl></div>
       </section>
-      <ServerSummarySettings />
       {extensions.flatMap((extension) => extension.navigation ?? []).filter((item) => !isServerNavigation(item)).map((item) =>
         (!item.capability || session.capabilities[item.capability]) && <a className="text-link" key={item.path} href={item.path}><MenuIcon name="document" />{item.label}</a>)}
       {sessionsEnabled && <section className="section-block">
@@ -751,6 +750,9 @@ function WorkspaceMeetings({ session, workspaceId }: { session: SessionInfo; wor
       ...(session.capabilities.sharing && workspace ? [{ id: "permissions", label: uiText("Permissions", "権限"), content: <WorkspaceSharing workspace={workspace} /> }] : []),
       { id: "settings", label: uiText("Settings", "設定"), content: <>
         <section className="workspace-settings"><h2>{uiText("Workspace details", "ワークスペースの詳細")}</h2><div className="collection-heading"><span>{workspace?.name}</span>{workspace?.role === "admin" && <button className="secondary" onClick={renameWorkspace}>{uiText("Edit Workspace", "ワークスペースを編集")}</button>}</div></section>
+        {workspace && <ServerSummarySettings key={workspaceId} workspaceId={workspaceId} onSave={(current, generationSettings) =>
+          commitSyncTransaction(workspaceId, [{ entity: "workspace", action: "update", entityId: workspaceId,
+            baseRevision: current.revision, data: { name: current.name, generationSettings } }], setRecovering)} />}
         {workspace?.role === "admin" && <WorkspaceTransfer workspace={workspace} />}
         {workspace?.role === "admin" && !personal && <section className="workspace-settings"><h2>{uiText("Delete Workspace", "ワークスペースを削除")}</h2>
           <div className="collection-heading"><p>{uiText("Only empty Workspaces can be deleted. Transfer resources or wait for meetings in the trash to be permanently deleted.", "空のワークスペースのみ削除できます。ごみ箱内のミーティングを含むリソースが残っている場合は、先に移管または削除完了を待ってください。")}</p>
@@ -949,7 +951,7 @@ export function SyncedMeeting({ workspaceId, meetingId }: { workspaceId: string;
       <DataError error={meetingQuery.error} retry={meetingQuery.reload} />
       <DataError error={workspaceQuery.error} retry={workspaceQuery.reload} />
       <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
-      {meeting && canWriteWorkspace(workspace?.role) && <ServerSummaryGeneration key={meetingId} meetingId={meetingId} />}
+      {meeting && canWriteWorkspace(workspace?.role) && <ServerSummaryGeneration key={meetingId} meetingId={meetingId} workspaceId={meeting.workspaceId} />}
       {meeting && <MeetingTabs
         actions={canWriteWorkspace(workspace?.role) && <div className="meeting-actions">
           <button className="action-trigger" aria-label={uiText("Meeting actions", "ミーティングの操作")} popoverTarget="meeting-actions"><span aria-hidden="true">⋯</span>{" "}<span className="action-label">{uiText("Actions", "操作")}</span></button>
