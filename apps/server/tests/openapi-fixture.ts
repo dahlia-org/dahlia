@@ -15,6 +15,14 @@ const config = { authProvider: "header" as const, authHeader: "X-Forwarded-Email
   storageBackend: "databricks" as const, storageDatabricksVolumePath: "/Volumes/test/app/files" };
 const store = createNodeApplicationStore(config);
 await store.migrate();
+// The client test creates a workspace in a Team; signup only provisions Personal.
+const headerIdentity = { userId: "swift-test@example.com", email: "swift-test@example.com", name: "swift-test", source: "header" as const };
+const userId = await store.resolveHeaderUser(headerIdentity);
+if (!userId) throw new Error("Integration test user missing");
+const identity = { ...headerIdentity, userId };
+await store.ensureIdentityUser(identity);
+await store.addAdminUser(identity.email);
+await store.organizations.create(identity, { name: "Integration Team", slug: "integration-team", initialOwnerUserId: userId });
 const app = createApp({ config, authStore: store, objectStorage: new LocalObjectStorage(join(directory, "objects")) });
 const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 }, (address) => {
   void writeFile(destination, `http://127.0.0.1:${address.port}`).catch((error: unknown) => { console.error(error); process.exitCode = 1; });

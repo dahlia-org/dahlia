@@ -132,11 +132,18 @@ final class WorkspaceManagementModel {
                 try await discover()
                 try Task.checkCancellation()
                 await loadWorkspaces()
-                guard hasLoadedWorkspaces else { return nil }
+                guard hasLoadedWorkspaces, let repository,
+                      let connection = try await repository.fetchDahliaAccountConnection(id: accountConnectionID)
+                else { return nil }
+                let organizations = try await fetchOrganizations(connection)
+                try Task.checkCancellation()
+                let personalOrganizationIDs = Set(organizations.items.filter { $0.kind == .personal }.compactMap { UUID(uuidString: $0.id) })
                 return workspaces.filter {
                     $0.accountConnectionId == accountConnectionID && $0.syncConfirmedConnectionId == accountConnectionID
                 }.min {
-                    if ($0.name == "Personal") != ($1.name == "Personal") { return $0.name == "Personal" }
+                    let firstIsPersonal = $0.organizationId.map { personalOrganizationIDs.contains($0) } ?? false
+                    let secondIsPersonal = $1.organizationId.map { personalOrganizationIDs.contains($0) } ?? false
+                    if firstIsPersonal != secondIsPersonal { return firstIsPersonal }
                     if $0.createdAt != $1.createdAt { return $0.createdAt < $1.createdAt }
                     return $0.id.uuidString < $1.id.uuidString
                 }

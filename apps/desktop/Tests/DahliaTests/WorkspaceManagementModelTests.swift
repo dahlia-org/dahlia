@@ -9,7 +9,7 @@
         @Test(arguments: ["admin", "editor"])
         func initialServerSetupSkipsRetainedUnconfirmedWorkspaces(role: String) async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let model = WorkspaceManagementModel()
+            let model = WorkspaceManagementModel(organizationFetcher: { _ in .init(items: [], canCreateOrganizations: false) })
             await model.configure(appDatabase: database)
             let connection = DahliaAccountConnectionRecord(
                 id: .v7(), origin: "https://setup.example.com", clientID: "desktop", createdAt: .now
@@ -72,7 +72,10 @@
         @Test
         func initialServerSetupWaitsForDiscoveryAndNeverCreatesLocalWorkspace() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let model = WorkspaceManagementModel()
+            let personalOrganizationID = UUID.v7()
+            let model = WorkspaceManagementModel(organizationFetcher: { _ in
+                .init(items: [.init(id: personalOrganizationID.uuidString, name: "Personal", slug: "personal", kind: .personal)], canCreateOrganizations: false)
+            })
             await model.configure(appDatabase: database)
             let connection = DahliaAccountConnectionRecord(
                 id: .v7(), origin: "https://setup.example.com", clientID: "desktop", createdAt: .now
@@ -82,12 +85,13 @@
             #expect(await model.resolveInitialWorkspace(accountConnectionID: connection.id) { throw URLError(.notConnectedToInternet) } == nil)
             #expect(model.workspaces.isEmpty)
             let personal = CloudWorkspaceRecord(
-                workspaceId: .v7(), connectionId: connection.id, organizationId: .v7(),
+                workspaceId: .v7(), connectionId: connection.id, organizationId: personalOrganizationID,
                 name: "Personal", createdAt: .now, revision: 1, role: "admin"
             )
             var shared = personal
             shared.workspaceId = .v7()
-            shared.name = "Older Team"
+            shared.name = "Personal"
+            shared.organizationId = .v7()
             shared.createdAt = .distantPast
             let discovered = [shared, personal]
             let selected = await model.resolveInitialWorkspace(accountConnectionID: connection.id) {
@@ -95,9 +99,12 @@
             }
             #expect(selected?.id == personal.workspaceId)
             _ = try await MeetingRepository(dbQueue: database.dbQueue).updateWorkspaceName(id: personal.workspaceId, name: "Renamed")
-            #expect(await model.resolveInitialWorkspace(accountConnectionID: connection.id) {}?.id == shared.workspaceId)
+            #expect(await model.resolveInitialWorkspace(accountConnectionID: connection.id) {}?.id == personal.workspaceId)
             #expect(model.workspaces.count == 2)
             #expect(model.workspaces.allSatisfy { $0.accountConnectionId == connection.id })
+            let unavailableDirectory = WorkspaceManagementModel(organizationFetcher: { _ in throw URLError(.notConnectedToInternet) })
+            await unavailableDirectory.configure(appDatabase: database)
+            #expect(await unavailableDirectory.resolveInitialWorkspace(accountConnectionID: connection.id) {} == nil)
             #expect(await model.resolveInitialWorkspace(accountConnectionID: .v7()) {} == nil)
         }
 
