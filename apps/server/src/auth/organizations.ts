@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import type { DBAdapterInstance } from "better-auth";
@@ -38,13 +38,15 @@ export function createOrganizationStore(connection: NodePgDatabase | SQLiteDatab
         }
         const availableSlug = async (source: string) => {
           const base = source.toLowerCase().replace(/[^a-z0-9]/gu, "_") || "organization";
+          const pattern = `${base.replaceAll("_", "!_")}!_%`;
+          const existing = await tx.select({ slug: schema.organization.slug }).from(schema.organization)
+            .where(or(eq(schema.organization.slug, base), sql`${schema.organization.slug} like ${pattern} escape '!'`));
+          const occupied = new Set(existing.map(({ slug }) => slug));
           let slug = base;
-          for (let suffix = 2; ; suffix++) {
-            const [existing] = await tx.select({ id: schema.organization.id }).from(schema.organization)
-              .where(eq(schema.organization.slug, slug)).limit(1);
-            if (!existing) return slug;
+          for (let suffix = 2; occupied.has(slug); suffix++) {
             slug = `${base}_${suffix}`;
           }
+          return slug;
         };
         await tx.insert(schema.organization).values({ id: userId, name: "Personal", slug: await availableSlug(user.email.split("@")[0]!), kind: "personal", createdAt: user.createdAt });
         await tx.insert(schema.member).values({ id: userId, userId, organizationId: userId, role: "owner", createdAt: user.createdAt });

@@ -1,7 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../src/app";
 import { initializeDahliaAuth } from "../src/auth/better-auth";
@@ -31,6 +33,28 @@ afterEach(() => {
 });
 
 describe("local single-user header mode", () => {
+  it("allocates colliding slugs with one lookup and reuses the first vacant suffix", async () => {
+    const config = localConfig(true);
+    const store = createNodeAuthStore(config);
+    const register = (email: string) => store.resolveHeaderUser({ userId: email, email, name: email, source: "header" });
+    try {
+      await store.migrate();
+      for (let index = 0; index < 8; index++) await register(`admin.name@domain${index}.example`);
+      const queries = vi.spyOn(DatabaseSync.prototype, "prepare");
+      try {
+        const id = await register("admin_name@domain0.example");
+        expect(queries.mock.calls.filter(([sql]) => /^select .* from "organization" where .*"slug"/.test(sql))).toHaveLength(1);
+        expect((await store.listServerOrganizations(100, 0)).find((org) => org.id === id)?.slug).toBe("admin_name_9");
+        const raw = new DatabaseSync(fileURLToPath(config.databaseUrl!));
+        try { raw.prepare("UPDATE organization SET slug = 'renamed' WHERE slug = 'admin_name_3'").run(); } finally { raw.close(); }
+        queries.mockClear();
+        const next = await register("admin-name@domain0.example");
+        expect(queries.mock.calls.filter(([sql]) => /^select .* from "organization" where .*"slug"/.test(sql))).toHaveLength(1);
+        expect((await store.listServerOrganizations(100, 0)).find((org) => org.id === next)?.slug).toBe("admin_name_3");
+      } finally { queries.mockRestore(); }
+    } finally { await store.close?.(); }
+  });
+
   it("falls back to the fixed local user only when no proxy header is supplied", async () => {
     const config = localConfig(true);
     const store = createNodeAuthStore(config);
