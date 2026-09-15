@@ -444,7 +444,7 @@ export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId:
       <option value="">{uiText("Workspace default", "ワークスペース設定")}</option>
       {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
     </Select>
-    <button className="primary" disabled={starting || active || query.loading || workspaceQuery.loading || !selectedSourceAvailable} onClick={() => void start()}>
+    <button className="primary" disabled={starting || active || query.loading || workspaceQuery.loading || !selectedSourceAvailable || (!!selectedModelID && !selectedModel)} onClick={() => void start()}>
       {starting ? uiText("Starting…", "開始中…") : buttonLabel}
     </button>
     </div>

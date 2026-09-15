@@ -162,10 +162,10 @@
             let controller = DahliaCloudAccountController(configuration: nil, serviceFactory: { _, configuration in
                 DahliaCloudService(configuration: configuration, storage: .init(load: { nil }, save: { _ in }, delete: {}))
             })
+            // Measure both throttle windows from registration, before any publication or polling delay.
+            let observationStarted = ContinuousClock.now
             await controller.configure(appDatabase: database)
             try await waitForProgress { controller.syncProgress[connection] != nil }
-            // Start before the first write; polling may resume long after its publication.
-            let firstUpdate = ContinuousClock.now
             _ = try await database.dbQueue.write { db in
                 try SyncTransactionRecorder.record(workspaceId: workspace.id, operations: [
                     .init(entity: .file, action: .delete, entityId: .v7()),
@@ -180,7 +180,7 @@
                 }
             }
             try await waitForProgress { controller.syncProgress[connection]?.remaining == 11 }
-            #expect(firstUpdate.duration(to: .now) >= .milliseconds(900))
+            #expect(observationStarted.duration(to: .now) >= .milliseconds(1500))
             let (replacement, otherWorkspace) = try await syncedDatabase()
             let otherConnection = try #require(otherWorkspace.accountConnectionId)
             await controller.configure(appDatabase: replacement)

@@ -97,18 +97,30 @@ it("explains the selected style and the data sent by Mac processing", () => {
   expect(html).not.toContain("Advanced server settings");
 });
 
-it("enables generation for the current remote settings shape", () => {
+it.each([
+  ["audio", undefined, true],
+  ["audio", "gemini-3-8-flash", true],
+  ["audio", "gpt-5-6-terra", false],
+  ["transcript", "gpt-5-6-terra", true],
+] as const)("validates the Workspace default model for %s (%s)", (source, summaryModel, available) => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: url === "/api/v1/models" ? modelList([]) : typeof url === "object" && url.key.startsWith('["getCapabilities"')
-      ? { meetingSummaryGeneration: { version: 2, sources: ["audio"], completeRecordings: true } }
+    data: url === "/api/v1/models" ? modelList([{ id: "gemini-3-8-flash" }, { id: "gpt-5-6-terra" }]) : typeof url === "object" && url.key.startsWith('["getCapabilities"')
+      ? { meetingSummaryGeneration: { version: 2, sources: [source], completeRecordings: true } }
       : typeof url === "object" && url.key.startsWith('["getWorkspace"')
-        ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing, location: "remote" } } }
+        ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: {
+          location: "remote", remote: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing.remote, summaryModel },
+        } } }
         : typeof url === "object" && url.key.startsWith('["summaryRecordingAvailability"') ? recordings(true)
+        : typeof url === "object" && url.key.startsWith('["summaryTranscriptAvailability"') ? transcript(true)
         : { job: null },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
   const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
-  expect(html).toContain('<button class="primary">Generate summary</button>');
+  expect(html.includes('<button class="primary">Generate summary</button>')).toBe(available);
+  if (!available) {
+    expect(html).toContain(`${summaryModel} — Unavailable`);
+    expect(html).toContain('<button class="primary" disabled="">');
+  }
   expect(html).not.toContain("This workspace processes summaries in Dahlia for Mac.");
 });
 

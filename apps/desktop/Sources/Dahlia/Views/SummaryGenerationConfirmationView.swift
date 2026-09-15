@@ -82,6 +82,12 @@ struct SummaryGenerationConfirmationView: View {
                         }
                         ForEach(modelIDs, id: \.self) { id in Text(modelName(id)).tag(Optional(id)) }
                     }
+                    if !isModelAvailable {
+                        SettingsStatusMessage(
+                            text: "\(modelName(overrides.model ?? defaultModel)) — \(L10n.unavailableModelPreference)",
+                            systemImage: "exclamationmark.triangle", tint: .orange
+                        )
+                    }
                     Picker(L10n.reasoningEffort, selection: $overrides.reasoningEffort) {
                         Text(L10n.workspaceGenerationDefault).tag(String?.none)
                         if usesRemote { Text(L10n.automaticModelPreference).tag(Optional("")) }
@@ -129,8 +135,7 @@ struct SummaryGenerationConfirmationView: View {
                     .keyboardShortcut(.cancelAction)
                 Button(actionTitle, action: generateSummary)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(!overrides
-                        .isModelAvailable(defaultModel: defaultModel, modelIDs: modelIDs, allowsAutomatic: usesRemote) || hasIncompatibleEffort ||
+                    .disabled(!isModelAvailable || hasIncompatibleEffort ||
                         isLoadingSources || sourceErrorMessage != nil ||
                         (selectedSource.map { sourceAvailability?.isAvailable($0) != true } ?? true))
             }
@@ -177,6 +182,10 @@ struct SummaryGenerationConfirmationView: View {
                 defaultReasoningEffort: usesRemote ? "" : catalog.resolvedEffort(current: "", modelID: model ?? defaultModel)
             )
         })
+    }
+
+    private var isModelAvailable: Bool {
+        overrides.isModelAvailable(defaultModel: defaultModel, modelIDs: modelIDs, allowsAutomatic: usesRemote)
     }
 
     private var hasIncompatibleEffort: Bool {

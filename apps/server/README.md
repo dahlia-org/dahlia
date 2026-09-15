@@ -310,6 +310,8 @@ Defaults are local transcription, detailed style, and transcribe-then-summarize.
 
 Workspace settings identify the Workspace and allow administrators to edit shared defaults. Other roles see read-only values. Generation-authorized users can override language, style, model and effort for a single summary without changing defaults. Failed saves expose an error and retain revision conflict handling; no silent model substitution occurs.
 
+Desktop and Web mark an effective summary model as unavailable and disable generation when it does not support the selected input source. This applies to Workspace defaults as well as one-time model choices; selecting a compatible model or Automatic permits generation without changing the saved default.
+
 Updates use the existing Workspace revision and authorization checks. Switching transcription location/workflow preserves inactive model overrides. Each generation captures a separate settings snapshot; one-time overrides never modify Workspace defaults. Server is unreleased and the initial migration creates the current schema directly. Desktop preserves released v41 data and inherits historical Mac processing defaults once during v42, preserving each Workspace's existing model and effort.
 
 Explicit job retries retain the captured input references and settings, but recapture summary/transcript revisions and the input fingerprint under the Workspace lock. Changes after retry acceptance still reject the result.
