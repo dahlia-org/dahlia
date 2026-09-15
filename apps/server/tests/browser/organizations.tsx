@@ -139,6 +139,7 @@ async function run() {
   await until(() => ![...main().querySelectorAll("h3")].some((heading) => heading.textContent === "Join requests"));
   (document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') as HTMLElement).click();
   await until(() => button("Members"));
+  button("Workspace governance").click();
   await until(() => panel()?.textContent?.includes("Team workspace"));
   assert(panel().querySelector(".workspace-governance-identity .appearance-icon"), "Workspace icon is missing");
   assert(!panel().textContent?.includes("workspace-id") && !panel().textContent?.includes("revision 1") && !panel().textContent?.includes("Creator"), "Internal Workspace metadata is visible");

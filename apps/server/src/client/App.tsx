@@ -1312,7 +1312,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
     <section className="organization-card">
       {dialog}
       <fieldset className="organization-controls" disabled={pending}>
-      <DetailTabs key={canGovern ? "govern" : "read"} label={uiText("Organization content", "組織の内容")} tabs={[
+      <DetailTabs label={uiText("Organization content", "組織の内容")} tabs={[
         ...(canGovern ? [{ id: "workspaces", label: uiText("Workspace governance", "ワークスペース管理"), content: <OrganizationWorkspaces organization={organization} /> }] : []),
         { id: "members", label: <>{uiText("Members", "メンバー")}{members && <> <span className="org-count">{members.length}</span></>}</>, content: <>
           <div className="org-section-header org-member-toolbar">
