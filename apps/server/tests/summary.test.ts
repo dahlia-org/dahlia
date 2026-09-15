@@ -188,7 +188,8 @@ describe("server summary jobs", () => {
       expect(await (await send(true)).json()).toEqual({
         sync: { version: 5 }, workspaceTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 },
         search: { version: 1 }, imageAnalysis: { version: 1 }, conversationAnalytics: { version: 1 },
-        meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"], completeRecordings: true },
+        meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"], completeRecordings: true,
+          retranscription: { version: 1, provider: "gemini" } },
       });
       methods.length = 0;
       expect(await (await send(true)).json()).not.toHaveProperty("meetingSummaryGeneration");
@@ -914,6 +915,20 @@ describe("audio summary jobs", () => {
     } finally { await store.close?.(); }
   });
 
+  it("rejects a request that omits an uploaded recording", async () => {
+    const value = await setup(); const { store, workspaceId, meetingId } = value;
+    try {
+      await addRecording(value, ["mic"]);
+      await addRecording(value, ["system"]);
+      const request = await recordingInput(value);
+      const { method } = audioMethod(value);
+      await expect(store.sync.withIdentity(owner, (scoped) => method.version(
+        scoped, workspaceId, meetingId, { ...request, recordings: request.recordings.slice(0, 1) },
+        { requireCompleteMeeting: true },
+      ))).rejects.toThrow("summary_audio_pair_incomplete");
+    } finally { await store.close?.(); }
+  });
+
   it("keeps an accepted recording snapshot valid when a later session is pending", async () => {
     const value = await setup(); const { store, sync, workspaceId, meetingId } = value;
     try {
@@ -1023,6 +1038,45 @@ describe("staged summary generation", () => {
       expect(summaryStartSchema.safeParse({ ...request, input: { ...request.input, ...extra } }).success).toBe(false);
     }
     expect(summaryStartSchema.safeParse({ ...request, input: { type: "transcript", version: "1" } }).success).toBe(true);
+  });
+
+  it("retranscribes with Gemini only and leaves the existing summary unchanged", async () => {
+    const value = await setup(); const { store, sync, workspaceId, meetingId } = value;
+    try {
+      await addRecording(value);
+      await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), workspaceId,
+        createdAt: new Date().toISOString(), operations: [{
+          id: uuidV7(), entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 0,
+          data: { title: "Existing", document: JSON.stringify({ ...doc(), title: "Existing" }), createdAt: new Date().toISOString() },
+        }] });
+      const { method, calls } = audioMethod(value, () => Response.json({
+        choices: [{ finish_reason: "stop", message: { content: JSON.stringify(cloudTranscript) } }],
+      }));
+      const service = new SummaryService(store.sync, [method]);
+      const settings = await generationSettings(store, owner, workspaceId) ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS;
+      const preferencesWithoutLanguage = { processing: settings.processing, summary: settings.summary,
+        outputLanguage: settings.outputLanguage };
+      await expect(service.start(owner, workspaceId, meetingId, {
+        id: uuidV7(), input: await recordingInput(value), preferences: preferencesWithoutLanguage,
+      })).rejects.toMatchObject({ code: "invalid_summary_request" });
+      const job = await service.start(owner, workspaceId, meetingId, {
+        id: uuidV7(), input: { ...await recordingInput(value), transcriptionOnly: true },
+        preferences: preferencesWithoutLanguage,
+      });
+      expect(job).toMatchObject({ stage: "transcribing", input: {
+        transcriptionOnly: true, transcriptionModel: "gemini-3-8-flash",
+      } });
+      expect(job.settings).not.toHaveProperty("transcription");
+      await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+      expect(calls).toHaveLength(1);
+      expect(JSON.stringify(calls[0])).not.toContain("selected spoken language");
+      expect(JSON.stringify(calls[0])).not.toContain("<locale_identifier>ja-JP</locale_identifier>");
+      expect(await service.status(owner, workspaceId, meetingId, job.id)).toMatchObject({ status: "succeeded" });
+      expect((await sync.latestSummary(owner, workspaceId, meetingId)).record?.title).toBe("Existing");
+      expect(await store.sync.withIdentity(owner, (scoped) => scoped.listSummaryVersions(workspaceId, meetingId, 100))).toHaveLength(1);
+      expect((await store.sync.withIdentity(owner, (scoped) => scoped.getTranscript(workspaceId, meetingId)))?.metadata)
+        .toMatchObject({ provider: "gemini" });
+    } finally { await store.close?.(); }
   });
 
   it("generates both results once, uses both session tracks, and atomically saves their canonical histories", async () => {
@@ -1138,20 +1192,21 @@ describe("staged summary generation", () => {
   });
 });
 
-it("preserves audio-pair order and rejects foreign, partial, or duplicated pairs", async () => {
+it("requires the complete canonical audio-pair order and rejects foreign, partial, or duplicated pairs", async () => {
   const value = await setup(); const { store, workspaceId, meetingId, sync } = value;
   try {
     await addRecording(value); await addRecording(value, ["system"]);
     const originalInput = await recordingInput(value);
-    const input = { ...originalInput, recordings: [...originalInput.recordings].reverse() };
+    const input = originalInput;
     const { method, calls } = audioMethod(value, () => combinedResponse({ segments: [
-      { ...cloudTranscript.segments[0], recording_index: 0, audio_source: "system" },
-      { ...cloudTranscript.segments[0], recording_index: 1 },
+      cloudTranscript.segments[0],
+      { ...cloudTranscript.segments[0], recording_index: 1, audio_source: "system" },
     ] }));
     const service = new SummaryService(store.sync, [method]);
     const request = { id: uuidV7(), input, model: "gemini-3-8-flash", detail: "high", outputLanguage: "ja" };
     await expect(service.start(owner, workspaceId, meetingId, { ...request, meetingId })).rejects.toMatchObject({ code: "invalid_summary_request" });
     for (const recordings of [
+      [...originalInput.recordings].reverse(),
       [{ micFileId: uuidV7(), systemFileId: null }],
       [{ ...originalInput.recordings[0], systemFileId: null }],
       [originalInput.recordings[0], originalInput.recordings[0]],
@@ -1162,7 +1217,7 @@ it("preserves audio-pair order and rejects foreign, partial, or duplicated pairs
     await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
     expect(calls).toHaveLength(1);
     const wire = JSON.stringify(calls[0]);
-    expect(wire.indexOf("<recording_number>2</recording_number>")).toBeLessThan(wire.indexOf("<recording_number>1</recording_number>"));
+    expect(wire.indexOf("<recording_number>1</recording_number>")).toBeLessThan(wire.indexOf("<recording_number>2</recording_number>"));
     expect((await service.status(owner, workspaceId, meetingId))?.status).toBe("succeeded");
   } finally { await store.close?.(); }
 });

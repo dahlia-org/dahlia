@@ -8,13 +8,27 @@ import GRDB
 
     @MainActor
     struct RecordingArchiveTests {
+        @Test
+        func localRecordingDoesNotEnqueueM4AArchive() async throws {
+            let fixture = try BatchAudioTestFixture(name: "LocalCAFOnly")
+            defer { fixture.removeFiles() }
+            try await fixture.database.dbQueue.write { db in
+                try RecordingArchiveRecord.enqueue(fixture.session, in: db)
+                #expect(try RecordingArchiveRecord.fetchCount(db) == 0)
+            }
+        }
+
         @Test(arguments: [false, true])
         func archiveDoesNotWaitForFinalTranscription(failed: Bool) async throws {
             let fixture = try BatchAudioTestFixture(name: "ArchiveBeforeTranscription")
             defer { fixture.removeFiles() }
             try await fixture.recordMicrophoneAudio()
             try await fixture.database.dbQueue.write { db in
-                try RecordingArchiveRecord.enqueue(fixture.session, in: db)
+                try RecordingArchiveRecord(
+                    sessionId: fixture.session.id,
+                    meetingId: fixture.meeting.id,
+                    workspaceId: fixture.meeting.workspaceId
+                ).insert(db)
                 try db.execute(sql: """
                 UPDATE recording_sessions SET endedAt = ?, batchLastAttemptAt = ?, batchLastError = ? WHERE id = ?
                 """, arguments: [fixture.now, failed ? fixture.now : nil, failed ? "transcription failed" : nil, fixture.session.id])
@@ -38,7 +52,11 @@ import GRDB
             defer { fixture.removeFiles() }
             try await fixture.recordMicrophoneAudio()
             try await fixture.database.dbQueue.write { db in
-                try RecordingArchiveRecord.enqueue(fixture.session, in: db)
+                try RecordingArchiveRecord(
+                    sessionId: fixture.session.id,
+                    meetingId: fixture.meeting.id,
+                    workspaceId: fixture.meeting.workspaceId
+                ).insert(db)
                 try db.execute(
                     sql: "UPDATE recording_sessions SET endedAt = ?, batchCompletedAt = ? WHERE id = ?",
                     arguments: [fixture.now, fixture.now, fixture.session.id]
@@ -142,7 +160,11 @@ import GRDB
             writer.appendBuffer(buffer)
             try await recorder.finish()
             let sources = try await fixture.database.dbQueue.write { db in
-                try RecordingArchiveRecord.enqueue(fixture.session, in: db)
+                try RecordingArchiveRecord(
+                    sessionId: fixture.session.id,
+                    meetingId: fixture.meeting.id,
+                    workspaceId: fixture.meeting.workspaceId
+                ).insert(db)
                 try db.execute(
                     sql: "UPDATE recording_sessions SET endedAt = ?, batchCompletedAt = ? WHERE id = ?",
                     arguments: [fixture.now, fixture.now, fixture.session.id]
@@ -245,7 +267,11 @@ import GRDB
             defer { fixture.removeFiles() }
             try await fixture.recordMicrophoneAudio()
             let segment = try await fixture.database.dbQueue.write { db in
-                try RecordingArchiveRecord.enqueue(fixture.session, in: db)
+                try RecordingArchiveRecord(
+                    sessionId: fixture.session.id,
+                    meetingId: fixture.meeting.id,
+                    workspaceId: fixture.meeting.workspaceId
+                ).insert(db)
                 try db.execute(
                     sql: "UPDATE recording_sessions SET endedAt = ?, batchCompletedAt = ? WHERE id = ?",
                     arguments: [fixture.now, fixture.now, fixture.session.id]
@@ -355,6 +381,11 @@ import GRDB
                 #expect(try RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db))
                 #expect(try RecordingArchiveRecord.fetchOne(db, key: sessionId)?.number == 12)
                 #expect(try RecordingSessionRecord.fetchOne(db, key: sessionId)?.batchCompletedAt != nil)
+                try db.execute(
+                    sql: "UPDATE recording_archives SET state = 'syncing' WHERE sessionId = ?",
+                    arguments: [sessionId]
+                )
+                #expect(try RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db))
                 let prepared = try String(
                     decoding: JSONSerialization.data(withJSONObject: [
                         "mic": [

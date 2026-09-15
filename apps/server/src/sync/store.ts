@@ -2381,7 +2381,12 @@ function createIdentityStore(
       await commitTransaction(transaction);
       const transcript = await getTranscript(job.workspaceId, job.meetingId);
       if (!transcript || transcript.id !== transcriptId) throw new SyncTransactionError(409, "summary_transcript_conflict");
-      await db.update(jobs).set(await content.write(jobs, { stage: "summarizing", transcriptResult: { transcriptId, version: String(transcript.version) } }, { id: job.id, workspaceId: job.workspaceId })).where(filter);
+      const transcriptionOnly = job.input?.type === "recording" && job.input.transcriptionOnly === true;
+      await db.update(jobs).set(await content.write(jobs, transcriptionOnly
+        ? { status: "succeeded", claimedAt: null, leaseExpiresAt: null, lastErrorCode: null,
+          transcriptResult: { transcriptId, version: String(transcript.version) } }
+        : { stage: "summarizing", transcriptResult: { transcriptId, version: String(transcript.version) } },
+      { id: job.id, workspaceId: job.workspaceId })).where(filter);
       return transcript;
     },
     async completeSummaryJob(job, transaction) {

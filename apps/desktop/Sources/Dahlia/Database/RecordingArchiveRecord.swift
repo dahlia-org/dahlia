@@ -39,7 +39,8 @@ struct RecordingArchiveRecord: Codable, FetchableRecord, PersistableRecord, Send
     static func isAvailable(sessionId: UUID, in db: Database) throws -> Bool {
         guard let archive = try fetchOne(db, key: sessionId),
               let workspace = try WorkspaceRecord.fetchOne(db, key: archive.workspaceId),
-              workspace.accountConnectionId == archive.connectionId, workspace.allowsCanonicalEdits,
+              workspace.accountConnectionId == archive.connectionId,
+              workspace.allowsCanonicalEdits,
               workspace.syncRecoveryState == nil else { return false }
         if archive.connectionId == nil { return archive.state == "saved" && archive.preparedJSON != "{}" }
         guard workspace.syncConfirmedConnectionId == archive.connectionId, archive.number != nil else { return false }
@@ -60,6 +61,7 @@ struct RecordingArchiveRecord: Codable, FetchableRecord, PersistableRecord, Send
         guard session.transcriptionMode == .batch,
               let meeting = try MeetingRecord.fetchOne(db, key: session.meetingId),
               let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId),
+              workspace.accountConnectionId != nil,
               workspace.allowsCanonicalEdits else { return }
         try Self(sessionId: session.id, meetingId: meeting.id, workspaceId: workspace.id, connectionId: workspace.accountConnectionId)
             .insert(db)

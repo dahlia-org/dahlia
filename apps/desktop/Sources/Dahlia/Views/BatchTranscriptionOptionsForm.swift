@@ -14,13 +14,27 @@ struct BatchTranscriptionOptionsForm: View {
     @Binding var selectedProjectId: UUID?
     var processingMethod: RecordingProcessingMethod?
     let usesServerSummary: Bool
+    let isRetranscription: Bool
 
     var body: some View {
         Form {
-            if let processingMethod {
+            if isRetranscription {
+                Section(L10n.retranscription) {
+                    LabeledContent(
+                        L10n.processingMethod,
+                        value: usesServerSummary ? L10n.retranscriptionGemini : L10n.retranscriptionAppleSpeech
+                    )
+                    Text(usesServerSummary
+                        ? L10n.serverRetranscriptionPolicyDescription
+                        : L10n.localRetranscriptionPolicyDescription)
+                        .foregroundStyle(.secondary)
+                    Text(L10n.retranscriptionKeepsSummary)
+                        .foregroundStyle(.secondary)
+                }
+            } else if let processingMethod {
                 Section { LabeledContent(L10n.processingMethod, value: processingMethod.displayName) }
             }
-            if processingMethod == nil || processingMethod == .transcript {
+            if !isRetranscription, processingMethod == nil || processingMethod == .transcript {
                 Section(L10n.transcription) {
                     Picker(L10n.language, selection: $languageSelection) {
                         if allowsRecordedLanguageSelection {
@@ -49,24 +63,26 @@ struct BatchTranscriptionOptionsForm: View {
                 }
 
             }
-            Section(L10n.summaryAndExport) {
-                SummaryProjectPicker(projects: projects, selection: $selectedProjectId)
+            if !isRetranscription {
+                Section(L10n.summaryAndExport) {
+                    SummaryProjectPicker(projects: projects, selection: $selectedProjectId)
 
-                if processingMethod == nil {
-                    Toggle(isOn: $generateSummaryAfterBatchTranscription) {
-                        Text(L10n.generateSummaryAfterBatchTranscription)
-                        Text(L10n.generateSummaryAfterBatchTranscriptionDescription)
+                    if processingMethod == nil {
+                        Toggle(isOn: $generateSummaryAfterBatchTranscription) {
+                            Text(L10n.generateSummaryAfterBatchTranscription)
+                            Text(L10n.generateSummaryAfterBatchTranscriptionDescription)
+                        }
+                        .toggleStyle(.switch)
                     }
-                    .toggleStyle(.switch)
-                }
 
-                SummaryGenerationOptionsControls(
-                    detailLevel: $summaryDetailLevel,
-                    exportsToWorkspace: $exportBatchSummaryToWorkspace,
-                    exportsToGoogleDocs: $exportBatchSummaryToGoogleDocs,
-                    isEnabled: processingMethod != nil || generateSummaryAfterBatchTranscription,
-                    usesServerSummary: usesServerSummary
-                )
+                    SummaryGenerationOptionsControls(
+                        detailLevel: $summaryDetailLevel,
+                        exportsToWorkspace: $exportBatchSummaryToWorkspace,
+                        exportsToGoogleDocs: $exportBatchSummaryToGoogleDocs,
+                        isEnabled: processingMethod != nil || generateSummaryAfterBatchTranscription,
+                        usesServerSummary: usesServerSummary
+                    )
+                }
             }
         }
         .formStyle(.grouped)

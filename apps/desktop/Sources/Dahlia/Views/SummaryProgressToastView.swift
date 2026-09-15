@@ -124,7 +124,9 @@ private struct SummaryGenerationJobProgressView: View {
                     showsProgressBar: true
                 )
             }
-            SummaryProgressStepRow(label: L10n.generateSummary, status: job.progress.summaryGeneration)
+            if !job.transcriptionOnly {
+                SummaryProgressStepRow(label: L10n.generateSummary, status: job.progress.summaryGeneration)
+            }
             if !job.progress.workspaceExport.isSkipped {
                 SummaryProgressStepRow(label: L10n.exportBatchSummaryToWorkspace, status: job.progress.workspaceExport)
             }

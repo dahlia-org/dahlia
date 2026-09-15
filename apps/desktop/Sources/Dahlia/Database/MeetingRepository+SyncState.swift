@@ -51,7 +51,7 @@ extension MeetingRepository {
         let archiveState: String? = archiveStates.isEmpty ? nil : archiveStates.contains("failed") ? "failed"
             : archiveStates.allSatisfy { ["saved", "remote"].contains($0) } ? "saved" : "pending"
         guard let connectionId = workspace.accountConnectionId else {
-            return MeetingSyncSnapshot(connectionId: nil, state: .local, revisions: [], recordingArchiveState: archiveState)
+            return MeetingSyncSnapshot(connectionId: nil, state: .local, revisions: [])
         }
         let state = try fetchWorkspaceSyncState(workspace, in: db)
         let revisions = try MeetingSyncSnapshot.Revision.fetchAll(

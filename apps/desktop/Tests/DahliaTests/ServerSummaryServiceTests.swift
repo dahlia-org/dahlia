@@ -19,10 +19,11 @@ import DahliaRuntimeSupport
                 id: id.uuidString.lowercased(),
                 input: .init(type: "recording", recordings: (0 ..< 74).map { _ in
                     .init(micFileId: UUID.v7().uuidString.lowercased(), systemFileId: UUID.v7().uuidString.lowercased())
-                }),
+                }, transcriptionOnly: true),
                 model: "gemini-3-8-flash", detailLevel: "high", summaryLanguage: "ja"
             )
             let encoded = try JSONEncoder().encode(body)
+            #expect(String(decoding: encoded, as: UTF8.self).contains("\"transcriptionOnly\":true"))
             #expect(encoded.count <= 8192)
             var job = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
             job["method"] = "audio"
@@ -408,10 +409,30 @@ import DahliaRuntimeSupport
 
             #expect(try await service.methods(connectionID: .v7(), origin: origin) == ["transcript", "audio"])
             #expect(try await service.manualMethods(connectionID: .v7(), origin: origin) == ["transcript"])
+            #expect(try await service.supportsRetranscription(connectionID: .v7(), origin: origin) == false)
         }
 
-        @Test(arguments: ["succeeded", "failed", "cancelled"])
-        func cloudProcessingKeepsItsCapturedRecordingAndMarksOnlyThatSessionComplete(status: String) async throws {
+        @Test
+        func compatibleCapabilityEnablesGeminiRetranscription() async throws {
+            let origin = "https://capabilities-\(UUID.v7().uuidString.lowercased()).test"
+            ImageURLProtocol.register(origin: origin) { _ in
+                (200, [:], Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#.utf8))
+            }
+            defer { ImageURLProtocol.remove(origin: origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let service = ServerSummaryService(client: SyncAPIClient(
+                session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" }
+            ))
+
+            #expect(try await service.supportsRetranscription(connectionID: .v7(), origin: origin))
+        }
+
+        @Test(arguments: ["succeeded", "failed", "cancelled"], [false, true])
+        func cloudProcessingKeepsItsCapturedRecordingAndMarksOnlyThatSessionComplete(
+            status: String,
+            transcriptionOnly: Bool
+        ) async throws {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
             let target = ServerSummaryService.Target(
                 workspaceID: .v7(),
@@ -493,13 +514,14 @@ import DahliaRuntimeSupport
                 workspaceSettings: settings
             )
             processing.sessionIDs = [first]
+            processing.transcriptionOnly = transcriptionOnly ? true : nil
             let bodies = Mutex<[Data]>([])
             ImageURLProtocol.register(origin: target.origin) { request in
                 if request.url!.path.hasSuffix("/capabilities") {
                     return (
                         200,
                         [:],
-                        Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],"completeRecordings":true}}"#.utf8)
+                        Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#.utf8)
                     )
                 }
                 if request.url!.path.hasSuffix("/recordings") {
@@ -557,11 +579,13 @@ import DahliaRuntimeSupport
             #expect(body.input.recordings?.count == 1)
             #expect(body.input.recordings?.first?.micFileId == fileID.uuidString.lowercased())
             #expect(body.input.transcriptionModel == nil)
+            #expect(body.input.transcriptionOnly == (transcriptionOnly ? true : nil))
             #expect(body.preferences?.processing.remote.transcriptionModel == "gemini-audio")
             #expect(body.preferences?.processing.remote.summaryModel == "summary-model")
             #expect(body.preferences?.processing.remote.reasoningEffort == "low")
             #expect(body.preferences?.outputLanguage == .en)
             #expect(body.preferences?.summary.style == .eventTimeline)
+            #expect((body.preferences?.transcription == nil) == transcriptionOnly)
             let sessions = try await queue.read { db in try RecordingSessionRecord.fetchAll(db) }
             #expect((sessions.first { $0.id == first }?.batchCompletedAt != nil) == (status == "succeeded"))
             #expect(sessions.first { $0.id == later }?.batchCompletedAt == nil)

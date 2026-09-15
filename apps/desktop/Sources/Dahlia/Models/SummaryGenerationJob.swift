@@ -14,6 +14,7 @@ final class SummaryGenerationJob: Identifiable {
     let meetingId: UUID
     let meetingName: String
     let startedAt: Date
+    let transcriptionOnly: Bool
     let progress = SummaryProgressState()
 
     init(
@@ -21,12 +22,14 @@ final class SummaryGenerationJob: Identifiable {
         meetingId: UUID,
         meetingName: String,
         includesTranscription: Bool = false,
+        transcriptionOnly: Bool = false,
         startedAt: Date = .now
     ) {
         self.id = id
         self.meetingId = meetingId
         self.meetingName = meetingName
         self.startedAt = startedAt
+        self.transcriptionOnly = transcriptionOnly
         if includesTranscription {
             progress.transcription = .running
         }

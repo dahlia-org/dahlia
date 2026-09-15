@@ -120,6 +120,7 @@ export const capabilities = z.object({
     version: integer,
     sources: z.array(z.enum(["transcript", "audio"])),
     completeRecordings: z.boolean().optional(),
+    retranscription: z.object({ version: z.literal(1), provider: z.literal("gemini") }).optional(),
   }).optional(),
 }).openapi("Capabilities");
 export const person = z.object({ id: principalId, name: z.string(), email: z.string() }).openapi("Person");

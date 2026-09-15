@@ -24,6 +24,7 @@ export async function processSummaryJob(
       if (!await jobs.advance(job, next)) throw new SummaryError("summary_job_inactive");
       phase = next;
     };
+    const transcriptionOnly = job.input?.type === "recording" && job.input.transcriptionOnly === true;
     const twoStage = job.input?.type === "recording" && job.input.transcriptionModel !== undefined;
     if (twoStage && !job.transcriptResult) {
       if (!method.transcribe) throw new SummaryError("summary_method_unavailable");
@@ -33,6 +34,11 @@ export async function processSummaryJob(
       const saved = await sync.saveSummaryTranscript(identity, job, transcript, method);
       if (!saved) throw new SummaryError("summary_job_inactive");
       job.transcriptResult = { transcriptId: saved.id, version: String(saved.version) };
+      if (transcriptionOnly) {
+        console.info(JSON.stringify({ level: "info", event: "summary_job_succeeded",
+          attempt: job.attempts, durationMs: Date.now() - startedAt }));
+        return true;
+      }
     }
     const generator = twoStage ? methods.find((method) => method.id === "transcript") : method;
     if (!generator) throw new SummaryError("summary_method_unavailable");

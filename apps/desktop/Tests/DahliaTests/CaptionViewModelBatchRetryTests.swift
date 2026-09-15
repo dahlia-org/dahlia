@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import Synchronization
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -491,6 +492,174 @@ import GRDB
             #expect(!viewModel.canRetranscribeBatchAudio)
             viewModel.presentAvailableBatchRetranscription()
             #expect(viewModel.pendingBatchTranscriptionConfirmation == nil)
+        }
+
+        @Test
+        func serverRetranscriptionRetriesCapabilityCheckAndWaitsForEveryArchive() async throws {
+            let completedAt = Date(timeIntervalSince1970: 1_776_384_002)
+            let batch = try BatchAudioTestFixture(
+                name: "server-retranscription-availability",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 1,
+                batchCompletedAt: completedAt
+            )
+            defer { batch.removeFiles() }
+            let connectionID = UUID.v7()
+            let replacementConnectionID = UUID.v7()
+            let secondSessionID = UUID.v7()
+            let origin = "https://retranscription-\(connectionID.uuidString.lowercased()).test"
+            let replacementOrigin = "https://retranscription-\(replacementConnectionID.uuidString.lowercased()).test"
+            let audioJSON = try String(decoding: SyncJSON.encoder.encode([
+                "mic": RecordingArchivedAudio(
+                    contentType: "audio/mp4",
+                    size: 1,
+                    checksum: "SHA-256:" + String(repeating: "0", count: 64),
+                    contentURL: "/audio",
+                    manifest: .init(sampleRate: 16_000, frameCount: 16_000, ranges: [])
+                ),
+            ]), as: UTF8.self)
+            try await batch.database.dbQueue.write { db in
+                try DahliaAccountConnectionRecord(
+                    id: connectionID,
+                    origin: origin,
+                    clientID: "test",
+                    createdAt: .now
+                ).insert(db)
+                try DahliaAccountConnectionRecord(
+                    id: replacementConnectionID,
+                    origin: replacementOrigin,
+                    clientID: "test",
+                    createdAt: .now
+                ).insert(db)
+                var workspace = try #require(try WorkspaceRecord.fetchOne(db, key: batch.meeting.workspaceId))
+                workspace.accountConnectionId = connectionID
+                workspace.organizationId = .v7()
+                workspace.syncRole = "admin"
+                workspace.syncConfirmedConnectionId = connectionID
+                workspace.syncPullCursor = "ready"
+                try workspace.update(db)
+                try RecordingSessionRecord(
+                    id: secondSessionID,
+                    meetingId: batch.meeting.id,
+                    startedAt: batch.now.addingTimeInterval(10),
+                    endedAt: batch.now.addingTimeInterval(11),
+                    duration: 1,
+                    offsetSeconds: 10,
+                    createdAt: batch.now,
+                    updatedAt: batch.now,
+                    transcriptionMode: .batch,
+                    batchCompletedAt: completedAt
+                ).insert(db)
+                try RecordingArchiveRecord(
+                    sessionId: batch.session.id,
+                    meetingId: batch.meeting.id,
+                    workspaceId: batch.meeting.workspaceId,
+                    connectionId: connectionID,
+                    number: 1,
+                    audioJSON: audioJSON,
+                    state: "remote"
+                ).insert(db)
+                try RecordingArchiveRecord(
+                    sessionId: secondSessionID,
+                    meetingId: batch.meeting.id,
+                    workspaceId: batch.meeting.workspaceId,
+                    connectionId: connectionID
+                ).insert(db)
+            }
+            let requests = Mutex(0)
+            ImageURLProtocol.register(origin: origin) { _ in
+                let number = requests.withLock { value in
+                    value += 1
+                    return value
+                }
+                if number == 1 { return (503, [:], Data()) }
+                return (200, [:], Data(
+                    #"{"meetingSummaryGeneration":{"version":2,"sources":["audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#.utf8
+                ))
+            }
+            defer { ImageURLProtocol.remove(origin: origin) }
+            let replacementRequests = Mutex(0)
+            ImageURLProtocol.register(origin: replacementOrigin) { _ in
+                replacementRequests.withLock { $0 += 1 }
+                return (200, [:], Data(
+                    #"{"meetingSummaryGeneration":{"version":2,"sources":["audio"],"completeRecordings":true}}"#.utf8
+                ))
+            }
+            defer { ImageURLProtocol.remove(origin: replacementOrigin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let viewModel = CaptionViewModel(serverSummaryService: ServerSummaryService(client: SyncAPIClient(
+                session: URLSession(configuration: configuration),
+                tokenProvider: { _, _ in "test" }
+            )))
+            viewModel.loadMeeting(
+                batch.meeting.id,
+                dbQueue: batch.database.dbQueue,
+                projectURL: nil,
+                projectId: nil,
+                workspaceURL: batch.workspaceURL
+            )
+
+            #expect(await waitUntil { viewModel.canRetryServerRetranscriptionAvailability })
+            #expect(viewModel.retranscribableBatchSessionIds.isEmpty)
+
+            viewModel.retryServerRetranscriptionAvailability()
+            #expect(await waitUntil {
+                viewModel.serverRetranscriptionUnavailableReason == nil && requests.withLock { $0 } >= 2
+            })
+            #expect(viewModel.retranscribableBatchSessionIds.isEmpty)
+
+            try await batch.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE recording_archives SET number = 2, audioJSON = ?, state = 'remote' WHERE sessionId = ?",
+                    arguments: [audioJSON, secondSessionID]
+                )
+            }
+            #expect(await waitUntil {
+                viewModel.recordingArchiveState == "saved"
+                    && viewModel.retranscribableBatchSessionIds == [batch.session.id, secondSessionID]
+                    && viewModel.canRetranscribeBatchAudio
+            })
+
+            try await batch.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE recording_archives SET connectionId = ? WHERE meetingId = ?",
+                    arguments: [replacementConnectionID, batch.meeting.id]
+                )
+                try db.execute(
+                    sql: "UPDATE workspaces SET accountConnectionId = ?, syncConfirmedConnectionId = ? WHERE id = ?",
+                    arguments: [replacementConnectionID, replacementConnectionID, batch.meeting.workspaceId]
+                )
+            }
+            #expect(await waitUntil {
+                replacementRequests.withLock { $0 } > 0
+                    && viewModel.serverRetranscriptionUnavailableReason == L10n.serverRetranscriptionUnsupported
+                    && !viewModel.canRetranscribeBatchAudio
+            })
+
+            try await batch.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE recording_sessions SET batchCompletedAt = NULL, batchLastAttemptAt = ?, batchLastError = ? WHERE id = ?",
+                    arguments: [Date.now, "initial transcription failed", secondSessionID]
+                )
+            }
+            viewModel.loadMeeting(
+                batch.meeting.id,
+                dbQueue: batch.database.dbQueue,
+                projectURL: nil,
+                projectId: nil,
+                workspaceURL: batch.workspaceURL
+            )
+            #expect(await waitUntil {
+                if case .failed = viewModel.batchTranscriptionState {
+                    viewModel.canStartOrResumeBatchTranscription
+                } else {
+                    false
+                }
+            })
+
+            viewModel.presentAvailableBatchRetranscription()
+            #expect(viewModel.pendingBatchTranscriptionConfirmation?.isRetranscription == false)
         }
 
         private func markBatchFailed(_ batch: BatchAudioTestFixture) async throws {

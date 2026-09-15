@@ -36,6 +36,16 @@ async function collectAudio(store: IdentitySyncStore, workspaceId: string, meeti
     if (page.length < 200) break;
     after = page.at(-1)!.number;
   }
+  if (requireCompleteMeeting && reference?.type === "recording") {
+    const complete = records.map((record) => ({
+      micFileId: record.audio.mic?.generation ?? null,
+      systemFileId: record.audio.system?.generation ?? null,
+    }));
+    if (reference.recordings.length !== complete.length || reference.recordings.some((pair, index) =>
+      pair.micFileId !== complete[index]!.micFileId || pair.systemFileId !== complete[index]!.systemFileId)) {
+      throw new SummaryError("summary_audio_pair_incomplete");
+    }
+  }
   const selected = reference?.type === "recording" ? reference.recordings.map((pair) => {
     const record = records.find((record) => (["mic", "system"] as const).every((source) =>
       pair[source === "mic" ? "micFileId" : "systemFileId"] === null || record.audio[source]?.generation === pair[source === "mic" ? "micFileId" : "systemFileId"]));
@@ -210,6 +220,11 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
                 await response.body?.cancel();
                 throw new SummaryError("summary_audio_unavailable", response.status >= 500);
               }
+              const ranges = audio.manifest.ranges.map((range) => {
+                const locale = transcriptionOnly ? "" : `<locale_identifier>${summaryXMLText(range.localeIdentifier)}</locale_identifier>`;
+                return `
+      <range><start_frame>${range.startFrame}</start_frame><frame_count>${range.frameCount}</frame_count><session_offset_seconds>${range.sessionOffsetSeconds}</session_offset_seconds>${locale}</range>`;
+              }).join("");
               yield ',' + JSON.stringify({ ...(cloudflare ? {} : { type: "text" }), text: `<audio>
   <recording_index>${audio.recordingIndex}</recording_index>
   <recording_number>${audio.number}</recording_number>
@@ -219,8 +234,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
   <manifest>
     <sample_rate>${audio.manifest.sampleRate}</sample_rate>
     <frame_count>${audio.manifest.frameCount}</frame_count>
-    <ranges>${audio.manifest.ranges.map((range) => `
-      <range><start_frame>${range.startFrame}</start_frame><frame_count>${range.frameCount}</frame_count><session_offset_seconds>${range.sessionOffsetSeconds}</session_offset_seconds><locale_identifier>${summaryXMLText(range.localeIdentifier)}</locale_identifier></range>`).join("")}
+    <ranges>${ranges}
     </ranges>
   </manifest>
 </audio>` })

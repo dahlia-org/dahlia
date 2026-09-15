@@ -21,7 +21,8 @@ export const summaryInputSchema = z.discriminatedUnion("type", [
     systemFileId: z.uuid().transform((value) => value.toLowerCase()).nullable(),
   }).strict().refine((pair) => pair.micFileId !== null || pair.systemFileId !== null)).min(1).max(1000)
     .refine((pairs) => { const ids = pairs.flatMap((pair) => [pair.micFileId, pair.systemFileId]).filter((id) => id !== null); return new Set(ids).size === ids.length; }),
-    transcriptionModel: z.string().trim().min(1).max(200).optional() }).strict(),
+    transcriptionModel: z.string().trim().min(1).max(200).optional(),
+    transcriptionOnly: z.literal(true).optional() }).strict(),
 ]);
 export type SummaryInput = z.infer<typeof summaryInputSchema>;
 export type SummaryStage = "transcribing" | "summarizing" | "generating" | "saving";

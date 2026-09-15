@@ -40,3 +40,18 @@ it("keeps inactive overrides and rejects unavailable explicit models and effort"
   expect(resolve().settings.model).toBe("gemini-3-8-flash");
   expect(resolve().settings.transcription).toEqual(preferences.transcription);
 });
+
+it("resolves retranscription to Gemini without language or summary settings", () => {
+  const preferences = structuredClone(DEFAULT_WORKSPACE_GENERATION_SETTINGS);
+  preferences.processing = { location: "remote", remote: {
+    workflow: "combined", summaryModel: "unavailable", transcriptionModel: "gemini-3-8-flash", reasoningEffort: "max",
+  } };
+  const result = resolveSummaryPreferences(preferences, {
+    type: "recording", recordings: [], transcriptionOnly: true,
+  }, modelList([{ id: "gemini-3-8-flash" }]), (id) => id);
+  expect(result).toMatchObject({
+    settings: { model: "gemini-3-8-flash", transcriptionReasoningEffort: "medium" },
+    input: { transcriptionOnly: true, transcriptionModel: "gemini-3-8-flash" },
+  });
+  expect(result.settings).not.toHaveProperty("transcription");
+});

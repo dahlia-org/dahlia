@@ -1,3 +1,4 @@
+import Foundation
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -53,6 +54,26 @@
             job.progress.transcription = .completed
 
             #expect(job.isFinished)
+        }
+
+        @Test
+        func localAutomaticRetranscriptionRequiresLanguageCandidates() {
+            #expect(BatchTranscriptionConfirmationView.startDisabled(
+                processingMethod: nil,
+                languageSelection: .automatic,
+                automaticLanguageLocales: []
+            ))
+            #expect(!BatchTranscriptionConfirmationView.startDisabled(
+                processingMethod: .cloudTranscription,
+                languageSelection: .recorded,
+                automaticLanguageLocales: []
+            ))
+            #expect(BatchTranscriptionConfirmationView.startDisabled(
+                processingMethod: .cloudTranscription,
+                languageSelection: .recorded,
+                automaticLanguageLocales: [],
+                serverRetranscriptionUnavailable: true
+            ))
         }
     }
 #endif
