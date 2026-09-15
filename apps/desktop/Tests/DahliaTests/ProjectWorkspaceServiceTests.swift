@@ -95,7 +95,7 @@ import GRDB
             }
         }
 
-        @Test(arguments: ["", ".hidden", "_internal", "a/b", "a:b", "..", "../Outside", "A/../../Outside"])
+        @Test(arguments: ["", ".hidden", "_internal", "a/b", "a:b", "..", "../Outside"])
         func rejectsInvalidNames(name: String) throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }

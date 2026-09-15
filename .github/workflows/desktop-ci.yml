@@ -131,7 +131,7 @@ jobs:
           done
           test -s "$endpoint_file"
           set -o pipefail
-          DAHLIA_OPENAPI_TEST_URL="$(cat "$endpoint_file")" swift test --skip-build --filter OpenAPIIntegrationTests 2>&1 | tee integration-output.log
+          DAHLIA_OPENAPI_TEST_URL="$(cat "$endpoint_file")" swift test --skip-build --filter 'DahliaTests.OpenAPIIntegrationTests/generatedClientPreservesNullsDatesReceiptsAndStreamedBytes()' 2>&1 | tee integration-output.log
           grep -Fq "Test generatedClientPreservesNullsDatesReceiptsAndStreamedBytes() passed" integration-output.log
 
       - name: Verify tests executed

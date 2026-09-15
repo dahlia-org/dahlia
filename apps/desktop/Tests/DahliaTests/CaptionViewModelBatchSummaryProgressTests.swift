@@ -5,7 +5,6 @@ import Foundation
     import Testing
 
     @MainActor
-    @Suite(.serialized)
     struct CaptionViewModelBatchSummaryProgressTests {
         @Test
         func failedBatchTranscriptionFinishesItsRunningTask() async throws {

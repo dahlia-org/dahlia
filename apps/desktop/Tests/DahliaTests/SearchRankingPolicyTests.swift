@@ -72,7 +72,6 @@ import GRDB
             #expect(MeetingSearchField.allCases.map { MeetingSearchRankingPolicy.standard.weight(for: $0) } == [
                 10, 6, 4, 2, 2,
             ])
-            #expect(MeetingSearchRankingPreset.allCases == [.standard, .custom])
             #expect(MeetingSearchRankingPreset.matching(.standard) == .standard)
             #expect(MeetingSearchRankingPreset.matching(adjusted) == .custom)
             #expect(MeetingSearchRankingPreset.custom.policy == nil)

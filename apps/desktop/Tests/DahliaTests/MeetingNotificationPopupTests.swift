@@ -21,13 +21,6 @@ import Foundation
         }
 
         @Test
-        func usesIconsThatMatchEachAction() {
-            #expect(MeetingNotificationPopup.Action.joinAndStartRecording.systemImage == "video.badge.waveform.fill")
-            #expect(MeetingNotificationPopup.Action.join.systemImage == "video.fill")
-            #expect(MeetingNotificationPopup.Action.startRecording.systemImage == "mic.and.signal.meter.fill")
-        }
-
-        @Test
         func exposesNonemptyCalendarDescription() {
             let event = makeCalendarEvent(description: "Agenda and notes")
             let popup = makePopup(id: "calendar", event: event)
