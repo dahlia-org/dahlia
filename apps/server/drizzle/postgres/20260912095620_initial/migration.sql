@@ -6,19 +6,12 @@ CREATE SCHEMA "jobs";
 --> statement-breakpoint
 CREATE SCHEMA "search";
 --> statement-breakpoint
-CREATE TABLE "app"."account_settings" (
-	"user_id" uuid PRIMARY KEY,
-	"revision" integer DEFAULT 1 NOT NULL,
-	"analysis_languages" jsonb NOT NULL
-);
---> statement-breakpoint
-ALTER TABLE "app"."account_settings" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "jobs"."image_analysis" (
-	"output_language" text,
 	"file_id" uuid PRIMARY KEY,
 	"workspace_id" uuid NOT NULL,
 	"owner_user_id" uuid NOT NULL,
 	"model" text NOT NULL,
+	"output_language" text,
 	"status" text DEFAULT 'pending' NOT NULL,
 	"attempts" integer DEFAULT 0 NOT NULL,
 	"available_at" timestamp DEFAULT now() NOT NULL,
@@ -321,12 +314,12 @@ CREATE TABLE "app"."transcript_segments" (
 --> statement-breakpoint
 ALTER TABLE "app"."transcript_segments" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."workspaces" (
-	"generation_settings" jsonb DEFAULT '{"outputLanguage":"ja","processing":{"location":"local","remote":{"workflow":"transcribeThenSummarize"}},"summary":{"style":"detailed"},"local":{"model":"gpt-5.6-luna","reasoningEffort":"high"}}' NOT NULL,
 	"encryption" text DEFAULT 'none' NOT NULL,
 	"encrypted_payload" text,
 	"workspace_id" uuid PRIMARY KEY,
 	"organization_id" uuid NOT NULL,
 	"created_by" jsonb NOT NULL,
+	"generation_settings" jsonb DEFAULT '{"outputLanguage":"ja","processing":{"location":"local","remote":{"workflow":"transcribeThenSummarize"}},"summary":{"style":"detailed"},"transcription":{"localeIdentifier":"ja-JP","automaticLanguageDetection":false,"languageScope":"all","languageIdentifiers":[],"liveTranscriptDraft":false},"local":{"model":"gpt-5.6-luna","reasoningEffort":"high"},"automaticProcessing":true}' NOT NULL,
 	"name" text NOT NULL,
 	"icon" text,
 	"color" text,
@@ -425,7 +418,6 @@ CREATE INDEX "transcript_segment_created_idx" ON "app"."transcript_segments" ("t
 CREATE INDEX "transcript_segment_start_id_idx" ON "app"."transcript_segments" ("transcript_id","started_at","segment_id");--> statement-breakpoint
 CREATE INDEX "workspace_permission_principal_workspace_idx" ON "app"."workspace_permissions" ("principal_type","principal_id","role","workspace_id");--> statement-breakpoint
 CREATE INDEX "workspace_transfer_owner_sequence_idx" ON "app"."workspace_transfers" ("owner_user_id","sequence");--> statement-breakpoint
-ALTER TABLE "app"."account_settings" ADD CONSTRAINT "account_settings_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "jobs"."image_analysis" ADD CONSTRAINT "jobs_image_analysis_file_id_files_file_id_fkey" FOREIGN KEY ("file_id") REFERENCES "app"."files"("file_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "jobs"."image_analysis" ADD CONSTRAINT "jobs_image_analysis_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "jobs"."image_analysis" ADD CONSTRAINT "jobs_image_analysis_owner_user_id_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint

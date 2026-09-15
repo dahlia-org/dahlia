@@ -1,6 +1,6 @@
 "settings.organization.checkAdvancedModels" = "A selected model is unavailable. Open advanced settings to change it or choose Automatic.";
 "settings.organization.settingsDataAndAccounts" = "Data management";
-"settings.organization.generationAndAnalysis" = "Summary & image analysis";
+"settings.organization.generationAndAnalysis" = "Transcription, summary & automation";
 "settings.organization.searchSettings" = "Search settings";
 "settings.organization.settingsAccountIntro" = "Choose how the current workspace creates summaries and image captions.";
 "settings.organization.settingsAccountsIntro" = "Manage connected accounts and the workspaces that belong to them.";
@@ -23,13 +23,13 @@
 "settings.organization.summaryStyleDetailedDescription" = "Topics, background, reasoning, open questions, and next steps.";
 "settings.organization.summaryStyleEventDescription" = "Key claims, demonstrations, and takeaways from a talk or session.";
 "settings.organization.summaryStyleTimelineDescription" = "Follow an event in order, including demonstrations and Q&A.";
-"settings.preferences.macInferencePreferences" = "AI on this Mac";
+"settings.preferences.macInferencePreferences" = "Model providers";
 "settings.preferences.usesMacInferencePreferences" = "Transcribes on this Mac, then sends transcripts and images to its configured AI provider. Generation models follow this workspace’s settings.";
 "settings.preferences.accountPreferences" = "Workspace generation settings";
 "settings.preferences.accountPreferencesScope" = "These defaults are shared by everyone in the displayed workspace.";
 "settings.preferences.accountSummaryPreferencesDescription" = "Style and output language apply regardless of processing location. Changes affect new processing only. Summaries on Mac also send transcripts and images to the connected AI.";
 "settings.preferences.summaryStyle" = "Summary style";
-"settings.preferences.recordingSettings" = "Recording";
+"settings.preferences.recordingSettings" = "Recording & storage";
 "settings.preferences.localModelPreferences" = "Local summary model";
 "settings.preferences.localModelPreferencesDescription" = "AI provider and credentials are specific to this Mac. Generation models are configured per workspace.";
 "settings.preferences.serverProcessingAdvanced" = "Advanced server settings";
@@ -1686,3 +1686,5 @@
 
 "summary.source.useSaved" = "Use the saved transcript";
 "summary.source.useSaved.description" = "Generate from the copy saved on this Mac without fetching the latest server version. It may be outdated. Select this when working offline.";
+
+"settings.serverConnections" = "Server connections";

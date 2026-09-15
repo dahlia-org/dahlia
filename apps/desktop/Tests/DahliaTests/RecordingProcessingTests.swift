@@ -8,6 +8,36 @@
 
     @MainActor
     struct RecordingProcessingTests {
+        @Test(arguments: [false, true], RecordingProcessingMethod.allCases)
+        func recordingCapturesWorkspaceDefaultsAndRoutesSummaryByOwnership(server: Bool, method: RecordingProcessingMethod) throws {
+            var workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Capture", createdAt: .now, lastOpenedAt: .now)
+            workspace.accountConnectionId = server ? .v7() : nil
+            workspace.generationSettings.processing.location = method == .transcript ? .local : .remote
+            workspace.generationSettings.processing.remote.workflow = method == .audio ? .combined : .transcribeThenSummarize
+            workspace.generationSettings.transcription.localeIdentifier = "fr-FR"
+            workspace.generationSettings.transcription.automaticLanguageDetection = true
+            workspace.generationSettings.transcription.liveTranscriptDraft = true
+            workspace.generationSettings.outputLanguage = .en
+            workspace.generationSettings.automaticProcessing = false
+            let expected = workspace.generationSettings
+            let viewModel = CaptionViewModel()
+            let processing = viewModel.processingSnapshot(
+                workspace: workspace,
+                plan: .init(finalMode: .batch, liveSubtitlesEnabled: false, liveTranscriptDraftEnabled: true),
+                locale: Locale(identifier: "fr-FR")
+            )
+            workspace.generationSettings = WorkspaceGenerationSettings()
+            var restored = try JSONDecoder().decode(RecordingProcessing.self, from: JSONEncoder().encode(processing))
+            restored.prepareRetry(serverJob: nil)
+            #expect(restored.method == (server ? method : .transcript))
+            #expect(restored.usesServerSummary == server)
+            #expect(restored.generationSettings.sourceAccountConnectionID == workspace.accountConnectionId)
+            #expect(restored.workspaceSettings == expected)
+            #expect(restored.generationSettings.workspacePreferences == expected)
+            #expect(!restored.automatic && restored.liveDraft)
+            #expect(restored.localeIdentifier == "fr-FR")
+        }
+
         @Test
         func workspaceSettingsRemainFrozenAfterReload() throws {
             var settings = WorkspaceGenerationSettings()

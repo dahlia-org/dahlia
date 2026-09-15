@@ -30,8 +30,7 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     const owner = testUserID("owner");
     await client.query('INSERT INTO auth."user"(id, name, email) VALUES ($1, $2, $3)', [owner, "Owner", "owner@example.com"]);
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner]);
-    await client.query("INSERT INTO app.account_settings(user_id, analysis_languages) VALUES ($1, '{}')", [owner]);
-    expect((await client.query("SELECT analysis_languages FROM app.account_settings")).rows).toEqual([{ analysis_languages: {} }]);
+    expect((await client.query("SELECT to_regclass('app.account_settings') AS retired")).rows).toEqual([{ retired: null }]);
     await client.query("INSERT INTO auth.organization(id, name, slug, kind, created_at) VALUES ($1, 'Team', $2, 'team', now())", [owner, `team-${owner}`]);
     await client.query("INSERT INTO auth.member(id, organization_id, user_id, role, created_at) VALUES ($1, $1, $1, 'owner', now())", [owner]);
     await client.query("INSERT INTO app.workspaces(workspace_id, organization_id, created_by, name) VALUES ($1, $1, $2, 'Workspace')", [owner, { id: owner, name: "Owner", email: "owner@example.com" }]);
@@ -41,7 +40,7 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     const protectedTables = await client.query<{ relname: string; relforcerowsecurity: boolean }>(`SELECT relname, relforcerowsecurity FROM pg_class
       WHERE relnamespace IN ('app'::regnamespace, 'jobs'::regnamespace) AND relrowsecurity ORDER BY relname`);
     expect(protectedTables.rows.map((row) => row.relname)).toEqual([
-      "account_settings", "files", "meeting_attachments", "meeting_events", "meetings", "projects",
+      "files", "meeting_attachments", "meeting_events", "meetings", "projects",
       "recordings", "summaries", "summary", "transaction_receipts",
       "transcript_patch_chunks", "transcript_segments", "transcripts", "workspace_transfers", "workspaces",
     ]);

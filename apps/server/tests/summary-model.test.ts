@@ -11,6 +11,7 @@ it("excludes transcription overrides structurally from preference inputs while p
     processing: DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing,
     summary: DEFAULT_WORKSPACE_GENERATION_SETTINGS.summary,
     outputLanguage: DEFAULT_WORKSPACE_GENERATION_SETTINGS.outputLanguage,
+    transcription: DEFAULT_WORKSPACE_GENERATION_SETTINGS.transcription,
   } };
   expect(summaryStartSchema.safeParse(request).success).toBe(true);
   const overridden = { ...input, transcriptionModel: "gemini-3-8-flash" };

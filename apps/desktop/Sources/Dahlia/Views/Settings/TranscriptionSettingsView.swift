@@ -1,30 +1,14 @@
-import Speech
 import SwiftUI
 
 /// このMac固有の録音設定。アカウントの生成設定とは独立する。
 struct TranscriptionSettingsView: View {
-    let onOpenAccountSettings: () -> Void
     @ObservedObject private var settings = AppSettings.shared
-    @State private var supportedLocales: [Locale] = []
-    @State private var isLoadingLocales = true
     @State private var pendingShorterAudioRetentionPeriod: BatchAudioRetentionPeriod?
     @State private var isShowingAudioRetentionConfirmation = false
 
     var body: some View {
         Form {
             Section {
-                Toggle(L10n.liveTranscriptDraft, isOn: $settings.liveTranscriptDraftEnabled)
-                    .toggleStyle(.switch)
-                DahliaMenuPicker(
-                    title: L10n.transcriptionLanguage,
-                    description: L10n.transcriptionLanguageDescription,
-                    selection: $settings.transcriptionLocale,
-                    options: transcriptionLocaleOptions.map(\.identifier)
-                ) { identifier in
-                    Locale(identifier: identifier).localizedString(forIdentifier: identifier) ?? identifier
-                }
-                .disabled(isLoadingLocales)
-
                 Toggle(isOn: $settings.automaticMeetingEndRecordingStopEnabled) {
                     Text(L10n.automaticMeetingEndRecordingStop)
                     Text(L10n.automaticMeetingEndRecordingStopDescription)
@@ -35,9 +19,6 @@ struct TranscriptionSettingsView: View {
             }
 
             Section {
-                Toggle(L10n.automaticRecordingProcessing, isOn: $settings.automaticRecordingProcessingEnabled)
-                    .toggleStyle(.switch)
-                Button(L10n.settingsChooseSummaryPreferences, systemImage: "arrow.right", action: onOpenAccountSettings)
                 DisclosureGroup(L10n.settingsAutomaticExport) {
                     Toggle(isOn: $settings.exportBatchSummaryToWorkspace) {
                         Text(L10n.exportBatchSummaryToWorkspace)
@@ -95,9 +76,6 @@ struct TranscriptionSettingsView: View {
         } message: {
             Text(L10n.shortenBatchAudioRetentionPeriodMessage)
         }
-        .task {
-            await loadSupportedLocales()
-        }
     }
 
     // MARK: - Private
@@ -133,17 +111,4 @@ struct TranscriptionSettingsView: View {
         pendingShorterAudioRetentionPeriod = nil
     }
 
-    private var transcriptionLocaleOptions: [Locale] {
-        SettingsLanguageOptions.locales(
-            from: supportedLocales.filter { settings.isLanguageEnabled($0.identifier) },
-            including: settings.transcriptionLocale
-        )
-    }
-
-    private func loadSupportedLocales() async {
-        isLoadingLocales = true
-        let locales = await SpeechSupportedLocales.load()
-        supportedLocales = locales.sortedByLocalizedName()
-        isLoadingLocales = false
-    }
 }

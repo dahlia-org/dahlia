@@ -252,19 +252,12 @@ CREATE TABLE `verification` (
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `account_settings` (
-	`user_id` text PRIMARY KEY,
-	`revision` integer DEFAULT 1 NOT NULL,
-	`analysis_languages` text NOT NULL,
-	CONSTRAINT `fk_account_settings_user_id_user_id_fk` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE
-);
---> statement-breakpoint
 CREATE TABLE `jobs_image_analysis` (
-	`output_language` text,
 	`file_id` text PRIMARY KEY,
 	`workspace_id` text NOT NULL,
 	`owner_user_id` text NOT NULL,
 	`model` text NOT NULL,
+	`output_language` text,
 	`status` text DEFAULT 'pending' NOT NULL,
 	`attempts` integer DEFAULT 0 NOT NULL,
 	`available_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
@@ -572,12 +565,12 @@ CREATE TABLE `transcript_segments` (
 );
 --> statement-breakpoint
 CREATE TABLE `workspaces` (
-	`generation_settings` text DEFAULT '{"outputLanguage":"ja","processing":{"location":"local","remote":{"workflow":"transcribeThenSummarize"}},"summary":{"style":"detailed"},"local":{"model":"gpt-5.6-luna","reasoningEffort":"high"}}' NOT NULL,
 	`encryption` text DEFAULT 'none' NOT NULL,
 	`encrypted_payload` text,
 	`workspace_id` text PRIMARY KEY,
 	`organization_id` text NOT NULL,
 	`created_by` text NOT NULL,
+	`generation_settings` text DEFAULT '{"outputLanguage":"ja","processing":{"location":"local","remote":{"workflow":"transcribeThenSummarize"}},"summary":{"style":"detailed"},"transcription":{"localeIdentifier":"ja-JP","automaticLanguageDetection":false,"languageScope":"all","languageIdentifiers":[],"liveTranscriptDraft":false},"local":{"model":"gpt-5.6-luna","reasoningEffort":"high"},"automaticProcessing":true}' NOT NULL,
 	`name` text NOT NULL,
 	`icon` text,
 	`color` text,

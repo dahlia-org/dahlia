@@ -1,4 +1,3 @@
-import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettingsStore } from "../account-settings";
 import type { Identity } from "../auth/identity";
 import { RequestError } from "../storage/upload";
 import type { MeetingSyncService } from "../sync/service";
@@ -10,7 +9,7 @@ import type { ImageAnalysisStore, ImageAnalysisReference } from "./store";
 
 export async function processImageAnalysisJob(
   jobs: ImageAnalysisStore, captioner: ImageCaptioner, syncStore: MeetingSyncStore,
-  sync: MeetingSyncService, accountSettings: AccountSettingsStore, signal: AbortSignal,
+  sync: MeetingSyncService, signal: AbortSignal,
   reference?: ImageAnalysisReference,
 ): Promise<boolean> {
   signal = AbortSignal.any([signal, AbortSignal.timeout(240_000)]);
@@ -23,8 +22,7 @@ export async function processImageAnalysisJob(
       await jobs.finish(job);
       return true;
     }
-    const settings = { ...(await accountSettings.get(job.ownerUserId) ?? DEFAULT_ACCOUNT_SETTINGS),
-      outputLanguage: job.outputLanguage };
+    const settings = { outputLanguage: job.outputLanguage };
     const { upstream } = await sync.readFileContent(identity, job.fileId, "thumb_1280", "GET",
       new Request("https://dahlia.invalid/", { signal }));
     if (!upstream.ok) {

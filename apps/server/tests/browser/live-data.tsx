@@ -66,7 +66,6 @@ window.fetch = async (input, init) => {
     projects: [{ id: "p0", kind: "project", title: projects[0]!.name, projectPath: projects[0]!.path, date: workspace.createdAt, snippet: "" }],
     screenshots: [], limited: { meetings: false, projects: false, screenshots: false },
   });
-  if (url.pathname === "/api/v1/account/settings") return Response.json({ settings: null });
   if (url.pathname === "/api/v1/models") return Response.json({ data: [{ id: "gpt-5.4", display_name: "GPT-5.4" }], models: [{ slug: "gpt-5.4", supported_reasoning_levels: [{ effort: "medium" }], default_reasoning_level: "medium" }] });
   if (url.pathname === "/api/v1/capabilities") return Response.json(previewMode ? { meetingSummaryGeneration: { version: 1, sources: ["transcript"] } } : {});
   if (url.pathname === "/api/v1/session") return Response.json({ user: { id: "browser-fixture", name: previewMode ? "Yuki Tanaka" : "Tester", email: "yuki@example.com" },  capabilities: { sync: true, sharing: true, sessions: false, admin: false } });

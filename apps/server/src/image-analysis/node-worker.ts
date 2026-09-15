@@ -1,5 +1,4 @@
 import { setTimeout as delay } from "node:timers/promises";
-import type { AccountSettingsStore } from "../account-settings";
 import type { MeetingSyncService } from "../sync/service";
 import type { MeetingSyncStore } from "../sync/types";
 import type { ImageCaptioner } from "./captioner";
@@ -15,7 +14,6 @@ export class ImageAnalysisWorker {
     private readonly captioner: ImageCaptioner,
     private readonly syncStore: MeetingSyncStore,
     private readonly sync: MeetingSyncService,
-    private readonly settings: AccountSettingsStore,
   ) {}
 
   start(): void { this.running ??= this.run(); }
@@ -42,6 +40,6 @@ export class ImageAnalysisWorker {
   }
 
   processOne(): Promise<boolean> {
-    return processImageAnalysisJob(this.jobs, this.captioner, this.syncStore, this.sync, this.settings, this.abort.signal);
+    return processImageAnalysisJob(this.jobs, this.captioner, this.syncStore, this.sync, this.abort.signal);
   }
 }

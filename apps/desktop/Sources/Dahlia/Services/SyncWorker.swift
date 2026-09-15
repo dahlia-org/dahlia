@@ -1436,9 +1436,7 @@ actor SyncWorker {
                 try await pullRemoteChanges()
                 for try await event in body.asDecodedServerSentEvents() {
                     try Task.checkCancellation()
-                    if event.event == "account_settings" {
-                        _ = await MainActor.run { ServerAccountSettingsModel.shared.refresh(connectionID: connectionId) }
-                    } else if event.event == "invalidation" {
+                    if event.event == "invalidation" {
                         try await pullRemoteChanges()
                     }
                 }

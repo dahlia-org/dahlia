@@ -10,7 +10,6 @@ struct SettingsDetailView: View {
     let onShowUnprocessedRecordings: (UUID) -> Void
 
     @ObservedObject private var appSettings = AppSettings.shared
-    @State private var settingsAccountID: UUID?
     @State private var dahliaAccountController = DahliaCloudAccountController.shared
 
     var body: some View {
@@ -38,9 +37,6 @@ struct SettingsDetailView: View {
             selectedSettings
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .onChange(of: appSettings.currentWorkspace?.accountConnectionId, initial: true) { _, connectionID in
-            settingsAccountID = connectionID
-        }
         .onChange(of: selection) { _, selection in
             if selection != .accountsAndWorkspaces { mainWindowNavigation.dismissDahliaSignIn() }
         }
@@ -53,15 +49,32 @@ struct SettingsDetailView: View {
             GeneralSettingsView()
         case .macInference, .modelProvider:
             MacInferenceSettingsView()
-        case .accountsAndWorkspaces, .dahliaAccounts, .workspace:
-            AccountsAndWorkspacesSettingsView(
-                appDatabase: appDatabase,
-                workspaceModel: workspaceManagementModel,
-                currentWorkspace: appSettings.currentWorkspace,
-                accountController: dahliaAccountController,
-                onShowSignIn: mainWindowNavigation.openDahliaSignIn,
-                onUpdateWorkspace: updateCurrentWorkspaceIfNeeded
-            )
+        case .accountsAndWorkspaces, .dahliaAccounts:
+            Form {
+                DahliaAccountsSettingsView(
+                    controller: dahliaAccountController,
+                    currentWorkspace: appSettings.currentWorkspace,
+                    onShowSignIn: mainWindowNavigation.openDahliaSignIn
+                )
+            }
+            .formStyle(.grouped)
+            .onChange(of: dahliaAccountController.connections) {
+                Task { await workspaceManagementModel.loadWorkspaces() }
+            }
+        case .workspace:
+            Form {
+                WorkspaceSettingsView(
+                    appDatabase: appDatabase,
+                    model: workspaceManagementModel,
+                    currentWorkspace: appSettings.currentWorkspace,
+                    accountConnections: dahliaAccountController.connections,
+                    onUpdateWorkspace: updateCurrentWorkspaceIfNeeded
+                )
+            }
+            .formStyle(.grouped)
+            .onChange(of: workspaceManagementModel.workspaces.map { "\($0.id):\($0.accountConnectionId?.uuidString ?? "local")" }) {
+                Task { await dahliaAccountController.reload() }
+            }
         case .permissions:
             PermissionSettingsView()
         case .backups:
@@ -73,19 +86,13 @@ struct SettingsDetailView: View {
         case .search:
             SearchSettingsView(database: appDatabase)
         case .accountPreferences, .aiSummary, .mcp:
-            WorkspaceProcessingSettingsView(
-                onOpenMacInference: { selection = .macInference },
-                onOpenLanguageSettings: { selection = .general }
-            )
+            WorkspaceProcessingSettingsView(onOpenMacInference: { selection = .macInference })
         case .transcription:
-            TranscriptionSettingsView(onOpenAccountSettings: {
-                settingsAccountID = appSettings.currentWorkspace?.accountConnectionId
-                selection = .accountPreferences
-            })
+            TranscriptionSettingsView()
         case .liveSubtitles:
             LiveSubtitleSettingsView()
         case .screenshots:
-            ScreenshotSettingsView(onOpenLanguageSettings: { selection = .general })
+            ScreenshotSettingsView()
         case .calendar:
             CalendarSettingsView()
         case .cloudStorage:
@@ -105,6 +112,7 @@ struct SettingsDetailView: View {
         switch SettingsNavigation.visibleSelection(selection) {
         case .accountPreferences: L10n.settingsAccountIntro
         case .accountsAndWorkspaces: L10n.settingsAccountsIntro
+        case .workspace: L10n.settingsAccountIntro
         case .backups: L10n.backupLocalWorkspacesOnly
         case .macInference: L10n.localModelPreferencesDescription
         case .cloudStorage: L10n.settingsExportIntro

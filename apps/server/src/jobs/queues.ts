@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { AccountSettingsStore } from "../account-settings";
 import type { MeetingSyncStore } from "../sync/types";
 import type { MeetingSyncService } from "../sync/service";
 import type { SummaryMethod } from "../summary/model";
@@ -49,7 +48,7 @@ export interface WorkerJobStores {
 }
 
 export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobStores,
-  syncStore: MeetingSyncStore, sync: MeetingSyncService, accountSettings: AccountSettingsStore,
+  syncStore: MeetingSyncStore, sync: MeetingSyncService,
   methods: readonly SummaryMethod[], captioner?: ImageCaptioner, embedder?: SearchEmbedder) {
   const queues = {
     summary: methods.length ? bindings.DAHLIA_SUMMARY_QUEUE : undefined,
@@ -126,7 +125,7 @@ export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobSt
       if (message.kind === "summary") {
         await processSummaryJob(stores.summaryJobs, methods, sync, signal, message.reference);
       } else if (message.kind === "image") {
-        await processImageAnalysisJob(stores.imageAnalysis, captioner!, syncStore, sync, accountSettings, signal, message.reference);
+        await processImageAnalysisJob(stores.imageAnalysis, captioner!, syncStore, sync, signal, message.reference);
       } else {
         await processSearchIndexBatch(stores.searchIndex, embedder!, signal, message.references);
       }

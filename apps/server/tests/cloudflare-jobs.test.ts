@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config";
 import { createSearchEmbedder } from "../src/search/embedding";
 import { createImageCaptioner } from "../src/image-analysis/captioner";
-import { DEFAULT_ACCOUNT_SETTINGS } from "../src/account-settings";
 import { cloudflareModels } from "../src/ai-gateway/cloudflare";
 import { isSummaryModel } from "../src/summary/audio-model";
 import { createTranscriptSummaryMethod } from "../src/summary/transcript";
@@ -66,12 +65,12 @@ describe("Cloudflare background provider contracts", () => {
       expect(body).not.toHaveProperty("reasoning");
       return Promise.resolve(Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: '{"ocr_text":"hello","caption":"A slide"}' }] }] }));
     };
-    expect(await createImageCaptioner(config, transport)!.analyze(new Uint8Array([1]), { ...DEFAULT_ACCOUNT_SETTINGS, outputLanguage: "ja" })).toEqual({ ocr_text: "hello", caption: "A slide" });
+    expect(await createImageCaptioner(config, transport)!.analyze(new Uint8Array([1]), { outputLanguage: "ja" })).toEqual({ ocr_text: "hello", caption: "A slide" });
   });
   it.each([429, 503, 400])("persists the existing transient/permanent distinction for HTTP %i", async (status) => {
     const transport: typeof fetch = () => Promise.resolve(new Response("private", { status }));
     await expect(createSearchEmbedder(config, transport)!.embedQuery("query")).rejects.toMatchObject({ code: `embedding_http_${status}`, retryable: status !== 400 });
-    await expect(createImageCaptioner(config, transport)!.analyze(new Uint8Array(), { ...DEFAULT_ACCOUNT_SETTINGS, outputLanguage: "ja" })).rejects.toMatchObject({ code: `captioning_http_${status}`, retryable: status !== 400 });
+    await expect(createImageCaptioner(config, transport)!.analyze(new Uint8Array(), { outputLanguage: "ja" })).rejects.toMatchObject({ code: `captioning_http_${status}`, retryable: status !== 400 });
   });
   it("rejects oversized embeddings and malformed native vectors", async () => {
     await expect(createSearchEmbedder(config, () => Promise.resolve(new Response("x".repeat(4 * 1024 * 1024 + 1))))!.embedQuery("query"))

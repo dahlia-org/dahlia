@@ -3,7 +3,6 @@ import SwiftUI
 
 /// 設定画面「スクリーンショット」タブ。自動スクリーンショット取得を管理する。
 struct ScreenshotSettingsView: View {
-    let onOpenLanguageSettings: () -> Void
     @ObservedObject private var settings = AppSettings.shared
     @AppStorage(ScreenshotFileStore.budgetDefaultsKey) private var screenshotCacheGiB = 2
 
@@ -67,14 +66,6 @@ struct ScreenshotSettingsView: View {
             }
             .disabled(!settings.automaticScreenshotEnabled)
 
-            Section {
-                LabeledContent {
-                    Button(L10n.openLanguageSettings, action: onOpenLanguageSettings)
-                } label: {
-                    Text(L10n.imageTextLanguages)
-                    Text(L10n.imageTextLanguagesDescription)
-                }
-            }
             Section {
                 Picker(L10n.screenshotCacheLimit, selection: $screenshotCacheGiB) {
                     ForEach([1, 2, 5, 10], id: \.self) { size in

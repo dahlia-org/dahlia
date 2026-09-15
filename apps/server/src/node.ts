@@ -50,7 +50,7 @@ if (process.argv.includes("--seed-dev")) {
 }
 const captioner = createImageCaptioner(config);
 const imageAnalysis = captioner && applicationStore.imageAnalysis
-  ? new ImageAnalysisWorker(applicationStore.imageAnalysis, captioner, applicationStore.sync, syncService, applicationStore.accountSettings)
+  ? new ImageAnalysisWorker(applicationStore.imageAnalysis, captioner, applicationStore.sync, syncService)
   : undefined;
 
 const summaryMethods = [createTranscriptSummaryMethod(config, applicationStore.sync, syncService),

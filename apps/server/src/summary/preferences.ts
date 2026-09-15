@@ -14,7 +14,6 @@ export function resolveSummaryPreferences(
   preferences: GenerationPreferences, input: SummaryInput, catalog: GatewayModelList,
   normalizeModel: (model: string) => string,
 ): { settings: TranscriptSettings; input: SummaryInput } {
-  if (preferences.processing.location !== "remote") throw new SummaryError("summary_remote_processing_required");
   const remote = preferences.processing.remote;
   const twoStage = input.type === "recording" && remote.workflow === "transcribeThenSummarize";
   const method = input.type === "transcript" || twoStage ? "transcript" : "audio";
@@ -32,7 +31,7 @@ export function resolveSummaryPreferences(
   }
   const settings: TranscriptSettings = {
     model, reasoningEffort: reasoningEffort as TranscriptSettings["reasoningEffort"],
-    detail: summaryStyleDetail(preferences.summary.style),
+    detail: summaryStyleDetail(preferences.summary.style), transcription: preferences.transcription,
   };
   if (input.type === "transcript") return { settings, input };
   const resolvedInput: SummaryInput = { type: "recording", recordings: input.recordings };

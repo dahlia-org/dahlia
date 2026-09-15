@@ -87,7 +87,7 @@ it("invalidates on connection, reconnection and notifications without persisting
   expect(changed).toHaveBeenCalledTimes(3);
   expect(settingsChanged).toHaveBeenCalledTimes(2);
   source.dispatchEvent(new Event("account_settings"));
-  expect(settingsChanged).toHaveBeenCalledTimes(3);
+  expect(settingsChanged).toHaveBeenCalledTimes(2);
   expect(changed).toHaveBeenCalledTimes(3);
   dispose();
   expect(close).toHaveBeenCalledOnce();

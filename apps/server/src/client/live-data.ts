@@ -165,7 +165,6 @@ export function subscribeLiveUpdates() {
   const refreshSettings = () => window.dispatchEvent(new Event(accountSettingsEvent));
   source.addEventListener("open", refreshData);
   source.addEventListener("open", refreshSettings);
-  source.addEventListener("account_settings", refreshSettings);
   source.addEventListener("invalidation", refreshData);
   return () => source.close();
 }

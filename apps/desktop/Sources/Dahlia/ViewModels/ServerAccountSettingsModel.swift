@@ -9,15 +9,16 @@ final class ServerAccountSettingsModel {
     static let shared = ServerAccountSettingsModel()
 
     struct State {
-        var settings: ServerAccountSettings?
         var isLoading = false
-        var isSaving = false
         var isAvailable = false
         var errorMessage: String?
         var summaryMethods: [String] = []
         var summaryModels: [ServerSummaryService.Model] = []
         var modelErrorMessage: String?
-        var canEdit: Bool { settings != nil && isAvailable && !isLoading && !isSaving }
+
+        var isModelCatalogLoaded: Bool {
+            isAvailable && !isLoading && errorMessage == nil && modelErrorMessage == nil
+        }
     }
 
     private struct Connection: Equatable {
@@ -33,14 +34,8 @@ final class ServerAccountSettingsModel {
     @ObservationIgnored private var generations: [UUID: UUID] = [:]
     @ObservationIgnored private var pendingModelReloads: Set<UUID> = []
     @ObservationIgnored private let client: SyncAPIClient
-    @ObservationIgnored private let initialValues: @MainActor () -> ServerAccountSettings
-
-    init(
-        client: SyncAPIClient = SyncAPIClient(session: .shared),
-        initialValues: @escaping @MainActor () -> ServerAccountSettings = { .initialValues() }
-    ) {
+    init(client: SyncAPIClient = SyncAPIClient(session: .shared)) {
         self.client = client
-        self.initialValues = initialValues
     }
 
     func updateConnections(_ accounts: [DahliaAccountConnection]) {
@@ -90,7 +85,6 @@ final class ServerAccountSettingsModel {
                 task.cancel()
                 generations.removeValue(forKey: id)
                 states[id]?.isLoading = false
-                states[id]?.isSaving = false
                 states[id]?.isAvailable = false
             }
             tasks.removeAll()
@@ -106,8 +100,6 @@ final class ServerAccountSettingsModel {
     @discardableResult
     func refresh(connectionID: UUID, reloadModels: Bool = false) -> Task<Void, Never>? {
         guard isNetworkAvailable, let connection = connections[connectionID] else { return nil }
-        // A notification may arrive while PATCH is in flight. Its response is the new state.
-        if state(for: connectionID).isSaving { return tasks[connectionID] }
         // Keep explicit reload intent when a notification replaces the in-flight refresh.
         if reloadModels { pendingModelReloads.insert(connectionID) }
         tasks[connectionID]?.cancel()
@@ -115,28 +107,16 @@ final class ServerAccountSettingsModel {
         generations[connectionID] = generation
         states[connectionID, default: State()].isLoading = true
         let client = client
-        let initial = initialValues()
         let task = Task { [weak self] in
             do {
                 try Task.checkCancellation()
-                var settings = try await Self.fetch(client: client, connectionID: connectionID, origin: connection.origin)
-                try Task.checkCancellation()
-                if settings == nil {
-                    settings = try await Self.patch(
-                        .init(
-                            analysisLanguages: initial.analysisLanguages,
-                            initialize: true
-                        ),
-                        client: client, connectionID: connectionID, origin: connection.origin
-                    )
-                }
                 guard let self, self.generations[connectionID] == generation, !Task.isCancelled else { return }
                 let previous = self.state(for: connectionID)
                 var methods = previous.summaryMethods
                 var models = previous.summaryModels
                 var modelError = previous.modelErrorMessage
-                if self.pendingModelReloads.contains(connectionID) || previous.settings == nil {
-                    methods = await (try? ServerSummaryService(client: client).methods(connectionID: connectionID, origin: connection.origin)) ?? []
+                if self.pendingModelReloads.contains(connectionID) || !previous.isAvailable {
+                    methods = try await ServerSummaryService(client: client).methods(connectionID: connectionID, origin: connection.origin)
                     guard self.generations[connectionID] == generation, !Task.isCancelled else { return }
                     models = []
                     modelError = nil
@@ -151,7 +131,6 @@ final class ServerAccountSettingsModel {
                 guard self.generations[connectionID] == generation, !Task.isCancelled else { return }
                 self.pendingModelReloads.remove(connectionID)
                 self.states[connectionID] = State(
-                    settings: settings,
                     isAvailable: true,
                     summaryMethods: methods,
                     summaryModels: models,
@@ -166,80 +145,12 @@ final class ServerAccountSettingsModel {
         return task
     }
 
-    @discardableResult
-    func save(_ patch: ServerAccountSettings.Patch, connectionID: UUID) -> Task<Void, Never>? {
-        guard state(for: connectionID).canEdit, let connection = connections[connectionID] else { return nil }
-        tasks[connectionID]?.cancel()
-        let generation = UUID()
-        generations[connectionID] = generation
-        states[connectionID, default: State()].isSaving = true
-        let client = client
-        let task = Task { [weak self] in
-            do {
-                let settings = try await Self.patch(patch, client: client, connectionID: connectionID, origin: connection.origin)
-                guard let self, self.generations[connectionID] == generation, !Task.isCancelled else { return }
-                self.states[connectionID] = State(
-                    settings: settings,
-                    isAvailable: true,
-                    summaryMethods: self.states[connectionID]?.summaryMethods ?? [],
-                    summaryModels: self.states[connectionID]?.summaryModels ?? [],
-                    modelErrorMessage: self.states[connectionID]?.modelErrorMessage
-                )
-                self.tasks[connectionID] = nil
-                // Also recover another device's update that raced the PATCH response.
-                self.refresh(connectionID: connectionID)
-            } catch {
-                self?.failed(error, connectionID: connectionID, generation: generation)
-            }
-        }
-        tasks[connectionID] = task
-        return task
-    }
-
-    func loadedSettings(connectionID: UUID) async throws -> ServerAccountSettings {
-        guard let connection = connections[connectionID] else { throw URLError(.notConnectedToInternet) }
-        var pending = tasks[connectionID] ?? refresh(connectionID: connectionID)
-        while let task = pending {
-            await task.value
-            try Task.checkCancellation()
-            guard connections[connectionID] == connection else { throw URLError(.cancelled) }
-            pending = tasks[connectionID]
-        }
-        guard let settings = state(for: connectionID).settings, state(for: connectionID).isAvailable else {
-            throw URLError(.notConnectedToInternet)
-        }
-        return settings
-    }
-
     private func failed(_: any Error, connectionID: UUID, generation: UUID) {
         guard generations[connectionID] == generation else { return }
         states[connectionID, default: State()].isLoading = false
-        states[connectionID, default: State()].isSaving = false
         states[connectionID, default: State()].isAvailable = false
         states[connectionID, default: State()].errorMessage = L10n.serverAccountSettingsUnavailable
         tasks[connectionID] = nil
-    }
-
-    private nonisolated static func fetch(client: SyncAPIClient, connectionID: UUID, origin: String) async throws -> ServerAccountSettings? {
-        guard let origin = URL(string: origin) else { throw URLError(.badURL) }
-        let data = try await client.data(origin: origin, connectionId: connectionID, maximumBytes: 8192) {
-            try await $0.getSettings().ok.body.json
-        }
-        return try JSONDecoder().decode(ServerAccountSettings.Response.self, from: data).settings
-    }
-
-    private nonisolated static func patch(
-        _ patch: ServerAccountSettings.Patch, client: SyncAPIClient, connectionID: UUID, origin: String
-    ) async throws -> ServerAccountSettings {
-        guard let origin = URL(string: origin) else { throw URLError(.badURL) }
-        let body = try JSONDecoder().decode(Operations.UpdateSettings.Input.Body.JsonPayload.self, from: JSONEncoder().encode(patch))
-        let data = try await client.data(origin: origin, connectionId: connectionID, maximumBytes: 8192) {
-            try await $0.updateSettings(body: .json(body)).ok.body.json
-        }
-        guard let settings = try JSONDecoder().decode(ServerAccountSettings.Response.self, from: data).settings else {
-            throw URLError(.badServerResponse)
-        }
-        return settings
     }
 
 }

@@ -4,7 +4,7 @@ import Foundation
 enum SettingsGroup: CaseIterable, Identifiable {
     case app
     case account
-    case data
+    case workspace
     case integrations
     case advanced
 
@@ -13,8 +13,8 @@ enum SettingsGroup: CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .app: L10n.thisMac
-        case .account: L10n.accountPreferences
-        case .data: L10n.settingsDataAndAccounts
+        case .account: L10n.account
+        case .workspace: L10n.workspace
         case .integrations: L10n.integrations
         case .advanced: L10n.advanced
         }
@@ -22,9 +22,9 @@ enum SettingsGroup: CaseIterable, Identifiable {
 
     var categories: [SettingsCategory] {
         switch self {
-        case .app: [.general, .transcription, .liveSubtitles, .screenshots, .macInference, .permissions]
-        case .account: [.accountPreferences]
-        case .data: [.accountsAndWorkspaces, .backups]
+        case .app: [.general, .transcription, .liveSubtitles, .screenshots, .macInference, .permissions, .backups]
+        case .account: [.accountsAndWorkspaces]
+        case .workspace: [.accountPreferences, .workspace]
         case .integrations: [.calendar, .cloudStorage]
         case .advanced: [.search, .betaFeatures, .developer, .audioDiagnostics]
         }

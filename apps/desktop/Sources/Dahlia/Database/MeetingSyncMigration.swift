@@ -1,12 +1,13 @@
+import Foundation
 import GRDB
 
 /// Final unreleased synchronization schema. v1-v41 are the only published migrations.
 enum MeetingSyncMigration {
-    static func migrate(in db: Database) throws {
+    static func migrate(in db: Database, defaults: UserDefaults = .standard) throws {
         guard try ["vaults", "meetings", "screenshots", "transcript_segments", "dahlia_account_connections"]
             .allSatisfy({ try db.tableExists($0) }) else { return }
 
-        try migrateVault(in: db)
+        try migrateVault(in: db, defaults: defaults)
         try db.alter(table: TranscriptSegmentRecord.databaseTableName) { table in
             table.add(column: "audioSource", .text)
         }
@@ -16,7 +17,24 @@ enum MeetingSyncMigration {
         try db.execute(sql: schemaSQL)
     }
 
-    private static func migrateVault(in db: Database) throws {
+    private static func migrateVault(in db: Database, defaults: UserDefaults) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let generationDefaults = try String(decoding: encoder.encode(WorkspaceGenerationSettings()), as: UTF8.self)
+        var settings = WorkspaceGenerationSettings()
+        settings.outputLanguage = defaults.string(forKey: "llmSummaryLanguage")
+            .flatMap(SummaryLanguage.init(rawValue:)) ?? .ja
+        if let detail = defaults.string(forKey: "summaryDetailLevel") {
+            settings.summary.style = SummaryStyle(detailLevel: .fromPersistedValue(detail))
+        }
+        settings.transcription.localeIdentifier = defaults.string(forKey: "transcriptionLocale") ?? Locale.current.identifier
+        settings.transcription.liveTranscriptDraft = defaults.bool(forKey: "liveTranscriptDraftEnabled")
+        settings.transcription.languageScope = defaults.string(forKey: "appLanguageScope")
+            .flatMap(TranscriptionLanguageScope.init(rawValue:)) ?? .selected
+        settings.transcription.languageIdentifiers = AppSettings.enabledLanguageIdentifiers(in: defaults).sorted()
+        settings.automaticProcessing = defaults.object(forKey: "automaticRecordingProcessingEnabled") as? Bool
+            ?? defaults.object(forKey: "generateSummaryAfterBatchTranscription") as? Bool ?? true
+        let inheritedSettings = try String(decoding: encoder.encode(settings), as: UTF8.self)
         // Published connections selected an AI account, not canonical Server ownership.
         // Keep account credentials and AI settings; Server association requires explicit Organization selection.
         try db.execute(sql: """
@@ -29,6 +47,7 @@ enum MeetingSyncMigration {
             accountConnectionId BLOB REFERENCES dahlia_account_connections(id) ON DELETE SET NULL,
             localAIProvider TEXT NOT NULL DEFAULT 'chatGPTSubscription',
             databricksProfile TEXT NOT NULL DEFAULT '',
+            generationSettings TEXT NOT NULL DEFAULT '\(generationDefaults.replacingOccurrences(of: "'", with: "''"))',
             chatModelID TEXT NOT NULL DEFAULT '',
             chatReasoningEffort TEXT NOT NULL DEFAULT 'medium',
             aiSettingsBackfilled INTEGER NOT NULL DEFAULT 0,
@@ -47,18 +66,19 @@ enum MeetingSyncMigration {
         );
         INSERT INTO vaults_v42 (
             id, path, name, createdAt, lastOpenedAt, accountConnectionId,
-            localAIProvider, databricksProfile,
+            localAIProvider, databricksProfile, generationSettings,
             chatModelID, chatReasoningEffort, aiSettingsBackfilled
         )
         SELECT
             id, path, name, createdAt, lastOpenedAt, NULL,
             localAIProvider, databricksProfile,
+            json_set(?, '$.local.model', summaryModelID, '$.local.reasoningEffort', summaryReasoningEffort),
             chatModelID, chatReasoningEffort, aiSettingsBackfilled
         FROM vaults;
         DROP TABLE vaults;
         ALTER TABLE vaults_v42 RENAME TO vaults;
         CREATE INDEX vaults_on_accountConnectionId ON vaults(accountConnectionId);
-        """)
+        """, arguments: [inheritedSettings])
         try SearchDocumentsMigration.createVaultCleanupTrigger(in: db)
     }
 

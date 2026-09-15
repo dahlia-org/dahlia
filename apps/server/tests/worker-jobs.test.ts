@@ -3,7 +3,6 @@ import { createQueueJobs, jobMessageSchema, type JobMessage, type JobQueue, type
 import { closeAfterResponse, createWorkerHandler, type WorkerApp } from "../src/worker";
 import type { MeetingSyncStore } from "../src/sync/types";
 import type { MeetingSyncService } from "../src/sync/service";
-import type { AccountSettingsStore } from "../src/account-settings";
 import { uuidV7 } from "../src/id";
 
 function setup(imageQueue?: JobQueue) {
@@ -14,7 +13,7 @@ function setup(imageQueue?: JobQueue) {
     summaryJobs: { due: vi.fn(() => Promise.resolve([{ id: uuidV7(), ownerUserId: "owner" }])), claim: vi.fn(() => Promise.resolve(null)) },
   };
   const jobs = createQueueJobs({ DAHLIA_SUMMARY_QUEUE: queue, DAHLIA_IMAGE_QUEUE: imageQueue }, stores as unknown as WorkerJobStores,
-    {} as MeetingSyncStore, {} as MeetingSyncService, {} as AccountSettingsStore, [{ id: "transcript" }] as never, imageQueue ? { model: "synthetic" } as never : undefined);
+    {} as MeetingSyncStore, {} as MeetingSyncService, [{ id: "transcript" }] as never, imageQueue ? { model: "synthetic" } as never : undefined);
   return { queue, stores, jobs, sent };
 }
 const signal = () => new AbortController().signal;

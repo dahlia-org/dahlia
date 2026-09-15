@@ -21,7 +21,6 @@ CREATE FUNCTION app.current_identity_can_admin_workspace(target_workspace_id uui
 --> statement-breakpoint
 CREATE UNIQUE INDEX "member_user_organization_idx" ON "auth"."member" ("user_id","organization_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "team_member_user_team_idx" ON "auth"."team_member" ("user_id","team_id");--> statement-breakpoint
-ALTER TABLE "app"."account_settings" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."meeting_events" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."meeting_attachments" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "search"."documents" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
@@ -55,8 +54,6 @@ BEGIN
   END LOOP;
 END $$;--> statement-breakpoint
 ALTER TABLE "crypto"."workspace_keys" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
---> statement-breakpoint
-CREATE POLICY "account_settings_owner" ON "app"."account_settings" FOR ALL USING ("app"."account_settings"."user_id" = nullif(current_setting('app.user_id', true), '')::uuid) WITH CHECK ("app"."account_settings"."user_id" = nullif(current_setting('app.user_id', true), '')::uuid);
 --> statement-breakpoint
 CREATE POLICY "meeting_attachment_select" ON "app"."meeting_attachments" FOR SELECT USING ((current_setting('app.maintenance', true) = 'meeting-retention' AND "app"."meeting_attachments"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR "app"."current_identity_can_read_workspace"("app"."meeting_attachments"."workspace_id") OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.workspace_id = "app"."meeting_attachments"."workspace_id" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid));
 --> statement-breakpoint

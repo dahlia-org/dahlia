@@ -189,24 +189,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/account/settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read current account settings */
-        get: operations["getSettings"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update account recognition languages; maximum 8 KiB */
-        patch: operations["updateSettings"];
-        trace?: never;
-    };
     "/api/v1/capabilities": {
         parameters: {
             query?: never;
@@ -656,7 +638,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** SSE invalidation and account_settings events; recover through canonical reads */
+        /** SSE invalidation events; recover through canonical reads */
         get: operations["getEvents"];
         put?: never;
         post?: never;
@@ -1228,11 +1210,20 @@ export interface components {
                     /** @enum {string} */
                     style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
                 };
+                transcription: {
+                    localeIdentifier: string;
+                    automaticLanguageDetection: boolean;
+                    /** @enum {string} */
+                    languageScope: "all" | "selected";
+                    languageIdentifiers: string[];
+                    liveTranscriptDraft: boolean;
+                };
                 local: {
                     model: string;
                     /** @enum {string} */
                     reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                 };
+                automaticProcessing: boolean;
             };
             /** @enum {string} */
             encryption?: "none" | "server";
@@ -1586,11 +1577,20 @@ export interface components {
                     /** @enum {string} */
                     style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
                 };
+                transcription: {
+                    localeIdentifier: string;
+                    automaticLanguageDetection: boolean;
+                    /** @enum {string} */
+                    languageScope: "all" | "selected";
+                    languageIdentifiers: string[];
+                    liveTranscriptDraft: boolean;
+                };
                 local: {
                     model: string;
                     /** @enum {string} */
                     reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                 };
+                automaticProcessing: boolean;
             };
             /** @enum {string} */
             encryption?: "none" | "server";
@@ -1788,15 +1788,6 @@ export interface components {
             kind: "personal" | "team";
             role?: string;
         };
-        AccountSettingsResponse: {
-            settings: {
-                analysisLanguages: {
-                    /** @enum {string} */
-                    scope: "all" | "selected";
-                    identifiers: string[];
-                };
-            } | null;
-        };
         Capabilities: {
             workspaceEncryption?: {
                 version: number;
@@ -1981,6 +1972,14 @@ export interface components {
                 reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                 /** @enum {string} */
                 detail: "low" | "medium" | "high" | "xhigh" | "max";
+                transcription?: {
+                    localeIdentifier: string;
+                    automaticLanguageDetection: boolean;
+                    /** @enum {string} */
+                    languageScope: "all" | "selected";
+                    languageIdentifiers: string[];
+                    liveTranscriptDraft: boolean;
+                };
                 /** @enum {string} */
                 transcriptionReasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
             };
@@ -2127,11 +2126,20 @@ export interface components {
                             /** @enum {string} */
                             style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
                         };
+                        transcription: {
+                            localeIdentifier: string;
+                            automaticLanguageDetection: boolean;
+                            /** @enum {string} */
+                            languageScope: "all" | "selected";
+                            languageIdentifiers: string[];
+                            liveTranscriptDraft: boolean;
+                        };
                         local: {
                             model: string;
                             /** @enum {string} */
                             reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                         };
+                        automaticProcessing: boolean;
                     };
                     organizationId: string;
                     /** @enum {string} */
@@ -2173,11 +2181,20 @@ export interface components {
                             /** @enum {string} */
                             style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
                         };
+                        transcription: {
+                            localeIdentifier: string;
+                            automaticLanguageDetection: boolean;
+                            /** @enum {string} */
+                            languageScope: "all" | "selected";
+                            languageIdentifiers: string[];
+                            liveTranscriptDraft: boolean;
+                        };
                         local: {
                             model: string;
                             /** @enum {string} */
                             reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                         };
+                        automaticProcessing: boolean;
                     };
                     /** @enum {string} */
                     encryption?: "none" | "server";
@@ -3133,67 +3150,6 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    getSettings: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AccountSettingsResponse"];
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    updateSettings: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                /**
-                 * @example {
-                 *       "analysisLanguages": {
-                 *         "scope": "all",
-                 *         "identifiers": []
-                 *       }
-                 *     }
-                 */
-                "application/json": {
-                    analysisLanguages: {
-                        /** @enum {string} */
-                        scope: "all" | "selected";
-                        identifiers: string[];
-                    };
-                    initialize?: boolean;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AccountSettingsResponse"];
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
     getCapabilities: {
         parameters: {
             query?: never;
@@ -3675,6 +3631,14 @@ export interface operations {
                             /** @enum {string} */
                             style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
                         };
+                        transcription: {
+                            localeIdentifier: string;
+                            automaticLanguageDetection: boolean;
+                            /** @enum {string} */
+                            languageScope: "all" | "selected";
+                            languageIdentifiers: string[];
+                            liveTranscriptDraft: boolean;
+                        };
                     };
                 };
             };
@@ -3743,6 +3707,14 @@ export interface operations {
                                 reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                                 /** @enum {string} */
                                 detail: "low" | "medium" | "high" | "xhigh" | "max";
+                                transcription?: {
+                                    localeIdentifier: string;
+                                    automaticLanguageDetection: boolean;
+                                    /** @enum {string} */
+                                    languageScope: "all" | "selected";
+                                    languageIdentifiers: string[];
+                                    liveTranscriptDraft: boolean;
+                                };
                                 /** @enum {string} */
                                 transcriptionReasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                             };
@@ -4032,7 +4004,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description text/event-stream: invalidation has {cursor}; account_settings has {}. No user content. */
+            /** @description text/event-stream: invalidation has {cursor}. No user content. */
             200: {
                 headers: {
                     [name: string]: unknown;

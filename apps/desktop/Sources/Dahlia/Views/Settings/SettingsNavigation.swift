@@ -17,7 +17,7 @@ enum SettingsNavigation {
         switch selection {
         case .language, .appearance:
             .general
-        case .dahliaAccounts, .workspace:
+        case .dahliaAccounts:
             .accountsAndWorkspaces
         case .modelProvider:
             .macInference

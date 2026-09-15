@@ -62,7 +62,11 @@ owner column と share table の重複を Workspace permission に集約した�
 
 forward migration は既存 receipt 本文を保持したまま結果 ID / revision を抽出し、ledger と receipt の最大 sequence で Workspace state を初期化する。PostgreSQL では migration owner が同一 transaction 内だけ receipt の FORCE RLS を解除して backfill し、完了前に復元する。保持処理は identity を transaction-local に設定し、失敗時は floor と削除を共に rollback する。
 
-## アカウント設定と画像解析 job（2026-09-07）
+## ワークスペース処理設定への統合（2026-09-15）
+
+以下の個人単位の生成・解析言語設定の決定は置き換えられた。現在は Workspace の `generationSettings` と既存 revision/管理者更新経路を使用する。未公開 Server の初期スキーマから `account_settings` と GET/PATCH を削除し、文字起こし言語もワークスペースに統合した。画像説明の出力言語は要約と共通、OCR は原文の言語を保持する。画像解析 job の認可境界は維持する。
+
+## アカウント設定と画像解析 job（2026-09-07、設定部分は上記で置換）
 
 `app.account_settings` は `auth.user.id` を正本キーに出力言語と解析言語範囲・一覧を保持する。本人の GET/PATCH だけを公開し、PostgreSQL は transaction-local identity と FORCE RLS、SQLite は user ID predicate で分離する。PATCH は指定項目だけの upsert、初回初期化は conditional INSERT。設定の競合制御用 revision は持たない。
 

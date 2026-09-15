@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "ce68f574-26de-47b2-831e-ed2278e7d283",
+  "id": "c9faa713-58e2-4062-9cb3-c2bebdd29b87",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -72,10 +72,6 @@
     },
     {
       "name": "verification",
-      "entityType": "tables"
-    },
-    {
-      "name": "account_settings",
       "entityType": "tables"
     },
     {
@@ -1997,36 +1993,6 @@
       "name": "updated_at",
       "entityType": "columns",
       "table": "verification"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "user_id",
-      "entityType": "columns",
-      "table": "account_settings"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "1",
-      "generated": null,
-      "name": "revision",
-      "entityType": "columns",
-      "table": "account_settings"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "analysis_languages",
-      "entityType": "columns",
-      "table": "account_settings"
     },
     {
       "type": "text",
@@ -4032,7 +3998,7 @@
       "type": "text",
       "notNull": true,
       "autoincrement": false,
-      "default": "'{\"outputLanguage\":\"ja\",\"processing\":{\"location\":\"local\",\"remote\":{\"workflow\":\"transcribeThenSummarize\"}},\"summary\":{\"style\":\"detailed\"},\"local\":{\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\"}}'",
+      "default": "'{\"outputLanguage\":\"ja\",\"processing\":{\"location\":\"local\",\"remote\":{\"workflow\":\"transcribeThenSummarize\"}},\"summary\":{\"style\":\"detailed\"},\"transcription\":{\"localeIdentifier\":\"ja-JP\",\"automaticLanguageDetection\":false,\"languageScope\":\"all\",\"languageIdentifiers\":[],\"liveTranscriptDraft\":false},\"local\":{\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\"},\"automaticProcessing\":true}'",
       "generated": null,
       "name": "generation_settings",
       "entityType": "columns",
@@ -4775,21 +4741,6 @@
     },
     {
       "columns": [
-        "user_id"
-      ],
-      "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_account_settings_user_id_user_id_fk",
-      "entityType": "fks",
-      "table": "account_settings"
-    },
-    {
-      "columns": [
         "file_id"
       ],
       "tableTo": "files",
@@ -5488,15 +5439,6 @@
       "nameExplicit": false,
       "name": "verification_pk",
       "table": "verification",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "user_id"
-      ],
-      "nameExplicit": false,
-      "name": "account_settings_pk",
-      "table": "account_settings",
       "entityType": "pks"
     },
     {

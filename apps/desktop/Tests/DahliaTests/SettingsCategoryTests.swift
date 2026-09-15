@@ -10,7 +10,6 @@ import Foundation
             let groupedCategories = SettingsGroup.allCases.flatMap(\.categories)
             let hiddenCategories: Set<SettingsCategory> = [
                 .dahliaAccounts,
-                .workspace,
                 .modelProvider,
                 .aiSummary,
                 .instructions,
@@ -50,7 +49,7 @@ import Foundation
             #expect(!groupedCategories.contains(.instructions))
             #expect(!groupedCategories.contains(.mcp))
             #expect(!groupedCategories.contains(.dahliaAccounts))
-            #expect(!groupedCategories.contains(.workspace))
+            #expect(groupedCategories.contains(.workspace))
             #expect(!groupedCategories.contains(.aiSummary))
             #expect(SettingsGroup.allCases.last == .advanced)
             #expect(SettingsGroup.app.categories == [
@@ -60,10 +59,11 @@ import Foundation
                 .screenshots,
                 .macInference,
                 .permissions,
+                .backups,
             ])
-            #expect(SettingsGroup.account.categories == [.accountPreferences])
+            #expect(SettingsGroup.account.categories == [.accountsAndWorkspaces])
             #expect(SettingsGroup.app.label == L10n.thisMac)
-            #expect(SettingsGroup.data.categories == [.accountsAndWorkspaces, .backups])
+            #expect(SettingsGroup.workspace.categories == [.accountPreferences, .workspace])
             #expect(SettingsGroup.advanced.categories == [.search, .betaFeatures, .developer, .audioDiagnostics])
             #expect(!AppSettings.defaultConversationAnalyticsBetaEnabled)
             #expect(DetailTab.allCases == [.summary, .notes, .screenshots, .transcript, .conversationAnalytics])
@@ -77,7 +77,7 @@ import Foundation
             #expect(SettingsNavigation.visibleSelection(.mcp) == .accountPreferences)
             #expect(SettingsNavigation.visibleSelection(.aiSummary) == .accountPreferences)
             #expect(SettingsNavigation.visibleSelection(.dahliaAccounts) == .accountsAndWorkspaces)
-            #expect(SettingsNavigation.visibleSelection(.workspace) == .accountsAndWorkspaces)
+            #expect(SettingsNavigation.visibleSelection(.workspace) == .workspace)
             #expect(SettingsNavigation.visibleSelection(.modelProvider) == .macInference)
             #expect(SettingsNavigation.visibleSelection(.calendar) == .calendar)
         }
@@ -89,7 +89,7 @@ import Foundation
             #expect(SettingsCategory.liveSubtitles.matches(L10n.translationTargetLanguage))
             #expect(SettingsCategory.macInference.matches("  chatGPT \n "))
             #expect(SettingsCategory.cloudStorage.matches("google"))
-            #expect(SettingsCategory.accountPreferences.matches(L10n.imageAnalysisLanguages))
+            #expect(SettingsCategory.accountPreferences.matches(L10n.automaticRecordingProcessing))
             #expect(SettingsCategory.general.matches(" \n "))
             #expect(!SettingsCategory.general.matches("not-a-setting"))
             #expect(!SettingsCategory.macInference.matches("ChatGPT not-a-setting"))
@@ -134,13 +134,13 @@ import Foundation
         func storedCategoryIdentifiersStayStable() {
             #expect(SettingsCategory.modelProvider.rawValue == "accounts")
             #expect(SettingsCategory.accountsAndWorkspaces.rawValue == "accountsAndWorkspaces")
-            #expect(SettingsCategory.accountsAndWorkspaces.label == L10n.accountsAndWorkspaces)
+            #expect(SettingsCategory.accountsAndWorkspaces.label == L10n.serverConnections)
             #expect(SettingsCategory.accountsAndWorkspaces.systemImage == "person.2")
             #expect(SettingsCategory.dahliaAccounts.rawValue == "dahliaAccounts")
             #expect(SettingsCategory.dahliaAccounts.label == L10n.dahliaAccount)
             #expect(SettingsCategory.dahliaAccounts.systemImage == "person.crop.circle")
             #expect(SettingsCategory.workspace.rawValue == "workspace")
-            #expect(SettingsCategory.workspace.label == L10n.workspace)
+            #expect(SettingsCategory.workspace.label == L10n.manageWorkspaces)
             #expect(SettingsCategory.workspace.systemImage == "externaldrive")
             #expect(SettingsCategory.backups.label == L10n.backups)
             #expect(SettingsCategory.permissions.label == L10n.permissions)

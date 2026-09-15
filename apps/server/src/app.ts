@@ -20,7 +20,6 @@ import {
   type AuthInfo,
 } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { accountSettingsPatchSchema } from "./account-settings";
 import { searchSettingsSchema } from "./search/settings-model";
 import { ConversationAnalyticsService } from "./conversation-analytics";
 
@@ -468,26 +467,6 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     return job ? context.json({ job: summaryJobResponse(job) }) : context.json({ error: "summary_job_not_found" }, 404);
   });
 
-  registerApi(app, "getSettings", async (context) => {
-    const identity = await syncIdentity(context.req.raw);
-    context.header("cache-control", "no-store");
-    return context.json({ settings: await store.accountSettings.get(identity.userId) });
-  });
-  registerApi(app, "updateSettings", accountSettingsBodyLimit, async (context) => {
-    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
-    if ((requiresBrowserOrigin || context.req.header("origin"))
-      && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
-      return context.json({ error: "invalid_origin" }, 403);
-    }
-    const identity = await syncIdentity(context.req.raw);
-    if (identity.impersonated) return context.json({ error: "impersonation_read_only" }, 403);
-    const parsed = accountSettingsPatchSchema.safeParse(await context.req.json().catch(() => null));
-    if (!parsed.success) return context.json({ error: "invalid_account_settings" }, 400);
-    const { initialize, ...patch } = parsed.data;
-    context.header("cache-control", "no-store");
-    return context.json({ settings: await store.accountSettings.update(identity.userId, patch, initialize) });
-  });
-
   async function syncIdentity(request: Request): Promise<Identity> {
     const identity = await identities.fromBrowserOrGateway(request, ALL_APIS_SCOPE);
     if (dependencies.onSyncMutation) jobOwners.set(request, identity.userId);
@@ -591,18 +570,12 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const suppliedCursor = context.req.query("cursor") ?? context.req.header("last-event-id");
     let sequence = suppliedCursor ? decodeSyncCursor(suppliedCursor) : 0;
     return streamSSE(context, async (stream) => {
-      let accountSettingsKey: number | null | undefined;
       while (!stream.aborted) {
         const cursor = await sync.latestCursor(identity);
         const latest = decodeSyncCursor(cursor);
         if (latest > sequence) {
           sequence = latest;
           await stream.writeSSE({ event: "invalidation", id: cursor, data: JSON.stringify({ cursor }) });
-        }
-        const settingsKey = await store.accountSettings.getRevision(identity.userId);
-        if (settingsKey !== accountSettingsKey) {
-          accountSettingsKey = settingsKey;
-          await stream.writeSSE({ event: "account_settings", data: "{}" });
         }
         await stream.sleep(2_000);
       }

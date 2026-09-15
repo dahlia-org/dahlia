@@ -6,21 +6,19 @@ struct SummaryGenerationConfirmationView: View {
     @State private var detailLevel: SummaryDetailLevel?
     @State private var selectedProjectId: UUID?
     @State private var selectedSource: SummaryGenerationSource?
-    @State private var useSavedTranscript = false
     @State private var sourceAvailability: SummaryGenerationSourceAvailability?
     @State private var isLoadingSources = true
     @State private var sourceErrorMessage: String?
     @State private var errorMessage: String?
-    @State private var outputLanguage: SummaryLanguage?
-    @State private var location: WorkspaceGenerationSettings.SummaryMode?
-    @State private var model: String?
-    @State private var effort: String?
+    @State private var overrides = SummaryGenerationOptions.Overrides()
+    @State private var catalog = CodexModelCatalog(service: .macInference)
+    @Bindable private var serverCatalog = ServerAccountSettingsModel.shared
 
     let title: String
     let description: String
     let actionTitle: String
     let projects: [FlatProjectRow]?
-    let loadSourceAvailability: (WorkspaceGenerationSettings.SummaryMode?) async throws -> SummaryGenerationSourceAvailability
+    let loadSourceAvailability: () async throws -> SummaryGenerationSourceAvailability
     let onCancel: () -> Void
     let onGenerate: (SummaryGenerationOptions, UUID?) -> String?
 
@@ -31,7 +29,7 @@ struct SummaryGenerationConfirmationView: View {
         projects: [FlatProjectRow]? = nil,
         initialProjectId: UUID? = nil,
         initialDetailLevel _: SummaryDetailLevel,
-        loadSourceAvailability: @escaping (WorkspaceGenerationSettings.SummaryMode?) async throws -> SummaryGenerationSourceAvailability,
+        loadSourceAvailability: @escaping () async throws -> SummaryGenerationSourceAvailability,
         onCancel: @escaping () -> Void,
         onGenerate: @escaping (SummaryGenerationOptions, UUID?) -> String?
     ) {
@@ -68,34 +66,39 @@ struct SummaryGenerationConfirmationView: View {
                         isLoading: isLoadingSources,
                         errorMessage: sourceErrorMessage
                     )
-                    if !usesRemote, sourceAvailability?.hasServerConnection == true, selectedSource == .transcript {
-                        Toggle(isOn: $useSavedTranscript) {
-                            Text(L10n.summaryUseSavedTranscript)
-                            Text(L10n.summaryUseSavedTranscriptDescription)
-                        }
-                        .toggleStyle(.checkbox)
-                    }
                 }
 
                 Section(L10n.generationOverrides) {
-                    if sourceAvailability?.hasServerConnection == true {
-                        Picker(L10n.processingLocation, selection: $location) {
-                            Text(L10n.workspaceGenerationDefault).tag(WorkspaceGenerationSettings.SummaryMode?.none)
-                            Text(L10n.localProcessing).tag(Optional(WorkspaceGenerationSettings.SummaryMode.local))
-                            Text(L10n.remoteProcessing).tag(Optional(WorkspaceGenerationSettings.SummaryMode.remote))
-                        }
-                    }
-                    Picker(L10n.summaryOutputLanguage, selection: $outputLanguage) {
+                    LabeledContent(L10n.processingLocation, value: usesRemote ? L10n.remoteProcessing : L10n.localProcessing)
+                    Picker(L10n.summaryOutputLanguage, selection: $overrides.outputLanguage) {
                         Text(L10n.workspaceGenerationDefault).tag(SummaryLanguage?.none)
                         ForEach(SummaryLanguage.allCases) { Text($0.displayName).tag(Optional($0)) }
                     }
-                    TextField(L10n.summaryModel, text: Binding(
-                        get: { model ?? defaultModel }, set: { model = $0 }
-                    ), prompt: Text(L10n.workspaceGenerationDefault))
-                    Picker(L10n.reasoningEffort, selection: $effort) {
+                    Picker(L10n.summaryModel, selection: modelSelection) {
+                        Text("\(L10n.workspaceGenerationDefault) — \(modelName(defaultModel))").tag(String?.none)
+                        if usesRemote { Text(L10n.automaticModelPreference).tag(Optional("")) }
+                        if let model = overrides.model, !model.isEmpty, !modelIDs.contains(model) {
+                            Text(isModelCatalogLoaded ? "\(model) — \(L10n.unavailableModelPreference)" : model).tag(Optional(model))
+                        }
+                        ForEach(modelIDs, id: \.self) { id in Text(modelName(id)).tag(Optional(id)) }
+                    }
+                    if isModelCatalogLoaded, !isModelAvailable {
+                        SettingsStatusMessage(
+                            text: "\(modelName(overrides.model ?? defaultModel)) — \(L10n.unavailableModelPreference)",
+                            systemImage: "exclamationmark.triangle", tint: .orange
+                        )
+                    }
+                    Picker(L10n.reasoningEffort, selection: $overrides.reasoningEffort) {
                         Text(L10n.workspaceGenerationDefault).tag(String?.none)
                         if usesRemote { Text(L10n.automaticModelPreference).tag(Optional("")) }
-                        ForEach(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"], id: \.self) { Text($0).tag(Optional($0)) }
+                        if let effort = overrides.reasoningEffort, !effort.isEmpty, !effortOptions.contains(effort) {
+                            Text("\(effort) — \(L10n.checkModelPreference)").tag(Optional(effort))
+                        }
+                        ForEach(effortOptions, id: \.self) { Text($0).tag(Optional($0)) }
+                    }
+                    if let error = modelError {
+                        SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange)
+                        Button(L10n.retry) { Task { await loadModels() } }
                     }
                 }
 
@@ -132,23 +135,89 @@ struct SummaryGenerationConfirmationView: View {
                     .keyboardShortcut(.cancelAction)
                 Button(actionTitle, action: generateSummary)
                     .keyboardShortcut(.defaultAction)
-                    .disabled((!usesRemote && model != nil && model?.nilIfBlank == nil) || isLoadingSources || sourceErrorMessage != nil ||
+                    .disabled(!isModelAvailable || hasIncompatibleEffort ||
+                        isLoadingSources || sourceErrorMessage != nil ||
                         (selectedSource.map { sourceAvailability?.isAvailable($0) != true } ?? true))
             }
             .padding(20)
         }
         .frame(width: 560, height: 650)
         .background(Color(nsColor: .windowBackgroundColor))
-        .task(id: location) { await loadSources() }
+        .task {
+            await loadSources()
+            await loadModels()
+        }
     }
 
     private var usesRemote: Bool {
-        (location ?? sourceAvailability?.generationSettings?.processing.location) == .remote
+        sourceAvailability?.hasServerConnection == true
     }
 
     private var defaultModel: String {
         guard let settings = sourceAvailability?.generationSettings else { return "" }
         return usesRemote ? settings.processing.remote.summaryModel ?? "" : settings.local.model
+    }
+
+    private var serverState: ServerAccountSettingsModel.State? {
+        sourceAvailability?.accountConnectionID.map { serverCatalog.state(for: $0) }
+    }
+
+    private var modelIDs: [String] {
+        if usesRemote {
+            return serverState?.summaryModels.filter { $0.supportsSummary(method: selectedSource == .audio ? "audio" : "transcript") }.map(\.id) ?? []
+        }
+        return catalog.models.map(\.model)
+    }
+
+    private func modelName(_ id: String) -> String {
+        if id.isEmpty { return L10n.automaticModelPreference }
+        if usesRemote { return serverState?.summaryModels.first { $0.id == id }?.displayName ?? id }
+        return catalog.models.first { $0.model == id }?.displayName ?? id
+    }
+
+    private var modelSelection: Binding<String?> {
+        Binding(get: { overrides.model }, set: { model in
+            overrides.selectModel(
+                model,
+                defaultReasoningEffort: usesRemote ? "" : catalog.resolvedEffort(current: "", modelID: model ?? defaultModel)
+            )
+        })
+    }
+
+    private var isModelAvailable: Bool {
+        overrides.isModelAvailable(defaultModel: defaultModel, modelIDs: modelIDs, allowsAutomatic: usesRemote)
+    }
+
+    private var isModelCatalogLoaded: Bool {
+        guard !isLoadingSources, selectedSource != nil, modelError == nil else { return false }
+        if usesRemote { return serverState?.isModelCatalogLoaded == true }
+        return catalog.hasAttemptedLoad && !catalog.isLoading
+    }
+
+    private var hasIncompatibleEffort: Bool {
+        guard let effort = overrides.reasoningEffort?.nilIfBlank else { return false }
+        return !effortOptions.contains(effort)
+    }
+
+    private var effortOptions: [String] {
+        let id = overrides.model ?? defaultModel
+        if usesRemote { return serverState?.summaryModels.first { $0.id == id }?.supportedReasoningLevels.map(\.effort) ?? [] }
+        return catalog.effortOptions(modelID: id).map(\.reasoningEffort)
+    }
+
+    private var modelError: String? {
+        usesRemote ? serverState?.modelErrorMessage ?? serverState?.errorMessage : catalog.errorMessage
+    }
+
+    private func loadModels() async {
+        if let connectionID = sourceAvailability?.accountConnectionID {
+            await serverCatalog.refresh(connectionID: connectionID, reloadModels: true)?.value
+        } else if sourceAvailability != nil {
+            let provider = WorkspaceAISettingsModel.shared.localAccountSettings.runtimeProvider
+            await catalog.load(forceRefresh: true) {
+                try await CodexRuntimeContextCoordinator.macInference.activate(provider: provider)
+            }
+        }
     }
 
     private func generateSummary() {
@@ -159,13 +228,7 @@ struct SummaryGenerationConfirmationView: View {
             ),
             detailLevel: detailLevel,
             source: selectedSource,
-            overrides: .init(
-                outputLanguage: outputLanguage,
-                location: location,
-                model: model.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) },
-                reasoningEffort: effort
-            ),
-            useSavedTranscript: !usesRemote && useSavedTranscript ? true : nil
+            overrides: overrides
         ), selectedProjectId)
         if errorMessage == nil {
             onCancel()
@@ -176,7 +239,7 @@ struct SummaryGenerationConfirmationView: View {
         isLoadingSources = true
         sourceErrorMessage = nil
         do {
-            let availability = try await loadSourceAvailability(location)
+            let availability = try await loadSourceAvailability()
             try Task.checkCancellation()
             sourceAvailability = availability
             selectedSource = availability.preferredSource

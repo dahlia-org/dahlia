@@ -80,14 +80,20 @@
             #expect(storedProfile == "LOCAL")
         }
 
-        @Test
-        func retainsTheExistingAppSettingsWhenThereIsNoLocalWorkspace() async throws {
+        @Test(arguments: [false, true])
+        func retainsTheExistingAppSettingsWithoutBackfilledWorkspace(hasWorkspace: Bool) async throws {
             let suiteName = "LocalAccountAISettingsTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
             defaults.set(AIAccountProvider.databricks.rawValue, forKey: LocalAccountAISettings.providerKey)
             defaults.set("LEGACY", forKey: LocalAccountAISettings.databricksProfileKey)
             let database = try AppDatabaseManager(path: ":memory:")
+            if hasWorkspace {
+                var pending = makeWorkspace(openedAt: .now)
+                pending.aiSettingsBackfilled = false
+                let workspace = pending
+                try await database.dbQueue.write { db in try workspace.insert(db) }
+            }
             let model = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
 
             model.configure(dbQueue: database.dbQueue)
@@ -155,7 +161,6 @@
 
             await #expect(throws: DatabaseError.self) {
                 try await repository.backfillWorkspaceAISettings(.init(
-                    localProvider: .databricks, databricksProfile: "LEGACY",
                     chatModelID: "legacy", chatReasoningEffort: "high"
                 ))
             }

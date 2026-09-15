@@ -630,10 +630,10 @@
             let settings = ServerAccountSettingsModel(client: SyncAPIClient(session: .shared, tokenProvider: { _, _ in
                 if expiredAuthentication { throw SyncHTTPError(status: 401, body: Data()) }
                 throw URLError(.notConnectedToInternet)
-            }), initialValues: { .init(analysisLanguages: .init(scope: .all, identifiers: [])) })
+            }))
             settings.updateConnections([.init(record: connection, account: .init(id: "user", name: nil, email: nil), isCloud: false)])
             await settings.refresh(connectionID: connection.id)?.value
-            #expect(settings.state(for: connection.id).settings == nil)
+            #expect(settings.state(for: connection.id).summaryModels.isEmpty)
             let persistence = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(), dbQueue: database.dbQueue, workspaceId: workspace.id, projectId: nil, initialName: "Offline recording"
             )

@@ -214,6 +214,16 @@ import GRDB
                 viewModel.currentSummaryDocument?.title == "Discarded summary" && viewModel.store.segments.count == 1 && !viewModel.store
                     .isLoadingInitialPage
             })
+            // Initial display loads independently of the content provider's two ensure calls.
+            // Wait for both resident reads before discarding their bodies, or the late ensure can start a fetch.
+            #expect(await pollUntil {
+                (try? await queue.read { db in
+                    try Int.fetchOne(db, sql: """
+                    SELECT count(*) FROM sync_content_state
+                    WHERE entityId = ? AND entity IN ('summary', 'transcript') AND lastAccessedAt IS NOT NULL
+                    """, arguments: [context.meetingID])
+                }) == 2
+            })
             viewModel.noteText = "Keep this note"
             let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: queue))
             try await SyncTransactionQueue.block(transaction, reason: .conflict, response: Data("{}".utf8), dbQueue: queue)

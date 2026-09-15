@@ -7,10 +7,10 @@
     @MainActor
     struct SummaryGenerationAccountRoutingTests {
         @Test(arguments: [false, true])
-        func manualRequestsUseCachedWorkspaceSettingsBeforeLocalInference(bulk: Bool) async throws {
+        func serverRequestsNeverUseLocalInference(bulk: Bool) async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
-            let connectionID = try attachServerAccount(to: fixture)
+            _ = try attachServerAccount(to: fixture)
             var generatedSettings: [SummaryGenerationSettings] = []
             let viewModel = CaptionViewModel(summaryGenerationRunner: { input in
                 generatedSettings.append(input.generationSettings)
@@ -29,17 +29,13 @@
             for job in jobs {
                 await job.task?.value
             }
-            #expect(generatedSettings.count == jobs.count)
-            for settings in generatedSettings {
-                #expect(settings.sourceAccountConnectionID == connectionID)
-                #expect(settings.languageDisplayName == SummaryLanguage.fr.displayName)
-                #expect(settings.detailLevelInstruction == SummaryDetailLevel.concise.instruction)
-            }
+            #expect(generatedSettings.isEmpty)
+            #expect(!jobs.contains { !$0.hasFailure })
 
         }
 
         @Test
-        func recordedLocalProcessingDoesNotLoadCurrentAccountSettings() async throws {
+        func serverRecordingCannotOverrideSummaryRoutingToLocal() async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
             let connectionID = try attachServerAccount(to: fixture)
@@ -68,7 +64,7 @@
             for job in viewModel.summaryGenerationJobs {
                 await job.task?.value
             }
-            #expect(generationCalls == 1)
+            #expect(generationCalls == 0)
         }
 
         @Test

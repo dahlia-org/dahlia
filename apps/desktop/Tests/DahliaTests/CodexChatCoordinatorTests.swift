@@ -93,11 +93,8 @@ import Foundation
 
             backgroundSession.draft = "Detached question"
             backgroundSession.sendDraft()
-            await waitUntil {
-                await MainActor.run {
-                    backgroundSession.isGenerating && backgroundSession.backendThreadID == "thread-1"
-                }
-            }
+            // Thread creation precedes stream registration; wait for the turn before completing it.
+            await waitUntil { await MainActor.run { backgroundSession.activeTurnID != nil } }
 
             let detachedID = coordinator.popOutDocked()
             coordinator.detachedWindowClosed(sessionID: detachedID)

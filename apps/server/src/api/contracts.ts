@@ -5,7 +5,6 @@ import { problemResponse } from "./problem";
 import { createRoute, OpenAPIHono, z, type RouteConfig } from "@hono/zod-openapi";
 import type { Handler } from "hono";
 import type { AppVariables } from "../app";
-import { accountSettingsSchema, accountSettingsPatchSchema } from "../account-settings-model";
 import { searchSettingsSchema } from "../search/settings-model";
 import { fileUploadSchema, filePatchSchema, fileWireMetadataSchema } from "../files/model";
 import { summaryStartSchema } from "../summary/service";
@@ -40,7 +39,6 @@ const readHeaders = z.object({ range: z.string().optional(), "if-match": z.strin
 const uploadHeaders = z.object({ "content-type": z.string(), "content-length": z.string().regex(/^\d+$/), "content-encoding": z.literal("identity").optional() });
 const recordingUpload = z.object({ id: S.integer, source: z.enum(["mic", "system"]), contentType: z.literal("audio/mp4"), size: S.integer, checksum: z.string(), revision: S.integer.nullable(), contentUrl: z.string() }).openapi("RecordingUpload");
 const jobEnvelope = z.object({ job: S.summaryJob });
-const settingsEnvelope = z.object({ settings: accountSettingsSchema.nullable() }).openapi("AccountSettingsResponse");
 const admin = S.person.extend({ createdAt: S.date, role: z.literal("admin"), removable: z.boolean() }).openapi("Administrator");
 const session = z.object({ id: S.principalId, createdAt: S.date, expiresAt: S.date, userAgent: z.string().nullable(), current: z.boolean() }).openapi("Session");
 function pathParameterSchema(name: string) {
@@ -83,7 +81,7 @@ export type OperationId =
   | "listAdministrators" | "addAdministrator" | "removeAdministrator" | "listServerUsers" | "listServerOrganizations"
   | "getServerOrganization" | "getSearchSettings" | "updateSearchSettings"
   | "listGovernanceWorkspaces" | "confirmWorkspaceDeletion" | "forceDeleteWorkspace"
-  | "getSettings" | "updateSettings" | "getCapabilities" | "listWorkspaces" | "getWorkspace"
+  | "getCapabilities" | "listWorkspaces" | "getWorkspace"
   | "listProjects" | "getProject" | "listMeetings" | "listDeletedMeetings" | "getMeeting" | "listSummaries"
   | "getSummary" | "getLatestSummary" | "listTranscripts" | "getTranscript" | "getLatestTranscript"
   | "getConversationAnalytics"
@@ -115,8 +113,6 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
     members: z.array(z.object({ id: S.principalId, userId: S.principalId, role: z.string(), name: z.string(), email: z.string() })),
     teams: z.array(z.object({ id: S.principalId, name: z.string() })), hasMoreMembers: z.boolean(), hasMoreTeams: z.boolean(),
   })) }, { query: z.object({ membersOffset: z.string().regex(/^\d+$/).optional(), teamsOffset: z.string().regex(/^\d+$/).optional() }).strict() }, browser),
-  getSettings: route("get", "/api/v1/account/settings", "getSettings", "Read current account settings", { 200: json(settingsEnvelope) }),
-  updateSettings: route("patch", "/api/v1/account/settings", "updateSettings", "Update account recognition languages; maximum 8 KiB", { 200: json(settingsEnvelope) }, body(accountSettingsPatchSchema, { analysisLanguages: { scope: "all", identifiers: [] } })),
   getCapabilities: route("get", "/api/v1/capabilities", "getCapabilities", "Discover feature versions; unsupported features are omitted", { 200: json(S.capabilities) }),
   listWorkspaces: route("get", "/api/v1/workspaces", "listWorkspaces", "Accessible Workspaces", { 200: json(S.page(S.workspace)) }, { query: z.object({ organizationId: S.principalId.optional() }).strict() }),
   getWorkspace: route("get", v, "getWorkspace", "Get Workspace", { 200: json(S.workspace) }),
@@ -145,7 +141,7 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   getSnapshot: route("get", `${v}/snapshot`, "getSnapshot", "Bounded snapshot; retain startCursor and catch up before reconciliation", { 200: json(S.snapshot) }, { query: S.pageQuery.extend({ startCursor: S.cursor.optional() }).strict() }),
   search: route("post", `${v}/search`, "search", "Ranked search with explicit truncation indicators; maximum 16 KiB", { 200: json(S.searchResults) }, body(workspaceSearchRequestSchema)),
   textSearch: route("post", `${v}/text-search`, "textSearch", "Exhaustive full-text search pages; cursor invalidates when the ledger changes", { 200: json(S.textSearchResults) }, body(S.textSearchRequest)),
-  getEvents: route("get", "/api/v1/events", "getEvents", "SSE invalidation and account_settings events; recover through canonical reads", { 200: { description: "text/event-stream: invalidation has {cursor}; account_settings has {}. No user content.", content: { "text/event-stream": { schema: z.string() } } } }, { query: z.object({ cursor: S.cursor.optional() }).strict(), headers: z.object({ "last-event-id": z.string().optional() }) }),
+  getEvents: route("get", "/api/v1/events", "getEvents", "SSE invalidation events; recover through canonical reads", { 200: { description: "text/event-stream: invalidation has {cursor}. No user content.", content: { "text/event-stream": { schema: z.string() } } } }, { query: z.object({ cursor: S.cursor.optional() }).strict(), headers: z.object({ "last-event-id": z.string().optional() }) }),
   putTranscriptChunk: route("put", `${m}/transcript-uploads/{patchId}/chunks/{chunkIndex}`, "putTranscriptChunk", "Stage an owner-only transcript patch chunk; SHA-256 of exact request bytes", { 204: empty }, { ...body(transcriptChunkSchema), headers: z.object({ "x-dahlia-content-sha256": z.string().regex(/^[a-fA-F0-9]{64}$/) }) }, [{ bearerAuth: [] }, { trustedProxy: [] }]),
   reserveFileUpload: route("post", "/api/v1/file-uploads", "reserveFileUpload", "Reserve private file staging with a client-generated UUIDv7; maximum 8 KiB", { 201: created(S.file), 200: json(S.file) }, body(fileUploadSchema)),
   putFileContent: route("put", "/api/v1/file-uploads/{fileId}/content", "putFileContent", "Stream reserved file bytes; identical replay succeeds, different content conflicts", { 201: created(S.file), 200: json(S.file) }, uploadBody),

@@ -53,7 +53,8 @@ import Foundation
             session.sendDraft()
 
             #expect(session.isGenerating)
-            #expect(await waitUntil { !session.isGenerating })
+            await session.turnTask?.value
+            #expect(!session.isGenerating)
             #expect(session.messages.last?.text == String(repeating: "x", count: 2048))
         }
 

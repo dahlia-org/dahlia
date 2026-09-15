@@ -16,6 +16,7 @@ enum BatchTranscriptionConfirmationService {
 
     static func confirm(
         sessionId: UUID,
+        processing: RecordingProcessing? = nil,
         languageSelection: BatchTranscriptionLanguageSelection,
         automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
         dbQueue: DatabaseQueue
@@ -56,7 +57,7 @@ enum BatchTranscriptionConfirmationService {
                     db: db
                 )
             }
-            if var processing = try RecordingProcessing.load(sessionID: sessionId, in: db) {
+            if var processing = try processing ?? RecordingProcessing.load(sessionID: sessionId, in: db) {
                 processing.sessionIDs = sessions.map(\.id)
                 try processing.save(sessionID: sessionId, in: db)
             }

@@ -601,15 +601,15 @@ import DahliaRuntimeSupport
                     meetingId: target.meetingID
                 ).insert(db)
             }
-            let local = try await viewModel.summaryGenerationSourceAvailability(
-                meetingIDs: [target.meetingID], dbQueue: queue, location: .local
-            )
-            #expect(!local.sourceCheckFailed && !local.usesServer)
-            #expect(local.hasServerConnection && local.preferredSource == .transcript)
-            #expect(local.generationSettings?.processing.location == .remote)
+            #expect(availability.usesServer)
             #expect(capabilityRequests.withLock { $0 } == 1)
             #expect(transcriptRequests.withLock { $0 } == 0)
             #expect(recordingRequests.withLock { $0 } == 0)
+            try await queue.write { db in
+                var workspace = try WorkspaceRecord.fetchOne(db, key: target.workspaceID)!
+                workspace.generationSettings.processing.location = .local
+                try workspace.update(db)
+            }
 
             availability = try await viewModel.summaryGenerationSourceAvailability(
                 meetingIDs: [target.meetingID], dbQueue: queue

@@ -30,14 +30,14 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .accountsAndWorkspaces: L10n.accountsAndWorkspaces
+        case .accountsAndWorkspaces: L10n.serverConnections
         case .accountPreferences: L10n.generationAndAnalysis
         case .macInference: L10n.macInferencePreferences
         case .general: L10n.general
         case .dahliaAccounts: L10n.dahliaAccount
         case .language: L10n.language
         case .appearance: L10n.appearance
-        case .workspace: L10n.workspace
+        case .workspace: L10n.manageWorkspaces
         case .permissions: L10n.permissions
         case .backups: L10n.backups
         case .search: L10n.search
@@ -112,7 +112,9 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.summaryStyle,
                 L10n.summaryOutputLanguage,
                 L10n.processingLocation,
-                L10n.imageAnalysisLanguages,
+                L10n.transcriptionLanguage,
+                L10n.automaticRecordingProcessing,
+                L10n.automaticDetectionLanguagesTitle,
                 L10n.summaryModel,
                 L10n.transcriptionModel,
                 "AI",
@@ -122,9 +124,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .transcription:
             [
                 L10n.transcription,
-                L10n.transcriptionLanguage,
                 L10n.automaticRecordingStop,
-                L10n.automaticRecordingProcessing,
                 L10n.batchAudioRetentionPeriod,
                 L10n.batchTranscriptionStallTimeout,
                 L10n.audioInput,
@@ -134,7 +134,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .liveSubtitles:
             [L10n.liveSubtitleLanguage, L10n.liveSubtitleTranslation, L10n.translationTargetLanguage, L10n.includeMicrophone]
         case .screenshots:
-            [L10n.automaticScreenshots, L10n.screenshotCacheLimit, L10n.screenshotInterval, L10n.sharedContent, L10n.imageTextLanguages]
+            [L10n.automaticScreenshots, L10n.screenshotCacheLimit, L10n.screenshotInterval, L10n.sharedContent]
         case .calendar:
             ["Google", L10n.macOSCalendar, L10n.calendarSources, L10n.menuBarCalendar, L10n.notifications]
         case .cloudStorage:

@@ -437,7 +437,7 @@ import GRDB
             model.inputText = #"project:"Needle project""#
             model.queryDidChange(using: sidebar)
 
-            #expect(await pollUntil { sidebar.areSearchProjectsLoaded && !sidebar.flatProjects.isEmpty })
+            #expect(await pollUntil { sidebar.areSearchProjectsLoaded && sidebar.isProjectCatalogLoaded && !sidebar.flatProjects.isEmpty })
             model.catalogDidChange(using: sidebar)
             #expect(await pollUntil { !model.isLoading && !model.isProjectCatalogLoading })
 
