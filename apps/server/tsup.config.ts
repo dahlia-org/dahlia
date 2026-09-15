@@ -2,7 +2,13 @@ import { defineConfig } from "tsup";
 
 export default defineConfig({
   clean: true,
-  dts: true,
+  dts: {
+    entry: {
+      index: "src/index.ts",
+      migrations: "src/migration-api.ts",
+      "node-api": "src/node-api.ts",
+    },
+  },
   entry: {
     "db/rotate-encryption-keys": "src/db/rotate-encryption-keys.ts",
     "db/migrate": "src/db/migrate.ts",

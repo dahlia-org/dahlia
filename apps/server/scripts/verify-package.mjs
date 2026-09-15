@@ -168,15 +168,18 @@ try {
       migrateApplicationDatabase,
     } from "@dahlia-ai/server/node";
     import type { App } from "@dahlia-ai/server/client";
+    import type { serverMigrationManifest } from "@dahlia-ai/server/migrations";
 
     declare const backend: AIGatewayBackend;
     declare const context: RequestContext;
+    declare const migrationManifest: typeof serverMigrationManifest;
     const body: RequestBody = { model: "model", input: [], max_output_tokens: 256, stream: true };
     void backend.responses(body, context);
     void backend.listModels({ signal: context.signal });
 
     const client: typeof App | undefined = undefined;
     void migrateApplicationDatabase;
+    void migrationManifest;
     void client;
     void createNodeAuthStore;
     void createPostgresApplicationStore;
