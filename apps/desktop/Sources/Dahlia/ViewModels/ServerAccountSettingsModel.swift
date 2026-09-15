@@ -15,6 +15,10 @@ final class ServerAccountSettingsModel {
         var summaryMethods: [String] = []
         var summaryModels: [ServerSummaryService.Model] = []
         var modelErrorMessage: String?
+
+        var isModelCatalogLoaded: Bool {
+            isAvailable && !isLoading && errorMessage == nil && modelErrorMessage == nil
+        }
     }
 
     private struct Connection: Equatable {

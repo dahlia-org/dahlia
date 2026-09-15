@@ -146,11 +146,14 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
   </section>;
   return <>
     <p>{uiText("Shared with everyone in this workspace. Only admins can change these defaults.", "このワークスペースの全員で共有します。既定値を変更できるのは管理者のみです。")}</p>
-    <p className="settings-save-status" role="status" data-saved={saved && !saving}>{saving ? uiText("Saving changes…", "変更を保存中…") : saved ? uiText("Changes saved", "変更を保存しました") : uiText("Changes save automatically and apply to your next summary.", "変更は自動で保存され、次回の要約から適用されます。")}</p>
+    <p className="settings-save-status" role="status" data-saved={saved && !saving}>{saving ? uiText("Saving changes…", "変更を保存中…") : saved ? uiText("Changes saved", "変更を保存しました") : uiText("Changes save automatically.", "変更は自動で保存されます。")}</p>
     {(error || query.error) && <p role="alert" className="error">{error ?? query.error?.message} {query.error && <button className="secondary" onClick={query.reload}>{uiText("Retry", "再試行")}</button>}</p>}
     <section className="section-block settings-section">
-      <h2 className="section-label">{uiText("Results", "生成結果")}</h2>
+      <h2 className="section-label">{uiText("Summary and image descriptions", "要約と画像の説明")}</h2>
       <fieldset className="account-settings" disabled={editingDisabled}>
+        <p>{uiText("Summary processing: Server", "要約の処理場所：サーバー")}</p>
+        <p>{uiText("The original transcript is synchronized and summarized on the server, including transcripts created in Dahlia for Mac.", "Dahlia for Macで作成した文字起こしも、原文を同期してからサーバーで要約します。")}</p>
+        {!remoteSupported && !capabilities.loading && !capabilities.error && <p>{uiText("Summary generation is unavailable on this server.", "このサーバーでは要約生成を利用できません。")}</p>}
         <label>{uiText("Summary style", "まとめ方")}<Select value={summary.style}
           onValueChange={(value) => void save({ summary: { style: value as WorkspaceGenerationSettings["summary"]["style"] } })}>
           {summaryStyles.map((style) => <option key={style} value={style}>{detailLabel(summaryStyleDetail(style))}</option>)}
@@ -164,16 +167,15 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
       </fieldset>
     </section>
     <section className="section-block settings-section">
-      <h2 className="section-label">{uiText("Transcription and summary", "文字起こしと要約")}</h2>
+      <h2 className="section-label">{uiText("Transcription", "文字起こし")}</h2>
       <fieldset className="account-settings" disabled={editingDisabled}>
-        <label>{uiText("Processing location", "処理する場所")}<Select value={processing.location}
+        <label>{uiText("Transcription location", "文字起こしの処理場所")}<Select value={processing.location}
           onValueChange={(value) => void save({ processing: { ...processing, location: value as WorkspaceGenerationSettings["processing"]["location"] } })}>
           <option value="local">{uiText("Dahlia for Mac", "Dahlia for Mac")}</option>
           {(remoteTranscriptionSupported || processing.location === "remote") && <option value="remote" disabled={!remoteTranscriptionSupported}>
             {uiText("Server", "サーバー")}</option>}
         </Select></label>
-        {processing.location === "local" && <p>{uiText("Use Dahlia for Mac for local transcription. The original transcript is synchronized and summarized on the server.", "ローカル文字起こしはDahlia for Macで実行してください。原文を同期してサーバーで要約します。")}</p>}
-        <p>{uiText("Summary processing: Server", "要約の処理場所：サーバー")}</p>
+        {processing.location === "local" && <p>{uiText("Use Dahlia for Mac for local transcription.", "ローカル文字起こしはDahlia for Macで実行してください。")}</p>}
         <label>{uiText("Transcription language", "文字起こし言語")}<input key={transcription.localeIdentifier}
           defaultValue={transcription.localeIdentifier} list="transcription-locales" placeholder="ja-JP"
           onBlur={(event) => {
@@ -204,18 +206,27 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
           onChange={(event) => void saveTranscription({ automaticLanguageDetection: event.target.checked })} /></label>
         <label>{uiText("Live transcript draft", "録音中に文字起こしの下書きを作成")}<input type="checkbox" checked={transcription.liveTranscriptDraft}
           onChange={(event) => void saveTranscription({ liveTranscriptDraft: event.target.checked })} /></label>
-        <label>{uiText("Process after recording", "録音終了後に文字起こし・要約")}<input type="checkbox" checked={settings?.automaticProcessing ?? true}
-          onChange={(event) => void save({ automaticProcessing: event.target.checked })} /></label>
         {capabilities.loading && <p role="status">{uiText("Checking server capabilities…", "サーバー機能を確認中…")}</p>}
-        {!remoteSupported && !capabilities.loading && <p>{uiText("Remote processing is unavailable on this server.", "このサーバーではリモート処理を利用できません。")}</p>}
+        {!remoteTranscriptionSupported && !capabilities.loading && !capabilities.error && <p>{uiText("Server transcription is unavailable on this server.", "このサーバーでは文字起こしを実行できません。")}</p>}
         {capabilities.error && <p role="alert" className="error">{capabilities.error.message} <button className="secondary"
           onClick={capabilities.reload}>{uiText("Retry", "再試行")}</button></p>}
+      </fieldset>
+    </section>
+    <section className="section-block settings-section">
+      <h2 className="section-label">{uiText("After recording", "録音後の自動処理")}</h2>
+      <fieldset className="account-settings" disabled={editingDisabled}>
+        <label>{uiText("Automatically transcribe and summarize after recording", "録音終了後に文字起こし・要約を自動実行")}<input type="checkbox" checked={settings?.automaticProcessing ?? true}
+          onChange={(event) => void save({ automaticProcessing: event.target.checked })} /></label>
+      </fieldset>
+    </section>
+    {remoteSupported && <section className="section-block settings-section">
+      <fieldset className="account-settings" disabled={editingDisabled}>
         {catalog.data && ((remote.summaryModel && !selectedSummaryModel)
           || (processing.location === "remote" && transcribesFirst && remote.transcriptionModel && !selectedTranscriptionModel)) && <p role="status">{uiText(
           "A selected model is unavailable. Open advanced settings to change it or choose Automatic.",
           "利用できないモデルが指定されています。詳細設定で変更するか「自動」に戻してください。",
         )}</p>}
-        {remoteSupported && <details className="settings-advanced">
+        <details className="settings-advanced">
           <summary>{uiText("Advanced server settings", "サーバー処理の詳細設定")}</summary>
           <p>{uiText(
             "These choices apply automatically after new recordings. Manual generation uses the source selected on the meeting screen.",
@@ -247,9 +258,9 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
           {catalog.error && <p role="alert" className="error">{catalog.error.message}</p>}
           {!catalog.loading && !models.length && <p>{uiText("No models available", "利用可能なモデルがありません")}</p>}
           <button className="secondary" onClick={catalog.reload} disabled={catalog.loading}>{uiText("Reload models", "モデル一覧を再取得")}</button>
-        </details>}
+        </details>
       </fieldset>
-    </section>
+    </section>}
   </>;
 }
 
@@ -311,6 +322,7 @@ export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId:
     && isSummaryModel(entry.id, catalog.data!, selectedSource ?? "transcript")) ?? [];
   const selectedModelID = model ?? workspaceQuery.data?.generationSettings.processing.remote.summaryModel ?? "";
   const selectedModel = models.find((entry) => entry.id === selectedModelID || selectedModelID.endsWith(`.${entry.id}`));
+  const isModelUnavailable = !!selectedSource && !!catalog.data && !catalog.loading && !catalog.error && !!selectedModelID && !selectedModel;
   const efforts = catalog.data?.models.find((entry) => entry.slug === selectedModel?.id)?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
   const selectedEffort = effort ?? workspaceQuery.data?.generationSettings.processing.remote.reasoningEffort ?? "";
 
@@ -426,7 +438,7 @@ export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId:
       <label>{uiText("Summary model", "要約モデル")}<Select value={selectedModel?.id ?? selectedModelID} disabled={catalog.loading}
         onValueChange={(value) => { setModel(value); setEffort(""); clearPendingRequest(); }}>
         <option value="">{uiText("Automatic", "自動")}</option>
-        {selectedModelID && !selectedModel && <option value={selectedModelID} disabled>{selectedModelID}{catalog.data && ` — ${uiText("Unavailable", "利用不可")}`}</option>}
+        {selectedModelID && !selectedModel && <option value={selectedModelID} disabled>{selectedModelID}{isModelUnavailable && ` — ${uiText("Unavailable", "利用不可")}`}</option>}
         {models.map((entry) => <option key={entry.id} value={entry.id}>{entry.display_name}</option>)}
       </Select></label>
       <label>{uiText("Reasoning effort", "推論強度")}<Select value={selectedEffort}
@@ -444,7 +456,7 @@ export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId:
       <option value="">{uiText("Workspace default", "ワークスペース設定")}</option>
       {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
     </Select>
-    <button className="primary" disabled={starting || active || query.loading || workspaceQuery.loading || !selectedSourceAvailable || (!!catalog.data && !!selectedModelID && !selectedModel)} onClick={() => void start()}>
+    <button className="primary" disabled={starting || active || query.loading || workspaceQuery.loading || !selectedSourceAvailable || isModelUnavailable} onClick={() => void start()}>
       {starting ? uiText("Starting…", "開始中…") : buttonLabel}
     </button>
     </div>

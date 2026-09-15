@@ -93,18 +93,25 @@ it("explains the selected style and the data sent by Mac processing", () => {
   }));
   const html = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
   expect(html).toContain("Topics, background, reasoning, open questions, and next steps.");
-  expect(html).toContain("The original transcript is synchronized and summarized on the server.");
+  expect(html).toContain("The original transcript is synchronized and summarized on the server, including transcripts created in Dahlia for Mac.");
+  const transcriptionSection = html.split('<h2 class="section-label">Transcription</h2>')[1]?.split("</section>")[0];
+  expect(transcriptionSection).toContain("Transcription location");
+  expect(transcriptionSection).not.toContain("Summary processing: Server");
+  expect(transcriptionSection).not.toContain("Automatically transcribe and summarize after recording");
+  expect(html).toContain('<h2 class="section-label">Summary and image descriptions</h2>');
+  expect(html).toContain('<h2 class="section-label">After recording</h2>');
   expect(html).not.toContain("Advanced server settings");
 });
 
 it.each([
-  ["audio", undefined, true],
-  ["audio", "gemini-3-8-flash", true],
-  ["audio", "gpt-5-6-terra", false],
-  ["transcript", "gpt-5-6-terra", true],
-] as const)("validates the Workspace default model for %s (%s)", (source, summaryModel, available) => {
+  ["audio", undefined, true, false],
+  ["audio", "gemini-3-8-flash", true, false],
+  ["audio", "gpt-5-6-terra", false, false],
+  ["transcript", "gpt-5-6-terra", true, false],
+  ["audio", "gpt-5-6-terra", false, true],
+] as const)("validates %s (model: %s, available: %s, empty catalog: %s)", (source, summaryModel, available, emptyCatalog) => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: url === "/api/v1/models" ? modelList([{ id: "gemini-3-8-flash" }, { id: "gpt-5-6-terra" }]) : typeof url === "object" && url.key.startsWith('["getCapabilities"')
+    data: url === "/api/v1/models" ? modelList(emptyCatalog ? [] : [{ id: "gemini-3-8-flash" }, { id: "gpt-5-6-terra" }]) : typeof url === "object" && url.key.startsWith('["getCapabilities"')
       ? { meetingSummaryGeneration: { version: 2, sources: [source], completeRecordings: true } }
       : typeof url === "object" && url.key.startsWith('["getWorkspace"')
         ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: {
@@ -124,9 +131,11 @@ it.each([
   expect(html).not.toContain("This workspace processes summaries in Dahlia for Mac.");
 });
 
-it.each(["loading", "error"] as const)("keeps generation available while the model catalog is %s", (state) => {
+it.each([
+  ["loading", false], ["error", false], ["loading", true], ["error", true],
+] as const)("keeps generation available while the model catalog is %s (cached: %s)", (state, cached) => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: url === "/api/v1/models" ? undefined : typeof url === "object" && url.key.startsWith('["getCapabilities"')
+    data: url === "/api/v1/models" ? (cached ? modelList([]) : undefined) : typeof url === "object" && url.key.startsWith('["getCapabilities"')
       ? { meetingSummaryGeneration: { version: 2, sources: ["transcript"], completeRecordings: true } }
       : typeof url === "object" && url.key.startsWith('["getWorkspace"')
         ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: {
@@ -263,7 +272,7 @@ it.each([true, false])("filters audio choices to available audio-capable Gemini 
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
   const html = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
-  expect(html).toContain("Processing location");
+  expect(html).toContain("Transcription location");
   expect(html).not.toContain('value="gpt-5-6-terra"'); expect(html).not.toContain('value="codex-auto-review"');
   expect(html).not.toContain('value="gemini-unknown"');
   if (available) { expect(html).toContain('value="gemini-3-8-flash" selected'); expect(html).toContain('value="gemini-3-7-flash"'); }

@@ -78,7 +78,7 @@ struct SummaryGenerationConfirmationView: View {
                         Text("\(L10n.workspaceGenerationDefault) — \(modelName(defaultModel))").tag(String?.none)
                         if usesRemote { Text(L10n.automaticModelPreference).tag(Optional("")) }
                         if let model = overrides.model, !model.isEmpty, !modelIDs.contains(model) {
-                            Text("\(model) — \(L10n.unavailableModelPreference)").tag(Optional(model))
+                            Text(isModelCatalogLoaded ? "\(model) — \(L10n.unavailableModelPreference)" : model).tag(Optional(model))
                         }
                         ForEach(modelIDs, id: \.self) { id in Text(modelName(id)).tag(Optional(id)) }
                     }
@@ -188,10 +188,9 @@ struct SummaryGenerationConfirmationView: View {
         overrides.isModelAvailable(defaultModel: defaultModel, modelIDs: modelIDs, allowsAutomatic: usesRemote)
     }
 
-    // An empty catalog before the first load or after a failed one is "not known yet", not "unavailable".
     private var isModelCatalogLoaded: Bool {
-        guard modelError == nil else { return false }
-        if usesRemote { return serverState?.isAvailable == true }
+        guard !isLoadingSources, selectedSource != nil, modelError == nil else { return false }
+        if usesRemote { return serverState?.isModelCatalogLoaded == true }
         return catalog.hasAttemptedLoad && !catalog.isLoading
     }
 

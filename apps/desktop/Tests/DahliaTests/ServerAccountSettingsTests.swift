@@ -7,6 +7,19 @@
     @MainActor
     struct ServerAccountSettingsTests {
         @Test
+        func modelCatalogDistinguishesUnknownFailedAndLoadedEmptyStates() {
+            var state = ServerAccountSettingsModel.State()
+            #expect(!state.isModelCatalogLoaded)
+            state.isAvailable = true
+            #expect(state.summaryModels.isEmpty && state.isModelCatalogLoaded)
+            state.modelErrorMessage = "catalog failed"
+            #expect(!state.isModelCatalogLoaded)
+            state.modelErrorMessage = nil
+            state.errorMessage = "capabilities failed"
+            #expect(!state.isModelCatalogLoaded)
+        }
+
+        @Test
         func refreshDoesNotWriteSettingsOrReloadModelCatalog() async {
             let account = connection()
             let requests = Mutex<[String]>([])
@@ -79,12 +92,14 @@
             // Interrupt the explicit reload during capabilities or models.
             let reload = model.refresh(connectionID: account.id, reloadModels: true)
             await gate.waitUntilStarted()
+            #expect(!model.state(for: account.id).isModelCatalogLoaded)
             await model.refresh(connectionID: account.id)?.value
             #expect(model.state(for: account.id).summaryModels.map(\.id) == ["refreshed"])
             await gate.release()
             await reload?.value
             #expect(model.state(for: account.id).summaryModels.map(\.id) == ["refreshed"])
             #expect(model.state(for: account.id).isAvailable)
+            #expect(model.state(for: account.id).isModelCatalogLoaded)
             let completedReads = modelReads.withLock { $0 }
             await model.refresh(connectionID: account.id)?.value
             #expect(modelReads.withLock { $0 } == completedReads)
