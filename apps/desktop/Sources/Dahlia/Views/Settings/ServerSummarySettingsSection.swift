@@ -27,7 +27,7 @@ struct ServerSummarySettingsSection: View {
 
     var body: some View {
         Section {
-            if state.modelErrorMessage == nil, !state.isLoading,
+            if state.isModelCatalogLoaded,
                (remote.summaryModel != nil && selectedModel == nil)
                || (!usesLocalTranscription && transcribesFirst && remote.transcriptionModel != nil && selectedTranscriptionModel == nil) {
                 SettingsStatusMessage(text: L10n.settingsCheckAdvancedModels, systemImage: "exclamationmark.triangle", tint: .orange)
@@ -63,14 +63,14 @@ struct ServerSummarySettingsSection: View {
                 Picker(L10n.summaryModel, selection: summaryModelSelection) {
                     Text(L10n.automaticModelPreference).tag("")
                     if let saved = remote.summaryModel, selectedModel == nil {
-                        Text("\(saved) — \(L10n.unavailableModelPreference)").tag(saved)
+                        Text(state.isModelCatalogLoaded ? "\(saved) — \(L10n.unavailableModelPreference)" : saved).tag(saved)
                     }
                     ForEach(models) { Text($0.displayName).tag($0.id) }
                 }
                 Picker(L10n.reasoningEffort, selection: effortSelection) {
                     Text(L10n.automaticModelPreference).tag("")
                     if let saved = remote.reasoningEffort, !efforts.contains(saved) {
-                        Text("\(saved) — \(L10n.checkModelPreference)").tag(saved)
+                        Text(state.isModelCatalogLoaded ? "\(saved) — \(L10n.checkModelPreference)" : saved).tag(saved)
                     }
                     ForEach(efforts, id: \.self) { Text($0).tag($0) }
                 }
@@ -78,14 +78,14 @@ struct ServerSummarySettingsSection: View {
                     Picker(L10n.transcriptionModel, selection: transcriptionModelSelection) {
                         Text(L10n.automaticModelPreference).tag("")
                         if let saved = remote.transcriptionModel, selectedTranscriptionModel == nil {
-                            Text("\(saved) — \(L10n.unavailableModelPreference)").tag(saved)
+                            Text(state.isModelCatalogLoaded ? "\(saved) — \(L10n.unavailableModelPreference)" : saved).tag(saved)
                         }
                         ForEach(audioModels) { Text($0.displayName).tag($0.id) }
                     }
                 }
                 if let error = state.modelErrorMessage {
                     SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle.fill", tint: .red)
-                } else if models.isEmpty {
+                } else if state.isModelCatalogLoaded, models.isEmpty {
                     Text(L10n.serverSummaryNoModels).foregroundStyle(.secondary)
                 }
                 Button(L10n.serverSummaryReloadModels) { model.refresh(connectionID: connectionID, reloadModels: true) }

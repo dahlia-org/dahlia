@@ -20,6 +20,34 @@
         }
 
         @Test
+        func capabilitiesFailureLeavesModelCatalogUnknownUntilRecovery() async {
+            let account = connection()
+            let fails = Mutex(true)
+            let modelReads = Mutex(0)
+            ImageURLProtocol.register(origin: account.origin) { request in
+                if request.url!.path == "/api/v1/capabilities" {
+                    if fails.withLock({ $0 }) { return (503, [:], Data()) }
+                    return (200, [:], Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8))
+                }
+                modelReads.withLock { $0 += 1 }
+                return (200, [:], Data(#"{"data":[],"models":[]}"#.utf8))
+            }
+            defer { ImageURLProtocol.remove(origin: account.origin) }
+            let model = model()
+            model.updateConnections([account])
+            await model.refresh(connectionID: account.id)?.value
+            let failed = model.state(for: account.id)
+            #expect(!failed.isModelCatalogLoaded)
+            #expect(!failed.isAvailable && failed.errorMessage != nil)
+            #expect(failed.modelErrorMessage == nil && modelReads.withLock { $0 } == 0)
+            fails.withLock { $0 = false }
+            await model.refresh(connectionID: account.id)?.value
+            #expect(model.state(for: account.id).isModelCatalogLoaded)
+            #expect(model.state(for: account.id).summaryModels.isEmpty)
+            model.updateConnections([])
+        }
+
+        @Test
         func refreshDoesNotWriteSettingsOrReloadModelCatalog() async {
             let account = connection()
             let requests = Mutex<[String]>([])
