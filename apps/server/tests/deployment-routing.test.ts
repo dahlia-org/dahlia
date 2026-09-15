@@ -162,14 +162,14 @@ describe("deployment routing", () => {
   it("uses the current database variables in Server CI", () => {
     const workflow = readText("../../../.github/workflows/server-ci.yml");
     const jobs = workflow.slice(workflow.indexOf("jobs:\n") + "jobs:\n".length);
-    const jobIds = [...jobs.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)].map((match) => match[1]!);
+    const jobIds = [...jobs.matchAll(/^ {2}([A-Za-z_][A-Za-z0-9_-]*):$/gm)].map((match) => match[1]!);
     const validationJobIds = jobIds.filter((jobId) => jobId !== "server-validation");
     const application = workflow.slice(workflow.indexOf("  application-validation:"), workflow.indexOf("  database-validation:"));
     const database = workflow.slice(workflow.indexOf("  database-validation:"), workflow.indexOf("  server-validation:"));
     const gate = workflow.slice(workflow.indexOf("  server-validation:"));
     const gateNeeds = gate.slice(gate.indexOf("    needs:"), gate.indexOf("    runs-on:"));
-    const neededJobIds = [...gateNeeds.matchAll(/^ {6}- ([a-z][a-z0-9-]*)$/gm)].map((match) => match[1]!);
-    const guardedJobIds = [...gate.matchAll(/test "\$\{\{ needs\.([a-z][a-z0-9-]*)\.result \}\}" = success/g)]
+    const neededJobIds = [...gateNeeds.matchAll(/^ {6}- ([A-Za-z_][A-Za-z0-9_-]*)$/gm)].map((match) => match[1]!);
+    const guardedJobIds = [...gate.matchAll(/test "\$\{\{ needs\.([A-Za-z_][A-Za-z0-9_-]*)\.result \}\}" = success/g)]
       .map((match) => match[1]!);
     expect(workflow).toContain("DAHLIA_DATABASE_TYPE: postgres");
     expect(workflow).toContain("DAHLIA_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia");
