@@ -52,6 +52,21 @@
         }
 
         @Test
+        func sourceChangesRejectUnavailableModelsIncludingWorkspaceDefaults() {
+            var overrides = SummaryGenerationOptions.Overrides()
+            overrides.selectModel("transcript-only", defaultReasoningEffort: "")
+            #expect(overrides.isModelAvailable(defaultModel: "transcript-only", modelIDs: ["transcript-only", "audio"], allowsAutomatic: true))
+            #expect(!overrides.isModelAvailable(defaultModel: "transcript-only", modelIDs: ["audio"], allowsAutomatic: true))
+            overrides.selectModel(nil, defaultReasoningEffort: nil)
+            #expect(!overrides.isModelAvailable(defaultModel: "transcript-only", modelIDs: ["audio"], allowsAutomatic: true))
+            overrides.selectModel("audio", defaultReasoningEffort: "")
+            #expect(overrides.isModelAvailable(defaultModel: "transcript-only", modelIDs: ["audio"], allowsAutomatic: true))
+            overrides.selectModel("", defaultReasoningEffort: "")
+            #expect(overrides.isModelAvailable(defaultModel: "transcript-only", modelIDs: ["audio"], allowsAutomatic: true))
+            #expect(!overrides.isModelAvailable(defaultModel: "transcript-only", modelIDs: ["audio"], allowsAutomatic: false))
+        }
+
+        @Test
         func mergingCombinesExports() {
             let merged = SummaryGenerationOptions.merging([
                 SummaryGenerationOptions(

@@ -10,6 +10,11 @@ struct SummaryGenerationOptions: Codable, Equatable {
         var model: String?
         var reasoningEffort: String?
 
+        func isModelAvailable(defaultModel: String, modelIDs: [String], allowsAutomatic: Bool) -> Bool {
+            let effectiveModel = model ?? defaultModel
+            return effectiveModel.isEmpty ? allowsAutomatic : modelIDs.contains(effectiveModel)
+        }
+
         mutating func selectModel(_ model: String?, defaultReasoningEffort: String?) {
             guard self.model != model else { return }
             self.model = model

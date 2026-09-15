@@ -129,7 +129,8 @@ struct SummaryGenerationConfirmationView: View {
                     .keyboardShortcut(.cancelAction)
                 Button(actionTitle, action: generateSummary)
                     .keyboardShortcut(.defaultAction)
-                    .disabled((!usesRemote && overrides.model != nil && overrides.model?.nilIfBlank == nil) || hasIncompatibleEffort ||
+                    .disabled(!overrides
+                        .isModelAvailable(defaultModel: defaultModel, modelIDs: modelIDs, allowsAutomatic: usesRemote) || hasIncompatibleEffort ||
                         isLoadingSources || sourceErrorMessage != nil ||
                         (selectedSource.map { sourceAvailability?.isAvailable($0) != true } ?? true))
             }
