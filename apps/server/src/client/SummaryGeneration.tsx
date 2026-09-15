@@ -110,6 +110,7 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const catalog = useLiveJSON<GatewayModelList>(remoteSupported ? "/api/v1/models" : undefined, "manual");
+  const isModelCatalogLoaded = !!catalog.data && !catalog.loading && !catalog.error;
   const settings = query.data?.generationSettings;
   const editingDisabled = saving || query.loading || !!query.error || query.data?.role !== "admin";
 
@@ -221,7 +222,7 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
     </section>
     {remoteSupported && <section className="section-block settings-section">
       <fieldset className="account-settings" disabled={editingDisabled}>
-        {catalog.data && ((remote.summaryModel && !selectedSummaryModel)
+        {isModelCatalogLoaded && ((remote.summaryModel && !selectedSummaryModel)
           || (processing.location === "remote" && transcribesFirst && remote.transcriptionModel && !selectedTranscriptionModel)) && <p role="status">{uiText(
           "A selected model is unavailable. Open advanced settings to change it or choose Automatic.",
           "利用できないモデルが指定されています。詳細設定で変更するか「自動」に戻してください。",
@@ -240,7 +241,7 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
           <label>{uiText("Summary model", "要約モデル")}<Select value={selectedSummaryModel?.id ?? remote.summaryModel ?? ""} disabled={catalog.loading}
             onValueChange={(value) => void saveRemote({ summaryModel: value || undefined })}>
             <option value="">{uiText("Automatic", "自動")}</option>
-            {remote.summaryModel && !selectedSummaryModel && <option value={remote.summaryModel} disabled>{remote.summaryModel} — {uiText("Unavailable for this workflow", "この方式では利用不可")}</option>}
+            {remote.summaryModel && !selectedSummaryModel && <option value={remote.summaryModel} disabled>{remote.summaryModel}{isModelCatalogLoaded && ` — ${uiText("Unavailable for this workflow", "この方式では利用不可")}`}</option>}
             {models.map((model) => <option key={model.id} value={model.id}>{model.display_name}</option>)}
           </Select></label>
           <label>{uiText("Reasoning effort", "推論強度")}<Select value={remote.reasoningEffort ?? ""}
@@ -252,11 +253,11 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
           {processing.location === "remote" && transcribesFirst && <label>{uiText("Transcription model", "文字起こしモデル")}<Select
             value={selectedTranscriptionModel?.id ?? remote.transcriptionModel ?? ""} onValueChange={(value) => void saveRemote({ transcriptionModel: value || undefined })}>
             <option value="">{uiText("Automatic", "自動")}</option>
-            {remote.transcriptionModel && !selectedTranscriptionModel && <option value={remote.transcriptionModel} disabled>{remote.transcriptionModel} — {uiText("Unavailable", "利用不可")}</option>}
+            {remote.transcriptionModel && !selectedTranscriptionModel && <option value={remote.transcriptionModel} disabled>{remote.transcriptionModel}{isModelCatalogLoaded && ` — ${uiText("Unavailable", "利用不可")}`}</option>}
             {audioModels.map((entry) => <option key={entry.id} value={entry.id}>{entry.display_name}</option>)}
           </Select></label>}
           {catalog.error && <p role="alert" className="error">{catalog.error.message}</p>}
-          {!catalog.loading && !models.length && <p>{uiText("No models available", "利用可能なモデルがありません")}</p>}
+          {isModelCatalogLoaded && !models.length && <p>{uiText("No models available", "利用可能なモデルがありません")}</p>}
           <button className="secondary" onClick={catalog.reload} disabled={catalog.loading}>{uiText("Reload models", "モデル一覧を再取得")}</button>
         </details>
       </fieldset>

@@ -151,6 +151,10 @@ it.each([
   expect(html).toContain('<button class="primary">Generate summary</button>');
   expect(html).toContain('<option value="gpt-5-6-terra" disabled="" selected="">gpt-5-6-terra</option>');
   expect(html).not.toContain("Unavailable");
+  const settingsHTML = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
+  expect(settingsHTML).not.toContain("Unavailable");
+  expect(settingsHTML).not.toContain("A selected model is unavailable");
+  expect(settingsHTML).not.toContain("No models available");
 });
 
 it.each(["loading", "error"] as const)("does not use stale complete recordings while availability is %s", (state) => {
