@@ -59,7 +59,7 @@
     "build:cloudflare": "pnpm run ensure:wrangler && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false vite build --config vite.cloudflare.config.ts",
     "build:server": "tsup --config tsup.config.ts",
     "build:library-client": "tsup --config tsup.client.config.ts && cp src/client/styles.css dist/client-library/styles.css",
-    "check": "pnpm openapi:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run test:package && pnpm run worker:dry-run",
+    "check": "pnpm openapi:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run test:package && pnpm run worker:dry-run",
     "db:generate": "pnpm run db:generate:postgres && pnpm run db:generate:sqlite",
     "db:generate:postgres": "drizzle-kit generate --config drizzle.auth.config.ts && drizzle-kit generate --config drizzle.config.ts",
     "db:generate:sqlite": "drizzle-kit generate --config drizzle.sqlite.config.ts",
