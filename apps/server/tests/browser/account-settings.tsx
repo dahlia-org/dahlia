@@ -84,7 +84,7 @@ async function run() {
   const first = createRoot(document.getElementById("root")!);
   first.render(<ServerSummarySettings workspaceId={workspaceId} onSave={save} />);
   await ready();
-  await choose("Processing location", "local");
+  await choose("Transcription location", "local");
   await until(() => settings.processing.location === "local");
   first.unmount();
 
