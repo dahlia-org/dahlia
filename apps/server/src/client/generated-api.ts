@@ -2719,6 +2719,8 @@ export interface components {
         GovernanceWorkspace: {
             workspaceId: string;
             name: string;
+            icon?: string | null;
+            color?: string | null;
             revision: number;
             creatorId: string;
         };
@@ -3034,6 +3036,8 @@ export interface operations {
             query?: {
                 /** @description 0–1000000. Fixed page size 100. */
                 offset?: string;
+                /** @description Case-insensitive name or email substring. */
+                q?: string;
             };
             header?: never;
             path?: never;

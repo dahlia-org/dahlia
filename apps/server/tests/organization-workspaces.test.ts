@@ -78,7 +78,7 @@ async function teamWorkspace(env: Awaited<ReturnType<typeof setup>>, actor: Iden
   const org = await createOrganization(actor, "Team", `team-${uuidV7()}`);
   const workspaceId = uuidV7();
   await store.sync.withIdentity(actor, (scoped) => scoped.commitTransaction(tx(workspaceId, [{ id: uuidV7(), entity: "workspace", action: "create", entityId: workspaceId,
-    baseRevision: null, data: { organizationId: org.id, encryption, name: "Team workspace", createdAt: new Date() } }])));
+    baseRevision: null, data: { organizationId: org.id, encryption, name: "Team workspace", icon: "briefcase", color: "blue", createdAt: new Date() } }])));
   return { org, workspaceId };
 }
 
@@ -602,7 +602,7 @@ describe("Organization-owned Workspaces", () => {
     await store.sync.withIdentity(a, (scoped) => scoped.deletePermission(workspaceId, "user", a.userId));
     expect(await store.sync.withIdentity(a, (scoped) => scoped.getWorkspace(workspaceId))).toBeNull();
     const listed = await store.sync.withIdentity(a, (scoped) => scoped.listGovernanceWorkspaces(org.id));
-    expect(listed.items).toEqual([{ workspaceId, name: "Team workspace", revision: 1, creatorId: a.userId }]);
+    expect(listed.items).toEqual([{ workspaceId, name: "Team workspace", icon: "briefcase", color: "blue", revision: 1, creatorId: a.userId }]);
     expect((await read("SELECT name FROM workspaces WHERE workspace_id = ?", workspaceId))[0]).toEqual({ name: "" });
     await expect(store.sync.withIdentity(c, (scoped) => scoped.listGovernanceWorkspaces(org.id))).rejects.toThrow("organization_admin_required");
     const confirmation = await store.sync.withIdentity(a, (scoped) => scoped.confirmWorkspaceDeletion(org.id, workspaceId));

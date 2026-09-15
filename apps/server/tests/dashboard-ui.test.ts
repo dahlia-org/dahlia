@@ -186,7 +186,8 @@ describe("desktop-style meeting layout", () => {
     expect(footer).toContain("All accessible Workspaces");
     expect(footer).not.toContain('href="/workspaces"');
     expect(navigation).toContain('href="/workspaces"');
-    expect(footer).toContain('<strong>Organizations</strong>');
+    expect(footer).not.toContain('<strong>Organizations</strong>');
+    expect(footer).not.toContain("aria-pressed");
     expect(footer).toContain('class="menu-account" href="/dashboard"');
     expect(footer).toContain('class="menu-icon"');
     expect(footer).toContain("Sign out");
@@ -213,6 +214,15 @@ describe("desktop-style meeting layout", () => {
     expect(html).not.toContain('href="/admin/members"');
   });
 
+  it("requests every accessible Workspace without an Organization filter", () => {
+    const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue({ data: undefined, loading: true, error: undefined, reload: vi.fn(), replace: vi.fn() });
+    const session = { user: { id: "user" }, capabilities: { sync: true, sharing: false, sessions: false, admin: false } };
+    try {
+      renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement("div") }));
+      expect(query).toHaveBeenCalledWith(expect.objectContaining({ key: '["listWorkspaces",{}]' }));
+    } finally { query.mockRestore(); }
+  });
+
   it.each([false, true])("keeps server administration outside the account menu with sharing=%s", (sharing) => {
     vi.stubGlobal("navigator", { language: "ja-JP" });
     const session = { user: { id: "user", name: "Example User" },  capabilities: { sync: true, sharing, sessions: true, admin: true } };
@@ -220,13 +230,13 @@ describe("desktop-style meeting layout", () => {
       session, brand: "Dahlia", children: createElement("a", { href: "/dashboard/settings" }, "設定"),
     }) }));
     const [navigation, footer] = html.split('<div class="sidebar-footer">');
-    for (const path of ["/admin/organizations", "/admin/users", "/admin/settings"]) {
+    for (const path of ["/admin/orgs", "/admin/users", "/admin/settings"]) {
       expect(navigation).toContain(`href="${path}"`);
       expect(footer).not.toContain(`href="${path}"`);
     }
     expect(navigation).toContain("サーバー設定");
     expect(footer?.includes('href="/orgs"')).toBe(sharing);
-    if (sharing) expect(footer).toContain("所属組織一覧");
+    if (sharing) expect(footer).toContain("参加している組織");
     expect(footer).toContain("設定");
   });
 });
@@ -424,10 +434,11 @@ describe("dashboard navigation", () => {
     expect(resolveDashboardRoute("/admin", admin)).toEqual({ redirect: "/admin/settings" });
     expect(resolveDashboardRoute("/admin/models", admin)).toEqual({ redirect: "/dashboard" });
     expect(resolveDashboardRoute("/admin/members", admin)).toEqual({ redirect: "/admin/users" });
-    for (const [path, page] of [["/admin/users", "admin-users"], ["/admin/organizations", "admin-organizations"], ["/admin/settings", "admin-settings"]]) {
+    for (const [path, page] of [["/admin/users", "admin-users"], ["/admin/orgs", "admin-organizations"], ["/admin/settings", "admin-settings"]]) {
       expect(resolveDashboardRoute(path!, admin)).toEqual({ page });
       expect(resolveDashboardRoute(path!, user)).toEqual({ redirect: "/dashboard" });
     }
+    expect(resolveDashboardRoute("/admin/organizations", admin)).toEqual({ redirect: "/dashboard" });
     expect(resolveDashboardRoute("/admin/models", user)).toEqual({ redirect: "/dashboard" });
   });
 
@@ -511,17 +522,19 @@ describe("meeting hover details", () => {
 
 it("routes administrator organization details independently of sharing membership", () => {
   const id = encodeId("organization", "019d4a01-2000-7000-8000-000000000001");
-  expect(resolveDashboardRoute(`/admin/organizations/${id}`, { admin: true, sessions: false, sharing: false })).toEqual({ page: "admin-organization", organizationId: id });
-  expect(resolveDashboardRoute(`/admin/organizations/${id}`, { admin: false, sessions: true, sharing: true })).toEqual({ redirect: "/dashboard" });
+  expect(resolveDashboardRoute(`/admin/orgs/${id}`, { admin: true, sessions: false, sharing: false })).toEqual({ page: "admin-organization", organizationId: id });
+  expect(resolveDashboardRoute(`/admin/orgs/${id}`, { admin: false, sessions: true, sharing: true })).toEqual({ redirect: "/dashboard" });
 });
 
 
-it.each(["", "selected-organization"])("keeps Workspace creation available in scope %s", (organizationId) => {
+it("keeps Workspace creation available while showing every accessible Workspace", () => {
   vi.stubGlobal("navigator", { language: "en-US" });
-  const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", organizationId, workspaces: [], select: vi.fn(), reload: vi.fn() });
+  const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", organizations: [{ id: "team", name: "Team", slug: "team", kind: "team" }], workspaces: [], reload: vi.fn() });
   const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue({ data: undefined, loading: false, error: undefined, reload: vi.fn(), replace: vi.fn() });
   try {
-    expect(renderToStaticMarkup(createElement(Workspaces))).toContain("New Workspace</button>");
+    const html = renderToStaticMarkup(createElement(Workspaces));
+    expect(html).toContain("New Workspace</button>");
+    expect(html).not.toContain("Accessible Workspaces owned by this organization");
   } finally { scope.mockRestore(); query.mockRestore(); }
 });
 

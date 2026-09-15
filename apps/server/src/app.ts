@@ -323,16 +323,21 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     if (!parsed.success) return context.json({ error: "invalid_search_settings" }, 400);
     return context.json(await store.searchSettings.update(parsed.data));
   });
-  for (const kind of ["users", "organizations"] as const) {
-    registerApi(app, kind === "users" ? "listServerUsers" : "listServerOrganizations", async (context) => {
-      const page = z.object({ offset: z.coerce.number().int().min(0).max(1_000_000).default(0) }).safeParse(context.req.query());
-      if (!page.success) return context.json({ error: "invalid_page" }, 400);
-      const limit = 100;
-      const items = kind === "users" ? await store.listServerUsers(limit + 1, page.data.offset)
-        : await store.listServerOrganizations(limit + 1, page.data.offset);
-      return context.json({ items: items.slice(0, limit), hasMore: items.length > limit });
-    });
-  }
+  const serverPageSchema = z.object({ offset: z.coerce.number().int().min(0).max(1_000_000).default(0) });
+  const serverUserPageSchema = serverPageSchema.extend({ q: z.string().trim().max(200).default("") });
+  const serverPageLimit = 100;
+  registerApi(app, "listServerUsers", async (context) => {
+    const page = serverUserPageSchema.safeParse(context.req.query());
+    if (!page.success) return context.json({ error: "invalid_page" }, 400);
+    const items = await store.listServerUsers(serverPageLimit + 1, page.data.offset, page.data.q);
+    return context.json({ items: items.slice(0, serverPageLimit), hasMore: items.length > serverPageLimit });
+  });
+  registerApi(app, "listServerOrganizations", async (context) => {
+    const page = serverPageSchema.safeParse(context.req.query());
+    if (!page.success) return context.json({ error: "invalid_page" }, 400);
+    const items = await store.listServerOrganizations(serverPageLimit + 1, page.data.offset);
+    return context.json({ items: items.slice(0, serverPageLimit), hasMore: items.length > serverPageLimit });
+  });
   registerApi(app, "getServerOrganization", async (context) => {
     const page = z.object({ membersOffset: z.coerce.number().int().min(0).max(1_000_000).default(0),
       teamsOffset: z.coerce.number().int().min(0).max(1_000_000).default(0) }).safeParse(context.req.query());

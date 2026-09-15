@@ -1,5 +1,5 @@
 import { WorkspaceSharing } from "./WorkspaceSharing";
-import { organizationSlugPattern } from "../auth/organization-slug";
+import { organizationSlugFromName, organizationSlugPattern } from "../auth/organization-slug";
 import { apiUrls } from "./generated-operations";
 import { DEFAULT_SEARCH_SETTINGS, SEARCH_FIELDS, searchSettingsSchema, type SearchSettings } from "../search/settings-model";
 import { encodeId } from "../typeid";
@@ -466,7 +466,7 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
 
 export function Workspaces({ home = false }: { home?: boolean }) {
   const { dialog, openDialog } = useActionDialog();
-  const { workspaces, error: loadError, reload, organizationId, select, organizations } = useSidebar();
+  const { workspaces, error: loadError, reload, organizations } = useSidebar();
   const teamOrganizations = organizations?.filter((organization) => organization.kind === "team") ?? [];
   const [recentWorkspaceId, setRecentWorkspaceId] = useState("");
   const recentWorkspace = workspaces?.find((workspace) => workspace.workspaceId === recentWorkspaceId) ?? workspaces?.[0];
@@ -482,7 +482,7 @@ export function Workspaces({ home = false }: { home?: boolean }) {
     description: uiText("Choose the Team Organization that will own this Workspace. Sharing is configured after creation.", "ワークスペースを所有するTeam組織を選んでください。共有は作成後に設定できます。"),
     confirmLabel: uiText("Create Workspace", "ワークスペースを作成"),
     fields: [{ name: "organizationId", label: uiText("Organization", "組織"), required: true,
-      value: teamOrganizations.some((organization) => organization.id === organizationId) ? organizationId : teamOrganizations[0]?.id,
+      value: teamOrganizations[0]?.id,
       options: teamOrganizations.map((organization) => ({ value: organization.id, label: organization.name })) },
       { name: "name", label: uiText("Workspace name", "ワークスペース名"), required: true },
       ...(encryptionCapabilities?.workspaceEncryption ? [{ name: "encryption", label: uiText("Database encryption", "DB 内データの暗号化"), value: "none", options: [
@@ -492,7 +492,6 @@ export function Workspaces({ home = false }: { home?: boolean }) {
       const id = encodeId("workspace", uuidV7());
       await commitSyncTransaction(id, [{ entity: "workspace", action: "create", entityId: id, baseRevision: null,
         data: { organizationId: targetOrganizationId!, name: name!.trim(), ...(encryption === "server" ? { encryption: "server" as const } : {}), createdAt: new Date().toISOString() } }], setRecovering);
-      select(targetOrganizationId!);
       navigateDashboard(`/workspaces/${id}`);
     },
   });
@@ -509,7 +508,7 @@ export function Workspaces({ home = false }: { home?: boolean }) {
       {workspaces?.length === 0 && <div className="welcome-empty">
         <span className="empty-symbol"><MenuIcon name="workspace" /></span>
         <h2>{uiText("A home for your meetings", "ミーティングの記録を、ひとつの場所に")}</h2>
-        <p>{organizationId ? uiText("Accessible Workspaces owned by this organization will appear here.", "この組織が所有する、アクセス可能なワークスペースがここに表示されます。") : uiText("Create a Workspace, then connect it in Dahlia for macOS to bring your meeting notes, transcripts and screenshots here.", "ワークスペースを作成して macOS 版 Dahlia で接続すると、ミーティングの要約・文字起こし・スクリーンショットをここで閲覧できます。")}</p>
+        <p>{uiText("Create a Workspace, then connect it in Dahlia for macOS to bring your meeting notes, transcripts and screenshots here.", "ワークスペースを作成して macOS 版 Dahlia で接続すると、ミーティングの要約・文字起こし・スクリーンショットをここで閲覧できます。")}</p>
       </div>}
       <div className="workspace-grid">{workspaces?.map((workspace) => <a className="workspace-card" href={`/workspaces/${workspace.workspaceId}`} key={workspace.workspaceId}>
         <div className="workspace-card-top"><span className="workspace-symbol"><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} size={22} /></span><span className={`status${workspace.role === "admin" ? "" : " shared"}`}>{workspaceRoleLabel(workspace.role)}</span></div>
@@ -1032,7 +1031,7 @@ function OrganizationWorkspaces({ organization }: { organization: OrganizationIn
   return <section>{dialog}
     <p>{uiText("Organization governance shows Workspace metadata. Content requires a separate Workspace permission.", "組織の管理用情報を表示しています。内容の閲覧にはワークスペースのアクセス権が必要です。")}</p>
     {query.data?.items.map((workspace) => <div className="row" key={workspace.workspaceId}>
-      <div><strong>{workspace.name}</strong><span>{workspace.workspaceId}</span><small>{uiText("Creator", "作成者")}: {workspace.creatorId} · revision {workspace.revision}</small></div>
+      <div className="workspace-governance-identity"><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><strong>{workspace.name}</strong></div>
       {organization.kind === "team" && <button className="secondary danger-button" onClick={() => void confirm(workspace.workspaceId)}>{uiText("Delete", "削除")}</button>}
     </div>)}
     {query.data?.items.length === 0 && <p>{uiText("No Workspaces", "ワークスペースがありません")}</p>}
@@ -1092,6 +1091,7 @@ function OrganizationJoinRequests({ organizationId }: { organizationId?: string 
     } });
   }
   const statusLabel = (status: string) => ({ pending: uiText("Pending", "承認待ち"), approved: uiText("Approved", "承認済み"), rejected: uiText("Rejected", "却下"), cancelled: uiText("Cancelled", "取り消し済み") })[status];
+  if (!query.data?.items.length && !query.error) return null;
   return <section>{dialog}<h3>{uiText("Join requests", "参加申請")}</h3>
     {query.data?.items.map((request) => <div className="row" key={request.id}><span>{organizationId ? `${request.userName} (${request.userEmail})` : request.organizationName} · {statusLabel(request.status)}</span>{request.status === "pending" && <div>{organizationId ? <><button onClick={() => resolve(request.id, "approve")}>{uiText("Approve", "承認")}</button><button onClick={() => resolve(request.id, "reject")}>{uiText("Reject", "却下")}</button></> : <button onClick={() => resolve(request.id, "cancel")}>{uiText("Cancel request", "申請を取り消す")}</button>}</div>}</div>)}
     {query.data?.nextCursor && <button className="secondary" onClick={query.loadMore}>{uiText("Show more", "さらに表示")}</button>}
@@ -1426,16 +1426,15 @@ function Organization({ session, organizationId }: { session: SessionInfo; organ
   </>;
 }
 
-function Organizations({ session }: { session: SessionInfo }) {
-  const [choosingOwner, setChoosingOwner] = useState(false);
-  const [ownerOffset, setOwnerOffset] = useState(0);
-  const owners = useLiveJSON(choosingOwner && session.capabilities.admin ? apiQuery("listServerUsers", { params: { query: { offset: String(ownerOffset) } } }) : undefined);
+function Organizations() {
   const candidates = useLivePage<operations["listOrganizationCandidates"]["responses"][200]["content"]["application/json"]["items"][number]>(apiQuery("listOrganizationCandidates", {}));
   const [organizations, setOrganizations] = useState<OrganizationInfo[]>();
   const [invitations, setInvitations] = useState<OrganizationInvitation[]>();
   const { dialog, openDialog } = useActionDialog();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
+  const joinedTeams = organizations?.filter((organization) => organization.kind === "team");
+  const showCandidates = Boolean(candidates.data?.items.length || candidates.error);
   const load = useCallback(async () => {
     setError(undefined);
     try {
@@ -1449,17 +1448,6 @@ function Organizations({ session }: { session: SessionInfo }) {
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
-
-  function create(owner: { id: string; name: string; email: string }) {
-    openDialog({ title: uiText("Create organization", "組織を作成"), confirmLabel: uiText("Create organization", "組織を作成"),
-      description: `${uiText("Initial owner", "初期owner")}: ${owner.name} (${owner.email})`,
-      fields: [{ name: "name", label: uiText("Name", "名前"), required: true }, { name: "slug", label: "slug", required: true, pattern: organizationSlugPattern.source }],
-      onSubmit: async ({ name, slug }) => {
-        await api.createOrganization({ body: { name: name!.trim(), slug: slug!.trim(), initialOwnerUserId: owner.id } });
-        navigateDashboard("/admin/organizations");
-      },
-    });
-  }
 
   async function decide(invitationId: string, accept: boolean) {
     if (pending) return;
@@ -1481,14 +1469,7 @@ function Organizations({ session }: { session: SessionInfo }) {
   return (
     <>
       {dialog}
-      <PageHeader title={uiText("Your organizations", "所属組織")} description={uiText("Choose an organization to manage its members and teams.", "組織を選んで、メンバーやチームを管理します。")}
-        actions={session.capabilities.admin && <button className="primary" onClick={() => { setOwnerOffset(0); setChoosingOwner(true); }}><MenuIcon name="plus" />{uiText("Create organization", "組織を作成")}</button>} />
-      {choosingOwner && session.capabilities.admin && <section className="section-block"><h2>{uiText("Choose the initial owner", "初期ownerを選択")}</h2>
-        {owners.loading && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
-        {owners.data?.items.map((owner) => <div className="row" key={owner.id}><span>{owner.name} ({owner.email})</span><button className="secondary" onClick={() => create(owner)}>{uiText("Choose owner", "ownerに指定")}</button></div>)}
-        <DataError error={owners.error} retry={owners.reload} />
-        <div className="row-actions"><button className="secondary" disabled={ownerOffset === 0 || owners.loading} onClick={() => setOwnerOffset(ownerOffset - 100)}>{uiText("Previous", "前へ")}</button><button className="secondary" disabled={!owners.data?.hasMore || owners.loading} onClick={() => setOwnerOffset(ownerOffset + 100)}>{uiText("Next", "次へ")}</button><button className="secondary" onClick={() => setChoosingOwner(false)}>{uiText("Cancel", "キャンセル")}</button></div>
-      </section>}
+      <PageHeader title={uiText("Your organizations", "所属組織")} description={uiText("Choose an organization to manage its members and teams.", "組織を選んで、メンバーやチームを管理します。")} />
       {invitations && invitations.length > 0 && (
         <section className="section-block">
           <h2 className="section-label">{uiText("Invitations", "招待")}</h2>
@@ -1505,7 +1486,7 @@ function Organizations({ session }: { session: SessionInfo }) {
           </div>
         </section>
       )}
-      <section>
+      {showCandidates && <section>
         <h2>{uiText("Organizations you can join", "参加できる組織")}</h2>
         {candidates.data?.items.map((candidate) => {
           const autoJoin = candidate.joinPolicy === "auto_join";
@@ -1532,13 +1513,13 @@ function Organizations({ session }: { session: SessionInfo }) {
         })}
         {candidates.data?.nextCursor && <button className="secondary" onClick={candidates.loadMore}>{uiText("Show more", "さらに表示")}</button>}
         <DataError error={candidates.error} retry={candidates.reload} />
-      </section>
+      </section>}
       <OrganizationJoinRequests />
       <section className="section-block organization-list">
         <h2 className="section-label">{uiText("Your organizations", "参加している組織")}</h2>
         {!organizations && !error && <p className="muted">{uiText("Loading organizations…", "組織を読み込み中…")}</p>}
-        {organizations?.length === 0 && <div className="panel empty-state"><strong>{uiText("No organizations", "参加している組織はありません")}</strong><span>{uiText("Create an organization or ask its administrator for an invitation link.", "組織を作成するか、管理者から招待リンクを受け取って参加してください。")}</span></div>}
-        <div className="collection-list">{organizations?.map((organization) => (
+        {joinedTeams?.length === 0 && <div className="panel empty-state"><strong>{uiText("No organizations", "参加している組織はありません")}</strong><span>{uiText("Ask a server administrator to create an organization or invite you.", "サーバー管理者に組織の作成または招待を依頼してください。")}</span></div>}
+        <div className="collection-list">{joinedTeams?.map((organization) => (
           <a className="collection-row" href={`/orgs/${encodeURIComponent(organization.id)}`} key={organization.id}>
             <span className="collection-icon"><MenuIcon name="organization" /></span>
             <span className="collection-copy"><strong>{organization.name}</strong><small>{organization.slug}</small></span>
@@ -1599,21 +1580,95 @@ function Invitation({ invitationId }: { invitationId: string }) {
   );
 }
 
+function OrganizationCreateDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [ownerOffset, setOwnerOffset] = useState(0);
+  const [ownerSearch, setOwnerSearch] = useState("");
+  const [ownerQuery, setOwnerQuery] = useState("");
+  const owners = useLiveJSON<operations["listServerUsers"]["responses"][200]["content"]["application/json"]>(apiQuery("listServerUsers", { params: { query: { offset: String(ownerOffset), q: ownerQuery || undefined } } }));
+  const [ownerId, setOwnerId] = useState("");
+  const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [slugEdited, setSlugEdited] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    const previous = document.activeElement;
+    const element = dialog.current!;
+    element.showModal();
+    return () => {
+      element.close();
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true });
+    };
+  }, []);
+  useEffect(() => { setOwnerId((current) => owners.data?.items.some((owner) => owner.id === current) ? current : owners.data?.items[0]?.id ?? ""); }, [owners.data]);
+  useEffect(() => { const timer = setTimeout(() => setOwnerQuery(ownerSearch.trim()), 200); return () => clearTimeout(timer); }, [ownerSearch]);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending || !ownerId) return;
+    setPending(true);
+    setError(undefined);
+    try {
+      await api.createOrganization({ body: { name: name.trim(), slug: slug.trim(), initialOwnerUserId: ownerId } });
+      onCreated();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : uiText("Could not create organization.", "組織を作成できませんでした。"));
+      setPending(false);
+    }
+  }
+
+  return <dialog ref={dialog} className="action-dialog" aria-labelledby="organization-create-title"
+    onCancel={(event) => { event.preventDefault(); if (!pending) onClose(); }}>
+    <form onSubmit={(event) => void submit(event)} aria-busy={pending}>
+      <header className="dialog-header">
+        <div><span className="dialog-symbol" aria-hidden="true"><MenuIcon name="organization" /></span><h2 id="organization-create-title">{uiText("Create organization", "組織を新規作成")}</h2></div>
+        <button type="button" className="icon-button" aria-label={uiText("Close", "閉じる")} disabled={pending} onClick={onClose}>×</button>
+      </header>
+      <div className="dialog-body">
+        <label className="dialog-field"><span>{uiText("Initial owner", "初期オーナー")}</span>
+          <Select aria-label={uiText("Initial owner", "初期オーナー")} value={ownerId} placeholder={uiText("Choose an owner", "オーナーを選択")} disabled={pending || owners.loading || !owners.data?.items.length} onValueChange={setOwnerId}
+            search={{ value: ownerSearch, placeholder: uiText("Search by name or email", "名前・メールアドレスで検索"), onValueChange: (value) => { setOwnerSearch(value); setOwnerOffset(0); } }}>
+            {owners.data?.items.map((owner) => <option key={owner.id} value={owner.id}>{owner.name} ({owner.email})</option>)}
+          </Select>
+        </label>
+        <DataError error={owners.error} retry={owners.reload} />
+        {(ownerOffset > 0 || owners.data?.hasMore) && <div className="row-actions">
+          <button type="button" className="secondary" disabled={pending || owners.loading || ownerOffset === 0} onClick={() => setOwnerOffset(ownerOffset - 100)}>{uiText("Previous", "前へ")}</button>
+          <button type="button" className="secondary" disabled={pending || owners.loading || !owners.data?.hasMore} onClick={() => setOwnerOffset(ownerOffset + 100)}>{uiText("Next", "次へ")}</button>
+        </div>}
+        <label className="dialog-field"><span>{uiText("Name", "名前")}</span><input name="name" required disabled={pending} value={name} onChange={(event) => { setName(event.target.value); if (!slugEdited) setSlug(organizationSlugFromName(event.target.value)); }} /></label>
+        <label className="dialog-field"><span>slug</span><input name="slug" required pattern={organizationSlugPattern.source} disabled={pending} value={slug} onChange={(event) => { setSlug(event.target.value); setSlugEdited(true); }} /></label>
+        {error && <p className="dialog-error" role="alert">{error}</p>}
+      </div>
+      <footer className="dialog-footer">
+        <span className="dialog-status" role="status">{pending ? uiText("Creating organization…", "組織を作成中…") : ""}</span>
+        <button type="button" className="secondary" disabled={pending} onClick={onClose}>{uiText("Cancel", "キャンセル")}</button>
+        <button className="primary" data-confirm disabled={pending || owners.loading || !ownerId}>{pending ? uiText("Please wait…", "処理中…") : uiText("Create organization", "組織を新規作成")}</button>
+      </footer>
+    </form>
+  </dialog>;
+}
+
 function AdminDirectory({ kind }: { kind: "users" | "organizations" }) {
   const [offset, setOffset] = useState(0);
+  const [creating, setCreating] = useState(false);
   const query = useLiveJSON<{ items: (ServerUserRecord | ServerOrganizationRecord)[]; hasMore: boolean }>(kind === "users" ? apiQuery("listServerUsers", { params: { query: { offset: String(offset) } } }) : apiQuery("listServerOrganizations", { params: { query: { offset: String(offset) } } }));
   const organizations = kind === "organizations";
+
   return <>
+    {organizations && creating && <OrganizationCreateDialog onClose={() => setCreating(false)} onCreated={() => { setCreating(false); query.reload(); }} />}
     <PageHeader title={organizations ? uiText("Organization management", "組織管理") : uiText("User management", "ユーザー管理")}
       description={organizations ? uiText("All organizations on this server, including those you have not joined.", "所属していない組織を含む、サーバー内のすべての組織です。") : uiText("All users registered on this server.", "このサーバーに登録されているすべてのユーザーです。")}
-      actions={organizations && <a className="secondary" href="/orgs">{uiText("Manage your organizations", "所属組織を管理")}</a>} />
+      actions={organizations && <button className="primary" onClick={() => setCreating(true)}><MenuIcon name="plus" />{uiText("Create organization", "組織を新規作成")}</button>} />
     <section className="section-block">
       <DataError error={query.error} retry={query.reload} />
       {query.loading && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
       {query.data && <><div className="admin-directory-scroll"><table className={`admin-directory${organizations ? " org-directory" : ""}`}>
         <thead><tr><th>{uiText("Name", "名前")}</th><th>{organizations ? "slug" : uiText("Email address", "メールアドレス")}</th><th>{organizations ? uiText("Members", "メンバー") : uiText("Role", "権限")}</th>{organizations && <th>{uiText("Teams", "チーム")}</th>}</tr></thead>
         <tbody>{query.data.items.map((item) => <tr key={item.id}>
-          <td>{organizations ? <a className="org-directory-identity text-link" href={`/admin/organizations/${encodeURIComponent(item.id)}`}><MenuIcon name="organization" /><strong>{item.name}</strong></a> : item.name}</td>{"email" in item ? <><td>{item.email}</td><td>{item.role?.split(",").includes("admin") ? uiText("Administrator", "管理者") : uiText("User", "ユーザー")}</td></>
+          <td>{organizations ? <a className="org-directory-identity text-link" href={`/admin/orgs/${encodeURIComponent(item.id)}`}><MenuIcon name="organization" /><strong>{item.name}</strong></a> : item.name}</td>{"email" in item ? <><td>{item.email}</td><td>{item.role?.split(",").includes("admin") ? uiText("Administrator", "管理者") : uiText("User", "ユーザー")}</td></>
             : <><td><code>{item.slug}</code></td><td>{item.memberCount}</td><td>{item.teamCount}</td></>}
         </tr>)}</tbody>
       </table></div>
@@ -1642,9 +1697,9 @@ export function AdminOrganization({ organizationId, session }: { organizationId:
     <button className="secondary" disabled={query.loading || !hasMore} onClick={() => select(offset + 100)}>{uiText("Next", "次へ")}</button>
   </div>;
   return <>{dialog}
-    {organization?.kind === "team" && <button className="secondary danger-button" onClick={() => openDialog({ title: uiText("Delete organization?", "組織を削除しますか？"), description: uiText("All owned Workspaces must be removed first. Memberships and teams will be deleted.", "配下のワークスペースをすべて削除した後に実行できます。所属とチームを削除します。"), confirmLabel: uiText("Delete", "削除"), destructive: true, onSubmit: async () => { await api.deleteOrganization({ params: { path: { organizationId } } }); navigateDashboard("/admin/organizations"); } })}>{uiText("Delete organization", "組織を削除")}</button>}
+    {organization?.kind === "team" && <button className="secondary danger-button" onClick={() => openDialog({ title: uiText("Delete organization?", "組織を削除しますか？"), description: uiText("All owned Workspaces must be removed first. Memberships and teams will be deleted.", "配下のワークスペースをすべて削除した後に実行できます。所属とチームを削除します。"), confirmLabel: uiText("Delete", "削除"), destructive: true, onSubmit: async () => { await api.deleteOrganization({ params: { path: { organizationId } } }); navigateDashboard("/admin/orgs"); } })}>{uiText("Delete organization", "組織を削除")}</button>}
 
-    <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}><a href="/admin/organizations">{uiText("Organization management", "組織管理")}</a></nav>
+    <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}><a href="/admin/orgs">{uiText("Organization management", "組織管理")}</a></nav>
     <PageHeader title={organization?.name ?? uiText("Organization", "組織")} description={organization?.slug}
       actions={joined && <a className="secondary" href={`/orgs/${encodeURIComponent(joined.id)}`}>{uiText("Manage organization", "組織を管理")}</a>} />
     <DataError error={query.error} retry={query.reload} />
@@ -1874,7 +1929,7 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   else if (route.page === "meeting") page = detailWorkspaceId ? <SyncedMeeting workspaceId={detailWorkspaceId} meetingId={route.meetingId!} /> : null;
   else if (route.page === "project") page = detailWorkspaceId ? <SyncedProject workspaceId={detailWorkspaceId} projectId={route.projectId!} /> : null;
   else if (route.page === "file") page = <FileViewer fileId={route.fileId!} />;
-  else if (route.page === "organizations") page = <Organizations session={session} />;
+  else if (route.page === "organizations") page = <Organizations />;
   else if (route.page === "organization") page = <Organization session={session} organizationId={route.organizationId!} />;
   else if (route.page === "invitation") page = <Invitation invitationId={route.invitationId!} />;
   else if (route.page === "settings") page = <Settings session={session} extensions={extensions} />;

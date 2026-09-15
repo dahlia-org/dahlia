@@ -7438,6 +7438,18 @@
           "name": {
             "type": "string"
           },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "revision": {
             "type": "integer",
             "minimum": 0,
@@ -8135,6 +8147,17 @@
             "required": false,
             "description": "0–1000000. Fixed page size 100.",
             "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Case-insensitive name or email substring."
+            },
+            "required": false,
+            "description": "Case-insensitive name or email substring.",
+            "name": "q",
             "in": "query"
           }
         ],

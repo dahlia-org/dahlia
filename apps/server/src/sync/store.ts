@@ -1463,7 +1463,7 @@ function createIdentityStore(
 
   const governanceContent = (organizationId: string) => createContentEncryption(db, schema, userPrincipalId, encryption,
     (workspace) => exists(db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(and(eq(schema.syncedWorkspace.workspaceId, workspace), eq(schema.syncedWorkspace.organizationId, organizationId)))), "governance");
-  const governanceColumns = () => ({ workspaceId: schema.syncedWorkspace.workspaceId, name: schema.syncedWorkspace.name, encryptedPayload: schema.syncedWorkspace.encryptedPayload,
+  const governanceColumns = () => ({ workspaceId: schema.syncedWorkspace.workspaceId, name: schema.syncedWorkspace.name, icon: schema.syncedWorkspace.icon, color: schema.syncedWorkspace.color, encryptedPayload: schema.syncedWorkspace.encryptedPayload,
     revision: schema.syncedWorkspace.revision, creatorId: sql<string>`${schema.syncedWorkspace.createdBy}->>'id'` });
   async function confirmWorkspaceDeletion(organizationId: string, workspaceId: string) {
     await governance(organizationId);

@@ -64,7 +64,7 @@ export function WorkspaceSharing({ workspace }: { workspace: SyncedWorkspaceInfo
     <p className="muted">{personal ? uiText("Your Personal Workspace is private.", "Personalワークスペースは本人だけが利用できます。")
       : uiText("Admins manage the Workspace; editors change content; viewers can read.", "管理者はワークスペースを管理でき、編集者は内容を変更でき、閲覧者は内容を閲覧できます。")}</p>
     <div className="share-list">{permissions.data?.items.map((permission) => <div className="share-row" key={`${permission.principalType}:${permission.principalId}`}>
-      <MenuIcon name={icons[permission.principalType]} /><span><strong>{permission.name ?? permission.principalId}</strong><small>{principalLabel(permission.principalType)}{permission.detail ? ` · ${permission.detail}` : ""}</small></span>
+      <MenuIcon name={icons[permission.principalType]} /><span className="share-identity"><strong>{permission.name ?? permission.principalId}</strong><small>{principalLabel(permission.principalType)}{permission.detail ? ` · ${permission.detail}` : ""}</small></span>
       {editable ? rolePicker(permission.principalType, permission.principalId, permission.name ?? permission.principalId) : <span>{workspaceRoleLabel(permission.role)}</span>}
     </div>)}</div>
     <dialog ref={dialog} className="action-dialog sharing-dialog" aria-labelledby={titleId} onClose={() => setOpen(false)}>
@@ -75,7 +75,7 @@ export function WorkspaceSharing({ workspace }: { workspace: SyncedWorkspaceInfo
         <div className="share-list sharing-results" aria-busy={targets.loading || saving}>
           {targets.loading && <p role="status">{uiText("Searching…", "検索中…")}</p>}
           {targets.data?.items.map((target) => <div className="share-row" key={`${target.principalType}:${target.principalId}`}>
-            <MenuIcon name={icons[target.principalType]} /><span><strong>{target.name}</strong><small>{principalLabel(target.principalType)} · {target.detail}</small></span>
+            <MenuIcon name={icons[target.principalType]} /><span className="share-identity"><strong>{target.name}</strong><small>{principalLabel(target.principalType)} · {target.detail}</small></span>
             {rolePicker(target.principalType, target.principalId, target.name)}
           </div>)}
           {targets.data?.nextCursor && <button className="secondary" disabled={targets.loading} onClick={targets.loadMore}>{uiText("Show more", "さらに表示")}</button>}

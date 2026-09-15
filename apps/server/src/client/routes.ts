@@ -21,7 +21,7 @@ const coreDashboardPaths = new Set([
   "/admin/models",
   "/admin/members",
   "/admin/users",
-  "/admin/organizations",
+  "/admin/orgs",
   "/admin/settings",
 ]);
 
@@ -29,7 +29,7 @@ export function isCoreDashboardPath(path: string): boolean {
   return coreDashboardPaths.has(path)
     || /^\/(?:meetings|projects|files|orgs)\/[^/]+$/.test(path)
     || /^\/workspaces\/[^/]+(?:\/(?:meetings|projects)\/[^/]+)?$/.test(path)
-    || /^\/admin\/organizations\/[^/]+$/.test(path)
+    || /^\/admin\/orgs\/[^/]+$/.test(path)
     || /^\/accept-invitation\/[^/]+$/.test(path);
 }
 
@@ -85,10 +85,10 @@ export function resolveDashboardRoute(
   }
   if (path === "/admin/members") return { redirect: capabilities.admin ? "/admin/users" : "/dashboard" };
   if (path === "/admin/users") return capabilities.admin ? { page: "admin-users" } : { redirect: "/dashboard" };
-  const adminOrganization = path.match(/^\/admin\/organizations\/([^/]+)$/);
+  const adminOrganization = path.match(/^\/admin\/orgs\/([^/]+)$/);
   if (adminOrganization && validID("organization", adminOrganization[1])) return capabilities.admin
     ? { page: "admin-organization", organizationId: adminOrganization[1] } : { redirect: "/dashboard" };
-  if (path === "/admin/organizations") return capabilities.admin ? { page: "admin-organizations" } : { redirect: "/dashboard" };
+  if (path === "/admin/orgs") return capabilities.admin ? { page: "admin-organizations" } : { redirect: "/dashboard" };
   if (path === "/admin/settings") return capabilities.admin ? { page: "admin-settings" } : { redirect: "/dashboard" };
   return { redirect: "/dashboard" };
 }

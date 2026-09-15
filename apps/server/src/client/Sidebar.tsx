@@ -5,11 +5,10 @@ import { Tooltip } from "./Tooltip";
 import { Search } from "./Search";
 import { RecordingIndicator } from "./RecordingIndicator";
 import { useLiveJSON, useLivePage } from "./live-data";
-import { navigateDashboard } from "./navigation";
-import { createContext, Fragment, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { SessionInfo } from "./App";
 import type { OrganizationInfo, SyncedMeetingInfo, SyncedProjectInfo, SyncedWorkspaceInfo } from "./api";
-import { json, RequestError, uiText } from "./api";
+import { json, uiText } from "./api";
 
 
 export function projectAncestors(projects: SyncedProjectInfo[], projectId?: string): Set<string> {
@@ -38,12 +37,9 @@ function save(key: string, value: string) {
 
 interface SidebarState {
   userId: string;
-  organizationId: string;
   organizations?: OrganizationInfo[];
-  organizationError?: string;
   workspaces?: SyncedWorkspaceInfo[];
   error?: string;
-  select: (id: string) => void;
   reload: () => void;
 }
 const SidebarContext = createContext<SidebarState | null>(null);
@@ -55,37 +51,14 @@ export function useSidebar() {
 }
 
 export function SidebarProvider({ session, children }: { session: SessionInfo; children: ReactNode }) {
-  const [selectedOrganizationId, setOrganizationId] = useState(() => session.capabilities.sharing ? readSelection(`dahlia:sidebar:${session.user.id}:organization`, "personal") : "personal");
   const organizationsQuery = useLiveJSON<OrganizationInfo[]>(!session.capabilities.sharing ? undefined
     : "/api/auth/organization/list");
-  const organizations = organizationsQuery.data;
-  const organizationId = selectedOrganizationId === "personal"
-    ? organizations?.find((organization) => organization.kind === "personal")?.id ?? "personal"
-    : selectedOrganizationId;
-  const organizationAllowed = !organizationId || organizations?.some(({ id }) => id === organizationId);
-  const workspacesQuery = useLiveJSON<{ items: SyncedWorkspaceInfo[] }>(session.capabilities.sync && organizationAllowed
-    ? apiQuery("listWorkspaces", { params: { query: organizationId ? { organizationId } : {} } }) : undefined);
-  const select = (id: string) => {
-    save(`dahlia:sidebar:${session.user.id}:organization`, id);
-    setOrganizationId(id);
-    document.getElementById("account-menu")?.hidePopover();
-    navigateDashboard("/workspaces");
-  };
-  useEffect(() => {
-    if (!organizationId || organizationId === "personal") return;
-    const membershipRemoved = organizations && !organizationAllowed;
-    const accessDenied = workspacesQuery.error instanceof RequestError && workspacesQuery.error.status === 403;
-    if (!membershipRemoved && !accessDenied) return;
-    save(`dahlia:sidebar:${session.user.id}:organization`, "personal");
-    setOrganizationId("personal");
-    navigateDashboard("/workspaces", true);
-  }, [organizationId, organizations, organizationAllowed, workspacesQuery.error, session.user.id]);
+  const workspacesQuery = useLiveJSON<{ items: SyncedWorkspaceInfo[] }>(session.capabilities.sync
+    ? apiQuery("listWorkspaces", {}) : undefined);
   const reload = () => { organizationsQuery.reload(); workspacesQuery.reload(); };
-  const organizationError = organizationsQuery.error?.message;
-  const workspaceError = workspacesQuery.error?.message ?? (organizationId && !organizations ? organizationError : undefined);
-  return <SidebarContext.Provider value={{ userId: session.user.id, organizationId, organizations,
-    organizationError, workspaces: workspacesQuery.data?.items, error: workspaceError, select, reload }}>
-    <Fragment key={selectedOrganizationId}>{children}</Fragment>
+  return <SidebarContext.Provider value={{ userId: session.user.id, organizations: organizationsQuery.data,
+    workspaces: workspacesQuery.data?.items, error: workspacesQuery.error?.message, reload }}>
+    {children}
   </SidebarContext.Provider>;
 }
 
@@ -149,11 +122,9 @@ function SignOutButton() {
 export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceId: resolvedWorkspaceId }: { brand: ReactNode; session: SessionInfo; children: ReactNode; serverLinks?: ReactNode; routeWorkspaceId?: string }) {
   const state = useSidebar();
   const identity = session.user.name || session.user.email || session.user.id;
-  const current = state.organizationId
-    ? state.organizations?.find(({ id }) => id === state.organizationId)?.name ?? "Organization"
-    : uiText("All accessible Workspaces", "アクセス可能なすべてのワークスペース");
+  const current = uiText("All accessible Workspaces", "アクセス可能なすべてのワークスペース");
   const routeWorkspaceId = resolvedWorkspaceId ?? (typeof window === "undefined" ? undefined : window.location.pathname.match(/^\/workspaces\/([^/]+)/)?.[1]);
-  const selectionKey = `dahlia:sidebar:${session.user.id}:${state.organizationId || "personal"}:workspace`;
+  const selectionKey = `dahlia:sidebar:${session.user.id}:workspace`;
   const routedWorkspace = useLiveJSON<SyncedWorkspaceInfo>(resolvedWorkspaceId ? apiQuery("getWorkspace", { params: { path: { workspaceId: resolvedWorkspaceId } } }) : undefined);
   const selectedWorkspace = selectedSidebarWorkspace(state.workspaces, routeWorkspaceId, readSelection(selectionKey)) ?? routedWorkspace.data;
   const selectedWorkspaceId = selectedWorkspace?.workspaceId;
@@ -185,14 +156,14 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
       {session.capabilities.sync && <nav className="workspace-navigation" aria-label={uiText("Project navigation", "プロジェクト")}>
         <h2 className="workspace-heading">{uiText("Projects", "プロジェクト")}</h2>
         {state.error && <Failure message={state.error} retry={state.reload} />}
-        {!state.workspaces && !state.error && <p className="sidebar-status">{state.organizationError ? uiText("Clear the organization selection or retry loading organizations.", "組織の選択を解除するか、組織の読み込みを再試行してください。") : "Loading Workspaces…"}</p>}
+        {!state.workspaces && !state.error && <p className="sidebar-status">Loading Workspaces…</p>}
         {state.workspaces?.length === 0 && <p className="sidebar-status">{uiText("No Workspaces", "ワークスペースがありません")}</p>}
-        {selectedWorkspace && <WorkspaceChildren key={`${state.organizationId}:${selectedWorkspace.workspaceId}`} workspaceId={selectedWorkspace.workspaceId} />}
+        {selectedWorkspace && <WorkspaceChildren key={selectedWorkspace.workspaceId} workspaceId={selectedWorkspace.workspaceId} />}
         {Boolean(state.workspaces?.length) && !selectedWorkspace && <p className="sidebar-status">{uiText("Choose a Workspace from Workspaces", "ワークスペースから表示するワークスペースを選択してください")}</p>}
       </nav>}
       {session.capabilities.admin ? <nav className="server-navigation" aria-label={uiText("Server settings", "サーバー設定")}>
         <h2 className="section-label">{uiText("Server settings", "サーバー設定")}</h2>
-        {([["/admin/organizations", "organization", uiText("Organizations", "組織管理")],
+        {([["/admin/orgs", "organization", uiText("Organizations", "組織管理")],
           ["/admin/users", "members", uiText("Users", "ユーザー管理")],
           ["/admin/settings", "settings", uiText("General settings", "全体設定")]] as const).map(([href, icon, label]) =>
           <a key={href} href={href} aria-current={typeof window !== "undefined" && window.location.pathname === href ? "page" : undefined}><MenuIcon name={icon} /><span>{label}</span></a>)}
@@ -213,14 +184,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
         <a className="menu-account" href="/dashboard"><MenuIcon name="account" /><span>{identity}</span></a>
         {session.capabilities.sharing && <>
           <span className="nav-divider" />
-          <strong>{uiText("Organizations", "組織")}</strong>
-          <button onClick={() => state.select("")} aria-pressed={!state.organizationId}><MenuIcon name="account" /><span>{uiText("All accessible Workspaces", "アクセス可能なすべてのワークスペース")}</span>{!state.organizationId && <MenuIcon name="check" />}</button>
-          {state.organizations?.map((organization) => <button key={organization.id} onClick={() => state.select(organization.id)} aria-pressed={state.organizationId === organization.id}>
-            <MenuIcon name="organization" /><span>{organization.name}</span>{state.organizationId === organization.id && <MenuIcon name="check" />}
-          </button>)}
-          {!state.organizations && !state.organizationError && <p className="sidebar-status">{uiText("Loading organizations…", "組織を読み込み中…")}</p>}
-          {state.organizationError && <Failure message={state.organizationError} retry={state.reload} />}
-          <a href="/orgs" aria-current={typeof window !== "undefined" && (window.location.pathname === "/orgs" || window.location.pathname.startsWith("/orgs/")) ? "page" : undefined}><MenuIcon name="organization" /><span>{uiText("Your organizations", "所属組織一覧")}</span><MenuIcon name="arrow" /></a>
+          <a href="/orgs" aria-current={typeof window !== "undefined" && (window.location.pathname === "/orgs" || window.location.pathname.startsWith("/orgs/")) ? "page" : undefined}><MenuIcon name="organization" /><span>{uiText("Organizations you belong to", "参加している組織")}</span></a>
         </>}
         <span className="nav-divider" />
         {children}
@@ -231,8 +195,8 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
 }
 
 function TreeNode({ id, name, href, initialOpen, children, appearance, project }: { project?: SyncedProjectInfo; id: string; name: string; href?: string; initialOpen: boolean; children: ReactNode; appearance?: Appearance | null }) {
-  const { userId, organizationId } = useSidebar();
-  const key = `dahlia:sidebar:${userId}:${organizationId || "personal"}:${id}`;
+  const { userId } = useSidebar();
+  const key = `dahlia:sidebar:${userId}:${id}`;
   const [open, setOpen] = useState(() => initialOpen || readSelection(key) === "true");
   const route = window.location.pathname;
   const active = route === href;
