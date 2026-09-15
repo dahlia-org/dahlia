@@ -24,8 +24,41 @@ permissions:
   contents: read
 
 jobs:
-  server-validation:
-    name: Server Validation
+  application-validation:
+    name: Server Application Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/server/package.json
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/server/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate Server application
+        run: pnpm check
+        env:
+          VITEST_MAX_WORKERS: 4
+
+  database-validation:
+    name: Server Database Validation
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -75,11 +108,6 @@ jobs:
           GRANT CONNECT, CREATE ON DATABASE dahlia TO dahlia;
           CREATE DATABASE dahlia_header OWNER dahlia;
           SQL
-
-      - name: Validate Server application
-        run: pnpm check
-        env:
-          VITEST_MAX_WORKERS: 4
 
       - name: Validate shared PostgreSQL migration in header mode
         run: |
@@ -135,7 +163,7 @@ jobs:
           TEST_MIGRATION_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia_baseline
 
       - name: Validate PostgreSQL application store
-        run: pnpm exec vitest run tests/postgres-store.test.ts tests/postgres-retention.test.ts tests/sync-sqlite.test.ts
+        run: pnpm exec vitest run tests/postgres-store.test.ts tests/postgres-retention.test.ts
         env:
           TEST_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia
 
@@ -157,3 +185,17 @@ jobs:
           GOOGLE_CLIENT_ID: test-google-client-id
           GOOGLE_CLIENT_SECRET: test-google-client-secret
           DAHLIA_OAUTH_REDIRECT_URIS: http://127.0.0.1:1455/oauth/callback,http://localhost:8020
+
+  server-validation:
+    name: Server Validation
+    if: ${{ always() }}
+    needs:
+      - application-validation
+      - database-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require all Server validation jobs
+        run: |
+          test "${{ needs.application-validation.result }}" = success
+          test "${{ needs.database-validation.result }}" = success

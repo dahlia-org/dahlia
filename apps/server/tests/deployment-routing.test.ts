@@ -161,12 +161,27 @@ describe("deployment routing", () => {
 
   it("uses the current database variables in Server CI", () => {
     const workflow = readText("../../../.github/workflows/server-ci.yml");
+    const application = workflow.slice(workflow.indexOf("  application-validation:"), workflow.indexOf("  database-validation:"));
+    const database = workflow.slice(workflow.indexOf("  database-validation:"), workflow.indexOf("  server-validation:"));
+    const gate = workflow.slice(workflow.indexOf("  server-validation:"));
     expect(workflow).toContain("DAHLIA_DATABASE_TYPE: postgres");
     expect(workflow).toContain("DAHLIA_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia");
     expect(workflow).toContain("DAHLIA_DATABASE_URL: file:/tmp/dahlia-auth.sqlite");
     expect(workflow).toContain("working-directory: apps/server");
     expect(workflow).toContain("cache-dependency-path: apps/server/pnpm-lock.yaml");
     expect(workflow).not.toMatch(/DAHLIA_RUNTIME|DAHLIA_AUTH_DATABASE|DAHLIA_AUTH_SQLITE_PATH|\n\s+DATABASE_URL:/);
+    expect(application).toContain("name: Server Application Validation");
+    expect(application).toContain("run: pnpm check");
+    expect(application).not.toContain("services:");
+    expect(database).toContain("name: Server Database Validation");
+    expect(database).toContain("image: pgvector/pgvector:pg17");
+    expect(database).not.toContain("tests/sync-sqlite.test.ts");
+    expect(gate).toContain("name: Server Validation");
+    expect(gate).toContain("if: ${{ always() }}");
+    expect(gate).toContain("- application-validation");
+    expect(gate).toContain("- database-validation");
+    expect(gate).toContain('test "${{ needs.application-validation.result }}" = success');
+    expect(gate).toContain('test "${{ needs.database-validation.result }}" = success');
   });
 
   it("deploys the standalone Server package as a Databricks App backed by Lakebase", () => {
