@@ -183,7 +183,8 @@ describe("desktop-style meeting layout", () => {
     expect(navigation).not.toContain("organization-switcher");
     expect(navigation).not.toContain("Account settings");
     expect(footer).toContain('popoverTarget="account-menu"');
-    expect(footer).toContain("All accessible Workspaces");
+    expect(footer).not.toContain("All accessible Workspaces");
+    expect(footer).not.toContain("<small>");
     expect(footer).not.toContain('href="/workspaces"');
     expect(navigation).toContain('href="/workspaces"');
     expect(footer).not.toContain('<strong>Organizations</strong>');

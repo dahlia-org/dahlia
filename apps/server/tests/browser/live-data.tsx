@@ -236,7 +236,7 @@ async function run() {
   }
   assert(document.querySelector('.unassigned-meetings h2')?.textContent === "Unassigned" && !document.querySelector('.unassigned-meetings .folder-icon'), "Unassigned meetings must have a separate section without a folder icon");
   assert(!document.querySelector('#account-menu a[href^="/workspaces"]') && document.querySelector('.primary-navigation a[href="/workspaces"]'), "Workspace navigation belongs in the sidebar, not the account menu");
-  assert(document.querySelector('.identity-copy small')?.textContent === "No organization selected", "Account identity must show the account context instead of the selected Workspace");
+  assert(!document.querySelector(".identity-copy small"), "Account identity must not repeat Organization or Workspace context");
   const library = document.querySelector(".primary-navigation")!;
   assert(library.querySelector('a[aria-label="Home"] svg') && library.querySelector('a[aria-label="Workspaces"] svg') && library.querySelector('button[aria-label="Search"]'), "Library icons and search must remain accessible together");
   const homeLink = library.querySelector<HTMLAnchorElement>('a[aria-label="Home"]')!;

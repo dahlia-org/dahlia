@@ -20,11 +20,13 @@ it("reads only the requested organization's members and teams with independent p
         db.prepare('INSERT INTO member (id,organization_id,user_id,role,created_at) VALUES (?,?,?,\'member\',0)').run(id, id, id);
         db.prepare('INSERT INTO team (id,organization_id,name,created_at) VALUES (?,?,?,0)').run(id, id, id);
       }
+      db.prepare('INSERT INTO organization (id,name,slug,kind,created_at) VALUES (?,?,?,?,0)').run("personal", "Personal", "personal", "personal");
     } finally { db.close(); }
     expect(await store.getServerOrganization("one", 100, 0, 0)).toEqual({ id: "one", name: "one", slug: "one", kind: "team",
       members: [{ id: "one", userId: "one", role: "member", name: "one", email: "one@example.com" }], teams: [{ id: "one", name: "one" }] });
     expect(await store.getServerOrganization("one", 100, 1, 0)).toMatchObject({ members: [], teams: [{ id: "one" }] });
     expect(await store.getServerOrganization("one", 100, 0, 1)).toMatchObject({ members: [{ id: "one" }], teams: [] });
+    expect(await store.getServerOrganization("personal", 100, 0, 0)).toBeNull();
     expect(await store.getServerOrganization("missing", 100, 0, 0)).toBeNull();
   } finally { await store.close?.(); rmSync(directory, { recursive: true, force: true }); }
 });

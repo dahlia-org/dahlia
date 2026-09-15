@@ -2,6 +2,7 @@ import { AppearancePicker, AppearanceIcon, type Appearance } from "./AppearanceP
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MenuIcon } from "./Sidebar";
+import { Select } from "./Select";
 import { uiText } from "./api";
 
 export interface DialogField {
@@ -42,7 +43,7 @@ export function ActionDialog({ title, description, confirmLabel, destructive, fi
     const element = dialog.current!;
     element.showModal();
     // Destructive dialogs start at Cancel; editors start at their first field.
-    element.querySelector<HTMLElement>(destructive ? "[data-cancel]" : "input, textarea, [data-confirm]")?.focus();
+    element.querySelector<HTMLElement>(destructive ? "[data-cancel]" : "input, textarea, [role=combobox], [data-confirm]")?.focus();
     return () => {
       element.close();
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true });
@@ -50,7 +51,7 @@ export function ActionDialog({ title, description, confirmLabel, destructive, fi
   }, [destructive]);
 
   useEffect(() => {
-    dialog.current?.querySelector<HTMLElement>(discarding || destructive ? "[data-cancel]" : "input, textarea, [data-confirm]")?.focus();
+    dialog.current?.querySelector<HTMLElement>(discarding || destructive ? "[data-cancel]" : "input, textarea, [role=combobox], [data-confirm]")?.focus();
   }, [discarding, destructive]);
 
   const close = () => {
@@ -131,10 +132,10 @@ export function ActionDialog({ title, description, confirmLabel, destructive, fi
           }
           if (field.options) return <label className="dialog-field" key={field.name}>
             <span>{field.label}</span>
-            <select name={field.name} value={values[field.name]} disabled={pending}
-              onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}>
+            <Select aria-label={field.label} value={values[field.name] ?? ""} disabled={pending}
+              onValueChange={(value) => setValues((current) => ({ ...current, [field.name]: value }))}>
               {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
+            </Select>
           </label>;
           const Control = field.multiline ? "textarea" : "input";
           return <label className="dialog-field" key={field.name}>

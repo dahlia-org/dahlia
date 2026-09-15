@@ -44,13 +44,15 @@ describe("local single-user header mode", () => {
       try {
         const id = await register("admin_name@domain0.example");
         expect(queries.mock.calls.filter(([sql]) => /^select .* from "organization" where .*"slug"/.test(sql))).toHaveLength(1);
-        expect((await store.listServerOrganizations(100, 0)).find((org) => org.id === id)?.slug).toBe("admin_name_9");
         const raw = new DatabaseSync(fileURLToPath(config.databaseUrl!));
-        try { raw.prepare("UPDATE organization SET slug = 'renamed' WHERE slug = 'admin_name_3'").run(); } finally { raw.close(); }
-        queries.mockClear();
-        const next = await register("admin-name@domain0.example");
-        expect(queries.mock.calls.filter(([sql]) => /^select .* from "organization" where .*"slug"/.test(sql))).toHaveLength(1);
-        expect((await store.listServerOrganizations(100, 0)).find((org) => org.id === next)?.slug).toBe("admin_name_3");
+        try {
+          expect(raw.prepare("SELECT slug FROM organization WHERE id = ?").get(id)).toEqual({ slug: "admin_name_9" });
+          raw.prepare("UPDATE organization SET slug = 'renamed' WHERE slug = 'admin_name_3'").run();
+          queries.mockClear();
+          const next = await register("admin-name@domain0.example");
+          expect(queries.mock.calls.filter(([sql]) => /^select .* from "organization" where .*"slug"/.test(sql))).toHaveLength(1);
+          expect(raw.prepare("SELECT slug FROM organization WHERE id = ?").get(next)).toEqual({ slug: "admin_name_3" });
+        } finally { raw.close(); }
       } finally { queries.mockRestore(); }
     } finally { await store.close?.(); }
   });
@@ -108,13 +110,16 @@ describe("local single-user header mode", () => {
       expect(await response.json()).toMatchObject({ user: { email: "garbage" } });
       expect(await store.listAdminUsers()).toMatchObject([{ email: "garbage", name: "garbage" }]);
 
-      // "garbage" carries no domain, so only the Personal Organization exists.
-      expect(await store.listServerOrganizations(10, 0)).toMatchObject([{ name: "Personal", kind: "personal" }]);
+      const raw = new DatabaseSync(fileURLToPath(config.databaseUrl!));
+      try {
+        // "garbage" carries no domain, so only the Personal Organization exists.
+        expect(raw.prepare("SELECT name, kind FROM organization").all()).toEqual([{ name: "Personal", kind: "personal" }]);
 
-      // An address with no configured domain also gets only Personal.
-      expect((await app.request("/api/v1/session", { headers: { "X-Forwarded-Email": "person@example.com" } })).status).toBe(200);
-      expect(await store.listServerOrganizations(10, 0))
-        .toMatchObject([{ name: "Personal", kind: "personal" }, { name: "Personal", kind: "personal" }]);
+        // An address with no configured domain also gets only Personal.
+        expect((await app.request("/api/v1/session", { headers: { "X-Forwarded-Email": "person@example.com" } })).status).toBe(200);
+        expect(raw.prepare("SELECT name, kind FROM organization ORDER BY id").all())
+          .toEqual([{ name: "Personal", kind: "personal" }, { name: "Personal", kind: "personal" }]);
+      } finally { raw.close(); }
     } finally {
       await store.close?.();
     }
@@ -128,8 +133,10 @@ describe("local single-user header mode", () => {
       for (const email of ["@local", "@other", "someone@", "@local", "someone@"]) {
         expect(await store.resolveHeaderUser({ userId: email, email, name: email, source: "header" })).toBeTruthy();
       }
-      const organizations = await store.listServerOrganizations(10, 0);
-      expect(organizations.map((org) => org.slug).sort()).toEqual(["organization", "organization_2", "someone"]);
+      const raw = new DatabaseSync(fileURLToPath(config.databaseUrl!));
+      try {
+        expect(raw.prepare("SELECT slug FROM organization ORDER BY slug").all()).toEqual([{ slug: "organization" }, { slug: "organization_2" }, { slug: "someone" }]);
+      } finally { raw.close(); }
     } finally {
       await store.close?.();
     }

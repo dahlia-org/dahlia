@@ -8219,7 +8219,7 @@
     "/api/v1/admin/organizations": {
       "get": {
         "operationId": "listServerOrganizations",
-        "summary": "Administrator organization directory",
+        "summary": "Administrator Team Organization directory",
         "tags": [
           "admin"
         ],
@@ -8300,7 +8300,7 @@
     "/api/v1/admin/organizations/{organizationId}": {
       "get": {
         "operationId": "getServerOrganization",
-        "summary": "Organization directory details; administrator only, independent of membership",
+        "summary": "Team Organization directory details; administrator only, independent of membership",
         "tags": [
           "admin"
         ],

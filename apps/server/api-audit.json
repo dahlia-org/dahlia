@@ -128,7 +128,7 @@
       "path": "/api/v1/admin/organizations",
       "classification": "modified",
       "previous": "/api/admin/organizations",
-      "reason": "Administrator organization directory",
+      "reason": "Administrator Team Organization directory",
       "consumers": [
         "apps/server/src/client/App.tsx"
       ]
@@ -758,7 +758,7 @@
       "path": "/api/v1/admin/organizations/{organizationId}",
       "classification": "modified",
       "previous": "none",
-      "reason": "Open organization directory details for server administrators regardless of membership.",
+      "reason": "Open Team Organization directory details for server administrators regardless of membership; Personal Organization IDs return 404.",
       "consumers": [
         "apps/server/src/client/App.tsx"
       ]

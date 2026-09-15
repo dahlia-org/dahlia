@@ -15,7 +15,9 @@ function Fixture() {
   return <main className="workspace">
     <button id="edit" className="secondary" onClick={() => openDialog({
       title: "Edit meeting", confirmLabel: "Save changes",
-      fields: [{ name: "name", label: "Meeting name", value: "Original", required: true }, { name: "description", label: "Description", multiline: true }],
+      fields: [{ name: "name", label: "Meeting name", value: "Original", required: true },
+        { name: "role", label: "Role", value: "viewer", options: [{ value: "viewer", label: "Viewer" }, { value: "editor", label: "Editor" }] },
+        { name: "description", label: "Description", multiline: true }],
       onSubmit: async (values) => {
         submissions++;
         await new Promise<void>((resolve) => { release = resolve; });
@@ -55,6 +57,10 @@ async function run() {
   edit.focus(); edit.click();
   await until(() => modal()?.matches(":modal"));
   assert(document.activeElement === modal().querySelector("input"), "Editor did not focus the name");
+  const role = modal().querySelector<HTMLButtonElement>('[role="combobox"][aria-label="Role"]')!;
+  role.closest("label")!.click();
+  await until(() => role.ariaExpanded === "true");
+  role.click();
   fill("input", "   ");
   await until(() => confirm().disabled);
   fill("input", "Changed title"); fill("textarea", "Line one\nLine two");
@@ -80,6 +86,7 @@ async function run() {
   confirm().click(); await until(() => Boolean(release)); release!();
   await until(() => !modal());
   assert(saved?.name === "Changed title" && saved.description === "Line one\nLine two", "Retry saved the wrong draft");
+  await new Promise(requestAnimationFrame);
   assert(document.activeElement === edit, "Closing editor did not restore focus");
   const remove = document.getElementById("delete")!;
   remove.focus(); remove.click();
