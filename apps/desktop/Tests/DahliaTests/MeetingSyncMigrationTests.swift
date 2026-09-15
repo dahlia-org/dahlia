@@ -1405,10 +1405,11 @@
                 id: .v7(), workspaceId: workspace.id, projectId: omittedProject.id, name: "Omitted",
                 createdAt: .now, updatedAt: .now
             )
-            let workspaceRecord = try SyncJSON.decoder.decode(
+            var workspaceRecord = try SyncJSON.decoder.decode(
                 SyncCanonicalPayload.self,
                 from: Data("{\"name\":\"Restored\"}".utf8)
             )
+            workspaceRecord.generationSettings = .init()
             let projectRecord = try SyncJSON.decoder.decode(
                 SyncCanonicalPayload.self,
                 from: Data("{\"name\":\"Current project\",\"projectType\":\"undefined\",\"createdAt\":\"2026-09-03T00:00:00.000Z\"}".utf8)

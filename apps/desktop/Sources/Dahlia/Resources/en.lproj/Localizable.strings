@@ -2,7 +2,7 @@
 "settings.organization.settingsDataAndAccounts" = "Data management";
 "settings.organization.generationAndAnalysis" = "Summary & image analysis";
 "settings.organization.searchSettings" = "Search settings";
-"settings.organization.settingsAccountIntro" = "Choose how each account creates summaries and analyzes images.";
+"settings.organization.settingsAccountIntro" = "Choose how the current workspace creates summaries and image captions.";
 "settings.organization.settingsAccountsIntro" = "Manage connected accounts and the workspaces that belong to them.";
 "settings.organization.settingsExportIntro" = "Configure export destinations on this Mac for the account selected in the sidebar.";
 "settings.organization.settingsAccountSelectionDescription" = "Choosing an account here does not switch your open workspace.";
@@ -24,14 +24,14 @@
 "settings.organization.summaryStyleEventDescription" = "Key claims, demonstrations, and takeaways from a talk or session.";
 "settings.organization.summaryStyleTimelineDescription" = "Follow an event in order, including demonstrations and Q&A.";
 "settings.preferences.macInferencePreferences" = "AI on this Mac";
-"settings.preferences.usesMacInferencePreferences" = "Transcribes on this Mac, then sends transcripts and images to the provider in AI on this Mac. That provider and model are shared by all accounts.";
-"settings.preferences.accountPreferences" = "Account settings";
-"settings.preferences.accountPreferencesScope" = "Switches with the account selected below. Changes in this section apply to the displayed account.";
+"settings.preferences.usesMacInferencePreferences" = "Transcribes on this Mac, then sends transcripts and images to its configured AI provider. Generation models follow this workspace’s settings.";
+"settings.preferences.accountPreferences" = "Workspace generation settings";
+"settings.preferences.accountPreferencesScope" = "These defaults are shared by everyone in the displayed workspace.";
 "settings.preferences.accountSummaryPreferencesDescription" = "Style and output language apply regardless of processing location. Changes affect new processing only. Summaries on Mac also send transcripts and images to the connected AI.";
 "settings.preferences.summaryStyle" = "Summary style";
 "settings.preferences.recordingSettings" = "Recording";
-"settings.preferences.localModelPreferences" = "Summary model on this Mac";
-"settings.preferences.localModelPreferencesDescription" = "Shared by accounts processing on this Mac. Model preferences are not synchronized to the server.";
+"settings.preferences.localModelPreferences" = "Local summary model";
+"settings.preferences.localModelPreferencesDescription" = "AI provider and credentials are specific to this Mac. Generation models are configured per workspace.";
 "settings.preferences.serverProcessingAdvanced" = "Advanced server settings";
 "settings.preferences.processingWorkflow" = "New recording automatic processing";
 "settings.preferences.transcribeThenSummarize" = "Transcribe, then summarize";
@@ -40,7 +40,7 @@
 "settings.preferences.automaticModelPreference" = "Automatic";
 "settings.preferences.unavailableModelPreference" = "Unavailable for this workflow";
 "settings.preferences.checkModelPreference" = "Check model compatibility";
-"settings.preferences.automaticModelPreferenceDescription" = "These choices apply automatically after new recordings. Manual generation uses the source selected on the meeting screen. Explicit model choices are retained; when one does not support the selected source, only that run uses Automatic for its model and reasoning effort.";
+"settings.preferences.automaticModelPreferenceDescription" = "These choices apply automatically after new recordings. Manual generation uses the selected source. Unavailable explicit models fail without substitution.";
 /* Common */
 "Delete" = "Delete";
 "Remove from Project" = "Remove from Project";
@@ -1460,7 +1460,7 @@
 "Choose the AI account used by this Workspace." = "Choose the AI account used by this Workspace.";
 "This account is used by %lld Workspaces. Those Workspaces will use the Local Account, and this account's Codex and Google Drive connection data will be deleted." = "This account is used by %lld Workspaces. Those Workspaces will use the Local Account, and this account's Codex and Google Drive connection data will be deleted.";
 "Dahlia stores meeting data and generated files in a local Workspace." = "Dahlia stores meeting data and generated files in a local Workspace.";
-"Choose the languages Dahlia should recognize and the primary language for AI output." = "Choose the languages Dahlia should recognize and the primary language for AI output.";
+"Choose the languages Dahlia should recognize. Set the AI output language in each workspace's settings." = "Choose the languages Dahlia should recognize. Set the AI output language in each workspace's settings.";
 "Recognition and OCR Languages" = "Recognition and OCR Languages";
 "Primary Language" = "Summary & Image Caption Language";
 "Used for summaries and screenshot captions." = "Used for summaries and screenshot captions.";
@@ -1581,7 +1581,7 @@
 "serverSummaryNoModels" = "No models available";
 "serverSummaryReloadModels" = "Reload models";
 
-"serverSummaryAccountDefault" = "Account default";
+"serverSummaryAccountDefault" = "Workspace default";
 
 "transcript.fullTranscriptionUnavailable" = "The transcript uses a different model. Full retranscription requires all original audio and a model that can process saved audio.";
 
@@ -1680,3 +1680,9 @@
 
 "setup.preparingWorkspace" = "Preparing your workspace…";
 "setup.workspaceUnavailable" = "Your workspace is not ready yet. Check your connection and retry.";
+"Generation defaults are shared by everyone in this workspace. Only admins can change them." = "Generation defaults are shared by everyone in this workspace. Only admins can change them.";
+"For this generation only" = "For this generation only";
+"Workspace default" = "Workspace default";
+
+"summary.source.useSaved" = "Use the saved transcript";
+"summary.source.useSaved.description" = "Generate from the copy saved on this Mac without fetching the latest server version. It may be outdated. Select this when working offline.";

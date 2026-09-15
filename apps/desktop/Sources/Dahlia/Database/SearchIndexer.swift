@@ -393,7 +393,7 @@ actor SearchIndexer {
             guard let firstRow = try Row.fetchOne(
                 db,
                 sql: """
-                SELECT targetKind, targetKey, generation, attempts
+                SELECT targetKind, targetKey, generation, attempts, captionLanguage
                 FROM jobs_search_index
                 WHERE indexKind = 'fts'
                   AND availableAt <= ?
@@ -410,7 +410,7 @@ actor SearchIndexer {
                 try Row.fetchAll(
                     db,
                     sql: """
-                    SELECT targetKind, targetKey, generation, attempts
+                    SELECT targetKind, targetKey, generation, attempts, captionLanguage
                     FROM jobs_search_index
                     WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis'
                       AND availableAt <= ? AND attempts < 5
@@ -423,13 +423,21 @@ actor SearchIndexer {
             } else {
                 [firstRow]
             }
-            let jobs = rows.map { row in
+            let jobs = try rows.map { row in
+                var language: SummaryLanguage? = (row["captionLanguage"] as String?).flatMap(SummaryLanguage.init(rawValue:))
+                if language == nil, (row["targetKind"] as String) == "screenshotAnalysis",
+                   let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: row["targetKey"] as UUID),
+                   let meeting = try MeetingRecord.fetchOne(db, key: screenshot.meetingId),
+                   let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId) {
+                    language = workspace.generationSettings.outputLanguage
+                }
                 let previousAttempts: Int = row["attempts"]
                 return SearchIndexJob(
                     targetKind: row["targetKind"],
                     targetID: row["targetKey"],
                     generation: row["generation"],
-                    attempts: previousAttempts + 1
+                    attempts: previousAttempts + 1,
+                    outputLanguage: language
                 )
             }
             let leaseDuration: TimeInterval = targetKind == "screenshotAnalysis" ? 300 : 60
@@ -437,11 +445,12 @@ actor SearchIndexer {
                 try db.execute(
                     sql: """
                     UPDATE jobs_search_index
-                    SET status = 'processing', attempts = attempts + 1,
+                    SET status = 'processing', attempts = attempts + 1, captionLanguage = ?,
                         claimedAt = ?, leaseExpiresAt = ?, updatedAt = ?
                     WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
                     """,
                     arguments: [
+                        job.outputLanguage?.rawValue,
                         now,
                         now.addingTimeInterval(leaseDuration),
                         now,
@@ -536,7 +545,8 @@ private extension SearchIndexer {
                       let meeting = try MeetingRecord.fetchOne(db, key: screenshot.meetingId),
                       let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId)
                 else { return nil }
-                guard screenshot.remoteReference == nil || screenshot.localReference != nil,
+                guard let outputLanguage = job.outputLanguage,
+                      screenshot.remoteReference == nil || screenshot.localReference != nil,
                       (try? TextContentAccess.requireComplete(entity: .file, id: screenshot.originalFileId, in: db)) != nil else { return nil }
                 return (job.targetID, ScreenshotAnalysisInput(
                     id: screenshot.id,
@@ -546,7 +556,8 @@ private extension SearchIndexer {
                         accountConnectionID: workspace.accountConnectionId,
                         localProvider: localSettings.provider,
                         databricksProfile: localSettings.databricksProfile
-                    )
+                    ),
+                    outputLanguage: outputLanguage
                 ))
             })
         }
@@ -967,6 +978,7 @@ private struct SearchIndexJob: Sendable {
     let targetID: UUID
     let generation: Int
     let attempts: Int
+    let outputLanguage: SummaryLanguage?
 }
 
 private enum ScreenshotJobOutcome: Sendable {

@@ -1,6 +1,6 @@
 import { seedPostgresIdentity } from "./public-test-client";
 import { testOrganizationID } from "./public-test-client";
-import { summaryStyleDetail } from "../src/account-settings-model";
+import { summaryStyleDetail } from "../src/workspace-generation-settings";
 import { describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { connectPostgresUrl } from "../src/db/postgres";
@@ -35,7 +35,7 @@ describe.runIf(databaseUrl)("PostgreSQL targeted summary delivery", () => {
         });
         return document;
       } };
-    const service = new SummaryService(store.sync, store.accountSettings, [method]);
+    const service = new SummaryService(store.sync, [method]);
     try {
       await seedPostgresIdentity(store, databaseUrl!, identity);
       await sync.commitTransaction(identity, { schemaVersion: 3, id: uuidV7(), workspaceId, createdAt: now, operations: [

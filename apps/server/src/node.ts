@@ -55,7 +55,7 @@ const imageAnalysis = captioner && applicationStore.imageAnalysis
 
 const summaryMethods = [createTranscriptSummaryMethod(config, applicationStore.sync, syncService),
   createAudioSummaryMethod(config, applicationStore.sync, syncService)].filter((method) => method !== undefined);
-const summaryService = summaryMethods.length ? new SummaryService(applicationStore.sync, applicationStore.accountSettings, summaryMethods) : undefined;
+const summaryService = summaryMethods.length ? new SummaryService(applicationStore.sync, summaryMethods) : undefined;
 const summaryWorker = summaryMethods.length ? new SummaryWorker(applicationStore.summaryJobs, summaryMethods, syncService) : undefined;
 const app = createApp({
   summaryService,

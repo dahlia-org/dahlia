@@ -9,6 +9,44 @@ import Synchronization
     @MainActor
     // swiftlint:disable:next type_body_length
     struct ScreenshotOCRSearchTests {
+        @Test
+        func captionRetryKeepsTheWorkspaceLanguageCapturedAtFirstClaim() async throws {
+            let analyzer = LanguageRetryAnalyzer()
+            let database = try makeDatabase(screenshotAnalyzer: analyzer)
+            var workspace = makeWorkspace()
+            workspace.generationSettings.outputLanguage = .fr
+            let meeting = makeMeeting(workspaceID: workspace.id)
+            let screenshot = MeetingScreenshotRecord(
+                id: .v7(),
+                meetingId: meeting.id,
+                sessionId: nil,
+                capturedAt: .now,
+                imageData: Data([1]),
+                mimeType: "image/png"
+            )
+            try await database.dbQueue.write { [workspace] db in
+                try workspace.insert(db)
+                try meeting.insert(db)
+                try screenshot.insertLegacyForTesting(db)
+            }
+            await database.searchIndexer.drain()
+            #expect(await analyzer.languages == [.fr])
+            try await database.dbQueue.write { [id = workspace.id] db in
+                var updated = try WorkspaceRecord.fetchOne(db, key: id)!
+                updated.generationSettings.outputLanguage = .en
+                try updated.update(db)
+                try db.execute(
+                    sql: "UPDATE jobs_search_index SET availableAt = ? WHERE targetKind = 'screenshotAnalysis'",
+                    arguments: [Date.distantPast]
+                )
+            }
+            await database.searchIndexer.drain()
+            #expect(await analyzer.languages == [.fr, .fr])
+            #expect(try await database.dbQueue.read { db in
+                try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.caption
+            } == "French caption")
+        }
+
         @Test(arguments: ["enabled", "disabled", "future", "legacy", "missing", "unavailable", "detached"])
         func serverAnalysisCapabilityControlsDeviceFallback(capability: String) async throws {
             let analyzer = StubScreenshotAnalyzer(text: "device OCR")
@@ -1080,6 +1118,15 @@ import Synchronization
             self.failureWaiter = nil
             failureWaiter.resume()
             return true
+        }
+    }
+
+    private actor LanguageRetryAnalyzer: ScreenshotAnalyzing {
+        private(set) var languages: [SummaryLanguage] = []
+        func analyze(_ screenshots: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
+            languages.append(contentsOf: screenshots.map(\.outputLanguage))
+            if languages.count == 1 { throw URLError(.notConnectedToInternet) }
+            return screenshots.map { ScreenshotAnalysis(screenshotID: $0.id, ocrText: "", caption: "French caption") }
         }
     }
 #endif

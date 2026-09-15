@@ -1,3 +1,4 @@
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "../workspace-generation-settings";
 import type { CalendarEventSnapshot } from "../sync/schemas";
 import type { TranscriptMetadata } from "../sync/transcript";
 import type { SummaryMetadata } from "../summary/metadata";
@@ -29,7 +30,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { fileMetadataLimits, type FileMetadata } from "../files/model";
-import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../account-settings-model";
+import { type AccountSettings } from "../account-settings-model";
 import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from "../search/settings-model";
 
 import { user as authUser, organization as authOrganization } from "./generated/postgres-auth-schema";
@@ -71,10 +72,7 @@ export const serverSettings = appSchema.table("server_settings", {
 
 export const accountSettings = appSchema.table("account_settings", {
   userId: uuid("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
-  summary: jsonb("summary").$type<AccountSettings["summary"]>().default(DEFAULT_ACCOUNT_SETTINGS.summary).notNull(),
-  processing: jsonb("processing").$type<AccountSettings["processing"]>().default(DEFAULT_ACCOUNT_SETTINGS.processing).notNull(),
   revision: integer("revision").default(1).notNull(),
-  outputLanguage: text("output_language").$type<AccountSettings["outputLanguage"]>().notNull(),
   analysisLanguages: jsonb("analysis_languages").$type<AccountSettings["analysisLanguages"]>().notNull(),
 }, (table) => [
   pgPolicy("account_settings_owner", {
@@ -94,6 +92,7 @@ export const syncedWorkspace = appSchema.table("workspaces", {
   workspaceId: uuid("workspace_id").primaryKey(),
   organizationId: uuid("organization_id").notNull().references(() => authOrganization.id, { onDelete: "restrict" }),
   createdBy: jsonb("created_by").$type<{ id: string; name: string; email: string }>().notNull(),
+  generationSettings: jsonb("generation_settings").$type<WorkspaceGenerationSettings>().default(DEFAULT_WORKSPACE_GENERATION_SETTINGS).notNull(),
   name: text("name").notNull(),
   icon: text("icon"),
   color: text("color"),
@@ -608,6 +607,7 @@ export const imageAnalysisJob = jobsSchema.table("image_analysis", {
   workspaceId: uuid("workspace_id").notNull(),
   ownerUserId: uuid("owner_user_id").notNull(),
   model: text("model").notNull(),
+  outputLanguage: text("output_language"),
   status: text("status").default("pending").notNull(),
   attempts: integer("attempts").default(0).notNull(),
   availableAt: timestamp("available_at").defaultNow().notNull(),

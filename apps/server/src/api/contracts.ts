@@ -116,7 +116,7 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
     teams: z.array(z.object({ id: S.principalId, name: z.string() })), hasMoreMembers: z.boolean(), hasMoreTeams: z.boolean(),
   })) }, { query: z.object({ membersOffset: z.string().regex(/^\d+$/).optional(), teamsOffset: z.string().regex(/^\d+$/).optional() }).strict() }, browser),
   getSettings: route("get", "/api/v1/account/settings", "getSettings", "Read current account settings", { 200: json(settingsEnvelope) }),
-  updateSettings: route("patch", "/api/v1/account/settings", "updateSettings", "Merge supplied fields, including nested summary settings; maximum 8 KiB", { 200: json(settingsEnvelope) }, body(accountSettingsPatchSchema, { outputLanguage: "ja" })),
+  updateSettings: route("patch", "/api/v1/account/settings", "updateSettings", "Update account recognition languages; maximum 8 KiB", { 200: json(settingsEnvelope) }, body(accountSettingsPatchSchema, { analysisLanguages: { scope: "all", identifiers: [] } })),
   getCapabilities: route("get", "/api/v1/capabilities", "getCapabilities", "Discover feature versions; unsupported features are omitted", { 200: json(S.capabilities) }),
   listWorkspaces: route("get", "/api/v1/workspaces", "listWorkspaces", "Accessible Workspaces", { 200: json(S.page(S.workspace)) }, { query: z.object({ organizationId: S.principalId.optional() }).strict() }),
   getWorkspace: route("get", v, "getWorkspace", "Get Workspace", { 200: json(S.workspace) }),

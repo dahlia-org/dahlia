@@ -20,7 +20,6 @@ struct SetupCompletionStepView: View {
                         identifiers: settings.enabledLanguageIdentifiers
                     )
                 )
-                LabeledContent(L10n.primaryLanguage, value: settings.llmSummaryLanguage.displayName)
                 if model.selectedAccountConnectionID == nil {
                     LabeledContent(L10n.modelProvider, value: workspaceSettings.localProvider.displayName)
                 } else {

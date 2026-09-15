@@ -769,7 +769,6 @@ final class CaptionViewModel: ObservableObject {
     private let transcriptTranslationService = TranscriptTranslationService()
     private let automaticScreenshotCaptureControl: AutomaticScreenshotCaptureControl
     private let summaryGenerationRunner: SummaryGenerationRunner
-    private let summaryAccountSettingsLoader: @MainActor (UUID) async throws -> ServerAccountSettings
     private let serverSummaryService: ServerSummaryService
     private let summaryJobSleeper: SummaryJobSleeper
     private let googleDocsSummaryExporter: SummaryGoogleDocsExporter
@@ -803,9 +802,6 @@ final class CaptionViewModel: ObservableObject {
                 generationSettings: input.generationSettings
             )
         },
-        summaryAccountSettingsLoader: @escaping @MainActor (UUID) async throws -> ServerAccountSettings = {
-            try await ServerAccountSettingsModel.shared.loadedSettings(connectionID: $0)
-        },
         serverSummaryService: ServerSummaryService = .shared,
         summaryJobSleeper: @escaping SummaryJobSleeper = { try await Task.sleep(for: $0) },
         googleDocsSummaryExporter: @escaping SummaryGoogleDocsExporter = { document, context, fileName in
@@ -832,7 +828,6 @@ final class CaptionViewModel: ObservableObject {
             capture: automaticScreenshotCapture
         )
         self.summaryGenerationRunner = summaryGenerationRunner
-        self.summaryAccountSettingsLoader = summaryAccountSettingsLoader
         self.serverSummaryService = serverSummaryService
         self.summaryJobSleeper = summaryJobSleeper
         self.googleDocsSummaryExporter = googleDocsSummaryExporter
@@ -1260,6 +1255,7 @@ final class CaptionViewModel: ObservableObject {
             purpose: .retranscription(sessionIds: sessionIds),
             initiallyGeneratesSummary: hasCurrentMeetingSummary
                 || AppSettings.shared.generateSummaryAfterBatchTranscription,
+            usesServerSummary: details.usesServerSummary,
             summaryGenerationOptions: details.summaryGenerationOptions,
             projectSelection: details.projectSelection
         )
@@ -1293,6 +1289,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private struct BatchTranscriptionConfirmationDetails {
+        var usesServerSummary = false
         let summaryGenerationOptions: SummaryGenerationOptions
         let projectSelection: BatchTranscriptionProjectSelection
         let meetingName: String
@@ -1311,17 +1308,17 @@ final class CaptionViewModel: ObservableObject {
         }
 
         do {
-            let snapshot = try dbQueue.read { db -> (MeetingRecord, [ProjectRecord], UUID?) in
+            let snapshot = try dbQueue.read { db -> (MeetingRecord, [ProjectRecord], Bool) in
                 guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else {
                     throw SummaryGenerationPreparationError.meetingUnavailable
                 }
                 let projects = try ProjectRecord.fetchResolvedAll(workspaceId: meeting.workspaceId, in: db)
-                return try (meeting, projects, WorkspaceRecord.fetchOne(db, key: meeting.workspaceId)?.accountConnectionId)
+                let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId)
+                return (meeting, projects, workspace?.generationSettings.processing.location == .remote)
             }
             return BatchTranscriptionConfirmationDetails(
-                summaryGenerationOptions: snapshot.2.map {
-                    AppSettings.shared.batchSummaryGenerationOptions(serverSettings: ServerAccountSettingsModel.shared.state(for: $0).settings)
-                } ?? AppSettings.shared.batchSummaryGenerationOptions(),
+                usesServerSummary: snapshot.2,
+                summaryGenerationOptions: AppSettings.shared.batchSummaryGenerationOptions(),
                 projectSelection: BatchTranscriptionProjectSelection(
                     projects: FlatProjectRow.buildRows(fromRecords: snapshot.1),
                     selectedProjectId: snapshot.0.projectId,
@@ -1504,6 +1501,7 @@ final class CaptionViewModel: ObservableObject {
             purpose: confirmation.purpose,
             initiallyGeneratesSummary: generatesSummary,
             processingMethod: confirmation.processingMethod,
+            usesServerSummary: confirmation.usesServerSummary,
             summaryGenerationOptions: summaryGenerationOptions,
             projectSelection: makeBatchTranscriptionConfirmationDetails(
                 meetingId: confirmation.meetingId,
@@ -1554,7 +1552,7 @@ final class CaptionViewModel: ObservableObject {
                     id: .v7(), automatic: true, liveDraft: false,
                     localeIdentifier: execution.confirmation.suggestedLocaleIdentifier,
                     method: .transcript, options: options,
-                    generationSettings: .current(detailLevel: options.detailLevel), serverSettings: nil,
+                    generationSettings: .current(detailLevel: options.detailLevel), workspaceSettings: nil,
                     summaryMode: .local,
                     stage: .transcribing
                 )
@@ -3498,33 +3496,24 @@ final class CaptionViewModel: ObservableObject {
     private func processingSnapshot(
         dbQueue: DatabaseQueue, workspaceID: UUID, plan: TranscriptionSessionPlan, locale: Locale
     ) async throws -> RecordingProcessing {
-        let automatic = AppSettings.shared.automaticRecordingProcessingEnabled
-        var options = SummaryGenerationOptions(
+        guard let workspace = try await dbQueue.read({ db in try WorkspaceRecord.fetchOne(db, key: workspaceID) }) else {
+            throw SummaryGenerationPreparationError.meetingUnavailable
+        }
+        let preferences = workspace.generationSettings
+        let options = SummaryGenerationOptions(
             exportOptions: .init(
                 exportsToWorkspace: AppSettings.shared.exportBatchSummaryToWorkspace,
                 exportsToGoogleDocs: AppSettings.shared.exportBatchSummaryToGoogleDocs
-            ),
-            detailLevel: AppSettings.shared.summaryDetailLevel
+            ), detailLevel: preferences.summary.detailLevel
         )
-        let connectionID = try await dbQueue.read { db in try WorkspaceRecord.fetchOne(db, key: workspaceID)?.accountConnectionId }
-        let serverSettings = connectionID.flatMap { ServerAccountSettingsModel.shared.state(for: $0).settings }
-        if let detail = serverSettings?.summary?.detailLevel {
-            options = .init(exportOptions: options.exportOptions, detailLevel: detail)
-        }
-        var generationSettings = SummaryGenerationSettings.current(
-            detailLevel: options.detailLevel, accountSettings: serverSettings ?? .initialValues()
-        )
-        generationSettings.accountConnectionID = connectionID
-        let method: RecordingProcessingMethod = switch serverSettings?.processing?.location {
-        case .remote:
-            serverSettings?.processing?.remote.workflow == .combined ? .audio : .cloudTranscription
-        default:
-            .transcript
-        }
+        let generationSettings = SummaryGenerationSettings.current(detailLevel: options.detailLevel, workspace: workspace)
+        let method: RecordingProcessingMethod = preferences.processing.location == .remote
+            ? (preferences.processing.remote.workflow == .combined ? .audio : .cloudTranscription) : .transcript
         return RecordingProcessing(
-            id: .v7(), automatic: automatic, liveDraft: plan.liveTranscriptDraftEnabled, localeIdentifier: locale.identifier,
-            method: method, options: options, generationSettings: generationSettings.applying(detailLevel: options.detailLevel),
-            serverSettings: serverSettings, summaryMode: serverSettings?.processing?.location ?? .local
+            id: .v7(), automatic: AppSettings.shared.automaticRecordingProcessingEnabled,
+            liveDraft: plan.liveTranscriptDraftEnabled, localeIdentifier: locale.identifier,
+            method: method, options: options, generationSettings: generationSettings,
+            workspaceSettings: preferences, summaryMode: preferences.processing.location
         )
     }
 
@@ -4053,6 +4042,7 @@ final class CaptionViewModel: ObservableObject {
             automaticLanguageCandidateSnapshot: preferences.automaticLanguageCandidateSnapshot,
             initiallyGeneratesSummary: processing != nil || AppSettings.shared.generateSummaryAfterBatchTranscription,
             processingMethod: processing?.method,
+            usesServerSummary: processing?.usesServerSummary ?? details.usesServerSummary,
             summaryGenerationOptions: processing?.options ?? details.summaryGenerationOptions,
             projectSelection: details.projectSelection
         )
@@ -4232,7 +4222,6 @@ final class CaptionViewModel: ObservableObject {
         let recordingSessions: [RecordingSessionTimeline]
         let options: SummaryGenerationOptions
         var generationSettings: SummaryGenerationSettings
-        var accountSettings: ServerAccountSettings?
         let retriesFailedPersistence: Bool
         let telemetryTrigger: UsageTelemetryEvent.SummaryTrigger
     }
@@ -4331,118 +4320,135 @@ final class CaptionViewModel: ObservableObject {
 
     func summaryGenerationSourceAvailability(
         meetingIDs: Set<UUID>,
-        dbQueue: DatabaseQueue? = nil
+        dbQueue: DatabaseQueue? = nil,
+        location: WorkspaceGenerationSettings.SummaryMode? = nil
     ) async throws -> SummaryGenerationSourceAvailability {
         guard !meetingIDs.isEmpty, let dbQueue = dbQueue ?? currentDbQueue else {
             throw SummaryGenerationPreparationError.meetingUnavailable
         }
-        let connectionIDs = try await dbQueue.read { db in
-            try Set(meetingIDs.map { meetingID -> UUID? in
+        let workspaces = try await dbQueue.read { db in
+            try meetingIDs.map { meetingID -> WorkspaceRecord in
                 guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
-                      let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId) else {
+                      let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId), workspace.allowsCanonicalEdits else {
                     throw SummaryGenerationPreparationError.meetingUnavailable
                 }
-                return workspace.accountConnectionId
-            })
-        }
-        guard connectionIDs.count == 1 else { throw SummaryGenerationPreparationError.meetingUnavailable }
-        let connectionID = connectionIDs.first.flatMap(\.self)
-        let settings: ServerAccountSettings? = if let connectionID {
-            try await summaryAccountSettingsLoader(connectionID)
-        } else {
-            nil
-        }
-        let usesServer = settings?.processing?.location == .remote
-        let supportedSources: Set<SummaryGenerationSource>
-        var serverTranscriptMeetingIDs: Set<UUID> = []
-        var serverAudioMeetingIDs: Set<UUID> = []
-        if usesServer, let connectionID {
-            var targets: [ServerSummaryService.Target] = []
-            for meetingID in meetingIDs {
-                if let target = try await serverSummaryService.target(meetingID: meetingID, dbQueue: dbQueue) {
-                    targets.append(target)
-                }
+                return workspace
             }
-            guard targets.count == meetingIDs.count, let target = targets.first else {
-                throw SummaryGenerationPreparationError.meetingUnavailable
-            }
-            supportedSources = try await Set(serverSummaryService.manualMethods(
-                connectionID: connectionID,
-                origin: target.origin
-            ).compactMap(SummaryGenerationSource.init(rawValue:)))
-            if !supportedSources.isEmpty {
-                let service = serverSummaryService
-                let check: @Sendable (ServerSummaryService.Target) async -> (UUID, Bool?, Bool?) = { target in
-                    let transcript: Bool?
-                    do {
-                        if supportedSources.contains(.transcript) {
-                            transcript = try await service.availableTranscriptVersion(target, dbQueue: dbQueue) != nil
-                        } else {
-                            transcript = false
-                        }
-                    } catch {
-                        transcript = nil
+        }
+        guard Set(workspaces.map(\.id)).count == 1, let workspace = workspaces.first else {
+            throw SummaryGenerationPreparationError.meetingUnavailable
+        }
+        let connectionID = workspace.accountConnectionId
+        let settings = workspace.generationSettings
+        let usesServer = (location ?? settings.processing.location) == .remote
+        do {
+            let supportedSources: Set<SummaryGenerationSource>
+            var serverTranscriptMeetingIDs: Set<UUID> = []
+            var serverAudioMeetingIDs: Set<UUID> = []
+            if usesServer, let connectionID {
+                var targets: [ServerSummaryService.Target] = []
+                for meetingID in meetingIDs {
+                    if let target = try await serverSummaryService.target(meetingID: meetingID, dbQueue: dbQueue) {
+                        targets.append(target)
                     }
-                    let audio: Bool?
-                    do {
-                        if supportedSources.contains(.audio) {
-                            audio = try await service.hasAvailableAudio(target)
-                        } else {
-                            audio = false
-                        }
-                    } catch {
-                        audio = nil
-                    }
-                    return (target.meetingID, transcript, audio)
                 }
-                let availability = try await withThrowingTaskGroup(of: (UUID, Bool?, Bool?).self) { group in
-                    var iterator = targets.makeIterator()
-                    for _ in 0 ..< min(4, targets.count) {
-                        guard let target = iterator.next() else { break }
-                        group.addTask { await check(target) }
+                guard targets.count == meetingIDs.count, let target = targets.first else {
+                    throw SummaryGenerationPreparationError.meetingUnavailable
+                }
+                supportedSources = try await Set(serverSummaryService.manualMethods(
+                    connectionID: connectionID,
+                    origin: target.origin
+                ).compactMap(SummaryGenerationSource.init(rawValue:)))
+                if !supportedSources.isEmpty {
+                    let service = serverSummaryService
+                    let check: @Sendable (ServerSummaryService.Target) async -> (UUID, Bool?, Bool?) = { target in
+                        let transcript: Bool?
+                        do {
+                            if supportedSources.contains(.transcript) {
+                                transcript = try await service.availableTranscriptVersion(target, dbQueue: dbQueue) != nil
+                            } else {
+                                transcript = false
+                            }
+                        } catch {
+                            transcript = nil
+                        }
+                        let audio: Bool?
+                        do {
+                            if supportedSources.contains(.audio) {
+                                audio = try await service.hasAvailableAudio(target)
+                            } else {
+                                audio = false
+                            }
+                        } catch {
+                            audio = nil
+                        }
+                        return (target.meetingID, transcript, audio)
                     }
-                    var result: [(UUID, Bool?, Bool?)] = []
-                    for try await availability in group {
-                        result.append(availability)
-                        if let target = iterator.next() {
+                    let availability = try await withThrowingTaskGroup(of: (UUID, Bool?, Bool?).self) { group in
+                        var iterator = targets.makeIterator()
+                        for _ in 0 ..< min(4, targets.count) {
+                            guard let target = iterator.next() else { break }
                             group.addTask { await check(target) }
                         }
-                    }
-                    return result
-                }
-                guard availability.contains(where: {
-                    (supportedSources.contains(.transcript) && $0.1 != nil)
-                        || (supportedSources.contains(.audio) && $0.2 != nil)
-                }) else { throw ServerSummaryService.Failure.unavailable }
-                serverTranscriptMeetingIDs = Set(availability.filter { $0.1 == true }.map(\.0))
-                serverAudioMeetingIDs = Set(availability.filter { $0.2 == true }.map(\.0))
-            }
-        } else {
-            supportedSources = [.transcript]
-            if connectionID != nil {
-                try await withThrowingTaskGroup(of: Void.self) { group in
-                    for meetingID in meetingIDs {
-                        group.addTask {
-                            try await MeetingContentProvider.shared.ensure(
-                                entity: .transcript,
-                                id: meetingID,
-                                dbQueue: dbQueue,
-                                refresh: true
-                            )
+                        var result: [(UUID, Bool?, Bool?)] = []
+                        for try await availability in group {
+                            result.append(availability)
+                            if let target = iterator.next() {
+                                group.addTask { await check(target) }
+                            }
                         }
+                        return result
                     }
-                    try await group.waitForAll()
+                    guard availability.contains(where: {
+                        (supportedSources.contains(.transcript) && $0.1 != nil)
+                            || (supportedSources.contains(.audio) && $0.2 != nil)
+                    }) else { throw ServerSummaryService.Failure.unavailable }
+                    serverTranscriptMeetingIDs = Set(availability.filter { $0.1 == true }.map(\.0))
+                    serverAudioMeetingIDs = Set(availability.filter { $0.2 == true }.map(\.0))
+                }
+            } else {
+                supportedSources = [.transcript]
+                if connectionID != nil {
+                    try await withThrowingTaskGroup(of: Void.self) { group in
+                        for meetingID in meetingIDs {
+                            group.addTask {
+                                try await MeetingContentProvider.shared.ensure(
+                                    entity: .transcript,
+                                    id: meetingID,
+                                    dbQueue: dbQueue,
+                                    refresh: false
+                                )
+                            }
+                        }
+                        try await group.waitForAll()
+                    }
                 }
             }
+            var availability = try await SummaryGenerationSourceAvailability.load(
+                meetingIDs: meetingIDs,
+                supportedSources: supportedSources,
+                usesServer: usesServer,
+                serverTranscriptMeetingIDs: serverTranscriptMeetingIDs,
+                serverAudioMeetingIDs: serverAudioMeetingIDs,
+                dbQueue: dbQueue
+            )
+            availability.generationSettings = settings
+            availability.hasServerConnection = connectionID != nil
+            return availability
+        } catch {
+            if error is CancellationError { throw error }
+            try Task.checkCancellation()
+            return SummaryGenerationSourceAvailability(
+                generationSettings: settings,
+                hasServerConnection: connectionID != nil,
+                sourceCheckFailed: true,
+                meetingCount: meetingIDs.count,
+                transcriptCount: 0,
+                audioCount: 0,
+                supportedSources: [],
+                usesServer: usesServer
+            )
         }
-        return try await SummaryGenerationSourceAvailability.load(
-            meetingIDs: meetingIDs,
-            supportedSources: supportedSources,
-            usesServer: usesServer,
-            serverTranscriptMeetingIDs: serverTranscriptMeetingIDs,
-            serverAudioMeetingIDs: serverAudioMeetingIDs,
-            dbQueue: dbQueue
-        )
     }
 
     func currentServerSummaryStatus() async throws -> ServerSummaryService.Job? {
@@ -4601,7 +4607,7 @@ final class CaptionViewModel: ObservableObject {
             noteText: noteText.nilIfBlank,
             recordingSessions: store.recordingSessions,
             options: options,
-            generationSettings: .current(detailLevel: options.detailLevel, accountSettings: .initialValues()),
+            generationSettings: .current(detailLevel: options.detailLevel),
             retriesFailedPersistence: true,
             telemetryTrigger: .manual
         )
@@ -4730,7 +4736,7 @@ final class CaptionViewModel: ObservableObject {
             noteText: snapshot.2?.text.nilIfBlank,
             recordingSessions: snapshot.3.map(RecordingSessionTimeline.init),
             options: options,
-            generationSettings: generationSettings ?? .current(detailLevel: options.detailLevel, accountSettings: .initialValues()),
+            generationSettings: generationSettings ?? .current(detailLevel: options.detailLevel),
             retriesFailedPersistence: false,
             telemetryTrigger: telemetryTrigger
         )
@@ -4788,32 +4794,37 @@ final class CaptionViewModel: ObservableObject {
         return true
     }
 
-    private func prepareAccountSummaryRequest(
+    private func prepareWorkspaceSummaryRequest(
         _ request: SummaryGenerationRequest, target: ServerSummaryService.Target?
     ) async throws -> SummaryGenerationRequest {
         var request = request
-        guard let target else {
-            guard request.accountSettings == nil else { throw ServerSummaryService.Failure.unavailable }
-            request.generationSettings.accountConnectionID = nil
-            return request
-        }
-        if request.accountSettings != nil {
-            guard request.generationSettings.sourceAccountConnectionID == target.connectionID
-            else { throw ServerSummaryService.Failure.unavailable }
+        let meetingID = request.meetingId
+        guard let workspace = try await request.dbQueue.read({ db -> WorkspaceRecord? in
+            guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID) else { return nil }
+            return try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId)
+        }), workspace.allowsCanonicalEdits else { throw SummaryGenerationPreparationError.meetingUnavailable }
+        guard workspace.accountConnectionId == target?.connectionID else { throw ServerSummaryService.Failure.unavailable }
+        if let capturedID = request.generationSettings.workspaceID {
+            guard capturedID == workspace.id,
+                  request.generationSettings.sourceAccountConnectionID == workspace.accountConnectionId else {
+                throw ServerSummaryService.Failure.unavailable
+            }
         } else {
-            request.accountSettings = try await summaryAccountSettingsLoader(target.connectionID)
+            request.generationSettings = request.generationSettings.applying(workspace: workspace, options: request.options)
         }
-        guard let accountSettings = request.accountSettings, accountSettings.processing != nil else {
-            throw ServerSummaryService.Failure.unavailable
-        }
-        request.generationSettings = request.generationSettings.applying(
-            accountSettings: accountSettings, connectionID: target.connectionID, detailLevel: request.options.detailLevel
-        )
         return request
     }
 
     private func runSummaryGeneration(_ request: SummaryGenerationRequest, job: SummaryGenerationJob) async {
-        var preparedRequest = request
+        var preparedRequest: SummaryGenerationRequest
+        do {
+            let target = try await serverSummaryService.target(meetingID: request.meetingId, dbQueue: request.dbQueue)
+            preparedRequest = try await prepareWorkspaceSummaryRequest(request, target: target)
+        } catch {
+            failSummaryGeneration(error.localizedDescription, request: request, job: job)
+            finishSummaryGeneration(request, job: job)
+            return
+        }
         for entity in [TextContentEntity.summary, .transcript] {
             await MeetingContentProvider.shared.retain(entity: entity, id: request.meetingId, dbQueue: request.dbQueue)
         }
@@ -4847,18 +4858,18 @@ final class CaptionViewModel: ObservableObject {
                 usesServerSummary = processing.usesServerSummary
                     ?? (preparedRequest.generationSettings.runtimeProvider.accountConnectionID != nil)
             } else {
-                preparedRequest = try await prepareAccountSummaryRequest(preparedRequest, target: target)
-                usesServerSummary = preparedRequest.accountSettings?.processing?.location == .remote
+                preparedRequest = try await prepareWorkspaceSummaryRequest(preparedRequest, target: target)
+                usesServerSummary = preparedRequest.generationSettings.workspacePreferences?.processing.location == .remote
             }
             if preparedRequest.options.source == .audio, !usesServerSummary {
                 throw ServerSummaryService.Failure.unavailable
             }
-            if preparedRequest.options.source == .transcript, !usesServerSummary, target != nil {
+            if !usesServerSummary, target != nil, sessionID == nil || preparedRequest.options.source == .transcript {
                 try await MeetingContentProvider.shared.ensure(
                     entity: .transcript,
                     id: preparedRequest.meetingId,
                     dbQueue: preparedRequest.dbQueue,
-                    refresh: true
+                    refreshIfStale: preparedRequest.options.useSavedTranscript != true
                 )
             }
             try Task.checkCancellation()
@@ -4877,7 +4888,7 @@ final class CaptionViewModel: ObservableObject {
                     source: request.options.source,
                     preparedRequest: job.serverRequest,
                     processing: processing,
-                    accountSettings: request.accountSettings,
+                    workspaceSettings: request.generationSettings.workspacePreferences,
                     onPrepared: { body in
                         await MainActor.run { job.serverRequest = body }
                         guard let sessionID else { return }

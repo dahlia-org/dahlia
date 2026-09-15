@@ -2009,42 +2009,12 @@
       "table": "account_settings"
     },
     {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "'{\"style\":\"detailed\"}'",
-      "generated": null,
-      "name": "summary",
-      "entityType": "columns",
-      "table": "account_settings"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "'{\"location\":\"local\",\"remote\":{\"workflow\":\"transcribeThenSummarize\"}}'",
-      "generated": null,
-      "name": "processing",
-      "entityType": "columns",
-      "table": "account_settings"
-    },
-    {
       "type": "integer",
       "notNull": true,
       "autoincrement": false,
       "default": "1",
       "generated": null,
       "name": "revision",
-      "entityType": "columns",
-      "table": "account_settings"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "output_language",
       "entityType": "columns",
       "table": "account_settings"
     },
@@ -2095,6 +2065,16 @@
       "default": null,
       "generated": null,
       "name": "model",
+      "entityType": "columns",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "output_language",
       "entityType": "columns",
       "table": "jobs_image_analysis"
     },
@@ -4045,6 +4025,16 @@
       "default": null,
       "generated": null,
       "name": "created_by",
+      "entityType": "columns",
+      "table": "workspaces"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'{\"outputLanguage\":\"ja\",\"processing\":{\"location\":\"local\",\"remote\":{\"workflow\":\"transcribeThenSummarize\"}},\"summary\":{\"style\":\"detailed\"},\"local\":{\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\"}}'",
+      "generated": null,
+      "name": "generation_settings",
       "entityType": "columns",
       "table": "workspaces"
     },

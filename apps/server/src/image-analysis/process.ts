@@ -23,7 +23,8 @@ export async function processImageAnalysisJob(
       await jobs.finish(job);
       return true;
     }
-    const settings = await accountSettings.get(job.ownerUserId) ?? DEFAULT_ACCOUNT_SETTINGS;
+    const settings = { ...(await accountSettings.get(job.ownerUserId) ?? DEFAULT_ACCOUNT_SETTINGS),
+      outputLanguage: job.outputLanguage };
     const { upstream } = await sync.readFileContent(identity, job.fileId, "thumb_1280", "GET",
       new Request("https://dahlia.invalid/", { signal }));
     if (!upstream.ok) {

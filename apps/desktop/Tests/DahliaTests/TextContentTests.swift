@@ -1099,10 +1099,39 @@
             #expect(state.revision == 1)
             let provider = provider(fixture, handler: fixture.response)
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
-            try await provider.ensure(entity: .transcript, id: fixture.meetingId, dbQueue: fixture.queue, refresh: true)
+            try await provider.ensure(entity: .transcript, id: fixture.meetingId, dbQueue: fixture.queue, refreshIfStale: true)
             #expect(try MeetingRepository(dbQueue: fixture.queue).fetchSegments(forMeetingId: fixture.meetingId).count == 2)
             #expect(try await fixture.queue
                 .read { try TextContentStore.fingerprint(entity: .transcript, id: fixture.meetingId, in: $0)?.hash } == fixture.hash)
+        }
+
+        @Test(arguments: [false, true], [false, true])
+        func localGenerationRefreshesKnownStaleTextUnlessSavedCopyIsSelected(stale: Bool, useSavedCopy: Bool) async throws {
+            let fixture = try textFixture()
+            try await fixture.queue.write { db in
+                try db.execute(sql: "INSERT INTO transcript_segment_bodies(segmentId, text) VALUES (?, 'Saved copy')", arguments: [fixture.segmentId])
+                try db.execute(sql: "UPDATE sync_content_state SET complete = 1, residentRevision = ?", arguments: [stale ? 1 : 3])
+            }
+            let requests = Mutex(0)
+            let provider = MeetingContentProvider(client: SyncAPIClient(
+                session: URLSession(configuration: .ephemeral),
+                tokenProvider: { _, _ in
+                    requests.withLock { $0 += 1 }
+                    throw URLError(.notConnectedToInternet)
+                }
+            ))
+            do {
+                try await provider.ensure(
+                    entity: .transcript, id: fixture.meetingId, dbQueue: fixture.queue,
+                    refreshIfStale: !useSavedCopy
+                )
+                #expect(!stale || useSavedCopy)
+            } catch {
+                #expect(stale && !useSavedCopy)
+                #expect((error as? URLError)?.code == .notConnectedToInternet)
+            }
+            #expect(requests.withLock { $0 } == (stale && !useSavedCopy ? 1 : 0))
+            #expect(try MeetingRepository(dbQueue: fixture.queue).fetchSegments(forMeetingId: fixture.meetingId).first?.text == "Saved copy")
         }
 
         @Test
@@ -1224,6 +1253,11 @@
             let fixture = try textFixture()
             let connectionId = try await fixture.queue.write { db in
                 try db.execute(sql: "UPDATE workspaces SET syncPullCursor = 'before'")
+                var workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                workspace.generationSettings.processing.location = .remote
+                workspace.generationSettings.outputLanguage = .en
+                workspace.generationSettings.local.model = "custom-model"
+                try workspace.update(db)
                 return try #require(try UUID.fetchOne(db, sql: "SELECT accountConnectionId FROM workspaces"))
             }
             var emptyDigest = TextContentDigest()
@@ -1283,6 +1317,10 @@
             }
             try await fixture.queue.read { db throws in
                 #expect(try UUID.fetchOne(db, sql: "SELECT accountConnectionId FROM workspaces") == (fail ? connectionId : nil))
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                #expect(workspace.generationSettings.processing.location == (fail ? .remote : .local))
+                #expect(workspace.generationSettings.outputLanguage == .en)
+                #expect(workspace.generationSettings.local.model == "custom-model")
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM transcript_segment_bodies") == (scenario == "textFailure" ? 0 : 2))
                 if !fail { #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_content_state") == 0) }
                 if fail {
@@ -1296,6 +1334,7 @@
                 try await repository.resolveWorkspacesForSignOut(connectionID: connectionId, disposition: .moveToLocalAccount, textContent: provider)
                 #expect(changeRequests.withLock { $0 } == 4)
                 #expect(try await fixture.queue.read { try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.accountConnectionId } == nil)
+                #expect(try await fixture.queue.read { try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.generationSettings.processing.location } == .local)
             }
         }
 

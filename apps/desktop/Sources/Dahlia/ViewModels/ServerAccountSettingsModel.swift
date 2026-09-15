@@ -124,10 +124,8 @@ final class ServerAccountSettingsModel {
                 if settings == nil {
                     settings = try await Self.patch(
                         .init(
-                            outputLanguage: initial.outputLanguage,
                             analysisLanguages: initial.analysisLanguages,
-                            initialize: true,
-                            summary: .init(style: initial.summary?.style)
+                            initialize: true
                         ),
                         client: client, connectionID: connectionID, origin: connection.origin
                     )

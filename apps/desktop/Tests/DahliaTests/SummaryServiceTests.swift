@@ -417,37 +417,14 @@ struct SummaryServiceTests {
     }
 
     @Test
-    func summaryDetailLevelFallsBackToDetailed() {
-        let previousValue = AppSettings.shared.summaryDetailLevelRawValue
-        defer { AppSettings.shared.summaryDetailLevelRawValue = previousValue }
-
-        #expect(SummaryDetailLevel.defaultValue == .detailed)
-        for detailLevel in SummaryDetailLevel.allCases {
-            AppSettings.shared.summaryDetailLevelRawValue = detailLevel.rawValue
-            #expect(AppSettings.shared.summaryDetailLevel == detailLevel)
-        }
-
-        AppSettings.shared.summaryDetailLevelRawValue = "unsupported"
-        #expect(AppSettings.shared.summaryDetailLevel == .detailed)
-    }
-
-    @Test
     func summaryGenerationInstructionsIncludeDetailAndLanguage() {
-        let settings = AppSettings.shared
-        let previousDetailLevel = settings.summaryDetailLevelRawValue
-        let previousLanguage = settings.llmSummaryLanguageRawValue
-        defer {
-            settings.summaryDetailLevelRawValue = previousDetailLevel
-            settings.llmSummaryLanguageRawValue = previousLanguage
-        }
-
-        settings.llmSummaryLanguage = .en
+        var workspace = WorkspaceRecord(id: .v7(), path: "/tmp/test", name: "Test", createdAt: .now, lastOpenedAt: .now)
+        workspace.generationSettings.outputLanguage = .en
         for detailLevel in SummaryDetailLevel.allCases {
-            settings.summaryDetailLevel = detailLevel
+            workspace.generationSettings.summary.style = SummaryStyle(detailLevel: detailLevel)
             let instructions = SummaryService.summaryGenerationInstructions(
-                settings: settings
+                generationSettings: .current(workspace: workspace)
             )
-
             #expect(instructions.hasPrefix(AppSettings.defaultSummaryPrompt))
             #expect(instructions.contains(detailLevel.instruction))
             #expect(instructions.contains("Write the summary in English."))

@@ -52,6 +52,12 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "settings.preferences.accountSummaryPreferencesDescription",
         bundle: bundle
     ) }
+    static var workspaceGenerationSettingsDescription: String { String(
+        localized: "Generation defaults are shared by everyone in this workspace. Only admins can change them.",
+        bundle: bundle
+    ) }
+    static var generationOverrides: String { String(localized: "For this generation only", bundle: bundle) }
+    static var workspaceGenerationDefault: String { String(localized: "Workspace default", bundle: bundle) }
     static var summaryStyle: String { String(localized: "settings.preferences.summaryStyle", bundle: bundle) }
     static var recordingSettings: String { String(localized: "settings.preferences.recordingSettings", bundle: bundle) }
     static var localModelPreferences: String { String(localized: "settings.preferences.localModelPreferences", bundle: bundle) }
@@ -1110,6 +1116,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var summarySourceAudioDescription: String { String(localized: "summary.source.audio.description", bundle: bundle) }
     static var summarySourceChecking: String { String(localized: "summary.source.checking", bundle: bundle) }
     static var summarySourceCheckFailed: String { String(localized: "summary.source.checkFailed", bundle: bundle) }
+    static var summaryUseSavedTranscript: String { String(localized: "summary.source.useSaved", bundle: bundle) }
+    static var summaryUseSavedTranscriptDescription: String { String(localized: "summary.source.useSaved.description", bundle: bundle) }
     static var summarySourceUnsupported: String { String(localized: "summary.source.unsupported", bundle: bundle) }
     static var summarySourceTranscriptUnavailable: String { String(
         localized: "summary.source.transcript.unavailable",
@@ -1453,7 +1461,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var workingLanguagesSetupDescription: String { String(
-        localized: "Choose the languages Dahlia should recognize and the primary language for AI output.",
+        localized: "Choose the languages Dahlia should recognize. Set the AI output language in each workspace's settings.",
         bundle: bundle
     ) }
     static var recognitionAndOCRLanguages: String { String(localized: "Recognition and OCR Languages", bundle: bundle) }

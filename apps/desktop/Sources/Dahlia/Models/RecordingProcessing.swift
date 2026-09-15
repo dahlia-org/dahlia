@@ -24,8 +24,8 @@ struct RecordingProcessing: Codable, Sendable {
     let method: RecordingProcessingMethod
     var options: SummaryGenerationOptions
     var generationSettings: SummaryGenerationSettings
-    let serverSettings: ServerAccountSettings?
-    var summaryMode: ServerAccountSettings.SummaryMode?
+    let workspaceSettings: WorkspaceGenerationSettings?
+    var summaryMode: WorkspaceGenerationSettings.SummaryMode?
     var sessionIDs: [UUID] = []
     var stage: Stage = .recorded
     var error: String?
@@ -38,7 +38,7 @@ struct RecordingProcessing: Codable, Sendable {
 
     var usesServerSummary: Bool? {
         if let summaryMode { return summaryMode == .remote }
-        if serverRequest != nil || method != .transcript || serverSettings?.legacyMethod != nil { return true }
+        if serverRequest != nil || method != .transcript { return true }
         return nil
     }
 

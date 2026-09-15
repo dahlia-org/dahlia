@@ -9,7 +9,7 @@ import { ImageAnalysisError, imageAnalysisSchema, type ImageAnalysis } from "./m
 
 export interface ImageCaptioner {
   readonly model: string;
-  analyze(imageData: Uint8Array, settings: AccountSettings, signal?: AbortSignal): Promise<ImageAnalysis>;
+  analyze(imageData: Uint8Array, settings: AccountSettings & { outputLanguage: string }, signal?: AbortSignal): Promise<ImageAnalysis>;
 }
 
 const responseSchema = z.object({

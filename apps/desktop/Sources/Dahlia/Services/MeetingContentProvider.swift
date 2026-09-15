@@ -107,13 +107,22 @@ actor MeetingContentProvider {
         return try await operation()
     }
 
-    func ensure(entity: TextContentEntity, id: UUID, dbQueue: DatabaseQueue, refresh: Bool = false, prefetchBudget: Int? = nil) async throws {
+    func ensure(
+        entity: TextContentEntity,
+        id: UUID,
+        dbQueue: DatabaseQueue,
+        refresh: Bool = false,
+        refreshIfStale: Bool = false,
+        prefetchBudget: Int? = nil
+    ) async throws {
         try Task.checkCancellation()
         let key = Key(database: ObjectIdentifier(dbQueue), entity: entity, id: id)
-        let available = try await dbQueue.read { db in
-            (try? TextContentAccess.requireComplete(entity: entity, id: id, in: db)) != nil
+        let (available, stale) = try await dbQueue.read { db in
+            let available = (try? TextContentAccess.requireComplete(entity: entity, id: id, in: db)) != nil
+            let stale = try TextContentAccess.availability(entity: entity, id: id, in: db).state == .stale
+            return (available, stale)
         }
-        if available, !refresh {
+        if available, !refresh, !(refreshIfStale && stale) {
             try await touch(entity: entity, id: id, dbQueue: dbQueue)
             return
         }

@@ -59,6 +59,7 @@
                         "workspaceId": remote.workspaceId.uuidString, "organizationId": remote.organizationId.uuidString, "role": remote.role,
                         "meetingDeletionGraceDays": 7,
                         "name": remote.name, "revision": 7,
+                        "generationSettings": JSONSerialization.jsonObject(with: JSONEncoder().encode(remote.generationSettings)),
                         "createdAt": "2023-11-14T22:13:20Z", "updatedAt": "2023-11-14T22:13:20Z",
                     ]],
                     ["entity": "meeting", "id": meetingID.uuidString, "revision": 1, "record": [
@@ -255,12 +256,13 @@
     }
 
     private func page(_ workspaces: [CloudWorkspaceRecord]) throws -> Data {
-        let items = workspaces.map { workspace in
-            [
+        let items = try workspaces.map { workspace in
+            try [
                 "workspaceId": workspace.workspaceId.uuidString,
                 "organizationId": workspace.organizationId.uuidString,
                 "meetingDeletionGraceDays": 7,
                 "name": workspace.name,
+                "generationSettings": JSONSerialization.jsonObject(with: JSONEncoder().encode(workspace.generationSettings)),
                 "icon": workspace.icon ?? "",
                 "color": workspace.color ?? "",
                 "revision": workspace.revision,

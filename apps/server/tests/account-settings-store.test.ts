@@ -9,7 +9,7 @@ import { createAccountSettingsStore } from "../src/account-settings";
 const url = process.env.TEST_ACCOUNT_SETTINGS_DATABASE_URL;
 const pool = url ? new Pool({ connectionString: url }) : undefined;
 afterAll(async () => pool?.end());
-it.runIf(url)("enforces PostgreSQL FORCE RLS and atomically merges concurrent leaves", async () => {
+it.runIf(url)("enforces PostgreSQL account isolation and conditional initialization", async () => {
   const db = drizzle({ client: pool! });
   const store = createAccountSettingsStore(db, true);
   const client = await pool!.connect();
@@ -20,32 +20,14 @@ it.runIf(url)("enforces PostgreSQL FORCE RLS and atomically merges concurrent le
     await client.query("COMMIT");
   } catch (error) { await client.query("ROLLBACK"); throw error; }
   finally { client.release(); }
-  const processing = {
-    location: "remote",
-    remote: { workflow: "transcribeThenSummarize", summaryModel: "saved-audio", reasoningEffort: "medium", transcriptionModel: "saved-transcript" },
-  } as const;
-  await store.update("01990ab0-0000-7000-8000-000000000101", { summary: { style: "standard" }, processing });
-  expect((await pool!.query("SELECT * FROM app.account_settings")).rows).toEqual([]);
-  expect(await store.get("01990ab0-0000-7000-8000-000000000103")).toBeNull();
-  expect(await store.getRevision("01990ab0-0000-7000-8000-000000000101")).toBe(1);
-  await store.update("01990ab0-0000-7000-8000-000000000101", { summary: { style: "standard" } });
-  expect(await store.getRevision("01990ab0-0000-7000-8000-000000000101")).toBe(1);
-  await Promise.all([
-    store.update("01990ab0-0000-7000-8000-000000000101", { processing: { remote: { summaryModel: "changed" } } }),
-    store.update("01990ab0-0000-7000-8000-000000000101", { processing: { remote: { reasoningEffort: "high" } } }),
-    store.update("01990ab0-0000-7000-8000-000000000101", { summary: { style: "detailed" } }),
-  ]);
-  expect(await store.get("01990ab0-0000-7000-8000-000000000101")).toMatchObject({ summary: { style: "detailed" }, processing: { ...processing, remote: {
-    ...processing.remote, summaryModel: "changed", reasoningEffort: "high",
-  } } });
-  expect(await store.getRevision("01990ab0-0000-7000-8000-000000000101")).toBe(4);
-  await store.update("01990ab0-0000-7000-8000-000000000101", { summary: { style: "concise" } });
-  await store.update("01990ab0-0000-7000-8000-000000000101", { summary: { style: "standard" } });
-  expect((await store.get("01990ab0-0000-7000-8000-000000000101"))?.summary.style).toBe("standard");
-  await store.update("01990ab0-0000-7000-8000-000000000101", { processing: { remote: { transcriptionModel: null } } });
-  expect((await store.get("01990ab0-0000-7000-8000-000000000101"))?.processing.remote.transcriptionModel).toBeUndefined();
-  await Promise.all([store.update("01990ab0-0000-7000-8000-000000000102", { outputLanguage: "en" }, true), store.update("01990ab0-0000-7000-8000-000000000102", { outputLanguage: "ja" }, true)]);
-  const initial = await store.get("01990ab0-0000-7000-8000-000000000102");
-  expect(await store.getRevision("01990ab0-0000-7000-8000-000000000102")).toBe(1);
-  expect(await store.update("01990ab0-0000-7000-8000-000000000102", { outputLanguage: "fr" }, true)).toEqual(initial);
+  const id = "01990ab0-0000-7000-8000-000000000101";
+  const settings = { analysisLanguages: { scope: "selected" as const, identifiers: ["en"] } };
+  await store.update(id, settings);
+  expect(await store.get(id)).toEqual(settings);
+  const revision = await store.getRevision(id);
+  await store.update(id, settings);
+  expect(await store.getRevision(id)).toBe(revision);
+  await store.update(id, { analysisLanguages: { scope: "all", identifiers: [] } }, true);
+  expect(await store.get(id)).toEqual(settings);
+  expect(await store.get("01990ab0-0000-7000-8000-000000000102")).toBeNull();
 });

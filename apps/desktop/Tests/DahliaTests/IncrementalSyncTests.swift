@@ -71,7 +71,10 @@
                 .workspace,
                 id: fixture.workspaceId,
                 revision: 2,
-                fields: ["name": "Server", "createdAt": "2026-09-09T00:00:00Z"]
+                fields: [
+                    "name": "Server", "createdAt": "2026-09-09T00:00:00Z",
+                    "generationSettings": JSONSerialization.jsonObject(with: JSONEncoder().encode(WorkspaceGenerationSettings())),
+                ]
             )
             let first = try page(workspaceId: fixture.workspaceId, [.init(
                 sequence: 2,
@@ -95,6 +98,7 @@
                     "organizationId": destination.uuidString,
                     "meetingDeletionGraceDays": 7,
                     "name": "Moved",
+                    "generationSettings": JSONSerialization.jsonObject(with: JSONEncoder().encode(WorkspaceGenerationSettings())),
                     "createdAt": "2026-09-09T00:00:00Z",
                     "updatedAt": "2026-09-09T00:00:00Z",
                     "revision": 1,
@@ -241,6 +245,7 @@
                     "organizationId": destination.uuidString,
                     "meetingDeletionGraceDays": 7,
                     "name": "Moved",
+                    "generationSettings": JSONSerialization.jsonObject(with: JSONEncoder().encode(WorkspaceGenerationSettings())),
                     "createdAt": "2026-09-09T00:00:00Z",
                     "updatedAt": "2026-09-09T00:00:00Z",
                     "revision": 1,

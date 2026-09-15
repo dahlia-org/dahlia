@@ -4,12 +4,12 @@ import { apiQuery } from "./live-data";
 import { Select } from "./Select";
 import { MenuIcon } from "./Sidebar";
 import { useEffect, useRef, useState } from "react";
-import { json, RequestError, uiText } from "./api";
+import { RequestError, uiText } from "./api";
 import { refreshData, useLiveJSON } from "./live-data";
 import { encodeId } from "../typeid";
 import { uuidV7 } from "../id";
 import type { GatewayModelList } from "../ai-gateway/backend";
-import { DEFAULT_ACCOUNT_SETTINGS, summaryStyles, summaryStyleDetail, type AccountSettings, type AccountSettingsPatch } from "../account-settings-model";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, summaryStyles, summaryStyleDetail, summaryModelSettingsSchema, type WorkspaceGenerationSettings } from "../workspace-generation-settings";
 type SummaryRequest = operations["startSummaryJob"]["requestBody"]["content"]["application/json"];
 import { isAudioSummaryModel, isSummaryModel } from "../summary/audio-model";
 import { CODEX_AUTO_REVIEW_ALIAS } from "../ai-gateway/model-alias";
@@ -23,11 +23,6 @@ type RecordingSnapshot = {
   recordings: { micFileId: string | null; systemFileId: string | null }[];
   complete: boolean;
 };
-
-export function shouldResetManualSummaryModel(savedModel: string, models: GatewayModelList, source: SummarySource) {
-  const model = models.data.find(({ id }) => id === savedModel || savedModel.endsWith(`.${id}`));
-  return model && models.models.some(({ slug }) => slug === model.id) ? !isSummaryModel(model.id, models, source) : false;
-}
 
 async function loadRecordings(meetingId: string, signal?: AbortSignal): Promise<RecordingSnapshot> {
   const items: Recording[] = [];
@@ -81,7 +76,7 @@ type Job = components["schemas"]["SummaryJob"] | null;
 const details = ["low", "medium", "high", "xhigh", "max"] as const;
 const detailLabel = (detail: typeof details[number]) => ({ low: uiText("Concise", "簡潔"), medium: uiText("Standard", "標準"),
   high: uiText("Detailed", "詳細"), xhigh: uiText("Event session", "イベントセッション"), max: uiText("Event Play-by-Play", "イベント実況中継") })[detail];
-const styleDescription = (style: AccountSettings["summary"]["style"]) => ({
+const styleDescription = (style: WorkspaceGenerationSettings["summary"]["style"]) => ({
   concise: uiText("Decisions, issues, and next actions, with minimal detail.", "決定事項・課題・次のアクションを短くまとめます。"),
   standard: uiText("Main topics with enough context to understand them.", "主な話題を、必要な背景とともにバランスよくまとめます。"),
   detailed: uiText("Topics, background, reasoning, open questions, and next steps.", "話題ごとの背景・理由・未解決事項まで詳しく残します。"),
@@ -103,32 +98,36 @@ function useSummaryMethods() {
   };
 }
 
-export function ServerSummarySettings() {
+export function ServerSummarySettings({ workspaceId, onSave }: {
+  workspaceId: string;
+  onSave: (workspace: components["schemas"]["Workspace"], settings: WorkspaceGenerationSettings) => Promise<unknown>;
+}) {
   const capabilities = useSummaryMethods();
   const remoteSupported = capabilities.methods.includes("audio");
-  const query = useLiveJSON<{ settings: AccountSettings | null }>(apiQuery("getSettings", {}), "account");
+  const query = useLiveJSON<components["schemas"]["Workspace"]>(apiQuery("getWorkspace", { params: { path: { workspaceId } } }));
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const catalog = useLiveJSON<GatewayModelList>(remoteSupported ? "/api/v1/models" : undefined, "manual");
-  const settings = query.data?.settings;
-  const editingDisabled = saving || query.loading || !!query.error;
+  const settings = query.data?.generationSettings;
+  const editingDisabled = saving || query.loading || !!query.error || query.data?.role !== "admin";
 
-  const save = async (patch: AccountSettingsPatch) => {
+  const save = async (patch: Partial<WorkspaceGenerationSettings>) => {
+    if (!query.data || !settings || editingDisabled) return;
     setSaving(true); setSaved(false); setError(undefined);
     try {
-      const result = await api.updateSettings({ body: patch }, false);
-      query.replace(result); query.reload(); setSaved(true);
+      await onSave(query.data, { ...settings, ...patch });
+      query.replace(await api.getWorkspace({ params: { path: { workspaceId } } }));
+      query.reload(); setSaved(true);
     }
-    catch (error) { setError(error instanceof Error ? error.message : uiText("Could not save settings", "設定を保存できません")); }
+    catch (error) { setError(error instanceof Error ? error.message : uiText("Could not save settings", "設定を保存できません")); query.reload(); }
     finally { setSaving(false); }
   };
-  const summary = settings?.summary ?? DEFAULT_ACCOUNT_SETTINGS.summary;
-  const processing = settings?.processing ?? DEFAULT_ACCOUNT_SETTINGS.processing;
+  const summary = settings?.summary ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS.summary;
+  const processing = settings?.processing ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing;
   const remote = processing.remote;
   const transcribesFirst = remote.workflow === "transcribeThenSummarize";
-  const saveRemote = (value: NonNullable<NonNullable<AccountSettingsPatch["processing"]>["remote"]>) =>
-    save({ processing: { remote: value } });
+  const saveRemote = (value: Partial<typeof remote>) => save({ processing: { ...processing, remote: { ...remote, ...value } } });
   const models = catalog.data?.data.filter((model) => model.id !== CODEX_AUTO_REVIEW_ALIAS
     && isSummaryModel(model.id, catalog.data!, transcribesFirst ? "transcript" : "audio")) ?? [];
   const audioModels = catalog.data?.data.filter((model) => isAudioSummaryModel(model.id, catalog.data!)) ?? [];
@@ -138,23 +137,24 @@ export function ServerSummarySettings() {
   const metadata = catalog.data?.models.find((model) => model.slug === selectedSummaryModel?.id);
   const efforts = metadata?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
   if (!query.data) return <section className="section-block settings-section" aria-busy={query.loading}>
-    {query.error ? <p className="error" role="alert">{uiText("Could not load account settings. Your saved preferences have not changed.", "アカウント設定を読み込めませんでした。保存済みの設定は変更されていません。")}
+    {query.error ? <p className="error" role="alert">{uiText("Could not load workspace settings. Your saved preferences have not changed.", "ワークスペース設定を読み込めませんでした。保存済みの設定は変更されていません。")}
       <button className="secondary" onClick={query.reload}>{uiText("Retry", "再試行")}</button></p>
       : <p role="status">{uiText("Loading settings…", "設定を読み込み中…")}</p>}
   </section>;
   return <>
+    <p>{uiText("Shared with everyone in this workspace. Only admins can change these defaults.", "このワークスペースの全員で共有します。既定値を変更できるのは管理者のみです。")}</p>
     <p className="settings-save-status" role="status" data-saved={saved && !saving}>{saving ? uiText("Saving changes…", "変更を保存中…") : saved ? uiText("Changes saved", "変更を保存しました") : uiText("Changes save automatically and apply to your next summary.", "変更は自動で保存され、次回の要約から適用されます。")}</p>
     {(error || query.error) && <p role="alert" className="error">{error ?? query.error?.message} {query.error && <button className="secondary" onClick={query.reload}>{uiText("Retry", "再試行")}</button>}</p>}
     <section className="section-block settings-section">
       <h2 className="section-label">{uiText("Results", "生成結果")}</h2>
       <fieldset className="account-settings" disabled={editingDisabled}>
         <label>{uiText("Summary style", "まとめ方")}<Select value={summary.style}
-          onValueChange={(value) => void save({ summary: { style: value as AccountSettings["summary"]["style"] } })}>
+          onValueChange={(value) => void save({ summary: { style: value as WorkspaceGenerationSettings["summary"]["style"] } })}>
           {summaryStyles.map((style) => <option key={style} value={style}>{detailLabel(summaryStyleDetail(style))}</option>)}
         </Select></label>
         <p>{styleDescription(summary.style)}</p>
-        <label>{uiText("Output language", "出力言語")}<Select value={settings?.outputLanguage ?? DEFAULT_ACCOUNT_SETTINGS.outputLanguage}
-          onValueChange={(value) => void save({ outputLanguage: value as AccountSettings["outputLanguage"] })}>
+        <label>{uiText("Output language", "出力言語")}<Select value={settings?.outputLanguage ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS.outputLanguage}
+          onValueChange={(value) => void save({ outputLanguage: value as WorkspaceGenerationSettings["outputLanguage"] })}>
           {Object.entries({ ja: "日本語", en: "English", zh: "中文", ko: "한국어", fr: "Français", de: "Deutsch", es: "Español" }).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </Select></label>
         <p>{uiText("Shared by summaries and image analysis. Speech recognition languages are unchanged.", "出力言語は要約と画像の説明に共通です。音声認識の言語は変更しません。")}</p>
@@ -164,12 +164,20 @@ export function ServerSummarySettings() {
       <h2 className="section-label">{uiText("Transcription and summary", "文字起こしと要約")}</h2>
       <fieldset className="account-settings" disabled={editingDisabled}>
         <label>{uiText("Processing location", "処理する場所")}<Select value={processing.location}
-          onValueChange={(value) => void save({ processing: { location: value as AccountSettings["processing"]["location"] } })}>
+          onValueChange={(value) => void save({ processing: { ...processing, location: value as WorkspaceGenerationSettings["processing"]["location"] } })}>
           <option value="local">{uiText("Dahlia for Mac", "Dahlia for Mac")}</option>
           {(remoteSupported || processing.location === "remote") && <option value="remote" disabled={!remoteSupported}>
             {uiText("Server", "サーバー")}</option>}
         </Select></label>
         {processing.location === "local" && <p>{uiText("Dahlia for Mac transcribes locally and sends transcripts and images to the AI provider configured on that Mac. Generation is unavailable on the web.", "Dahlia for Macで文字起こしし、そのMacに設定したAI接続先へ文字起こしや画像を送って要約します。Webからは生成できません。")}</p>}
+        {processing.location === "local" && settings && <>
+          <label>{uiText("Summary model", "要約モデル")}<input key={settings.local.model} defaultValue={settings.local.model}
+            onBlur={(event) => { const model = event.target.value.trim(); if (!model) event.target.value = settings.local.model; else if (model !== settings.local.model) void save({ local: { ...settings.local, model } }); }} /></label>
+          <label>{uiText("Reasoning effort", "推論強度")}<Select value={settings.local.reasoningEffort}
+            onValueChange={(value) => void save({ local: { ...settings.local, reasoningEffort: value as typeof settings.local.reasoningEffort } })}>
+            {summaryModelSettingsSchema.shape.reasoningEffort.options.map((effort) => <option key={effort}>{effort}</option>)}
+          </Select></label>
+        </>}
         {processing.location === "remote" && <p>{uiText(
           "New recordings use the selected automatic server processing. Manual generation uses the source selected on the meeting screen.",
           "新しい録音には選択したサーバーの自動処理を使います。手動生成ではミーティング画面のソース選択が優先されます。",
@@ -195,19 +203,19 @@ export function ServerSummarySettings() {
             <option value="combined">{uiText("Generate together", "文字起こしと要約を一括生成")}</option>
           </Select></label>
           <label>{uiText("Summary model", "要約モデル")}<Select value={selectedSummaryModel?.id ?? remote.summaryModel ?? ""} disabled={catalog.loading}
-            onValueChange={(value) => void saveRemote({ summaryModel: value || null })}>
+            onValueChange={(value) => void saveRemote({ summaryModel: value || undefined })}>
             <option value="">{uiText("Automatic", "自動")}</option>
             {remote.summaryModel && !selectedSummaryModel && <option value={remote.summaryModel} disabled>{remote.summaryModel} — {uiText("Unavailable for this workflow", "この方式では利用不可")}</option>}
             {models.map((model) => <option key={model.id} value={model.id}>{model.display_name}</option>)}
           </Select></label>
           <label>{uiText("Reasoning effort", "推論強度")}<Select value={remote.reasoningEffort ?? ""}
-            onValueChange={(value) => void saveRemote({ reasoningEffort: value ? value as typeof remote.reasoningEffort : null })}>
+            onValueChange={(value) => void saveRemote({ reasoningEffort: value ? value as typeof remote.reasoningEffort : undefined })}>
             <option value="">{uiText("Automatic", "自動")}</option>
             {remote.reasoningEffort && !efforts.includes(remote.reasoningEffort) && <option value={remote.reasoningEffort} disabled>{remote.reasoningEffort} — {uiText("Check model compatibility", "モデルとの対応を確認")}</option>}
             {efforts.map((effort) => <option key={effort}>{effort}</option>)}
           </Select></label>
           {transcribesFirst && <label>{uiText("Transcription model", "文字起こしモデル")}<Select
-            value={selectedTranscriptionModel?.id ?? remote.transcriptionModel ?? ""} onValueChange={(value) => void saveRemote({ transcriptionModel: value || null })}>
+            value={selectedTranscriptionModel?.id ?? remote.transcriptionModel ?? ""} onValueChange={(value) => void saveRemote({ transcriptionModel: value || undefined })}>
             <option value="">{uiText("Automatic", "自動")}</option>
             {remote.transcriptionModel && !selectedTranscriptionModel && <option value={remote.transcriptionModel} disabled>{remote.transcriptionModel} — {uiText("Unavailable", "利用不可")}</option>}
             {audioModels.map((entry) => <option key={entry.id} value={entry.id}>{entry.display_name}</option>)}
@@ -221,11 +229,11 @@ export function ServerSummarySettings() {
   </>;
 }
 
-export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
+export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId: string; workspaceId: string }) {
   const methods = useSummaryMethods().manualMethods;
   const enabled = methods.length > 0;
   const query = useLiveJSON<{ job: Job }>(enabled ? apiQuery("getLatestSummaryJob", { params: { path: { meetingId } } }) : undefined);
-  const accountQuery = useLiveJSON<{ settings: AccountSettings | null }>(apiQuery("getSettings", {}), "account");
+  const workspaceQuery = useLiveJSON<components["schemas"]["Workspace"]>(apiQuery("getWorkspace", { params: { path: { workspaceId } } }));
   const transcriptQuery = useLiveJSON<TranscriptSnapshot>(methods.includes("transcript") ? {
     key: JSON.stringify(["summaryTranscriptAvailability", { meetingId }]),
     load: (signal) => loadTranscript(meetingId, signal),
@@ -234,10 +242,13 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
     key: JSON.stringify(["summaryRecordingAvailability", { meetingId }]),
     load: (signal) => loadRecordings(meetingId, signal),
   } : undefined);
-  const catalog = useLiveJSON<GatewayModelList>(enabled ? "/api/v1/models" : undefined, "manual");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string>();
   const [detail, setDetail] = useState("");
+  const [language, setLanguage] = useState("");
+  const [model, setModel] = useState<string>();
+  const [effort, setEffort] = useState<string>();
+  const [location, setLocation] = useState<"local" | "remote">();
   const [source, setSource] = useState<SummarySource>();
   const completed = useRef<string | undefined>(undefined);
   const requestID = useRef<string | undefined>(undefined);
@@ -259,7 +270,7 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
     }
   }, [job?.id, job?.status]);
   if (!enabled) return null;
-  const remoteEnabled = accountQuery.data?.settings?.processing.location === "remote";
+  const remoteEnabled = (location ?? workspaceQuery.data?.generationSettings.processing.location) === "remote";
   const active = job?.status === "pending" || job?.status === "processing";
   const transcriptAvailable = methods.includes("transcript") && !transcriptQuery.loading && !transcriptQuery.error
     && transcriptQuery.data?.available === true;
@@ -292,11 +303,11 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
     requestID.current ??= encodeId("summaryJob", uuidV7());
     try {
       if (!requestBody.current) {
-        const account = await api.getSettings({});
-        const settings = account.settings ?? DEFAULT_ACCOUNT_SETTINGS;
-        if (settings.processing.location !== "remote") throw new Error(uiText(
-          "This account processes summaries in Dahlia for Mac.",
-          "このアカウントはDahlia for Macで要約を処理します。",
+        const workspace = await api.getWorkspace({ params: { path: { workspaceId } } });
+        const settings = workspace.generationSettings;
+        if ((location ?? settings.processing.location) !== "remote") throw new Error(uiText(
+          "This workspace processes summaries in Dahlia for Mac.",
+          "このワークスペースはDahlia for Macで要約を処理します。",
         ));
         if (!selectedSource) throw new Error(uiText("Choose an available source.", "利用可能なソースを選択してください。"));
         let input: Extract<SummaryRequest, { input: unknown }>["input"];
@@ -315,15 +326,10 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
         }
         const remote = { ...settings.processing.remote,
           workflow: selectedSource === "audio" ? "combined" as const : "transcribeThenSummarize" as const };
-        if (remote.summaryModel) {
-          const models = catalog.data ?? await json<GatewayModelList>("/api/v1/models", undefined, { notifyMutation: false });
-          if (shouldResetManualSummaryModel(remote.summaryModel, models, selectedSource)) {
-            delete remote.summaryModel;
-            delete remote.reasoningEffort;
-          }
-        }
+        if (model !== undefined) remote.summaryModel = model || undefined;
+        if (effort !== undefined) remote.reasoningEffort = effort ? effort as typeof remote.reasoningEffort : undefined;
         requestBody.current = { id: requestID.current, input,
-          preferences: { processing: { location: "remote", remote }, outputLanguage: settings.outputLanguage,
+          preferences: { processing: { location: "remote", remote }, outputLanguage: (language || settings.outputLanguage) as WorkspaceGenerationSettings["outputLanguage"],
             summary: { style: detail ? summaryStyles[details.indexOf(detail as typeof details[number])]! : settings.summary.style } } };
       }
       await api.startSummaryJob({ params: { path: { meetingId } }, body: requestBody.current });
@@ -384,19 +390,37 @@ export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
         })}
       </div>
     </fieldset>
+    <fieldset disabled={active || starting || workspaceQuery.loading} className="account-settings">
+      <legend>{uiText("For this generation only", "今回の生成のみ")}</legend>
+      <label>{uiText("Processing location", "処理する場所")}<Select value={location ?? workspaceQuery.data?.generationSettings.processing.location ?? "local"}
+        onValueChange={(value) => { setLocation(value as "local" | "remote"); clearPendingRequest(); }}>
+        <option value="local">Dahlia for Mac</option><option value="remote">{uiText("Server", "サーバー")}</option>
+      </Select></label>
+      <label>{uiText("Output language", "出力言語")}<Select value={language} onValueChange={(value) => { setLanguage(value); clearPendingRequest(); }}>
+        <option value="">{uiText("Workspace default", "ワークスペース設定")}</option>
+        {Object.entries({ ja: "日本語", en: "English", zh: "中文", ko: "한국어", fr: "Français", de: "Deutsch", es: "Español" }).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+      </Select></label>
+      <label>{uiText("Summary model", "要約モデル")}<input value={model ?? workspaceQuery.data?.generationSettings.processing.remote.summaryModel ?? ""}
+        placeholder={uiText("Automatic", "自動")} onChange={(event) => { setModel(event.target.value); clearPendingRequest(); }} /></label>
+      <label>{uiText("Reasoning effort", "推論強度")}<Select value={effort ?? workspaceQuery.data?.generationSettings.processing.remote.reasoningEffort ?? ""}
+        onValueChange={(value) => { setEffort(value); clearPendingRequest(); }}>
+        <option value="">{uiText("Automatic", "自動")}</option>
+        {summaryModelSettingsSchema.shape.reasoningEffort.options.map((effort) => <option key={effort}>{effort}</option>)}
+      </Select></label>
+    </fieldset>
     <div className="generation-controls">
     <Select aria-label={uiText("Summary detail", "要約の詳細度")} value={detail} disabled={active || starting}
       onValueChange={(value) => { setDetail(value); clearPendingRequest(); }}>
-      <option value="">{uiText("Account default", "アカウント設定")}</option>
+      <option value="">{uiText("Workspace default", "ワークスペース設定")}</option>
       {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
     </Select>
-    <button className="primary" disabled={starting || active || query.loading || accountQuery.loading || !remoteEnabled || !selectedSourceAvailable} onClick={() => void start()}>
+    <button className="primary" disabled={starting || active || query.loading || workspaceQuery.loading || !remoteEnabled || !selectedSourceAvailable} onClick={() => void start()}>
       {starting ? uiText("Starting…", "開始中…") : buttonLabel}
     </button>
     </div>
-    {!accountQuery.loading && !remoteEnabled && <span>{uiText(
-      "This account processes summaries in Dahlia for Mac.",
-      "このアカウントはDahlia for Macで要約を処理します。",
+    {!workspaceQuery.loading && !remoteEnabled && <span>{uiText(
+      "This workspace processes summaries in Dahlia for Mac.",
+      "このワークスペースはDahlia for Macで要約を処理します。",
     )}</span>}
     {active && <><span role="status">{stageLabel(job.stage)} — {uiText("You can close this window.", "画面を閉じても処理は続きます。")}</span>
       <button disabled={starting} onClick={() => void action("cancel")}>{uiText("Cancel", "キャンセル")}</button></>}

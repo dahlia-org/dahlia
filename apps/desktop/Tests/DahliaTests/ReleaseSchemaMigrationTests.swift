@@ -77,7 +77,7 @@
             try AppDatabaseManager.migrator.migrate(queue)
             try queue.read { db in
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: workspaceID))
-                #expect(workspace.path == "/tmp/released-workspace" && workspace.summaryModelID == "saved-model")
+                #expect(workspace.path == "/tmp/released-workspace" && workspace.summaryModelID == "gpt-5.6-luna")
                 #expect(workspace.accountConnectionId == nil && workspace.organizationId == nil && workspace.syncRole == nil && workspace
                     .syncConfirmedConnectionId == nil)
                 #expect(try DahliaAccountConnectionRecord.fetchOne(db, key: connectionID) != nil)

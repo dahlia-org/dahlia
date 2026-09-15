@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { generationPreferencesSchema, summaryStyleDetail } from "../account-settings-model";
+import { generationPreferencesSchema, summaryStyleDetail } from "../workspace-generation-settings";
 import type { GatewayModelList } from "../ai-gateway/backend";
 import { isAudioSummaryModel, isSummaryModel } from "./audio-model";
 import { SummaryError, type SummaryInput, type TranscriptSettings } from "./model";

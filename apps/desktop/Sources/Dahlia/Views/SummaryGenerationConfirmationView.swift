@@ -6,16 +6,21 @@ struct SummaryGenerationConfirmationView: View {
     @State private var detailLevel: SummaryDetailLevel?
     @State private var selectedProjectId: UUID?
     @State private var selectedSource: SummaryGenerationSource?
+    @State private var useSavedTranscript = false
     @State private var sourceAvailability: SummaryGenerationSourceAvailability?
     @State private var isLoadingSources = true
     @State private var sourceErrorMessage: String?
     @State private var errorMessage: String?
+    @State private var outputLanguage: SummaryLanguage?
+    @State private var location: WorkspaceGenerationSettings.SummaryMode?
+    @State private var model: String?
+    @State private var effort: String?
 
     let title: String
     let description: String
     let actionTitle: String
     let projects: [FlatProjectRow]?
-    let loadSourceAvailability: () async throws -> SummaryGenerationSourceAvailability
+    let loadSourceAvailability: (WorkspaceGenerationSettings.SummaryMode?) async throws -> SummaryGenerationSourceAvailability
     let onCancel: () -> Void
     let onGenerate: (SummaryGenerationOptions, UUID?) -> String?
 
@@ -25,8 +30,8 @@ struct SummaryGenerationConfirmationView: View {
         actionTitle: String = L10n.generateSummary,
         projects: [FlatProjectRow]? = nil,
         initialProjectId: UUID? = nil,
-        initialDetailLevel: SummaryDetailLevel,
-        loadSourceAvailability: @escaping () async throws -> SummaryGenerationSourceAvailability,
+        initialDetailLevel _: SummaryDetailLevel,
+        loadSourceAvailability: @escaping (WorkspaceGenerationSettings.SummaryMode?) async throws -> SummaryGenerationSourceAvailability,
         onCancel: @escaping () -> Void,
         onGenerate: @escaping (SummaryGenerationOptions, UUID?) -> String?
     ) {
@@ -37,12 +42,7 @@ struct SummaryGenerationConfirmationView: View {
         self.loadSourceAvailability = loadSourceAvailability
         self.onCancel = onCancel
         self.onGenerate = onGenerate
-        let connectionID = AppSettings.shared.currentWorkspace?.accountConnectionId
-        let serverDetail = connectionID.flatMap { connectionID -> SummaryDetailLevel? in
-            guard let summary = ServerAccountSettingsModel.shared.state(for: connectionID).settings?.summary else { return nil }
-            return summary.detailLevel
-        }
-        _detailLevel = State(initialValue: connectionID == nil ? initialDetailLevel : serverDetail)
+        _detailLevel = State(initialValue: nil)
         _selectedProjectId = State(initialValue: initialProjectId)
         _errorMessage = State(initialValue: nil)
     }
@@ -68,6 +68,35 @@ struct SummaryGenerationConfirmationView: View {
                         isLoading: isLoadingSources,
                         errorMessage: sourceErrorMessage
                     )
+                    if !usesRemote, sourceAvailability?.hasServerConnection == true, selectedSource == .transcript {
+                        Toggle(isOn: $useSavedTranscript) {
+                            Text(L10n.summaryUseSavedTranscript)
+                            Text(L10n.summaryUseSavedTranscriptDescription)
+                        }
+                        .toggleStyle(.checkbox)
+                    }
+                }
+
+                Section(L10n.generationOverrides) {
+                    if sourceAvailability?.hasServerConnection == true {
+                        Picker(L10n.processingLocation, selection: $location) {
+                            Text(L10n.workspaceGenerationDefault).tag(WorkspaceGenerationSettings.SummaryMode?.none)
+                            Text(L10n.localProcessing).tag(Optional(WorkspaceGenerationSettings.SummaryMode.local))
+                            Text(L10n.remoteProcessing).tag(Optional(WorkspaceGenerationSettings.SummaryMode.remote))
+                        }
+                    }
+                    Picker(L10n.summaryOutputLanguage, selection: $outputLanguage) {
+                        Text(L10n.workspaceGenerationDefault).tag(SummaryLanguage?.none)
+                        ForEach(SummaryLanguage.allCases) { Text($0.displayName).tag(Optional($0)) }
+                    }
+                    TextField(L10n.summaryModel, text: Binding(
+                        get: { model ?? defaultModel }, set: { model = $0 }
+                    ), prompt: Text(L10n.workspaceGenerationDefault))
+                    Picker(L10n.reasoningEffort, selection: $effort) {
+                        Text(L10n.workspaceGenerationDefault).tag(String?.none)
+                        if usesRemote { Text(L10n.automaticModelPreference).tag(Optional("")) }
+                        ForEach(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"], id: \.self) { Text($0).tag(Optional($0)) }
+                    }
                 }
 
                 Section(L10n.summaryAndExport) {
@@ -79,7 +108,8 @@ struct SummaryGenerationConfirmationView: View {
                         detailLevel: $detailLevel,
                         exportsToWorkspace: $exportsToWorkspace,
                         exportsToGoogleDocs: $exportsToGoogleDocs,
-                        isEnabled: true
+                        isEnabled: true,
+                        usesServerSummary: usesRemote
                     )
                 }
             }
@@ -102,13 +132,23 @@ struct SummaryGenerationConfirmationView: View {
                     .keyboardShortcut(.cancelAction)
                 Button(actionTitle, action: generateSummary)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(selectedSource.map { sourceAvailability?.isAvailable($0) != true } ?? true)
+                    .disabled((!usesRemote && model != nil && model?.nilIfBlank == nil) || isLoadingSources || sourceErrorMessage != nil ||
+                        (selectedSource.map { sourceAvailability?.isAvailable($0) != true } ?? true))
             }
             .padding(20)
         }
-        .frame(width: 560, height: 500)
+        .frame(width: 560, height: 650)
         .background(Color(nsColor: .windowBackgroundColor))
-        .task(loadSources)
+        .task(id: location) { await loadSources() }
+    }
+
+    private var usesRemote: Bool {
+        (location ?? sourceAvailability?.generationSettings?.processing.location) == .remote
+    }
+
+    private var defaultModel: String {
+        guard let settings = sourceAvailability?.generationSettings else { return "" }
+        return usesRemote ? settings.processing.remote.summaryModel ?? "" : settings.local.model
     }
 
     private func generateSummary() {
@@ -118,7 +158,14 @@ struct SummaryGenerationConfirmationView: View {
                 exportsToGoogleDocs: exportsToGoogleDocs
             ),
             detailLevel: detailLevel,
-            source: selectedSource
+            source: selectedSource,
+            overrides: .init(
+                outputLanguage: outputLanguage,
+                location: location,
+                model: model.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) },
+                reasoningEffort: effort
+            ),
+            useSavedTranscript: !usesRemote && useSavedTranscript ? true : nil
         ), selectedProjectId)
         if errorMessage == nil {
             onCancel()
@@ -129,10 +176,11 @@ struct SummaryGenerationConfirmationView: View {
         isLoadingSources = true
         sourceErrorMessage = nil
         do {
-            let availability = try await loadSourceAvailability()
+            let availability = try await loadSourceAvailability(location)
             try Task.checkCancellation()
             sourceAvailability = availability
             selectedSource = availability.preferredSource
+            sourceErrorMessage = availability.sourceCheckFailed ? L10n.summarySourceCheckFailed : nil
         } catch is CancellationError {
             return
         } catch {

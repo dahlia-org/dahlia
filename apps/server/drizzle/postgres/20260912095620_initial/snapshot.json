@@ -192,32 +192,6 @@
       "table": "account_settings"
     },
     {
-      "type": "jsonb",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "'{\"style\":\"detailed\"}'",
-      "generated": null,
-      "identity": null,
-      "name": "summary",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "account_settings"
-    },
-    {
-      "type": "jsonb",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "'{\"location\":\"local\",\"remote\":{\"workflow\":\"transcribeThenSummarize\"}}'",
-      "generated": null,
-      "identity": null,
-      "name": "processing",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "account_settings"
-    },
-    {
       "type": "integer",
       "typeSchema": null,
       "notNull": true,
@@ -226,19 +200,6 @@
       "generated": null,
       "identity": null,
       "name": "revision",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "account_settings"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "output_language",
       "entityType": "columns",
       "schema": "app",
       "table": "account_settings"
@@ -304,6 +265,19 @@
       "generated": null,
       "identity": null,
       "name": "model",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "image_analysis"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "output_language",
       "entityType": "columns",
       "schema": "jobs",
       "table": "image_analysis"
@@ -2951,6 +2925,19 @@
       "generated": null,
       "identity": null,
       "name": "created_by",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "workspaces"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'{\"outputLanguage\":\"ja\",\"processing\":{\"location\":\"local\",\"remote\":{\"workflow\":\"transcribeThenSummarize\"}},\"summary\":{\"style\":\"detailed\"},\"local\":{\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\"}}'",
+      "generated": null,
+      "identity": null,
+      "name": "generation_settings",
       "entityType": "columns",
       "schema": "app",
       "table": "workspaces"

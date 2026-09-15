@@ -151,6 +151,7 @@ struct SyncTransactionResponse: Decodable, Sendable {
 }
 
 struct SyncCanonicalPayload: Codable, Sendable {
+    var generationSettings: WorkspaceGenerationSettings?
     var organizationId: UUID?
     var icalUid: String?
     var recurrenceId: String?
@@ -191,7 +192,7 @@ struct SyncCanonicalPayload: Codable, Sendable {
     var audio: [String: Components.Schemas.RecordingAudio]?
 
     enum CodingKeys: String, CodingKey {
-        case organizationId, icalUid, recurrenceId, calendarEvent
+        case generationSettings, organizationId, icalUid, recurrenceId, calendarEvent
         case icon, color
         case contentOmitted, contentPresent, contentCount, hasSummary, transcriptRevision, transcript
         case parentProjectId, projectId, meetingId, name, description, projectType, status, duration, recordingStartedAt
@@ -779,11 +780,13 @@ enum SyncTransactionQueue {
                try WorkspaceRecord.fetchOne(db, key: workspaceId)?.organizationId != organizationId {
                 throw SyncTransactionQueueError.invalidReceipt
             }
-            if let name = value.name {
+            if let name = value.name, let generationSettings = value.generationSettings {
                 try db.execute(
-                    sql: "UPDATE workspaces SET name = ?, icon = ?, color = ? WHERE id = ?",
-                    arguments: [name, value.icon, value.color, workspaceId]
+                    sql: "UPDATE workspaces SET name = ?, icon = ?, color = ?, generationSettings = ? WHERE id = ?",
+                    arguments: [name, value.icon, value.color, String(decoding: JSONEncoder().encode(generationSettings), as: UTF8.self), workspaceId]
                 )
+            } else {
+                throw SyncTransactionQueueError.invalidReceipt
             }
         case .project:
             guard let name = value.name, let createdAt = value.createdAt else { return }

@@ -105,7 +105,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let transcriptionLanguageScopeUserDefaultsKey = "transcriptionLanguageScope"
     nonisolated static let appLanguageScopeUserDefaultsKey = "appLanguageScope"
     nonisolated static let enabledLanguageIdentifiersUserDefaultsKey = "enabledLanguageIdentifiers"
-    nonisolated static let llmSummaryLanguageUserDefaultsKey = "llmSummaryLanguage"
     nonisolated static let transcriptionLocaleUserDefaultsKey = "transcriptionLocale"
     nonisolated static let liveSubtitleLocaleUserDefaultsKey = "liveSubtitleLocale"
     nonisolated static let liveSubtitleTranslationEnabledKey = "transcriptTranslationEnabled"
@@ -135,7 +134,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         Self.migrateLiveSubtitleLocaleSetting(in: .standard)
         Self.migrateAppLanguageSettings(in: .standard)
         Self.migrateBatchAudioRetentionPeriodSetting(in: .standard)
-        summaryDetailLevelRawValue = summaryDetailLevel.rawValue
         migrateGoogleDriveExportFolderSetting()
         meetingNotificationPresentationRawValue = meetingNotificationPresentation.rawValue
         batchTranscriptionStallTimeoutRawValue = batchTranscriptionStallTimeout.rawValue
@@ -308,15 +306,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
             exportOptions: SummaryExportOptions(
                 exportsToWorkspace: exportBatchSummaryToWorkspace,
                 exportsToGoogleDocs: exportBatchSummaryToGoogleDocs
-            ),
-            detailLevel: summaryDetailLevel
-        )
-    }
-
-    func batchSummaryGenerationOptions(serverSettings: ServerAccountSettings?) -> SummaryGenerationOptions {
-        SummaryGenerationOptions(
-            exportOptions: batchSummaryGenerationOptions().exportOptions,
-            detailLevel: serverSettings?.summary?.detailLevel
+            )
         )
     }
 
@@ -726,12 +716,18 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         AIAccountProvider.chatGPTSubscription.rawValue
     @AppStorage(LocalAccountAISettings.databricksProfileKey) var codexDatabricksProfile = ""
     @AppStorage("codexConfiguredDatabricksProfile") var codexConfiguredDatabricksProfile = ""
-    @AppStorage(LocalAccountAISettings.summaryModelKey) var codexModelID = "gpt-5.6-luna"
-    @AppStorage(LocalAccountAISettings.summaryReasoningEffortKey) var codexReasoningEffort = "high"
+    var codexModelID: String {
+        get { WorkspaceAISettingsModel.shared.summaryModelID }
+        set { WorkspaceAISettingsModel.shared.summaryModelID = newValue }
+    }
+
+    var codexReasoningEffort: String {
+        get { WorkspaceAISettingsModel.shared.summaryReasoningEffort }
+        set { WorkspaceAISettingsModel.shared.summaryReasoningEffort = newValue }
+    }
+
     @AppStorage("codexChatModelID") var codexChatModelID = ""
     @AppStorage("codexChatReasoningEffort") var codexChatReasoningEffort = CodexReasoningEffortOption.defaultValue
-    @AppStorage(llmSummaryLanguageUserDefaultsKey) var llmSummaryLanguageRawValue = SummaryLanguage.ja.rawValue
-    @AppStorage("summaryDetailLevel") var summaryDetailLevelRawValue = SummaryDetailLevel.defaultValue.rawValue
 
     var codexAccountProvider: AIAccountProvider {
         get { AIAccountProvider(rawValue: codexAccountProviderRawValue) ?? .chatGPTSubscription }
@@ -789,14 +785,9 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         codexAccountProviderRawValue = provider.rawValue
     }
 
-    var llmSummaryLanguage: SummaryLanguage {
-        get { SummaryLanguage(rawValue: llmSummaryLanguageRawValue) ?? .ja }
-        set { llmSummaryLanguageRawValue = newValue.rawValue }
-    }
-
     var summaryDetailLevel: SummaryDetailLevel {
-        get { SummaryDetailLevel.fromPersistedValue(summaryDetailLevelRawValue) }
-        set { summaryDetailLevelRawValue = newValue.rawValue }
+        get { WorkspaceAISettingsModel.shared.generationSettings.summary.detailLevel }
+        set { WorkspaceAISettingsModel.shared.generationSettings.summary.style = SummaryStyle(detailLevel: newValue) }
     }
 
     @AppStorage("llmSummaryPrompt") var llmSummaryPrompt: String = AppSettings.defaultSummaryPrompt

@@ -5,8 +5,9 @@ struct WorkspaceAISettingsSnapshot: Equatable, Sendable {
     var accountConnectionID: UUID?
     var localProvider: AIAccountProvider
     var databricksProfile: String
-    var summaryModelID: String
-    var summaryReasoningEffort: String
+    var generationSettings: WorkspaceGenerationSettings
+    var summaryModelID: String { generationSettings.local.model }
+    var summaryReasoningEffort: String { generationSettings.local.reasoningEffort }
     var chatModelID: String
     var chatReasoningEffort: String
 
@@ -16,8 +17,7 @@ struct WorkspaceAISettingsSnapshot: Equatable, Sendable {
     }
 
     func applyAISettings(to workspace: inout WorkspaceRecord) {
-        workspace.summaryModelID = summaryModelID
-        workspace.summaryReasoningEffort = summaryReasoningEffort
+        workspace.generationSettings = generationSettings
         workspace.chatModelID = chatModelID
         workspace.chatReasoningEffort = chatReasoningEffort
         workspace.aiSettingsBackfilled = true
@@ -30,8 +30,7 @@ extension WorkspaceAISettingsSnapshot {
         accountConnectionID = workspace.accountConnectionId
         localProvider = localAccountSettings.provider
         databricksProfile = localAccountSettings.databricksProfile
-        summaryModelID = workspace.summaryModelID
-        summaryReasoningEffort = workspace.summaryReasoningEffort
+        generationSettings = workspace.generationSettings
         chatModelID = workspace.chatModelID
         chatReasoningEffort = workspace.chatReasoningEffort
     }

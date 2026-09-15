@@ -9,15 +9,13 @@
     @MainActor
     struct RecordingProcessingTests {
         @Test
-        func legacyTranscriptServerSettingsRemainServerRoutedAfterReload() throws {
-            let settings = try JSONDecoder().decode(ServerAccountSettings.self, from: Data("""
-            {"summary":{"method":"transcript","detail":"high","methodSettings":{"transcript":{"model":"saved","reasoningEffort":"high"}}},
-             "outputLanguage":"ja","analysisLanguages":{"scope":"all","identifiers":[]}}
-            """.utf8))
-            let processing = Self.processing(serverSettings: settings)
+        func workspaceSettingsRemainFrozenAfterReload() throws {
+            var settings = WorkspaceGenerationSettings()
+            settings.processing.location = .remote
+            settings.processing.remote.summaryModel = "saved"
+            let processing = Self.processing(workspaceSettings: settings)
             let restored = try JSONDecoder().decode(RecordingProcessing.self, from: JSONEncoder().encode(processing))
-            #expect(restored.usesServerSummary == true)
-            #expect(restored.serverSettings?.legacyMethod == "transcript")
+            #expect(restored.workspaceSettings == settings)
         }
 
         @Test(arguments: [String?.none, "pending", "processing", "succeeded", "failed", "cancelled"])
@@ -281,7 +279,7 @@
         private static func processing(
             method: RecordingProcessingMethod = .transcript,
             automatic: Bool = true,
-            serverSettings: ServerAccountSettings? = nil
+            workspaceSettings: WorkspaceGenerationSettings? = nil
         ) -> RecordingProcessing {
             .init(
                 id: .v7(),
@@ -297,7 +295,7 @@
                     languageDisplayName: "English",
                     runtimeProvider: .chatGPTSubscription
                 ),
-                serverSettings: serverSettings
+                workspaceSettings: workspaceSettings
             )
         }
     }

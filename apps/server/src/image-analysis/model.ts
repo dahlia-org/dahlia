@@ -6,6 +6,7 @@ export interface ImageAnalysisClaim {
   workspaceId: string;
   ownerUserId: string;
   model: string;
+  outputLanguage: string;
   attempts: number;
   claimedAt: Date;
 }

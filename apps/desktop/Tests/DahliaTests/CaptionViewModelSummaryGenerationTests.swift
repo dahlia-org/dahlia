@@ -24,7 +24,7 @@ import GRDB
             // A saved Server request retains its ID on result-sync retry. Use the local runner to gate cleanup.
             let processing = RecordingProcessing(
                 id: id, automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
-                options: options, generationSettings: .current(), serverSettings: nil,
+                options: options, generationSettings: .current(), workspaceSettings: nil,
                 summaryMode: .local,
                 sessionIDs: [sessionID], stage: .transcribing,
                 serverRequest: .init(
@@ -73,7 +73,7 @@ import GRDB
             )
             let processing = RecordingProcessing(
                 id: .v7(), automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
-                options: options, generationSettings: .current(detailLevel: .detailed), serverSettings: nil,
+                options: options, generationSettings: .current(detailLevel: .detailed), workspaceSettings: nil,
                 sessionIDs: [sessionID], stage: .transcribing
             )
             try await fixture.database.dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
@@ -83,7 +83,7 @@ import GRDB
                 generationSettings: processing.generationSettings, processing: processing
             )
             await viewModel.handleBatchTranscriptionUpdate(.init(meetingId: fixture.first.id, state: .completed(sessionId: sessionID)))
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
             runner.complete(meetingID: fixture.first.id, title: "Published")
             try #require(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
             let job = try #require(viewModel.summaryGenerationJobs.first)
@@ -135,7 +135,7 @@ import GRDB
             let processing = RecordingProcessing(
                 id: id, automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
                 options: .init(exportOptions: .init(exportsToWorkspace: false, exportsToGoogleDocs: true)),
-                generationSettings: .current(), serverSettings: nil, sessionIDs: [sessionID], stage: .saving,
+                generationSettings: .current(), workspaceSettings: nil, sessionIDs: [sessionID], stage: .saving,
                 summaryExpectation: expected, generatedSummary: saved
             )
             try await fixture.database.dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
@@ -167,7 +167,7 @@ import GRDB
                 .updateWorkspacePath(id: fixture.workspace.id, path: nil)
 
             #expect(viewModel.triggerManualSummary(options: .manual))
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
             runner.complete(meetingID: fixture.first.id, title: "Database only")
 
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
@@ -184,7 +184,7 @@ import GRDB
             await fixture.select(fixture.first, in: viewModel, note: "note")
 
             #expect(viewModel.triggerManualSummary(options: .manual))
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
             _ = try await MeetingRepository(dbQueue: fixture.database.dbQueue)
                 .updateWorkspacePath(id: fixture.workspace.id, path: nil)
             runner.complete(meetingID: fixture.first.id, title: "Database only")
@@ -213,7 +213,7 @@ import GRDB
             await loader.waitForCall()
 
             #expect(viewModel.triggerManualSummary(options: options))
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
             runner.complete(meetingID: fixture.first.id, title: "Generated")
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
 
@@ -291,7 +291,7 @@ import GRDB
             await fixture.select(fixture.first, in: viewModel, note: "note")
             #expect(viewModel.assignCurrentMeetingProject(project.id) == nil)
             viewModel.triggerManualSummary(options: options)
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
 
             #expect(runner.calls[0].projectName == project.path)
             #expect(runner.calls[0].projectDescription == "Selected context")
@@ -321,7 +321,7 @@ import GRDB
                     exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
                 )
             )
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
 
             #expect(runner.calls[0].recordedAt == recordingStartedAt)
             runner.complete(meetingID: fixture.first.id, title: "Summary")
@@ -341,7 +341,7 @@ import GRDB
             await fixture.select(fixture.first, in: viewModel, note: "note")
             #expect(viewModel.assignCurrentMeetingProject(project.id) == nil)
             #expect(viewModel.triggerManualSummary(options: options))
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
 
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
             let service = ProjectWorkspaceService(repository: repository, workspace: fixture.workspace)
@@ -385,7 +385,7 @@ import GRDB
 
             await fixture.select(fixture.first, in: viewModel, note: "note")
             #expect(viewModel.triggerManualSummary(options: options))
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
             runner.complete(meetingID: fixture.first.id, title: "New summary")
 
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
@@ -463,7 +463,7 @@ import GRDB
                 meetingId: fixture.first.id,
                 state: .completed(sessionId: sessionID)
             ))
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
 
             #expect(viewModel.summaryGenerationJobs.first?.id == job.id)
             #expect(job.progress.transcription.isTerminal)
@@ -494,7 +494,7 @@ import GRDB
                 workspaceURL: fixture.workspaceURL,
                 options: options
             )
-            await runner.waitForCallCount(2)
+            try await runner.waitForCallCount(2)
 
             #expect(Set(runner.calls.map(\.meetingID)) == meetingIDs)
             #expect(runner.calls.allSatisfy {
@@ -525,7 +525,7 @@ import GRDB
 
             await fixture.select(fixture.first, in: viewModel, note: "first")
             viewModel.triggerManualSummary(options: options)
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
 
             #expect(viewModel.canRegenerateSummaries(meetingIds: meetingIDs))
             viewModel.triggerManualSummaries(
@@ -534,7 +534,7 @@ import GRDB
                 workspaceURL: fixture.workspaceURL,
                 options: options
             )
-            await runner.waitForCallCount(2)
+            try await runner.waitForCallCount(2)
 
             #expect(runner.calls.count(where: { $0.meetingID == fixture.first.id }) == 1)
             #expect(runner.calls.count(where: { $0.meetingID == fixture.second.id }) == 1)
@@ -556,11 +556,11 @@ import GRDB
 
             await fixture.select(fixture.first, in: viewModel, note: "first note")
             viewModel.triggerManualSummary(options: options)
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
 
             await fixture.select(fixture.second, in: viewModel, note: "second note")
             viewModel.triggerManualSummary(options: options)
-            await runner.waitForCallCount(2)
+            try await runner.waitForCallCount(2)
 
             #expect(viewModel.summaryGeneratingMeetingIDs == [fixture.first.id, fixture.second.id])
             #expect(runner.calls.map(\.meetingID) == [fixture.first.id, fixture.second.id])
@@ -587,21 +587,11 @@ import GRDB
             defer { fixture.removeFiles() }
             let runner = BlockingSummaryRunner()
             let sleeper = ControlledSummaryJobSleeper()
-            let settings = AppSettings.shared
-            let workspaceSettings = WorkspaceAISettingsModel.shared
-            let originalModel = settings.codexModelID
-            let originalEffort = settings.codexReasoningEffort
-            let originalWorkspaceModel = workspaceSettings.summaryModelID
-            let originalWorkspaceEffort = workspaceSettings.summaryReasoningEffort
-            settings.codexModelID = "frozen-model"
-            settings.codexReasoningEffort = "high"
-            workspaceSettings.summaryModelID = "frozen-model"
-            workspaceSettings.summaryReasoningEffort = "high"
-            defer {
-                settings.codexModelID = originalModel
-                settings.codexReasoningEffort = originalEffort
-                workspaceSettings.summaryModelID = originalWorkspaceModel
-                workspaceSettings.summaryReasoningEffort = originalWorkspaceEffort
+            try await fixture.database.dbQueue.write { db in
+                var workspace = try WorkspaceRecord.fetchOne(db, key: fixture.workspace.id)!
+                workspace.generationSettings.local.model = "frozen-model"
+                workspace.generationSettings.local.reasoningEffort = "high"
+                try workspace.update(db)
             }
             let viewModel = CaptionViewModel(
                 summaryGenerationRunner: runner.run,
@@ -614,11 +604,13 @@ import GRDB
             await fixture.select(fixture.first, in: viewModel, note: "note")
 
             viewModel.triggerManualSummary(options: options)
-            await runner.waitForCallCount(1)
-            settings.codexModelID = "changed-model"
-            settings.codexReasoningEffort = "low"
-            workspaceSettings.summaryModelID = "changed-model"
-            workspaceSettings.summaryReasoningEffort = "low"
+            try await runner.waitForCallCount(1)
+            try await fixture.database.dbQueue.write { db in
+                var workspace = try WorkspaceRecord.fetchOne(db, key: fixture.workspace.id)!
+                workspace.generationSettings.local.model = "changed-model"
+                workspace.generationSettings.local.reasoningEffort = "low"
+                try workspace.update(db)
+            }
             #expect(runner.calls[0].settings.modelID == "frozen-model")
             #expect(runner.calls[0].settings.reasoningEffort == "high")
             #expect(runner.calls[0].settings.detailLevelInstruction == SummaryDetailLevel.eventSession.instruction)
@@ -628,13 +620,13 @@ import GRDB
             let failedJobID = try #require(viewModel.summaryGenerationJobs.first(where: \.hasFailure)?.id)
 
             viewModel.triggerManualSummary(options: options)
-            await runner.waitForCallCount(2)
+            try await runner.waitForCallCount(2)
             #expect(viewModel.summaryGenerationJobs.contains { $0.id == failedJobID })
             #expect(viewModel.summaryGenerationJobs.count == 2)
 
             runner.complete(meetingID: fixture.first.id, title: "Recovered")
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
-            await sleeper.waitUntilSleeping()
+            try await sleeper.waitUntilSleeping()
             #expect(viewModel.summaryGenerationJobs.count == 2)
             await sleeper.resume()
             #expect(await waitUntil { viewModel.summaryGenerationJobs.count == 1 })
@@ -659,7 +651,9 @@ import GRDB
                 reasoningEffort: "high",
                 detailLevelInstruction: SummaryDetailLevel.concise.instruction,
                 languageDisplayName: "Japanese",
-                runtimeProvider: .dahlia(connectionID: UUID.v7())
+                runtimeProvider: .databricks(profile: "source-profile"),
+                workspaceID: fixture.workspace.id,
+                workspacePreferences: fixture.workspace.generationSettings
             )
             viewModel.registerPendingBatchSummaryForTesting(
                 sessionID: sessionID,
@@ -674,7 +668,7 @@ import GRDB
                 meetingId: fixture.first.id,
                 state: .completed(sessionId: sessionID)
             ))
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
 
             #expect(runner.calls[0].settings.modelID == "source-model")
             #expect(runner.calls[0].settings.runtimeProvider == sourceSettings.runtimeProvider)
@@ -701,7 +695,7 @@ import GRDB
             )
             await fixture.select(fixture.first, in: viewModel, note: "manual")
             viewModel.triggerManualSummary(options: manualOptions)
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
             await fixture.select(fixture.second, in: viewModel, note: "visible")
 
             let firstSessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
@@ -727,7 +721,7 @@ import GRDB
             #expect(runner.calls.count == 1)
 
             runner.complete(meetingID: fixture.first.id, title: "Manual")
-            await runner.waitForCallCount(2)
+            try await runner.waitForCallCount(2)
             #expect(runner.calls[1].recordingSessionIDs == [firstSessionID])
             #expect(runner.calls[1].settings.detailLevelInstruction == SummaryDetailLevel.eventSession.instruction)
 
@@ -743,7 +737,7 @@ import GRDB
             #expect(runner.calls.count == 2)
 
             runner.complete(meetingID: fixture.first.id, title: "First automatic")
-            await runner.waitForCallCount(3)
+            try await runner.waitForCallCount(3)
             #expect(Set(runner.calls[2].recordingSessionIDs) == [firstSessionID, secondSessionID])
             #expect(runner.calls[2].settings.detailLevelInstruction == SummaryDetailLevel.eventSession.instruction)
             runner.complete(meetingID: fixture.first.id, title: "Second automatic")
@@ -776,7 +770,7 @@ import GRDB
 
             await original.select(original.first, in: viewModel, note: "manual")
             viewModel.triggerManualSummary(options: options)
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
 
             viewModel.registerPendingBatchSummaryForTesting(
                 sessionID: originalSessionID,
@@ -802,9 +796,9 @@ import GRDB
             ))
 
             runner.complete(meetingID: original.first.id, title: "Manual")
-            await runner.waitForCallCount(2)
+            try await runner.waitForCallCount(2)
             runner.complete(meetingID: original.first.id, title: "Original context")
-            await runner.waitForCallCount(3)
+            try await runner.waitForCallCount(3)
 
             #expect(try original.summary(for: original.first.id)?.loadDocument().title == "Original context")
             #expect(try destination.summary(for: original.first.id) == nil)
@@ -857,7 +851,7 @@ import GRDB
                 meetingId: original.first.id,
                 state: .completed(sessionId: activeSessionID)
             ))
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
 
             let otherContextSessionID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
             let sameContextSessionID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000002"))
@@ -922,7 +916,7 @@ import GRDB
             ))
 
             runner.complete(meetingID: original.first.id, title: "First context")
-            await runner.waitForCallCount(2)
+            try await runner.waitForCallCount(2)
             let failedJob = try #require(viewModel.summaryGenerationJobs.first { $0.id == failedJobID })
             #expect(failedJob.isFinished)
             #expect(failedJob.progress.workspaceExport.isSkipped)
@@ -940,7 +934,7 @@ import GRDB
             ))
 
             runner.fail(meetingID: original.first.id)
-            await runner.waitForCallCount(3)
+            try await runner.waitForCallCount(3)
             #expect(runner.calls[2].settings.detailLevelInstruction == SummaryDetailLevel.eventSession.instruction)
             let sameContextJob = try #require(viewModel.summaryGenerationJobs.first {
                 if case .running = $0.progress.summaryGeneration { true } else { false }
@@ -954,7 +948,7 @@ import GRDB
                 meetingId: original.second.id,
                 state: .completed(sessionId: otherMeetingSessionID)
             ))
-            await runner.waitForCallCount(4)
+            try await runner.waitForCallCount(4)
             #expect(runner.calls[3].settings.detailLevelInstruction == SummaryDetailLevel.concise.instruction)
             let otherMeetingJob = try #require(viewModel.summaryGenerationJobs.first {
                 if case .running = $0.progress.summaryGeneration { true } else { false }
@@ -1005,7 +999,7 @@ import GRDB
             #expect(viewModel.completedBatchSummarySessionCountForTesting == 1)
 
             viewModel.setScreenshotDeletionInProgressForTesting(false)
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
             runner.complete(meetingID: fixture.first.id, title: "After deletion")
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
             #expect(try fixture.summary(for: fixture.first.id)?.loadDocument().title == "After deletion")
@@ -1034,7 +1028,7 @@ import GRDB
                 meetingId: fixture.first.id,
                 state: .completed(sessionId: firstSessionID)
             ))
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
 
             viewModel.registerPendingBatchSummaryForTesting(
                 sessionID: secondSessionID,
@@ -1057,7 +1051,7 @@ import GRDB
             #expect(runner.calls.count == 1)
 
             viewModel.setScreenshotDeletionInProgressForTesting(false)
-            await runner.waitForCallCount(2)
+            try await runner.waitForCallCount(2)
             #expect(runner.calls[1].settings.detailLevelInstruction == SummaryDetailLevel.eventSession.instruction)
             let job = try #require(viewModel.summaryGenerationJobs.first {
                 if case .running = $0.progress.summaryGeneration { true } else { false }
@@ -1114,6 +1108,11 @@ import GRDB
             )
             await original.select(original.first, in: viewModel, note: "original")
             let sessionID = try original.insertRecordingSession(for: original.first, offset: 0)
+            try await original.database.dbQueue.write { db in
+                var workspace = try #require(try WorkspaceRecord.fetchOne(db, key: original.workspace.id))
+                workspace.generationSettings.processing.location = .remote
+                try workspace.update(db)
+            }
             await viewModel.presentBatchTranscriptionConfirmation(
                 sessionId: sessionID,
                 meetingId: original.first.id,
@@ -1122,6 +1121,12 @@ import GRDB
 
             await destination.select(destination.first, in: viewModel, note: "destination")
             let confirmation = try #require(viewModel.pendingBatchTranscriptionConfirmation)
+            #expect(confirmation.usesServerSummary)
+            try await original.database.dbQueue.write { db in
+                var workspace = try #require(try WorkspaceRecord.fetchOne(db, key: original.workspace.id))
+                workspace.generationSettings.processing.location = .local
+                try workspace.update(db)
+            }
             let projectSelection = confirmation.projectSelection
             #expect(projectSelection.projects.map(\.id) == [project.id])
             #expect(projectSelection.selectedProjectId == nil)
@@ -1143,7 +1148,7 @@ import GRDB
                 meetingId: original.first.id,
                 state: .completed(sessionId: sessionID)
             ))
-            await runner.waitForCallCount(1)
+            try await runner.waitForCallCount(1)
 
             #expect(runner.calls[0].meetingID == original.first.id)
             #expect(runner.calls[0].projectName == project.path)
@@ -1173,7 +1178,7 @@ import GRDB
                 let processing = RecordingProcessing(
                     id: .v7(), automatic: true, liveDraft: false, localeIdentifier: "en_US",
                     method: .transcript, options: options, generationSettings: .current(detailLevel: .concise),
-                    serverSettings: nil, sessionIDs: [sessionID], stage: .transcribing
+                    workspaceSettings: nil, sessionIDs: [sessionID], stage: .transcribing
                 )
                 try await fixture.database.dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
                 if !restoring {
@@ -1215,16 +1220,10 @@ import GRDB
             #expect(runner.calls.count == (cancelSecond ? 2 : 3))
         }
 
-        private func waitUntil(
-            attempts: Int = 10000,
-            condition: @escaping @MainActor () -> Bool
-        ) async -> Bool {
-            for _ in 0 ..< attempts {
-                if condition() { return true }
-                await Task.yield()
-            }
-            return condition()
+        private func waitUntil(condition: @escaping @MainActor () -> Bool) async -> Bool {
+            await pollUntil { condition() }
         }
+
     }
 
     @MainActor
@@ -1245,7 +1244,6 @@ import GRDB
 
         private(set) var calls: [Call] = []
         private var continuations: [UUID: CheckedContinuation<Result<SummaryService.GeneratedSummary, Error>, Never>] = [:]
-        private var callWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
         func run(_ input: SummaryGenerationRunnerInput) async throws -> SummaryService.GeneratedSummary {
             calls.append(Call(
@@ -1257,18 +1255,14 @@ import GRDB
                 settings: input.generationSettings,
                 recordingSessionIDs: input.recordingSessions.map(\.id)
             ))
-            resumeCallWaiters()
             let result = await withCheckedContinuation { continuation in
                 continuations[input.promptContext.meetingId] = continuation
             }
             return try result.get()
         }
 
-        func waitForCallCount(_ count: Int) async {
-            if calls.count >= count { return }
-            await withCheckedContinuation { continuation in
-                callWaiters.append((count, continuation))
-            }
+        func waitForCallCount(_ count: Int) async throws {
+            try #require(await pollUntil { calls.count >= count })
         }
 
         func complete(meetingID: UUID, title: String) {
@@ -1283,11 +1277,6 @@ import GRDB
             continuations.removeValue(forKey: meetingID)?.resume(returning: .failure(TestError.failed))
         }
 
-        private func resumeCallWaiters() {
-            let ready = callWaiters.filter { calls.count >= $0.count }
-            callWaiters.removeAll { calls.count >= $0.count }
-            ready.forEach { $0.continuation.resume() }
-        }
     }
 
     @MainActor
@@ -1340,19 +1329,15 @@ import GRDB
 
     private actor ControlledSummaryJobSleeper {
         private var continuation: CheckedContinuation<Void, Never>?
-        private var waiter: CheckedContinuation<Void, Never>?
 
         func sleep(for _: Duration) async throws {
             await withCheckedContinuation { continuation in
                 self.continuation = continuation
-                waiter?.resume()
-                waiter = nil
             }
         }
 
-        func waitUntilSleeping() async {
-            if continuation != nil { return }
-            await withCheckedContinuation { waiter = $0 }
+        func waitUntilSleeping() async throws {
+            try #require(await pollUntil { continuation != nil })
         }
 
         func resume() {

@@ -2,7 +2,7 @@
 "settings.organization.settingsDataAndAccounts" = "データ管理";
 "settings.organization.generationAndAnalysis" = "要約と画像解析";
 "settings.organization.searchSettings" = "設定を検索";
-"settings.organization.settingsAccountIntro" = "まとめ方や処理方法をアカウントごとに設定します。";
+"settings.organization.settingsAccountIntro" = "現在のワークスペースでの要約と画像キャプションの生成方法を設定します。";
 "settings.organization.settingsAccountsIntro" = "接続先のアカウントと、それぞれのワークスペースを管理します。";
 "settings.organization.settingsExportIntro" = "サイドバーで選択中のアカウントの書き出し先を、このMacで設定します。";
 "settings.organization.settingsAccountSelectionDescription" = "編集対象を選んでも、開いているワークスペースは変わりません。";
@@ -24,14 +24,14 @@
 "settings.organization.summaryStyleEventDescription" = "講演やセッションの主張・デモ・学びを流れに沿ってまとめます。";
 "settings.organization.summaryStyleTimelineDescription" = "発言やデモ、質疑応答を時系列で詳しく辿れる形にします。";
 "settings.preferences.macInferencePreferences" = "このMacのAI";
-"settings.preferences.usesMacInferencePreferences" = "このMacで文字起こしし、「このMacのAI」の接続先へ文字起こしや画像を送って要約します。AIの接続先・モデルは全アカウントで共通です。";
-"settings.preferences.accountPreferences" = "アカウント設定";
-"settings.preferences.accountPreferencesScope" = "下のアカウント選択に応じて切り替わります。この領域の変更は表示中のアカウントに適用されます。";
+"settings.preferences.usesMacInferencePreferences" = "このMacで文字起こしし、文字起こしと画像をこのMacで設定したAIプロバイダーへ送信します。生成モデルはワークスペース設定を使用します。";
+"settings.preferences.accountPreferences" = "ワークスペースの生成設定";
+"settings.preferences.accountPreferencesScope" = "表示中のワークスペースの全員で共有する既定値です。";
 "settings.preferences.accountSummaryPreferencesDescription" = "まとめ方と出力言語は処理場所にかかわらず共通です。変更は次回の処理から適用されます。Macでの要約も、接続先のAIへ文字起こしや画像を送信します。";
 "settings.preferences.summaryStyle" = "まとめ方";
 "settings.preferences.recordingSettings" = "録音";
-"settings.preferences.localModelPreferences" = "このMacの要約モデル";
-"settings.preferences.localModelPreferencesDescription" = "このMacで処理するすべてのアカウントに共通です。モデル設定はサーバーに同期されません。";
+"settings.preferences.localModelPreferences" = "ローカル要約モデル";
+"settings.preferences.localModelPreferencesDescription" = "AIプロバイダーと認証情報はこのMac固有です。生成モデルはワークスペースごとに設定します。";
 "settings.preferences.serverProcessingAdvanced" = "サーバー処理の詳細設定";
 "settings.preferences.processingWorkflow" = "新しい録音の自動処理";
 "settings.preferences.transcribeThenSummarize" = "文字起こししてから要約";
@@ -40,7 +40,7 @@
 "settings.preferences.automaticModelPreference" = "自動";
 "settings.preferences.unavailableModelPreference" = "この方式では利用不可";
 "settings.preferences.checkModelPreference" = "モデルとの対応を確認";
-"settings.preferences.automaticModelPreferenceDescription" = "ここでの選択は新しい録音後の自動処理に適用されます。手動生成ではミーティング画面で選んだソースが優先されます。明示したモデルは保持し、選んだソースに非対応の場合はその実行だけモデルと推論強度を自動に戻します。";
+"settings.preferences.automaticModelPreferenceDescription" = "新しい録音後の自動処理に適用されます。手動生成では選択したソースを使用します。明示したモデルが利用できない場合は置き換えず、エラーを表示します。";
 /* Common */
 "Delete" = "削除";
 "Remove from Project" = "プロジェクトを解除";
@@ -1460,7 +1460,7 @@
 "Choose the AI account used by this Workspace." = "このワークスペースで使用するAIアカウントを選びます。";
 "This account is used by %lld Workspaces. Those Workspaces will use the Local Account, and this account's Codex and Google Drive connection data will be deleted." = "このアカウントは%lld個のワークスペースで使用されています。対象のワークスペースはローカルアカウントへ戻り、このアカウントのCodexデータとGoogle Drive連携情報は削除されます。";
 "Dahlia stores meeting data and generated files in a local Workspace." = "Dahliaはミーティングデータと生成ファイルをローカルのWorkspaceに保存します。";
-"Choose the languages Dahlia should recognize and the primary language for AI output." = "Dahliaが認識する言語と、AI出力で主に使う言語を選びます。";
+"Choose the languages Dahlia should recognize. Set the AI output language in each workspace's settings." = "Dahliaが認識する言語を選びます。AIの出力言語は各ワークスペースの設定で変更できます。";
 "Recognition and OCR Languages" = "認識・OCR対象の言語";
 "Primary Language" = "要約・画像説明の言語";
 "Used for summaries and screenshot captions." = "要約とスクリーンショットの画像説明に使用します。";
@@ -1581,7 +1581,7 @@
 "serverSummaryNoModels" = "利用可能なモデルがありません";
 "serverSummaryReloadModels" = "モデル一覧を再取得";
 
-"serverSummaryAccountDefault" = "アカウント設定";
+"serverSummaryAccountDefault" = "ワークスペース設定";
 
 "transcript.fullTranscriptionUnavailable" = "前の文字起こしとモデルが異なります。全文の再文字起こしには、すべての元音声と保存音声を処理できるモデルが必要です。";
 
@@ -1680,3 +1680,9 @@
 
 "setup.preparingWorkspace" = "ワークスペースを準備しています…";
 "setup.workspaceUnavailable" = "ワークスペースを準備できませんでした。接続を確認して再試行してください。";
+"Generation defaults are shared by everyone in this workspace. Only admins can change them." = "生成の既定値はこのワークスペースの全員で共有します。変更できるのは管理者のみです。";
+"For this generation only" = "今回の生成のみ";
+"Workspace default" = "ワークスペース設定";
+
+"summary.source.useSaved" = "保存済みの文字起こしを使う";
+"summary.source.useSaved.description" = "サーバーの最新版を取得せず、このMacに保存された版から生成します。内容が古い可能性があります。オフライン時に選択できます。";

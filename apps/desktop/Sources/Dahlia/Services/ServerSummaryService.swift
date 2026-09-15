@@ -91,7 +91,7 @@ actor ServerSummaryService {
         var detailLevel: String?
         var summaryLanguage: String?
         var reasoningEffort: String?
-        var preferences: ServerAccountSettings.GenerationPreferences?
+        var preferences: WorkspaceGenerationSettings.GenerationPreferences?
     }
 
     enum Failure: LocalizedError {
@@ -289,7 +289,7 @@ actor ServerSummaryService {
         source: SummaryGenerationSource? = nil,
         preparedRequest: Request? = nil,
         processing: RecordingProcessing? = nil,
-        accountSettings: ServerAccountSettings? = nil,
+        workspaceSettings: WorkspaceGenerationSettings? = nil,
         onPrepared: @Sendable (Request) async throws -> Void = { _ in },
         onStage: @MainActor @Sendable (String) async -> Void = { _ in }
     ) async throws {
@@ -313,25 +313,22 @@ actor ServerSummaryService {
             let body: Request
             if var saved = preparedRequest ?? processing?.serverRequest {
                 if saved.preferences == nil {
-                    saved.reasoningEffort = saved.reasoningEffort ?? processing?.serverSettings?.processing?.remote.reasoningEffort
+                    saved.reasoningEffort = saved.reasoningEffort ?? processing?.workspaceSettings?.processing.remote.reasoningEffort
                 }
                 body = saved
             } else {
-                let settings: ServerAccountSettings
-                if let captured = processing?.serverSettings ?? accountSettings {
+                let settings: WorkspaceGenerationSettings
+                if let captured = processing?.workspaceSettings ?? workspaceSettings {
                     settings = captured
                 } else {
-                    guard let origin = URL(string: target.origin) else { throw URLError(.badURL) }
-                    let data = try await client.data(origin: origin, connectionId: target.connectionID, maximumBytes: 8192) {
-                        try await $0.getSettings().ok.body.json
+                    guard let workspace = try await dbQueue.read({ db in try WorkspaceRecord.fetchOne(db, key: target.workspaceID) }) else {
+                        throw Failure.unavailable
                     }
-                    guard let saved = try JSONDecoder().decode(ServerAccountSettings.Response.self, from: data).settings
-                    else { throw Failure.unavailable }
-                    settings = saved
+                    settings = workspace.generationSettings
                 }
-                let isLegacyProcessing = processing != nil && processing?.summaryMode == nil
-                guard let summary = settings.summary, let accountProcessing = settings.processing,
-                      accountProcessing.location == .remote || settings.legacyMethod != nil || isLegacyProcessing else { throw Failure.unavailable }
+                let summary = settings.summary
+                let accountProcessing = settings.processing
+                guard accountProcessing.location == .remote else { throw Failure.unavailable }
                 let method = processing?.method ?? source?.processingMethod
                     ?? (accountProcessing.remote.workflow == .combined ? .audio : .cloudTranscription)
                 let input: Input
@@ -356,7 +353,6 @@ actor ServerSummaryService {
                 var preferences = settings.generationPreferences
                 preferences.processing.location = .remote
                 preferences.processing.remote.workflow = method == .audio ? .combined : .transcribeThenSummarize
-                preferences = await resettingIncompatibleManualModel(preferences, source: source, target: target)
                 preferences.summary.style = detail.map { SummaryStyle(detailLevel: .fromPersistedValue($0)) } ?? summary.style
                 body = Request(id: id.uuidString.lowercased(), input: input, preferences: preferences)
                 try await onPrepared(body)
@@ -431,21 +427,6 @@ actor ServerSummaryService {
             cursor = page.nextCursor
         } while cursor != nil
         return nil
-    }
-
-    private func resettingIncompatibleManualModel(
-        _ preferences: ServerAccountSettings.GenerationPreferences,
-        source: SummaryGenerationSource?,
-        target: Target
-    ) async -> ServerAccountSettings.GenerationPreferences {
-        guard let source, let savedModel = preferences.processing.remote.summaryModel else { return preferences }
-        guard let models = try? await models(connectionID: target.connectionID, origin: target.origin),
-              let model = models.first(where: { $0.id == savedModel || savedModel.hasSuffix("." + $0.id) }),
-              !model.supportsSummary(method: source.rawValue) else { return preferences }
-        var preferences = preferences
-        preferences.processing.remote.summaryModel = nil
-        preferences.processing.remote.reasoningEffort = nil
-        return preferences
     }
 
     private func awaitRecordingUploads(

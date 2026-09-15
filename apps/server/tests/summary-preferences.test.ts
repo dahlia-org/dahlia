@@ -1,10 +1,10 @@
 import { expect, it } from "vitest";
-import { DEFAULT_ACCOUNT_SETTINGS, summaryStyles, summaryStyleDetail } from "../src/account-settings-model";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, summaryStyles, summaryStyleDetail } from "../src/workspace-generation-settings";
 import { modelList } from "../src/ai-gateway/models";
 import { resolveSummaryPreferences } from "../src/summary/preferences";
 
 it("resolves automatic preferences without depending on catalog order or changing the saved choices", () => {
-  const preferences = { ...DEFAULT_ACCOUNT_SETTINGS, processing: { location: "remote" as const,
+  const preferences = { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: { location: "remote" as const,
     remote: { workflow: "transcribeThenSummarize" as const } } };
   const before = structuredClone(preferences);
   const entries = [{ id: "gpt-5.4" }, { id: "gemini-3-8-flash" }];
@@ -20,7 +20,7 @@ it("resolves automatic preferences without depending on catalog order or changin
 });
 
 it("keeps inactive overrides and rejects unavailable explicit models and effort", () => {
-  const preferences = structuredClone(DEFAULT_ACCOUNT_SETTINGS);
+  const preferences = structuredClone(DEFAULT_WORKSPACE_GENERATION_SETTINGS);
   preferences.processing = { location: "remote", remote: {
     workflow: "combined", summaryModel: "gemini-3-8-flash", transcriptionModel: "unavailable",
   } };

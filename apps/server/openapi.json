@@ -50,6 +50,133 @@
             "minimum": 1,
             "maximum": 90
           },
+          "generationSettings": {
+            "type": "object",
+            "properties": {
+              "outputLanguage": {
+                "type": "string",
+                "enum": [
+                  "ja",
+                  "en",
+                  "zh",
+                  "ko",
+                  "fr",
+                  "de",
+                  "es"
+                ]
+              },
+              "processing": {
+                "type": "object",
+                "properties": {
+                  "location": {
+                    "type": "string",
+                    "enum": [
+                      "local",
+                      "remote"
+                    ]
+                  },
+                  "remote": {
+                    "type": "object",
+                    "properties": {
+                      "workflow": {
+                        "type": "string",
+                        "enum": [
+                          "transcribeThenSummarize",
+                          "combined"
+                        ]
+                      },
+                      "summaryModel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "transcriptionModel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "reasoningEffort": {
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "minimal",
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max",
+                          "ultra"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "workflow"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "location",
+                  "remote"
+                ],
+                "additionalProperties": false
+              },
+              "summary": {
+                "type": "object",
+                "properties": {
+                  "style": {
+                    "type": "string",
+                    "enum": [
+                      "concise",
+                      "standard",
+                      "detailed",
+                      "eventSummary",
+                      "eventTimeline"
+                    ]
+                  }
+                },
+                "required": [
+                  "style"
+                ],
+                "additionalProperties": false
+              },
+              "local": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "reasoningEffort": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh",
+                      "max",
+                      "ultra"
+                    ]
+                  }
+                },
+                "required": [
+                  "model",
+                  "reasoningEffort"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "outputLanguage",
+              "processing",
+              "summary",
+              "local"
+            ],
+            "additionalProperties": false
+          },
           "encryption": {
             "type": "string",
             "enum": [
@@ -117,6 +244,7 @@
         },
         "required": [
           "meetingDeletionGraceDays",
+          "generationSettings",
           "workspaceId",
           "organizationId",
           "name",
@@ -1624,6 +1752,133 @@
             "minimum": 1,
             "maximum": 90
           },
+          "generationSettings": {
+            "type": "object",
+            "properties": {
+              "outputLanguage": {
+                "type": "string",
+                "enum": [
+                  "ja",
+                  "en",
+                  "zh",
+                  "ko",
+                  "fr",
+                  "de",
+                  "es"
+                ]
+              },
+              "processing": {
+                "type": "object",
+                "properties": {
+                  "location": {
+                    "type": "string",
+                    "enum": [
+                      "local",
+                      "remote"
+                    ]
+                  },
+                  "remote": {
+                    "type": "object",
+                    "properties": {
+                      "workflow": {
+                        "type": "string",
+                        "enum": [
+                          "transcribeThenSummarize",
+                          "combined"
+                        ]
+                      },
+                      "summaryModel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "transcriptionModel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "reasoningEffort": {
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "minimal",
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max",
+                          "ultra"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "workflow"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "location",
+                  "remote"
+                ],
+                "additionalProperties": false
+              },
+              "summary": {
+                "type": "object",
+                "properties": {
+                  "style": {
+                    "type": "string",
+                    "enum": [
+                      "concise",
+                      "standard",
+                      "detailed",
+                      "eventSummary",
+                      "eventTimeline"
+                    ]
+                  }
+                },
+                "required": [
+                  "style"
+                ],
+                "additionalProperties": false
+              },
+              "local": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "reasoningEffort": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh",
+                      "max",
+                      "ultra"
+                    ]
+                  }
+                },
+                "required": [
+                  "model",
+                  "reasoningEffort"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "outputLanguage",
+              "processing",
+              "summary",
+              "local"
+            ],
+            "additionalProperties": false
+          },
           "encryption": {
             "type": "string",
             "enum": [
@@ -1691,6 +1946,7 @@
         },
         "required": [
           "meetingDeletionGraceDays",
+          "generationSettings",
           "workspaceId",
           "organizationId",
           "name",
@@ -2480,93 +2736,6 @@
               "null"
             ],
             "properties": {
-              "outputLanguage": {
-                "type": "string",
-                "enum": [
-                  "ja",
-                  "en",
-                  "zh",
-                  "ko",
-                  "fr",
-                  "de",
-                  "es"
-                ]
-              },
-              "processing": {
-                "type": "object",
-                "properties": {
-                  "location": {
-                    "type": "string",
-                    "enum": [
-                      "local",
-                      "remote"
-                    ]
-                  },
-                  "remote": {
-                    "type": "object",
-                    "properties": {
-                      "workflow": {
-                        "type": "string",
-                        "enum": [
-                          "transcribeThenSummarize",
-                          "combined"
-                        ]
-                      },
-                      "summaryModel": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "transcriptionModel": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "reasoningEffort": {
-                        "type": "string",
-                        "enum": [
-                          "none",
-                          "minimal",
-                          "low",
-                          "medium",
-                          "high",
-                          "xhigh",
-                          "max",
-                          "ultra"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "workflow"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "required": [
-                  "location",
-                  "remote"
-                ],
-                "additionalProperties": false
-              },
-              "summary": {
-                "type": "object",
-                "properties": {
-                  "style": {
-                    "type": "string",
-                    "enum": [
-                      "concise",
-                      "standard",
-                      "detailed",
-                      "eventSummary",
-                      "eventTimeline"
-                    ]
-                  }
-                },
-                "required": [
-                  "style"
-                ],
-                "additionalProperties": false
-              },
               "analysisLanguages": {
                 "type": "object",
                 "properties": {
@@ -2594,9 +2763,6 @@
               }
             },
             "required": [
-              "outputLanguage",
-              "processing",
-              "summary",
               "analysisLanguages"
             ],
             "additionalProperties": false
@@ -4062,6 +4228,133 @@
                           "minimum": 1,
                           "maximum": 90
                         },
+                        "generationSettings": {
+                          "type": "object",
+                          "properties": {
+                            "outputLanguage": {
+                              "type": "string",
+                              "enum": [
+                                "ja",
+                                "en",
+                                "zh",
+                                "ko",
+                                "fr",
+                                "de",
+                                "es"
+                              ]
+                            },
+                            "processing": {
+                              "type": "object",
+                              "properties": {
+                                "location": {
+                                  "type": "string",
+                                  "enum": [
+                                    "local",
+                                    "remote"
+                                  ]
+                                },
+                                "remote": {
+                                  "type": "object",
+                                  "properties": {
+                                    "workflow": {
+                                      "type": "string",
+                                      "enum": [
+                                        "transcribeThenSummarize",
+                                        "combined"
+                                      ]
+                                    },
+                                    "summaryModel": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 200
+                                    },
+                                    "transcriptionModel": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 200
+                                    },
+                                    "reasoningEffort": {
+                                      "type": "string",
+                                      "enum": [
+                                        "none",
+                                        "minimal",
+                                        "low",
+                                        "medium",
+                                        "high",
+                                        "xhigh",
+                                        "max",
+                                        "ultra"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "workflow"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "required": [
+                                "location",
+                                "remote"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "summary": {
+                              "type": "object",
+                              "properties": {
+                                "style": {
+                                  "type": "string",
+                                  "enum": [
+                                    "concise",
+                                    "standard",
+                                    "detailed",
+                                    "eventSummary",
+                                    "eventTimeline"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "style"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "local": {
+                              "type": "object",
+                              "properties": {
+                                "model": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "reasoningEffort": {
+                                  "type": "string",
+                                  "enum": [
+                                    "none",
+                                    "minimal",
+                                    "low",
+                                    "medium",
+                                    "high",
+                                    "xhigh",
+                                    "max",
+                                    "ultra"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "model",
+                                "reasoningEffort"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "outputLanguage",
+                            "processing",
+                            "summary",
+                            "local"
+                          ],
+                          "additionalProperties": false
+                        },
                         "organizationId": {
                           "type": "string",
                           "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
@@ -4198,6 +4491,133 @@
                           "type": "integer",
                           "minimum": 1,
                           "maximum": 90
+                        },
+                        "generationSettings": {
+                          "type": "object",
+                          "properties": {
+                            "outputLanguage": {
+                              "type": "string",
+                              "enum": [
+                                "ja",
+                                "en",
+                                "zh",
+                                "ko",
+                                "fr",
+                                "de",
+                                "es"
+                              ]
+                            },
+                            "processing": {
+                              "type": "object",
+                              "properties": {
+                                "location": {
+                                  "type": "string",
+                                  "enum": [
+                                    "local",
+                                    "remote"
+                                  ]
+                                },
+                                "remote": {
+                                  "type": "object",
+                                  "properties": {
+                                    "workflow": {
+                                      "type": "string",
+                                      "enum": [
+                                        "transcribeThenSummarize",
+                                        "combined"
+                                      ]
+                                    },
+                                    "summaryModel": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 200
+                                    },
+                                    "transcriptionModel": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 200
+                                    },
+                                    "reasoningEffort": {
+                                      "type": "string",
+                                      "enum": [
+                                        "none",
+                                        "minimal",
+                                        "low",
+                                        "medium",
+                                        "high",
+                                        "xhigh",
+                                        "max",
+                                        "ultra"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "workflow"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "required": [
+                                "location",
+                                "remote"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "summary": {
+                              "type": "object",
+                              "properties": {
+                                "style": {
+                                  "type": "string",
+                                  "enum": [
+                                    "concise",
+                                    "standard",
+                                    "detailed",
+                                    "eventSummary",
+                                    "eventTimeline"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "style"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "local": {
+                              "type": "object",
+                              "properties": {
+                                "model": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "reasoningEffort": {
+                                  "type": "string",
+                                  "enum": [
+                                    "none",
+                                    "minimal",
+                                    "low",
+                                    "medium",
+                                    "high",
+                                    "xhigh",
+                                    "max",
+                                    "ultra"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "model",
+                                "reasoningEffort"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "outputLanguage",
+                            "processing",
+                            "summary",
+                            "local"
+                          ],
+                          "additionalProperties": false
                         },
                         "encryption": {
                           "type": "string",
@@ -7878,7 +8298,7 @@
       },
       "patch": {
         "operationId": "updateSettings",
-        "summary": "Merge supplied fields, including nested summary settings; maximum 8 KiB",
+        "summary": "Update account recognition languages; maximum 8 KiB",
         "tags": [
           "account"
         ],
@@ -7887,23 +8307,14 @@
           "content": {
             "application/json": {
               "example": {
-                "outputLanguage": "ja"
+                "analysisLanguages": {
+                  "scope": "all",
+                  "identifiers": []
+                }
               },
               "schema": {
                 "type": "object",
                 "properties": {
-                  "outputLanguage": {
-                    "type": "string",
-                    "enum": [
-                      "ja",
-                      "en",
-                      "zh",
-                      "ko",
-                      "fr",
-                      "de",
-                      "es"
-                    ]
-                  },
                   "analysisLanguages": {
                     "type": "object",
                     "properties": {
@@ -7929,85 +8340,13 @@
                     ],
                     "additionalProperties": false
                   },
-                  "summary": {
-                    "type": "object",
-                    "properties": {
-                      "style": {
-                        "type": "string",
-                        "enum": [
-                          "concise",
-                          "standard",
-                          "detailed",
-                          "eventSummary",
-                          "eventTimeline"
-                        ]
-                      }
-                    },
-                    "additionalProperties": false
-                  },
-                  "processing": {
-                    "type": "object",
-                    "properties": {
-                      "location": {
-                        "type": "string",
-                        "enum": [
-                          "local",
-                          "remote"
-                        ]
-                      },
-                      "remote": {
-                        "type": "object",
-                        "properties": {
-                          "workflow": {
-                            "type": "string",
-                            "enum": [
-                              "transcribeThenSummarize",
-                              "combined"
-                            ]
-                          },
-                          "summaryModel": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "transcriptionModel": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "reasoningEffort": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
-                            "enum": [
-                              "none",
-                              "minimal",
-                              "low",
-                              "medium",
-                              "high",
-                              "xhigh",
-                              "max",
-                              "ultra",
-                              null
-                            ]
-                          }
-                        },
-                        "additionalProperties": false
-                      }
-                    },
-                    "additionalProperties": false
-                  },
                   "initialize": {
                     "type": "boolean"
                   }
                 },
+                "required": [
+                  "analysisLanguages"
+                ],
                 "additionalProperties": false
               }
             }

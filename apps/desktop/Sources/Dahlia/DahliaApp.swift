@@ -206,6 +206,7 @@ struct DahliaApp: App {
                     summaryGenerationOptions: confirmation.summaryGenerationOptions,
                     isRetranscription: confirmation.isRetranscription,
                     processingMethod: confirmation.processingMethod,
+                    usesServerSummary: confirmation.usesServerSummary,
                     onStart: { languageSelection, generatesSummary, summaryOptions, projectId in
                         if let error = viewModel.assignPendingBatchTranscriptionProject(projectId) {
                             return error

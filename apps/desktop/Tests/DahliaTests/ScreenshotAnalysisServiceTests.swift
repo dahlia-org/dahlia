@@ -93,7 +93,7 @@ import Foundation
             let analyzer = CodexScreenshotAnalysisService(appServer: appServer, accountSettings: { connectionID in
                 #expect(connectionID == provider.accountConnectionID)
                 if !settingsAvailable { throw URLError(.resourceUnavailable) }
-                return .init(outputLanguage: .en, analysisLanguages: .init(scope: .selected, identifiers: ["ja"]))
+                return .init(analysisLanguages: .init(scope: .selected, identifiers: ["ja"]))
             })
 
             let results = try await analyzer.analyze([
@@ -101,7 +101,7 @@ import Foundation
                     id: screenshotID,
                     imageData: Data([1]),
                     mimeType: "image/png",
-                    runtimeProvider: provider
+                    runtimeProvider: provider, outputLanguage: .en
                 ),
             ])
 
@@ -113,7 +113,7 @@ import Foundation
                     id: screenshotID,
                     imageData: Data([1]),
                     mimeType: "image/png",
-                    runtimeProvider: provider
+                    runtimeProvider: provider, outputLanguage: .en
                 ),
             ])
             let messages = await transport.messages()

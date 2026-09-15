@@ -1,3 +1,4 @@
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "../workspace-generation-settings";
 import type { CalendarEventSnapshot } from "../sync/schemas";
 import type { TranscriptMetadata } from "../sync/transcript";
 import type { SummaryMetadata } from "../summary/metadata";
@@ -7,7 +8,7 @@ import { sql } from "drizzle-orm";
 import { blob, check, foreignKey, index, integer, primaryKey, real, sqliteTable, sqliteView, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import type { FileMetadata } from "../files/model";
-import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../account-settings-model";
+import { type AccountSettings } from "../account-settings-model";
 import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from "../search/settings-model";
 
 import { user as authUser, organization as authOrganization } from "./generated/sqlite-auth-schema";
@@ -46,10 +47,7 @@ export const serverSettings = sqliteTable("server_settings", {
 
 export const accountSettings = sqliteTable("account_settings", {
   userId: text("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
-  summary: text("summary", { mode: "json" }).$type<AccountSettings["summary"]>().default(DEFAULT_ACCOUNT_SETTINGS.summary).notNull(),
-  processing: text("processing", { mode: "json" }).$type<AccountSettings["processing"]>().default(DEFAULT_ACCOUNT_SETTINGS.processing).notNull(),
   revision: integer("revision").default(1).notNull(),
-  outputLanguage: text("output_language").$type<AccountSettings["outputLanguage"]>().notNull(),
   analysisLanguages: text("analysis_languages", { mode: "json" }).$type<AccountSettings["analysisLanguages"]>().notNull(),
 });
 
@@ -59,6 +57,7 @@ export const syncedWorkspace = sqliteTable("workspaces", {
   workspaceId: text("workspace_id").primaryKey(),
   organizationId: text("organization_id").notNull().references(() => authOrganization.id, { onDelete: "restrict" }),
   createdBy: text("created_by", { mode: "json" }).$type<{ id: string; name: string; email: string }>().notNull(),
+  generationSettings: text("generation_settings", { mode: "json" }).$type<WorkspaceGenerationSettings>().default(DEFAULT_WORKSPACE_GENERATION_SETTINGS).notNull(),
   name: text("name").notNull(),
   icon: text("icon"),
   color: text("color"),
@@ -449,6 +448,7 @@ export const imageAnalysisJob = sqliteTable("jobs_image_analysis", {
   workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   model: text("model").notNull(),
+  outputLanguage: text("output_language"),
   status: text("status").default("pending").notNull(),
   attempts: integer("attempts").default(0).notNull(),
   availableAt: sqliteTimestamp("available_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),

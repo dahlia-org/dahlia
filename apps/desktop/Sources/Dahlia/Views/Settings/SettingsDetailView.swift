@@ -73,8 +73,7 @@ struct SettingsDetailView: View {
         case .search:
             SearchSettingsView(database: appDatabase)
         case .accountPreferences, .aiSummary, .mcp:
-            AccountProcessingSettingsView(
-                connectionID: $settingsAccountID,
+            WorkspaceProcessingSettingsView(
                 onOpenMacInference: { selection = .macInference },
                 onOpenLanguageSettings: { selection = .general }
             )

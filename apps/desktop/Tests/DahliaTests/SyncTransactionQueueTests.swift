@@ -57,25 +57,29 @@
                 createdAt: .now,
                 projectType: .undefined
             )
-            let payload = try SyncJSON.decoder.decode(
+            var payload = try SyncJSON.decoder.decode(
                 SyncCanonicalPayload.self,
                 from: Data(
                     #"{"name":"Styled","createdAt":"2026-09-09T00:00:00Z","projectType":"undefined","icon":"book.closed","color":"green"}"#
                         .utf8
                 )
             )
-            let renamed = try SyncJSON.decoder.decode(
+            var renamed = try SyncJSON.decoder.decode(
                 SyncCanonicalPayload.self,
                 from: Data(
                     #"{"name":"Renamed","createdAt":"2026-09-09T00:00:00Z","projectType":"undefined","icon":"book.closed","color":"green"}"#
                         .utf8
                 )
             )
+            payload.generationSettings = WorkspaceGenerationSettings()
+            renamed.generationSettings = WorkspaceGenerationSettings()
+            let appearancePayload = payload
+            let renamedPayload = renamed
             try await database.dbQueue.write { db in
                 try project.insert(db)
                 for (entity, id) in [(SyncEntity.workspace, workspace.id), (.project, project.id)] {
-                    try SyncTransactionQueue.applyCanonical(entity, id: id, workspaceId: workspace.id, value: payload, in: db)
-                    try SyncTransactionQueue.applyCanonical(entity, id: id, workspaceId: workspace.id, value: renamed, in: db)
+                    try SyncTransactionQueue.applyCanonical(entity, id: id, workspaceId: workspace.id, value: appearancePayload, in: db)
+                    try SyncTransactionQueue.applyCanonical(entity, id: id, workspaceId: workspace.id, value: renamedPayload, in: db)
                 }
             }
             let (savedWorkspace, savedProject) = try await database.dbQueue.read { db in
@@ -513,10 +517,11 @@
                 try WorkspaceRecord.fetchOne(db, key: workspace.id)?.syncConfirmedConnectionId
             } == workspace.syncConfirmedConnectionId)
 
-            let canonical = try SyncJSON.decoder.decode(
+            var canonical = try SyncJSON.decoder.decode(
                 SyncCanonicalPayload.self,
                 from: Data(#"{"name":"Server name","icon":null,"color":null}"#.utf8)
             )
+            canonical.generationSettings = WorkspaceGenerationSettings()
             let changes: [SyncChangePage.Change] = [
                 .init(sequence: 4, entity: .workspace, entityId: workspace.id, action: "upsert", revision: 4, record: canonical),
             ]

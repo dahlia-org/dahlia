@@ -24,16 +24,27 @@ final class WorkspaceAISettingsModel {
         didSet { persistLocalAccountSettingsIfChanged(oldValue, databricksProfile) }
     }
 
-    var summaryModelID: String { didSet { persistIfChanged(oldValue, summaryModelID) } }
-    var summaryReasoningEffort: String { didSet { persistIfChanged(oldValue, summaryReasoningEffort) } }
+    var generationSettings = WorkspaceGenerationSettings() { didSet { persistIfChanged(oldValue, generationSettings) } }
+    var summaryModelID: String {
+        get { generationSettings.local.model }
+        set { generationSettings.local.model = newValue }
+    }
+
+    var summaryReasoningEffort: String {
+        get { generationSettings.local.reasoningEffort }
+        set { generationSettings.local.reasoningEffort = newValue }
+    }
+
     var chatModelID: String { didSet { persistIfChanged(oldValue, chatModelID) } }
     var chatReasoningEffort: String { didSet { persistIfChanged(oldValue, chatReasoningEffort) } }
     private(set) var isSwitchingRuntime = false
     private(set) var errorMessage: String?
 
     @ObservationIgnored private var dbQueue: DatabaseQueue?
+    @ObservationIgnored private var workspaceObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var isApplying = false
     @ObservationIgnored private var activationGeneration = 0
+    @ObservationIgnored private var persistenceGeneration = 0
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var runtimeTask: Task<Bool, Never>?
     @ObservationIgnored private let setupDefaults: UserDefaults
@@ -58,8 +69,6 @@ final class WorkspaceAISettingsModel {
             localProvider = localSettings.provider
             databricksProfile = localSettings.databricksProfile
         }
-        summaryModelID = "gpt-5.6-luna"
-        summaryReasoningEffort = "high"
         chatModelID = ""
         chatReasoningEffort = CodexReasoningEffortOption.defaultValue
     }
@@ -75,8 +84,7 @@ final class WorkspaceAISettingsModel {
             accountConnectionID: accountConnectionID,
             localProvider: localProvider,
             databricksProfile: databricksProfile,
-            summaryModelID: summaryModelID,
-            summaryReasoningEffort: summaryReasoningEffort,
+            generationSettings: workspaceID == self.workspaceID ? generationSettings : WorkspaceGenerationSettings(),
             chatModelID: chatModelID,
             chatReasoningEffort: chatReasoningEffort
         )
@@ -90,39 +98,34 @@ final class WorkspaceAISettingsModel {
 
     func configure(dbQueue: DatabaseQueue) {
         self.dbQueue = dbQueue
+        observeWorkspace()
     }
 
     func inheritLocalAccountSettings(from dbQueue: DatabaseQueue) async throws {
-        let migratesProvider = !setupDefaults.bool(forKey: LocalAccountAISettings.migrationKey)
-        let migratesSummary = !setupDefaults.bool(forKey: LocalAccountAISettings.summaryMigrationKey)
-        guard migratesProvider || migratesSummary else { return }
+        guard !setupDefaults.bool(forKey: LocalAccountAISettings.migrationKey) else { return }
         let previousWorkspace = try await MeetingRepository(dbQueue: dbQueue).fetchLatestLocalAccountWorkspace()
         isApplying = true
-        if migratesProvider, let previousWorkspace {
+        if let previousWorkspace {
             localProvider = previousWorkspace.localProvider
             databricksProfile = previousWorkspace.databricksProfile
         }
         isApplying = false
-        if migratesProvider { localAccountSettings.save(to: setupDefaults) }
-        if migratesSummary {
-            if let previousWorkspace {
-                setupDefaults.set(previousWorkspace.summaryModelID, forKey: LocalAccountAISettings.summaryModelKey)
-                setupDefaults.set(previousWorkspace.summaryReasoningEffort, forKey: LocalAccountAISettings.summaryReasoningEffortKey)
-            }
-            setupDefaults.set(true, forKey: LocalAccountAISettings.summaryMigrationKey)
-        }
+        localAccountSettings.save(to: setupDefaults)
     }
 
     func activate(workspace: WorkspaceRecord) {
         activationGeneration += 1
         errorMessage = nil
         apply(WorkspaceAISettingsSnapshot(workspace: workspace, localAccountSettings: localAccountSettings))
+        observeWorkspace()
         scheduleRuntimeActivation()
     }
 
     func clear() {
         activationGeneration += 1
         workspaceID = nil
+        workspaceObservation?.cancel()
+        workspaceObservation = nil
         isSwitchingRuntime = false
         errorMessage = nil
         runtimeTask?.cancel()
@@ -134,12 +137,37 @@ final class WorkspaceAISettingsModel {
         return await runtimeTask.value
     }
 
+    private func observeWorkspace() {
+        workspaceObservation?.cancel()
+        guard let dbQueue, let workspaceID else { return }
+        let generation = activationGeneration
+        workspaceObservation = ValueObservation.tracking { db in
+            try WorkspaceRecord.fetchOne(db, key: workspaceID)
+        }.start(in: dbQueue, onError: { _ in }, onChange: { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // Wait only for local saves, then read the latest row rather than an older observation.
+                let savedGeneration = self.persistenceGeneration
+                await self.saveTask?.value
+                guard let workspace = try? await dbQueue.read({ db in
+                    try WorkspaceRecord.fetchOne(db, key: workspaceID)
+                }), self.activationGeneration == generation, self.persistenceGeneration == savedGeneration,
+                self.workspaceID == workspaceID else { return }
+                let changedAccount = self.accountConnectionID != workspace.accountConnectionId
+                self.apply(WorkspaceAISettingsSnapshot(workspace: workspace, localAccountSettings: self.localAccountSettings))
+                if AppSettings.shared.currentWorkspace?.id == workspaceID {
+                    AppSettings.shared.currentWorkspace = workspace
+                }
+                if changedAccount { self.scheduleRuntimeActivation() }
+            }
+        })
+    }
+
     private func apply(_ settings: WorkspaceAISettingsSnapshot) {
         isApplying = true
         workspaceID = settings.workspaceID
         accountConnectionID = settings.accountConnectionID
-        summaryModelID = settings.summaryModelID
-        summaryReasoningEffort = settings.summaryReasoningEffort
+        generationSettings = settings.generationSettings
         chatModelID = settings.chatModelID
         chatReasoningEffort = settings.chatReasoningEffort
         isApplying = false
@@ -148,6 +176,7 @@ final class WorkspaceAISettingsModel {
     private func persistIfChanged<T: Equatable>(_ oldValue: T, _ newValue: T) {
         guard oldValue != newValue, !isApplying, let snapshot, let dbQueue else { return }
         errorMessage = nil
+        persistenceGeneration += 1
         let generation = activationGeneration
         let previousTask = saveTask
         saveTask = Task { [weak self] in

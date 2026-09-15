@@ -43,6 +43,7 @@ enum SummaryService {
         }
         let responseText = try await service.generate(.init(
             model: generationSettings.modelID,
+            requiresExactModel: true,
             reasoningEffort: generationSettings.reasoningEffort,
             developerInstructions: systemPrompt,
             inputs: inputs,
