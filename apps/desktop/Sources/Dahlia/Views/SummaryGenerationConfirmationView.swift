@@ -10,9 +10,7 @@ struct SummaryGenerationConfirmationView: View {
     @State private var isLoadingSources = true
     @State private var sourceErrorMessage: String?
     @State private var errorMessage: String?
-    @State private var outputLanguage: SummaryLanguage?
-    @State private var model: String?
-    @State private var effort: String?
+    @State private var overrides = SummaryGenerationOptions.Overrides()
     @State private var catalog = CodexModelCatalog(service: .macInference)
     @Bindable private var serverCatalog = ServerAccountSettingsModel.shared
 
@@ -72,22 +70,22 @@ struct SummaryGenerationConfirmationView: View {
 
                 Section(L10n.generationOverrides) {
                     LabeledContent(L10n.processingLocation, value: usesRemote ? L10n.remoteProcessing : L10n.localProcessing)
-                    Picker(L10n.summaryOutputLanguage, selection: $outputLanguage) {
+                    Picker(L10n.summaryOutputLanguage, selection: $overrides.outputLanguage) {
                         Text(L10n.workspaceGenerationDefault).tag(SummaryLanguage?.none)
                         ForEach(SummaryLanguage.allCases) { Text($0.displayName).tag(Optional($0)) }
                     }
-                    Picker(L10n.summaryModel, selection: $model) {
+                    Picker(L10n.summaryModel, selection: modelSelection) {
                         Text("\(L10n.workspaceGenerationDefault) — \(modelName(defaultModel))").tag(String?.none)
                         if usesRemote { Text(L10n.automaticModelPreference).tag(Optional("")) }
-                        if let model, !model.isEmpty, !modelIDs.contains(model) {
+                        if let model = overrides.model, !model.isEmpty, !modelIDs.contains(model) {
                             Text("\(model) — \(L10n.unavailableModelPreference)").tag(Optional(model))
                         }
                         ForEach(modelIDs, id: \.self) { id in Text(modelName(id)).tag(Optional(id)) }
                     }
-                    Picker(L10n.reasoningEffort, selection: $effort) {
+                    Picker(L10n.reasoningEffort, selection: $overrides.reasoningEffort) {
                         Text(L10n.workspaceGenerationDefault).tag(String?.none)
                         if usesRemote { Text(L10n.automaticModelPreference).tag(Optional("")) }
-                        if let effort, !effort.isEmpty, !effortOptions.contains(effort) {
+                        if let effort = overrides.reasoningEffort, !effort.isEmpty, !effortOptions.contains(effort) {
                             Text("\(effort) — \(L10n.checkModelPreference)").tag(Optional(effort))
                         }
                         ForEach(effortOptions, id: \.self) { Text($0).tag(Optional($0)) }
@@ -131,7 +129,8 @@ struct SummaryGenerationConfirmationView: View {
                     .keyboardShortcut(.cancelAction)
                 Button(actionTitle, action: generateSummary)
                     .keyboardShortcut(.defaultAction)
-                    .disabled((!usesRemote && model != nil && model?.nilIfBlank == nil) || isLoadingSources || sourceErrorMessage != nil ||
+                    .disabled((!usesRemote && overrides.model != nil && overrides.model?.nilIfBlank == nil) || hasIncompatibleEffort ||
+                        isLoadingSources || sourceErrorMessage != nil ||
                         (selectedSource.map { sourceAvailability?.isAvailable($0) != true } ?? true))
             }
             .padding(20)
@@ -170,8 +169,22 @@ struct SummaryGenerationConfirmationView: View {
         return catalog.models.first { $0.model == id }?.displayName ?? id
     }
 
+    private var modelSelection: Binding<String?> {
+        Binding(get: { overrides.model }, set: { model in
+            overrides.selectModel(
+                model,
+                defaultReasoningEffort: usesRemote ? "" : catalog.resolvedEffort(current: "", modelID: model ?? defaultModel)
+            )
+        })
+    }
+
+    private var hasIncompatibleEffort: Bool {
+        guard let effort = overrides.reasoningEffort?.nilIfBlank else { return false }
+        return !effortOptions.contains(effort)
+    }
+
     private var effortOptions: [String] {
-        let id = model ?? defaultModel
+        let id = overrides.model ?? defaultModel
         if usesRemote { return serverState?.summaryModels.first { $0.id == id }?.supportedReasoningLevels.map(\.effort) ?? [] }
         return catalog.effortOptions(modelID: id).map(\.reasoningEffort)
     }
@@ -199,11 +212,7 @@ struct SummaryGenerationConfirmationView: View {
             ),
             detailLevel: detailLevel,
             source: selectedSource,
-            overrides: .init(
-                outputLanguage: outputLanguage,
-                model: model.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) },
-                reasoningEffort: effort
-            )
+            overrides: overrides
         ), selectedProjectId)
         if errorMessage == nil {
             onCancel()

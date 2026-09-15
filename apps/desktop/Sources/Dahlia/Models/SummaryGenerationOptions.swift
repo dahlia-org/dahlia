@@ -9,6 +9,12 @@ struct SummaryGenerationOptions: Codable, Equatable {
         var outputLanguage: SummaryLanguage?
         var model: String?
         var reasoningEffort: String?
+
+        mutating func selectModel(_ model: String?, defaultReasoningEffort: String?) {
+            guard self.model != model else { return }
+            self.model = model
+            reasoningEffort = model == nil ? nil : defaultReasoningEffort
+        }
     }
 
     func applying(to settings: WorkspaceGenerationSettings, usesServer: Bool) -> WorkspaceGenerationSettings {

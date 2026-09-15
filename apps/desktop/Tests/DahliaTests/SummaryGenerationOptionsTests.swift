@@ -23,6 +23,34 @@
             #expect(shared == WorkspaceGenerationSettings())
         }
 
+        @Test(arguments: [false, true])
+        func changingModelResetsEffortBeforeGenerating(usesServer: Bool) throws {
+            var shared = WorkspaceGenerationSettings()
+            shared.local.reasoningEffort = "high"
+            shared.processing.remote.reasoningEffort = "high"
+            var overrides = SummaryGenerationOptions.Overrides()
+            overrides.selectModel("first", defaultReasoningEffort: "high")
+            overrides.reasoningEffort = "high"
+            overrides.selectModel("first", defaultReasoningEffort: "low")
+            #expect(overrides.reasoningEffort == "high")
+            // The Server resolves its default; the local catalog supplies a supported effort.
+            overrides.selectModel("second", defaultReasoningEffort: usesServer ? "" : "low")
+            let options = SummaryGenerationOptions(exportOptions: .manual, overrides: overrides)
+            let request = try JSONDecoder().decode(SummaryGenerationOptions.self, from: JSONEncoder().encode(options))
+            let effective = request.applying(to: shared, usesServer: usesServer)
+            if usesServer {
+                #expect(effective.processing.remote.summaryModel == "second")
+                #expect(effective.processing.remote.reasoningEffort == nil)
+            } else {
+                #expect(effective.local.model == "second")
+                #expect(effective.local.reasoningEffort == "low")
+            }
+            #expect(shared.local.reasoningEffort == "high")
+            #expect(shared.processing.remote.reasoningEffort == "high")
+            overrides.selectModel(nil, defaultReasoningEffort: "low")
+            #expect(overrides.model == nil && overrides.reasoningEffort == nil)
+        }
+
         @Test
         func mergingCombinesExports() {
             let merged = SummaryGenerationOptions.merging([

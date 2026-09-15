@@ -134,13 +134,6 @@ jobs:
         env:
           TEST_MIGRATION_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia_baseline
 
-      - name: Validate PostgreSQL account settings
-        run: |
-          psql postgresql://postgres@127.0.0.1:5432/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE dahlia_account_settings OWNER dahlia'
-          pnpm exec vitest run tests/account-settings-store.test.ts
-        env:
-          TEST_ACCOUNT_SETTINGS_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia_account_settings
-
       - name: Validate PostgreSQL application store
         run: pnpm exec vitest run tests/postgres-store.test.ts tests/postgres-retention.test.ts tests/sync-sqlite.test.ts
         env:

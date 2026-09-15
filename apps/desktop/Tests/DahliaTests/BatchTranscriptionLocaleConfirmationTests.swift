@@ -47,14 +47,28 @@ import GRDB
             #expect(locales == ["en_US"])
         }
 
-        @Test(arguments: [false, true])
-        func confirmationPreservesLocalesChangedWhileRecording(automaticDetection: Bool) async throws {
+        @Test(arguments: [false, true], [false, true])
+        func confirmationPreservesLocalesChangedWhileRecording(automaticDetection: Bool, capturesProcessing: Bool) async throws {
             let batch = try BatchAudioTestFixture(
                 name: "recording-locale-ranges",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
                 duration: 1
             )
             defer { batch.removeFiles() }
+            let viewModel = CaptionViewModel()
+            if capturesProcessing {
+                let workspace = try await batch.database.dbQueue.read { db in
+                    try #require(try WorkspaceRecord.fetchOne(db, key: batch.meeting.workspaceId))
+                }
+                let processing = viewModel.processingSnapshot(
+                    workspace: workspace,
+                    plan: .init(finalMode: .batch, liveSubtitlesEnabled: false, liveTranscriptDraftEnabled: false),
+                    locale: Locale(identifier: "ja_JP")
+                )
+                try await batch.database.dbQueue.write { db in
+                    try processing.saveForRecordingStart(sessionID: batch.session.id, in: db)
+                }
+            }
             try await batch.recordMicrophoneAudio()
             try await batch.database.dbQueue.write { db in
                 var workspace = try #require(try WorkspaceRecord.fetchOne(db, key: batch.meeting.workspaceId))
@@ -79,7 +93,6 @@ import GRDB
                 ).insert(db)
             }
 
-            let viewModel = CaptionViewModel()
             await viewModel.presentBatchTranscriptionConfirmation(
                 sessionId: batch.session.id,
                 meetingId: batch.meeting.id,
@@ -88,6 +101,16 @@ import GRDB
 
             let confirmation = try #require(viewModel.pendingBatchTranscriptionConfirmation)
             #expect(confirmation.initialLanguageSelection == .recorded)
+            _ = try await BatchTranscriptionConfirmationService.confirm(
+                sessionId: batch.session.id,
+                languageSelection: confirmation.initialLanguageSelection,
+                automaticLanguageCandidates: confirmation.automaticLanguageCandidateSnapshot,
+                dbQueue: batch.database.dbQueue
+            )
+            let locales = try await batch.database.dbQueue.read { db in
+                try RecordingAudioSegmentRangeRecord.order(Column("startFrame")).fetchAll(db).map(\.localeIdentifier)
+            }
+            #expect(locales == ["ja_JP", "en_US"])
         }
 
         @Test

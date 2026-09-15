@@ -32,6 +32,12 @@
             snapshot.generationSettings.local.model = "shared-model"
             snapshot.generationSettings.transcription.localeIdentifier = "fr-FR"
             snapshot.generationSettings.transcription.automaticLanguageDetection = true
+            snapshot.generationSettings.transcription.languageScope = .selected
+            // The settings checkbox uses this helper, which must retain the last candidate.
+            snapshot.generationSettings.transcription.languageIdentifiers = AppLanguageSelection.updating(
+                ["ja"], identifier: "ja", isEnabled: false
+            ).sorted()
+            #expect(snapshot.generationSettings.transcription.languageIdentifiers == ["ja"])
             snapshot.generationSettings.automaticProcessing = false
             if role == "local" || role == "admin" {
                 let updated = try #require(try await repository.updateWorkspaceAISettings(snapshot))

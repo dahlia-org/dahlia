@@ -4159,7 +4159,7 @@ final class CaptionViewModel: ObservableObject {
             }
         } else if transcription?.automaticLanguageDetection == true {
             .automatic
-        } else if stored.2 > 1, transcription == nil {
+        } else if stored.2 > 1 {
             .recorded
         } else {
             .manual(localeIdentifier: localeIdentifier)
