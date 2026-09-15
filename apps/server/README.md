@@ -635,7 +635,7 @@ Live refreshes preserve current tabs, filters, loaded pages, scroll, and an open
 
 ### Audio summary generation
 
-Node and PostgreSQL/Hyperdrive Workers with the Databricks or Cloudflare backend support `meetingSummaryGeneration.sources: ["transcript", "audio"]`. In Private Web, **Processing location** selects local Mac or remote Server transcription; remote processing can optionally transcribe before generating the summary. Audio model choices use the existing `/api/v1/models` list, restricted to Gemini models whose catalog metadata includes audio input. The worker validates the model and reasoning effort against that same catalog before reading recording bytes.
+Node and PostgreSQL/Hyperdrive Workers with the Databricks or Cloudflare backend support `meetingSummaryGeneration.sources: ["transcript", "audio"]`. In Private Web, **Transcription location** selects local Mac or remote Server transcription; remote processing can optionally transcribe before generating the summary. Audio model choices use the existing `/api/v1/models` list, restricted to Gemini models whose catalog metadata includes audio input. The worker validates the model and reasoning effort against that same catalog before reading recording bytes.
 
 Workspace `generationSettings` exposes summary style, transcription location and remote workflow/model/effort preferences. See Server summary generation above for defaults and immutable job snapshots.
 
