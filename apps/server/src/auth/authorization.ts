@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { APIError } from "better-auth/api";
 import type * as Schema from "../db/auth-schema";
-import { organizationSlugPattern } from "./organization-slug";
+import { isReservedTeamOrganizationSlug, organizationSlugPattern } from "./organization-slug";
 
 export const authorizationConflict = (message: string): never => { throw new APIError("CONFLICT", { message, code: message }); };
 
@@ -38,7 +38,7 @@ export function validateAuthorization(state: AuthorizationState, before?: Author
     if (before && previousSlug !== org.slug && !organizationSlugPattern.test(org.slug)) authorizationConflict("invalid_organization_slug");
     if (!["personal", "team"].includes(org.kind)) authorizationConflict("invalid_organization_kind");
     if (org.kind === "personal" && state.invitations.some((i) => i.organizationId === org.id)) authorizationConflict("personal_organization_immutable");
-    if (org.kind === "team" && org.slug.toLowerCase().startsWith("personal-")) authorizationConflict("reserved_organization_slug");
+    if (org.kind === "team" && isReservedTeamOrganizationSlug(org.slug)) authorizationConflict("reserved_organization_slug");
     if (org.kind === "personal" && state.workspaces.filter((v) => v.organizationId === org.id).length !== 1) authorizationConflict("personal_organization_immutable");
   }
   const memberOf = (userId: string, organizationId: string) => state.members.some((m) => m.userId === userId && m.organizationId === organizationId);

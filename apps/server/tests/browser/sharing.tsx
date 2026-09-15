@@ -1,7 +1,7 @@
 import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../../src/workspace-generation-settings";
 // Open /tests/browser/sharing.html with pnpm dev:client. All requests are mocked.
 import { createRoot } from "react-dom/client";
-import { SidebarProvider, useSidebar } from "../../src/client/Sidebar";
+import { SidebarProvider } from "../../src/client/Sidebar";
 import { WorkspaceSharing } from "../../src/client/WorkspaceSharing";
 import type { SyncedWorkspaceInfo } from "../../src/client/api";
 import "../../src/client/styles.css";
@@ -47,23 +47,13 @@ const choose = (picker: HTMLSelectElement, role: string) => {
   Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(picker, role);
   picker.dispatchEvent(new Event("change", { bubbles: true }));
 };
-function ScopeProbe() {
-  const { organizationId, select } = useSidebar();
-  return <><output id="scope">{organizationId}</output><button id="all-workspaces" onClick={() => select("")}>All Workspaces</button></>;
-}
 async function run() {
   const workspace: SyncedWorkspaceInfo = { meetingDeletionGraceDays: 7, generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS, workspaceId: "workspace", organizationId: "org", name: "Shared", role: "admin", revision: 1,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-  sessionStorage.removeItem("dahlia:sidebar:me:organization");
   const fixture = <SidebarProvider session={{ user: { id: "me" },
-    capabilities: { admin: false, sessions: false, sharing: true, sync: true } }}><ScopeProbe /><WorkspaceSharing workspace={workspace} /></SidebarProvider>;
-  let root = createRoot(document.getElementById("root")!);
+    capabilities: { admin: false, sessions: false, sharing: true, sync: true } }}><WorkspaceSharing workspace={workspace} /></SidebarProvider>;
+  const root = createRoot(document.getElementById("root")!);
   root.render(fixture);
-  await until(() => document.getElementById("scope")?.textContent === "personal-org");
-  document.getElementById("all-workspaces")!.click();
-  await until(() => document.getElementById("scope")?.textContent === "");
-  root.unmount(); root = createRoot(document.getElementById("root")!); root.render(fixture);
-  await until(() => document.getElementById("scope")?.textContent === "");
   await until(() => document.querySelector(".collection-heading button"));
   const opener = document.querySelector<HTMLButtonElement>(".collection-heading button")!;
   opener.focus(); opener.click();

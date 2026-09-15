@@ -5,9 +5,11 @@ import { Select } from "../../src/client/Select";
 import "../../src/client/styles.css";
 function Fixture() {
   const [value, setValue] = useState("a");
+  const [search, setSearch] = useState("");
   return <dialog open><label>Choice<Select value={value} onValueChange={setValue}>
     <option value="a"><svg aria-hidden="true" width="16" height="16"><circle cx="8" cy="8" r="6" /></svg><span>Alpha</span></option><option value="disabled" disabled>Blocked</option><option value="b">Beta</option>
-  </Select></label><fieldset disabled><label>Disabled<Select value="a" onValueChange={() => { throw Error("Disabled changed"); }}><option value="a">Alpha</option></Select></label></fieldset><button>After</button><Select aria-label="Destination" value="" placeholder="Choose a Workspace" menuLabel="Workspaces" onValueChange={() => {}}><option value="target">Target</option></Select></dialog>;
+  </Select></label><fieldset disabled><label>Disabled<Select value="a" onValueChange={() => { throw Error("Disabled changed"); }}><option value="a">Alpha</option></Select></label></fieldset><button>After</button><Select aria-label="Destination" value="" placeholder="Choose a Workspace" menuLabel="Workspaces" onValueChange={() => {}}><option value="target">Target</option></Select>
+  <Select aria-label="Searchable" value="target" search={{ value: search, onValueChange: setSearch, placeholder: "Search" }} onValueChange={() => {}}><option value="target">Target</option></Select></dialog>;
 }
 const assert = (value: unknown, message: string) => { if (!value) throw Error(message); };
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -40,6 +42,12 @@ async function run() {
   assert(popup.querySelectorAll('[role="option"]').length === 1, "placeholder became an option");
   assert(document.querySelector('[role="option"] svg'), "option icon missing");
   key("Escape");
-  document.getElementById("result")!.textContent = "PASS: modal, disabled fieldset, selection, arrow keys, disabled option, Home, Escape, focus, typeahead";
+  const searchable = document.querySelector<HTMLButtonElement>('[aria-label="Searchable"]')!;
+  searchable.click(); await frame(); await frame();
+  const searchablePopup = document.getElementById(searchable.getAttribute("aria-controls")!)!;
+  assert(document.activeElement === searchablePopup.querySelector('input[type="search"]'), "search did not receive focus");
+  key("Tab"); await frame();
+  assert(!searchablePopup.matches(":popover-open") && document.activeElement === searchable, "Tab left the searchable picker open or lost trigger focus");
+  document.getElementById("result")!.textContent = "PASS: modal, disabled fieldset, selection, arrow keys, disabled option, Home, Escape, Tab, focus, typeahead";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });

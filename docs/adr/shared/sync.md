@@ -12,7 +12,7 @@ Server account の Workspace / Project / meeting は Desktop と Web が共有�
 
 ## Server ワークスペースの自動発見（2026-09-10）
 
-Desktopは `GET /api/v1/workspaces` で全principalからアクセスできるAdmin／Editor／ViewerのWorkspaceを発見する。metadataを同期し、本文・画像は必要時に取得する。`organizationId` は所有Organizationで絞り、旧owner queryは提供しない。Webの初期contextはPersonalとし、所属外から共有されたWorkspaceもアクセス可能一覧で発見する。
+Desktopは `GET /api/v1/workspaces` で全principalからアクセスできるAdmin／Editor／ViewerのWorkspaceを発見する。metadataを同期し、本文・画像は必要時に取得する。`organizationId` は所有Organizationで絞り、旧owner queryは提供しない。WebはOrganization contextを持たず、権限のあるすべてのWorkspaceを既定で表示する。Organizationによる絞り込みは必要になった時点でWorkspace一覧へ追加する。
 登録は接続を再検査する SQLite transaction で冪等に行い、確定 revision と作業コピーを同時に保存する。登録による upload は作らない。Server 所属 Workspace は常に利用可能として表示し、Desktop の Workspace 削除操作によるローカル登録解除は提供しない。Local Account の Workspace 削除とサインアウト時のデータ処理は維持する。同一 ID の Local Workspace や別接続の Workspace は自動移行しない。既存の同期待ち操作、cursor、最終選択は維持する。通信失敗や一覧からの欠落だけでは削除せず、権限失効は既存の同期・データ保全経路で処理する。サインイン操作から Local Workspace の移行確認は出さず、明示移行操作を使う。
 
 ## 同期対象とモデル

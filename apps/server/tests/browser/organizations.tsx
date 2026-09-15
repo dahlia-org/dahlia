@@ -15,11 +15,14 @@ let creates = 0;
 let edits = 0;
 let invites = 0;
 let teamCreates = 0;
+let candidatesVisible = true;
 const organizations = [{ id: "org_00000000000000000000000001", name: "Alpha", slug: "alpha-team", kind: "team" }];
 const member = { id: "member-id", userId: "owner", role: "owner", user: { name: "Owner", email: "owner@example.com" } };
 let domains: { domain: string; joinPolicy: "invite_only" | "need_approval" | "auto_join" }[] = [];
 const requests = [{ id: "ojr_other", organizationId: organizations[0]!.id, userId: "applicant", userName: "Applicant", userEmail: "applicant@example.com", organizationName: "Alpha", status: "pending" }];
 const candidateId = "org_00000000000000000000000004";
+const serverUsers = [{ id: "owner", name: "Owner", email: "owner@example.com", role: "admin", createdAt: new Date().toISOString() },
+  { id: "second", name: "Second", email: "second@example.com", role: "user", createdAt: new Date().toISOString() }];
 window.fetch = async (input, init) => {
   const method = input instanceof Request ? input.method : init?.method ?? "GET";
   const requestBody: unknown = method !== "GET" && method !== "HEAD" ? (input instanceof Request ? await input.clone().json().catch(() => ({})) : JSON.parse(typeof init?.body === "string" ? init.body : "{}")) : undefined;
@@ -32,7 +35,7 @@ window.fetch = async (input, init) => {
     }
     return Response.json({ domains });
   }
-  if (url.pathname === "/api/v1/organization-candidates") return Response.json({ items: [{ id: candidateId, name: "Candidate", logo: null, joinPolicy: "need_approval", requestStatus: requests.findLast((request) => request.organizationId === candidateId)?.status ?? null }], nextCursor: null });
+  if (url.pathname === "/api/v1/organization-candidates") return Response.json({ items: candidatesVisible ? [{ id: candidateId, name: "Candidate", logo: null, joinPolicy: "need_approval", requestStatus: requests.findLast((request) => request.organizationId === candidateId)?.status ?? null }] : [], nextCursor: null });
   if (url.pathname === "/api/v1/organization-join-requests") return Response.json({ items: requests.filter((request) => request.userId === "owner"), nextCursor: null });
   if (url.pathname.endsWith("/join-requests")) {
     const organizationId = url.pathname.split("/")[4]!;
@@ -44,10 +47,13 @@ window.fetch = async (input, init) => {
     requests.find((request) => request.id === requestId)!.status = action === "approve" ? "approved" : action === "reject" ? "rejected" : "cancelled";
     return new Response(null, { status: 204 });
   }
-  if (url.pathname === "/api/v1/admin/users") return Response.json({ items: [{ id: "owner", name: "Owner", email: "owner@example.com", role: "admin", createdAt: new Date().toISOString() }], hasMore: false });
+  if (url.pathname === "/api/v1/admin/users") {
+    const query = url.searchParams.get("q")?.toLowerCase() ?? "";
+    return Response.json({ items: serverUsers.filter((user) => `${user.name} ${user.email}`.toLowerCase().includes(query)), hasMore: false });
+  }
   if (url.pathname === "/api/v1/admin/organizations") return Response.json({ items: organizations.map((org) => ({ ...org, memberCount: 1, teamCount: 1 })), hasMore: false });
   if (url.pathname.startsWith("/api/v1/admin/organizations/")) {
-    if (method === "DELETE") { deletions++; return new Response(null, { status: 204 }); }
+    if (method === "DELETE") { deletions++; organizations.splice(organizations.findIndex((org) => org.id === url.pathname.split("/")[5]), 1); return new Response(null, { status: 204 }); }
     return Response.json({ ...organizations.find((org) => org.id === url.pathname.split("/")[5]), members: [], teams: [], hasMoreMembers: false, hasMoreTeams: false });
   }
   if (url.pathname === "/api/v1/session") return Response.json({ user: { id: "owner", name: "Owner" },
@@ -76,7 +82,7 @@ window.fetch = async (input, init) => {
   }
   if (url.pathname === "/api/v1/organizations") return Response.json({ items: organizations, nextCursor: null, canCreateOrganizations: serverAdmin });
   if (url.pathname.endsWith("/list")) return Response.json(organizations);
-  if (url.pathname.endsWith("/workspaces")) return Response.json({ items: [], nextCursor: null });
+  if (url.pathname.endsWith("/workspaces")) return Response.json({ items: [{ workspaceId: "workspace-id", name: "Team workspace", icon: "briefcase", color: "blue", revision: 1, creatorId: "owner" }], nextCursor: null });
   if (url.pathname === "/api/v1/organizations/org_00000000000000000000000001/members") return Response.json({ items: [member], nextCursor: null });
   if (url.pathname === "/api/v1/organizations/org_00000000000000000000000001/teams") return Response.json({ items: [{ id: "team-id", organizationId: "org_00000000000000000000000001", name: "Design" }], nextCursor: null });
   if (url.pathname.endsWith("/list-members") || url.pathname.endsWith("/members")) {
@@ -126,8 +132,17 @@ async function run() {
   await until(() => document.querySelector(".action-dialog:modal"));
   document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
   await until(() => !document.querySelector(".action-dialog") && button("Apply", main()));
+  candidatesVisible = false;
+  requests.splice(1);
+  window.dispatchEvent(new Event(clientMutationEvent));
+  await until(() => ![...main().querySelectorAll("h2")].some((heading) => heading.textContent === "Organizations you can join"));
+  await until(() => ![...main().querySelectorAll("h3")].some((heading) => heading.textContent === "Join requests"));
   (document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') as HTMLElement).click();
-  await until(() => button("Members"));
+  await until(() => button("Workspace governance"));
+  button("Workspace governance").click();
+  await until(() => panel()?.textContent?.includes("Team workspace"));
+  assert(panel().querySelector(".workspace-governance-identity .appearance-icon"), "Workspace icon is missing");
+  assert(!panel().textContent?.includes("workspace-id") && !panel().textContent?.includes("revision 1") && !panel().textContent?.includes("Creator"), "Internal Workspace metadata is visible");
   button("Members").click();
   await until(() => panel()?.textContent?.includes("owner@example.com"));
   assert(location.pathname === "/orgs/org_00000000000000000000000001", "Detail did not use TypeID");
@@ -192,13 +207,55 @@ async function run() {
   navigateDashboard("/orgs/org_00000000000000000000000003");
   await until(() => main().textContent?.includes("Organization not found"));
   navigateDashboard("/orgs");
+  await until(() => document.querySelector('a[href="/orgs/org_00000000000000000000000001"]'));
+  assert(!button("Create organization", main()), "Organization creation leaked into memberships");
+  navigateDashboard("/admin/orgs");
   await until(() => button("Create organization", main()));
-  button("Create organization", main()).click();
-  await until(() => button("Choose owner", main()));
-  button("Choose owner", main()).click();
+  const createButton = button("Create organization", main());
+  createButton.focus();
+  createButton.click();
   await until(() => document.querySelector(".action-dialog:modal"));
-  assert(document.querySelector(".action-dialog")?.textContent?.includes("Initial owner: Owner (owner@example.com)"), "Initial owner not shown");
-  fill("name", "New organization"); fill("slug", "Invalid Slug");
+  button("Cancel", document.querySelector(".action-dialog")!).click();
+  await until(() => !document.querySelector(".action-dialog"));
+  assert(document.activeElement === createButton, "Closing organization creation did not restore focus");
+  createButton.click();
+  await until(() => document.querySelector(".action-dialog:modal"));
+  const ownerSelect = document.querySelector<HTMLButtonElement>('.action-dialog [role="combobox"]')!;
+  assert(ownerSelect.value === "", "Initial owner was selected implicitly");
+  ownerSelect.click();
+  await until(() => document.querySelector<HTMLInputElement>('.select-menu input[type="search"]'));
+  const search = document.querySelector<HTMLInputElement>('.select-menu input[type="search"]')!;
+  const ownerMenu = search.closest<HTMLElement>('.select-menu')!;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "missing");
+  search.dispatchEvent(new Event("input", { bubbles: true }));
+  await until(() => ownerMenu.textContent?.includes("No matching users."));
+  search.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  await until(() => ownerSelect.ariaExpanded === "false");
+  assert(!ownerSelect.disabled, "Empty owner search disabled the picker");
+  ownerSelect.click();
+  await until(() => ownerMenu.matches(":popover-open"));
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "second");
+  search.dispatchEvent(new Event("input", { bubbles: true }));
+  await until(() => ownerMenu.querySelectorAll('[role="option"]').length === 1);
+  assert(ownerSelect.value === "", "Filtered owner was selected implicitly");
+  ownerMenu.querySelector<HTMLButtonElement>('[role="option"]')!.click();
+  await until(() => ownerSelect.value === "second");
+  ownerSelect.click();
+  await until(() => ownerMenu.matches(":popover-open"));
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "");
+  search.dispatchEvent(new Event("input", { bubbles: true }));
+  await until(() => ownerMenu.querySelectorAll('[role="option"]').length === 2);
+  assert(ownerSelect.value === "second", "Owner selection was reset by a live result refresh");
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "owner");
+  search.dispatchEvent(new Event("input", { bubbles: true }));
+  await until(() => ownerMenu.querySelectorAll('[role="option"]').length === 1 && ownerSelect.value === "");
+  ownerMenu.querySelector<HTMLButtonElement>('[role="option"]')!.click();
+  await until(() => ownerSelect.value === "owner");
+  fill("name", "New organization");
+  await until(() => document.querySelector<HTMLInputElement>('[name="slug"]')?.value === "new-organization");
+  fill("slug", "Invalid Slug");
+  fill("name", "Renamed organization");
+  assert(document.querySelector<HTMLInputElement>('[name="slug"]')?.value === "Invalid Slug", "Manual slug edit was overwritten");
   await until(() => document.querySelector<HTMLInputElement>('[name="slug"]')?.validity.patternMismatch);
   document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
   assert(creates === 0, "Invalid slug was submitted");
@@ -206,22 +263,23 @@ async function run() {
   await until(() => document.querySelector<HTMLInputElement>('[name="slug"]')?.value === "new_team");
   document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
   await until(() => document.querySelector(".action-dialog [role=alert]"));
-  assert(document.querySelector<HTMLInputElement>('[name="name"]')?.value === "New organization", "Failure discarded draft");
+  assert(document.querySelector<HTMLInputElement>('[name="name"]')?.value === "Renamed organization", "Failure discarded draft");
   failCreate = false;
   document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
-  await until(() => location.pathname === "/admin/organizations" && !document.querySelector(".action-dialog"));
+  await until(() => location.pathname === "/admin/orgs" && !document.querySelector(".action-dialog"));
   assert(creates === 2, "Create did not complete exactly once after retry");
-  navigateDashboard("/admin/organizations/org_00000000000000000000000002");
+  navigateDashboard("/admin/orgs/org_00000000000000000000000002");
   await until(() => button("Delete organization", main()));
   button("Delete organization", main()).click();
   await until(() => document.querySelector(".action-dialog:modal"));
   document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
-  await until(() => location.pathname === "/admin/organizations" && !document.querySelector(".action-dialog"));
+  await until(() => location.pathname === "/admin/orgs" && !document.querySelector(".action-dialog"));
   assert(deletions === 1, "Server administrator deletion did not run");
   accounts = false;
   window.dispatchEvent(new Event(clientMutationEvent));
   navigateDashboard("/orgs");
-  await until(() => document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') && button("Create organization", main()));
+  await until(() => document.querySelector('a[href="/orgs/org_00000000000000000000000001"]'));
+  assert(!button("Create organization", main()), "Organization creation returned to memberships");
   (document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') as HTMLElement).click();
   await until(() => button("Members"));
   button("Members").click();
@@ -248,8 +306,10 @@ async function run() {
   assert(!button("Delete organization", panel()), "Organization settings exposed deletion in Header mode");
   organizations[0]!.kind = "personal";
   navigateDashboard("/orgs");
-  await until(() => document.querySelector('a[href="/orgs/org_00000000000000000000000001"]'));
-  (document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') as HTMLElement).click();
+  await until(() => main().textContent?.includes("No organizations"));
+  assert(main().textContent?.includes("Ask a server administrator"), "Organization empty state suggests an unavailable creation action");
+  assert(!document.querySelector('a[href="/orgs/org_00000000000000000000000001"]'), "Personal organization is listed as a joined organization");
+  navigateDashboard("/orgs/org_00000000000000000000000001");
   await until(() => button("Settings"));
   button("Settings").click();
   await until(() => button("Change slug", panel()));

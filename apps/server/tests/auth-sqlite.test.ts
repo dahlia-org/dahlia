@@ -103,6 +103,12 @@ describe("SQLite Better Auth store", () => {
       expect(first.items).toHaveLength(100); expect(first.hasMore).toBe(true);
       expect(second.items).toHaveLength(2); expect(second.hasMore).toBe(false);
       expect(new Set([...first.items, ...second.items].map((user) => user.id)).size).toBe(102);
+      const filtered = page.parse(await (await send("/api/v1/admin/users?q=MEMBER%40EXAMPLE.COM")).json());
+      expect(filtered.items.map((user) => user.email)).toEqual(["member@example.com"]);
+      expect(page.parse(await (await send("/api/v1/admin/users?q=%25")).json()).items).toEqual([]);
+      raw.prepare('INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)').run(uuidV7(), "Änne", "anne@example.com", Date.now(), Date.now());
+      const unicode = page.parse(await (await send("/api/v1/admin/users?q=%C3%A4NNE")).json());
+      expect(unicode.items.map((user) => user.name)).toEqual(["Änne"]);
       for (const kind of ["users", "organizations"]) {
         expect((await send(`/api/v1/admin/${kind}`, "member@example.com")).status).toBe(403);
         expect((await send(`/api/v1/admin/${kind}?offset=-1`)).status).toBe(400);

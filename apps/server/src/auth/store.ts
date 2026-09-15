@@ -5,7 +5,7 @@ import { HEADER_IDENTITY_ISSUER } from "./ids";
 import { createSearchSettingsStore, type SearchSettingsStore } from "../search/settings";
 import type { DBAdapterInstance } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
-import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { uuidV7 } from "../id";
 
 import { gatewayResource, type AppConfig } from "../config";
@@ -26,6 +26,9 @@ import type { MeetingSyncStore } from "../sync/types";
 const DAHLIA_DESKTOP_CLIENT_ID = "databricks-cli";
 const LEGACY_DAHLIA_DESKTOP_CLIENT_ID = "dahlia-macos";
 const DAHLIA_DESKTOP_SESSION_CLIENT_IDS = [DAHLIA_DESKTOP_CLIENT_ID, LEGACY_DAHLIA_DESKTOP_CLIENT_ID];
+const userSearchPattern = (query: string) => `%${query.toLowerCase().replace(/[\\%_]/g, "\\$&")}%`;
+const containsNonASCII = (value: string) => /[^\p{ASCII}]/u.test(value);
+
 function isUniqueConstraintError(error: unknown): boolean {
   const cause = typeof error === "object" && error !== null && "cause" in error
     ? error.cause
@@ -104,7 +107,7 @@ export interface ApplicationStore {
   seedDahliaClient(config: AppConfig): Promise<void>;
   listDahliaSessions(userId: string): Promise<DahliaOAuthSession[]>;
   revokeDahliaSession(userId: string, refreshTokenId: string): Promise<boolean>;
-  listServerUsers(limit: number, offset: number): Promise<ServerUserRecord[]>;
+  listServerUsers(limit: number, offset: number, query?: string): Promise<ServerUserRecord[]>;
   listServerOrganizations(limit: number, offset: number): Promise<ServerOrganizationRecord[]>;
   getServerOrganization(organizationId: string, limit: number, membersOffset: number, teamsOffset: number): Promise<ServerOrganizationDetails | null>;
   listAdminUsers(): Promise<AdminUserRecord[]>;
@@ -264,10 +267,14 @@ export function createPostgresApplicationStore(
         .where(eq(postgresSchema.oauthAccessToken.refreshId, refreshTokenId));
       return true;
     },
-    listServerUsers: (limit, offset) => db.select({
-      id: postgresAuthSchema.user.id, name: postgresAuthSchema.user.name, email: postgresAuthSchema.user.email,
-      role: postgresAuthSchema.user.role, createdAt: postgresAuthSchema.user.createdAt,
-    }).from(postgresAuthSchema.user).orderBy(asc(postgresAuthSchema.user.email), asc(postgresAuthSchema.user.id)).limit(limit).offset(offset),
+    listServerUsers: (limit, offset, query = "") => {
+      const pattern = userSearchPattern(query);
+      return db.select({
+        id: postgresAuthSchema.user.id, name: postgresAuthSchema.user.name, email: postgresAuthSchema.user.email,
+        role: postgresAuthSchema.user.role, createdAt: postgresAuthSchema.user.createdAt,
+      }).from(postgresAuthSchema.user).where(query ? or(sql`lower(${postgresAuthSchema.user.name}) like ${pattern} escape '\\'`, sql`lower(${postgresAuthSchema.user.email}) like ${pattern} escape '\\'`) : undefined)
+        .orderBy(asc(postgresAuthSchema.user.email), asc(postgresAuthSchema.user.id)).limit(limit).offset(offset);
+    },
     listServerOrganizations: (limit, offset) => db.select({
       id: postgresAuthSchema.organization.id, name: postgresAuthSchema.organization.name, slug: postgresAuthSchema.organization.slug, kind: postgresAuthSchema.organization.kind,
       memberCount: sql<number>`(select count(*) from ${postgresAuthSchema.member} where ${postgresAuthSchema.member.organizationId} = ${postgresAuthSchema.organization}."id")`.mapWith(Number),
@@ -481,10 +488,23 @@ export function createSqliteApplicationStore(
       await db.delete(sqliteSchema.oauthAccessToken).where(eq(sqliteSchema.oauthAccessToken.refreshId, refreshTokenId));
       return true;
     },
-    listServerUsers: (limit, offset) => db.select({
-      id: sqliteAuthSchema.user.id, name: sqliteAuthSchema.user.name, email: sqliteAuthSchema.user.email,
-      role: sqliteAuthSchema.user.role, createdAt: sqliteAuthSchema.user.createdAt,
-    }).from(sqliteAuthSchema.user).orderBy(asc(sqliteAuthSchema.user.email), asc(sqliteAuthSchema.user.id)).limit(limit).offset(offset),
+    listServerUsers: async (limit, offset, query = "") => {
+      if (containsNonASCII(query)) {
+        // ponytail: SQLite has no Unicode case folding; use ICU-backed search if local user directories grow large.
+        const normalized = query.toLowerCase();
+        const rows = await db.select({
+          id: sqliteAuthSchema.user.id, name: sqliteAuthSchema.user.name, email: sqliteAuthSchema.user.email,
+          role: sqliteAuthSchema.user.role, createdAt: sqliteAuthSchema.user.createdAt,
+        }).from(sqliteAuthSchema.user).orderBy(asc(sqliteAuthSchema.user.email), asc(sqliteAuthSchema.user.id));
+        return rows.filter((user) => user.name.toLowerCase().includes(normalized) || user.email.toLowerCase().includes(normalized)).slice(offset, offset + limit);
+      }
+      const pattern = userSearchPattern(query);
+      return db.select({
+        id: sqliteAuthSchema.user.id, name: sqliteAuthSchema.user.name, email: sqliteAuthSchema.user.email,
+        role: sqliteAuthSchema.user.role, createdAt: sqliteAuthSchema.user.createdAt,
+      }).from(sqliteAuthSchema.user).where(query ? or(sql`lower(${sqliteAuthSchema.user.name}) like ${pattern} escape '\\'`, sql`lower(${sqliteAuthSchema.user.email}) like ${pattern} escape '\\'`) : undefined)
+        .orderBy(asc(sqliteAuthSchema.user.email), asc(sqliteAuthSchema.user.id)).limit(limit).offset(offset);
+    },
     listServerOrganizations: (limit, offset) => db.select({
       id: sqliteAuthSchema.organization.id, name: sqliteAuthSchema.organization.name, slug: sqliteAuthSchema.organization.slug, kind: sqliteAuthSchema.organization.kind,
       memberCount: sql<number>`(select count(*) from ${sqliteAuthSchema.member} where ${sqliteAuthSchema.member.organizationId} = ${sqliteAuthSchema.organization}."id")`.mapWith(Number),

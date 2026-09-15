@@ -247,7 +247,7 @@ export interface WorkspaceTransferRecord {
   manifest: { projects: string[]; meetings: string[]; files: string[] };
 }
 
-export interface GovernanceWorkspace { workspaceId: string; name: string; revision: number; creatorId: string }
+export interface GovernanceWorkspace { workspaceId: string; name: string; icon?: string | null; color?: string | null; revision: number; creatorId: string }
 
 export interface IdentitySyncStore {
   listGovernanceWorkspaces(organizationId: string, after?: string): Promise<{ items: GovernanceWorkspace[]; nextCursor: string | null }>;
