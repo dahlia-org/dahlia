@@ -2,7 +2,6 @@ import { hasEmailDomain, headerIdentityValue } from "./header";
 import { lockAuthorization } from "./authorization";
 import { createOrganizationStore, type OrganizationStore } from "./organizations";
 import { HEADER_IDENTITY_ISSUER } from "./ids";
-import { createAccountSettingsStore, type AccountSettingsStore } from "../account-settings";
 import { createSearchSettingsStore, type SearchSettingsStore } from "../search/settings";
 import type { DBAdapterInstance } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
@@ -98,7 +97,6 @@ export interface TeamMemberRecord {
 
 export interface ApplicationStore {
   database: DBAdapterInstance;
-  accountSettings: AccountSettingsStore;
   searchSettings: SearchSettingsStore;
   sync: MeetingSyncStore;
   resolveHeaderUser(identity: Identity): Promise<string | null>;
@@ -132,7 +130,6 @@ export function createPostgresApplicationStore(
   return {
     database: drizzleAdapter(db, { provider: "pg", schema: postgresAuthSchema, schemaName: "auth" }),
     organizations,
-    accountSettings: createAccountSettingsStore(db, true),
     searchSettings: createSearchSettingsStore(db, true),
     sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding, encryption),
     async resolveHeaderUser(identity) {
@@ -351,7 +348,6 @@ export function createSqliteApplicationStore(
   return {
     database: drizzleAdapter(db, { provider: "sqlite", schema: sqliteAuthSchema, transaction: transactions }),
     organizations,
-    accountSettings: createAccountSettingsStore(db, false),
     searchSettings: createSearchSettingsStore(db, false),
     sync: createSqliteMeetingSyncStore(db, searchEmbedding, encryption),
     async resolveHeaderUser(identity) {

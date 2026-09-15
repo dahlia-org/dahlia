@@ -265,8 +265,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     @AppStorage(AppSettings.transcriptionLocaleUserDefaultsKey) var transcriptionLocale: String = Locale.current.identifier
     @AppStorage(AppSettings.liveSubtitleLocaleUserDefaultsKey) var liveSubtitleLocale: String = Locale.current.identifier
-    @AppStorage("liveTranscriptDraftEnabled") var liveTranscriptDraftEnabled = false
-    @AppStorage("automaticRecordingProcessingEnabled") var automaticRecordingProcessingEnabled = true
     @AppStorage("forceEchoCancellationForExternalMicrophone") var forceEchoCancellationForExternalMicrophone = false
     @AppStorage(AppSettings.batchTranscriptionStallTimeoutUserDefaultsKey) private var batchTranscriptionStallTimeoutRawValue =
         BatchTranscriptionStallTimeout.defaultValue.rawValue

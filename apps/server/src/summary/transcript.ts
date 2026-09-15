@@ -71,7 +71,7 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
     id: "transcript",
     captureSettings: (settings, detail) => ({
       model: settings.processing.remote.summaryModel ?? "gemini-3-8-flash", reasoningEffort: settings.processing.remote.reasoningEffort ?? "medium",
-      detail: detail ?? summaryStyleDetail(settings.summary.style),
+      detail: detail ?? summaryStyleDetail(settings.summary.style), transcription: settings.transcription,
     }),
     async resolvePreferences(preferences, input) {
       return resolveSummaryPreferences(preferences, input, await backend.listModels({ signal: AbortSignal.timeout(30_000) }), execution.normalizeModel);

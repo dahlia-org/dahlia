@@ -6,6 +6,7 @@ import Foundation
 /// ローカライズ文字列への型安全なアクセスを提供する。
 enum L10n { // swiftlint:disable:this type_body_length
     static var settingsCheckAdvancedModels: String { String(localized: "settings.organization.checkAdvancedModels", bundle: bundle) }
+    static var serverConnections: String { String(localized: "settings.serverConnections", bundle: bundle) }
     static var settingsDataAndAccounts: String { String(localized: "settings.organization.settingsDataAndAccounts", bundle: bundle) }
     static var generationAndAnalysis: String { String(localized: "settings.organization.generationAndAnalysis", bundle: bundle) }
     static var searchSettings: String { String(localized: "settings.organization.searchSettings", bundle: bundle) }

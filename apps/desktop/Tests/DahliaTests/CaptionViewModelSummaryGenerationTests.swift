@@ -1121,7 +1121,7 @@ import GRDB
 
             await destination.select(destination.first, in: viewModel, note: "destination")
             let confirmation = try #require(viewModel.pendingBatchTranscriptionConfirmation)
-            #expect(confirmation.usesServerSummary)
+            #expect(!confirmation.usesServerSummary)
             try await original.database.dbQueue.write { db in
                 var workspace = try #require(try WorkspaceRecord.fetchOne(db, key: original.workspace.id))
                 workspace.generationSettings.processing.location = .local

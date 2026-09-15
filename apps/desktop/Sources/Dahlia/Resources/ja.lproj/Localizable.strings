@@ -1,6 +1,6 @@
 "settings.organization.checkAdvancedModels" = "利用できないモデルが指定されています。詳細設定で変更するか「自動」に戻してください。";
 "settings.organization.settingsDataAndAccounts" = "データ管理";
-"settings.organization.generationAndAnalysis" = "要約と画像解析";
+"settings.organization.generationAndAnalysis" = "文字起こし・要約・自動処理";
 "settings.organization.searchSettings" = "設定を検索";
 "settings.organization.settingsAccountIntro" = "現在のワークスペースでの要約と画像キャプションの生成方法を設定します。";
 "settings.organization.settingsAccountsIntro" = "接続先のアカウントと、それぞれのワークスペースを管理します。";
@@ -23,13 +23,13 @@
 "settings.organization.summaryStyleDetailedDescription" = "話題ごとの背景・理由・未解決事項まで詳しく残します。";
 "settings.organization.summaryStyleEventDescription" = "講演やセッションの主張・デモ・学びを流れに沿ってまとめます。";
 "settings.organization.summaryStyleTimelineDescription" = "発言やデモ、質疑応答を時系列で詳しく辿れる形にします。";
-"settings.preferences.macInferencePreferences" = "このMacのAI";
+"settings.preferences.macInferencePreferences" = "モデルプロバイダー";
 "settings.preferences.usesMacInferencePreferences" = "このMacで文字起こしし、文字起こしと画像をこのMacで設定したAIプロバイダーへ送信します。生成モデルはワークスペース設定を使用します。";
 "settings.preferences.accountPreferences" = "ワークスペースの生成設定";
 "settings.preferences.accountPreferencesScope" = "表示中のワークスペースの全員で共有する既定値です。";
 "settings.preferences.accountSummaryPreferencesDescription" = "まとめ方と出力言語は処理場所にかかわらず共通です。変更は次回の処理から適用されます。Macでの要約も、接続先のAIへ文字起こしや画像を送信します。";
 "settings.preferences.summaryStyle" = "まとめ方";
-"settings.preferences.recordingSettings" = "録音";
+"settings.preferences.recordingSettings" = "録音・保存";
 "settings.preferences.localModelPreferences" = "ローカル要約モデル";
 "settings.preferences.localModelPreferencesDescription" = "AIプロバイダーと認証情報はこのMac固有です。生成モデルはワークスペースごとに設定します。";
 "settings.preferences.serverProcessingAdvanced" = "サーバー処理の詳細設定";
@@ -1686,3 +1686,5 @@
 
 "summary.source.useSaved" = "保存済みの文字起こしを使う";
 "summary.source.useSaved.description" = "サーバーの最新版を取得せず、このMacに保存された版から生成します。内容が古い可能性があります。オフライン時に選択できます。";
+
+"settings.serverConnections" = "サーバー接続";

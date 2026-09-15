@@ -47,14 +47,18 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
         )
     }
 
-    func applying(workspace: WorkspaceRecord, options: SummaryGenerationOptions) -> Self {
-        let preferences = options.applying(to: workspace.generationSettings)
+    func applying(workspace: WorkspaceRecord? = nil, options: SummaryGenerationOptions) -> Self {
+        let connectionID = workspace.map(\.accountConnectionId) ?? sourceAccountConnectionID
+        let preferences = options.applying(
+            to: workspace?.generationSettings ?? workspacePreferences ?? WorkspaceGenerationSettings(),
+            usesServer: connectionID != nil
+        )
         return Self(
             modelID: preferences.local.model, reasoningEffort: preferences.local.reasoningEffort,
             detailLevelInstruction: preferences.summary.detailLevel.instruction,
             languageDisplayName: preferences.outputLanguage.displayName,
-            runtimeProvider: runtimeProvider, accountConnectionID: workspace.accountConnectionId,
-            workspaceID: workspace.id, workspacePreferences: preferences
+            runtimeProvider: runtimeProvider, accountConnectionID: connectionID,
+            workspaceID: workspace?.id ?? workspaceID, workspacePreferences: preferences
         )
     }
 }

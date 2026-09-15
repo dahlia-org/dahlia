@@ -318,7 +318,7 @@ actor ServerSummaryService {
                 body = saved
             } else {
                 let settings: WorkspaceGenerationSettings
-                if let captured = processing?.workspaceSettings ?? workspaceSettings {
+                if let captured = processing?.generationSettings.workspacePreferences ?? processing?.workspaceSettings ?? workspaceSettings {
                     settings = captured
                 } else {
                     guard let workspace = try await dbQueue.read({ db in try WorkspaceRecord.fetchOne(db, key: target.workspaceID) }) else {
@@ -328,9 +328,13 @@ actor ServerSummaryService {
                 }
                 let summary = settings.summary
                 let accountProcessing = settings.processing
-                guard accountProcessing.location == .remote else { throw Failure.unavailable }
-                let method = processing?.method ?? source?.processingMethod
-                    ?? (accountProcessing.remote.workflow == .combined ? .audio : .cloudTranscription)
+                let method: RecordingProcessingMethod = if let capturedMethod = processing?.method ?? source?.processingMethod {
+                    capturedMethod
+                } else if accountProcessing.location == .local {
+                    .transcript
+                } else {
+                    accountProcessing.remote.workflow == .combined ? .audio : .cloudTranscription
+                }
                 let input: Input
                 if method == .transcript {
                     guard let version = try await latestTranscriptVersion(target) else {
@@ -351,7 +355,6 @@ actor ServerSummaryService {
                     )
                 }
                 var preferences = settings.generationPreferences
-                preferences.processing.location = .remote
                 preferences.processing.remote.workflow = method == .audio ? .combined : .transcribeThenSummarize
                 preferences.summary.style = detail.map { SummaryStyle(detailLevel: .fromPersistedValue($0)) } ?? summary.style
                 body = Request(id: id.uuidString.lowercased(), input: input, preferences: preferences)

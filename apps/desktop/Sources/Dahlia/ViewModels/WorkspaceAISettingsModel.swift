@@ -105,7 +105,7 @@ final class WorkspaceAISettingsModel {
         guard !setupDefaults.bool(forKey: LocalAccountAISettings.migrationKey) else { return }
         let previousWorkspace = try await MeetingRepository(dbQueue: dbQueue).fetchLatestLocalAccountWorkspace()
         isApplying = true
-        if let previousWorkspace {
+        if let previousWorkspace, previousWorkspace.aiSettingsBackfilled {
             localProvider = previousWorkspace.localProvider
             databricksProfile = previousWorkspace.databricksProfile
         }

@@ -72,7 +72,7 @@
             navigation.openSettings(category: .workspace)
 
             #expect(navigation.isShowingSettings)
-            #expect(navigation.settingsCategory == .accountsAndWorkspaces)
+            #expect(navigation.settingsCategory == .workspace)
             #expect(navigation.currentLocation == .meeting(meetingID))
         }
 

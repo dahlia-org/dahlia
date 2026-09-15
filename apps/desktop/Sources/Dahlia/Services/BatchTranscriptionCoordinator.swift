@@ -944,6 +944,7 @@ extension BatchTranscriptionCoordinator {
 
     func confirmAndEnqueue(
         sessionId: UUID,
+        processing: RecordingProcessing? = nil,
         languageSelection: BatchTranscriptionLanguageSelection,
         automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
         onConfirmed: @Sendable (BatchTranscriptionConfirmationService.Result) async -> Void
@@ -952,6 +953,7 @@ extension BatchTranscriptionCoordinator {
         defer { finishConfirmation() }
         let result = try await BatchTranscriptionConfirmationService.confirm(
             sessionId: sessionId,
+            processing: processing,
             languageSelection: languageSelection,
             automaticLanguageCandidates: automaticLanguageCandidates,
             dbQueue: dbQueue

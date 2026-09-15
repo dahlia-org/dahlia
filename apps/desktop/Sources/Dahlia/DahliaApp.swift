@@ -367,9 +367,9 @@ struct DahliaApp: App {
         await ScreenshotContentProvider.shared.configure(dbQueue: db.dbQueue)
         await CodexRuntimeContextCoordinator.shared.configure(dbQueue: db.dbQueue)
         do {
+            try await workspaceAISettings.inheritLocalAccountSettings(from: db.dbQueue)
             try await MeetingRepository(dbQueue: db.dbQueue)
                 .backfillWorkspaceAISettings(WorkspaceAISettingsLegacyValues(settings: .shared))
-            try await workspaceAISettings.inheritLocalAccountSettings(from: db.dbQueue)
         } catch {
             ErrorReportingService.capture(error, context: ["source": "workspaceAISettingsBackfill"])
         }

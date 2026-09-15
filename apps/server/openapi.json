@@ -140,6 +140,45 @@
                 ],
                 "additionalProperties": false
               },
+              "transcription": {
+                "type": "object",
+                "properties": {
+                  "localeIdentifier": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$"
+                  },
+                  "automaticLanguageDetection": {
+                    "type": "boolean"
+                  },
+                  "languageScope": {
+                    "type": "string",
+                    "enum": [
+                      "all",
+                      "selected"
+                    ]
+                  },
+                  "languageIdentifiers": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?$"
+                    },
+                    "maxItems": 200
+                  },
+                  "liveTranscriptDraft": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "localeIdentifier",
+                  "automaticLanguageDetection",
+                  "languageScope",
+                  "languageIdentifiers",
+                  "liveTranscriptDraft"
+                ],
+                "additionalProperties": false
+              },
               "local": {
                 "type": "object",
                 "properties": {
@@ -167,13 +206,18 @@
                   "reasoningEffort"
                 ],
                 "additionalProperties": false
+              },
+              "automaticProcessing": {
+                "type": "boolean"
               }
             },
             "required": [
               "outputLanguage",
               "processing",
               "summary",
-              "local"
+              "transcription",
+              "local",
+              "automaticProcessing"
             ],
             "additionalProperties": false
           },
@@ -1842,6 +1886,45 @@
                 ],
                 "additionalProperties": false
               },
+              "transcription": {
+                "type": "object",
+                "properties": {
+                  "localeIdentifier": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$"
+                  },
+                  "automaticLanguageDetection": {
+                    "type": "boolean"
+                  },
+                  "languageScope": {
+                    "type": "string",
+                    "enum": [
+                      "all",
+                      "selected"
+                    ]
+                  },
+                  "languageIdentifiers": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?$"
+                    },
+                    "maxItems": 200
+                  },
+                  "liveTranscriptDraft": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "localeIdentifier",
+                  "automaticLanguageDetection",
+                  "languageScope",
+                  "languageIdentifiers",
+                  "liveTranscriptDraft"
+                ],
+                "additionalProperties": false
+              },
               "local": {
                 "type": "object",
                 "properties": {
@@ -1869,13 +1952,18 @@
                   "reasoningEffort"
                 ],
                 "additionalProperties": false
+              },
+              "automaticProcessing": {
+                "type": "boolean"
               }
             },
             "required": [
               "outputLanguage",
               "processing",
               "summary",
-              "local"
+              "transcription",
+              "local",
+              "automaticProcessing"
             ],
             "additionalProperties": false
           },
@@ -2725,51 +2813,6 @@
           "name",
           "slug",
           "kind"
-        ]
-      },
-      "AccountSettingsResponse": {
-        "type": "object",
-        "properties": {
-          "settings": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "properties": {
-              "analysisLanguages": {
-                "type": "object",
-                "properties": {
-                  "scope": {
-                    "type": "string",
-                    "enum": [
-                      "all",
-                      "selected"
-                    ]
-                  },
-                  "identifiers": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "pattern": "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?$"
-                    },
-                    "maxItems": 200
-                  }
-                },
-                "required": [
-                  "scope",
-                  "identifiers"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "analysisLanguages"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "required": [
-          "settings"
         ]
       },
       "Capabilities": {
@@ -3626,6 +3669,45 @@
                   "max"
                 ]
               },
+              "transcription": {
+                "type": "object",
+                "properties": {
+                  "localeIdentifier": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$"
+                  },
+                  "automaticLanguageDetection": {
+                    "type": "boolean"
+                  },
+                  "languageScope": {
+                    "type": "string",
+                    "enum": [
+                      "all",
+                      "selected"
+                    ]
+                  },
+                  "languageIdentifiers": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?$"
+                    },
+                    "maxItems": 200
+                  },
+                  "liveTranscriptDraft": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "localeIdentifier",
+                  "automaticLanguageDetection",
+                  "languageScope",
+                  "languageIdentifiers",
+                  "liveTranscriptDraft"
+                ],
+                "additionalProperties": false
+              },
               "transcriptionReasoningEffort": {
                 "type": "string",
                 "enum": [
@@ -4318,6 +4400,45 @@
                               ],
                               "additionalProperties": false
                             },
+                            "transcription": {
+                              "type": "object",
+                              "properties": {
+                                "localeIdentifier": {
+                                  "type": "string",
+                                  "maxLength": 100,
+                                  "pattern": "^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$"
+                                },
+                                "automaticLanguageDetection": {
+                                  "type": "boolean"
+                                },
+                                "languageScope": {
+                                  "type": "string",
+                                  "enum": [
+                                    "all",
+                                    "selected"
+                                  ]
+                                },
+                                "languageIdentifiers": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?$"
+                                  },
+                                  "maxItems": 200
+                                },
+                                "liveTranscriptDraft": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "localeIdentifier",
+                                "automaticLanguageDetection",
+                                "languageScope",
+                                "languageIdentifiers",
+                                "liveTranscriptDraft"
+                              ],
+                              "additionalProperties": false
+                            },
                             "local": {
                               "type": "object",
                               "properties": {
@@ -4345,13 +4466,18 @@
                                 "reasoningEffort"
                               ],
                               "additionalProperties": false
+                            },
+                            "automaticProcessing": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
                             "outputLanguage",
                             "processing",
                             "summary",
-                            "local"
+                            "transcription",
+                            "local",
+                            "automaticProcessing"
                           ],
                           "additionalProperties": false
                         },
@@ -4582,6 +4708,45 @@
                               ],
                               "additionalProperties": false
                             },
+                            "transcription": {
+                              "type": "object",
+                              "properties": {
+                                "localeIdentifier": {
+                                  "type": "string",
+                                  "maxLength": 100,
+                                  "pattern": "^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$"
+                                },
+                                "automaticLanguageDetection": {
+                                  "type": "boolean"
+                                },
+                                "languageScope": {
+                                  "type": "string",
+                                  "enum": [
+                                    "all",
+                                    "selected"
+                                  ]
+                                },
+                                "languageIdentifiers": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?$"
+                                  },
+                                  "maxItems": 200
+                                },
+                                "liveTranscriptDraft": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "localeIdentifier",
+                                "automaticLanguageDetection",
+                                "languageScope",
+                                "languageIdentifiers",
+                                "liveTranscriptDraft"
+                              ],
+                              "additionalProperties": false
+                            },
                             "local": {
                               "type": "object",
                               "properties": {
@@ -4609,13 +4774,18 @@
                                 "reasoningEffort"
                               ],
                               "additionalProperties": false
+                            },
+                            "automaticProcessing": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
                             "outputLanguage",
                             "processing",
                             "summary",
-                            "local"
+                            "transcription",
+                            "local",
+                            "automaticProcessing"
                           ],
                           "additionalProperties": false
                         },
@@ -8273,102 +8443,6 @@
         }
       }
     },
-    "/api/v1/account/settings": {
-      "get": {
-        "operationId": "getSettings",
-        "summary": "Read current account settings",
-        "tags": [
-          "account"
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccountSettingsResponse"
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      },
-      "patch": {
-        "operationId": "updateSettings",
-        "summary": "Update account recognition languages; maximum 8 KiB",
-        "tags": [
-          "account"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "example": {
-                "analysisLanguages": {
-                  "scope": "all",
-                  "identifiers": []
-                }
-              },
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "analysisLanguages": {
-                    "type": "object",
-                    "properties": {
-                      "scope": {
-                        "type": "string",
-                        "enum": [
-                          "all",
-                          "selected"
-                        ]
-                      },
-                      "identifiers": {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "pattern": "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?$"
-                        },
-                        "maxItems": 200
-                      }
-                    },
-                    "required": [
-                      "scope",
-                      "identifiers"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "initialize": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "analysisLanguages"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccountSettingsResponse"
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      }
-    },
     "/api/v1/capabilities": {
       "get": {
         "operationId": "getCapabilities",
@@ -9588,12 +9662,52 @@
                               "style"
                             ],
                             "additionalProperties": false
+                          },
+                          "transcription": {
+                            "type": "object",
+                            "properties": {
+                              "localeIdentifier": {
+                                "type": "string",
+                                "maxLength": 100,
+                                "pattern": "^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$"
+                              },
+                              "automaticLanguageDetection": {
+                                "type": "boolean"
+                              },
+                              "languageScope": {
+                                "type": "string",
+                                "enum": [
+                                  "all",
+                                  "selected"
+                                ]
+                              },
+                              "languageIdentifiers": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "pattern": "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?$"
+                                },
+                                "maxItems": 200
+                              },
+                              "liveTranscriptDraft": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "localeIdentifier",
+                              "automaticLanguageDetection",
+                              "languageScope",
+                              "languageIdentifiers",
+                              "liveTranscriptDraft"
+                            ],
+                            "additionalProperties": false
                           }
                         },
                         "required": [
                           "outputLanguage",
                           "processing",
-                          "summary"
+                          "summary",
+                          "transcription"
                         ],
                         "additionalProperties": false
                       }
@@ -9823,6 +9937,45 @@
                                 "xhigh",
                                 "max"
                               ]
+                            },
+                            "transcription": {
+                              "type": "object",
+                              "properties": {
+                                "localeIdentifier": {
+                                  "type": "string",
+                                  "maxLength": 100,
+                                  "pattern": "^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$"
+                                },
+                                "automaticLanguageDetection": {
+                                  "type": "boolean"
+                                },
+                                "languageScope": {
+                                  "type": "string",
+                                  "enum": [
+                                    "all",
+                                    "selected"
+                                  ]
+                                },
+                                "languageIdentifiers": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?$"
+                                  },
+                                  "maxItems": 200
+                                },
+                                "liveTranscriptDraft": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "localeIdentifier",
+                                "automaticLanguageDetection",
+                                "languageScope",
+                                "languageIdentifiers",
+                                "liveTranscriptDraft"
+                              ],
+                              "additionalProperties": false
                             },
                             "transcriptionReasoningEffort": {
                               "type": "string",
@@ -10392,7 +10545,7 @@
     "/api/v1/events": {
       "get": {
         "operationId": "getEvents",
-        "summary": "SSE invalidation and account_settings events; recover through canonical reads",
+        "summary": "SSE invalidation events; recover through canonical reads",
         "tags": [
           "events"
         ],
@@ -10419,7 +10572,7 @@
         ],
         "responses": {
           "200": {
-            "description": "text/event-stream: invalidation has {cursor}; account_settings has {}. No user content.",
+            "description": "text/event-stream: invalidation has {cursor}. No user content.",
             "content": {
               "text/event-stream": {
                 "schema": {

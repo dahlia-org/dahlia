@@ -121,29 +121,26 @@
             }
 
             try await repository.backfillWorkspaceAISettings(WorkspaceAISettingsLegacyValues(
-                localProvider: .databricks,
-                databricksProfile: "work",
                 chatModelID: "chat-model",
                 chatReasoningEffort: "low"
             ))
 
             let workspaces = try await repository.fetchAllWorkspacesAsync()
             #expect(workspaces.count == 2)
-            #expect(workspaces.allSatisfy { $0.localProvider == .databricks })
-            #expect(workspaces.allSatisfy { $0.databricksProfile == "work" })
+            #expect(workspaces.allSatisfy { $0.localProvider == .chatGPTSubscription })
+            let profilesAreEmpty = workspaces.allSatisfy(\.databricksProfile.isEmpty)
+            #expect(profilesAreEmpty)
             #expect(workspaces.allSatisfy { $0.generationSettings == WorkspaceGenerationSettings() })
             #expect(workspaces.allSatisfy { $0.chatModelID == "chat-model" })
             let allAISettingsBackfilled = workspaces.allSatisfy(\.aiSettingsBackfilled)
             #expect(allAISettingsBackfilled)
 
             try await repository.backfillWorkspaceAISettings(WorkspaceAISettingsLegacyValues(
-                localProvider: .chatGPTSubscription,
-                databricksProfile: "ignored",
                 chatModelID: "ignored",
                 chatReasoningEffort: "high"
             ))
             let unchanged = try await repository.fetchAllWorkspacesAsync()
-            #expect(unchanged.allSatisfy { $0.localProvider == .databricks })
+            #expect(unchanged.allSatisfy { $0.localProvider == .chatGPTSubscription })
             #expect(unchanged.allSatisfy { $0.generationSettings == WorkspaceGenerationSettings() })
         }
 
@@ -165,8 +162,6 @@
 
             _ = try await repository.updateWorkspaceAISettings(settings)
             try await repository.backfillWorkspaceAISettings(WorkspaceAISettingsLegacyValues(
-                localProvider: .databricks,
-                databricksProfile: "legacy",
                 chatModelID: "legacy-chat",
                 chatReasoningEffort: "low"
             ))

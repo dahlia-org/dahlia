@@ -30,6 +30,9 @@
             )
             snapshot.generationSettings.outputLanguage = .fr
             snapshot.generationSettings.local.model = "shared-model"
+            snapshot.generationSettings.transcription.localeIdentifier = "fr-FR"
+            snapshot.generationSettings.transcription.automaticLanguageDetection = true
+            snapshot.generationSettings.automaticProcessing = false
             if role == "local" || role == "admin" {
                 let updated = try #require(try await repository.updateWorkspaceAISettings(snapshot))
                 #expect(updated.generationSettings == snapshot.generationSettings)
@@ -65,6 +68,8 @@
             changed.outputLanguage = .en
             changed.summary.style = .concise
             changed.local.model = "shared-model"
+            changed.transcription.localeIdentifier = "en-US"
+            changed.automaticProcessing = false
             let encoded = try String(decoding: JSONEncoder().encode(changed), as: UTF8.self)
             let payload = try SyncJSON.decoder.decode(
                 SyncCanonicalPayload.self,

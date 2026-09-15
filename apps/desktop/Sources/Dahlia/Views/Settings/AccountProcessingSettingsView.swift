@@ -1,18 +1,19 @@
+import Speech
 import SwiftUI
 
 struct WorkspaceProcessingSettingsView: View {
     let onOpenMacInference: () -> Void
-    let onOpenLanguageSettings: () -> Void
 
     @ObservedObject private var settings = AppSettings.shared
     @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
     @Bindable private var accountSettings = ServerAccountSettingsModel.shared
 
+    @State private var supportedLocales: [Locale] = []
+
     private var workspace: WorkspaceRecord? { settings.currentWorkspace }
     private var connectionID: UUID? { workspace?.accountConnectionId }
+    private var canTranscribeRemotely: Bool { connectionID.map { accountSettings.state(for: $0).summaryMethods.contains("audio") } == true }
     private var canEdit: Bool { workspace?.allowsWorkspaceManagement == true }
-    private var location: WorkspaceGenerationSettings.SummaryMode { workspaceSettings.generationSettings.processing.location }
-    private var canSelectRemote: Bool { connectionID.map { accountSettings.state(for: $0).summaryMethods.contains("audio") } == true }
 
     var body: some View {
         Form {
@@ -25,6 +26,38 @@ struct WorkspaceProcessingSettingsView: View {
             }
 
             if workspace != nil {
+                Section(L10n.transcription) {
+                    if connectionID != nil {
+                        Picker(L10n.processingLocation, selection: $workspaceSettings.generationSettings.processing.location) {
+                            Text(L10n.localProcessing).tag(WorkspaceGenerationSettings.SummaryMode.local)
+                            Text(L10n.remoteProcessing).tag(WorkspaceGenerationSettings.SummaryMode.remote)
+                                .disabled(!canTranscribeRemotely)
+                        }
+                    } else {
+                        LabeledContent(L10n.processingLocation, value: L10n.localProcessing)
+                    }
+                    if connectionID != nil, !canTranscribeRemotely {
+                        Text(L10n.serverSummaryUnavailable).foregroundStyle(.secondary)
+                    }
+                    if connectionID == nil || workspaceSettings.generationSettings.processing.location == .local {
+                        LabeledContent(L10n.transcriptionModel, value: "Apple Speech")
+                    }
+                    Picker(L10n.transcriptionLanguage, selection: $workspaceSettings.generationSettings.transcription.localeIdentifier) {
+                        ForEach(SettingsLanguageOptions.locales(
+                            from: supportedLocales, including: workspaceSettings.generationSettings.transcription.localeIdentifier
+                        ), id: \.identifier) { locale in
+                            Text(locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier).tag(locale.identifier)
+                        }
+                    }
+                    Toggle(
+                        L10n.automaticDetectionMultilingualTitle,
+                        isOn: $workspaceSettings.generationSettings.transcription.automaticLanguageDetection
+                    )
+                    Toggle(L10n.liveTranscriptDraft, isOn: $workspaceSettings.generationSettings.transcription.liveTranscriptDraft)
+                }
+                .disabled(!canEdit)
+                WorkspaceTranscriptionLanguagesSection().disabled(!canEdit)
+
                 Section {
                     Picker(L10n.summaryStyle, selection: $workspaceSettings.generationSettings.summary.style) {
                         ForEach(SummaryStyle.allCases) { Text($0.displayName).tag($0) }
@@ -41,50 +74,28 @@ struct WorkspaceProcessingSettingsView: View {
                 .disabled(!canEdit)
 
                 Section {
-                    if connectionID != nil {
-                        Picker(L10n.processingLocation, selection: $workspaceSettings.generationSettings.processing.location) {
-                            Text(L10n.localProcessing).tag(WorkspaceGenerationSettings.SummaryMode.local)
-                            if canSelectRemote || location == .remote {
-                                Text(L10n.remoteProcessing).tag(WorkspaceGenerationSettings.SummaryMode.remote)
-                                    .disabled(!canSelectRemote)
-                            }
-                        }
-                        .disabled(!canEdit)
-                    } else {
-                        LabeledContent(L10n.processingLocation, value: L10n.localProcessing)
-                    }
-                    if location == .local {
+                    LabeledContent(L10n.processingLocation, value: connectionID == nil ? L10n.localProcessing : L10n.remoteProcessing)
+                    if connectionID == nil {
                         Button(L10n.macInferencePreferences, systemImage: "arrow.right", action: onOpenMacInference)
                     }
-                    if connectionID != nil, !canSelectRemote {
-                        Text(L10n.serverSummaryUnavailable).foregroundStyle(.secondary)
-                    }
                 } header: {
-                    Text(L10n.transcriptionAndSummary)
+                    Text(L10n.summaryModel)
                 } footer: {
-                    Text(location == .local ? L10n.usesMacInferencePreferences : L10n.settingsServerProcessingDescription)
-                }
-
-                if location == .local {
-                    LocalSummarySettingsSection(canEdit: canEdit)
-                } else if let connectionID {
-                    ServerSummarySettingsSection(connectionID: connectionID).disabled(!canEdit)
+                    Text(connectionID == nil ? L10n.usesMacInferencePreferences : L10n.settingsServerProcessingDescription)
                 }
                 if let connectionID {
-                    ServerAccountLanguageSettingsSection(connectionID: connectionID)
-                        .id("server-languages-\(connectionID)")
+                    ServerSummarySettingsSection(connectionID: connectionID).disabled(!canEdit)
                 } else {
-                    Section {
-                        LabeledContent(L10n.imageAnalysisLanguages) {
-                            Button(L10n.openLanguageSettings, action: onOpenLanguageSettings)
-                        }
-                    } footer: {
-                        Text(L10n.settingsLocalAnalysisLanguages)
-                    }
+                    LocalSummarySettingsSection(canEdit: canEdit)
                 }
+                Section(L10n.settingsAfterRecording) {
+                    Toggle(L10n.automaticRecordingProcessing, isOn: $workspaceSettings.generationSettings.automaticProcessing)
+                }
+                .disabled(!canEdit)
             }
         }
         .formStyle(.grouped)
+        .task { supportedLocales = await SpeechSupportedLocales.load() }
         .task(id: connectionID) {
             if let connectionID, let task = accountSettings.refresh(connectionID: connectionID) { await task.value }
         }

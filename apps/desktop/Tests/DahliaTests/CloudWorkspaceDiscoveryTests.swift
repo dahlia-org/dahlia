@@ -47,7 +47,8 @@
             as: .organization
         ))","meetingDeletionGraceDays":7,"generationSettings":{"outputLanguage":"ja","summary":{"style":"detailed"},
         "processing":{"location":"local","remote":{"workflow":"transcribeThenSummarize"}},
-        "local":{"model":"gpt-5.6-luna","reasoningEffort":"high"}},"revision":1,"createdAt":"2026-09-03T00:00:00.000Z","updatedAt":"2026-09-03T00:00:00.000Z","role":"\(
+        "local":{"model":"gpt-5.6-luna","reasoningEffort":"high"},"automaticProcessing":true,
+        "transcription":{"localeIdentifier":"ja-JP","automaticLanguageDetection":false,"languageScope":"all","languageIdentifiers":[],"liveTranscriptDraft":false}},"revision":1,"createdAt":"2026-09-03T00:00:00.000Z","updatedAt":"2026-09-03T00:00:00.000Z","role":"\(
             role
         )"}],"nextCursor":null}
         """

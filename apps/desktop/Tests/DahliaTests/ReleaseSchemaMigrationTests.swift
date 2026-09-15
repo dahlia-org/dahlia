@@ -77,7 +77,7 @@
             try AppDatabaseManager.migrator.migrate(queue)
             try queue.read { db in
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: workspaceID))
-                #expect(workspace.path == "/tmp/released-workspace" && workspace.summaryModelID == "gpt-5.6-luna")
+                #expect(workspace.path == "/tmp/released-workspace" && workspace.summaryModelID == "saved-model")
                 #expect(workspace.accountConnectionId == nil && workspace.organizationId == nil && workspace.syncRole == nil && workspace
                     .syncConfirmedConnectionId == nil)
                 #expect(try DahliaAccountConnectionRecord.fetchOne(db, key: connectionID) != nil)
@@ -114,6 +114,42 @@
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
                 #expect(try String.fetchOne(db, sql: "PRAGMA integrity_check") == "ok")
                 #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+            }
+        }
+
+        @Test
+        func migrationCopiesMacProcessingDefaultsAndPreservesEachWorkspaceModel() throws {
+            let suite = "WorkspaceProcessingMigration-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.set("fr-FR", forKey: "transcriptionLocale")
+            defaults.set("selected", forKey: "appLanguageScope")
+            defaults.set("[\"fr\",\"en\"]", forKey: "enabledLanguageIdentifiers")
+            defaults.set("en", forKey: "llmSummaryLanguage")
+            defaults.set("low", forKey: "summaryDetailLevel")
+            defaults.set(true, forKey: "liveTranscriptDraftEnabled")
+            defaults.set(false, forKey: "automaticRecordingProcessingEnabled")
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
+            try queue.write { db in
+                for model in ["first", "second"] {
+                    try db.execute(sql: """
+                    INSERT INTO vaults(id, path, name, createdAt, lastOpenedAt, summaryModelID, summaryReasoningEffort)
+                    VALUES (?, ?, ?, ?, ?, ?, 'low')
+                    """, arguments: [UUID.v7(), "/tmp/\(model)", model, Date.now, Date.now, model])
+                }
+                try MeetingSyncMigration.migrate(in: db, defaults: defaults)
+                for row in try Row.fetchAll(db, sql: "SELECT name, generationSettings FROM vaults") {
+                    let settings = try JSONDecoder().decode(WorkspaceGenerationSettings.self, from: Data((row["generationSettings"] as String).utf8))
+                    #expect(settings.local.model == row["name"] as String)
+                    #expect(settings.local.reasoningEffort == "low")
+                    #expect(settings.outputLanguage == .en && settings.summary.style == .concise)
+                    #expect(settings.transcription.localeIdentifier == "fr-FR")
+                    #expect(settings.transcription.languageScope == .selected)
+                    #expect(settings.transcription.languageIdentifiers == ["en", "fr"])
+                    #expect(settings.transcription.liveTranscriptDraft && !settings.automaticProcessing)
+                }
+                #expect(try !db.columns(in: "vaults").contains { $0.name == "summaryModelID" })
             }
         }
 

@@ -8,7 +8,6 @@ import { sql } from "drizzle-orm";
 import { blob, check, foreignKey, index, integer, primaryKey, real, sqliteTable, sqliteView, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import type { FileMetadata } from "../files/model";
-import { type AccountSettings } from "../account-settings-model";
 import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from "../search/settings-model";
 
 import { user as authUser, organization as authOrganization } from "./generated/sqlite-auth-schema";
@@ -45,11 +44,6 @@ export const serverSettings = sqliteTable("server_settings", {
   searchWeights: text("search_weights", { mode: "json" }).$type<SearchSettings>().default(DEFAULT_SEARCH_SETTINGS).notNull(),
 }, (table) => [check("server_settings_singleton", sql`${table.id} = 1`)]);
 
-export const accountSettings = sqliteTable("account_settings", {
-  userId: text("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
-  revision: integer("revision").default(1).notNull(),
-  analysisLanguages: text("analysis_languages", { mode: "json" }).$type<AccountSettings["analysisLanguages"]>().notNull(),
-});
 
 export const syncedWorkspace = sqliteTable("workspaces", {
   encryption: text("encryption").$type<"none" | "server">().default("none").notNull(),

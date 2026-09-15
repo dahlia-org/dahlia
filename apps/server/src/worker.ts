@@ -178,7 +178,7 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     ].filter((method) => method !== undefined) : [];
     const captioner = createImageCaptioner(config);
     const jobs = applicationStore.jobs ? createQueueJobs(env, applicationStore.jobs, applicationStore.sync,
-      syncService, applicationStore.accountSettings, summaryMethods, captioner, searchEmbedder) : undefined;
+      syncService, summaryMethods, captioner, searchEmbedder) : undefined;
     const app = createApp({
       config, auth, authStore: applicationStore, objectStorage, searchTokenizer, searchEmbedder, screenshotTransformer, syncService,
       summaryService: summaryMethods.length ? new SummaryService(applicationStore.sync, summaryMethods) : undefined,

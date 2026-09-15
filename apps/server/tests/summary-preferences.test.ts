@@ -36,5 +36,7 @@ it("keeps inactive overrides and rejects unavailable explicit models and effort"
   preferences.processing.remote.reasoningEffort = "ultra";
   expect(resolve).toThrow("summary_invalid_reasoning_effort");
   preferences.processing.location = "local";
-  expect(resolve).toThrow("summary_remote_processing_required");
+  preferences.processing.remote.reasoningEffort = undefined;
+  expect(resolve().settings.model).toBe("gemini-3-8-flash");
+  expect(resolve().settings.transcription).toEqual(preferences.transcription);
 });

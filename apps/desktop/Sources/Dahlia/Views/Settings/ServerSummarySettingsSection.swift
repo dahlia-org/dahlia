@@ -8,7 +8,8 @@ struct ServerSummarySettingsSection: View {
     @State private var isHeaderHovered = false
     private var state: ServerAccountSettingsModel.State { model.state(for: connectionID) }
     private var remote: WorkspaceGenerationSettings.RemoteProcessing { workspaceSettings.generationSettings.processing.remote }
-    private var transcribesFirst: Bool { remote.workflow == .transcribeThenSummarize }
+    private var usesLocalTranscription: Bool { workspaceSettings.generationSettings.processing.location == .local }
+    private var transcribesFirst: Bool { usesLocalTranscription || remote.workflow == .transcribeThenSummarize }
     private var models: [ServerSummaryService.Model] {
         state.summaryModels.filter { $0.supportsSummary(method: transcribesFirst ? "transcript" : "audio") }
     }
@@ -28,7 +29,7 @@ struct ServerSummarySettingsSection: View {
         Section {
             if state.modelErrorMessage == nil, !state.isLoading,
                (remote.summaryModel != nil && selectedModel == nil)
-               || (transcribesFirst && remote.transcriptionModel != nil && selectedTranscriptionModel == nil) {
+               || (!usesLocalTranscription && transcribesFirst && remote.transcriptionModel != nil && selectedTranscriptionModel == nil) {
                 SettingsStatusMessage(text: L10n.settingsCheckAdvancedModels, systemImage: "exclamationmark.triangle", tint: .orange)
             }
             Button {
@@ -53,9 +54,11 @@ struct ServerSummarySettingsSection: View {
             .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
 
             if isExpanded {
-                Picker(L10n.processingWorkflow, selection: workflowSelection) {
-                    Text(L10n.transcribeThenSummarize).tag(WorkspaceGenerationSettings.Workflow.transcribeThenSummarize)
-                    Text(L10n.combinedTranscriptionSummary).tag(WorkspaceGenerationSettings.Workflow.combined)
+                if !usesLocalTranscription {
+                    Picker(L10n.processingWorkflow, selection: workflowSelection) {
+                        Text(L10n.transcribeThenSummarize).tag(WorkspaceGenerationSettings.Workflow.transcribeThenSummarize)
+                        Text(L10n.combinedTranscriptionSummary).tag(WorkspaceGenerationSettings.Workflow.combined)
+                    }
                 }
                 Picker(L10n.summaryModel, selection: summaryModelSelection) {
                     Text(L10n.automaticModelPreference).tag("")
@@ -71,7 +74,7 @@ struct ServerSummarySettingsSection: View {
                     }
                     ForEach(efforts, id: \.self) { Text($0).tag($0) }
                 }
-                if transcribesFirst {
+                if !usesLocalTranscription, transcribesFirst {
                     Picker(L10n.transcriptionModel, selection: transcriptionModelSelection) {
                         Text(L10n.automaticModelPreference).tag("")
                         if let saved = remote.transcriptionModel, selectedTranscriptionModel == nil {

@@ -17,6 +17,8 @@ The published v0.21.0 schema ends at `v41_vaultAISettingsBackfill`. These migrat
 
 The migration reads historical rows independently of current Record coding keys. IDs, content, settings, recordings and output paths are preserved. Settings and pending restore requests use Workspace keys without legacy aliases. Backup import accepts format 5 only; formats 2–4 are rejected. Existing export URL schemes and audio storage-location values retain their serialized `vault` value; they are not filesystem relocations.
 
+During v42, historical Mac transcription/language/automatic-processing defaults are copied once into existing Workspace generation settings. Existing Workspace summary model and effort take precedence. Credentials remain in the existing local account storage; the migration neither copies them into generation settings nor writes UserDefaults.
+
 Old unpublished development/QA v42 databases are not a supported migration source. Never edit the migration ledger to force replay, or reset the normal Application Support database. Development profile replacement is a separate, explicitly scoped operation.
 
 ## Server data

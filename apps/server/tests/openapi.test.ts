@@ -83,8 +83,6 @@ describe("generated Web client against the real SQLite Server", () => {
       expect((await client.POST("/api/v1/transactions", { body: { ...transaction, createdAt: "2026-09-10T00:00:00Z" } })).response.status).toBe(409);
       await client.GET("/api/v1/session");
       await client.GET("/api/v1/capabilities");
-      await client.GET("/api/v1/account/settings");
-      await client.PATCH("/api/v1/account/settings", { body: { analysisLanguages: { scope: "all", identifiers: [] } } });
       await client.GET("/api/v1/workspaces");
       await client.GET("/api/v1/organizations");
       await client.GET("/api/v1/workspaces/{workspaceId}", { params: { path: { workspaceId } } });

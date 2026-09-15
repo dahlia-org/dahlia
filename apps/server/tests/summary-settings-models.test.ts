@@ -62,7 +62,7 @@ const recordings = (complete: boolean) => ({
 it.each([{}, { meetingSummaryGeneration: { version: 1, sources: ["transcript", "audio"] } }])(
   "keeps common settings and hides generation for unsupported capabilities: %j", (capabilities) => {
     vi.mocked(useLiveJSON).mockImplementation((url) => ({
-      data: typeof url === "object" && url.key.startsWith('["getCapabilities"') ? capabilities
+      data: url === "/api/v1/models" ? modelList([]) : typeof url === "object" && url.key.startsWith('["getCapabilities"') ? capabilities
         : typeof url === "object" && url.key.startsWith('["getWorkspace"') ? { role: "admin", generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS } : undefined,
       loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
     }));
@@ -87,19 +87,19 @@ it.each([false, true])("does not present made-up defaults while settings are una
 
 it("explains the selected style and the data sent by Mac processing", () => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: typeof url === "object" && url.key.startsWith('["getWorkspace"') ? { role: "admin", generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS } : undefined,
+    data: url === "/api/v1/models" ? modelList([]) : typeof url === "object" && url.key.startsWith('["getWorkspace"') ? { role: "admin", generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS } : undefined,
     loading: false, error: undefined,
     reload: vi.fn(), replace: vi.fn(),
   }));
   const html = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
   expect(html).toContain("Topics, background, reasoning, open questions, and next steps.");
-  expect(html).toContain("sends transcripts and images to the AI provider configured on that Mac");
+  expect(html).toContain("The original transcript is synchronized and summarized on the server.");
   expect(html).not.toContain("Advanced server settings");
 });
 
 it("enables generation for the current remote settings shape", () => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: typeof url === "object" && url.key.startsWith('["getCapabilities"')
+    data: url === "/api/v1/models" ? modelList([]) : typeof url === "object" && url.key.startsWith('["getCapabilities"')
       ? { meetingSummaryGeneration: { version: 2, sources: ["audio"], completeRecordings: true } }
       : typeof url === "object" && url.key.startsWith('["getWorkspace"')
         ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing, location: "remote" } } }
@@ -114,7 +114,7 @@ it("enables generation for the current remote settings shape", () => {
 
 it.each(["loading", "error"] as const)("does not use stale complete recordings while availability is %s", (state) => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: typeof url === "object" && url.key.startsWith('["getCapabilities"')
+    data: url === "/api/v1/models" ? modelList([]) : typeof url === "object" && url.key.startsWith('["getCapabilities"')
       ? { meetingSummaryGeneration: { version: 2, sources: ["audio"], completeRecordings: true } }
       : typeof url === "object" && url.key.startsWith('["getWorkspace"')
         ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing, location: "remote" } } }
@@ -132,7 +132,7 @@ it.each(["loading", "error"] as const)("does not use stale complete recordings w
 
 it("keeps automatic recording processing unavailable but allows manual transcript generation", () => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: typeof url === "object" && url.key.startsWith('["getCapabilities"')
+    data: url === "/api/v1/models" ? modelList([]) : typeof url === "object" && url.key.startsWith('["getCapabilities"')
       ? { meetingSummaryGeneration: { version: 2, sources: ["transcript"], completeRecordings: true } }
       : typeof url === "object" && url.key.startsWith('["getWorkspace"')
         ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing, location: "remote" } } }
@@ -142,7 +142,7 @@ it("keeps automatic recording processing unavailable but allows manual transcrip
   }));
   const settings = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
   expect(settings).toContain('value="remote" disabled="" selected=""');
-  expect(settings).toContain("Remote processing is unavailable on this server.");
+  expect(settings).toContain("Summary processing: Server");
   const generation = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
   expect(generation).toContain('checked="" value="transcript"');
   expect(generation).toContain('<button class="primary">Generate summary</button>');
@@ -150,7 +150,7 @@ it("keeps automatic recording processing unavailable but allows manual transcrip
 
 it("keeps audio disabled for servers that do not guarantee complete recordings", () => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: typeof url === "object" && url.key.startsWith('["getCapabilities"')
+    data: url === "/api/v1/models" ? modelList([]) : typeof url === "object" && url.key.startsWith('["getCapabilities"')
       ? { meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"] } }
       : typeof url === "object" && url.key.startsWith('["getWorkspace"')
         ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing, location: "remote" } } }
@@ -170,7 +170,7 @@ it.each([
   [true, false, "transcript"],
 ] as const)("prefers transcript and falls back to audio (transcript: %s, audio: %s)", (hasText, hasAudio, preferred) => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: typeof url === "object" && url.key.startsWith('["getCapabilities"')
+    data: url === "/api/v1/models" ? modelList([]) : typeof url === "object" && url.key.startsWith('["getCapabilities"')
       ? { meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"], completeRecordings: true } }
       : typeof url === "object" && url.key.startsWith('["getWorkspace"')
         ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing, location: "remote" } } }
@@ -186,7 +186,7 @@ it.each([
 
 it("disables generation when neither source is available", () => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: typeof url === "object" && url.key.startsWith('["getCapabilities"')
+    data: url === "/api/v1/models" ? modelList([]) : typeof url === "object" && url.key.startsWith('["getCapabilities"')
       ? { meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"], completeRecordings: true } }
       : typeof url === "object" && url.key.startsWith('["getWorkspace"')
         ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing, location: "remote" } } }
@@ -248,7 +248,7 @@ it.each([
   ["summary_http_400", "Summary failed; the existing summary was preserved."],
 ])("shows the existing failure message for %s", (error, message) => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: typeof url === "object" && url.key.startsWith('["getCapabilities"') ? { meetingSummaryGeneration: { version: 2, sources: ["audio"], completeRecordings: true } }
+    data: url === "/api/v1/models" ? modelList([]) : typeof url === "object" && url.key.startsWith('["getCapabilities"') ? { meetingSummaryGeneration: { version: 2, sources: ["audio"], completeRecordings: true } }
       : typeof url === "object" && url.key.startsWith('["getWorkspace"') ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing, location: "remote" } } }
       : { job: { id: "test", status: "failed", error } },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
@@ -260,7 +260,7 @@ it.each([
 
 it("keeps the shared output language editable without summary capability", () => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: typeof url === "object" && url.key.startsWith('["getWorkspace"') ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, outputLanguage: "fr" } } : url ? {} : undefined,
+    data: url === "/api/v1/models" ? modelList([]) : typeof url === "object" && url.key.startsWith('["getWorkspace"') ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, outputLanguage: "fr" } } : url ? {} : undefined,
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
   const html = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
@@ -270,7 +270,7 @@ it("keeps the shared output language editable without summary capability", () =>
 });
 
 it.each(["editor", "viewer"])("renders shared settings read-only for %s", (role) => {
-  vi.mocked(useLiveJSON).mockImplementation((url) => ({ data: typeof url === "object" && url.key.startsWith('["getWorkspace"') ? { role, generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS } : undefined,
+  vi.mocked(useLiveJSON).mockImplementation((url) => ({ data: url === "/api/v1/models" ? modelList([]) : typeof url === "object" && url.key.startsWith('["getWorkspace"') ? { role, generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS } : undefined,
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn() }));
   const html = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
   expect(html).toMatch(/<fieldset[^>]*disabled=""/);

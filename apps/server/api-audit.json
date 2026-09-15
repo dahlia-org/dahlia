@@ -134,33 +134,6 @@
       ]
     },
     {
-      "operationId": "getSettings",
-      "method": "GET",
-      "path": "/api/v1/account/settings",
-      "classification": "maintained",
-      "previous": "/api/v1/account/settings",
-      "reason": "Read current account settings",
-      "consumers": [
-        "apps/server/src/client/SummaryGeneration.tsx",
-        "apps/desktop/Sources/Dahlia/ViewModels/ServerAccountSettingsModel.swift",
-        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift"
-      ]
-    },
-    {
-      "operationId": "updateSettings",
-      "method": "PATCH",
-      "path": "/api/v1/account/settings",
-      "classification": "maintained",
-      "previous": "/api/v1/account/settings",
-      "reason": "Merge supplied fields, including nested summary settings; maximum 8 KiB",
-      "consumers": [
-        "apps/server/src/client/SummaryGeneration.tsx",
-        "apps/desktop/Sources/Dahlia/ViewModels/CaptionViewModel.swift",
-        "apps/desktop/Sources/Dahlia/ViewModels/ServerAccountSettingsModel.swift",
-        "apps/desktop/Sources/Dahlia/Services/AutomaticScreenshotCaptureService.swift"
-      ]
-    },
-    {
       "operationId": "getCapabilities",
       "method": "GET",
       "path": "/api/v1/capabilities",

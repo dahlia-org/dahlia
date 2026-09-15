@@ -1,3 +1,4 @@
+import { DEFAULT_GENERATION_PREFERENCES } from "../src/workspace-generation-settings";
 import { generationSettings, updateGenerationSettings } from "./workspace-settings-helpers";
 import { testOrganizationID } from "./public-test-client";
 import { seedHeaderIdentity, testUserID } from "./public-test-client";
@@ -18,7 +19,6 @@ import { SummaryService } from "../src/summary/service";
 import { SummaryWorker } from "../src/summary/node-worker";
 import { SummaryError, summaryDocument, type SummaryMethod } from "../src/summary/model";
 import { collectSummaryInput, createTranscriptSummaryMethod, fingerprint, summaryImageContent } from "../src/summary/transcript";
-import { accountSettingsPatchSchema } from "../src/account-settings";
 import { loadConfig } from "../src/config";
 import { createContractApp as createApp } from "./api-test-client";
 import { createWorkerHandler } from "../src/worker";
@@ -71,7 +71,6 @@ describe("server summary jobs", () => {
         raw.prepare("UPDATE jobs_summary SET settings = ? WHERE id = ?").run(historical, job.id);
         expect(await service.cancel(owner, workspaceId, meetingId, job.id)).toMatchObject({ status: "cancelled", settings: { detail: current } });
         expect(await store.summaryJobs.claim()).toBeNull();
-        expect(accountSettingsPatchSchema.safeParse({ processing: { remote: { detail: legacy } } }).success).toBe(false);
       } finally { raw.close(); await store.close?.(); }
     });
 
@@ -494,8 +493,6 @@ describe("server summary jobs", () => {
       expect((await app.request(`${path}/latest`, { headers: { ...headers, "x-forwarded-user": "other", "x-forwarded-email": "other@example.com" } })).status).toBe(404);
       expect((await app.request(path, { method: "POST", headers: { ...headers, origin: "https://evil.example" }, body: JSON.stringify({ id: uuidV7() }) })).status).toBe(403);
       expect((await app.request(path, { method: "POST", headers, body: JSON.stringify({ id: uuidV7(), method: "gemini" }) })).status).toBe(400);
-      expect(accountSettingsPatchSchema.safeParse({ summaryMethod: "gemini" }).success).toBe(false);
-      expect(accountSettingsPatchSchema.safeParse({ outputLanguage: "en" }).success).toBe(false);
       const body = JSON.stringify({ id: uuidV7() });
       const response = await app.request(path, { method: "POST", headers, body });
       expect(response.status).toBe(202);
@@ -719,7 +716,7 @@ describe("audio summary jobs", () => {
       const { method } = audioMethod(value);
       const resolve = vi.spyOn(method, "resolvePreferences");
       const service = new SummaryService(store.sync, [method]);
-      const preferences = { outputLanguage: "fr" as const,
+      const preferences = { ...DEFAULT_GENERATION_PREFERENCES, outputLanguage: "fr" as const,
         summary: { style: "eventTimeline" as const },
         processing: { location: "remote" as const, remote: { workflow: "combined" as const } } };
       const request = { id: uuidV7(), input: await recordingInput(value), preferences };

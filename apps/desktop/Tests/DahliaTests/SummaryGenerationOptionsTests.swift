@@ -12,12 +12,12 @@
             let options = SummaryGenerationOptions(
                 exportOptions: .manual,
                 detailLevel: .concise,
-                overrides: .init(outputLanguage: .fr, location: .remote, model: "chosen", reasoningEffort: "low")
+                overrides: .init(outputLanguage: .fr, model: "chosen", reasoningEffort: "low")
             )
-            let effective = options.applying(to: shared)
+            let effective = options.applying(to: shared, usesServer: true)
             #expect(effective.outputLanguage == .fr)
             #expect(effective.summary.style == .concise)
-            #expect(effective.processing.location == .remote)
+            #expect(effective.processing.location == .local)
             #expect(effective.processing.remote.summaryModel == "chosen")
             #expect(effective.processing.remote.reasoningEffort == "low")
             #expect(shared == WorkspaceGenerationSettings())

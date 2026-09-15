@@ -1,11 +1,8 @@
 import { testUserID } from "./public-test-client";
-import { accountSettingsSchema } from "../src/account-settings-model";
 import type { AuthStore } from "../src/auth/store";
-import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../src/account-settings";
 import { DEFAULT_SEARCH_SETTINGS } from "../src/search/settings-model";
 
 export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
-  const settings = new Map<string, AccountSettings>();
   let searchWeights = { ...DEFAULT_SEARCH_SETTINGS };
   return {
     database: {} as AuthStore["database"],
@@ -14,17 +11,6 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
     searchSettings: {
       get: () => Promise.resolve({ ...searchWeights }),
       update: (weights) => { searchWeights = { ...weights }; return Promise.resolve({ ...searchWeights }); },
-    },
-    accountSettings: {
-      getRevision: (userId) => Promise.resolve(settings.has(userId) ? 1 : null),
-      get: (userId) => Promise.resolve(settings.get(userId) ?? null),
-      update: (userId, patch, initialize) => {
-        const current = settings.get(userId) ?? DEFAULT_ACCOUNT_SETTINGS;
-        const value = initialize && settings.has(userId) ? settings.get(userId)!
-          : accountSettingsSchema.parse({ ...current, ...patch });
-        settings.set(userId, value);
-        return Promise.resolve(value);
-      },
     },
     sync: {
       purgeDeletedMeetings: () => Promise.resolve(0),

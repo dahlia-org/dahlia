@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "bf5e91fb-da18-4707-9006-f0b587ab12d1",
+  "id": "36fefe06-5ed6-48c7-a1cf-f966c679cd9c",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -21,12 +21,6 @@
     {
       "name": "search",
       "entityType": "schemas"
-    },
-    {
-      "isRlsEnabled": true,
-      "name": "account_settings",
-      "entityType": "tables",
-      "schema": "app"
     },
     {
       "isRlsEnabled": false,
@@ -177,45 +171,6 @@
       "name": "workspace_transfers",
       "entityType": "tables",
       "schema": "app"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "user_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "account_settings"
-    },
-    {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "1",
-      "generated": null,
-      "identity": null,
-      "name": "revision",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "account_settings"
-    },
-    {
-      "type": "jsonb",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "analysis_languages",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "account_settings"
     },
     {
       "type": "uuid",
@@ -2934,7 +2889,7 @@
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
-      "default": "'{\"outputLanguage\":\"ja\",\"processing\":{\"location\":\"local\",\"remote\":{\"workflow\":\"transcribeThenSummarize\"}},\"summary\":{\"style\":\"detailed\"},\"local\":{\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\"}}'",
+      "default": "'{\"outputLanguage\":\"ja\",\"processing\":{\"location\":\"local\",\"remote\":{\"workflow\":\"transcribeThenSummarize\"}},\"summary\":{\"style\":\"detailed\"},\"transcription\":{\"localeIdentifier\":\"ja-JP\",\"automaticLanguageDetection\":false,\"languageScope\":\"all\",\"languageIdentifiers\":[],\"liveTranscriptDraft\":false},\"local\":{\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\"},\"automaticProcessing\":true}'",
       "generated": null,
       "identity": null,
       "name": "generation_settings",
@@ -4259,23 +4214,6 @@
       "table": "workspace_transfers"
     },
     {
-      "nameExplicit": false,
-      "columns": [
-        "user_id"
-      ],
-      "schemaTo": "auth",
-      "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "account_settings_user_id_user_id_fkey",
-      "entityType": "fks",
-      "schema": "app",
-      "table": "account_settings"
-    },
-    {
       "nameExplicit": true,
       "columns": [
         "file_id"
@@ -4895,16 +4833,6 @@
     },
     {
       "columns": [
-        "user_id"
-      ],
-      "nameExplicit": false,
-      "name": "account_settings_pkey",
-      "schema": "app",
-      "table": "account_settings",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
         "file_id"
       ],
       "nameExplicit": false,
@@ -5392,19 +5320,6 @@
       "entityType": "checks",
       "schema": "app",
       "table": "transcripts"
-    },
-    {
-      "as": "PERMISSIVE",
-      "for": "ALL",
-      "roles": [
-        "public"
-      ],
-      "using": "\"app\".\"account_settings\".\"user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
-      "withCheck": "\"app\".\"account_settings\".\"user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
-      "name": "account_settings_owner",
-      "entityType": "policies",
-      "schema": "app",
-      "table": "account_settings"
     },
     {
       "as": "PERMISSIVE",

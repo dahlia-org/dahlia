@@ -7,17 +7,15 @@ struct SummaryGenerationOptions: Codable, Equatable {
 
     struct Overrides: Codable, Equatable {
         var outputLanguage: SummaryLanguage?
-        var location: WorkspaceGenerationSettings.SummaryMode?
         var model: String?
         var reasoningEffort: String?
     }
 
-    func applying(to settings: WorkspaceGenerationSettings) -> WorkspaceGenerationSettings {
+    func applying(to settings: WorkspaceGenerationSettings, usesServer: Bool) -> WorkspaceGenerationSettings {
         var settings = settings
         if let detailLevel { settings.summary.style = SummaryStyle(detailLevel: detailLevel) }
         if let language = overrides?.outputLanguage { settings.outputLanguage = language }
-        if let location = overrides?.location { settings.processing.location = location }
-        if settings.processing.location == .local {
+        if !usesServer {
             if let model = overrides?.model { settings.local.model = model }
             if let effort = overrides?.reasoningEffort { settings.local.reasoningEffort = effort }
         } else {

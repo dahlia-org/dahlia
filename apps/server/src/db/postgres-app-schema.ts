@@ -30,7 +30,6 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { fileMetadataLimits, type FileMetadata } from "../files/model";
-import { type AccountSettings } from "../account-settings-model";
 import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from "../search/settings-model";
 
 import { user as authUser, organization as authOrganization } from "./generated/postgres-auth-schema";
@@ -70,17 +69,6 @@ export const serverSettings = appSchema.table("server_settings", {
   searchWeights: jsonb("search_weights").$type<SearchSettings>().default(DEFAULT_SEARCH_SETTINGS).notNull(),
 }, (table) => [check("server_settings_singleton", sql`${table.id} = 1`)]);
 
-export const accountSettings = appSchema.table("account_settings", {
-  userId: uuid("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
-  revision: integer("revision").default(1).notNull(),
-  analysisLanguages: jsonb("analysis_languages").$type<AccountSettings["analysisLanguages"]>().notNull(),
-}, (table) => [
-  pgPolicy("account_settings_owner", {
-    for: "all",
-    using: sql`${table.userId} = nullif(current_setting('app.user_id', true), '')::uuid`,
-    withCheck: sql`${table.userId} = nullif(current_setting('app.user_id', true), '')::uuid`,
-  }),
-]).enableRLS();
 
 const governanceWorkspace = (workspaceId: AnyPgColumn) => sql`current_setting('app.maintenance', true) = 'governance-delete' AND ${workspaceId} = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid`;
 

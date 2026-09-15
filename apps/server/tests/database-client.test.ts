@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { globSync, readFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { Pool } from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { createPostgresMeetingSyncStore } from "../src/sync/store";
 
 import type { AppConfig } from "../src/config";
 import { connectApplicationDatabase, ensureSearchIndexes, migrateApplicationDatabase, postgresMigrationConfigs, readPostgresMigrations } from "../src/db/client";
@@ -85,11 +87,37 @@ describe("PostgreSQL migrations", () => {
   it("forces RLS on the new file tables before enabling canonical sync", () => {
     const sql = serverMigrationManifest.postgres.files
       .map((path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")).join("\n");
-    for (const table of ["files", "meeting_attachments", "account_settings", "summaries"]) {
+    for (const table of ["files", "meeting_attachments", "summaries"]) {
       const created = sql.indexOf(`CREATE TABLE "app"."${table}"`);
       expect(created).toBeGreaterThan(-1);
       expect(sql.indexOf(`ALTER TABLE "app"."${table}" FORCE ROW LEVEL SECURITY`, created)).toBeGreaterThan(created);
     }
+  });
+
+  it("checks only protected tables present in the current PostgreSQL baseline", async () => {
+    const sql = serverMigrationManifest.postgres.files
+      .map((path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")).join("\n");
+    const protectedTables = new Set([...sql.matchAll(/ALTER TABLE "([^"]+)"\."([^"]+)" FORCE ROW LEVEL SECURITY/g)]
+      .map((match) => `${match[1]}.${match[2]}`));
+    const client = {
+      release: vi.fn(),
+      query: vi.fn(async (statement: string, parameters?: unknown[]) => {
+        if (statement.includes("pg_roles")) return { rows: [{ rolsuper: false, rolbypassrls: false }] };
+        if (statement.includes("pg_class")) {
+          const requested = parameters![0] as string[];
+          expect(requested.length).toBeGreaterThan(0);
+          return { rows: [{ count: requested.filter((table) => protectedTables.has(table)).length }] };
+        }
+        if (statement.includes("current_setting")) return { rows: [{ user_id: "", sharing_enabled: "" }] };
+        return { rows: [] };
+      }),
+    };
+    const pool = new Pool();
+    const connect = vi.spyOn(pool, "connect").mockResolvedValue(client as never);
+    try {
+      await expect(createPostgresMeetingSyncStore(drizzle({ client: pool })).isAvailable()).resolves.toBe(true);
+      expect(client.release).toHaveBeenCalledOnce();
+    } finally { connect.mockRestore(); await pool.end(); }
   });
 
   it("migrates generated auth tables before application tables in every authentication mode", () => {

@@ -1,6 +1,5 @@
 CREATE UNIQUE INDEX "member_user_organization_idx" ON "auth"."member" ("user_id","organization_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "team_member_user_team_idx" ON "auth"."team_member" ("user_id","team_id");--> statement-breakpoint
-ALTER TABLE "app"."account_settings" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."meeting_events" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."meeting_attachments" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "search"."documents" FORCE ROW LEVEL SECURITY;--> statement-breakpoint

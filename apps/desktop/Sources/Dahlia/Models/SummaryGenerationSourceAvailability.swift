@@ -2,6 +2,7 @@ import Foundation
 import GRDB
 
 struct SummaryGenerationSourceAvailability: Equatable, Sendable {
+    var accountConnectionID: UUID?
     var generationSettings: WorkspaceGenerationSettings?
     var hasServerConnection = false
     var sourceCheckFailed = false
