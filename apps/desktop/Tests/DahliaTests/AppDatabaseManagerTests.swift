@@ -197,6 +197,11 @@ import os
                 try db.tableExists("fixture_isolation")
             }
             #expect(!leaked)
+            let laterDatabase = try AppDatabaseManager(path: ":memory:")
+            let inherited = try laterDatabase.dbQueue.read { db in
+                try db.tableExists("fixture_isolation")
+            }
+            #expect(!inherited)
         }
 
         @Test
