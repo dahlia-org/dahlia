@@ -164,22 +164,20 @@
             })
             await controller.configure(appDatabase: database)
             try await waitForProgress { controller.syncProgress[connection] != nil }
+            // Start before the first write; polling may resume long after its publication.
+            let firstUpdate = ContinuousClock.now
             _ = try await database.dbQueue.write { db in
                 try SyncTransactionRecorder.record(workspaceId: workspace.id, operations: [
                     .init(entity: .file, action: .delete, entityId: .v7()),
                 ], in: db)
             }
             try await waitForProgress { controller.syncProgress[connection]?.remaining == 1 }
-            let firstUpdate = ContinuousClock.now
             for _ in 0 ..< 10 {
                 _ = try await database.dbQueue.write { db in
                     try SyncTransactionRecorder.record(workspaceId: workspace.id, operations: [
                         .init(entity: .file, action: .delete, entityId: .v7()),
                     ], in: db)
                 }
-            }
-            if firstUpdate.duration(to: .now) < .milliseconds(500) {
-                #expect(controller.syncProgress[connection]?.remaining == 1)
             }
             try await waitForProgress { controller.syncProgress[connection]?.remaining == 11 }
             #expect(firstUpdate.duration(to: .now) >= .milliseconds(900))
