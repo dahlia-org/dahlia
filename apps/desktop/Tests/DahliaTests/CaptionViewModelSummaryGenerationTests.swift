@@ -8,7 +8,6 @@ import GRDB
     import Testing
 
     @MainActor
-    @Suite(.serialized)
     // swiftlint:disable:next type_body_length
     struct CaptionViewModelSummaryGenerationTests {
         @Test

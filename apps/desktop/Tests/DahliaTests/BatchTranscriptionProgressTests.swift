@@ -7,7 +7,6 @@ import GRDB
     import Testing
 
     @MainActor
-    @Suite(.serialized)
     struct BatchTranscriptionProgressTests {
         @Test
         func reportsProgressFromCompletedCAFFileCount() async throws {

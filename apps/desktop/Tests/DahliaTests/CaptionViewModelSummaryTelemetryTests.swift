@@ -6,7 +6,6 @@ import GRDB
     import Testing
 
     @MainActor
-    @Suite(.serialized)
     struct CaptionViewModelSummaryTelemetryTests {
         @Test
         func successfulManualSummaryEmitsOneStartAndOneCompletion() async throws {

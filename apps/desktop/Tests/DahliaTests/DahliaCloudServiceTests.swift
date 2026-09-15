@@ -4,7 +4,6 @@
     import Testing
     @testable import Dahlia
 
-    @Suite(.serialized)
     struct DahliaCloudServiceTests {
         @Test
         func invalidConfigurationIsDisabled() {
@@ -689,9 +688,9 @@
             clientID: String = "desktop-client",
             authorize: DahliaCloudService.AuthorizationHandler? = nil
         ) -> DahliaCloudService {
-            CloudURLProtocol.recorder = recorder
             let configuration = URLSessionConfiguration.ephemeral
             configuration.protocolClasses = [CloudURLProtocol.self]
+            CloudURLProtocol.register(recorder, in: configuration)
             let authorizationHandler = authorize ?? { url in
                 recorder.authorizationURL = url
                 let state = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
@@ -939,13 +938,25 @@
     }
 
     private final class CloudURLProtocol: URLProtocol, @unchecked Sendable {
-        nonisolated(unsafe) static var recorder: CloudRequestRecorder?
+        private static let recorderHeader = "X-Dahlia-Test-Recorder"
+        private static let lock = NSLock()
+        private nonisolated(unsafe) static var recorders: [String: CloudRequestRecorder] = [:]
+
+        static func register(_ recorder: CloudRequestRecorder, in configuration: URLSessionConfiguration) {
+            let id = UUID.v7().uuidString
+            lock.withLock { recorders[id] = recorder }
+            configuration.httpAdditionalHeaders = [recorderHeader: id]
+        }
 
         override static func canInit(with _: URLRequest) -> Bool { true }
         override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
         override func startLoading() {
-            guard let recorder = Self.recorder else { fatalError("CloudURLProtocol recorder is not configured") }
+            guard let id = request.value(forHTTPHeaderField: Self.recorderHeader),
+                  let recorder = Self.lock.withLock({ Self.recorders[id] })
+            else {
+                fatalError("CloudURLProtocol recorder is not configured")
+            }
             let (response, data) = recorder.response(for: request)
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: data)

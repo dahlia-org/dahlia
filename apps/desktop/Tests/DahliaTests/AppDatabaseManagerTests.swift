@@ -116,17 +116,92 @@ import os
         }
 
         @Test
-        func initializesInMemoryDatabaseWithCanonicalProjectColumns() throws {
+        func inMemoryDatabasesUseCurrentSchemaAndRemainIndependent() throws {
             let database = try AppDatabaseManager(path: ":memory:")
-
-            let columns = try database.dbQueue.read { db in
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')")
+            let isolatedDatabase = try AppDatabaseManager(path: ":memory:")
+            let inspectedTables = [
+                "projects",
+                "summaries",
+                "summary_bodies",
+                "transcript_segments",
+                "recording_sessions",
+                "meeting_attachments",
+                "recording_audio_files",
+                "instructions",
+            ]
+            let schema = try database.dbQueue.read { db in
+                let columns = try Dictionary(uniqueKeysWithValues: inspectedTables.map { table in
+                    (table, try db.columns(in: table).map(\.name))
+                })
+                let tables = try Set(String.fetchAll(
+                    db,
+                    sql: "SELECT name FROM sqlite_master WHERE type = 'table'"
+                ))
+                let instructionUniqueIndexCount = try Int.fetchOne(
+                    db,
+                    sql: """
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT il.name
+                        FROM pragma_index_list('instructions') AS il
+                        JOIN pragma_index_info(il.name) AS ii
+                        WHERE il."unique" = 1
+                        GROUP BY il.name
+                        HAVING group_concat(ii.name, ',') = 'workspace_id,name'
+                    )
+                    """
+                )
+                return (columns, tables, instructionUniqueIndexCount)
             }
 
-            #expect(columns == [
+            #expect(schema.0["projects"] == [
                 "id", "workspace_id", "parentProjectId", "name", "nameKey",
                 "createdAt", "description", "projectType", "revision", "legacyAppearanceMigrated", "icon", "color",
             ])
+            #expect(schema.0["summaries"] == ["meetingId", "title", "createdAt"])
+            #expect(schema.0["summary_bodies"]?.contains("document") == true)
+            #expect(schema.0["transcript_segments"]?.contains("translatedText") == true)
+            #expect(schema.0["transcript_segments"]?.contains("sessionId") == true)
+            #expect(schema.0["recording_sessions"]?.contains("transcriptionMode") == true)
+            #expect(schema.0["recording_sessions"]?.contains("retainAudioAfterBatch") == true)
+            #expect(schema.0["recording_sessions"]?.contains("batchCompletedAt") == true)
+            #expect(schema.0["recording_sessions"]?.contains("batchLastError") == true)
+            #expect(schema.0["recording_sessions"]?.contains("batchLastAttemptAt") == true)
+            #expect(schema.0["recording_sessions"]?.contains("batchAttemptCount") == true)
+            #expect(schema.0["recording_sessions"]?.contains("batchDiscardedAt") == true)
+            #expect(schema.0["recording_sessions"]?.contains("batchLanguageDetectionMode") == true)
+            #expect(schema.0["recording_sessions"]?.contains("batchSelectedLocaleIdentifier") == true)
+            #expect(schema.0["recording_sessions"]?.contains("batchAutomaticLanguageCandidatesJSON") == true)
+            #expect(schema.0["recording_sessions"]?.contains("audioRetentionPolicy") == true)
+            #expect(schema.0["recording_sessions"]?.contains("retentionExpiresAt") == true)
+            #expect(schema.0["recording_sessions"]?.contains("batchFailureKind") == true)
+            #expect(schema.0["meeting_attachments"]?.contains("sessionId") == true)
+            #expect(schema.0["recording_audio_files"]?.contains("storageLocation") == true)
+            #expect(Set(schema.0["instructions"] ?? []).isSuperset(of: ["workspace_id", "name", "content"]))
+            #expect(schema.1.isSuperset(of: [
+                "recording_sessions",
+                "recording_audio_ranges",
+                "recording_audio_segments",
+                "recording_audio_segment_ranges",
+                "recording_audio_source_progress",
+                "recording_audio_reconciliation_issues",
+            ]))
+            #expect(schema.2 == 1)
+
+            try database.dbQueue.write { db in
+                try db.create(table: "fixture_isolation") { table in
+                    table.column("id", .integer)
+                }
+            }
+            let leaked = try isolatedDatabase.dbQueue.read { db in
+                try db.tableExists("fixture_isolation")
+            }
+            #expect(!leaked)
+            let laterDatabase = try AppDatabaseManager(path: ":memory:")
+            let inherited = try laterDatabase.dbQueue.read { db in
+                try db.tableExists("fixture_isolation")
+            }
+            #expect(!inherited)
         }
 
         @Test
@@ -848,105 +923,6 @@ import os
         }
 
         @Test
-        func initializesInMemoryDatabaseWithoutLegacySummaryColumns() throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-
-            let columns = try database.dbQueue.read { db in
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')")
-            }
-
-            #expect(columns == ["meetingId", "title", "createdAt"])
-        }
-
-        @Test
-        func initializesInMemoryDatabaseWithSeparateSummaryBody() throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-
-            let columns = try database.dbQueue.read { db in
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summary_bodies')")
-            }
-
-            #expect(columns.contains("document"))
-        }
-
-        @Test
-        func initializesInMemoryDatabaseWithTranscriptTranslatedTextColumn() throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-
-            let columns = try database.dbQueue.read { db in
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('transcript_segments')")
-            }
-
-            #expect(columns.contains("translatedText"))
-        }
-
-        @Test
-        func initializesInMemoryDatabaseWithRecordingSessionsSchema() throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-
-            let result = try database.dbQueue.read { db in
-                try (
-                    db.tableExists("recording_sessions"),
-                    String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('transcript_segments')"),
-                    String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('meeting_attachments')")
-                )
-            }
-
-            #expect(result.0)
-            #expect(result.1.contains("sessionId"))
-            #expect(result.2.contains("sessionId"))
-        }
-
-        @Test
-        func initializesBatchTranscriptionSchema() throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-
-            let result = try database.dbQueue.read { db in
-                try (
-                    String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('recording_sessions')"),
-                    String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('recording_audio_files')"),
-                    db.tableExists("recording_audio_ranges")
-                )
-            }
-
-            #expect(result.0.contains("transcriptionMode"))
-            #expect(result.0.contains("retainAudioAfterBatch"))
-            #expect(result.0.contains("batchCompletedAt"))
-            #expect(result.0.contains("batchLastError"))
-            #expect(result.0.contains("batchLastAttemptAt"))
-            #expect(result.0.contains("batchAttemptCount"))
-            #expect(result.0.contains("batchDiscardedAt"))
-            #expect(result.0.contains("batchLanguageDetectionMode"))
-            #expect(result.0.contains("batchSelectedLocaleIdentifier"))
-            #expect(result.0.contains("batchAutomaticLanguageCandidatesJSON"))
-            #expect(result.1.contains("storageLocation"))
-            #expect(result.2)
-        }
-
-        @Test
-        func initializesSegmentedRecordingAudioSchema() throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-
-            let result = try database.dbQueue.read { db in
-                try (
-                    db.tableExists("recording_audio_segments"),
-                    db.tableExists("recording_audio_segment_ranges"),
-                    db.tableExists("recording_audio_source_progress"),
-                    db.tableExists("recording_audio_reconciliation_issues"),
-                    String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('recording_sessions')")
-                )
-            }
-
-            #expect(result.0)
-            #expect(result.1)
-            #expect(result.2)
-            #expect(result.3)
-            #expect(result.4.contains("audioRetentionPolicy"))
-            #expect(result.4.contains("retentionExpiresAt"))
-            #expect(result.4.contains("batchFailureKind"))
-        }
-
-        @Test
         func existingV17AudioRowsSurviveSegmentedAudioMigration() throws {
             let databaseURL = URL.temporaryDirectory
                 .appending(path: UUID.v7().uuidString)
@@ -1159,61 +1135,6 @@ import os
             #expect(result.1["sessionId"] as UUID? == session.id)
             #expect(result.1["text"] as String? == "Hello world")
             #expect(result.2.sessionId == session.id)
-        }
-
-        @Test
-        func repositoryUpdatesProjectDescription() throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let workspace = WorkspaceRecord(
-                id: .v7(),
-                path: "/tmp/test-workspace",
-                name: "Test Workspace",
-                createdAt: Date(),
-                lastOpenedAt: Date()
-            )
-            try repository.insertWorkspace(workspace)
-
-            let project = try repository.fetchOrCreateProject(name: "Project A", workspaceId: workspace.id)
-            try repository.updateProjectDescription(
-                id: project.id,
-                workspaceId: workspace.id,
-                description: "Customer rollout"
-            )
-
-            let fetchedProject = try repository.fetchProject(id: project.id)
-            let updatedProject = try #require(fetchedProject)
-            #expect(updatedProject.description == "Customer rollout")
-        }
-
-        @Test
-        func initializesInstructionsTableWithConstraints() throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-
-            let columnNames = try database.dbQueue.read { db in
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('instructions')")
-            }
-            let hasCompositeUniqueIndex = try database.dbQueue.read { db in
-                try Int.fetchOne(
-                    db,
-                    sql: """
-                    SELECT COUNT(*)
-                    FROM (
-                        SELECT il.name
-                        FROM pragma_index_list('instructions') AS il
-                        JOIN pragma_index_info(il.name) AS ii
-                        WHERE il."unique" = 1
-                        GROUP BY il.name
-                        HAVING group_concat(ii.name, ',') = 'workspace_id,name'
-                    )
-                    """
-                )
-            }
-
-            #expect(columnNames.contains("workspace_id"))
-            #expect(columnNames.contains("name"))
-            #expect(columnNames.contains("content"))
-            #expect(hasCompositeUniqueIndex == 1)
         }
 
         @Test

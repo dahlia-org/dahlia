@@ -91,36 +91,63 @@ import GRDB
         }
 
         @Test
-        func transcriptSegmentsAreNotIndexedOrSearched() async throws {
+        func transcriptSegmentsAreNotIndexedSearchedOrRequeued() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let workspace = Self.makeWorkspace()
             let meeting = Self.makeMeeting(workspaceID: workspace.id)
+            let translatedSegment = Self.makeSegment(
+                meetingID: meeting.id,
+                text: "原文だけの検索語",
+                translatedText: "翻訳された品質保証",
+                offset: 30
+            )
             try await database.dbQueue.write { db in
                 try workspace.insert(db)
                 try meeting.insert(db)
                 try Self.makeSegment(meetingID: meeting.id, text: "検索について話します", offset: 10).insert(db)
                 try Self.makeSegment(meetingID: meeting.id, text: "精度を改善します", offset: 20).insert(db)
+                try translatedSegment.insert(db)
                 try Self.makeSegment(
                     meetingID: meeting.id,
                     text: "未確定だけの秘密語",
-                    offset: 30,
+                    offset: 40,
                     isConfirmed: false
                 ).insert(db)
             }
 
             await database.searchIndexer.drain()
-            let page = try await MeetingRepository.searchMeetingSidebarPage(
-                workspaceId: workspace.id,
-                query: "検索精度",
-                limit: 20,
-                dbQueue: database.dbQueue
-            )
+            for query in ["検索精度", "品質保証", "原文検索語"] {
+                let page = try await MeetingRepository.searchMeetingSidebarPage(
+                    workspaceId: workspace.id,
+                    query: query,
+                    limit: 20,
+                    dbQueue: database.dbQueue
+                )
+                #expect(page.items.isEmpty)
+            }
             let segmentDocumentCount = try await database.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents WHERE kind = 'segment'") ?? -1
             }
 
-            #expect(page.items.isEmpty)
             #expect(segmentDocumentCount == 0)
+
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE transcript_segments SET translatedText = ? WHERE id = ?",
+                    arguments: ["更新後の翻訳", translatedSegment.id]
+                )
+            }
+            let queued = try await database.dbQueue.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: """
+                    SELECT COUNT(*) FROM jobs_search_index
+                    WHERE indexKind = 'fts' AND targetKind = 'segment' AND targetKey = ?
+                    """,
+                    arguments: [translatedSegment.id]
+                ) ?? -1
+            }
+            #expect(queued == 0)
         }
 
         @Test
@@ -597,59 +624,6 @@ import GRDB
             }
             #expect(result.0 == 0)
             #expect(result.1 == "failed")
-        }
-
-        @Test
-        func transcriptIsNotIndexedOrRequeued() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let workspace = Self.makeWorkspace()
-            let meeting = Self.makeMeeting(workspaceID: workspace.id)
-            let segment = Self.makeSegment(
-                meetingID: meeting.id,
-                text: "原文だけの検索語",
-                translatedText: "翻訳された品質保証",
-                offset: 10
-            )
-            try await database.dbQueue.write { db in
-                try workspace.insert(db)
-                try meeting.insert(db)
-                try segment.insert(db)
-            }
-            await database.searchIndexer.drain()
-
-            let result = try await MeetingRepository.searchMeetingSidebarPage(
-                workspaceId: workspace.id,
-                query: "品質保証",
-                limit: 20,
-                dbQueue: database.dbQueue
-            )
-            #expect(result.items.isEmpty)
-
-            let original = try await MeetingRepository.searchMeetingSidebarPage(
-                workspaceId: workspace.id,
-                query: "原文検索語",
-                limit: 20,
-                dbQueue: database.dbQueue
-            )
-            #expect(original.items.isEmpty)
-
-            try await database.dbQueue.write { db in
-                try db.execute(
-                    sql: "UPDATE transcript_segments SET translatedText = ? WHERE meetingId = ?",
-                    arguments: ["更新後の翻訳", meeting.id]
-                )
-            }
-            let queued = try await database.dbQueue.read { db in
-                try Int.fetchOne(
-                    db,
-                    sql: """
-                    SELECT COUNT(*) FROM jobs_search_index
-                    WHERE indexKind = 'fts' AND targetKind = 'segment' AND targetKey = ?
-                    """,
-                    arguments: [segment.id]
-                ) ?? -1
-            }
-            #expect(queued == 0)
         }
 
         @Test

@@ -779,7 +779,6 @@
                 try trimmedSizes.append(storageBytes(directory))
                 #expect(try await MeetingContentProvider.usedBytes(dbQueue: queue) == 0)
             }
-            print("Text retention DB/WAL bytes: retained=\(retainedSizes), trimmed=\(trimmedSizes)")
             #expect(trimmedSizes[0] < retainedSizes[0] / 2)
             #expect(trimmedSizes[1] < retainedSizes[1] / 2)
             #expect(trimmedSizes[1] <= trimmedSizes[0] + 128 * 1024)

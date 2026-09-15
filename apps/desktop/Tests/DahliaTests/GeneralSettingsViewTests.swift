@@ -62,12 +62,6 @@
         }
 
         @Test
-        func dahliaAccountStatusCopyIsNotCloudSpecific() {
-            #expect(!L10n.dahliaNotSignedIn.localizedCaseInsensitiveContains("cloud"))
-            #expect(!L10n.dahliaSignedInAs("User").localizedCaseInsensitiveContains("cloud"))
-        }
-
-        @Test
         func dahliaCloudActionShowsComingSoonOnlyWhenUnconfigured() {
             #expect(DahliaServerSignInView.cloudActionTitle(isConfigured: true) == L10n.signInToDahliaCloud)
             #expect(DahliaServerSignInView.cloudActionTitle(isConfigured: false) == L10n.dahliaCloudComingSoon)

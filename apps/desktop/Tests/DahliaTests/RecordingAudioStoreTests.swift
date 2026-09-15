@@ -8,8 +8,6 @@ import GRDB
     import Testing
 
     @MainActor
-    @Suite(.serialized)
-    // Recovery and integrity scenarios share serialized filesystem fixtures.
     // swiftlint:disable:next type_body_length
     struct RecordingAudioStoreTests {
         @Test

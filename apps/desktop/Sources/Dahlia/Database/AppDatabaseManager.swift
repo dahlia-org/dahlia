@@ -49,6 +49,7 @@ final class AppDatabaseManager: Sendable {
         }
         var configuration = Self.configuration()
         dbQueue = try DatabaseQueue(path: path, configuration: configuration)
+        let copiesMigratedSchema = path == ":memory:" && onMigration == nil
         let usesConcurrentSearch: Bool
         if enablesConcurrentSearch, path != ":memory:" {
             let journalMode = try? dbQueue.writeWithoutTransaction {
@@ -58,11 +59,15 @@ final class AppDatabaseManager: Sendable {
         } else {
             usesConcurrentSearch = false
         }
-        if let onMigration,
-           try dbQueue.read({ try !Self.migrator.hasCompletedMigrations($0) }) {
-            onMigration()
+        if copiesMigratedSchema {
+            try Self.migratedInMemoryDatabase.get().backup(to: dbQueue)
+        } else {
+            if let onMigration,
+               try dbQueue.read({ try !Self.migrator.hasCompletedMigrations($0) }) {
+                onMigration()
+            }
+            try Self.migrator.migrate(dbQueue)
         }
-        try Self.migrator.migrate(dbQueue)
         if !usesConcurrentSearch {
             searchDBQueue = dbQueue
         } else {
@@ -91,6 +96,12 @@ final class AppDatabaseManager: Sendable {
             try SearchFTS5Tokenizer.register(in: db)
         }
         return configuration
+    }
+
+    private static let migratedInMemoryDatabase: Result<DatabaseQueue, Error> = Result {
+        let database = try DatabaseQueue(configuration: configuration())
+        try migrator.migrate(database)
+        return database
     }
 
     func close() throws {
