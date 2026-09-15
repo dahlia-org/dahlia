@@ -138,7 +138,7 @@ async function run() {
   await until(() => ![...main().querySelectorAll("h2")].some((heading) => heading.textContent === "Organizations you can join"));
   await until(() => ![...main().querySelectorAll("h3")].some((heading) => heading.textContent === "Join requests"));
   (document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') as HTMLElement).click();
-  await until(() => button("Members"));
+  await until(() => button("Workspace governance"));
   button("Workspace governance").click();
   await until(() => panel()?.textContent?.includes("Team workspace"));
   assert(panel().querySelector(".workspace-governance-identity .appearance-icon"), "Workspace icon is missing");
