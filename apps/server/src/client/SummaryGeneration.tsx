@@ -426,7 +426,7 @@ export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId:
       <label>{uiText("Summary model", "要約モデル")}<Select value={selectedModel?.id ?? selectedModelID} disabled={catalog.loading}
         onValueChange={(value) => { setModel(value); setEffort(""); clearPendingRequest(); }}>
         <option value="">{uiText("Automatic", "自動")}</option>
-        {selectedModelID && !selectedModel && <option value={selectedModelID} disabled>{selectedModelID} — {uiText("Unavailable", "利用不可")}</option>}
+        {selectedModelID && !selectedModel && <option value={selectedModelID} disabled>{selectedModelID}{catalog.data && ` — ${uiText("Unavailable", "利用不可")}`}</option>}
         {models.map((entry) => <option key={entry.id} value={entry.id}>{entry.display_name}</option>)}
       </Select></label>
       <label>{uiText("Reasoning effort", "推論強度")}<Select value={selectedEffort}
@@ -444,7 +444,7 @@ export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId:
       <option value="">{uiText("Workspace default", "ワークスペース設定")}</option>
       {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
     </Select>
-    <button className="primary" disabled={starting || active || query.loading || workspaceQuery.loading || !selectedSourceAvailable || (!!selectedModelID && !selectedModel)} onClick={() => void start()}>
+    <button className="primary" disabled={starting || active || query.loading || workspaceQuery.loading || !selectedSourceAvailable || (!!catalog.data && !!selectedModelID && !selectedModel)} onClick={() => void start()}>
       {starting ? uiText("Starting…", "開始中…") : buttonLabel}
     </button>
     </div>

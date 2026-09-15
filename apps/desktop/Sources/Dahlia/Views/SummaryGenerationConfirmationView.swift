@@ -82,7 +82,7 @@ struct SummaryGenerationConfirmationView: View {
                         }
                         ForEach(modelIDs, id: \.self) { id in Text(modelName(id)).tag(Optional(id)) }
                     }
-                    if !isModelAvailable {
+                    if isModelCatalogLoaded, !isModelAvailable {
                         SettingsStatusMessage(
                             text: "\(modelName(overrides.model ?? defaultModel)) — \(L10n.unavailableModelPreference)",
                             systemImage: "exclamationmark.triangle", tint: .orange
@@ -186,6 +186,13 @@ struct SummaryGenerationConfirmationView: View {
 
     private var isModelAvailable: Bool {
         overrides.isModelAvailable(defaultModel: defaultModel, modelIDs: modelIDs, allowsAutomatic: usesRemote)
+    }
+
+    // An empty catalog before the first load or after a failed one is "not known yet", not "unavailable".
+    private var isModelCatalogLoaded: Bool {
+        guard modelError == nil else { return false }
+        if usesRemote { return serverState?.isAvailable == true }
+        return catalog.hasAttemptedLoad && !catalog.isLoading
     }
 
     private var hasIncompatibleEffort: Bool {

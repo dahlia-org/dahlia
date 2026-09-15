@@ -124,6 +124,26 @@ it.each([
   expect(html).not.toContain("This workspace processes summaries in Dahlia for Mac.");
 });
 
+it.each(["loading", "error"] as const)("keeps generation available while the model catalog is %s", (state) => {
+  vi.mocked(useLiveJSON).mockImplementation((url) => ({
+    data: url === "/api/v1/models" ? undefined : typeof url === "object" && url.key.startsWith('["getCapabilities"')
+      ? { meetingSummaryGeneration: { version: 2, sources: ["transcript"], completeRecordings: true } }
+      : typeof url === "object" && url.key.startsWith('["getWorkspace"')
+        ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: {
+          location: "remote", remote: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing.remote, summaryModel: "gpt-5-6-terra" },
+        } } }
+        : typeof url === "object" && url.key.startsWith('["summaryTranscriptAvailability"') ? transcript(true)
+        : { job: null },
+    loading: state === "loading" && url === "/api/v1/models",
+    error: state === "error" && url === "/api/v1/models" ? new Error("offline") : undefined,
+    reload: vi.fn(), replace: vi.fn(),
+  }));
+  const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
+  expect(html).toContain('<button class="primary">Generate summary</button>');
+  expect(html).toContain('<option value="gpt-5-6-terra" disabled="" selected="">gpt-5-6-terra</option>');
+  expect(html).not.toContain("Unavailable");
+});
+
 it.each(["loading", "error"] as const)("does not use stale complete recordings while availability is %s", (state) => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
     data: url === "/api/v1/models" ? modelList([]) : typeof url === "object" && url.key.startsWith('["getCapabilities"')
