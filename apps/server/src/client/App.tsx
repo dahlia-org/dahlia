@@ -1312,7 +1312,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
     <section className="organization-card">
       {dialog}
       <fieldset className="organization-controls" disabled={pending}>
-      <DetailTabs label={uiText("Organization content", "組織の内容")} tabs={[
+      <DetailTabs key={canGovern ? "govern" : "read"} label={uiText("Organization content", "組織の内容")} tabs={[
         ...(canGovern ? [{ id: "workspaces", label: uiText("Workspace governance", "ワークスペース管理"), content: <OrganizationWorkspaces organization={organization} /> }] : []),
         { id: "members", label: <>{uiText("Members", "メンバー")}{members && <> <span className="org-count">{members.length}</span></>}</>, content: <>
           <div className="org-section-header org-member-toolbar">
@@ -1602,7 +1602,10 @@ function OrganizationCreateDialog({ onClose, onCreated }: { onClose: () => void;
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true });
     };
   }, []);
-  useEffect(() => { setOwnerId((current) => owners.data?.items.some((owner) => owner.id === current) ? current : owners.data?.items[0]?.id ?? ""); }, [owners.data]);
+  useEffect(() => {
+    const items = owners.data?.items;
+    if (items) setOwnerId((current) => items.some((owner) => owner.id === current) ? current : "");
+  }, [owners.data]);
   useEffect(() => { const timer = setTimeout(() => setOwnerQuery(ownerSearch.trim()), 200); return () => clearTimeout(timer); }, [ownerSearch]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -1628,7 +1631,8 @@ function OrganizationCreateDialog({ onClose, onCreated }: { onClose: () => void;
       </header>
       <div className="dialog-body">
         <label className="dialog-field"><span>{uiText("Initial owner", "初期オーナー")}</span>
-          <Select aria-label={uiText("Initial owner", "初期オーナー")} value={ownerId} placeholder={uiText("Choose an owner", "オーナーを選択")} disabled={pending || owners.loading || !owners.data?.items.length} onValueChange={setOwnerId}
+          <Select aria-label={uiText("Initial owner", "初期オーナー")} value={ownerId} placeholder={uiText("Choose an owner", "オーナーを選択")} disabled={pending} onValueChange={setOwnerId}
+            emptyMessage={!owners.loading ? uiText("No matching users.", "該当するユーザーはいません。") : undefined}
             search={{ value: ownerSearch, placeholder: uiText("Search by name or email", "名前・メールアドレスで検索"), onValueChange: (value) => { setOwnerSearch(value); setOwnerOffset(0); } }}>
             {owners.data?.items.map((owner) => <option key={owner.id} value={owner.id}>{owner.name} ({owner.email})</option>)}
           </Select>

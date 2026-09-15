@@ -3,11 +3,11 @@ import { createPortal } from "react-dom";
 
 type Option = { value?: string | number; children?: ReactNode; disabled?: boolean };
 type Props = { value: string | number; onValueChange: (value: string) => void; children: ReactNode;
-  disabled?: boolean; placeholder?: string; menuLabel?: string; "aria-label"?: string;
+  disabled?: boolean; placeholder?: string; menuLabel?: string; emptyMessage?: string; "aria-label"?: string;
   search?: { value: string; onValueChange: (value: string) => void; placeholder: string } };
 
 /** Single-value picker using the same menu surface as Workspace navigation. */
-export function Select({ value, onValueChange, children, disabled, placeholder, menuLabel, search, "aria-label": label }: Props) {
+export function Select({ value, onValueChange, children, disabled, placeholder, menuLabel, emptyMessage, search, "aria-label": label }: Props) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -89,6 +89,7 @@ export function Select({ value, onValueChange, children, disabled, placeholder, 
       {menuLabel && <strong>{menuLabel}</strong>}
       {search && <input className="select-search" type="search" value={search.value} maxLength={200} aria-label={search.placeholder} placeholder={search.placeholder}
         onChange={(event) => search.onValueChange(event.target.value)} />}
+      {!options.length && emptyMessage && <span className="select-empty" role="status">{emptyMessage}</span>}
       {options.map((option) => <button type="button" key={option.value} value={option.value} role="option" tabIndex={-1}
         className="dropdown-option" aria-selected={option.value === selectedValue} disabled={option.disabled}
         onClick={() => { close(); if (option.value !== selectedValue) onValueChange(option.value); }}>

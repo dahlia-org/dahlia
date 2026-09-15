@@ -53,7 +53,7 @@ window.fetch = async (input, init) => {
   }
   if (url.pathname === "/api/v1/admin/organizations") return Response.json({ items: organizations.map((org) => ({ ...org, memberCount: 1, teamCount: 1 })), hasMore: false });
   if (url.pathname.startsWith("/api/v1/admin/organizations/")) {
-    if (method === "DELETE") { deletions++; return new Response(null, { status: 204 }); }
+    if (method === "DELETE") { deletions++; organizations.splice(organizations.findIndex((org) => org.id === url.pathname.split("/")[5]), 1); return new Response(null, { status: 204 }); }
     return Response.json({ ...organizations.find((org) => org.id === url.pathname.split("/")[5]), members: [], teams: [], hasMoreMembers: false, hasMoreTeams: false });
   }
   if (url.pathname === "/api/v1/session") return Response.json({ user: { id: "owner", name: "Owner" },
@@ -211,6 +211,7 @@ async function run() {
   navigateDashboard("/admin/orgs");
   await until(() => button("Create organization", main()));
   const createButton = button("Create organization", main());
+  createButton.focus();
   createButton.click();
   await until(() => document.querySelector(".action-dialog:modal"));
   button("Cancel", document.querySelector(".action-dialog")!).click();
@@ -219,21 +220,36 @@ async function run() {
   createButton.click();
   await until(() => document.querySelector(".action-dialog:modal"));
   const ownerSelect = document.querySelector<HTMLButtonElement>('.action-dialog [role="combobox"]')!;
-  assert(ownerSelect.value === "owner", "Initial owner not selected");
+  assert(ownerSelect.value === "", "Initial owner was selected implicitly");
   ownerSelect.click();
   await until(() => document.querySelector<HTMLInputElement>('.select-menu input[type="search"]'));
   const search = document.querySelector<HTMLInputElement>('.select-menu input[type="search"]')!;
+  const ownerMenu = search.closest<HTMLElement>('.select-menu')!;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "missing");
+  search.dispatchEvent(new Event("input", { bubbles: true }));
+  await until(() => ownerMenu.textContent?.includes("No matching users."));
+  search.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  await until(() => ownerSelect.ariaExpanded === "false");
+  assert(!ownerSelect.disabled, "Empty owner search disabled the picker");
+  ownerSelect.click();
+  await until(() => ownerMenu.matches(":popover-open"));
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "second");
   search.dispatchEvent(new Event("input", { bubbles: true }));
+  await until(() => ownerMenu.querySelectorAll('[role="option"]').length === 1);
+  assert(ownerSelect.value === "", "Filtered owner was selected implicitly");
+  ownerMenu.querySelector<HTMLButtonElement>('[role="option"]')!.click();
   await until(() => ownerSelect.value === "second");
+  ownerSelect.click();
+  await until(() => ownerMenu.matches(":popover-open"));
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "");
   search.dispatchEvent(new Event("input", { bubbles: true }));
-  await until(() => document.querySelectorAll('.select-menu [role="option"]').length === 2);
+  await until(() => ownerMenu.querySelectorAll('[role="option"]').length === 2);
   assert(ownerSelect.value === "second", "Owner selection was reset by a live result refresh");
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "owner");
   search.dispatchEvent(new Event("input", { bubbles: true }));
+  await until(() => ownerMenu.querySelectorAll('[role="option"]').length === 1 && ownerSelect.value === "");
+  ownerMenu.querySelector<HTMLButtonElement>('[role="option"]')!.click();
   await until(() => ownerSelect.value === "owner");
-  document.querySelector<HTMLButtonElement>('.select-menu [role="option"]')!.click();
   fill("name", "New organization");
   await until(() => document.querySelector<HTMLInputElement>('[name="slug"]')?.value === "new-organization");
   fill("slug", "Invalid Slug");

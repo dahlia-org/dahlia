@@ -39,6 +39,7 @@ select { padding-right: 32px; }
 .select-trigger > svg { flex-shrink: 0; color: var(--muted); }
 .select-menu { position: fixed; inset: auto; margin: 0; min-width: 160px; max-width: calc(100vw - 24px); overflow: auto; }
 .select-search { width: 100%; margin-bottom: 6px; }
+.select-empty { display: block; padding: 10px; color: var(--muted); font-size: 12px; }
 .select-menu .dropdown-option { width: 100%; border: 0; background: transparent; text-align: left; cursor: pointer; }
 .select-menu .dropdown-option > span:first-child { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .select-menu .dropdown-option:is(:hover, :focus, [aria-selected="true"]) { color: var(--plum); background: var(--plum-soft); }
