@@ -41,17 +41,20 @@ final class WorkspaceManagementModel {
     private let cloudWorkspaceFetcher: CloudWorkspaceFetcher?
     private let organizationFetcher: ((DahliaAccountConnectionRecord) async throws -> CloudOrganizationDirectory)?
     private let organizationOwnerFetcher: ((DahliaAccountConnectionRecord, Int) async throws -> (items: [CloudOrganizationOwner], hasMore: Bool))?
+    private let organizationCreator: ((String, String, String, DahliaAccountConnectionRecord) async throws -> UUID)?
     @ObservationIgnored private var initialLocalWorkspaceTask: Task<WorkspaceRecord?, Never>?
     private var syncObservation: AnyDatabaseCancellable?
 
     init(
         cloudWorkspaceFetcher: CloudWorkspaceFetcher? = nil,
         organizationFetcher: ((DahliaAccountConnectionRecord) async throws -> CloudOrganizationDirectory)? = nil,
-        organizationOwnerFetcher: ((DahliaAccountConnectionRecord, Int) async throws -> (items: [CloudOrganizationOwner], hasMore: Bool))? = nil
+        organizationOwnerFetcher: ((DahliaAccountConnectionRecord, Int) async throws -> (items: [CloudOrganizationOwner], hasMore: Bool))? = nil,
+        organizationCreator: ((String, String, String, DahliaAccountConnectionRecord) async throws -> UUID)? = nil
     ) {
         self.cloudWorkspaceFetcher = cloudWorkspaceFetcher
         self.organizationFetcher = organizationFetcher
         self.organizationOwnerFetcher = organizationOwnerFetcher
+        self.organizationCreator = organizationCreator
     }
 
     func configure(appDatabase: AppDatabaseManager?) async {
@@ -391,17 +394,30 @@ final class WorkspaceManagementModel {
         }
     }
 
-    func createAdoptionOrganization(name: String, slug: String, initialOwnerUserId: String) async {
+    func createAdoptionOrganization(
+        name: String,
+        slug: String,
+        initialOwnerUserId: String
+    ) async -> (created: Bool, selectableID: UUID?) {
         guard let pending = pendingServerAdoption, pending.canCreateOrganizations, !initialOwnerUserId.isEmpty,
-              !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+              !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return (false, nil) }
         do {
-            try await CloudWorkspaceDiscovery.createOrganization(
-                name: name, slug: slug, initialOwnerUserId: initialOwnerUserId,
-                connection: pending.connection.record,
-                api: SyncAPIClient(session: .shared)
-            )
+            let id = if let organizationCreator {
+                try await organizationCreator(name, slug, initialOwnerUserId, pending.connection.record)
+            } else {
+                try await CloudWorkspaceDiscovery.createOrganization(
+                    name: name, slug: slug, initialOwnerUserId: initialOwnerUserId,
+                    connection: pending.connection.record,
+                    api: SyncAPIClient(session: .shared)
+                )
+            }
             await reloadServerAdoption()
-        } catch { presentError(L10n.workspaceOperationFailed, error: error, source: "createAdoptionOrganization") }
+            let isSelectable = pendingServerAdoption?.organizations.contains { UUID(uuidString: $0.id) == id } == true
+            return (true, isSelectable ? id : nil)
+        } catch {
+            presentError(L10n.workspaceOperationFailed, error: error, source: "createAdoptionOrganization")
+            return (false, nil)
+        }
     }
 
     func confirmServerAdoption(
