@@ -1825,6 +1825,9 @@ export interface components {
                 };
             };
         };
+        WorkspaceRead: components["schemas"]["Workspace"] & {
+            organizationName: string;
+        };
         DeletedMeeting: {
             meetingId: string;
             workspaceId: string;
@@ -3201,7 +3204,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        items: components["schemas"]["Workspace"][];
+                        items: components["schemas"]["WorkspaceRead"][];
                         /** @description Opaque cursor. Pass back unchanged with the original filters. */
                         nextCursor: string | null;
                     };
@@ -3227,7 +3230,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Workspace"];
+                    "application/json": components["schemas"]["WorkspaceRead"];
                 };
             };
             default: components["responses"]["Problem"];
@@ -4793,7 +4796,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        workspaces: components["schemas"]["Workspace"][];
+                        workspaces: components["schemas"]["WorkspaceRead"][];
                         items: {
                             /** @enum {string} */
                             entity: "project" | "meeting" | "file";

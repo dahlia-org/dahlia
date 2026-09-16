@@ -96,6 +96,7 @@
                 "workspaces": [[
                     "workspaceId": destination.uuidString,
                     "organizationId": destination.uuidString,
+                    "organizationName": "Organization",
                     "meetingDeletionGraceDays": 7,
                     "name": "Moved",
                     "generationSettings": JSONSerialization.jsonObject(with: JSONEncoder().encode(WorkspaceGenerationSettings())),
@@ -243,6 +244,7 @@
                 "workspaces": [[
                     "workspaceId": destination.uuidString,
                     "organizationId": destination.uuidString,
+                    "organizationName": "Organization",
                     "meetingDeletionGraceDays": 7,
                     "name": "Moved",
                     "generationSettings": JSONSerialization.jsonObject(with: JSONEncoder().encode(WorkspaceGenerationSettings())),

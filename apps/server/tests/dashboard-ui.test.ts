@@ -15,8 +15,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   App,
   HeaderAuthenticationNotice,
+  Organization,
   ScreenshotFigure,
   SyncedMeeting,
+  WorkspaceMeetings,
   Workspaces,
   MeetingList,
   accountSignInRequired,
@@ -28,7 +30,7 @@ import { isCoreDashboardPath, resolveDashboardRoute, shouldRedirectToSignIn } fr
 import { FileViewer } from "../src/client/FileViewer";
 import * as liveData from "../src/client/live-data";
 import { dashboardNavigationPath } from "../src/client/navigation";
-import { clientMutationEvent, json, type SyncedMeetingInfo } from "../src/client/api";
+import { clientMutationEvent, json, type SyncedMeetingInfo, type SyncedWorkspaceInfo } from "../src/client/api";
 
 const ExtensionPage = () => null;
 afterEach(() => vi.unstubAllGlobals());
@@ -102,6 +104,24 @@ describe("desktop-style meeting layout", () => {
       expect(html).toContain('role="alert"');
       expect(html).not.toContain("<h1>");
     } finally { query.mockRestore(); page.mockRestore(); }
+  });
+
+  it("waits for Workspace and Organization names without flashing generic detail headings", () => {
+    vi.stubGlobal("navigator", { language: "ja-JP" });
+    const empty = { data: undefined, error: undefined, loading: true, reload: vi.fn(), replace: vi.fn() };
+    const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue(empty);
+    const page = vi.spyOn(liveData, "useLivePage").mockReturnValue({ ...empty, loadingMore: false, loadMore: vi.fn() });
+    const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", reload: vi.fn() });
+    const session = { user: { id: "user" }, capabilities: { sync: true, sharing: true, sessions: true, admin: false } };
+    try {
+      const workspace = renderToStaticMarkup(createElement(WorkspaceMeetings, { session, workspaceId: "workspace" }));
+      const organization = renderToStaticMarkup(createElement(Organization, { session, organizationId: "organization" }));
+      expect(workspace).toContain('aria-busy="true"');
+      expect(workspace).not.toContain("<h1>");
+      expect(workspace).not.toContain('role="tab"');
+      expect(organization).toContain("組織を読み込み中…");
+      expect(organization).not.toContain("<h1>");
+    } finally { query.mockRestore(); page.mockRestore(); scope.mockRestore(); }
   });
 
   it("renders a text-labelled recording indicator only for active sessions in both languages", () => {
@@ -571,6 +591,21 @@ it("keeps Workspace creation available while showing every accessible Workspace"
     const html = renderToStaticMarkup(createElement(Workspaces));
     expect(html).toContain("New Workspace</button>");
     expect(html).not.toContain("Accessible Workspaces owned by this organization");
+  } finally { scope.mockRestore(); query.mockRestore(); }
+});
+
+it("labels each Workspace with its owning Organization", () => {
+  vi.stubGlobal("navigator", { language: "ja-JP" });
+  const workspace = { workspaceId: "workspace", organizationId: "alpha", organizationName: "Alpha", name: "企画", role: "admin", revision: 1,
+    createdAt: "2026-09-16T00:00:00Z" } as SyncedWorkspaceInfo;
+  const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user",
+    organizations: [{ id: "alpha", name: "Alpha", slug: "alpha", kind: "team" }], workspaces: [workspace], reload: vi.fn() });
+  const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue({ data: undefined, loading: false, error: undefined, reload: vi.fn(), replace: vi.fn() });
+  try {
+    const html = renderToStaticMarkup(createElement(Workspaces));
+    expect(html).toContain('class="workspace-organization-badge"');
+    expect(html).toContain('aria-label="組織: Alpha"');
+    expect(html).toContain("<span>Alpha</span>");
   } finally { scope.mockRestore(); query.mockRestore(); }
 });
 

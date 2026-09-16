@@ -77,6 +77,7 @@ enum CloudWorkspaceDiscovery {
         let items = try await client.listWorkspaces().ok.body.json.items
         var seen = Set<UUID>()
         return try items.compactMap { item -> CloudWorkspaceRecord? in
+            let item = item.value1
             guard let workspaceId = UUID(uuidString: item.workspaceId),
                   let organizationId = UUID(uuidString: item.organizationId) else { throw URLError(.cannotParseResponse) }
             guard seen.insert(workspaceId).inserted else { return nil }

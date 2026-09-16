@@ -566,10 +566,11 @@ export function Workspaces({ home = false }: { home?: boolean }) {
         <p>{uiText("Create a Workspace, then connect it in Dahlia for macOS to bring your meeting notes, transcripts and screenshots here.", "ワークスペースを作成して macOS 版 Dahlia で接続すると、ミーティングの要約・文字起こし・スクリーンショットをここで閲覧できます。")}</p>
       </div>}
       <div className="workspace-grid">{workspaces?.map((workspace) => <a className="workspace-card" href={`/workspaces/${workspace.workspaceId}`} key={workspace.workspaceId}>
-        <div className="workspace-card-top"><span className="workspace-symbol"><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} size={22} /></span><span className={`status${workspace.role === "admin" ? "" : " shared"}`}>{workspaceRoleLabel(workspace.role)}</span></div>
-        <h3>{workspace.name}</h3>
-        <div className="workspace-card-bottom"><span>{uiText("Updated", "更新日")} {new Date(workspace.updatedAt ?? workspace.createdAt).toLocaleDateString()}</span><MenuIcon name="arrow" /></div>
-      </a>)}</div>
+          <div className="workspace-card-top"><span className="workspace-symbol"><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} size={22} /></span><span className={`status${workspace.role === "admin" ? "" : " shared"}`}>{workspaceRoleLabel(workspace.role)}</span></div>
+          <h3>{workspace.name}</h3>
+          <span className="workspace-organization-badge" aria-label={uiText(`Organization: ${workspace.organizationName}`, `組織: ${workspace.organizationName}`)} title={workspace.organizationName}><MenuIcon name="organization" /><span>{workspace.organizationName}</span></span>
+          <div className="workspace-card-bottom"><span>{uiText("Updated", "更新日")} {new Date(workspace.updatedAt ?? workspace.createdAt).toLocaleDateString()}</span><MenuIcon name="arrow" /></div>
+        </a>)}</div>
     </section>
     {home && recentWorkspace && <section className="section-block recent-meetings">
       <div className="collection-heading"><h2>{uiText("Recent meetings", "最近のミーティング")}</h2>
@@ -702,7 +703,7 @@ export function WorkspaceTrash({ workspace }: { workspace: SyncedWorkspaceInfo }
   </section>;
 }
 
-function WorkspaceMeetings({ session, workspaceId }: { session: SessionInfo; workspaceId: string }) {
+export function WorkspaceMeetings({ session, workspaceId }: { session: SessionInfo; workspaceId: string }) {
   const { dialog, openDialog } = useActionDialog();
   const workspaceQuery = useLiveJSON<SyncedWorkspaceInfo>(apiQuery("getWorkspace", { params: { path: { workspaceId: workspaceId } } }));
   const workspace = workspaceQuery.data;
@@ -768,16 +769,16 @@ function WorkspaceMeetings({ session, workspaceId }: { session: SessionInfo; wor
       navigateDashboard(`/projects/${id}`);
     },
   });
-  return <article className="meeting-detail collection-detail">
-    <header className="meeting-header">
+  return <article className="meeting-detail collection-detail" aria-busy={!workspace && workspaceQuery.loading}>
+    {workspace && <header className="meeting-header">
       <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}><a href="/workspaces">{uiText("All Workspaces", "ワークスペース一覧")}</a></nav>
-      <h1><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} size={28} />{workspace?.name ?? uiText("Workspace", "ワークスペース")}</h1>
-      {workspace && <div className="meeting-metadata"><span className="metadata-chip">{workspaceRoleLabel(workspace.role)}</span></div>}
-    </header>
+      <h1><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} size={28} />{workspace.name}</h1>
+      <div className="meeting-metadata"><span className="metadata-chip">{workspaceRoleLabel(workspace.role)}</span></div>
+    </header>}
     {dialog}
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
     <DataError error={workspaceQuery.error} retry={workspaceQuery.reload} />
-    <DetailTabs label={uiText("Workspace content", "ワークスペースの内容")} tabs={[
+    {workspace && <DetailTabs label={uiText("Workspace content", "ワークスペースの内容")} tabs={[
       { id: "meetings", label: uiText("Meetings", "ミーティング"), content: <>
         <div className="collection-filters">
           <input type="search" className="model-search" aria-label={uiText("Search meetings", "ミーティングを検索")} placeholder={uiText("Search meetings", "ミーティングを検索")} value={query} onChange={(event) => setQuery(event.target.value)} />
@@ -813,7 +814,7 @@ function WorkspaceMeetings({ session, workspaceId }: { session: SessionInfo; wor
           <button className="secondary danger-button" disabled={workspace.hasResources !== false} onClick={deleteWorkspace}>{uiText("Delete Workspace", "ワークスペースを削除")}</button></div>
         </section>}
       </> },
-    ]} />
+    ]} />}
   </article>;
 }
 
@@ -1518,14 +1519,14 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
   );
 }
 
-function Organization({ session, organizationId }: { session: SessionInfo; organizationId: string }) {
+export function Organization({ session, organizationId }: { session: SessionInfo; organizationId: string }) {
   const query = useLiveJSON<OrganizationInfo[]>("/api/auth/organization/list");
   const organization = query.data?.find((item) => item.id === organizationId);
   return <>
     <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}>
       <a className="text-link" href="/orgs">{uiText("Your organizations", "所属組織")}</a>
     </nav>
-    <PageHeader title={organization?.name ?? uiText("Organization", "組織")} />
+    {organization && <PageHeader title={organization.name} />}
     <DataError error={query.error} retry={query.reload} />
     {!query.data && query.loading && <p role="status">{uiText("Loading organization…", "組織を読み込み中…")}</p>}
     {query.data && !organization && <p role="alert">{uiText("Organization not found or you no longer have access.", "組織が見つからないか、アクセス権がありません。")}</p>}

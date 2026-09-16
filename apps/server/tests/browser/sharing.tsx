@@ -51,7 +51,7 @@ const choose = async (picker: HTMLButtonElement, role: string) => {
   document.getElementById(picker.getAttribute("aria-controls")!)!.querySelector<HTMLButtonElement>(`button[value="${role}"]`)!.click();
 };
 async function run() {
-  const workspace: SyncedWorkspaceInfo = { meetingDeletionGraceDays: 7, generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS, workspaceId: "workspace", organizationId: "org", name: "Shared", role: "admin", revision: 1,
+  const workspace: SyncedWorkspaceInfo = { meetingDeletionGraceDays: 7, generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS, workspaceId: "workspace", organizationId: "org", organizationName: "Example Org", name: "Shared", role: "admin", revision: 1,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   const fixture = <SidebarProvider session={{ user: { id: "me" },
     capabilities: { admin: false, sessions: false, sharing: true, sync: true } }}><WorkspaceSharing workspace={workspace} /></SidebarProvider>;

@@ -2972,6 +2972,24 @@
           }
         }
       },
+      "WorkspaceRead": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Workspace"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "organizationName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "organizationName"
+            ]
+          }
+        ]
+      },
       "DeletedMeeting": {
         "type": "object",
         "properties": {
@@ -8548,7 +8566,7 @@
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Workspace"
+                        "$ref": "#/components/schemas/WorkspaceRead"
                       }
                     },
                     "nextCursor": {
@@ -8598,7 +8616,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Workspace"
+                  "$ref": "#/components/schemas/WorkspaceRead"
                 }
               }
             }
@@ -12747,7 +12765,7 @@
                     "workspaces": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Workspace"
+                        "$ref": "#/components/schemas/WorkspaceRead"
                       }
                     },
                     "items": {

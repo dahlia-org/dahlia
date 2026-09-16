@@ -1,6 +1,6 @@
 import createClient from "openapi-fetch";
 import type { paths, components } from "./generated-api";
-export type SyncedWorkspaceInfo = components["schemas"]["Workspace"];
+export type SyncedWorkspaceInfo = components["schemas"]["WorkspaceRead"];
 export type OrganizationInfo = components["schemas"]["Organization"];
 export type SyncedMeetingInfo = components["schemas"]["Meeting"];
 export type SyncedMeetingPage = { items: SyncedMeetingInfo[]; nextCursor: string | null };
