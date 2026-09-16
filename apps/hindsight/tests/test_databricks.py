@@ -213,6 +213,7 @@ class DatabricksStartTests(unittest.TestCase):
         provider.get_token.return_value = "db/token"
         env = {
             "LAKEBASE_ENDPOINT": "projects/project/branches/production/endpoints/app",
+            "PGHOST": "db.example.com",
             "PGUSER": "app@example.com",
         }
         with (
@@ -225,6 +226,16 @@ class DatabricksStartTests(unittest.TestCase):
                         refresh_lakebase_database_url(f"{scheme}://app%40example.com@db.example.com:5432/db"),
                         f"{scheme}://app%40example.com:db%2Ftoken@db.example.com:5432/db",
                     )
+
+    def test_refreshable_credential_ignores_an_unrelated_database_host(self):
+        url = "postgresql://app@disposable.example.com:5432/db"
+        env = {
+            "LAKEBASE_ENDPOINT": "projects/project/branches/production/endpoints/app",
+            "PGHOST": "lakebase.example.com",
+        }
+        with patch("hindsight_lakebase.databricks.get_lakebase_credential_provider") as get_provider:
+            self.assertEqual(refresh_lakebase_database_url(url, env), url)
+        get_provider.assert_not_called()
 
     def test_main_fetches_a_fresh_databricks_database_credential(self):
         env = {
@@ -280,6 +291,7 @@ class DatabricksStartTests(unittest.TestCase):
 
         env = {
             "LAKEBASE_ENDPOINT": "projects/project/branches/production/endpoints/app",
+            "PGHOST": "db.example.com",
             "DATABRICKS_HOST": "https://workspace.cloud.databricks.com",
             "DATABRICKS_CLIENT_ID": "client",
             "DATABRICKS_CLIENT_SECRET": "secret",
@@ -290,6 +302,16 @@ class DatabricksStartTests(unittest.TestCase):
             )
 
         self.assertIs(captured["kwargs"]["password"], lakebase_database_password_async)
+
+        captured.clear()
+        with (
+            patch.dict(os.environ, {**env, "PGHOST": "lakebase.example.com"}, clear=False),
+            patch("asyncpg.create_pool", create_pool),
+        ):
+            asyncio.run(
+                PostgreSQLBackend().initialize("postgresql://app@db.example.com:5432/db", min_size=1, max_size=1)
+            )
+        self.assertNotIn("password", captured["kwargs"])
 
     def test_prepare_extensions_rejects_an_existing_private_extension(self):
         cursor = Mock()

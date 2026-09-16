@@ -23,4 +23,4 @@ def test_databricks_providers_use_app_oauth_without_api_keys(monkeypatch):
     assert inspect.iscoroutinefunction(llm._client._api_key_provider)
     assert embeddings.provider_name == "databricks"
     assert embeddings.base_url == llm.base_url
-    assert not inspect.iscoroutinefunction(embeddings.api_key)
+    assert callable(embeddings.api_key) and not inspect.iscoroutinefunction(embeddings.api_key)

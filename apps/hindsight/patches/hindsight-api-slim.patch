@@ -86,7 +86,7 @@ index 60c9997..0902195 100644
          # Embedded directly into raw SQL via to_tsvector('<lang>', ...), so we
          # reject anything that isn't a plain identifier to prevent injection.
 diff --git a/hindsight_api/db_url.py b/hindsight_api/db_url.py
-index 0df4ac3..50af95a 100644
+index 0df4ac3..5b5f270 100644
 --- a/hindsight_api/db_url.py
 +++ b/hindsight_api/db_url.py
 @@ -47,6 +47,11 @@ def to_libpq_url(url: str) -> str:
@@ -95,7 +95,7 @@ index 0df4ac3..50af95a 100644
 
 +    from hindsight_lakebase.databricks import lakebase_database_auth_enabled, refresh_lakebase_database_url
 +
-+    if lakebase_database_auth_enabled():
++    if lakebase_database_auth_enabled(database_url=url):
 +        url = refresh_lakebase_database_url(url)
 +
      parts = urlsplit(url)
@@ -178,7 +178,7 @@ index 88941e8..2f67d10 100644
 
      async def bulk_insert_links(
 diff --git a/hindsight_api/engine/db/postgresql.py b/hindsight_api/engine/db/postgresql.py
-index d5c29f6..c5f0d2f 100644
+index d5c29f6..1cb3dff 100644
 --- a/hindsight_api/engine/db/postgresql.py
 +++ b/hindsight_api/engine/db/postgresql.py
 @@ -254,6 +254,14 @@ class PostgreSQLBackend(DatabaseBackend):
@@ -188,7 +188,7 @@ index d5c29f6..c5f0d2f 100644
 +        connect_kwargs: dict[str, Any] = {}
 +        from hindsight_lakebase.databricks import lakebase_database_auth_enabled
 +
-+        if lakebase_database_auth_enabled():
++        if lakebase_database_auth_enabled(database_url=dsn):
 +            from hindsight_lakebase.databricks import lakebase_database_password_async
 +
 +            connect_kwargs["password"] = lakebase_database_password_async
@@ -633,7 +633,7 @@ index e7abdf9..20057c0 100644
      pg_search_tokenizer = normalize_pg_search_tokenizer(pg_search_tokenizer)
 
 diff --git a/hindsight_api/pg0.py b/hindsight_api/pg0.py
-index 5df3693..02f0393 100644
+index 5df3693..7a3ee24 100644
 --- a/hindsight_api/pg0.py
 +++ b/hindsight_api/pg0.py
 @@ -219,4 +219,8 @@ async def resolve_database_url(db_url: str) -> str:
@@ -642,6 +642,6 @@ index 5df3693..02f0393 100644
          return await pg0.ensure_running()
 +    from hindsight_lakebase.databricks import lakebase_database_auth_enabled, refresh_lakebase_database_url
 +
-+    if lakebase_database_auth_enabled():
++    if lakebase_database_auth_enabled(database_url=db_url):
 +        return refresh_lakebase_database_url(db_url)
      return db_url

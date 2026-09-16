@@ -159,8 +159,14 @@ _lakebase_provider = None
 _lakebase_provider_key = None
 
 
-def lakebase_database_auth_enabled(env=os.environ):
-    return bool(env.get("LAKEBASE_ENDPOINT"))
+def lakebase_database_auth_enabled(env=os.environ, database_url=None):
+    if not env.get("LAKEBASE_ENDPOINT"):
+        return False
+    if database_url is None:
+        return True
+    expected_host = env.get("PGHOST", "").strip("[]").casefold()
+    actual_host = urlsplit(database_url).hostname
+    return bool(actual_host and actual_host.casefold() == expected_host)
 
 
 def get_lakebase_credential_provider(env=os.environ):
@@ -185,7 +191,7 @@ async def lakebase_database_password_async():
 
 def refresh_lakebase_database_url(database_url, env=os.environ):
     """Embed a fresh Lakebase credential for synchronous PostgreSQL clients."""
-    if not lakebase_database_auth_enabled(env) or "://" not in database_url:
+    if "://" not in database_url or not lakebase_database_auth_enabled(env, database_url):
         return database_url
 
     parsed = urlsplit(database_url)
