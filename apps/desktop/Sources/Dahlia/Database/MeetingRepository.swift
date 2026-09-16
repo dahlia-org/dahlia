@@ -223,7 +223,7 @@ final class MeetingRepository {
         id: UUID,
         connectionID: UUID,
         serverWorkspace: CloudWorkspaceRecord,
-        expectedChanges: Int,
+        expectedMutationGeneration: Int64,
         requestedName: String? = nil,
         screenshotContent: ScreenshotContentProvider = .shared
     ) async throws -> WorkspaceRecord? {
@@ -236,10 +236,12 @@ final class MeetingRepository {
         defer { screenshotContent.releaseOriginals(workspaceIds: [id], dbQueue: dbQueue) }
         let files = try await screenshotContent.prepareAccountTransfer(workspaceId: id, connectionId: connectionID, dbQueue: dbQueue)
         return try await dbQueue.write { db in
-            guard db.totalChangesCount == expectedChanges,
-                  var workspace = try WorkspaceRecord.fetchOne(db, key: id), workspace.accountConnectionId == nil,
-                  try !RecordingSessionRecord.hasActiveRecording(workspaceId: id, in: db),
-                  try !SyncTransactionQueue.hasPending(workspaceId: id, in: db) else { throw LocalWorkspaceImportError.changed }
+            guard try Int64.fetchOne(
+                db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [id]
+            ) == expectedMutationGeneration,
+                var workspace = try WorkspaceRecord.fetchOne(db, key: id), workspace.accountConnectionId == nil,
+                try !RecordingSessionRecord.hasActiveRecording(workspaceId: id, in: db),
+                try !SyncTransactionQueue.hasPending(workspaceId: id, in: db) else { throw LocalWorkspaceImportError.changed }
             try ScreenshotContentProvider.installTransfers(files, workspaceId: id, in: db)
             workspace.name = adoptedName
             workspace.accountConnectionId = connectionID

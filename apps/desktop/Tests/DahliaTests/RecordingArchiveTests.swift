@@ -55,9 +55,13 @@ import GRDB
                 clientID: "test",
                 createdAt: .now
             )
-            let expectedChanges = try await fixture.database.dbQueue.write { db in
+            let expectedMutationGeneration = try await fixture.database.dbQueue.write { db in
                 try connection.insert(db)
-                return db.totalChangesCount
+                return try #require(try Int64.fetchOne(
+                    db,
+                    sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?",
+                    arguments: [fixture.meeting.workspaceId]
+                ))
             }
             let remote = CloudWorkspaceRecord(
                 workspaceId: fixture.meeting.workspaceId,
@@ -73,7 +77,7 @@ import GRDB
                 id: fixture.meeting.workspaceId,
                 connectionID: connection.id,
                 serverWorkspace: remote,
-                expectedChanges: expectedChanges
+                expectedMutationGeneration: expectedMutationGeneration
             )
 
             let archive = try #require(try await fixture.database.dbQueue.read {

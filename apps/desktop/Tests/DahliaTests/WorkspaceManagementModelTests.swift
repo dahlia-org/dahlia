@@ -531,7 +531,7 @@
                     id: workspace.id,
                     connectionID: remote.connectionId,
                     serverWorkspace: remote,
-                    expectedChanges: 0
+                    expectedMutationGeneration: 0
                 )
             }
             #expect(try repository.fetchAllWorkspaces().first?.accountConnectionId == nil)
@@ -556,18 +556,63 @@
             )
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertWorkspace(workspace)
-            let expectedChanges = try await database.dbQueue.read { $0.totalChangesCount }
+            let expectedMutationGeneration = try await database.dbQueue.read {
+                try #require(try Int64.fetchOne(
+                    $0, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspace.id]
+                ))
+            }
+            try await database.dbQueue.write {
+                try $0.execute(sql: "UPDATE workspaces SET lastOpenedAt = lastOpenedAt WHERE id = ?", arguments: [workspace.id])
+            }
 
             let adopted = try await repository.adoptWorkspaceForServerSync(
                 id: workspace.id,
                 connectionID: connection.id,
                 serverWorkspace: remote,
-                expectedChanges: expectedChanges,
+                expectedMutationGeneration: expectedMutationGeneration,
                 screenshotContent: ScreenshotContentProvider()
             )
 
             #expect(adopted?.name == "Team Notes")
             #expect(try repository.fetchAllWorkspaces().first?.name == "Team Notes")
+        }
+
+        @Test
+        func adoptingSameIDRejectsAConcurrentLocalMutation() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            let workspace = makeWorkspace(name: "Local", lastOpenedAt: .now)
+            let remote = CloudWorkspaceRecord(
+                workspaceId: workspace.id,
+                connectionId: connection.id,
+                organizationId: .v7(),
+                name: "Server",
+                createdAt: .now,
+                revision: 1,
+                role: "admin"
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            try repository.insertWorkspace(workspace)
+            let expectedMutationGeneration = try await database.dbQueue.read {
+                try #require(try Int64.fetchOne(
+                    $0, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspace.id]
+                ))
+            }
+            _ = try await repository.updateWorkspaceName(id: workspace.id, name: "Changed")
+
+            await #expect(throws: LocalWorkspaceImportError.self) {
+                try await repository.adoptWorkspaceForServerSync(
+                    id: workspace.id,
+                    connectionID: connection.id,
+                    serverWorkspace: remote,
+                    expectedMutationGeneration: expectedMutationGeneration,
+                    screenshotContent: ScreenshotContentProvider()
+                )
+            }
+            #expect(try repository.fetchAllWorkspaces().first?.accountConnectionId == nil)
         }
 
         @Test
@@ -589,13 +634,17 @@
             )
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertWorkspace(workspace)
-            let expectedChanges = try await database.dbQueue.read { $0.totalChangesCount }
+            let expectedMutationGeneration = try await database.dbQueue.read {
+                try #require(try Int64.fetchOne(
+                    $0, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspace.id]
+                ))
+            }
 
             let adopted = try await repository.adoptWorkspaceForServerSync(
                 id: workspace.id,
                 connectionID: connection.id,
                 serverWorkspace: remote,
-                expectedChanges: expectedChanges,
+                expectedMutationGeneration: expectedMutationGeneration,
                 requestedName: "  Second Attempt  "
             )
 

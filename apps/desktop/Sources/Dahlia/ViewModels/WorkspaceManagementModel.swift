@@ -403,12 +403,14 @@ final class WorkspaceManagementModel {
                       .contains(where: { $0.id == organizationId.uuidString.lowercased() && $0.kind == .team }) else {
                     throw LocalWorkspaceImportError.unavailable
                 }
-                let fence = try await repository.dbQueue.read { db in
+                let mutationGeneration = try await repository.dbQueue.read { db in
                     guard try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id) == connection,
                           let source = try WorkspaceRecord.fetchOne(db, key: pending.workspace.id), source.accountConnectionId == nil,
-                          try !RecordingSessionRecord.hasActiveRecording(workspaceId: source.id, in: db),
+                          let mutationGeneration = try Int64.fetchOne(
+                              db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [source.id]
+                          ), try !RecordingSessionRecord.hasActiveRecording(workspaceId: source.id, in: db),
                           try !SyncTransactionQueue.hasPending(workspaceId: source.id, in: db) else { throw LocalWorkspaceImportError.unavailable }
-                    return db.totalChangesCount
+                    return mutationGeneration
                 }
                 _ = try await backup.createGeneration(workspaceIds: [pending.workspace.id])
                 if !currentWorkspaces.contains(where: { $0.workspaceId == pending.workspace.id }) {
@@ -434,7 +436,7 @@ final class WorkspaceManagementModel {
                     id: pending.workspace.id,
                     connectionID: connection.id,
                     serverWorkspace: serverWorkspace,
-                    expectedChanges: fence,
+                    expectedMutationGeneration: mutationGeneration,
                     requestedName: workspaceName
                 ) else {
                     throw LocalWorkspaceImportError.changed

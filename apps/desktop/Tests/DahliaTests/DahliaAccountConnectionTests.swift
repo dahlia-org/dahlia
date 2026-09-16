@@ -82,7 +82,11 @@
                     revision: 1,
                     role: "admin"
                 ),
-                expectedChanges: manager.dbQueue.read { $0.totalChangesCount }
+                expectedMutationGeneration: manager.dbQueue.read {
+                    try #require(try Int64.fetchOne(
+                        $0, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspace.id]
+                    ))
+                }
             )
             _ = try await repository.updateWorkspaceAISettings(staleSettings)
 

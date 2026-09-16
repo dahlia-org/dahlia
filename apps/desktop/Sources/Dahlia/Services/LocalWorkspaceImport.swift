@@ -33,10 +33,14 @@ enum LocalWorkspaceImport {
         screenshots.retainOriginals(workspaceIds: [sourceId], dbQueue: dbQueue)
         defer { screenshots.releaseOriginals(workspaceIds: [sourceId], dbQueue: dbQueue) }
         let files = try await screenshots.prepareAccountTransfer(workspaceId: sourceId, connectionId: connection.id, dbQueue: dbQueue)
-        // ponytail: a database-wide fence may reject unrelated background writes; use per-Workspace generations if contention matters.
         let fence = try await dbQueue.read { db in
             try validate(sourceId: sourceId, destination: destination, in: db)
-            return db.totalChangesCount
+            guard let sourceGeneration = try Int64.fetchOne(
+                db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [sourceId]
+            ), let destinationGeneration = try Int64.fetchOne(
+                db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [destination.workspaceId]
+            ) else { throw LocalWorkspaceImportError.changed }
+            return (source: sourceGeneration, destination: destinationGeneration)
         }
         let generation = try await backup.createGeneration(workspaceIds: [sourceId])
         let snapshot = try await worker.importSnapshot(workspaceId: destination.workspaceId, connectionId: connection.id, origin: origin)
@@ -46,8 +50,13 @@ enum LocalWorkspaceImport {
             throw LocalWorkspaceImportError.unavailable
         }
         return try await dbQueue.write { db in
-            guard db.totalChangesCount == fence,
-                  try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id) == connection else {
+            guard try Int64.fetchOne(
+                db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [sourceId]
+            ) == fence.source,
+                try Int64.fetchOne(
+                    db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [destination.workspaceId]
+                ) == fence.destination,
+                try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id) == connection else {
                 throw LocalWorkspaceImportError.changed
             }
             return try commit(

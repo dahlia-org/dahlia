@@ -188,7 +188,13 @@
                         revision: 1,
                         role: "admin"
                     ),
-                    expectedChanges: queue.read { $0.totalChangesCount },
+                    expectedMutationGeneration: queue.read {
+                        try #require(try Int64.fetchOne(
+                            $0,
+                            sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?",
+                            arguments: [fixture.workspace.id]
+                        ))
+                    },
                     screenshotContent: fixture.provider
                 )
             }
@@ -210,7 +216,13 @@
                     revision: 1,
                     role: "admin"
                 ),
-                expectedChanges: queue.read { $0.totalChangesCount },
+                expectedMutationGeneration: queue.read {
+                    try #require(try Int64.fetchOne(
+                        $0,
+                        sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?",
+                        arguments: [fixture.workspace.id]
+                    ))
+                },
                 screenshotContent: fixture.provider
             )
             try await fixture.provider.trimFiles(dbQueue: queue, budget: 0)

@@ -317,8 +317,8 @@ enum SyncTransactionRecorder {
         guard Set(operations.map { "\($0.entity.rawValue):\($0.entityId.uuidString)" }).count == operations.count else {
             throw DatabaseError(message: "duplicate sync entity in transaction")
         }
-        guard let workspace = try WorkspaceRecord.fetchOne(db, key: workspaceId),
-              let targetConnectionId = workspace.accountConnectionId else { return nil }
+        guard let workspace = try WorkspaceRecord.fetchOne(db, key: workspaceId) else { return nil }
+        guard let targetConnectionId = try mutationTargetConnectionID(for: workspace, in: db) else { return nil }
         let connectionId: UUID
         if let connectionIdOverride {
             guard connectionIdOverride == targetConnectionId,
@@ -475,6 +475,17 @@ enum SyncTransactionRecorder {
             }
         }
         return transactionId
+    }
+
+    private static func mutationTargetConnectionID(for workspace: WorkspaceRecord, in db: Database) throws -> UUID? {
+        guard let connectionID = workspace.accountConnectionId else {
+            try db.execute(
+                sql: "UPDATE workspaces SET syncMutationGeneration = syncMutationGeneration + 1 WHERE id = ?",
+                arguments: [workspace.id]
+            )
+            return nil
+        }
+        return connectionID
     }
 }
 
