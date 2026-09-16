@@ -44,17 +44,29 @@ import GRDB
                 isConfirmed: true,
                 audioSource: "mic"
             )
-            let selectedRecordingNumber = 1
-            let expiredRecordingNumber = 2
+            let selectedSourceRecordingNumber = 2
+            let expiredSourceRecordingNumber = 1
+            let selectedDestinationRecordingNumber = 1
             let selectedInput = TranscriptMetadata.Run.AudioInput(
-                recordingNumber: selectedRecordingNumber,
+                recordingNumber: selectedSourceRecordingNumber,
                 source: "mic",
                 checksum: "SHA-256:" + String(repeating: "1", count: 64)
             )
             let expiredInput = TranscriptMetadata.Run.AudioInput(
-                recordingNumber: expiredRecordingNumber,
+                recordingNumber: expiredSourceRecordingNumber,
                 source: "mic",
                 checksum: "SHA-256:" + String(repeating: "2", count: 64)
+            )
+            let selectedArchiveAudio = RecordingArchivedAudio(
+                contentType: "audio/mp4",
+                size: 1,
+                checksum: selectedInput.checksum,
+                contentURL: "/recording",
+                manifest: .init(sampleRate: 16000, frameCount: 1, ranges: [])
+            )
+            let selectedArchiveAudioJSON = try String(
+                decoding: SyncJSON.encoder.encode(["mic": selectedArchiveAudio]),
+                as: UTF8.self
             )
             let previousServerRun = {
                 var run = TranscriptMetadata.Run(
@@ -71,13 +83,14 @@ import GRDB
                     sessionId: fixture.session.id,
                     meetingId: fixture.meeting.id,
                     workspaceId: fixture.meeting.workspaceId,
-                    number: selectedRecordingNumber
+                    number: selectedDestinationRecordingNumber,
+                    audioJSON: selectedArchiveAudioJSON
                 ).insert(db)
                 try RecordingArchiveRecord(
                     sessionId: expiredSession.id,
                     meetingId: fixture.meeting.id,
                     workspaceId: fixture.meeting.workspaceId,
-                    number: expiredRecordingNumber,
+                    number: expiredSourceRecordingNumber,
                     state: "expired"
                 ).insert(db)
                 try previousTranscript.insert(db)
