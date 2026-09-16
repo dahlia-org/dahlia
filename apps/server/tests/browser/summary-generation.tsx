@@ -15,7 +15,7 @@ const bodies: SummaryRequest[] = [];
 const settings: WorkspaceGenerationSettings = {
   ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing, location: "remote", remote: {
     ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing.remote,
-    summaryModel: "gpt-5-6-luna",
+    summaryModel: "system.ai.gpt-5-6-luna",
     reasoningEffort: "high",
   } },
 };
@@ -27,7 +27,7 @@ window.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"], completeRecordings: true },
   });
   if (path === "/api/v1/workspaces/workspace") return Response.json({ workspaceId: "workspace", generationSettings: settings, role: "editor" });
-  if (path === "/api/v1/models") return Response.json(modelList([{ id: "gpt-5-6-luna" }]));
+  if (path === "/api/v1/models") return Response.json(modelList([{ id: "system.ai.gpt-5-6-luna" }]));
   if (path.endsWith("/transcripts/latest")) return Response.json({
     formatVersion: 1, version: transcriptVersion, entityId: "meeting", present: true, count: 1, byteCount: 10,
     sha256: "test", entity: "transcript", syncRevision: transcriptVersion, transcript: {}, nextCursor: null,
@@ -68,7 +68,7 @@ async function run() {
   assert(first, "First request was not captured");
   assert("input" in first && first.input.type === "transcript" && first.input.version === "1",
     "Latest transcript was not preferred");
-  assert("preferences" in first && first.preferences.processing.remote.summaryModel === "gpt-5-6-luna",
+  assert("preferences" in first && first.preferences.processing.remote.summaryModel === "system.ai.gpt-5-6-luna",
     "Compatible transcript model was not preserved");
   transcriptVersion = 2; reject = false;
   await start(2);

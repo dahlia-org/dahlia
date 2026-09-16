@@ -50,7 +50,7 @@ Workers の方法一覧は空にし生成 capability は無効にする。実際
 
 Server transcript には Desktop の session ID / 累積 offset がないため、現時点の方式は `transcript_ref: null` のみ生成する。録音の中断時間から参照時刻を推測しない。生成タグは Desktop の canonical summary 本文取得時に既存ローカルタグへ追加し、同期イベントや summary の再送は発生させない。
 
-モデル候補は Desktop/Web とも `/api/v1/models` の同じ一覧を使う。要約のSP呼び出しもGatewayと同じ短名→schema付き名の解決を使い、既存設定に保存された当該schema付き名は短名へ正規化してから解決する。失敗はworkerで内容・認証情報を含めず記録し、`summary_input_changed` は画面で入力更新による失敗として示す。
+モデル候補は Desktop/Web とも `/api/v1/models` の同じ一覧を使う。Databricks の要約SP呼び出しは `system.ai.*` の完全修飾モデル名を設定と Gateway から受け取り、そのまま上流へ渡す。失敗はworkerで内容・認証情報を含めず記録し、`summary_input_changed` は画面で入力更新による失敗として示す。
 
 機能検出は `GET /api/v1/capabilities` の `meetingSummaryGeneration: { version, sources }` に統合する。生成capabilityはversion 2とし、登録済み方式から sources を導出する。未対応はキーを省略し、capabilities 自体が空の場合も未対応とする。PATCHは指定した葉だけ更新し、remoteのsummaryModel・transcriptionModel・reasoningEffortはnullで自動へ戻す。開始済みジョブの設定スナップショットは変更しない。`outputLanguage` はアカウント設定直下に維持する。
 
@@ -76,7 +76,7 @@ HTTP の会議詳細（Vault 配下と ID 解決用の両経路）は会議情�
 
 Node / Databricks に `audio` 方法を追加する。Private Web の「要約のソース」で文字起こしと画像／音声と画像を選び、
 `summary.methodSettings.audio` にモデル・推論強度を保存し、詳細度は方式共通の `summary.detail` を使う。既存設定の既定は `transcript` を維持し、
-音声モデル・推論強度の初期値は `gemini-3-8-flash` / `medium`、共通詳細度の初期値は `detailed` とする。設定は葉ごとの PATCH で更新し、
+音声モデル・推論強度の初期値は Databricks では `system.ai.gemini-3-8-flash` / `medium`、Cloudflare では `gemini-3-8-flash` / `medium`、共通詳細度の初期値は `detailed` とする。設定は葉ごとの PATCH で更新し、
 モデル候補は既存の一覧に存在し、カタログで audio 入力を持つ Gemini に限定する。worker でも同条件を再検証する。
 
 確定済み録音の全セッションから、存在する mic / system の両音声を取得する。保存済みの audio/mp4 を再エンコードせず、

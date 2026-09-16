@@ -36,7 +36,7 @@ window.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     : {});
   if (path === "/api/v1/models") {
     modelReads++;
-    return Response.json(modelList([{ id: "gpt-5.4" }, { id: "gemini-3-8-flash" }]));
+    return Response.json(modelList([{ id: "gpt-5.4" }, { id: "system.ai.gemini-3-8-flash" }]));
   }
   if (path === "/api/v1/transactions") {
     const body: { revision: number; settings: WorkspaceGenerationSettings } = await request.json();
@@ -96,8 +96,8 @@ async function run() {
   await until(() => document.querySelectorAll('[role="combobox"]').length >= 5 && modelReads === 1);
   document.querySelector("details")!.open = true;
   assert(select("Transcription model").value === "catalog.ai.unavailable", "Unavailable explicit choice was silently replaced");
-  await choose("Transcription model", "gemini-3-8-flash");
-  await until(() => settings.processing.remote.transcriptionModel === "gemini-3-8-flash");
+  await choose("Transcription model", "system.ai.gemini-3-8-flash");
+  await until(() => settings.processing.remote.transcriptionModel === "system.ai.gemini-3-8-flash");
   await ready();
   await choose("Summary style", "concise");
   await until(() => settings.summary.style === "concise");

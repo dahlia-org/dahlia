@@ -20,12 +20,11 @@ export class GatewayService {
   ) {
     const provider = config.provider;
     if (provider?.backend === "databricks") {
-      if (!config.databricksWorkspace) throw new Error("Databricks workspace credentials are required");
-      this.backend = new DatabricksBackend(provider, config.databricksWorkspace, transport);
+      this.backend = new DatabricksBackend(provider, config.codexModels ?? [], transport);
     } else if (provider) {
       this.backend = provider.backend === "cloudflare"
-        ? new CloudflareBackend(provider, transport)
-        : new OpenAIBackend(provider, transport);
+        ? new CloudflareBackend(provider, transport, config.codexModels ?? [])
+        : new OpenAIBackend(provider, transport, config.codexModels ?? []);
     }
   }
 

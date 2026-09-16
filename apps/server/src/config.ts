@@ -19,7 +19,8 @@ export type ProviderConfig = {
 } | {
   backend: "databricks";
   baseUrl: string;
-  modelSchema: string;
+  /** @deprecated Model discovery was removed; use AppConfig.codexModels. */
+  modelSchema?: string;
 };
 
 export interface LakebaseDatabaseConfig {
@@ -65,6 +66,7 @@ export interface AppConfig {
   betterAuthSecret?: string;
   oauthRedirectUris: string[];
   maxRequestBytes: number;
+  codexModels?: string[];
   codexAutoReviewModel?: string;
   storageBackend?: StorageBackend;
   storageLocalPath?: string;
@@ -175,9 +177,9 @@ function loadLakebaseDatabase(
 
 function databricksWorkspaceConfig(
   env: Record<string, string | undefined>,
-  requiredForStorage: boolean,
+  requiredForUse: boolean,
 ): DatabricksWorkspaceConfig | undefined {
-  if (!requiredForStorage) return undefined;
+  if (!requiredForUse) return undefined;
   const hostValue = required(env, "DATABRICKS_HOST");
   const host = validateBaseUrl(hostValue.includes("://") ? hostValue : `https://${hostValue}`, "DATABRICKS_HOST");
   if (new URL(host).pathname !== "/") throw new Error("DATABRICKS_HOST must be a workspace origin without a path");
@@ -199,13 +201,8 @@ function providerConfig(
     const host = databricks?.host
       ?? validateBaseUrl(hostValue.includes("://") ? hostValue : `https://${hostValue}`, "DATABRICKS_HOST");
     if (new URL(host).pathname !== "/") throw new Error("DATABRICKS_HOST must be a workspace origin without a path");
-    const modelSchema = required(env, "DATABRICKS_MODEL_SCHEMA");
-    if (!/^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,254}\.[a-zA-Z0-9_][a-zA-Z0-9_-]{0,254}$/.test(modelSchema)) {
-      throw new Error("DATABRICKS_MODEL_SCHEMA must be catalog.schema");
-    }
     return {
       backend,
-      modelSchema,
       baseUrl: `${host}/ai-gateway/mlflow/v1`,
     };
   }
@@ -248,18 +245,25 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     .max(64 * 1024 * 1024)
     .parse(env.DAHLIA_MAX_REQUEST_BYTES ?? String(16 * 1024 * 1024));
   const aiBackend = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai");
+  const codexModels = z.array(z.string().max(UPSTREAM_MODEL_MAX_LENGTH))
+    .parse([...new Set(csv(env.DAHLIA_CODEX_MODELS))]);
   const codexAutoReviewModel = env.CODEX_AUTO_REVIEW_MODEL?.trim();
   const storageBackend = storageBackendSchema.parse(env.DAHLIA_STORAGE_BACKEND?.trim() || "local");
-  const searchEmbeddingModel = env.DAHLIA_EMBEDDING_MODEL?.trim();
+  const searchEmbeddingModel = env.DAHLIA_SEARCH_EMBEDDING_MODEL?.trim();
   const searchEmbedding = searchEmbeddingModel ? {
     model: searchEmbeddingModel,
     dimensions: z.coerce.number().int().min(32).max(1024)
       .refine((value) => (value & (value - 1)) === 0, "must be a power of two")
       .parse(env.DAHLIA_SEARCH_EMBEDDING_DIMENSIONS ?? String(DEFAULT_SEARCH_EMBEDDING_DIMENSIONS)),
   } : undefined;
+  const captioningModel = env.DAHLIA_CAPTIONING_MODEL?.trim()
+    ? z.string().max(UPSTREAM_MODEL_MAX_LENGTH).parse(env.DAHLIA_CAPTIONING_MODEL.trim())
+    : undefined;
   const databricksWorkspace = databricksWorkspaceConfig(
     env,
-    storageBackend === "databricks" || aiBackend === "databricks",
+    storageBackend === "databricks" || (aiBackend === "databricks"
+      && Boolean(searchEmbedding || captioningModel
+        || env.DATABRICKS_CLIENT_ID?.trim() || env.DATABRICKS_CLIENT_SECRET?.trim())),
   );
   const storageDatabricksVolumePath = storageBackend === "databricks"
     ? required(env, "DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH").replace(/\/$/, "")
@@ -296,6 +300,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     provider: providerConfig(env, aiBackend, databricksWorkspace),
     oauthRedirectUris: csv(env.DAHLIA_OAUTH_REDIRECT_URIS),
     maxRequestBytes,
+    codexModels,
     codexAutoReviewModel: codexAutoReviewModel
       ? z.string().max(UPSTREAM_MODEL_MAX_LENGTH).parse(codexAutoReviewModel)
       : undefined,
@@ -305,13 +310,11 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     storageDatabricksVolumePath,
     databricksWorkspace,
     searchEmbedding,
-    captioningModel: env.DAHLIA_CAPTIONING_MODEL?.trim()
-      ? z.string().max(UPSTREAM_MODEL_MAX_LENGTH).parse(env.DAHLIA_CAPTIONING_MODEL.trim())
-      : undefined,
+    captioningModel,
   };
 
   if (config.searchEmbedding && !["databricks", "cloudflare"].includes(config.provider?.backend ?? "")) {
-    throw new Error("DAHLIA_EMBEDDING_MODEL requires DAHLIA_AI_BACKEND=databricks or cloudflare");
+    throw new Error("DAHLIA_SEARCH_EMBEDDING_MODEL requires DAHLIA_AI_BACKEND=databricks or cloudflare");
   }
   if (config.captioningModel && !["databricks", "cloudflare"].includes(config.provider?.backend ?? "")) {
     throw new Error("DAHLIA_CAPTIONING_MODEL requires DAHLIA_AI_BACKEND=databricks or cloudflare");

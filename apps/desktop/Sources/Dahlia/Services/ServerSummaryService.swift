@@ -33,7 +33,11 @@ actor ServerSummaryService {
         let defaultReasoningLevel: String?
         let inputModalities: [String]?
         let summaryMethods: [String]?
-        var supportsAudioSummary: Bool { slug.hasPrefix("gemini-") && inputModalities?.contains("audio") == true }
+        var supportsAudioSummary: Bool {
+            slug.split(separator: ".").last?.hasPrefix("gemini-") == true
+                && inputModalities?.contains("audio") == true
+        }
+
         func supportsSummary(method: String) -> Bool {
             let source = method == "audio" ? "audio" : "transcript"
             return (summaryMethods?.contains(source) ?? true)

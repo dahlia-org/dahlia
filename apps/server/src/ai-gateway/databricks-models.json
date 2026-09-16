@@ -1,7 +1,7 @@
 {
   "models": [
     {
-      "slug": "gpt-6-astra",
+      "slug": "system.ai.gpt-6-astra",
       "supports_experimental_context": true,
       "prefer_websockets": true,
       "support_verbosity": true,
@@ -147,7 +147,7 @@
       "supports_reasoning_summaries": true
     },
     {
-      "slug": "gpt-5-6-sol",
+      "slug": "system.ai.gpt-5-6-sol",
       "prefer_websockets": true,
       "support_verbosity": true,
       "default_verbosity": "low",
@@ -254,7 +254,7 @@
       "supports_reasoning_summaries": true
     },
     {
-      "slug": "gpt-5-6-terra",
+      "slug": "system.ai.gpt-5-6-terra",
       "prefer_websockets": true,
       "support_verbosity": true,
       "default_verbosity": "low",
@@ -356,7 +356,7 @@
       "supports_reasoning_summaries": true
     },
     {
-      "slug": "gpt-5-6-luna",
+      "slug": "system.ai.gpt-5-6-luna",
       "prefer_websockets": true,
       "support_verbosity": true,
       "default_verbosity": "low",
@@ -458,7 +458,7 @@
       "supports_reasoning_summaries": true
     },
     {
-      "slug": "gpt-5-5",
+      "slug": "system.ai.gpt-5-5",
       "prefer_websockets": true,
       "support_verbosity": true,
       "default_verbosity": "low",
@@ -550,7 +550,7 @@
       "supports_reasoning_summaries": true
     },
     {
-      "slug": "glm-5-3",
+      "slug": "system.ai.glm-5-3",
       "prefer_websockets": true,
       "support_verbosity": true,
       "default_verbosity": "low",
@@ -644,7 +644,7 @@
       "supports_reasoning_summaries": true
     },
     {
-      "slug": "glm-5-3-flash",
+      "slug": "system.ai.glm-5-3-flash",
       "prefer_websockets": true,
       "support_verbosity": true,
       "default_verbosity": "low",
@@ -738,7 +738,7 @@
       "supports_reasoning_summaries": true
     },
     {
-      "slug": "kimi-k3",
+      "slug": "system.ai.kimi-k3",
       "prefer_websockets": true,
       "support_verbosity": true,
       "default_verbosity": "low",
@@ -833,7 +833,7 @@
       "supports_reasoning_summaries": true
     },
     {
-      "slug": "deepseek-v4-1-flash",
+      "slug": "system.ai.deepseek-v4-1-flash",
       "prefer_websockets": true,
       "support_verbosity": true,
       "default_verbosity": "low",
@@ -931,7 +931,7 @@
       "supports_reasoning_summaries": true
     },
     {
-      "slug": "deepseek-v4-pro-0813",
+      "slug": "system.ai.deepseek-v4-pro-0813",
       "prefer_websockets": true,
       "support_verbosity": true,
       "default_verbosity": "low",
@@ -1029,7 +1029,7 @@
       "supports_reasoning_summaries": true
     },
     {
-      "slug": "gemini-3-8-flash",
+      "slug": "system.ai.gemini-3-8-flash",
       "prefer_websockets": true,
       "support_verbosity": true,
       "default_verbosity": "low",
@@ -1124,7 +1124,7 @@
       "supports_reasoning_summaries": true
     },
     {
-      "slug": "gemini-3-7-flash",
+      "slug": "system.ai.gemini-3-7-flash",
       "prefer_websockets": true,
       "support_verbosity": true,
       "default_verbosity": "low",

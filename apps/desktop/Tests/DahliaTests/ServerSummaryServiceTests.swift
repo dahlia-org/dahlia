@@ -352,6 +352,7 @@ import DahliaRuntimeSupport
 
         @Test(arguments: [
             ("gemini-3-8-flash", ["text", "image", "audio"], true),
+            ("system.ai.gemini-3-8-flash", ["text", "image", "audio"], true),
             ("gemini-3-7-flash", ["audio"], true),
             ("gemini-text-only", ["text"], false),
             ("other-audio", ["audio"], false),

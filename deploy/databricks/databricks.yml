@@ -17,7 +17,7 @@ experimental:
   skip_name_prefix_for_schema: true
   scripts:
     prebuild: "cd ../../apps/hindsight && uv run --no-project scripts/sync_upstream.py"
-    postdeploy: "bash scripts/postdeploy.sh '${workspace.profile}' '${var.catalog}' '${var.ai_schema}' '${var.database_project_id}' 'mcp-dahlia-server-${bundle.target}' 'hindsight-${bundle.target}'"
+    postdeploy: "bash scripts/postdeploy.sh '${workspace.profile}' '${var.catalog}' '${var.database_project_id}' 'mcp-dahlia-server-${bundle.target}' 'hindsight-${bundle.target}'"
 
 variables:
   database_project_id:
@@ -35,7 +35,7 @@ variables:
     description: PostgreSQL schema containing Hindsight data.
     default: hindsight
   ai_schema:
-    description: Unity Catalog schema containing AI model services.
+    description: Legacy Unity Catalog schema retained for deployed bundle state.
     default: ai
   ops_schema:
     description: Unity Catalog schema containing OTel tables.

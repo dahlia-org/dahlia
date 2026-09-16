@@ -12,7 +12,7 @@ resources:
           privileges:
             - EXECUTE
             - USE_SCHEMA
-      comment: AI model services for Dahlia Server
+      comment: Legacy AI schema retained for deployed bundle state
     app_schema:
       catalog_name: ${var.catalog}
       name: ${var.app_schema}
@@ -54,18 +54,20 @@ resources:
             value: test-only-better-auth-secret-value
           - name: DAHLIA_AI_BACKEND
             value: databricks
-          - name: DATABRICKS_MODEL_SCHEMA
-            value: ${var.catalog}.${var.ai_schema}
+          - name: DAHLIA_CODEX_MODELS
+            value: system.ai.gpt-6-astra,system.ai.gpt-5-6-sol,system.ai.gpt-5-6-terra,system.ai.gpt-5-6-luna,system.ai.gpt-5-5,system.ai.glm-5-3,system.ai.glm-5-3-flash,system.ai.kimi-k3,system.ai.deepseek-v4-1-flash,system.ai.deepseek-v4-pro-0813,system.ai.gemini-3-8-flash,system.ai.gemini-3-7-flash
+          - name: CODEX_AUTO_REVIEW_MODEL
+            value: system.ai.gpt-5-6-luna
           - name: DAHLIA_STORAGE_BACKEND
             value: databricks
           - name: DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH
             value: /Volumes/${resources.volumes.dahlia_storage.catalog_name}/${resources.volumes.dahlia_storage.schema_name}/${resources.volumes.dahlia_storage.name}
           - name: DAHLIA_DATABASE_TYPE
             value: lakebase
-          - name: DAHLIA_EMBEDDING_MODEL
-            value: ${var.catalog}.${var.ai_schema}.qwen3-embedding-0-6b
+          - name: DAHLIA_SEARCH_EMBEDDING_MODEL
+            value: system.ai.qwen3-embedding-0-6b
           - name: DAHLIA_CAPTIONING_MODEL
-            value: ${var.catalog}.${var.ai_schema}.gpt-5-6-luna
+            value: system.ai.gpt-5-6-luna
           - name: DAHLIA_SEARCH_EMBEDDING_DIMENSIONS
             value: ${var.search_embedding_dimensions}
           - name: LAKEBASE_ENDPOINT

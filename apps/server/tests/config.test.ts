@@ -20,6 +20,7 @@ describe("configuration", () => {
       oauthRedirectUris: ["http://127.0.0.1:1455/oauth/callback", "http://localhost:8020"],
       storageBackend: "local",
       storageLocalPath: ".data/storage",
+      codexModels: [],
       codexAutoReviewModel: undefined,
       searchEmbedding: undefined,
     });
@@ -32,44 +33,45 @@ describe("configuration", () => {
     expect(() => loadConfig({ ...accounts, CODEX_AUTO_REVIEW_MODEL: "m".repeat(768) })).toThrow();
   });
 
+  it("configures an ordered backend-independent Codex model list", () => {
+    expect(loadConfig({ ...accounts,
+      DAHLIA_CODEX_MODELS: " system.ai.gpt-5-6-luna, system.ai.gpt-5-6-sol,system.ai.gpt-5-6-luna ",
+    }).codexModels).toEqual(["system.ai.gpt-5-6-luna", "system.ai.gpt-5-6-sol"]);
+    expect(() => loadConfig({ ...accounts, DAHLIA_CODEX_MODELS: "m".repeat(768) })).toThrow();
+  });
+
   it("keeps embeddings off unless a Databricks model is configured", () => {
     expect(loadConfig({ ...accounts }).searchEmbedding).toBeUndefined();
     expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_AI_BACKEND: "databricks",
       DATABRICKS_HOST: "workspace.cloud.databricks.com",
-      DATABRICKS_MODEL_SCHEMA: "dahlia.ai",
       DATABRICKS_CLIENT_ID: "app-client-id",
       DATABRICKS_CLIENT_SECRET: "app-client-secret",
-      DAHLIA_EMBEDDING_MODEL: "system.ai.qwen3-embedding-0-6b",
+      DAHLIA_SEARCH_EMBEDDING_MODEL: "system.ai.qwen3-embedding-0-6b",
     }).searchEmbedding).toEqual({ model: "system.ai.qwen3-embedding-0-6b", dimensions: 1024 });
     expect(() => loadConfig({ ...accounts,
-      DAHLIA_EMBEDDING_MODEL: "model",
-    })).toThrow("requires DAHLIA_AI_BACKEND=databricks");
+      DAHLIA_SEARCH_EMBEDDING_MODEL: "model",
+    })).toThrow("DAHLIA_SEARCH_EMBEDDING_MODEL requires DAHLIA_AI_BACKEND=databricks");
+    for (const modelVariable of ["DAHLIA_SEARCH_EMBEDDING_MODEL", "DAHLIA_CAPTIONING_MODEL"]) {
+      expect(() => loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
+        DAHLIA_AUTH_TYPE: "header",
+        DAHLIA_AI_BACKEND: "databricks",
+        DATABRICKS_HOST: "workspace.cloud.databricks.com",
+        [modelVariable]: "system.ai.model",
+      })).toThrow("DATABRICKS_CLIENT_ID is required");
+    }
     for (const dimensions of [31, 96, 2048]) {
       expect(() => loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
         DAHLIA_AUTH_TYPE: "header",
         DAHLIA_AI_BACKEND: "databricks",
         DATABRICKS_HOST: "workspace.cloud.databricks.com",
-      DATABRICKS_MODEL_SCHEMA: "dahlia.ai",
         DATABRICKS_CLIENT_ID: "app-client-id",
         DATABRICKS_CLIENT_SECRET: "app-client-secret",
-        DAHLIA_EMBEDDING_MODEL: "model",
+        DAHLIA_SEARCH_EMBEDDING_MODEL: "model",
         DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: String(dimensions),
       })).toThrow();
     }
-  });
-
-  it("requires a qualified Databricks model schema", () => {
-    const env = {
-      DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "databricks",
-      DATABRICKS_HOST: "workspace.example", DATABRICKS_CLIENT_ID: "client", DATABRICKS_CLIENT_SECRET: "secret",
-    };
-    for (const schema of [undefined, "", "catalog", "a.b.c", "a/b.ai", "a.ai?x=1"]) {
-      expect(() => loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", ...env, DATABRICKS_MODEL_SCHEMA: schema })).toThrow("DATABRICKS_MODEL_SCHEMA");
-    }
-    expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", ...env, DATABRICKS_MODEL_SCHEMA: " custom_catalog.ai " }).provider)
-      .toMatchObject({ modelSchema: "custom_catalog.ai" });
   });
 
   it("selects PostgreSQL independently from the AI Gateway", () => {
@@ -92,7 +94,6 @@ describe("configuration", () => {
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_AI_BACKEND: "databricks",
       DATABRICKS_HOST: "workspace.cloud.databricks.com",
-      DATABRICKS_MODEL_SCHEMA: "dahlia.ai",
     };
     expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       ...databricks,
@@ -108,7 +109,13 @@ describe("configuration", () => {
         clientId: "app-client-id",
       },
     });
-    expect(() => loadConfig(databricks)).toThrow("DATABRICKS_CLIENT_ID is required");
+    expect(loadConfig(databricks)).toMatchObject({
+      provider: {
+        backend: "databricks",
+        baseUrl: "https://workspace.cloud.databricks.com/ai-gateway/mlflow/v1",
+      },
+      databricksWorkspace: undefined,
+    });
     expect(() => loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       ...databricks,
       DATABRICKS_CLIENT_ID: "app-client-id",
@@ -121,7 +128,6 @@ describe("configuration", () => {
       DAHLIA_STORAGE_BACKEND: "databricks",
       DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH: "/Volumes/dahlia/server/storage",
       DATABRICKS_HOST: "workspace.cloud.databricks.com",
-      DATABRICKS_MODEL_SCHEMA: "dahlia.ai",
       DATABRICKS_CLIENT_ID: "app-client-id",
       DATABRICKS_CLIENT_SECRET: "app-client-secret",
     })).toMatchObject({
@@ -162,7 +168,6 @@ describe("configuration", () => {
       DAHLIA_STORAGE_BACKEND: "databricks",
       DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH: "/Volumes/main/default/volume/nested",
       DATABRICKS_HOST: "workspace.cloud.databricks.com",
-      DATABRICKS_MODEL_SCHEMA: "dahlia.ai",
       DATABRICKS_CLIENT_ID: "app-client-id",
       DATABRICKS_CLIENT_SECRET: "app-client-secret",
     })).toThrow("must identify a Unity Catalog Volume");

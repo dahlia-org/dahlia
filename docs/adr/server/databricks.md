@@ -15,17 +15,17 @@ managed Volume resource key は `dahlia_storage`、既定名は `storage`。Unit
 | 操作 | Credential / 意図 |
 | --- | --- |
 | Responses | 当該 request の `X-Forwarded-Access-Token` を upstream Bearer に変換。利用者の認可と監査を維持 |
-| backend model discovery | runtime の `DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET` による短期 App service principal token |
+| configured model list | `DAHLIA_CODEX_MODELS`。upstream request なし |
 | Volume access | App service principal の既存 storage 権限。利用者の forwarded token を使わない |
 
 `DAHLIA_AI_BACKEND=databricks` は `DATABRICKS_HOST` の `/ai-gateway/mlflow/v1/responses` を使う。forwarded token がなければ Responses を upstream 呼出前に拒否し、App token へ fallback しない。token は request 外に保持せず、元 header 名のまま転送、保存、log、client 返却をしない。
 
-モデル発見は必須の `DATABRICKS_MODEL_SCHEMA` 配下を全ページ取得し、Volume と共通の `DatabricksTokenProvider` で token の期限前更新と同時要求を集約する。Databricks AI backend は storage 選択にかかわらず App credential を必要とする。credential と upstream body は保存・log しない。
+モデル一覧は `DAHLIA_CODEX_MODELS` から読み、`system.ai.*` の完全修飾名をそのまま公開・転送する。App service principal は background summary、embedding、image analysis、Volume access に使用し、credential と upstream body は保存・log しない。
 
 ## 経緯と制約
 
-初期は AI 呼出を App 主体にし、その後 Responses を OBO に変更した。モデル発見まで OBO にすると scope / consent 更新後も403となったため、発見だけを App 主体へ分離した。モデル一覧と Responses の監査主体は一致しない。
+初期は AI 呼出を App 主体にし、その後 Responses を OBO に変更した。モデル一覧は upstream discovery を行わないため、OBO token や App token の可用性に依存しない。Responses の監査主体は引き続き利用者である。
 
 発見用の `catalog.catalogs:read` / `catalog.schemas:read` user scope は廃止した。DAB の OBO scope と Desktop の `all-apis` は [共通 OAuth](../shared/oauth.md#scope) の別境界。provider secret を bundle や利用者へ配布せず、App runtime から取得する。
 
-2026-09-05 に固定の `system.ai` と DB の Model Alias 管理を廃止し、backend のモデル一覧へ移した。公開名・予約モデルと DAB の暫定登録処理は [Backend モデル契約](gateway.md#backend-モデル契約) に従う。
+2026-09-05 に DB の Model Alias 管理を廃止し、2026-09-16 に backend discovery と DAB の暫定登録処理を廃止した。公開名・予約モデルは [Backend モデル契約](gateway.md#backend-モデル契約) に従う。

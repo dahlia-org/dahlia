@@ -86,7 +86,7 @@ describe("deployment routing", () => {
     expect(worker).not.toContain("isApplicationPath");
     expect(worker).toContain("DAHLIA_AI_BACKEND");
     expect(worker).toContain("DATABRICKS_HOST");
-    expect(worker).toContain("DATABRICKS_MODEL_SCHEMA: env.DATABRICKS_MODEL_SCHEMA");
+    expect(worker).toContain("DAHLIA_CODEX_MODELS: env.DAHLIA_CODEX_MODELS");
     expect(worker).toContain("OPENAI_API_KEY");
     expect(worker).toContain("OPENAI_BASE_URL");
     expect(cloudflareVite).toContain("cloudflare(");
@@ -258,7 +258,8 @@ describe("deployment routing", () => {
     expect(bundle).not.toContain("app_name:");
     expect(bundle).toContain("database_project_id: dahlia-db-dev");
     expect(bundle).not.toContain("codex_auto_review_model");
-    expect(resource).not.toContain("CODEX_AUTO_REVIEW_MODEL");
+    expect(resource).toContain("name: CODEX_AUTO_REVIEW_MODEL");
+    expect(resource).toContain("value: system.ai.gpt-5-6-luna");
     expect(bundle).toContain("database_project_id: dahlia-db");
     expect(bundle).toContain("catalog:");
     expect(bundle).toContain("default: dahlia");
@@ -266,7 +267,7 @@ describe("deployment routing", () => {
     expect(bundle).toMatch(/ai_schema:[\s\S]*?default: ai/);
     expect(resource).toContain("name: ${var.app_schema}");
     expect(resource).not.toContain("${var.schema}");
-    expect(bundle).toContain("'${var.catalog}' '${var.ai_schema}' '${var.database_project_id}' 'mcp-dahlia-server-${bundle.target}' 'hindsight-${bundle.target}'");
+    expect(bundle).toContain("'${var.catalog}' '${var.database_project_id}' 'mcp-dahlia-server-${bundle.target}' 'hindsight-${bundle.target}'");
     expect(bundle).toContain("volume_name:");
     expect(bundle).toContain("default: storage");
     expect(bundle).not.toContain("legacy_artifact_catalog:");
@@ -276,8 +277,9 @@ describe("deployment routing", () => {
       schema_name: \${resources.schemas.app_schema.name}
       name: \${var.volume_name}`);
     expect(bundle).toContain("scripts/postdeploy.sh");
-    expect(resource).toContain("name: DATABRICKS_MODEL_SCHEMA");
-    expect(resource).toContain("value: ${var.catalog}.${var.ai_schema}");
+    expect(resource).toContain("name: DAHLIA_CODEX_MODELS");
+    expect(resource).toContain("system.ai.gpt-5-6-luna");
+    expect(resource).not.toContain("DATABRICKS_MODEL_SCHEMA");
     expect(resource).toContain("name: ${var.ai_schema}");
     expect(resource).toMatch(/ai_schema:[\s\S]*?principal: account users\s+privileges:\s+- EXECUTE/);
     expect(resource).not.toContain("service_principal_client_id");
@@ -326,8 +328,8 @@ describe("deployment routing", () => {
     expect(hindsight).toContain("name: HINDSIGHT_API_EMBEDDINGS_PROVIDER\n            value: databricks");
     expect(hindsight).toContain("name: LAKEBASE_ENDPOINT\n            value_from: postgres");
     expect(hindsight).not.toContain("HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER");
-    expect(hindsight).toContain("${var.catalog}.${var.ai_schema}.gpt-5-6-luna");
-    expect(hindsight).toContain("${var.catalog}.${var.ai_schema}.qwen3-embedding-0-6b");
+    expect(hindsight).toContain("system.ai.gpt-5-6-luna");
+    expect(hindsight).toContain("system.ai.qwen3-embedding-0-6b");
     expect(hindsight).toContain("name: HINDSIGHT_API_EMBEDDINGS_OPENAI_DIMENSIONS\n            value: ${var.search_embedding_dimensions}");
     expect(hindsight).not.toMatch(/API_KEY|secret:|value_from: openai-api-key|user_api_scopes/);
     expect(bundle).not.toContain("hindsight_openai_secret");

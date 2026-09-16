@@ -12,33 +12,29 @@ const config: AppConfig = {
   authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite",
   baseUrl: "https://dahlia.example", oauthRedirectUris: [], maxRequestBytes: 1024,
   provider: { backend: "openai", baseUrl: "https://upstream.example/v1", apiKey: "secret" },
+  codexModels: ["gpt-5.6-luna"],
 };
 const databricksProvider = {
-  backend: "databricks" as const, modelSchema: "dahlia.ai", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1",
+  backend: "databricks" as const, baseUrl: "https://workspace.example/ai-gateway/mlflow/v1",
 };
-const workspace = {
-  host: "https://workspace.example", clientId: "app-client-id", clientSecret: "app-client-secret",
-  tokenUrl: "https://workspace.example/oidc/v1/token",
+const databricksConfig: AppConfig = {
+  ...config,
+  provider: databricksProvider,
+  codexModels: ["system.ai.gpt-5-6-luna", "system.ai.custom"],
 };
-const databricksConfig: AppConfig = { ...config, provider: databricksProvider, databricksWorkspace: workspace };
 const identity = { userId: "verified-user" };
 const request = (body: unknown, headers?: HeadersInit) => new Request("https://dahlia.example/api/v1/responses", {
   method: "POST", headers, body: JSON.stringify(body),
 });
-const modelTransport = (models: GatewayFetch): GatewayFetch => async (url, init) =>
-  String(url).endsWith("/oidc/v1/token")
-    ? Response.json({ access_token: "app-token", expires_in: 3600 }) : models(url, init);
-
 const configs: AppConfig[] = [config, {
   ...config, provider: { backend: "cloudflare", baseUrl: "https://cf.example/v1", apiKey: "secret" },
+  codexModels: ["gpt-5.6-luna", "gpt-4.1", "gemini-3-flash"],
 }, databricksConfig];
 
 describe("AI Gateway", () => {
   it.each(configs)("keeps auto review override independent of backend ($provider.backend)", async (backendConfig) => {
-    const sent = vi.fn<GatewayFetch>(async (url) => String(url).includes("model-services")
-      ? Response.json({ model_services: [{ name: "model-services/dahlia.ai.codex-auto-review", supported_api_types: ["mlflow/v1/responses"] }] })
-      : new Response("{}"));
-    const service = new GatewayService({ ...backendConfig, codexAutoReviewModel: "other.schema.reviewer" }, modelTransport(sent));
+    const sent = vi.fn<GatewayFetch>(async () => new Response("{}"));
+    const service = new GatewayService({ ...backendConfig, codexAutoReviewModel: "other.schema.reviewer" }, sent);
     const models = await service.models();
     expect(models.data.filter((m) => m.id === "codex-auto-review")).toHaveLength(1);
     expect(models.models.filter((m) => m.slug === "codex-auto-review")).toHaveLength(1);
@@ -49,91 +45,37 @@ describe("AI Gateway", () => {
     expect(JSON.parse(String(sent.mock.calls.at(-1)![1]?.body))).toMatchObject({ model: "other.schema.reviewer" });
 
     for (const value of [undefined, " "]) {
-      const fallback = new GatewayService({ ...backendConfig, codexAutoReviewModel: value }, modelTransport(sent));
+      const fallback = new GatewayService({ ...backendConfig, codexAutoReviewModel: value }, sent);
       const list = await fallback.models();
-      const isDatabricks = backendConfig.provider?.backend === "databricks";
-      expect(list.data.some((m) => m.id === "codex-auto-review")).toBe(isDatabricks);
-      expect(list.models.find((m) => m.slug === "codex-auto-review")?.visibility).toBe(isDatabricks ? "list" : undefined);
+      expect(list.data.some((m) => m.id === "codex-auto-review")).toBe(false);
+      expect(list.models.find((m) => m.slug === "codex-auto-review")?.visibility).toBeUndefined();
       await fallback.responses(request({ model: "codex-auto-review", input: [] }, {
         "x-forwarded-access-token": "user-token",
       }), identity);
-      expect(JSON.parse(String(sent.mock.calls.at(-1)![1]?.body)))
-        .toMatchObject({ model: isDatabricks ? "dahlia.ai.codex-auto-review" : "codex-auto-review" });
+      expect(JSON.parse(String(sent.mock.calls.at(-1)![1]?.body))).toMatchObject({ model: "codex-auto-review" });
     }
   });
 
-  it.each(configs.slice(0, 2))("uses the provider catalog without reading the database ($provider.backend)", async (backendConfig) => {
+  it.each(configs)("uses the configured model list without provider discovery ($provider.backend)", async (backendConfig) => {
     const transport = vi.fn<GatewayFetch>();
     const models = await new GatewayService(backendConfig, transport).models();
-    expect(models.data.map((m) => m.id)).toEqual(backendConfig.provider?.backend === "cloudflare" ? ["gpt-5.6-luna", "gpt-4.1", "gemini-3-flash"] : ["gpt-5.6-luna"]);
-    expect(models.models.find((m) => m.slug === "gpt-5.6-luna")).toMatchObject({ visibility: "list", input_modalities: ["text", "image"] });
+    expect(models.data.map((m) => m.id)).toEqual(backendConfig.codexModels);
     expect(transport).not.toHaveBeenCalled();
   });
 
-  it("paginates the configured schema with the App credential and Codex metadata", async () => {
-    const transport = vi.fn<GatewayFetch>(async (url, init) => {
-      const endpoint = new URL(String(url));
-      expect(endpoint.searchParams.get("parent")).toBe("schemas/dahlia.ai");
-      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer app-token");
-      expect(init?.cache).toBe("no-store");
-      return Response.json(endpoint.searchParams.has("page_token")
-        ? { model_services: [{ name: "model-services/dahlia.ai.custom", supported_api_types: ["mlflow/v1/responses"] }] }
-        : { model_services: [{ name: "model-services/dahlia.ai.gpt-5-6-luna", supported_api_types: ["mlflow/v1/responses"] }], next_page_token: "page-2" });
-    });
-    const list = await new GatewayService(databricksConfig, modelTransport(transport)).models(
+  it("publishes fully qualified Databricks slugs with Codex metadata", async () => {
+    const transport = vi.fn<GatewayFetch>();
+    const list = await new GatewayService(databricksConfig, transport).models(
       new Request(`https://dahlia.example/api/v1/models?client_version=${LATEST_CODEX_CLIENT_VERSION}`, {
         headers: { "x-forwarded-access-token": "must-not-use" },
       }),
     );
-    expect(list.data.map((m) => m.id)).toEqual(["gpt-5-6-luna", "custom"]);
-    expect(list.data.map((m) => m.display_name)).toEqual(["GPT 5.6 Luna", "custom"]);
-    expect(list.models.find((m) => m.slug === "gpt-5-6-luna")).toMatchObject({ default_reasoning_level: "medium", visibility: "list", display_name: "GPT 5.6 Luna" });
-    expect(list.models.find((m) => m.slug === "gpt-5-6-luna")).toHaveProperty("use_responses_lite", true);
-    expect(list.models.find((m) => m.slug === "custom")).toBeUndefined();
-    expect(transport).toHaveBeenCalledTimes(2);
-  });
-
-  it("filters embedding models and continues after a fully excluded page", async () => {
-    const transport = vi.fn<GatewayFetch>(async (url) => Response.json(new URL(String(url)).searchParams.has("page_token")
-      ? { model_services: [{ name: "model-services/dahlia.ai.codex-auto-review", supported_api_types: ["mlflow/v1/responses"] }] }
-      : {
-        model_services: [
-          { name: "model-services/dahlia.ai.qwen3-embedding-0-6b", supported_api_types: ["mlflow/v1/embeddings", "openai/v1/embeddings"] },
-          { name: "model-services/dahlia.ai.embedding" },
-        ],
-        next_page_token: "next",
-      }));
-    const list = await new GatewayService(databricksConfig, modelTransport(transport)).models();
-    expect(list.data.map((model) => model.id)).toEqual(["codex-auto-review"]);
-    expect(list.models.filter((model) => model.visibility === "list").map((model) => model.slug)).toEqual(["codex-auto-review"]);
-    expect(transport).toHaveBeenCalledTimes(2);
-  });
-
-  it("filters embedding names without extra API calls when list capabilities are absent", async () => {
-    const ids = ["gpt-5-6-luna", "custom", "codex-auto-review", "embedding", "qwen3-embedding-0-6b", "text_embeddings", "embeddingish"];
-    const transport = vi.fn<GatewayFetch>(async () => Response.json({ model_services:
-      ids.map((id) => ({ name: `model-services/dahlia.ai.${id}` })),
-    }));
-    const list = await new GatewayService(databricksConfig, modelTransport(transport)).models();
-    const expected = ["gpt-5-6-luna", "custom", "codex-auto-review"];
-    expect(list.data.map((model) => model.id)).toEqual(expected);
-    expect(list.models.filter((model) => model.visibility === "list").map((model) => model.slug).sort()).toEqual(["codex-auto-review", "gpt-5-6-luna"]);
-    expect(transport).toHaveBeenCalledTimes(1);
-  });
-
-  it.each([null, [], "mlflow/v1/responses", ["mlflow/v1/embeddings"]])("ignores API capabilities: %j", async (supported_api_types) => {
-    const list = await new GatewayService(databricksConfig, modelTransport(async () => Response.json({
-      model_services: ["model", "embedding", "qwen3-embedding-0-6b"].map((id) => ({
-        name: `model-services/dahlia.ai.${id}`, supported_api_types,
-      })),
-    }))).models();
-    expect(list.data.map((model) => model.id)).toEqual(["model"]);
-    expect(list.models.filter((model) => model.visibility === "list")).toEqual([]);
-  });
-
-  it("accepts an empty protobuf model list", async () => {
-    const models = await new GatewayService(databricksConfig, modelTransport(async () => Response.json({}))).models();
-    expect(models.data).toEqual([]);
+    expect(list.data.map((m) => m.id)).toEqual(["system.ai.gpt-5-6-luna", "system.ai.custom"]);
+    expect(list.data.map((m) => m.display_name)).toEqual(["GPT 5.6 Luna", "system.ai.custom"]);
+    expect(list.models.find((m) => m.slug === "system.ai.gpt-5-6-luna"))
+      .toMatchObject({ default_reasoning_level: "medium", visibility: "list", display_name: "GPT 5.6 Luna" });
+    expect(list.models.find((m) => m.slug === "system.ai.custom")).toBeUndefined();
+    expect(transport).not.toHaveBeenCalled();
   });
 
   it("maps the Cloudflare mock ID while preserving the rest of the request", async () => {
@@ -143,35 +85,10 @@ describe("AI Gateway", () => {
     expect(new Headers(transport.mock.calls[0]![1]?.headers).get("cf-aig-collect-log-payload")).toBe("false");
   });
 
-  it.each([
-    { model_services: [{ name: "model-services/other.ai.model" }] },
-    { model_services: [{ name: "model-services/dahlia.ai.a.b" }] },
-    { model_services: [null] },
-    { model_services: [], next_page_token: 123 },
-    { model_services: [], next_page_token: "repeated" },
-    { model_services: "invalid" },
-  ])("rejects malformed model discovery: %j", async (body) => {
-    const logs = vi.spyOn(console, "error").mockImplementation(() => {});
-    await expect(new GatewayService(databricksConfig, modelTransport(async () => Response.json(body))).models())
-      .rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
-    logs.mockRestore();
-  });
-
-  it("keeps upstream discovery errors private", async () => {
-    const logs = vi.spyOn(console, "error").mockImplementation(() => {});
-    const app = createApp({ config: databricksConfig, authStore: testStore(), fetch: modelTransport(async () => new Response("private body", { status: 403 })) });
-    const response = await app.request("/api/v1/models", { headers: { "X-Forwarded-Email": "user@example.com" } });
-    expect(response.status).toBe(502);
-    expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(await response.text()).not.toContain("private body");
-    expect(JSON.stringify(logs.mock.calls)).not.toContain("private body");
-    logs.mockRestore();
-  });
-
   it("does not mutate the body; resolves model, OBO and trusted user tags inside Databricks", async () => {
     const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
-    const backend = new DatabricksBackend(databricksProvider, workspace, transport);
-    const body = Object.freeze({ model: "gpt-5-6-luna", input: [], max_output_tokens: 256, stream: true, tools: [{ type: "function", name: "note" }] });
+    const backend = new DatabricksBackend(databricksProvider, databricksConfig.codexModels!, transport);
+    const body = Object.freeze({ model: "system.ai.gpt-5-6-luna", input: [], max_output_tokens: 256, stream: true, tools: [{ type: "function", name: "note" }] });
     const controller = new AbortController();
     await backend.responses(body, {
       identity, signal: controller.signal,
@@ -179,8 +96,8 @@ describe("AI Gateway", () => {
     });
     const [url, init] = transport.mock.calls[0]!;
     expect(String(url)).toBe(`${databricksProvider.baseUrl}/responses`);
-    expect(JSON.parse(String(init?.body))).toEqual({ ...body, model: "dahlia.ai.gpt-5-6-luna" });
-    expect(body.model).toBe("gpt-5-6-luna");
+    expect(JSON.parse(String(init?.body))).toEqual(body);
+    expect(body.model).toBe("system.ai.gpt-5-6-luna");
     const headers = new Headers(init?.headers);
     expect(headers.get("authorization")).toBe("Bearer obo");
     expect(headers.get("Databricks-Ai-Gateway-Request-Tags")).toBe('{"user_id":"verified-user"}');
@@ -191,25 +108,39 @@ describe("AI Gateway", () => {
     expect(init?.signal?.aborted).toBe(true);
   });
 
+  it("keeps the legacy Databricks constructor usable without schema discovery", async () => {
+    const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
+    const backend = new DatabricksBackend({ ...databricksProvider, modelSchema: "legacy.ai" }, {
+      host: "https://workspace.example",
+      clientId: "legacy-client",
+      clientSecret: "legacy-secret",
+      tokenUrl: "https://workspace.example/oidc/v1/token",
+    }, transport);
+    expect((await backend.listModels({ signal: new AbortController().signal })).data).toEqual([]);
+    await backend.responses({ model: "system.ai.gpt-5-6-luna", input: [] }, {
+      identity,
+      signal: new AbortController().signal,
+      headers: new Headers({ "x-forwarded-access-token": "obo" }),
+    });
+    expect(transport).toHaveBeenCalledOnce();
+  });
+
   it("uses API identity instead of body or client tag fields", async () => {
     const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
     const app = createApp({ config: databricksConfig, authStore: testStore(), fetch: transport });
     const response = await app.request("/api/v1/responses", {
       method: "POST", headers: { "X-Forwarded-Email": "real@example.com", "x-forwarded-access-token": "obo" },
-      body: JSON.stringify({ model: "gpt-5-6-luna", input: [], identity: { userId: "forged" }, upstreamModel: "other.ai.model" }),
+      body: JSON.stringify({ model: "system.ai.gpt-5-6-luna", input: [], identity: { userId: "forged" }, upstreamModel: "other.ai.model" }),
     });
     expect(response.status).toBe(200);
     expect(new Headers(transport.mock.calls[0]![1]?.headers).get("Databricks-Ai-Gateway-Request-Tags")).toBe(JSON.stringify({ user_id: testUserID("real@example.com") }));
-    expect(JSON.parse(String(transport.mock.calls[0]![1]?.body))).toMatchObject({ model: "dahlia.ai.gpt-5-6-luna" });
+    expect(JSON.parse(String(transport.mock.calls[0]![1]?.body))).toMatchObject({ model: "system.ai.gpt-5-6-luna" });
   });
 
-  it("rejects full model paths and missing OBO before sending", async () => {
+  it("requires OBO before sending a fully qualified model", async () => {
     const transport = vi.fn<GatewayFetch>();
     const service = new GatewayService(databricksConfig, transport);
-    for (const model of ["other.ai.model", "dahlia.ai.model", "../model"]) {
-      await expect(service.responses(request({ model, input: [] }), identity)).rejects.toMatchObject({ code: "invalid_model" });
-    }
-    await expect(service.responses(request({ model: "model", input: [] }), identity)).rejects.toMatchObject({ status: 401 });
+    await expect(service.responses(request({ model: "system.ai.gpt-5-6-luna", input: [] }), identity)).rejects.toMatchObject({ status: 401 });
     expect(transport).not.toHaveBeenCalled();
   });
 
@@ -240,9 +171,7 @@ describe("AI Gateway", () => {
       { model: "model", prompt: { id: "pmpt_example" } },
     ]) {
       await service.responses(request(body, { "x-forwarded-access-token": "obo" }), identity);
-      expect(JSON.parse(String(transport.mock.calls.at(-1)![1]?.body))).toEqual({
-        ...body, model: backendConfig.provider?.backend === "databricks" ? "dahlia.ai.model" : "model",
-      });
+      expect(JSON.parse(String(transport.mock.calls.at(-1)![1]?.body))).toEqual(body);
     }
   });
 

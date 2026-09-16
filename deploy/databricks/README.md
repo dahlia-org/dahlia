@@ -10,7 +10,7 @@ Databricks Apps proxy
         │ identity headers + X-Forwarded-Access-Token
         ▼
 Dahlia Server App ─┬─ forwarded user token ── Databricks AI Gateway Responses
-                  ├─ app service principal ── Model discovery and embeddings
+                  ├─ app service principal ── background AI jobs
                   ├─ app service principal ── Lakebase PostgreSQL
                   └─ app service principal ── managed Volume / Files API
 
@@ -22,7 +22,7 @@ Hindsight App ─────┬─ app service principal ── same Lakebase d
 
 - A Databricks workspace with Databricks Apps, Lakebase Autoscaling, and access to the Lakebase Search preview.
 - Permission to create Apps and Lakebase projects and query the configured Responses and embedding models.
-- Databricks CLI 1.4.0 or newer with `ai-gateway list-model-services`, `get-model-service`, and `create-model-service` support (verified with 1.12.1), authenticated with a CLI profile or environment variables.
+- Databricks CLI 1.4.0 or newer, authenticated with a CLI profile or environment variables.
 - Bash and jq for postdeploy.
 - Node.js 22.13 or newer, Corepack, and pnpm for local validation.
 - Python 3.11 or newer and uv for preparing the pinned Hindsight source before upload.
@@ -31,11 +31,11 @@ Hindsight App ─────┬─ app service principal ── same Lakebase d
 
 The first authenticated user becomes the initial administrator. Additional administrators must authenticate once before they can be promoted under `/admin/members`.
 
-Dahlia Desktop requests `all-apis` when authorizing against a deployed Databricks App. Separately, the App resource keeps `user_api_scopes` set to `ai-gateway` and `files`; these scopes govern only the Apps proxy's OBO token and are not the Desktop API capability scope. Dahlia uses `X-Forwarded-Access-Token` as Bearer authentication only for the workspace OpenAI-compatible Responses API at `DATABRICKS_HOST/ai-gateway/mlflow/v1/responses`. Configured-schema model discovery and background embedding requests use short-lived App service principal tokens obtained from the runtime-injected `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; no provider secret or forwarded user token is stored. Dahlia also uses the runtime-provided `DATABRICKS_APP_URL` as its canonical public origin, so the bundle does not need to reference its own App URL. `/mcp` needs no additional user API scope: the Apps proxy authenticates the caller and supplies verified identity headers, while file and recording bytes use the App service principal's existing Volume permission.
+Dahlia Desktop requests `all-apis` when authorizing against a deployed Databricks App. Separately, the App resource keeps `user_api_scopes` set to `ai-gateway` and `files`; these scopes govern only the Apps proxy's OBO token and are not the Desktop API capability scope. Dahlia uses `X-Forwarded-Access-Token` as Bearer authentication only for the workspace OpenAI-compatible Responses API at `DATABRICKS_HOST/ai-gateway/mlflow/v1/responses`. Background AI requests use short-lived App service principal tokens obtained from the runtime-injected `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; no provider secret or forwarded user token is stored. The configured Codex model list performs no workspace discovery request. Dahlia also uses the runtime-provided `DATABRICKS_APP_URL` as its canonical public origin, so the bundle does not need to reference its own App URL. `/mcp` needs no additional user API scope: the Apps proxy authenticates the caller and supplies verified identity headers, while file and recording bytes use the App service principal's existing Volume permission.
 
 The bundle temporarily sets `DAHLIA_AUTH_SECRET` directly to the fixed value `test-only-better-auth-secret-value`. It does not define a Secret resource, retrieve a Unity Catalog Secret, or grant secret permissions. This is a shared test value; replace it with a unique signing secret before production use. Header authentication uses `DAHLIA_AUTH_HEADER` (default `X-Forwarded-Email`) as the email identity and stores its normalized value in `account.account_id`. New users join their email-domain Organization; the first is owner and later users are members. Departed or removed users are not automatically added again. `DAHLIA_SIGNOUT_URL=/.auth/logout` sends the browser through the Databricks Apps proxy logout endpoint after Dahlia clears its local session.
 
-The App name is `mcp-dahlia-server-{target}`, for example `mcp-dahlia-server-dev` or `mcp-dahlia-server-prod`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. By default, both targets use the managed Volume `dahlia.app.storage`. Choose the deployment environment by overriding `catalog`; override `app_schema` only when a catalog needs more than one Dahlia Server installation. Explicit Vault sharing is available in every target; Vault Admins can grant Admin, Editor, or Viewer access to a user, Organization, or Team. Organization membership alone does not grant Vault access. The postdeploy script registers `codex-auto-review` backed by `system.ai.gpt-5-6-luna`; manage its destination in Databricks. The bundle sets `DAHLIA_EMBEDDING_MODEL` to `${var.catalog}.${var.ai_schema}.qwen3-embedding-0-6b` at 1024 dimensions and `DAHLIA_CAPTIONING_MODEL` to `${var.catalog}.${var.ai_schema}.gpt-5-6-luna`. Postdeploy registers `qwen3-embedding-0-6b` backed by `qwen3-embedding-0-6b` only when absent and reuses the existing `gpt-5-6-luna` registration for captions. Existing model registrations are never overwritten. A legacy `embedding` registration is retained; postdeploy creates `qwen3-embedding-0-6b` separately when absent. To disable a worker, remove its model environment value from the App resource.
+The App name is `mcp-dahlia-server-{target}`, for example `mcp-dahlia-server-dev` or `mcp-dahlia-server-prod`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. By default, both targets use the managed Volume `dahlia.app.storage`. Choose the deployment environment by overriding `catalog`; override `app_schema` only when a catalog needs more than one Dahlia Server installation. Explicit Vault sharing is available in every target; Vault Admins can grant Admin, Editor, or Viewer access to a user, Organization, or Team. Organization membership alone does not grant Vault access. The bundle lists public Gateway models in `DAHLIA_CODEX_MODELS`, routes automatic reviews to `system.ai.gpt-5-6-luna`, and uses `system.ai.qwen3-embedding-0-6b` for search embeddings. All AI models are used directly; postdeploy does not register Model Services. To disable a worker, remove its model environment value from the App resource.
 
 The bundle syncs the self-contained `apps/server` package and the setup notebooks in `deploy/databricks/notebooks`. The Server package manifest, pnpm lockfile, runtime configuration, and source are deployed without repository-root pnpm files. `pnpm test:package` builds and packs an isolated Server source directory without sibling Desktop files or existing build output, then checks the resulting package. The Server ships its own transcript activity policy JSON; a cross-platform test keeps it equal to the Desktop resource.
 
@@ -53,7 +53,7 @@ Use `-t prod` for production and pass its catalog explicitly when it differs fro
 
 `bundle deploy` creates or updates the resources and uploads source code, but it does not restart an already-running App. Always run both `dahlia_server` and `hindsight` after deployment. The bundle's `prebuild` step materializes the pinned Hindsight v0.9.2 source and maintained Lakebase patch before upload; it does not follow newer upstream tags.
 
-Hindsight's `databricks` model provider derives the OpenAI-compatible base URL from the App-injected `DATABRICKS_HOST`. It uses `${catalog}.${ai_schema}.gpt-5-6-luna` for LLM calls and `${catalog}.${ai_schema}.qwen3-embedding-0-6b` at `${search_embedding_dimensions}` dimensions for embeddings. The provider obtains and refreshes OAuth tokens with the App-injected `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; it never reads a user's forwarded OBO token or a Databricks secret resource.
+Hindsight's `databricks` model provider derives the OpenAI-compatible base URL from the App-injected `DATABRICKS_HOST`. It uses `system.ai.gpt-5-6-luna` for LLM calls and `system.ai.qwen3-embedding-0-6b` at `${search_embedding_dimensions}` dimensions for embeddings. The provider obtains and refreshes OAuth tokens with the App-injected `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; it never reads a user's forwarded OBO token or a Databricks secret resource.
 
 Lakebase requires each `lakebase_bm25` index to be created after its table contains data. After Hindsight first writes `memory_units` or `mental_models`, create that table's index with the SQL in [`apps/hindsight/README.md`](../../apps/hindsight/README.md) before using full-text recall.
 
@@ -126,31 +126,11 @@ signal's `x-databricks-zerobus-table-name` header with its fully qualified table
 name. This setup does not create credentials, grant sender access, configure a
 Collector, or enable telemetry emission.
 
-## Initial AI models
+## AI models
 
-The bundle creates `${catalog}.${ai_schema}` (default `dahlia.ai`) and sets `DATABRICKS_MODEL_SCHEMA` to that schema. It is independent of `app_schema` (default `app`), which contains stored content. The postdeploy Bash script preserves Lakebase search-extension activation, then registers these model services using the foundation-model destinations of the corresponding `system.ai` services:
+The bundle exposes its Responses-compatible `system.ai.*` models through the ordered `DAHLIA_CODEX_MODELS` value. `/api/v1/models` reads this value without calling a discovery API, and Responses forwards the selected fully qualified model ID unchanged. `CODEX_AUTO_REVIEW_MODEL=system.ai.gpt-5-6-luna` preserves the reserved `codex-auto-review` route without registering an alias service.
 
-| Registered name | Source service |
-| --- | --- |
-| `gpt-5-6-luna` | `system.ai.gpt-5-6-luna` |
-| `gpt-6-astra` | `system.ai.gpt-6-astra` |
-| `gpt-5-6-sol` | `system.ai.gpt-5-6-sol` |
-| `gpt-5-6-terra` | `system.ai.gpt-5-6-terra` |
-| `kimi-k3` | `system.ai.kimi-k3` |
-| `deepseek-v4-pro-0813` | `system.ai.deepseek-v4-pro-0813` |
-| `deepseek-v4-1-flash` | `system.ai.deepseek-v4-1-flash` |
-| `glm-5-3-flash` | `system.ai.glm-5-3-flash` |
-| `glm-5-3` | `system.ai.glm-5-3` |
-| `gemini-3-8-flash` | `system.ai.gemini-3-8-flash` |
-| `gemini-3-7-flash` | `system.ai.gemini-3-7-flash` |
-| `qwen3-embedding-0-6b` | `system.ai.qwen3-embedding-0-6b` |
-| `codex-auto-review` | `system.ai.gpt-5-6-luna` |
-
-This registration step lists existing model services across all pages and creates only missing names. Existing model configurations are preserved, so deployments can be repeated or resumed after a partial failure. Listing, source lookup, and creation failures stop postdeploy with CLI diagnostics; each creation logs the target and source model names. Concurrent creation conflicts are not retried; rerun deployment after resolving the error. Model creation uses `databricks ai-gateway create-model-service`; `get-model-service` and jq resolve and validate each source foundation-model destination. No inference payload logging is enabled by the script.
-
-The bundle grants `USE SCHEMA` and `EXECUTE` on the AI schema to `account users` and both App service principals, with `EXECUTE` inherited by its model services. Before activating search extensions and registering models, postdeploy adds `USE CATALOG` on the existing `${catalog}` to `account users` and both App service principals, preserving other grants. The deployment principal needs `USE CATALOG`, `USE SCHEMA`, `CREATE SERVICE`, permission to manage catalog and schema grants, and access to the source models. If the AI schema already exists outside the bundle, bind the `ai_schema` schema resource before deployment rather than creating a duplicate. Deployments sharing a catalog must share one schema owner/bundle management arrangement.
-
-The bundle does not set `CODEX_AUTO_REVIEW_MODEL`. The Server still supports that environment override: when set, it takes precedence over the discovered `codex-auto-review` service and is forwarded unchanged. Otherwise, the registered service uses normal schema discovery and Responses routing. `/api/v1/models` excludes names containing `embedding` and publishes the remaining services without inspecting `supported_api_types` or issuing individual GETs. Include `embedding` in embedding service names and use Responses-compatible models for other names.
+Search embeddings, image analysis, and Hindsight also use their `system.ai.*` models directly. Postdeploy only grants catalog use and activates Lakebase Search extensions; it does not list, inspect, or create Model Services. The existing bundle-managed `${catalog}.${ai_schema}` resource remains declared to avoid a destructive removal from already deployed targets, but runtime configuration no longer references it.
 
 ## Smoke test
 
@@ -173,11 +153,11 @@ For MCP, connect a modern MCP 2026-07-28 client to `https://<app-host>/mcp` with
 
 For Files and recording smoke tests, upload private content, commit it through the canonical transaction API, then verify GET, HEAD, Range, conditional reads and revoked-access rejection. HEAD must report the full size; a mismatched If-Range must return the full representation.
 
-Confirm `/api/v1/models` includes `gpt-5-6-luna`, then complete a real `POST /api/v1/responses` request with that short model ID, `input`, and `stream: true`. Confirm SSE events arrive incrementally through the Apps proxy. Model management is now in Databricks; `/admin/models` is retired.
+Confirm `/api/v1/models` includes `system.ai.gpt-5-6-luna`, then complete a real `POST /api/v1/responses` request with that full model ID, `input`, and `stream: true`. Confirm SSE events arrive incrementally through the Apps proxy. `/admin/models` is retired.
 
 ## Security requirements
 
 - Trust the configured email header (default `X-Forwarded-Email`) and display name `X-Forwarded-Preferred-Username` only behind the Databricks Apps proxy. `X-Forwarded-User` is not used for identification.
-- `X-Forwarded-Access-Token` is trusted only behind the Databricks Apps proxy, converted to the Responses upstream Bearer credential, and never persisted or logged. Model discovery never uses it.
+- `X-Forwarded-Access-Token` is trusted only behind the Databricks Apps proxy, converted to the Responses upstream Bearer credential, and never persisted or logged. The configured model list performs no upstream request.
 - Responses request and response content is streamed without being persisted or logged. Synchronized summary, OCR, caption text, and search query text may be sent to the configured embedding model; only the resulting rebuildable vectors are persisted, and request content is not logged.
 - `/healthz` is process liveness only; anonymous external access is not guaranteed.

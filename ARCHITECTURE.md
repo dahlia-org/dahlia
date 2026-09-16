@@ -140,9 +140,9 @@ Better Auth、Gateway 管理 metadata、meeting sync は単一の Drizzle applic
 `DAHLIA_DATABASE_TYPE` は `sqlite`、`postgres`、`lakebase`、`hyperdrive` から選び、SQLite／PostgreSQL の接続先は
 `DAHLIA_DATABASE_URL` で指定する。Node は SQLite／PostgreSQL／Lakebase、Workers は Hyperdrive／PostgreSQL を扱う。
 Lakebase は公式 `@databricks/lakebase` connector で OAuth credential を更新する。
-database 選択は認証および AI backend と独立する。`DAHLIA_AI_BACKEND` で Databricks、Cloudflare、OpenAI を選択し、Databricks Responses は Apps proxy の `X-Forwarded-Access-Token`、モデル発見は App service principal、その他は `OPENAI_API_KEY` と必要に応じて `OPENAI_BASE_URL` を使う。
+database 選択は認証および AI backend と独立する。`DAHLIA_AI_BACKEND` で Databricks、Cloudflare、OpenAI を選択し、Databricks Responses は Apps proxy の `X-Forwarded-Access-Token`、その他は `OPENAI_API_KEY` と必要に応じて `OPENAI_BASE_URL` を使う。
 Databricks Apps の header identity は sessionless だが、認証・administrator・Server canonical data のため Lakebase を使用する。
-AI Gateway は `AIGatewayBackend.listModels` と `responses(body, context)` を共通境界とする。モデル一覧は backend が返し、Databricks は App service principal で `DATABRICKS_MODEL_SCHEMA` 配下を取得する。短い公開モデル名の上流変換とヘッダー構築は backend が所有する。
+AI Gateway は `AIGatewayBackend.listModels` と `responses(body, context)` を共通境界とする。全 backend の公開モデル一覧は `DAHLIA_CODEX_MODELS` で列挙し、backend ごとの JSON catalog が一致する slug の metadata を供給する。Databricks は `system.ai.*` の完全修飾 slug をそのまま上流へ渡し、ヘッダー構築だけを backend が所有する。
 Server 共通層は `CODEX_AUTO_REVIEW_MODEL` による予約モデル上書きを所有し、設定された上流 ID はスキーマを補完せず転送する。
 Responses request は上限内で検証し、upstream response body は streaming relay する。request と response の content は DB、cache、analytics、application log へ保存しない。
 Databricks request tags には認証済み user ID を付与する。Model Alias テーブル・store 型・CRUD と管理画面・API は廃止する ([Backend モデル契約](docs/adr/server/gateway.md#backend-モデル契約))。
@@ -211,7 +211,7 @@ Project は階層参照と meeting 絞り込みのためだけに同期し、Ser
 
 - [Server database と認可 identity](docs/adr/server/database-and-identity.md): schema、Workspace permission、content RLS、header user 射影。
 - [Artifact](docs/adr/server/artifacts.md): ownership、storage、ID、Remote MCP。
-- [Databricks upstream identity](docs/adr/server/databricks.md#upstream-identity): Responses と model discovery の認証境界。
+- [Databricks upstream identity](docs/adr/server/databricks.md#upstream-identity): Responses と background AI の認証境界。
 - [Canonical sync](docs/adr/shared/sync.md): Workspace／Project、transcript 話者モデル、Desktop／Web の双方向変更、revision、transaction、delta、SSE。
 - [Workspace 共有と管理者](docs/adr/server/sharing-and-administration.md): shared read、Organization／Team 共有、Server 管理者権限。
 - [Server Hybrid 検索](docs/adr/server/search.md#hybrid-検索): 同期済み content の検索 projection。
@@ -298,7 +298,7 @@ recording-critical lane から捨てる根拠にはしない。
 画面や選択対象が変わった場合は不要な処理をキャンセルし、identity または generation を確認して古い完了結果を捨てる。
 UI projection を破棄しても、durable source of truth は変更しない。
 
-全文検索は `search_documents` registry と contentless `search_documents_fts` を再構築可能な projection として扱う。meeting metadata、構造化 summary の本文、project、全 screenshot の検出文字と画像説明を索引し、summary の metadata・内部識別子と文字起こし・翻訳文は対象にしない。ミーティング自由文検索はアプリと MCP のどちらも title、description、summary、calendar、tags を対象とし、project path は Project 専用検索と明示的な Project 絞り込みだけに使う。画像解析の正本は `file_text_bodies.ocrText` と `file_text_bodies.caption` に保存し、meeting_attachments insert trigger は coalesce 可能な `screenshotAnalysis` job の upsert だけを行う。utility-priority の `SearchIndexer` actor は Codex app-server の `gpt-5.6-luna`（Dahlia Account は Gateway の `gpt-5-6-luna`）、reasoning effort `low` に1枚ずつ最大8並行で送り、正本保存、Lindera tokenization、FTS 更新を一つの複合 job として処理する。指定モデルへフォールバックせず、Codex の未設定、未認証、モデル利用不可では並行処理を停止し、試行回数を消費せず job を queue に残す。Indexer は録音開始前に停止して録音終了後に再開し、録音中は画像解析を含む projection work を実行しない。screenshot は meeting 検索結果へ統合せず、同じ検索画面と MCP の独立した結果として返す。要約生成には従来どおり画像を渡し、抽出結果を代替入力にしない。初期構築・再構築中は不完全な結果を返さず検索 unavailable とし、索引の遅延や failure は録音、確定文字起こし、正本 metadata と summary の commit を待たせない。
+全文検索は `search_documents` registry と contentless `search_documents_fts` を再構築可能な projection として扱う。meeting metadata、構造化 summary の本文、project、全 screenshot の検出文字と画像説明を索引し、summary の metadata・内部識別子と文字起こし・翻訳文は対象にしない。ミーティング自由文検索はアプリと MCP のどちらも title、description、summary、calendar、tags を対象とし、project path は Project 専用検索と明示的な Project 絞り込みだけに使う。画像解析の正本は `file_text_bodies.ocrText` と `file_text_bodies.caption` に保存し、meeting_attachments insert trigger は coalesce 可能な `screenshotAnalysis` job の upsert だけを行う。utility-priority の `SearchIndexer` actor は Codex app-server の `gpt-5.6-luna`（Dahlia Account は Gateway の `system.ai.gpt-5-6-luna`）、reasoning effort `low` に1枚ずつ最大8並行で送り、正本保存、Lindera tokenization、FTS 更新を一つの複合 job として処理する。指定モデルへフォールバックせず、Codex の未設定、未認証、モデル利用不可では並行処理を停止し、試行回数を消費せず job を queue に残す。Indexer は録音開始前に停止して録音終了後に再開し、録音中は画像解析を含む projection work を実行しない。screenshot は meeting 検索結果へ統合せず、同じ検索画面と MCP の独立した結果として返す。要約生成には従来どおり画像を渡し、抽出結果を代替入力にしない。初期構築・再構築中は不完全な結果を返さず検索 unavailable とし、索引の遅延や failure は録音、確定文字起こし、正本 metadata と summary の commit を待たせない。
 
 Desktop 検索は旧 Advanced 相当の全文検索に統一し、Simple／Neural とモード切替を廃止した。Gemma 推論、モデル取得、vector worker は実行しない。追加 migration で vector 検索を無効化し、専用 trigger を撤去する。互換性のため旧 schema、既存 vector と job は保持する。起動時に現在のアプリプロファイルの `Models/EmbeddingGemma` だけをバックグラウンド削除し、失敗時は次回起動で再試行する。Server Account の主検索は capabilities の `search: { version: 1 }` により `POST /api/v1/search` の共通順位へ切り替え、未同期の端末内結果を別枠で表示する。オフライン・旧 Server・metadata 同期待ち・タグ指定・複数 Project 指定は端末内検索と明示する。Web と Server MCP は同じ service を使う。上位100件は全件完了としない。旧 GET FTS ページングは local content broker と既存クライアントの全件探索用に維持する。
 

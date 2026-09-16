@@ -10,8 +10,8 @@ export type GenerationPreferences = Omit<StoredGenerationPreferences, "transcrip
 };
 
 // Deliberate product defaults, not catalog order. Unknown deployments require an explicit selection.
-const preferredSummaryModels = ["gemini-3-8-flash", "gpt-5.4", "gpt-4.1", "gemini-3-flash"];
-const preferredTranscriptionModels = ["gemini-3-8-flash", "gemini-3-7-flash", "gemini-3-flash"];
+const preferredSummaryModels = ["system.ai.gemini-3-8-flash", "gemini-3-8-flash", "gpt-5.4", "gpt-4.1", "gemini-3-flash"];
+const preferredTranscriptionModels = ["system.ai.gemini-3-8-flash", "system.ai.gemini-3-7-flash", "gemini-3-8-flash", "gemini-3-7-flash", "gemini-3-flash"];
 
 export function resolveSummaryPreferences(
   preferences: GenerationPreferences, input: SummaryInput, catalog: GatewayModelList,
