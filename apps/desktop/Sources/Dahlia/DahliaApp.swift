@@ -157,11 +157,13 @@ struct DahliaApp: App {
                         pending: pending, isBusy: workspaceManagementModel.updatingWorkspaceAccountID != nil,
                         onCancel: cancelServerAdoption,
                         onReload: { await workspaceManagementModel.reloadServerAdoption() },
-                        onCreateOrganization: { await workspaceManagementModel.createAdoptionOrganization(name: $0, slug: $1, initialOwnerUserId: $2)
-                        },
-                        onLoadOwners: { await workspaceManagementModel.adoptionOrganizationOwners(offset: $0) },
-                        onImport: { destinationId, organizationId in
-                            await confirmServerAdoption(pending, destinationId: destinationId, organizationId: organizationId)
+                        onImport: { destinationId, organizationId, workspaceName in
+                            await confirmServerAdoption(
+                                pending,
+                                destinationId: destinationId,
+                                organizationId: organizationId,
+                                workspaceName: workspaceName
+                            )
                         }
                     )
                 }
@@ -474,11 +476,17 @@ struct DahliaApp: App {
         mainWindowNavigation.dismissDahliaSignIn()
     }
 
-    private func confirmServerAdoption(_ pending: PendingWorkspaceServerAdoption, destinationId: UUID?, organizationId: UUID?) async {
+    private func confirmServerAdoption(
+        _ pending: PendingWorkspaceServerAdoption,
+        destinationId: UUID?,
+        organizationId: UUID?,
+        workspaceName: String?
+    ) async {
         guard let updated = await workspaceManagementModel.confirmServerAdoption(
             pending,
             destinationId: destinationId,
-            organizationId: organizationId
+            organizationId: organizationId,
+            workspaceName: workspaceName
         )
         else {
             if workspaceManagementModel.pendingServerAdoption == nil {
