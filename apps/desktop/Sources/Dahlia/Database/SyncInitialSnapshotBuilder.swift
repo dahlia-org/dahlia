@@ -635,10 +635,17 @@ enum SyncInitialSnapshotBuilder {
               AND EXISTS (
                   SELECT 1 FROM recording_audio_segments AS segments
                   WHERE segments.recordingSessionId = sessions.id
-                    AND segments.state != ?
+                    AND segments.state NOT IN (?, ?)
                     AND segments.purgedAt IS NULL
               )
-            """, arguments: [workspaceId, connectionId, item.id, TranscriptionMode.batch.rawValue, RecordingAudioSegmentState.purged.rawValue])
+            """, arguments: [
+                workspaceId,
+                connectionId,
+                item.id,
+                TranscriptionMode.batch.rawValue,
+                RecordingAudioSegmentState.purged.rawValue,
+                RecordingAudioSegmentState.failed.rawValue,
+            ])
             let attachments = try MeetingAttachmentRecord.filter(Column("meetingId") == item.id).fetchCursor(db)
             while let attachment = try attachments.next() {
                 try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [

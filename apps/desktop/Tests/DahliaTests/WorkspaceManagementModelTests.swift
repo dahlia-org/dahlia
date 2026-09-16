@@ -696,6 +696,7 @@
             await model.requestServerAdoption(for: workspace, connection: account)
             let pending = try #require(model.pendingServerAdoption)
             #expect(await model.confirmServerAdoption(pending, destinationId: remote.workspaceId, organizationId: nil) == nil)
+            #expect(model.errorMessage == L10n.workspaceImportUnavailable)
             #expect(try repository.fetchAllWorkspaces().first(where: { $0.id == workspace.id })?.accountConnectionId == nil)
         }
 
