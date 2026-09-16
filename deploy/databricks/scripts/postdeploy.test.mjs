@@ -51,14 +51,14 @@ if (args[0] === "apps" && command === "get") {
   console.log("{}");
 }
 `, { mode: 0o755 });
-  const run = (failCommand = "", failModel = "") => spawnSync("bash", [
+  const run = (failCommand = "", failModel = "", dahliaAppName = "mcp-dahlia-server-test", hindsightAppName = "hindsight-test") => spawnSync("bash", [
     script,
     "test-profile",
     "test_catalog",
     "ai",
     "test-project",
-    "mcp-dahlia-server-test",
-    "hindsight-test",
+    dahliaAppName,
+    hindsightAppName,
   ], {
     encoding: "utf8",
     env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, STATE: state, CALLS: calls, FAIL_COMMAND: failCommand, FAIL_MODEL: failModel },
@@ -120,6 +120,11 @@ if (args[0] === "apps" && command === "get") {
     assert.notEqual(denied.status, 0);
     assert.match(denied.stderr, /PERMISSION_DENIED/);
     assert.equal(readCalls().some(args => args[1] === "create-model-service"), false);
+
+    writeFileSync(calls, "");
+    const missingPrincipal = run("", "", "missing-dahlia-app");
+    assert.notEqual(missingPrincipal.status, 0);
+    assert.equal(readCalls().some(args => args[0] === "grants" && args[1] === "update"), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
