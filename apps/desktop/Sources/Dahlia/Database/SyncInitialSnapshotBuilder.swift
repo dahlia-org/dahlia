@@ -648,6 +648,15 @@ enum SyncInitialSnapshotBuilder {
             let archives = try RecordingArchiveRecord.filter(Column("meetingId") == item.id).fetchCursor(db)
             while var archive = try archives.next() {
                 let prepared = try SyncJSON.decoder.decode([String: RecordingArchiveEncoder.Prepared].self, from: Data(archive.preparedJSON.utf8))
+                let hasRetainedSegments = try Bool.fetchOne(db, sql: """
+                SELECT EXISTS (
+                    SELECT 1 FROM recording_audio_segments
+                    WHERE recordingSessionId = ?
+                      AND state != ?
+                      AND purgedAt IS NULL
+                )
+                """, arguments: [archive.sessionId, RecordingAudioSegmentState.purged.rawValue]) ?? false
+                guard !prepared.isEmpty || hasRetainedSegments else { continue }
                 archive.connectionId = connectionId
                 archive.number = nil
                 archive.audioJSON = "{}"

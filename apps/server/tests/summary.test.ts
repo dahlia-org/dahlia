@@ -929,20 +929,6 @@ describe("audio summary jobs", () => {
     } finally { await store.close?.(); }
   });
 
-  it("accepts a complete recording request independent of upload order", async () => {
-    const value = await setup(); const { store, workspaceId, meetingId } = value;
-    try {
-      await addRecording(value, ["mic"]);
-      await addRecording(value, ["system"]);
-      const request = await recordingInput(value);
-      const { method } = audioMethod(value);
-      await expect(store.sync.withIdentity(owner, (scoped) => method.version(
-        scoped, workspaceId, meetingId, { ...request, recordings: request.recordings.toReversed() },
-        { requireCompleteMeeting: true },
-      ))).resolves.toBeDefined();
-    } finally { await store.close?.(); }
-  });
-
   it("keeps an accepted recording snapshot valid when a later session is pending", async () => {
     const value = await setup(); const { store, sync, workspaceId, meetingId } = value;
     try {
@@ -1211,10 +1197,10 @@ it("requires the complete audio-pair set and rejects foreign, partial, or duplic
   try {
     await addRecording(value); await addRecording(value, ["system"]);
     const originalInput = await recordingInput(value);
-    const input = originalInput;
+    const input = { ...originalInput, recordings: originalInput.recordings.toReversed() };
     const { method, calls } = audioMethod(value, () => combinedResponse({ segments: [
-      cloudTranscript.segments[0],
-      { ...cloudTranscript.segments[0], recording_index: 1, audio_source: "system" },
+      { ...cloudTranscript.segments[0], recording_index: 0, audio_source: "system" },
+      { ...cloudTranscript.segments[0], recording_index: 1, audio_source: "mic" },
     ] }));
     const service = new SummaryService(store.sync, [method]);
     const request = { id: uuidV7(), input, model: "gemini-3-8-flash", detail: "high", outputLanguage: "ja" };
@@ -1230,7 +1216,7 @@ it("requires the complete audio-pair set and rejects foreign, partial, or duplic
     await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
     expect(calls).toHaveLength(1);
     const wire = JSON.stringify(calls[0]);
-    expect(wire.indexOf("<recording_number>1</recording_number>")).toBeLessThan(wire.indexOf("<recording_number>2</recording_number>"));
+    expect(wire.indexOf("<recording_number>2</recording_number>")).toBeLessThan(wire.indexOf("<recording_number>1</recording_number>"));
     expect((await service.status(owner, workspaceId, meetingId))?.status).toBe("succeeded");
   } finally { await store.close?.(); }
 });

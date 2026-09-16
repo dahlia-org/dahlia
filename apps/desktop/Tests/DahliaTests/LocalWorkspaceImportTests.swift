@@ -139,6 +139,25 @@
             #expect(archive.preparedJSON == "{}")
         }
 
+        @Test
+        func leavesExpiredLocalArchiveWithoutAudioExpired() async throws {
+            let fixture = try LocalImportFixture(role: "editor")
+            defer { fixture.close() }
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE recording_archives SET preparedJSON = '{}', state = 'expired' WHERE sessionId = ?",
+                    arguments: [fixture.session.id]
+                )
+                _ = try fixture.commit(in: db)
+            }
+
+            let archive = try #require(try await fixture.database.dbQueue.read {
+                try RecordingArchiveRecord.fetchOne($0, key: fixture.session.id)
+            })
+            #expect(archive.connectionId == nil)
+            #expect(archive.state == "expired")
+        }
+
         @Test(arguments: ["collision", "pending", "blocked", "recording", "viewer", "unknown", "metadata", "connection", "rollback"])
         func failedPreflightAndCommitPreserveTheLocalWorkingCopy(reason: String) throws {
             let fixture = try LocalImportFixture(role: "editor")
