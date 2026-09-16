@@ -526,12 +526,15 @@
                 revision: 1,
                 role: role
             )
+            let transferFence = try await database.dbQueue.write {
+                try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], in: $0)
+            }
             await #expect(throws: LocalWorkspaceImportError.self) {
                 try await repository.adoptWorkspaceForServerSync(
                     id: workspace.id,
                     connectionID: remote.connectionId,
                     serverWorkspace: remote,
-                    expectedChanges: 0
+                    transferFence: transferFence
                 )
             }
             #expect(try repository.fetchAllWorkspaces().first?.accountConnectionId == nil)
@@ -556,18 +559,62 @@
             )
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertWorkspace(workspace)
-            let expectedChanges = try await database.dbQueue.read { $0.totalChangesCount }
+            let transferFence = try await database.dbQueue.write {
+                try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], in: $0)
+            }
+            try await database.dbQueue.write {
+                try $0.execute(sql: "UPDATE workspaces SET lastOpenedAt = lastOpenedAt WHERE id = ?", arguments: [workspace.id])
+            }
 
             let adopted = try await repository.adoptWorkspaceForServerSync(
                 id: workspace.id,
                 connectionID: connection.id,
                 serverWorkspace: remote,
-                expectedChanges: expectedChanges,
+                transferFence: transferFence,
                 screenshotContent: ScreenshotContentProvider()
             )
 
             #expect(adopted?.name == "Team Notes")
             #expect(try repository.fetchAllWorkspaces().first?.name == "Team Notes")
+        }
+
+        @Test
+        func adoptingSameIDRejectsAConcurrentLocalMutation() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            let workspace = makeWorkspace(name: "Local", lastOpenedAt: .now)
+            let remote = CloudWorkspaceRecord(
+                workspaceId: workspace.id,
+                connectionId: connection.id,
+                organizationId: .v7(),
+                name: "Server",
+                createdAt: .now,
+                revision: 1,
+                role: "admin"
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            try repository.insertWorkspace(workspace)
+            let transferFence = try await database.dbQueue.write {
+                try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], in: $0)
+            }
+            _ = try await repository.updateWorkspaceName(id: workspace.id, name: "Changed")
+            #expect(try await database.dbQueue.read {
+                try Int.fetchOne($0, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspace.id])
+            } == 0)
+
+            await #expect(throws: LocalWorkspaceImportError.self) {
+                try await repository.adoptWorkspaceForServerSync(
+                    id: workspace.id,
+                    connectionID: connection.id,
+                    serverWorkspace: remote,
+                    transferFence: transferFence,
+                    screenshotContent: ScreenshotContentProvider()
+                )
+            }
+            #expect(try repository.fetchAllWorkspaces().first?.accountConnectionId == nil)
         }
 
         @Test
@@ -589,13 +636,15 @@
             )
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertWorkspace(workspace)
-            let expectedChanges = try await database.dbQueue.read { $0.totalChangesCount }
+            let transferFence = try await database.dbQueue.write {
+                try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], in: $0)
+            }
 
             let adopted = try await repository.adoptWorkspaceForServerSync(
                 id: workspace.id,
                 connectionID: connection.id,
                 serverWorkspace: remote,
-                expectedChanges: expectedChanges,
+                transferFence: transferFence,
                 requestedName: "  Second Attempt  "
             )
 

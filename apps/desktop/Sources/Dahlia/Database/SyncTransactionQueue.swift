@@ -317,8 +317,10 @@ enum SyncTransactionRecorder {
         guard Set(operations.map { "\($0.entity.rawValue):\($0.entityId.uuidString)" }).count == operations.count else {
             throw DatabaseError(message: "duplicate sync entity in transaction")
         }
-        guard let workspace = try WorkspaceRecord.fetchOne(db, key: workspaceId),
-              let targetConnectionId = workspace.accountConnectionId else { return nil }
+        guard let workspace = try WorkspaceRecord.fetchOne(db, key: workspaceId) else { return nil }
+        // Any local canonical mutation that must invalidate a Workspace transfer must reach this recorder.
+        try WorkspaceTransferFence.recordLocalMutation(workspaceID: workspaceId, in: db)
+        guard let targetConnectionId = workspace.accountConnectionId else { return nil }
         let connectionId: UUID
         if let connectionIdOverride {
             guard connectionIdOverride == targetConnectionId,

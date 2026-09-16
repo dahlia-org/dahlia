@@ -403,43 +403,50 @@ final class WorkspaceManagementModel {
                       .contains(where: { $0.id == organizationId.uuidString.lowercased() && $0.kind == .team }) else {
                     throw LocalWorkspaceImportError.unavailable
                 }
-                let fence = try await repository.dbQueue.read { db in
+                let transferFence = try await repository.dbQueue.write { db in
                     guard try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id) == connection,
                           let source = try WorkspaceRecord.fetchOne(db, key: pending.workspace.id), source.accountConnectionId == nil,
                           try !RecordingSessionRecord.hasActiveRecording(workspaceId: source.id, in: db),
                           try !SyncTransactionQueue.hasPending(workspaceId: source.id, in: db) else { throw LocalWorkspaceImportError.unavailable }
-                    return db.totalChangesCount
+                    return try WorkspaceTransferFence.create(workspaceIDs: [source.id], in: db)
                 }
-                _ = try await backup.createGeneration(workspaceIds: [pending.workspace.id])
-                if !currentWorkspaces.contains(where: { $0.workspaceId == pending.workspace.id }) {
-                    var serverWorkspace = pending.workspace
-                    serverWorkspace.name = workspaceName
-                    try await CloudWorkspaceDiscovery.createWorkspace(
-                        serverWorkspace,
-                        organizationId: organizationId,
-                        connection: connection,
-                        api: api
-                    )
+                do {
+                    _ = try await backup.createGeneration(workspaceIds: [pending.workspace.id])
+                    if !currentWorkspaces.contains(where: { $0.workspaceId == pending.workspace.id }) {
+                        var serverWorkspace = pending.workspace
+                        serverWorkspace.name = workspaceName
+                        try await CloudWorkspaceDiscovery.createWorkspace(
+                            serverWorkspace,
+                            organizationId: organizationId,
+                            connection: connection,
+                            api: api
+                        )
+                    }
+                    guard let serverWorkspace = try await fetchCloudWorkspaces(from: connection)
+                        .first(where: { $0.workspaceId == pending.workspace.id }),
+                        serverWorkspace.organizationId == organizationId, serverWorkspace.role == "admin",
+                        let origin = URL(string: connection.origin) else { throw LocalWorkspaceImportError.unavailable }
+                    let snapshot = try await SyncWorker(dbQueue: repository.dbQueue, apiClient: api)
+                        .importSnapshot(workspaceId: serverWorkspace.workspaceId, connectionId: connection.id, origin: origin)
+                    guard snapshot.projects.isEmpty, snapshot.meetings.isEmpty, snapshot.files.isEmpty
+                    else { throw LocalWorkspaceImportError.collision }
+                    guard try await fetchCloudWorkspaces(from: connection).contains(where: {
+                        $0.workspaceId == serverWorkspace.workspaceId && $0.organizationId == organizationId && $0.role == "admin"
+                    }) else { throw LocalWorkspaceImportError.unavailable }
+                    guard let adopted = try await repository.adoptWorkspaceForServerSync(
+                        id: pending.workspace.id,
+                        connectionID: connection.id,
+                        serverWorkspace: serverWorkspace,
+                        transferFence: transferFence,
+                        requestedName: workspaceName
+                    ) else {
+                        throw LocalWorkspaceImportError.changed
+                    }
+                    updated = adopted
+                } catch {
+                    try? await repository.dbQueue.write { try transferFence.release(in: $0) }
+                    throw error
                 }
-                guard let serverWorkspace = try await fetchCloudWorkspaces(from: connection).first(where: { $0.workspaceId == pending.workspace.id }),
-                      serverWorkspace.organizationId == organizationId, serverWorkspace.role == "admin",
-                      let origin = URL(string: connection.origin) else { throw LocalWorkspaceImportError.unavailable }
-                let snapshot = try await SyncWorker(dbQueue: repository.dbQueue, apiClient: api)
-                    .importSnapshot(workspaceId: serverWorkspace.workspaceId, connectionId: connection.id, origin: origin)
-                guard snapshot.projects.isEmpty, snapshot.meetings.isEmpty, snapshot.files.isEmpty else { throw LocalWorkspaceImportError.collision }
-                guard try await fetchCloudWorkspaces(from: connection).contains(where: {
-                    $0.workspaceId == serverWorkspace.workspaceId && $0.organizationId == organizationId && $0.role == "admin"
-                }) else { throw LocalWorkspaceImportError.unavailable }
-                guard let adopted = try await repository.adoptWorkspaceForServerSync(
-                    id: pending.workspace.id,
-                    connectionID: connection.id,
-                    serverWorkspace: serverWorkspace,
-                    expectedChanges: fence,
-                    requestedName: workspaceName
-                ) else {
-                    throw LocalWorkspaceImportError.changed
-                }
-                updated = adopted
             }
             pendingServerAdoption = nil
             await loadWorkspaces()

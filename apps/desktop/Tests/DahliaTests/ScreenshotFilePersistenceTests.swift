@@ -175,6 +175,9 @@
                 """)
             }
             let repository = MeetingRepository(dbQueue: queue)
+            let transferFence = try await queue.write {
+                try WorkspaceTransferFence.create(workspaceIDs: [fixture.workspace.id], in: $0)
+            }
             await #expect(throws: (any Error).self) {
                 try await repository.adoptWorkspaceForServerSync(
                     id: fixture.workspace.id,
@@ -188,7 +191,7 @@
                         revision: 1,
                         role: "admin"
                     ),
-                    expectedChanges: queue.read { $0.totalChangesCount },
+                    transferFence: transferFence,
                     screenshotContent: fixture.provider
                 )
             }
@@ -210,7 +213,7 @@
                     revision: 1,
                     role: "admin"
                 ),
-                expectedChanges: queue.read { $0.totalChangesCount },
+                transferFence: transferFence,
                 screenshotContent: fixture.provider
             )
             try await fixture.provider.trimFiles(dbQueue: queue, budget: 0)

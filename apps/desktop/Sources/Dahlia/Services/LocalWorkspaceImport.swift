@@ -33,31 +33,41 @@ enum LocalWorkspaceImport {
         screenshots.retainOriginals(workspaceIds: [sourceId], dbQueue: dbQueue)
         defer { screenshots.releaseOriginals(workspaceIds: [sourceId], dbQueue: dbQueue) }
         let files = try await screenshots.prepareAccountTransfer(workspaceId: sourceId, connectionId: connection.id, dbQueue: dbQueue)
-        // ponytail: a database-wide fence may reject unrelated background writes; use per-Workspace generations if contention matters.
-        let fence = try await dbQueue.read { db in
+        let fence = try await dbQueue.write { db in
             try validate(sourceId: sourceId, destination: destination, in: db)
-            return db.totalChangesCount
-        }
-        let generation = try await backup.createGeneration(workspaceIds: [sourceId])
-        let snapshot = try await worker.importSnapshot(workspaceId: destination.workspaceId, connectionId: connection.id, origin: origin)
-        guard let current = try await CloudWorkspaceDiscovery.fetch(connection: connection, apiClient: api)
-            .first(where: { $0.workspaceId == destination.workspaceId }),
-            ["admin", "editor"].contains(current.role), current.organizationId == destination.organizationId else {
-            throw LocalWorkspaceImportError.unavailable
-        }
-        return try await dbQueue.write { db in
-            guard db.totalChangesCount == fence,
-                  try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id) == connection else {
-                throw LocalWorkspaceImportError.changed
-            }
-            return try commit(
-                sourceId: sourceId,
-                destination: current,
-                snapshot: snapshot,
-                files: files,
-                backupPath: generation.fileURL.path,
+            return try WorkspaceTransferFence.create(
+                workspaceIDs: [sourceId, destination.workspaceId],
+                blockingRemoteChangesIn: [destination.workspaceId],
                 in: db
             )
+        }
+        do {
+            let generation = try await backup.createGeneration(workspaceIds: [sourceId])
+            let snapshot = try await worker.importSnapshot(workspaceId: destination.workspaceId, connectionId: connection.id, origin: origin)
+            guard let current = try await CloudWorkspaceDiscovery.fetch(connection: connection, apiClient: api)
+                .first(where: { $0.workspaceId == destination.workspaceId }),
+                ["admin", "editor"].contains(current.role), current.organizationId == destination.organizationId else {
+                throw LocalWorkspaceImportError.unavailable
+            }
+            return try await dbQueue.write { db in
+                guard try fence.isCurrent(in: db),
+                      try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id) == connection else {
+                    throw LocalWorkspaceImportError.changed
+                }
+                let result = try commit(
+                    sourceId: sourceId,
+                    destination: current,
+                    snapshot: snapshot,
+                    files: files,
+                    backupPath: generation.fileURL.path,
+                    in: db
+                )
+                try fence.release(in: db)
+                return result
+            }
+        } catch {
+            try? await dbQueue.write { try fence.release(in: $0) }
+            throw error
         }
     }
 

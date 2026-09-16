@@ -223,7 +223,7 @@ final class MeetingRepository {
         id: UUID,
         connectionID: UUID,
         serverWorkspace: CloudWorkspaceRecord,
-        expectedChanges: Int,
+        transferFence: WorkspaceTransferFence,
         requestedName: String? = nil,
         screenshotContent: ScreenshotContentProvider = .shared
     ) async throws -> WorkspaceRecord? {
@@ -236,7 +236,7 @@ final class MeetingRepository {
         defer { screenshotContent.releaseOriginals(workspaceIds: [id], dbQueue: dbQueue) }
         let files = try await screenshotContent.prepareAccountTransfer(workspaceId: id, connectionId: connectionID, dbQueue: dbQueue)
         return try await dbQueue.write { db in
-            guard db.totalChangesCount == expectedChanges,
+            guard try transferFence.isCurrent(in: db),
                   var workspace = try WorkspaceRecord.fetchOne(db, key: id), workspace.accountConnectionId == nil,
                   try !RecordingSessionRecord.hasActiveRecording(workspaceId: id, in: db),
                   try !SyncTransactionQueue.hasPending(workspaceId: id, in: db) else { throw LocalWorkspaceImportError.changed }
@@ -264,6 +264,7 @@ final class MeetingRepository {
                     .map { .init(entity: entity, id: $0, workspaceId: id) }
             }
             try SyncInitialSnapshotBuilder.enqueueContents(items, workspaceId: id, in: db)
+            try transferFence.release(in: db)
             return workspace
         }
     }

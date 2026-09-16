@@ -88,12 +88,19 @@ final class AppDatabaseManager: Sendable {
         }
     }
 
-    static func configuration(readonly: Bool = false) -> Configuration {
+    static func configuration() -> Configuration {
         var configuration = Configuration()
-        configuration.readonly = readonly
         configuration.busyMode = .timeout(5)
         configuration.prepareDatabase { db in
             try SearchFTS5Tokenizer.register(in: db)
+            try db.execute(sql: """
+            CREATE TEMP TABLE workspace_transfer_fences (
+                workspaceId BLOB PRIMARY KEY NOT NULL,
+                token BLOB NOT NULL,
+                generation INTEGER NOT NULL DEFAULT 0,
+                blocksRemoteChanges INTEGER NOT NULL DEFAULT 0
+            )
+            """)
         }
         return configuration
     }

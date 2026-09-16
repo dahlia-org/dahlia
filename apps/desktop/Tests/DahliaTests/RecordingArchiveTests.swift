@@ -55,9 +55,9 @@ import GRDB
                 clientID: "test",
                 createdAt: .now
             )
-            let expectedChanges = try await fixture.database.dbQueue.write { db in
+            let transferFence = try await fixture.database.dbQueue.write { db in
                 try connection.insert(db)
-                return db.totalChangesCount
+                return try WorkspaceTransferFence.create(workspaceIDs: [fixture.meeting.workspaceId], in: db)
             }
             let remote = CloudWorkspaceRecord(
                 workspaceId: fixture.meeting.workspaceId,
@@ -73,7 +73,7 @@ import GRDB
                 id: fixture.meeting.workspaceId,
                 connectionID: connection.id,
                 serverWorkspace: remote,
-                expectedChanges: expectedChanges
+                transferFence: transferFence
             )
 
             let archive = try #require(try await fixture.database.dbQueue.read {

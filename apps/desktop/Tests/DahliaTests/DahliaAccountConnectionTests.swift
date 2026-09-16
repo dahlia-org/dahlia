@@ -64,6 +64,9 @@
             let workspace = makeWorkspace(name: "Account")
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertWorkspace(workspace)
+            let transferFence = try await manager.dbQueue.write {
+                try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], in: $0)
+            }
             var staleSettings = WorkspaceAISettingsSnapshot(
                 workspace: workspace,
                 localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
@@ -82,7 +85,7 @@
                     revision: 1,
                     role: "admin"
                 ),
-                expectedChanges: manager.dbQueue.read { $0.totalChangesCount }
+                transferFence: transferFence
             )
             _ = try await repository.updateWorkspaceAISettings(staleSettings)
 

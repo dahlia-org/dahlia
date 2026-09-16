@@ -3,6 +3,7 @@
     import DahliaRuntimeSupport
     import Foundation
     import GRDB
+    import Synchronization
     import Testing
     @testable import Dahlia
 
@@ -297,7 +298,7 @@
         }
 
         @Test
-        func preparesARealBackupAndImageBeforeCommittingTheImport() async throws {
+        func preparesARealBackupAndImageDespiteAnUnrelatedDatabaseWrite() async throws {
             let fixture = try LocalImportFixture(role: "editor")
             defer { fixture.close() }
             let queue = fixture.database.dbQueue
@@ -343,13 +344,27 @@
                 ],
                 "startCursor": "complete", "nextCursor": NSNull(),
             ])
+            let destinationId = fixture.target.id
+            let unrelatedWriteCompleted = Mutex(false)
             ImageURLProtocol.register(origin: fixture.connection.origin) { request in
                 switch request.url!.lastPathComponent {
-                case "capabilities": (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
-                case "workspaces": (200, [:], listing)
-                case "snapshot": (200, [:], snapshot)
-                case "changes": (200, [:], Data(#"{"items":[],"cursor":"complete","highWaterCursor":"complete","hasMore":false}"#.utf8))
-                default: (404, [:], Data())
+                case "capabilities": return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                case "workspaces": return (200, [:], listing)
+                case "snapshot":
+                    do {
+                        try queue.write {
+                            try $0.execute(
+                                sql: "UPDATE workspaces SET lastOpenedAt = lastOpenedAt WHERE id = ?",
+                                arguments: [destinationId]
+                            )
+                        }
+                        unrelatedWriteCompleted.withLock { $0 = true }
+                    } catch {
+                        return (500, [:], Data())
+                    }
+                    return (200, [:], snapshot)
+                case "changes": return (200, [:], Data(#"{"items":[],"cursor":"complete","highWaterCursor":"complete","hasMore":false}"#.utf8))
+                default: return (404, [:], Data())
                 }
             }
             defer { ImageURLProtocol.remove(origin: fixture.connection.origin) }
@@ -373,6 +388,7 @@
                 api: api,
                 screenshots: screenshots
             )
+            #expect(unrelatedWriteCompleted.withLock { $0 })
             let record = try #require(try await queue.read { try LocalWorkspaceImportRecord.fetchOne($0) })
             #expect(FileManager.default.fileExists(atPath: record.backupPath))
             #expect(try await screenshots.fileContent(id: fixture.file.id, dbQueue: queue).data == bytes)

@@ -746,6 +746,36 @@
         }
 
         @Test
+        func workspaceTransferDefersRemoteChangesUntilTheFenceIsReleased() async throws {
+            let fixture = try Fixture()
+            let context = try await fixture.context()
+            let change = try fixture.change(.meeting, id: fixture.meetingId, revision: 1, fields: [
+                "name": "Remote overwrite",
+                "description": "",
+                "status": "READY",
+                "contentOmitted": true,
+                "hasSummary": false,
+                "transcriptRevision": 0,
+                "createdAt": "2026-09-07T00:00:00Z",
+                "updatedAt": "2026-09-07T00:00:01Z",
+            ])
+            let fence = try await fixture.queue.write {
+                try WorkspaceTransferFence.create(
+                    workspaceIDs: [fixture.workspaceId],
+                    blockingRemoteChangesIn: [fixture.workspaceId],
+                    in: $0
+                )
+            }
+
+            #expect(try await RemoteChangeApplier.applyIncremental(change, context: context, dbQueue: fixture.queue) == .deferred)
+            #expect(try await fixture.queue.read { try MeetingRecord.fetchOne($0, key: fixture.meetingId)?.name } == "Recording")
+
+            try await fixture.queue.write { try fence.release(in: $0) }
+            #expect(try await RemoteChangeApplier.applyIncremental(change, context: context, dbQueue: fixture.queue) == .applied)
+            #expect(try await fixture.queue.read { try MeetingRecord.fetchOne($0, key: fixture.meetingId)?.name } == "Remote overwrite")
+        }
+
+        @Test
         func revisionsTombstonesAndRecordingOwnershipUseTheSamePolicy() async throws {
             #expect(!ScreenshotOCRState.remote(ocrText: "cached", caption: "cached", state: .stale).isTerminal)
             let fixture = try Fixture()
