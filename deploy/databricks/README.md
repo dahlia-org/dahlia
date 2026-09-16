@@ -1,6 +1,6 @@
 # Deploy Dahlia Server on Databricks Apps
 
-This bundle creates a Databricks App with `LARGE` compute and a dedicated Lakebase Autoscaling project for each target. The Apps proxy authenticates requests before they reach Dahlia Server, so the deployment uses Header identity and sets `DAHLIA_AUTH_PROVIDER_ID=databricks` for linked Better Auth accounts.
+This bundle creates separate Dahlia Server and Hindsight Databricks Apps backed by one dedicated Lakebase Autoscaling project per target. Dahlia uses its existing PostgreSQL schemas and Hindsight uses `${hindsight_schema}` (default `hindsight`) in the same `databricks-postgres` database. The Apps proxy authenticates requests before they reach either App; Dahlia Server uses Header identity and sets `DAHLIA_AUTH_PROVIDER_ID=databricks` for linked Better Auth accounts.
 
 ```text
 browser / Dahlia Codex with U2M token
@@ -13,6 +13,9 @@ Dahlia Server App ─┬─ forwarded user token ── Databricks AI Gateway Re
                   ├─ app service principal ── Model discovery and embeddings
                   ├─ app service principal ── Lakebase PostgreSQL
                   └─ app service principal ── managed Volume / Files API
+
+Hindsight App ─────┬─ app service principal ── same Lakebase database / `hindsight` schema
+                  └─ OpenAI-compatible API ─── Databricks AI Gateway models
 ```
 
 ## Prerequisites
@@ -22,6 +25,7 @@ Dahlia Server App ─┬─ forwarded user token ── Databricks AI Gateway Re
 - Databricks CLI 1.4.0 or newer with `ai-gateway list-model-services`, `get-model-service`, and `create-model-service` support (verified with 1.12.1), authenticated with a CLI profile or environment variables.
 - Bash and jq for postdeploy.
 - Node.js 22.13 or newer, Corepack, and pnpm for local validation.
+- Python 3.11 or newer and uv for preparing the pinned Hindsight source before upload.
 
 ## Configure
 
@@ -41,12 +45,17 @@ The bundle syncs the self-contained `apps/server` package and the setup notebook
 databricks bundle validate --strict -t dev
 databricks bundle deploy -t dev
 databricks bundle run dahlia_server -t dev
+databricks bundle run hindsight -t dev
 databricks bundle summary -t dev
 ```
 
 Use `-t prod` for production and pass its catalog explicitly when it differs from `dahlia`, for example `--var catalog=dahlia_prod`. The production Lakebase project, storage Volume, and schema have `lifecycle.prevent_destroy: true`; destructive changes fail until an operator deliberately removes that protection. Development uses separate disposable resources.
 
-`bundle deploy` creates or updates the resources and uploads source code, but it does not restart an already-running App. Always run `dahlia_server` after deployment.
+`bundle deploy` creates or updates the resources and uploads source code, but it does not restart an already-running App. Always run both `dahlia_server` and `hindsight` after deployment. The bundle's `prebuild` step materializes the pinned Hindsight v0.9.2 source and maintained Lakebase patch before upload; it does not follow newer upstream tags.
+
+Hindsight's `databricks` model provider derives the OpenAI-compatible base URL from the App-injected `DATABRICKS_HOST`. It uses `${catalog}.${ai_schema}.gpt-5-6-luna` for LLM calls and `${catalog}.${ai_schema}.qwen3-embedding-0-6b` at `${search_embedding_dimensions}` dimensions for embeddings. The provider obtains and refreshes OAuth tokens with the App-injected `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; it never reads a user's forwarded OBO token or a Databricks secret resource.
+
+Lakebase requires each `lakebase_bm25` index to be created after its table contains data. After Hindsight first writes `memory_units` or `mental_models`, create that table's index with the SQL in [`apps/hindsight/README.md`](../../apps/hindsight/README.md) before using full-text recall.
 
 After each deployment, the bundle requests Lakebase Search enablement through the Search Extensions API using the same resolved CLI profile as the bundle deployment. The deployment fails if that request fails; it does not wait, retry, or poll the returned operation. The separate App build/start step provides the expected propagation interval.
 
@@ -139,7 +148,7 @@ The bundle creates `${catalog}.${ai_schema}` (default `dahlia.ai`) and sets `DAT
 
 This registration step lists existing model services across all pages and creates only missing names. Existing model configurations are preserved, so deployments can be repeated or resumed after a partial failure. Listing, source lookup, and creation failures stop postdeploy with CLI diagnostics; each creation logs the target and source model names. Concurrent creation conflicts are not retried; rerun deployment after resolving the error. Model creation uses `databricks ai-gateway create-model-service`; `get-model-service` and jq resolve and validate each source foundation-model destination. No inference payload logging is enabled by the script.
 
-The bundle grants `USE SCHEMA` and `EXECUTE` on the AI schema to `account users`, with `EXECUTE` inherited by its model services. Before activating search extensions and registering models, postdeploy adds `USE CATALOG` on the existing `${catalog}` to `account users`, preserving other grants. The deployment principal needs `USE CATALOG`, `USE SCHEMA`, `CREATE SERVICE`, permission to manage catalog and schema grants, and access to the source models. The App service principal needs visibility of the target model services. If the AI schema already exists outside the bundle, bind the `ai_schema` schema resource before deployment rather than creating a duplicate. Deployments sharing a catalog must share one schema owner/bundle management arrangement.
+The bundle grants `USE SCHEMA` and `EXECUTE` on the AI schema to `account users` and both App service principals, with `EXECUTE` inherited by its model services. Before activating search extensions and registering models, postdeploy adds `USE CATALOG` on the existing `${catalog}` to `account users` and both App service principals, preserving other grants. The deployment principal needs `USE CATALOG`, `USE SCHEMA`, `CREATE SERVICE`, permission to manage catalog and schema grants, and access to the source models. If the AI schema already exists outside the bundle, bind the `ai_schema` schema resource before deployment rather than creating a duplicate. Deployments sharing a catalog must share one schema owner/bundle management arrangement.
 
 The bundle does not set `CODEX_AUTO_REVIEW_MODEL`. The Server still supports that environment override: when set, it takes precedence over the discovered `codex-auto-review` service and is forwarded unchanged. Otherwise, the registered service uses normal schema discovery and Responses routing. `/api/v1/models` excludes names containing `embedding` and publishes the remaining services without inspecting `supported_api_types` or issuing individual GETs. Include `embedding` in embedding service names and use Responses-compatible models for other names.
 

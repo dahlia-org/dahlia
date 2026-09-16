@@ -13,7 +13,7 @@ import type { Pool } from "pg";
 import type { AppConfig } from "../config";
 import { postgresMigrations, serverMigrationManifest, type PostgresMigrationDirectory } from "../migrations";
 import { SEARCH_FIELDS } from "../search/settings-model";
-import { createPostgresPool, POSTGRES_MIGRATION_SCHEMA } from "./postgres";
+import { createPostgresPool, ensurePublicExtensions, POSTGRES_MIGRATION_SCHEMA } from "./postgres";
 
 export type PostgresDatabase = NodePgDatabase & { $client: Pool };
 export type SQLiteDatabase = SQLiteAsyncDatabase<"sync" | "async", unknown>;
@@ -137,8 +137,11 @@ export async function migrateApplicationDatabase(
 }
 
 export async function ensureSearchIndexes(pool: Pick<Pool, "query">, config: AppConfig): Promise<void> {
+  const embedding = config.searchEmbedding;
   if (config.databaseType === "lakebase") {
-    await pool.query("CREATE EXTENSION IF NOT EXISTS lakebase_text WITH SCHEMA public");
+    await ensurePublicExtensions(pool, embedding
+      ? ["vector", "lakebase_text", "lakebase_vector"]
+      : ["lakebase_text"]);
     await pool.query(
       "CREATE INDEX IF NOT EXISTS search_documents_search_bm25 ON search.documents USING lakebase_bm25 (search_vector)",
     );
@@ -150,10 +153,8 @@ export async function ensureSearchIndexes(pool: Pick<Pool, "query">, config: App
       "CREATE INDEX IF NOT EXISTS search_documents_search_gin ON search.documents USING gin (search_vector)",
     );
   }
-  const embedding = config.searchEmbedding;
   if (!embedding || (config.databaseType !== "postgres" && config.databaseType !== "lakebase")) return;
-  const extension = config.databaseType === "lakebase" ? "lakebase_vector WITH SCHEMA public CASCADE" : "vector WITH SCHEMA public";
-  await pool.query(`CREATE EXTENSION IF NOT EXISTS ${extension}`);
+  if (config.databaseType === "postgres") await ensurePublicExtensions(pool, ["vector"]);
   const modelLiteral = (await pool.query<{ value: string }>("select quote_literal($1) as value", [embedding.model])).rows[0]!.value;
   const suffix = createHash("sha256").update(embedding.model).digest("hex").slice(0, 8);
   const method = config.databaseType === "lakebase" ? "lakebase_ann" : "hnsw";

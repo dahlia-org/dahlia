@@ -12,6 +12,14 @@ resources:
           privileges:
             - EXECUTE
             - USE_SCHEMA
+        - principal: ${resources.apps.dahlia_server.service_principal_client_id}
+          privileges:
+            - EXECUTE
+            - USE_SCHEMA
+        - principal: ${resources.apps.hindsight.service_principal_client_id}
+          privileges:
+            - EXECUTE
+            - USE_SCHEMA
       comment: AI model services for Dahlia Server
     app_schema:
       catalog_name: ${var.catalog}

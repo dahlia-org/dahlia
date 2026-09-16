@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 4 ]]; then
-  echo "Usage: postdeploy.sh PROFILE CATALOG AI_SCHEMA DATABASE_PROJECT_ID" >&2
+if [[ $# -ne 6 ]]; then
+  echo "Usage: postdeploy.sh PROFILE CATALOG AI_SCHEMA DATABASE_PROJECT_ID DAHLIA_APP_SERVICE_PRINCIPAL HINDSIGHT_APP_SERVICE_PRINCIPAL" >&2
   exit 1
 fi
 profile=$1
 catalog=$2
 ai_schema=$3
 database_project_id=$4
+dahlia_app_service_principal=$5
+hindsight_app_service_principal=$6
+if [[ -z $dahlia_app_service_principal || -z $hindsight_app_service_principal ]]; then
+  echo "App service principal IDs must not be empty; check that the apps deployed before postdeploy ran" >&2
+  exit 1
+fi
 
 # Keep successful response bodies quiet, but preserve CLI failure diagnostics.
 cli() {
@@ -18,7 +24,15 @@ cli() {
   fi
 }
 
-cli grants update catalog "$catalog" --json '{"changes":[{"principal":"account users","add":["USE_CATALOG"]}]}' >/dev/null
+catalog_grants=$(jq -cn \
+  --arg dahlia "$dahlia_app_service_principal" \
+  --arg hindsight "$hindsight_app_service_principal" \
+  '{changes: [
+    {principal: "account users", add: ["USE_CATALOG"]},
+    {principal: $dahlia, add: ["USE_CATALOG"]},
+    {principal: $hindsight, add: ["USE_CATALOG"]}
+  ]}')
+cli grants update catalog "$catalog" --json "$catalog_grants" >/dev/null
 
 cli api post "/api/2.0/postgres/projects/${database_project_id}/search-extensions" --json '{}' >/dev/null
 

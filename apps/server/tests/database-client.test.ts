@@ -153,8 +153,8 @@ describe("PostgreSQL migrations", () => {
   });
 
   it.each([
-    ["lakebase", "lakebase_vector WITH SCHEMA public CASCADE", "lakebase_ann"],
-    ["postgres", "vector WITH SCHEMA public", "hnsw"],
+    ["lakebase", "lakebase_vector", "lakebase_ann"],
+    ["postgres", "vector", "hnsw"],
   ] as const)("uses the native %s vector extension and index", async (databaseType, extension, method) => {
     const query = vi.fn(async (statement: string) => statement.startsWith("select quote_literal")
       ? { rows: [{ value: "'model'" }] }
@@ -164,16 +164,27 @@ describe("PostgreSQL migrations", () => {
       searchEmbedding: { model: "model", dimensions: 32 },
     } as AppConfig);
     const statements = query.mock.calls.map(([statement]) => statement);
-    expect(statements).toContain(`CREATE EXTENSION IF NOT EXISTS ${extension}`);
+    const extensionStatement = statements.find((statement) => statement.includes("extension_schema_mismatch"))!;
+    expect(extensionStatement).toContain(`'${extension}'`);
     expect(statements.some((statement) => statement.includes(`USING ${method}`)
       && statement.includes("embedding::public.vector(32)")
       && statement.includes("public.vector_cosine_ops"))).toBe(true);
     if (databaseType === "lakebase") {
-      expect(statements).toContain("CREATE EXTENSION IF NOT EXISTS lakebase_text WITH SCHEMA public");
+      expect(extensionStatement).toContain("'vector', 'lakebase_text', 'lakebase_vector'");
       expect(statements.some((statement) => statement.includes("USING lakebase_bm25"))).toBe(true);
     } else {
       expect(statements.some((statement) => statement.includes("USING gin"))).toBe(true);
     }
+  });
+
+  it("installs only the Lakebase text extension when semantic search is disabled", async () => {
+    const query = vi.fn<(statement: string) => Promise<{ rows: never[] }>>(async () => ({ rows: [] }));
+    await ensureSearchIndexes({ query } as never, { databaseType: "lakebase" } as AppConfig);
+    const extensionStatement = query.mock.calls.map(([statement]) => statement)
+      .find((statement) => statement.includes("extension_schema_mismatch"))!;
+    expect(extensionStatement).toContain("'lakebase_text'");
+    expect(extensionStatement).not.toContain("'vector'");
+    expect(extensionStatement).not.toContain("'lakebase_vector'");
   });
 
   it("rejects duplicate or unstable ledger IDs", () => {

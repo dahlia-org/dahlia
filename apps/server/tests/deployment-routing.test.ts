@@ -207,9 +207,10 @@ describe("deployment routing", () => {
     expect(guardedJobIds.toSorted()).toEqual(validationJobIds.toSorted());
   });
 
-  it("deploys the standalone Server package as a Databricks App backed by Lakebase", () => {
+  it("deploys separate Server and Hindsight Apps backed by one Lakebase database", () => {
     const bundle = readText("../../../deploy/databricks/databricks.yml");
     const resource = readText("../../../deploy/databricks/resources/dahlia_server.yml");
+    const hindsight = readText("../../../deploy/databricks/resources/hindsight.app.yml");
     expect(resource).toMatch(/name: DAHLIA_AUTH_PROVIDER_ID\s+value: databricks/);
     expect(resource).toMatch(/name: DAHLIA_SIGNOUT_URL\s+value: \/\.auth\/logout/);
     const serverPackage = JSON.parse(readText("../package.json")) as {
@@ -230,6 +231,10 @@ describe("deployment routing", () => {
     expect(packageConfig).toContain("workerd: true");
     expect(bundle).toContain('databricks_cli_version: ">= 1.4.0"');
     expect(bundle).toContain("- ../../apps/server");
+    expect(bundle).toContain("- ../../apps/hindsight");
+    expect(bundle).toContain("../../apps/hindsight/.upstream/hindsight-api-slim/**");
+    expect(bundle).toContain("prebuild: \"cd ../../apps/hindsight && uv run --no-project scripts/sync_upstream.py\"");
+    expect(bundle).toMatch(/hindsight_schema:[\s\S]*?default: hindsight/);
     expect(bundle).not.toContain("../../pnpm-lock.yaml");
     expect(bundle).not.toContain("- ../../pnpm-workspace.yaml");
     expect(bundle).not.toContain("app_name:");
@@ -243,7 +248,7 @@ describe("deployment routing", () => {
     expect(bundle).toMatch(/ai_schema:[\s\S]*?default: ai/);
     expect(resource).toContain("name: ${var.app_schema}");
     expect(resource).not.toContain("${var.schema}");
-    expect(bundle).toContain("'${var.catalog}' '${var.ai_schema}' '${var.database_project_id}'");
+    expect(bundle).toContain("'${var.catalog}' '${var.ai_schema}' '${var.database_project_id}' '${resources.apps.dahlia_server.service_principal_client_id}' '${resources.apps.hindsight.service_principal_client_id}'");
     expect(bundle).toContain("volume_name:");
     expect(bundle).toContain("default: storage");
     expect(bundle).not.toContain("legacy_artifact_catalog:");
@@ -257,6 +262,8 @@ describe("deployment routing", () => {
     expect(resource).toContain("value: ${var.catalog}.${var.ai_schema}");
     expect(resource).toContain("name: ${var.ai_schema}");
     expect(resource).toMatch(/ai_schema:[\s\S]*?principal: account users\s+privileges:\s+- EXECUTE/);
+    expect(resource).toContain("principal: ${resources.apps.dahlia_server.service_principal_client_id}");
+    expect(resource).toContain("principal: ${resources.apps.hindsight.service_principal_client_id}");
     expect(bundle).toMatch(/prod:[\s\S]*?volumes:[\s\S]*?prevent_destroy: true/);
     expect(bundle).toMatch(/dev:[\s\S]*?purge_on_delete: true[\s\S]*?prod:/);
     expect(bundle).not.toContain("admin_email");
@@ -291,6 +298,23 @@ describe("deployment routing", () => {
     expect(resource).not.toContain("postgres_roles:");
     expect(resource).not.toContain("postgres_databases:");
     expect(resource).toContain("/databases/databricks-postgres");
+    expect(hindsight).toContain("name: hindsight-${bundle.target}");
+    expect(hindsight).toContain("source_code_path: ../../../apps/hindsight");
+    expect(exists("../../hindsight/requirements.txt")).toBe(true);
+    expect(exists("../../hindsight/scripts/start_databricks.py")).toBe(true);
+    expect(hindsight).toContain("name: HINDSIGHT_API_DATABASE_SCHEMA\n            value: ${var.hindsight_schema}");
+    expect(hindsight).toContain("name: HINDSIGHT_API_TEXT_SEARCH_EXTENSION\n            value: lakebase_text");
+    expect(hindsight).toContain("name: HINDSIGHT_API_VECTOR_EXTENSION\n            value: lakebase_vector");
+    expect(hindsight).toContain("name: HINDSIGHT_API_LLM_PROVIDER\n            value: databricks");
+    expect(hindsight).toContain("name: HINDSIGHT_API_EMBEDDINGS_PROVIDER\n            value: databricks");
+    expect(hindsight).toContain("name: LAKEBASE_ENDPOINT\n            value_from: postgres");
+    expect(hindsight).not.toContain("HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER");
+    expect(hindsight).toContain("${var.catalog}.${var.ai_schema}.gpt-5-6-luna");
+    expect(hindsight).toContain("${var.catalog}.${var.ai_schema}.qwen3-embedding-0-6b");
+    expect(hindsight).toContain("name: HINDSIGHT_API_EMBEDDINGS_OPENAI_DIMENSIONS\n            value: ${var.search_embedding_dimensions}");
+    expect(hindsight).not.toMatch(/API_KEY|secret:|value_from: openai-api-key|user_api_scopes/);
+    expect(bundle).not.toContain("hindsight_openai_secret");
+    expect(hindsight).toContain("${resources.postgres_projects.dahlia_database_project.id}/branches/production/databases/databricks-postgres");
     expect(serverPackage.name).toBe("@dahlia-ai/server");
     expect(serverPackage.exports).toHaveProperty(".");
     expect(serverPackage.exports).toHaveProperty("./client");
