@@ -4,9 +4,12 @@ import { json, uiText } from "./api";
 
 export type MCPClient = "mcpJSON" | "claude" | "codex";
 
-interface MCPConnectionInfo {
-  mcp: { url: string; proxyUrl?: string; databricksProxy: boolean; available: boolean };
-}
+type MCPSettings = { url: string; available: boolean } & (
+  { databricksProxy: false; proxyUrl?: never }
+  | { databricksProxy: true; proxyUrl: string }
+);
+
+interface MCPConnectionInfo { mcp: MCPSettings }
 
 export function parseMCPConnectionInfo(value: unknown): MCPConnectionInfo {
   const mcp = typeof value === "object" && value !== null && "mcp" in value ? value.mcp : undefined;
@@ -31,7 +34,7 @@ function shellArgument(value: string): string {
 }
 
 export function mcpConnectionOutput(client: MCPClient, mcp: MCPConnectionInfo["mcp"], profile = "DEFAULT"): string {
-  const url = mcp.databricksProxy ? mcp.proxyUrl! : mcp.url;
+  const url = mcp.databricksProxy ? mcp.proxyUrl : mcp.url;
   const normalizedProfile = profile.trim() || "DEFAULT";
   if (client === "mcpJSON") {
     return JSON.stringify({

@@ -231,8 +231,8 @@ describe("desktop-style meeting layout", () => {
 
   it("generates direct and Databricks proxy MCP client settings", () => {
     const url = "https://dahlia.aws.databricksapps.com/mcp";
-    const direct = { url, databricksProxy: false, available: true };
-    const proxy = { url: "https://dahlia.example/mcp", proxyUrl: url, databricksProxy: true, available: true };
+    const direct = { url, databricksProxy: false, available: true } as const;
+    const proxy = { url: "https://dahlia.example/mcp", proxyUrl: url, databricksProxy: true, available: true } as const;
     expect(mcpConnectionOutput("codex", direct)).toBe(`codex mcp add dahlia --url '${url}'`);
     expect(mcpConnectionOutput("claude", direct)).toBe(`claude mcp add --scope user --transport http dahlia '${url}'`);
     expect(JSON.parse(mcpConnectionOutput("mcpJSON", direct))).toEqual({ mcpServers: { dahlia: { type: "http", url } } });
