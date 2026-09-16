@@ -1,7 +1,7 @@
 resources:
   apps:
     hindsight:
-      name: hindsight-${bundle.target}
+      name: dahlia-hindsight-${bundle.target}
       description: Hindsight backed by the shared Dahlia Lakebase database.
       source_code_path: ../../../apps/hindsight
       config:
