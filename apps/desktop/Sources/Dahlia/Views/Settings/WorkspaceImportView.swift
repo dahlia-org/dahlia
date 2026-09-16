@@ -119,7 +119,7 @@ struct WorkspaceImportView: View {
             let initialOrganizationID = pending.organizations.first(where: { $0.kind == .team }).flatMap { UUID(uuidString: $0.id) }
             let teamOrganizationIDs = Set(pending.organizations.filter { $0.kind == .team }.compactMap { UUID(uuidString: $0.id) })
             let hasTeamWorkspace = destinations.contains { teamOrganizationIDs.contains($0.organizationId) }
-            let requiresOrganizationSelection = !destinations.isEmpty && !teamOrganizationIDs.isEmpty && !hasTeamWorkspace
+            let requiresOrganizationSelection = !teamOrganizationIDs.isEmpty && !hasTeamWorkspace
             organizationId = requiresOrganizationSelection ? nil : initialOrganizationID
             useExisting = !destinations.isEmpty && !requiresOrganizationSelection
             if pending.canCreateOrganizations { await loadOwners() }
