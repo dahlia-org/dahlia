@@ -623,12 +623,14 @@
             )
             let organizationID = UUID.v7()
             let workspace = makeWorkspace(name: "Local", lastOpenedAt: .now)
+            var organizationFetchCount = 0
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertWorkspace(workspace)
             let model = WorkspaceManagementModel(
                 cloudWorkspaceFetcher: { _ in [] },
                 organizationFetcher: { _ in
-                    [.init(id: organizationID.uuidString.lowercased(), name: "Team", slug: "team", kind: .team)]
+                    organizationFetchCount += 1
+                    return [.init(id: organizationID.uuidString.lowercased(), name: "Team", slug: "team", kind: .team)]
                 }
             )
             await model.configure(appDatabase: database)
@@ -640,6 +642,8 @@
             )
             await model.requestServerAdoption(for: workspace, connection: account)
             let pending = try #require(model.pendingServerAdoption)
+            #expect(organizationFetchCount == 1)
+            organizationFetchCount = 0
 
             let adopted = await model.confirmServerAdoption(
                 pending,
@@ -649,6 +653,7 @@
             )
 
             #expect(adopted == nil)
+            #expect(organizationFetchCount == 0)
             #expect(try repository.fetchAllWorkspaces().first?.name == "Local")
             #expect(try await database.dbQueue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_transactions") } == 0)
         }
