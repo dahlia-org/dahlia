@@ -149,6 +149,17 @@
                     arguments: [fixture.session.id]
                 )
                 _ = try fixture.commit(in: db)
+                try db.execute(sql: "DELETE FROM sync_transactions WHERE workspace_id = ?", arguments: [fixture.target.id])
+                let destination = CloudWorkspaceRecord(
+                    workspaceId: fixture.target.id,
+                    connectionId: fixture.connection.id,
+                    organizationId: fixture.target.organizationId!,
+                    name: fixture.target.name,
+                    createdAt: fixture.target.createdAt,
+                    revision: 1,
+                    role: fixture.target.syncRole!
+                )
+                try LocalWorkspaceImport.validate(sourceId: fixture.source.id, destination: destination, in: db)
             }
 
             let archive = try #require(try await fixture.database.dbQueue.read {
@@ -156,6 +167,61 @@
             })
             #expect(archive.connectionId == nil)
             #expect(archive.state == "expired")
+        }
+
+        @Test
+        func rejectsImportOfRetainedCAFWithFailedSegment() throws {
+            let fixture = try LocalImportFixture(role: "editor")
+            defer { fixture.close() }
+            try fixture.database.dbQueue.write { db in
+                try RecordingArchiveRecord.deleteOne(db, key: fixture.session.id)
+                let now = Date.now
+                var segment = RecordingAudioSegmentRecord(
+                    id: .v7(),
+                    recordingSessionId: fixture.session.id,
+                    source: .microphone,
+                    segmentIndex: 1,
+                    generationId: .v7(),
+                    state: .ready,
+                    partialRelativePath: "",
+                    finalRelativePath: "recordings/retained.caf",
+                    sampleRate: 16000,
+                    channelCount: 1,
+                    sealedFrameCount: 160,
+                    sessionStartOffsetSeconds: 0,
+                    sessionEndOffsetSeconds: 0.01,
+                    byteCount: 1,
+                    sha256: Data(repeating: 0, count: 32),
+                    finalizationStartedAt: now,
+                    integrityVerifiedAt: now,
+                    finalizedAt: now,
+                    purgeRequestedAt: nil,
+                    purgedAt: nil,
+                    failureStage: nil,
+                    failureCode: nil,
+                    createdAt: now,
+                    updatedAt: now
+                )
+                try segment.insert(db)
+                segment.id = .v7()
+                segment.segmentIndex = 2
+                segment.generationId = .v7()
+                segment.state = .failed
+                segment.partialRelativePath = "recordings/failed.partial.caf"
+                segment.finalRelativePath = "recordings/failed.caf"
+                segment.integrityVerifiedAt = nil
+                segment.failureStage = "finalize"
+                segment.failureCode = "missingFinal"
+                try segment.insert(db)
+            }
+
+            #expect(throws: LocalWorkspaceImportError.self) {
+                try fixture.database.dbQueue.write { db in _ = try fixture.commit(in: db) }
+            }
+            try fixture.database.dbQueue.read { db throws in
+                #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.workspaceId == fixture.source.id)
+                #expect(try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id) == nil)
+            }
         }
 
         @Test(arguments: ["collision", "pending", "blocked", "recording", "viewer", "unknown", "metadata", "connection", "rollback"])

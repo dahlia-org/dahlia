@@ -657,6 +657,21 @@ enum SyncInitialSnapshotBuilder {
                 )
                 """, arguments: [archive.sessionId, RecordingAudioSegmentState.purged.rawValue]) ?? false
                 guard !prepared.isEmpty || hasRetainedSegments else { continue }
+                if prepared.isEmpty {
+                    let hasUnarchivableSegments = try Bool.fetchOne(db, sql: """
+                    SELECT EXISTS (
+                        SELECT 1 FROM recording_audio_segments
+                        WHERE recordingSessionId = ?
+                          AND state NOT IN (?, ?, ?)
+                    )
+                    """, arguments: [
+                        archive.sessionId,
+                        RecordingAudioSegmentState.ready.rawValue,
+                        RecordingAudioSegmentState.purgePending.rawValue,
+                        RecordingAudioSegmentState.purged.rawValue,
+                    ]) ?? false
+                    guard !hasUnarchivableSegments else { throw LocalWorkspaceImportError.unavailable }
+                }
                 archive.connectionId = connectionId
                 archive.number = nil
                 archive.audioJSON = "{}"
