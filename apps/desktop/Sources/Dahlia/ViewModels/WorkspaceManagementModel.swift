@@ -375,7 +375,7 @@ final class WorkspaceManagementModel {
         _ pending: PendingWorkspaceServerAdoption,
         destinationId: UUID?,
         organizationId: UUID?,
-        workspaceName: String? = nil
+        workspaceName: String?
     ) async -> WorkspaceRecord? {
         guard updatingWorkspaceAccountID == nil, let repository else { return nil }
         updatingWorkspaceAccountID = pending.workspace.id
@@ -434,7 +434,8 @@ final class WorkspaceManagementModel {
                     id: pending.workspace.id,
                     connectionID: connection.id,
                     serverWorkspace: serverWorkspace,
-                    expectedChanges: fence
+                    expectedChanges: fence,
+                    requestedName: workspaceName
                 ) else {
                     throw LocalWorkspaceImportError.changed
                 }

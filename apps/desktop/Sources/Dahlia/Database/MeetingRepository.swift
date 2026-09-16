@@ -224,11 +224,14 @@ final class MeetingRepository {
         connectionID: UUID,
         serverWorkspace: CloudWorkspaceRecord,
         expectedChanges: Int,
+        requestedName: String? = nil,
         screenshotContent: ScreenshotContentProvider = .shared
     ) async throws -> WorkspaceRecord? {
         guard serverWorkspace.workspaceId == id, serverWorkspace.connectionId == connectionID, serverWorkspace.role == "admin" else {
             throw LocalWorkspaceImportError.unavailable
         }
+        let adoptedName = requestedName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? serverWorkspace.name
+        guard !adoptedName.isEmpty else { throw LocalWorkspaceImportError.unavailable }
         screenshotContent.retainOriginals(workspaceIds: [id], dbQueue: dbQueue)
         defer { screenshotContent.releaseOriginals(workspaceIds: [id], dbQueue: dbQueue) }
         let files = try await screenshotContent.prepareAccountTransfer(workspaceId: id, connectionId: connectionID, dbQueue: dbQueue)
@@ -238,7 +241,7 @@ final class MeetingRepository {
                   try !RecordingSessionRecord.hasActiveRecording(workspaceId: id, in: db),
                   try !SyncTransactionQueue.hasPending(workspaceId: id, in: db) else { throw LocalWorkspaceImportError.changed }
             try ScreenshotContentProvider.installTransfers(files, workspaceId: id, in: db)
-            workspace.name = serverWorkspace.name
+            workspace.name = adoptedName
             workspace.accountConnectionId = connectionID
             workspace.organizationId = serverWorkspace.organizationId
             workspace.syncRole = serverWorkspace.role
@@ -248,6 +251,13 @@ final class MeetingRepository {
                 sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, ?)",
                 arguments: [id, id, serverWorkspace.revision]
             )
+            if adoptedName != serverWorkspace.name {
+                try SyncTransactionRecorder.record(
+                    workspaceId: id,
+                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
+                    in: db
+                )
+            }
             var items: [WorkspaceRelocation.Item] = []
             for (entity, table) in [(SyncEntity.project, "projects"), (.meeting, "meetings"), (.file, "files")] {
                 items += try UUID.fetchAll(db, sql: "SELECT id FROM \(table) WHERE workspace_id = ?", arguments: [id])

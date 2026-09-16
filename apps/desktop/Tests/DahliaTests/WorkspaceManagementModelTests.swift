@@ -1,6 +1,7 @@
 #if canImport(Testing)
     import DahliaMeetingAccess
     import Foundation
+    import GRDB
     import Testing
     @testable import Dahlia
 
@@ -570,6 +571,89 @@
         }
 
         @Test
+        func adoptingSameIDQueuesTheRequestedWorkspaceNameOnRetry() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            let workspace = makeWorkspace(name: "Local", lastOpenedAt: .now)
+            let remote = CloudWorkspaceRecord(
+                workspaceId: workspace.id,
+                connectionId: connection.id,
+                organizationId: .v7(),
+                name: "First Attempt",
+                createdAt: .now,
+                revision: 4,
+                role: "admin"
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            try repository.insertWorkspace(workspace)
+            let expectedChanges = try await database.dbQueue.read { $0.totalChangesCount }
+
+            let adopted = try await repository.adoptWorkspaceForServerSync(
+                id: workspace.id,
+                connectionID: connection.id,
+                serverWorkspace: remote,
+                expectedChanges: expectedChanges,
+                requestedName: "  Second Attempt  "
+            )
+
+            #expect(adopted?.name == "Second Attempt")
+            let queued = try await database.dbQueue.read { db in
+                (
+                    try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity = 'workspace' AND action = 'update'") ?? 0,
+                    try Int.fetchOne(db, sql: "SELECT baseRevision FROM sync_operations WHERE entity = 'workspace' AND action = 'update'"),
+                    try String.fetchOne(db, sql: "SELECT payloadJSON FROM sync_operations WHERE entity = 'workspace' AND action = 'update'")
+                )
+            }
+            #expect(queued.0 == 1)
+            #expect(queued.1 == remote.revision)
+            let payloadData = Data(try #require(queued.2).utf8)
+            let payload = try #require(try JSONSerialization.jsonObject(with: payloadData) as? [String: Any])
+            #expect(payload["name"] as? String == "Second Attempt")
+        }
+
+        @Test
+        func newWorkspaceAdoptionRejectsABlankName() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            let organizationID = UUID.v7()
+            let workspace = makeWorkspace(name: "Local", lastOpenedAt: .now)
+            try await repository.insertDahliaAccountConnection(connection)
+            try repository.insertWorkspace(workspace)
+            let model = WorkspaceManagementModel(
+                cloudWorkspaceFetcher: { _ in [] },
+                organizationFetcher: { _ in
+                    [.init(id: organizationID.uuidString.lowercased(), name: "Team", slug: "team", kind: .team)]
+                }
+            )
+            await model.configure(appDatabase: database)
+            let account = DahliaAccountConnection(
+                record: connection,
+                account: DahliaCloudAccount(id: "user", name: "User", email: nil),
+                isCloud: false,
+                grantedScopes: ["all-apis"]
+            )
+            await model.requestServerAdoption(for: workspace, connection: account)
+            let pending = try #require(model.pendingServerAdoption)
+
+            let adopted = await model.confirmServerAdoption(
+                pending,
+                destinationId: nil,
+                organizationId: organizationID,
+                workspaceName: "  \n  "
+            )
+
+            #expect(adopted == nil)
+            #expect(try repository.fetchAllWorkspaces().first?.name == "Local")
+            #expect(try await database.dbQueue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_transactions") } == 0)
+        }
+
+        @Test
         func adoptionPreservesTheLocalWorkspaceWhenAccessWasRevokedBeforeConfirmation() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
@@ -605,7 +689,12 @@
             )
             await model.requestServerAdoption(for: workspace, connection: account)
             let pending = try #require(model.pendingServerAdoption)
-            #expect(await model.confirmServerAdoption(pending, destinationId: remote.workspaceId, organizationId: nil) == nil)
+            #expect(await model.confirmServerAdoption(
+                pending,
+                destinationId: remote.workspaceId,
+                organizationId: nil,
+                workspaceName: nil
+            ) == nil)
             #expect(try repository.fetchAllWorkspaces().first(where: { $0.id == workspace.id })?.accountConnectionId == nil)
         }
 
