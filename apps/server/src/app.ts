@@ -200,11 +200,6 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   const signOutUrl = config.signOutUrl ?? (config.authProvider === "accounts" ? "/sign-in" : "/dashboard");
 
   app.use("*", secureHeaders());
-  app.get("/sign-in", async (context, next) => {
-    if (config.authProvider === "accounts") return next();
-    context.header("Cache-Control", "no-store");
-    return context.redirect("/dashboard");
-  });
   app.get("/sign-out", (context) => {
     context.header("Cache-Control", "no-store");
     return context.redirect(signOutUrl);

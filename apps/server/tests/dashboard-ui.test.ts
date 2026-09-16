@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   App,
+  HeaderAuthenticationUnavailable,
   ScreenshotFigure,
   SyncedMeeting,
   Workspaces,
@@ -265,6 +266,15 @@ describe("dashboard navigation", () => {
     }
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "unavailable" }, { status: 503 })));
     await expect(accountSignInRequired()).rejects.toMatchObject({ status: 503 });
+  });
+
+  it("shows a stable terminal screen when Header authentication is unavailable", () => {
+    vi.stubGlobal("navigator", { language: "en-US" });
+    const html = renderToStaticMarkup(createElement(HeaderAuthenticationUnavailable, {
+      brand: { name: "Dahlia", product: "Server" },
+    }));
+    expect(html).toContain("Your external authentication session is unavailable. Contact your administrator.");
+    expect(html).not.toContain("Continue with Google");
   });
 
   it("uses advertised thumbnails for browsing and preserves the original link", () => {

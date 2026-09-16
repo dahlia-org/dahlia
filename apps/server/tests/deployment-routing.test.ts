@@ -104,15 +104,14 @@ describe("deployment routing", () => {
     expect(await discovery.json()).toEqual({ error: "not_found" });
   });
 
-  it("keeps the accounts screen unavailable in Header mode and routes sign-out through configuration", async () => {
+  it("leaves sign-in to the SPA and routes sign-out through configuration", async () => {
     const app = createApp({ config: { ...headerConfig, signOutUrl: "/.auth/logout" }, authStore: testStore() });
     const signIn = await app.request("/sign-in");
     const signOut = await app.request("/sign-out");
     const authMode = await app.request("/api/auth/mode");
 
-    expect(signIn.status).toBe(302);
-    expect(signIn.headers.get("location")).toBe("/dashboard");
-    expect(signIn.headers.get("cache-control")).toBe("no-store");
+    expect(signIn.status).toBe(404);
+    expect(signIn.headers.get("location")).toBeNull();
     expect(signOut.status).toBe(302);
     expect(signOut.headers.get("location")).toBe("/.auth/logout");
     expect(signOut.headers.get("cache-control")).toBe("no-store");

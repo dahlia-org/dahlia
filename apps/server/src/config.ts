@@ -115,8 +115,16 @@ function validateBaseUrl(value: string, name: string): string {
   return url.toString().replace(/\/$/, "");
 }
 
-function validateSignOutUrl(value: string): string {
-  if (value.startsWith("/") && !/^\/[\\/]/.test(value)) return value;
+function validateSignOutUrl(value: string, baseUrl: string): string {
+  if ([...value].some((character) => character.charCodeAt(0) <= 31 || character.charCodeAt(0) === 127)) {
+    throw new Error("DAHLIA_SIGNOUT_URL must not contain control characters");
+  }
+  if (value.startsWith("/")) {
+    if (new URL(value, baseUrl).origin !== new URL(baseUrl).origin) {
+      throw new Error("DAHLIA_SIGNOUT_URL must be a same-origin root-relative path");
+    }
+    return value;
+  }
   let url: URL;
   try {
     url = new URL(value);
@@ -230,6 +238,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   );
   const signOutUrl = validateSignOutUrl(
     env.DAHLIA_SIGNOUT_URL?.trim() || (authProvider === "accounts" ? "/sign-in" : "/dashboard"),
+    baseUrl,
   );
   const maxRequestBytes = z.coerce
     .number()

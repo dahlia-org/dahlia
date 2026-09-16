@@ -241,18 +241,18 @@ export async function accountSignInRequired(signal?: AbortSignal): Promise<boole
 }
 
 function AccountsOnly({ brand, children }: { brand: DashboardBrand; children: ReactNode }) {
-  const [accountSignIn, setAccountSignIn] = useState(false);
+  const [accountSignIn, setAccountSignIn] = useState<boolean>();
   const [authModeError, setAuthModeError] = useState<string>();
   const [authModeAttempt, setAuthModeAttempt] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
+    setAccountSignIn(undefined);
     setAuthModeError(undefined);
     void accountSignInRequired(controller.signal)
       .then((required) => {
         if (controller.signal.aborted) return;
-        if (required) setAccountSignIn(true);
-        else window.location.replace("/dashboard");
+        setAccountSignIn(required);
       })
       .catch((caught: unknown) => {
         if (!controller.signal.aborted) setAuthModeError(caught instanceof Error ? caught.message : "Could not load your account");
@@ -261,10 +261,21 @@ function AccountsOnly({ brand, children }: { brand: DashboardBrand; children: Re
   }, [authModeAttempt]);
 
   if (accountSignIn) return children;
+  if (accountSignIn === false) return <HeaderAuthenticationUnavailable brand={brand} />;
   return <main className="loading">
     <Brand brand={brand} />
     <span>{authModeError ?? uiText("Loading account…", "アカウントを読み込み中…")}</span>
     {authModeError && <button className="secondary" onClick={() => setAuthModeAttempt((attempt) => attempt + 1)}>{uiText("Try again", "再試行")}</button>}
+  </main>;
+}
+
+export function HeaderAuthenticationUnavailable({ brand }: { brand: DashboardBrand }) {
+  return <main className="loading">
+    <Brand brand={brand} />
+    <span>{uiText(
+      "Your external authentication session is unavailable. Contact your administrator.",
+      "外部認証セッションを確認できません。管理者にお問い合わせください。",
+    )}</span>
   </main>;
 }
 

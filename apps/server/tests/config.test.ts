@@ -275,7 +275,7 @@ describe("configuration", () => {
     expect(loadConfig({ ...accounts, DAHLIA_SIGNOUT_URL: " /.auth/logout " }).signOutUrl).toBe("/.auth/logout");
     expect(loadConfig({ ...accounts, DAHLIA_SIGNOUT_URL: "https://access.example/logout" }).signOutUrl)
       .toBe("https://access.example/logout");
-    for (const value of ["sign-out", "//access.example/logout", "/\\access.example/logout", "http://access.example/logout", "javascript:location.reload()"]) {
+    for (const value of ["sign-out", "//access.example/logout", "/\\access.example/logout", "/\t/access.example", "http://access.example/logout", "javascript:location.reload()"]) {
       expect(() => loadConfig({ ...accounts, DAHLIA_SIGNOUT_URL: value })).toThrow("DAHLIA_SIGNOUT_URL");
     }
   });
