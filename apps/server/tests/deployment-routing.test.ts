@@ -266,7 +266,7 @@ describe("deployment routing", () => {
     expect(bundle).toMatch(/ai_schema:[\s\S]*?default: ai/);
     expect(resource).toContain("name: ${var.app_schema}");
     expect(resource).not.toContain("${var.schema}");
-    expect(bundle).toContain("'${var.catalog}' '${var.ai_schema}' '${var.database_project_id}' '${resources.apps.dahlia_server.service_principal_client_id}' '${resources.apps.hindsight.service_principal_client_id}'");
+    expect(bundle).toContain("'${var.catalog}' '${var.ai_schema}' '${var.database_project_id}'");
     expect(bundle).toContain("volume_name:");
     expect(bundle).toContain("default: storage");
     expect(bundle).not.toContain("legacy_artifact_catalog:");
@@ -280,8 +280,7 @@ describe("deployment routing", () => {
     expect(resource).toContain("value: ${var.catalog}.${var.ai_schema}");
     expect(resource).toContain("name: ${var.ai_schema}");
     expect(resource).toMatch(/ai_schema:[\s\S]*?principal: account users\s+privileges:\s+- EXECUTE/);
-    expect(resource).toContain("principal: ${resources.apps.dahlia_server.service_principal_client_id}");
-    expect(resource).toContain("principal: ${resources.apps.hindsight.service_principal_client_id}");
+    expect(resource).not.toContain("service_principal_client_id");
     expect(bundle).toMatch(/prod:[\s\S]*?volumes:[\s\S]*?prevent_destroy: true/);
     expect(bundle).toMatch(/dev:[\s\S]*?purge_on_delete: true[\s\S]*?prod:/);
     expect(bundle).not.toContain("admin_email");
