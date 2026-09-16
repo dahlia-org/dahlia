@@ -24,7 +24,13 @@ if (command === process.env.FAIL_COMMAND && (!process.env.FAIL_MODEL || args[3] 
   console.error("PERMISSION_DENIED: missing CREATE_SERVICE");
   process.exit(1);
 }
-if (command === "list-model-services") {
+if (args[0] === "apps" && command === "get") {
+  const principals = {
+    "mcp-dahlia-server-test": "dahlia-app-sp",
+    "hindsight-test": "hindsight-app-sp",
+  };
+  console.log(JSON.stringify({service_principal_client_id: principals[args[2]]}));
+} else if (command === "list-model-services") {
   console.log(JSON.stringify(names.map(name => ({name}))));
 } else if (command === "get-model-service") {
   const model = args[2].replace("model-services/", "models/");
@@ -51,6 +57,8 @@ if (command === "list-model-services") {
     "test_catalog",
     "ai",
     "test-project",
+    "mcp-dahlia-server-test",
+    "hindsight-test",
   ], {
     encoding: "utf8",
     env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, STATE: state, CALLS: calls, FAIL_COMMAND: failCommand, FAIL_MODEL: failModel },
@@ -89,6 +97,14 @@ if (command === "list-model-services") {
     const catalogGrant = readCalls().find(args => args[0] === "grants" && args[1] === "update");
     assert.deepEqual(JSON.parse(catalogGrant[catalogGrant.indexOf("--json") + 1]).changes, [
       { principal: "account users", add: ["USE_CATALOG"] },
+      { principal: "dahlia-app-sp", add: ["USE_CATALOG"] },
+      { principal: "hindsight-app-sp", add: ["USE_CATALOG"] },
+    ]);
+    const schemaGrant = readCalls().find(args => args[0] === "grants" && args[1] === "update" && args[2] === "schema");
+    assert.equal(schemaGrant[3], "test_catalog.ai");
+    assert.deepEqual(JSON.parse(schemaGrant[schemaGrant.indexOf("--json") + 1]).changes, [
+      { principal: "dahlia-app-sp", add: ["USE_SCHEMA", "EXECUTE"] },
+      { principal: "hindsight-app-sp", add: ["USE_SCHEMA", "EXECUTE"] },
     ]);
     const resource = readFileSync(new URL("../resources/dahlia_server.yml", import.meta.url), "utf8");
     assert.match(resource, /name: DAHLIA_EMBEDDING_MODEL\s+value: \$\{var.catalog\}\.\$\{var.ai_schema\}\.qwen3-embedding-0-6b/);

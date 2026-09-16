@@ -266,7 +266,7 @@ describe("deployment routing", () => {
     expect(bundle).toMatch(/ai_schema:[\s\S]*?default: ai/);
     expect(resource).toContain("name: ${var.app_schema}");
     expect(resource).not.toContain("${var.schema}");
-    expect(bundle).toContain("'${var.catalog}' '${var.ai_schema}' '${var.database_project_id}'");
+    expect(bundle).toContain("'${var.catalog}' '${var.ai_schema}' '${var.database_project_id}' 'mcp-dahlia-server-${bundle.target}' 'hindsight-${bundle.target}'");
     expect(bundle).toContain("volume_name:");
     expect(bundle).toContain("default: storage");
     expect(bundle).not.toContain("legacy_artifact_catalog:");

@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 4 ]]; then
-  echo "Usage: postdeploy.sh PROFILE CATALOG AI_SCHEMA DATABASE_PROJECT_ID" >&2
+if [[ $# -ne 6 ]]; then
+  echo "Usage: postdeploy.sh PROFILE CATALOG AI_SCHEMA DATABASE_PROJECT_ID DAHLIA_APP_NAME HINDSIGHT_APP_NAME" >&2
   exit 1
 fi
 profile=$1
 catalog=$2
 ai_schema=$3
 database_project_id=$4
+dahlia_app_name=$5
+hindsight_app_name=$6
 
 # Keep successful response bodies quiet, but preserve CLI failure diagnostics.
 cli() {
@@ -18,7 +20,31 @@ cli() {
   fi
 }
 
-cli grants update catalog "$catalog" --json '{"changes":[{"principal":"account users","add":["USE_CATALOG"]}]}' >/dev/null
+app_service_principal() {
+  cli apps get "$1" | jq -er '.service_principal_client_id | select(type == "string" and length > 0)'
+}
+
+dahlia_app_service_principal=$(app_service_principal "$dahlia_app_name")
+hindsight_app_service_principal=$(app_service_principal "$hindsight_app_name")
+
+catalog_grants=$(jq -cn \
+  --arg dahlia "$dahlia_app_service_principal" \
+  --arg hindsight "$hindsight_app_service_principal" \
+  '{changes: [
+    {principal: "account users", add: ["USE_CATALOG"]},
+    {principal: $dahlia, add: ["USE_CATALOG"]},
+    {principal: $hindsight, add: ["USE_CATALOG"]}
+  ]}')
+cli grants update catalog "$catalog" --json "$catalog_grants" >/dev/null
+
+schema_grants=$(jq -cn \
+  --arg dahlia "$dahlia_app_service_principal" \
+  --arg hindsight "$hindsight_app_service_principal" \
+  '{changes: [
+    {principal: $dahlia, add: ["USE_SCHEMA", "EXECUTE"]},
+    {principal: $hindsight, add: ["USE_SCHEMA", "EXECUTE"]}
+  ]}')
+cli grants update schema "${catalog}.${ai_schema}" --json "$schema_grants" >/dev/null
 
 cli api post "/api/2.0/postgres/projects/${database_project_id}/search-extensions" --json '{}' >/dev/null
 
