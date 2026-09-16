@@ -28,6 +28,10 @@ class Response:
         return json.dumps(self.body).encode()
 
 
+def _postgres_url(authority):
+    return f"postgresql:{authority}"
+
+
 class DatabricksStartTests(unittest.TestCase):
     def test_app_oauth_token_is_cached_and_refreshed(self):
         now = [100.0]
@@ -56,6 +60,13 @@ class DatabricksStartTests(unittest.TestCase):
         now[0] = 161.0
         self.assertEqual(provider.get_token(), "token-2")
         self.assertEqual(len(requests), 2)
+
+        provider.opener = Mock(side_effect=OSError("offline"))
+        now[0] = 222.0
+        self.assertEqual(provider.get_token(), "token-2")
+        now[0] = 282.0
+        with self.assertRaisesRegex(RuntimeError, "OAuth token request failed"):
+            provider.get_token()
 
     def test_app_oauth_uses_the_ai_gateway_on_the_injected_workspace(self):
         provider = DatabricksOAuthTokenProvider.from_env(
@@ -116,6 +127,13 @@ class DatabricksStartTests(unittest.TestCase):
         self.assertEqual(provider.get_token(), "db-token-2")
         self.assertEqual(len(requests), 2)
 
+        provider.opener = Mock(side_effect=OSError("offline"))
+        now[0] = 1881
+        self.assertEqual(provider.get_token(), "db-token-2")
+        now[0] = 2000
+        with self.assertRaisesRegex(RuntimeError, "Lakebase credential request failed"):
+            provider.get_token()
+
     def test_database_url_encodes_injected_credentials(self):
         self.assertEqual(
             start_databricks.database_url(
@@ -128,8 +146,7 @@ class DatabricksStartTests(unittest.TestCase):
                     "PGSSLMODE": "require",
                 }
             ),
-            "postgresql:"
-            "//app%40example.com:a%2Fb%3Fc@db.example.com:5432/shared%20db?sslmode=require",
+            _postgres_url("//app%40example.com:a%2Fb%3Fc@db.example.com:5432/shared%20db?sslmode=require"),
         )
 
     def test_main_starts_hindsight_on_the_databricks_port(self):
@@ -169,8 +186,7 @@ class DatabricksStartTests(unittest.TestCase):
             {
                 "file": "hindsight-api",
                 "args": ["hindsight-api", "--host", "0.0.0.0", "--port", "9000"],
-                "url": "postgresql:"
-                "//app:secret@db.example.com:5432/databricks-postgres?sslmode=require",
+                "url": _postgres_url("//app:secret@db.example.com:5432/databricks-postgres?sslmode=require"),
                 "llm_base_url": "https://custom.example/llm/v1",
                 "embeddings_base_url": "https://custom.example/embeddings/v1",
             },
@@ -185,7 +201,7 @@ class DatabricksStartTests(unittest.TestCase):
             "PGHOST": "db.example.com",
             "PGDATABASE": "databricks-postgres",
             "PGUSER": "app",
-            "HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER": "databricks",
+            "LAKEBASE_ENDPOINT": "projects/project/branches/production/endpoints/app",
         }
         self.assertEqual(
             start_databricks.database_url(env),
@@ -195,7 +211,10 @@ class DatabricksStartTests(unittest.TestCase):
     def test_refreshable_credential_preserves_encoded_database_user(self):
         provider = Mock()
         provider.get_token.return_value = "db/token"
-        env = {"HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER": "databricks", "PGUSER": "app@example.com"}
+        env = {
+            "LAKEBASE_ENDPOINT": "projects/project/branches/production/endpoints/app",
+            "PGUSER": "app@example.com",
+        }
         with (
             patch.dict(os.environ, env, clear=True),
             patch("hindsight_lakebase.databricks.get_lakebase_credential_provider", return_value=provider),
@@ -213,7 +232,6 @@ class DatabricksStartTests(unittest.TestCase):
             "PGDATABASE": "databricks-postgres",
             "PGUSER": "app",
             "LAKEBASE_ENDPOINT": "projects/project/branches/production/endpoints/app",
-            "HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER": "databricks",
             "DATABRICKS_HOST": "https://workspace.cloud.databricks.com",
             "DATABRICKS_CLIENT_ID": "client",
             "DATABRICKS_CLIENT_SECRET": "secret",
@@ -240,8 +258,7 @@ class DatabricksStartTests(unittest.TestCase):
             start_databricks.main()
 
         prepare.assert_called_once_with(
-            "postgresql:"
-            "//app:db-token@db.example.com:5432/databricks-postgres?sslmode=require"
+            _postgres_url("//app:db-token@db.example.com:5432/databricks-postgres?sslmode=require")
         )
         self.assertEqual(
             executed["database_url"], "postgresql://app@db.example.com:5432/databricks-postgres?sslmode=require"
@@ -262,7 +279,6 @@ class DatabricksStartTests(unittest.TestCase):
             return Mock()
 
         env = {
-            "HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER": "databricks",
             "LAKEBASE_ENDPOINT": "projects/project/branches/production/endpoints/app",
             "DATABRICKS_HOST": "https://workspace.cloud.databricks.com",
             "DATABRICKS_CLIENT_ID": "client",

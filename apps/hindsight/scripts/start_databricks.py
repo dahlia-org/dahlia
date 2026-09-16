@@ -60,8 +60,6 @@ def main():
     prepare_database(startup_url)
     os.environ["HINDSIGHT_API_DATABASE_URL"] = url
     os.environ["HINDSIGHT_API_MIGRATION_DATABASE_URL"] = url
-    if lakebase_database_auth_enabled():
-        os.environ["HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER"] = "databricks"
     port = os.environ.get("DATABRICKS_APP_PORT", "8000")
     os.execvp("hindsight-api", ["hindsight-api", "--host", "0.0.0.0", "--port", port])
 

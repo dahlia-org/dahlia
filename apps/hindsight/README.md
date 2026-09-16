@@ -47,6 +47,7 @@ HTTP API・認証設定は [upstream のドキュメント](https://hindsight.ve
 | `HINDSIGHT_API_VECTOR_EXTENSION` | `lakebase_vector` | `vector` + `lakebase_ann`、cosine距離 |
 | `HINDSIGHT_API_LLM_PROVIDER` | `databricks` | App service principalでAI GatewayのOpenAI互換`chat/completions`を呼び出す |
 | `HINDSIGHT_API_EMBEDDINGS_PROVIDER` | `databricks` | 同じ認証でAI GatewayのOpenAI互換`embeddings`を呼び出す |
+| `LAKEBASE_ENDPOINT` | Databricks Apps resource binding | 設定時にApp service principalの短命DB credentialへ自動で切り替える |
 
 独立して指定できます。未指定時は upstream の `native` / `pgvector` のままです。
 既存のバックエンドも維持しています。Lakebase は PostgreSQL バックエンドでのみ利用できます。

@@ -290,8 +290,8 @@ describe("deployment routing", () => {
     expect(hindsight).toContain("name: HINDSIGHT_API_VECTOR_EXTENSION\n            value: lakebase_vector");
     expect(hindsight).toContain("name: HINDSIGHT_API_LLM_PROVIDER\n            value: databricks");
     expect(hindsight).toContain("name: HINDSIGHT_API_EMBEDDINGS_PROVIDER\n            value: databricks");
-    expect(hindsight).toContain("name: HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER\n            value: databricks");
     expect(hindsight).toContain("name: LAKEBASE_ENDPOINT\n            value_from: postgres");
+    expect(hindsight).not.toContain("HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER");
     expect(hindsight).toContain("${var.catalog}.${var.ai_schema}.gpt-5-6-luna");
     expect(hindsight).toContain("${var.catalog}.${var.ai_schema}.qwen3-embedding-0-6b");
     expect(hindsight).toContain("name: HINDSIGHT_API_EMBEDDINGS_OPENAI_DIMENSIONS\n            value: ${var.search_embedding_dimensions}");

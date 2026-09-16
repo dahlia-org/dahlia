@@ -86,24 +86,16 @@ index 60c9997..0902195 100644
          # Embedded directly into raw SQL via to_tsvector('<lang>', ...), so we
          # reject anything that isn't a plain identifier to prevent injection.
 diff --git a/hindsight_api/db_url.py b/hindsight_api/db_url.py
-index 0df4ac3..7e5d75c 100644
+index 0df4ac3..50af95a 100644
 --- a/hindsight_api/db_url.py
 +++ b/hindsight_api/db_url.py
-@@ -12,6 +12,7 @@ marker, or to any non-PostgreSQL string (returned unchanged).
-
- from __future__ import annotations
-
-+import os
- from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-
- _ASYNCPG_SCHEMES = ("postgresql+asyncpg", "postgres+asyncpg")
-@@ -47,6 +48,11 @@ def to_libpq_url(url: str) -> str:
+@@ -47,6 +47,11 @@ def to_libpq_url(url: str) -> str:
      if not url or "://" not in url:
          return url
 
-+    if os.getenv("HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER") == "databricks":
-+        from hindsight_lakebase.databricks import refresh_lakebase_database_url
++    from hindsight_lakebase.databricks import lakebase_database_auth_enabled, refresh_lakebase_database_url
 +
++    if lakebase_database_auth_enabled():
 +        url = refresh_lakebase_database_url(url)
 +
      parts = urlsplit(url)
@@ -641,23 +633,15 @@ index e7abdf9..20057c0 100644
      pg_search_tokenizer = normalize_pg_search_tokenizer(pg_search_tokenizer)
 
 diff --git a/hindsight_api/pg0.py b/hindsight_api/pg0.py
-index 5df3693..11dda9f 100644
+index 5df3693..02f0393 100644
 --- a/hindsight_api/pg0.py
 +++ b/hindsight_api/pg0.py
-@@ -2,6 +2,7 @@ from __future__ import annotations
-
- import asyncio
- import logging
-+import os
- from dataclasses import dataclass
- from typing import TYPE_CHECKING
-
-@@ -219,4 +220,8 @@ async def resolve_database_url(db_url: str) -> str:
+@@ -219,4 +219,8 @@ async def resolve_database_url(db_url: str) -> str:
              kwargs["password"] = parsed.password
          pg0 = EmbeddedPostgres(**kwargs)
          return await pg0.ensure_running()
-+    if os.getenv("HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER") == "databricks":
-+        from hindsight_lakebase.databricks import refresh_lakebase_database_url
++    from hindsight_lakebase.databricks import lakebase_database_auth_enabled, refresh_lakebase_database_url
 +
++    if lakebase_database_auth_enabled():
 +        return refresh_lakebase_database_url(db_url)
      return db_url

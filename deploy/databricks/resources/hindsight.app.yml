@@ -27,8 +27,6 @@ resources:
             value: ${var.search_embedding_dimensions}
           - name: HINDSIGHT_API_RERANKER_PROVIDER
             value: none
-          - name: HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER
-            value: databricks
           - name: LAKEBASE_ENDPOINT
             value_from: postgres
       resources:

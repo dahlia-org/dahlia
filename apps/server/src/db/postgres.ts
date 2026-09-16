@@ -8,7 +8,7 @@ type PostgresExtension = "vector" | "pg_trgm" | "lakebase_text" | "lakebase_vect
 
 export async function ensurePublicExtensions(database: Pick<Pool, "query">, extensions: readonly PostgresExtension[]): Promise<void> {
   if (!extensions.length) return;
-  // Shared with apps/hindsight/scripts/start_databricks.py so first startup order does not matter.
+  // Serialize Dahlia and Hindsight bootstrap extension installation.
   await database.query(`DO $$
     DECLARE extension_name text; extension_schema text;
     BEGIN
@@ -18,7 +18,7 @@ export async function ensurePublicExtensions(database: Pick<Pool, "query">, exte
         SELECT n.nspname INTO extension_schema FROM pg_extension e
           JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = extension_name;
         IF FOUND AND extension_schema <> 'public' THEN
-          RAISE EXCEPTION 'extension_schema_mismatch: % must be installed in public', extension_name;
+          RAISE EXCEPTION 'extension_schema_mismatch: % is installed in %, expected public; migrate it explicitly or use a new database', extension_name, extension_schema;
         END IF;
         EXECUTE format('CREATE EXTENSION IF NOT EXISTS %I WITH SCHEMA public', extension_name);
       END LOOP;

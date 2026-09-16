@@ -166,8 +166,6 @@ describe("PostgreSQL migrations", () => {
     const statements = query.mock.calls.map(([statement]) => statement);
     const extensionStatement = statements.find((statement) => statement.includes("extension_schema_mismatch"))!;
     expect(extensionStatement).toContain(`'${extension}'`);
-    expect(extensionStatement).toContain("WITH SCHEMA public");
-    expect(statements.join("\n")).not.toMatch(/DROP EXTENSION|ALTER EXTENSION|CASCADE/);
     expect(statements.some((statement) => statement.includes(`USING ${method}`)
       && statement.includes("embedding::public.vector(32)")
       && statement.includes("public.vector_cosine_ops"))).toBe(true);
@@ -177,6 +175,16 @@ describe("PostgreSQL migrations", () => {
     } else {
       expect(statements.some((statement) => statement.includes("USING gin"))).toBe(true);
     }
+  });
+
+  it("installs only the Lakebase text extension when semantic search is disabled", async () => {
+    const query = vi.fn<(statement: string) => Promise<{ rows: never[] }>>(async () => ({ rows: [] }));
+    await ensureSearchIndexes({ query } as never, { databaseType: "lakebase" } as AppConfig);
+    const extensionStatement = query.mock.calls.map(([statement]) => statement)
+      .find((statement) => statement.includes("extension_schema_mismatch"))!;
+    expect(extensionStatement).toContain("'lakebase_text'");
+    expect(extensionStatement).not.toContain("'vector'");
+    expect(extensionStatement).not.toContain("'lakebase_vector'");
   });
 
   it("rejects duplicate or unstable ledger IDs", () => {

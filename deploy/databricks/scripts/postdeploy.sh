@@ -11,6 +11,10 @@ ai_schema=$3
 database_project_id=$4
 dahlia_app_service_principal=$5
 hindsight_app_service_principal=$6
+if [[ -z $dahlia_app_service_principal || -z $hindsight_app_service_principal ]]; then
+  echo "App service principal IDs must not be empty; check that the apps deployed before postdeploy ran" >&2
+  exit 1
+fi
 
 # Keep successful response bodies quiet, but preserve CLI failure diagnostics.
 cli() {

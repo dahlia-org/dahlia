@@ -1,3 +1,5 @@
+import inspect
+
 from hindsight_api.config import clear_config_cache
 from hindsight_api.engine.embeddings import create_embeddings_from_env
 from hindsight_api.engine.llm_wrapper import create_llm_provider, requires_api_key
@@ -18,7 +20,7 @@ def test_databricks_providers_use_app_oauth_without_api_keys(monkeypatch):
 
     assert llm.provider == "databricks"
     assert llm.base_url == "https://workspace.cloud.databricks.com/ai-gateway/mlflow/v1"
-    assert callable(llm._client._api_key_provider)
+    assert inspect.iscoroutinefunction(llm._client._api_key_provider)
     assert embeddings.provider_name == "databricks"
     assert embeddings.base_url == llm.base_url
-    assert callable(embeddings.api_key)
+    assert not inspect.iscoroutinefunction(embeddings.api_key)

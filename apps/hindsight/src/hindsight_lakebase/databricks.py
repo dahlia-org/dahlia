@@ -49,7 +49,13 @@ class DatabricksOAuthTokenProvider:
         with self.lock:
             if self.cached and self.expires_at > self.clock() + 60:
                 return self.cached
-            self.cached, expires_in = self._request_token()
+            try:
+                token, expires_in = self._request_token()
+            except RuntimeError:
+                if self.cached and self.expires_at > self.clock():
+                    return self.cached
+                raise
+            self.cached = token
             self.expires_at = self.clock() + expires_in
             return self.cached
 
@@ -104,39 +110,46 @@ class DatabricksLakebaseCredentialProvider:
         with self.lock:
             if self.cached and self.expires_at > self.clock() + 120:
                 return self.cached
-
-            request = Request(
-                f"{self.auth.host}/api/2.0/postgres/credentials",
-                data=json.dumps({"endpoint": self.endpoint}).encode(),
-                headers={
-                    "Authorization": f"Bearer {self.auth.get_token()}",
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                },
-                method="POST",
-            )
             try:
-                with self.opener(request, timeout=30) as response:
-                    body = json.loads(response.read())
-            except (OSError, json.JSONDecodeError) as error:
-                raise RuntimeError("Databricks Lakebase credential request failed") from error
-
-            if not isinstance(body, dict):
-                raise RuntimeError("Databricks Lakebase credential response is invalid")
-            token = body.get("token")
-            expire_time = body.get("expire_time")
-            if not isinstance(token, str) or not token or not isinstance(expire_time, str):
-                raise RuntimeError("Databricks Lakebase credential response is invalid")
-            try:
-                expires_at = datetime.fromisoformat(expire_time.replace("Z", "+00:00")).timestamp()
-            except ValueError as error:
-                raise RuntimeError("Databricks Lakebase credential response is invalid") from error
-            if expires_at <= self.clock():
-                raise RuntimeError("Databricks Lakebase credential response is expired")
-
+                token, expires_at = self._request_token()
+            except RuntimeError:
+                if self.cached and self.expires_at > self.clock():
+                    return self.cached
+                raise
             self.cached = token
             self.expires_at = expires_at
             return token
+
+    def _request_token(self):
+        request = Request(
+            f"{self.auth.host}/api/2.0/postgres/credentials",
+            data=json.dumps({"endpoint": self.endpoint}).encode(),
+            headers={
+                "Authorization": f"Bearer {self.auth.get_token()}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with self.opener(request, timeout=30) as response:
+                body = json.loads(response.read())
+        except (OSError, json.JSONDecodeError) as error:
+            raise RuntimeError("Databricks Lakebase credential request failed") from error
+
+        if not isinstance(body, dict):
+            raise RuntimeError("Databricks Lakebase credential response is invalid")
+        token = body.get("token")
+        expire_time = body.get("expire_time")
+        if not isinstance(token, str) or not token or not isinstance(expire_time, str):
+            raise RuntimeError("Databricks Lakebase credential response is invalid")
+        try:
+            expires_at = datetime.fromisoformat(expire_time.replace("Z", "+00:00")).timestamp()
+        except ValueError as error:
+            raise RuntimeError("Databricks Lakebase credential response is invalid") from error
+        if expires_at <= self.clock():
+            raise RuntimeError("Databricks Lakebase credential response is expired")
+        return token, expires_at
 
     async def get_token_async(self):
         return await asyncio.to_thread(self.get_token)
@@ -147,7 +160,7 @@ _lakebase_provider_key = None
 
 
 def lakebase_database_auth_enabled(env=os.environ):
-    return env.get("HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER") == "databricks"
+    return bool(env.get("LAKEBASE_ENDPOINT"))
 
 
 def get_lakebase_credential_provider(env=os.environ):

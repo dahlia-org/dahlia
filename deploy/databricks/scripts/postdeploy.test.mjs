@@ -45,14 +45,14 @@ if (command === "list-model-services") {
   console.log("{}");
 }
 `, { mode: 0o755 });
-  const run = (failCommand = "", failModel = "") => spawnSync("bash", [
+  const run = (failCommand = "", failModel = "", dahliaAppSp = "dahlia-app-sp", hindsightAppSp = "hindsight-app-sp") => spawnSync("bash", [
     script,
     "test-profile",
     "test_catalog",
     "ai",
     "test-project",
-    "dahlia-app-sp",
-    "hindsight-app-sp",
+    dahliaAppSp,
+    hindsightAppSp,
   ], {
     encoding: "utf8",
     env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, STATE: state, CALLS: calls, FAIL_COMMAND: failCommand, FAIL_MODEL: failModel },
@@ -108,6 +108,12 @@ if (command === "list-model-services") {
     assert.notEqual(denied.status, 0);
     assert.match(denied.stderr, /PERMISSION_DENIED/);
     assert.equal(readCalls().some(args => args[1] === "create-model-service"), false);
+
+    writeFileSync(calls, "");
+    const missingPrincipal = run("", "", "", "hindsight-app-sp");
+    assert.equal(missingPrincipal.status, 1);
+    assert.match(missingPrincipal.stderr, /App service principal IDs must not be empty/);
+    assert.equal(readCalls().length, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
