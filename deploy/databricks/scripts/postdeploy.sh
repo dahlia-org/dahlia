@@ -21,7 +21,8 @@ cli() {
 }
 
 app_service_principal() {
-  cli apps get "$1" | jq -er '.service_principal_client_id | select(type == "string" and length > 0)'
+  cli apps get "$1" | jq -er '.service_principal_client_id | select(type == "string" and length > 0)' \
+    || { echo "App service principal not found for app '$1'; check that the app deployed before postdeploy ran" >&2; return 1; }
 }
 
 dahlia_app_service_principal=$(app_service_principal "$dahlia_app_name")

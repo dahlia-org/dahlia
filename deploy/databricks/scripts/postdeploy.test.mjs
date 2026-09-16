@@ -124,6 +124,7 @@ if (args[0] === "apps" && command === "get") {
     writeFileSync(calls, "");
     const missingPrincipal = run("", "", "missing-dahlia-app");
     assert.notEqual(missingPrincipal.status, 0);
+    assert.match(missingPrincipal.stderr, /App service principal not found for app 'missing-dahlia-app'/);
     assert.equal(readCalls().some(args => args[0] === "grants" && args[1] === "update"), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
