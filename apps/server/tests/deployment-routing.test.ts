@@ -267,7 +267,7 @@ describe("deployment routing", () => {
     expect(bundle).not.toContain("ai_schema");
     expect(resource).toContain("name: ${var.app_schema}");
     expect(resource).not.toContain("${var.schema}");
-    expect(bundle).toContain("'${var.catalog}' '${var.database_project_id}' 'mcp-dahlia-server-${bundle.target}' 'hindsight-${bundle.target}'");
+    expect(bundle).toContain("postdeploy: \"bash scripts/postdeploy.sh '${workspace.profile}' '${var.database_project_id}'\"");
     expect(bundle).toContain("volume_name:");
     expect(bundle).toContain("default: storage");
     expect(bundle).not.toContain("legacy_artifact_catalog:");
@@ -318,7 +318,7 @@ describe("deployment routing", () => {
     expect(resource).not.toContain("postgres_roles:");
     expect(resource).not.toContain("postgres_databases:");
     expect(resource).toContain("/databases/databricks-postgres");
-    expect(hindsight).toContain("name: hindsight-${bundle.target}");
+    expect(hindsight).toContain("name: dahlia-hindsight-${bundle.target}");
     expect(hindsight).toContain("source_code_path: ../../../apps/hindsight");
     expect(exists("../../hindsight/requirements.txt")).toBe(true);
     expect(exists("../../hindsight/scripts/start_databricks.py")).toBe(true);
