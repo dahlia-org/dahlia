@@ -78,7 +78,7 @@ struct WorkspaceImportView: View {
                             Task {
                                 let result = await onCreateOrganization(organizationName, organizationSlug, ownerId)
                                 if result.created {
-                                    organizationId = result.selectableID
+                                    if let selectableID = result.selectableID { organizationId = selectableID }
                                     organizationName = ""
                                     organizationSlug = ""
                                 }
@@ -116,10 +116,12 @@ struct WorkspaceImportView: View {
         .disabled(isBusy || isCreating)
         .task {
             destinationId = destinations.first?.workspaceId
-            organizationId = pending.organizations.first(where: { $0.kind == .team }).flatMap { UUID(uuidString: $0.id) }
+            let initialOrganizationID = pending.organizations.first(where: { $0.kind == .team }).flatMap { UUID(uuidString: $0.id) }
             let teamOrganizationIDs = Set(pending.organizations.filter { $0.kind == .team }.compactMap { UUID(uuidString: $0.id) })
             let hasTeamWorkspace = destinations.contains { teamOrganizationIDs.contains($0.organizationId) }
-            useExisting = !destinations.isEmpty && (teamOrganizationIDs.isEmpty || hasTeamWorkspace)
+            let requiresOrganizationSelection = !destinations.isEmpty && !teamOrganizationIDs.isEmpty && !hasTeamWorkspace
+            organizationId = requiresOrganizationSelection ? nil : initialOrganizationID
+            useExisting = !destinations.isEmpty && !requiresOrganizationSelection
             if pending.canCreateOrganizations { await loadOwners() }
         }
     }
