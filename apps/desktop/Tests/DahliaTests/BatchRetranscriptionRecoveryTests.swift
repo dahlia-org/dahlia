@@ -44,24 +44,40 @@ import GRDB
                 isConfirmed: true,
                 audioSource: "mic"
             )
-            let selectedPreviousRun = TranscriptMetadata.Run(
-                generatedBy: "server",
-                startedAt: fixture.now,
-                completedAt: completedAt,
-                recordingSessionId: fixture.session.id
+            let selectedRecordingNumber = 1
+            let expiredRecordingNumber = 2
+            let selectedInput = TranscriptMetadata.Run.AudioInput(
+                recordingNumber: selectedRecordingNumber,
+                source: "mic",
+                checksum: "SHA-256:" + String(repeating: "1", count: 64)
             )
-            let siblingPreviousRun = TranscriptMetadata.Run(
-                generatedBy: "server",
-                startedAt: expiredSession.startedAt,
-                completedAt: completedAt,
-                recordingSessionId: expiredSession.id
+            let expiredInput = TranscriptMetadata.Run.AudioInput(
+                recordingNumber: expiredRecordingNumber,
+                source: "mic",
+                checksum: "SHA-256:" + String(repeating: "2", count: 64)
             )
+            let previousServerRun = {
+                var run = TranscriptMetadata.Run(
+                    generatedBy: "server",
+                    startedAt: fixture.now,
+                    completedAt: completedAt
+                )
+                run.audioInputs = [selectedInput, expiredInput]
+                return run
+            }()
             try await fixture.database.dbQueue.write { db in
                 try expiredSession.insert(db)
+                try RecordingArchiveRecord(
+                    sessionId: fixture.session.id,
+                    meetingId: fixture.meeting.id,
+                    workspaceId: fixture.meeting.workspaceId,
+                    number: selectedRecordingNumber
+                ).insert(db)
                 try RecordingArchiveRecord(
                     sessionId: expiredSession.id,
                     meetingId: fixture.meeting.id,
                     workspaceId: fixture.meeting.workspaceId,
+                    number: expiredRecordingNumber,
                     state: "expired"
                 ).insert(db)
                 try previousTranscript.insert(db)
@@ -79,7 +95,7 @@ import GRDB
                         metadata: .init(
                             provider: "gemini",
                             model: "gemini",
-                            runs: [selectedPreviousRun, siblingPreviousRun]
+                            runs: [previousServerRun]
                         )
                     )
                 ).insert(db)
@@ -119,8 +135,9 @@ import GRDB
             #expect(persisted.2.map(\.sessionId) == [fixture.session.id, nil])
             let persistedRuns = try #require(persisted.3?.metadata?.runs)
             #expect(persistedRuns.count == 2)
-            #expect(persistedRuns.first == siblingPreviousRun)
-            #expect(!persistedRuns.contains(selectedPreviousRun))
+            #expect(persistedRuns.first?.recordingSessionId == nil)
+            #expect(persistedRuns.first?.audioInputs == [expiredInput])
+            #expect(!persistedRuns.flatMap { $0.audioInputs ?? [] }.contains(selectedInput))
             #expect(persistedRuns.last?.recordingSessionId == fixture.session.id)
         }
 

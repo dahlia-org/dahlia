@@ -124,12 +124,22 @@ enum BatchTranscriptionPersistence {
                 ),
                 recordingSessionId: session.id
             )] : runs
+            let replacedRecordingNumbers = try Set(RecordingArchiveRecord
+                .filter(ids.contains(Column("sessionId")))
+                .fetchAll(db)
+                .compactMap(\.number))
+            let retainedRuns: [TranscriptMetadata.Run] = !replacingMeeting ? (previous?.metadata?.runs ?? []).compactMap { run in
+                guard run.generatedBy == "server", let inputs = run.audioInputs else {
+                    return run.recordingSessionId.map(ids.contains) == true ? nil : run
+                }
+                var retained = run
+                retained.audioInputs = inputs.filter { !replacedRecordingNumbers.contains($0.recordingNumber) }
+                return retained.audioInputs?.isEmpty == true ? nil : retained
+            } : []
             let metadata = TranscriptMetadata(
                 provider: "apple",
                 model: "apple-speech",
-                runs: (!replacingMeeting ? (previous?.metadata?.runs ?? []).filter { run in
-                    run.recordingSessionId.map { !ids.contains($0) } ?? true
-                } : []) + executionRuns
+                runs: retainedRuns + executionRuns
             )
             let info = TranscriptInfo(
                 id: .v7(),
