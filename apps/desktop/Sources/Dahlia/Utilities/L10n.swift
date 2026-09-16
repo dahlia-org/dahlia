@@ -111,6 +111,15 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var serverSummaryNoModels: String { String(localized: "serverSummaryNoModels", bundle: bundle) }
     static var serverSummaryReloadModels: String { String(localized: "serverSummaryReloadModels", bundle: bundle) }
     static var serverSummaryFailed: String { String(localized: "serverSummaryFailed", bundle: bundle) }
+    static var initialTranscription: String { String(localized: "transcription.initial", bundle: bundle) }
+    static var retranscription: String { String(localized: "transcription.retranscription", bundle: bundle) }
+    static var retranscriptionAppleSpeech: String { String(localized: "transcription.retranscription.appleSpeech", bundle: bundle) }
+    static var retranscriptionGemini: String { String(localized: "transcription.retranscription.gemini", bundle: bundle) }
+    static var localRetranscriptionPolicyDescription: String { String(localized: "transcription.retranscription.localDescription", bundle: bundle) }
+    static var serverRetranscriptionPolicyDescription: String { String(localized: "transcription.retranscription.serverDescription", bundle: bundle) }
+    static var retranscriptionKeepsSummary: String { String(localized: "transcription.retranscription.keepsSummary", bundle: bundle) }
+    static var serverRetranscriptionCheckFailed: String { String(localized: "transcription.retranscription.checkFailed", bundle: bundle) }
+    static var serverRetranscriptionUnsupported: String { String(localized: "transcription.retranscription.unsupported", bundle: bundle) }
     static var imageAnalysisLanguages: String { String(localized: "account.settings.imageLanguages", bundle: bundle) }
     static var serverAccountSettingsDescription: String { String(localized: "account.settings.description", bundle: bundle) }
     static var serverAccountSettingsNotLoaded: String { String(localized: "account.settings.notLoaded", bundle: bundle) }
@@ -1756,10 +1765,10 @@ enum L10n { // swiftlint:disable:this type_body_length
         localizedCount(minutes, singular: "%lld minute", plural: "%lld minutes")
     }
 
-    static var batchAudioRetentionPeriod: String { String(localized: "Recording Retention", bundle: bundle) }
+    static var batchAudioRetentionPeriod: String { String(localized: "Local CAF Recording Retention", bundle: bundle) }
     static var batchAudioRetentionPeriodDescription: String { String(
         // swiftlint:disable:next line_length
-        localized: "Recordings become eligible for deletion this long after both recording and transcription finish. Audio with failed or unfinished transcription is kept.",
+        localized: "Local Workspace CAF recordings become eligible for deletion this long after both recording and transcription finish. Failed, unfinished, or active retranscription audio is kept. Server M4A storage is not affected.",
         bundle: bundle
     ) }
     static var forever: String { String(localized: "Forever", bundle: bundle) }

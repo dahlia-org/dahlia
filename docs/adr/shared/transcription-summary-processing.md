@@ -22,6 +22,20 @@
 
 手動生成の入力ソースはアカウント設定に保存せず、会議ごとの実行時設定とする。最新の確定文字起こしに非空セグメントがあれば `transcript` を既定とし、なければ全対象録音の確定済みアーカイブが揃った場合だけ `audio` を既定とする。`transcript` は要約だけを置き換え、`audio` は文字起こしと要約を置き換える。複数会議では全件で利用できるソースだけ選べ、一部の録音だけを使う生成は行わない。Local処理は `transcript` のみ、Remote処理ではServer capabilityに含まれるソースだけを選べる。`audio` の手動選択は、`meetingSummaryGeneration.completeRecordings` が完全な録音集合の検査を保証するServerだけで有効にする。既存のv2機能と自動処理設定はこの追加保証の有無にかかわらず維持する。
 
+## 2026-09-16 の再文字起こし境界
+
+初回処理の設定と明示的な再文字起こしを分離する。Local Workspace の再文字起こしは保持中の CAF（既存録音では互換 M4A も可）を
+使い、区間別の自動言語判定と Apple Speech で全文を再生成する。Server Account 配下の Workspace は、初回の処理方法に
+かかわらず確定・アップロード済み M4A を使い、音声対応 Gemini だけで全文を再生成する。Server 再文字起こし要求には
+保存済み言語設定を含めず、言語判定も Gemini に委任する。Gemini の失敗を Apple Speech、ローカル処理、別 provider へ
+暗黙にフォールバックしない。
+
+既存 summary job API の録音入力に任意リテラル `transcriptionOnly: true` を追加し、既存 queue、lease、最大試行、取消、
+競合検出を再利用する。Server はこの要求で文字起こしだけを atomic に置換し、要約生成へ進まず既存要約を変更しない。
+Desktop は `meetingSummaryGeneration.retranscription: { version: 1, provider: "gemini" }` を広告する Server にだけ要求し、
+完全な録音集合のアップロードが未完了・失敗なら既存結果を保持して操作を無効化する。処理用途は
+`recording_sessions.processingJSON` の任意フィールドへ保存し、DB 列を追加せず旧データの decode を維持する。
+
 ## 設定と移行
 
 アカウント設定は次の構造とする。

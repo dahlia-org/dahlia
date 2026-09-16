@@ -2942,6 +2942,27 @@
               },
               "completeRecordings": {
                 "type": "boolean"
+              },
+              "retranscription": {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "number",
+                    "enum": [
+                      1
+                    ]
+                  },
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "gemini"
+                    ]
+                  }
+                },
+                "required": [
+                  "version",
+                  "provider"
+                ]
               }
             },
             "required": [
@@ -3596,6 +3617,12 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200
+                  },
+                  "transcriptionOnly": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
                   }
                 },
                 "required": [
@@ -9424,6 +9451,12 @@
                                 "type": "string",
                                 "minLength": 1,
                                 "maxLength": 200
+                              },
+                              "transcriptionOnly": {
+                                "type": "boolean",
+                                "enum": [
+                                  true
+                                ]
                               }
                             },
                             "required": [
@@ -9586,6 +9619,12 @@
                                 },
                                 "minItems": 1,
                                 "maxItems": 1000
+                              },
+                              "transcriptionOnly": {
+                                "type": "boolean",
+                                "enum": [
+                                  true
+                                ]
                               }
                             },
                             "required": [
@@ -9729,8 +9768,7 @@
                         "required": [
                           "outputLanguage",
                           "processing",
-                          "summary",
-                          "transcription"
+                          "summary"
                         ],
                         "additionalProperties": false
                       }
@@ -9888,6 +9926,12 @@
                                   "type": "string",
                                   "minLength": 1,
                                   "maxLength": 200
+                                },
+                                "transcriptionOnly": {
+                                  "type": "boolean",
+                                  "enum": [
+                                    true
+                                  ]
                                 }
                               },
                               "required": [

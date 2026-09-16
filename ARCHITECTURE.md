@@ -525,7 +525,9 @@ lane を分離した。R5 は instrumentation のみ完了しており、backpre
 
 ## Recording audio archives
 
-New batch sessions enqueue a durable `recording_archives` job at session creation. The idle sync lane handles Server archives; batch post-processing and maintenance handle Local archives. Native streaming AAC encoding preserves source-specific time/language ranges. Capture and canonical transcript persistence never wait for archiving. `recording` sync metadata restores source audio for existing batch recognition. See [the archive ADR](docs/adr/shared/recording-audio-archive.md) for retention, protocol version, and the still-disabled source-deletion quality gate.
+New Local Workspace batch sessions keep verified source-specific CAF segments for the configured retention period and do not create `recording_archives` jobs or joined M4A files. Local retranscription reads those CAF segments, detects each segment's language, and uses Apple Speech. Existing Local M4A archives remain compatible inputs and expire through the same purge state machine.
+
+New Server Workspace batch sessions enqueue a durable `recording_archives` job at session creation. The idle sync lane converts every recording to source-specific M4A, uploads it, verifies the receipt and re-download, then releases CAF through the existing purge state machine. Server retranscription requires the complete uploaded M4A set and a compatible `retranscription` capability, and uses Gemini without a language hint or local fallback. Capture, initial transcript persistence, and existing transcript or summary results never wait for archiving or retranscription. See [the archive ADR](docs/adr/shared/recording-audio-archive.md) for retention and protocol details.
 
 ### ライブ MCP 配信
 

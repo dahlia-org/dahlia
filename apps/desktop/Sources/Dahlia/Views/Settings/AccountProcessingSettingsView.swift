@@ -26,7 +26,7 @@ struct WorkspaceProcessingSettingsView: View {
             }
 
             if workspace != nil {
-                Section(L10n.transcription) {
+                Section(L10n.initialTranscription) {
                     if connectionID != nil {
                         Picker(L10n.processingLocation, selection: $workspaceSettings.generationSettings.processing.location) {
                             Text(L10n.localProcessing).tag(WorkspaceGenerationSettings.SummaryMode.local)
@@ -57,6 +57,18 @@ struct WorkspaceProcessingSettingsView: View {
                 }
                 .disabled(!canEdit)
                 WorkspaceTranscriptionLanguagesSection().disabled(!canEdit)
+
+                Section(L10n.retranscription) {
+                    LabeledContent(
+                        L10n.processingMethod,
+                        value: connectionID == nil ? L10n.retranscriptionAppleSpeech : L10n.retranscriptionGemini
+                    )
+                    Text(connectionID == nil
+                        ? L10n.localRetranscriptionPolicyDescription
+                        : L10n.serverRetranscriptionPolicyDescription)
+                        .foregroundStyle(.secondary)
+                    Text(L10n.retranscriptionKeepsSummary).foregroundStyle(.secondary)
+                }
 
                 Section {
                     Picker(L10n.summaryStyle, selection: $workspaceSettings.generationSettings.summary.style) {

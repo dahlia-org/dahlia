@@ -1570,6 +1570,17 @@
 "settings.processing.thisMacDescription" = "Applies only to this Mac. Switching accounts does not change these settings.";
 
 "serverSummaryUnavailable" = "Summary generation is unavailable on this server.";
+"transcription.initial" = "Initial Transcription";
+"transcription.retranscription" = "Retranscription";
+"transcription.retranscription.appleSpeech" = "Apple Speech (per-segment language detection)";
+"transcription.retranscription.gemini" = "Server Gemini (automatic language detection)";
+"transcription.retranscription.localDescription" = "Uses retained CAF recordings on this Mac and detects the language of each segment automatically.";
+"transcription.retranscription.serverDescription" = "Uses uploaded M4A recordings. Gemini detects languages and retranscribes without language settings or local fallback.";
+"transcription.retranscription.keepsSummary" = "Retranscription replaces only the transcript and leaves the existing summary unchanged.";
+"transcription.retranscription.checkFailed" = "Could not check Server retranscription support.";
+"transcription.retranscription.unsupported" = "This Server does not support Gemini retranscription.";
+"Local CAF Recording Retention" = "Local Workspace CAF Recording Retention";
+"Local Workspace CAF recordings become eligible for deletion this long after both recording and transcription finish. Failed, unfinished, or active retranscription audio is kept. Server M4A storage is not affected." = "Local Workspace CAF recordings become eligible for deletion this long after both recording and transcription finish. Failed, unfinished, or active retranscription audio is kept. Server M4A storage is not affected.";
 
 "serverSummarySyncPending" = "Sync has not finished. Check sync status and retry.";
 

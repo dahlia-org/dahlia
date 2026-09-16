@@ -160,6 +160,20 @@ struct ControlPanelView: View {
                 .padding(.vertical, 6)
             }
 
+            if let reason = viewModel.serverRetranscriptionUnavailableReason {
+                HStack {
+                    Label(reason, systemImage: "info.circle")
+                    Spacer()
+                    if viewModel.canRetryServerRetranscriptionAvailability {
+                        Button(L10n.retry, action: viewModel.retryServerRetranscriptionAvailability)
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
+                .padding(.vertical, 6)
+            }
+
             // エラー表示
             if let error = viewModel.errorMessage {
                 detailErrorBanner(message: error, tint: .red)

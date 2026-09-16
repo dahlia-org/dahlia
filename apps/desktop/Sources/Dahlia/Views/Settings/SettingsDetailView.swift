@@ -14,24 +14,32 @@ struct SettingsDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(SettingsNavigation.visibleSelection(selection).label)
-                        .font(.title2)
-                        .accessibilityAddTraits(.isHeader)
-                    Text(scopeDescription)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                if selection == .general {
-                    Button(L10n.initialSetup, action: mainWindowNavigation.openSetupTour)
-                        .buttonStyle(.dahlia())
+            Form {
+                Section {
+                    EmptyView()
+                } header: {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(SettingsNavigation.visibleSelection(selection).label)
+                                .font(.title2)
+                                .foregroundStyle(.primary)
+                                .accessibilityAddTraits(.isHeader)
+                            Text(scopeDescription)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        if selection == .general {
+                            Button(L10n.initialSetup, action: mainWindowNavigation.openSetupTour)
+                                .buttonStyle(.dahlia())
+                        }
+                    }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 8)
+            .formStyle(.grouped)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(minHeight: 90)
             .padding(.top, DahliaDesign.windowHeaderHeight)
 
             selectedSettings

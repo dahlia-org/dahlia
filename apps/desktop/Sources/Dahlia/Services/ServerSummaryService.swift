@@ -82,6 +82,7 @@ actor ServerSummaryService {
         var version: String?
         var recordings: [RecordingPair]?
         var transcriptionModel: String?
+        var transcriptionOnly: Bool?
     }
 
     struct Request: Codable, Sendable {
@@ -147,6 +148,11 @@ actor ServerSummaryService {
         }
         let summary = try JSONDecoder().decode(ServerCapabilities.self, from: data).meetingSummaryGeneration
         return summary?.version == 2 ? summary : nil
+    }
+
+    func supportsRetranscription(connectionID: UUID, origin: String) async throws -> Bool {
+        let capability = try await summaryCapability(connectionID: connectionID, origin: origin)?.retranscription
+        return capability?.version == 1 && capability?.provider == "gemini"
     }
 
     func models(connectionID: UUID, origin: String) async throws -> [Model] {
@@ -294,7 +300,7 @@ actor ServerSummaryService {
         onStage: @MainActor @Sendable (String) async -> Void = { _ in }
     ) async throws {
         let supportedSources = try await supportedSources(for: source, target: target)
-        guard supports(source, in: supportedSources) else { throw Failure.unavailable }
+        try await validate(source, in: supportedSources, target: target, transcriptionOnly: processing?.transcriptionOnly == true)
         await onStage("uploading")
         try await awaitSynchronization(target, dbQueue: dbQueue)
         let sessionIDs: [UUID] = if let processing {
@@ -342,7 +348,12 @@ actor ServerSummaryService {
                     }
                     input = Input(type: "transcript", version: String(version))
                 } else {
-                    try await awaitRecordingUploads(target, sessionIDs: sessionIDs, dbQueue: dbQueue, wait: source == nil)
+                    try await awaitRecordingUploads(
+                        target,
+                        sessionIDs: sessionIDs,
+                        dbQueue: dbQueue,
+                        wait: source == nil && processing?.transcriptionOnly != true
+                    )
                     let numbers = try await dbQueue.read { db in
                         try sessionIDs.map { id in
                             guard let number = try RecordingArchiveRecord.fetchOne(db, key: id)?.number else { throw Failure.syncPending }
@@ -351,12 +362,14 @@ actor ServerSummaryService {
                     }
                     input = try await Input(
                         type: "recording",
-                        recordings: recordings(target, numbers: numbers)
+                        recordings: recordings(target, numbers: numbers),
+                        transcriptionOnly: processing?.transcriptionOnly == true ? true : nil
                     )
                 }
                 var preferences = settings.generationPreferences
                 preferences.processing.remote.workflow = method == .audio ? .combined : .transcribeThenSummarize
                 preferences.summary.style = detail.map { SummaryStyle(detailLevel: .fromPersistedValue($0)) } ?? summary.style
+                if processing?.transcriptionOnly == true { preferences.transcription = nil }
                 body = Request(id: id.uuidString.lowercased(), input: input, preferences: preferences)
                 try await onPrepared(body)
             }
@@ -380,7 +393,7 @@ actor ServerSummaryService {
             try await dbQueue.write { db in
                 for id in sessionIDs {
                     try db.execute(
-                        sql: "UPDATE recording_sessions SET batchCompletedAt = ?, batchLastError = NULL WHERE id = ? AND endedAt IS NOT NULL AND batchDiscardedAt IS NULL",
+                        sql: "UPDATE recording_sessions SET batchCompletedAt = ?, batchLastError = NULL, batchFailureKind = NULL WHERE id = ? AND endedAt IS NOT NULL AND batchDiscardedAt IS NULL",
                         arguments: [Date.now, id]
                     )
                 }
@@ -390,6 +403,21 @@ actor ServerSummaryService {
 
     private func supports(_ source: SummaryGenerationSource?, in supportedSources: [String]) -> Bool {
         source.map { supportedSources.contains($0.rawValue) } ?? !supportedSources.isEmpty
+    }
+
+    private func validate(
+        _ source: SummaryGenerationSource?,
+        in supportedSources: [String],
+        target: Target,
+        transcriptionOnly: Bool
+    ) async throws {
+        guard supports(source, in: supportedSources) else { throw Failure.unavailable }
+        if transcriptionOnly {
+            guard try await supportsRetranscription(
+                connectionID: target.connectionID,
+                origin: target.origin
+            ) else { throw Failure.unavailable }
+        }
     }
 
     private func supportedSources(for source: SummaryGenerationSource?, target: Target) async throws -> [String] {

@@ -11,6 +11,7 @@ const preferencesInputSchema = z.discriminatedUnion("type", [
   summaryInputSchema.options[0],
   summaryInputSchema.options[1].omit({ transcriptionModel: true }),
 ]);
+const requestPreferencesSchema = generationPreferencesSchema.partial({ transcription: true });
 export const summaryStartSchema = z.union([
   z.object({ id: z.uuidv7().meta({ format: "uuidv7" }), input: summaryInputSchema, model: z.string().trim().min(1).max(200),
     detail: summaryDetailSchema, outputLanguage: outputLanguageSchema,
@@ -18,7 +19,7 @@ export const summaryStartSchema = z.union([
   // Existing clients may omit the explicit input; already accepted jobs keep their original settings.
   z.object({ id: z.uuidv7().meta({ format: "uuidv7" }), detail: summaryDetailSchema.optional(), outputLanguage: outputLanguageSchema.optional() }).strict(),
   z.object({ id: z.uuidv7().meta({ format: "uuidv7" }), input: preferencesInputSchema,
-    preferences: generationPreferencesSchema }).strict(),
+    preferences: requestPreferencesSchema }).strict(),
 ]);
 export type SummaryRequest = z.infer<typeof summaryStartSchema>;
 
@@ -99,6 +100,14 @@ export class SummaryService {
     });
     const request = parsed.data;
     let input: SummaryInput | undefined = "input" in request ? request.input : undefined;
+    if (input?.type === "recording" && input.transcriptionOnly === true && !("preferences" in request)) {
+      throw new RequestError(400, "invalid_summary_request");
+    }
+    if ("preferences" in request
+      && !(input?.type === "recording" && input.transcriptionOnly === true)
+      && request.preferences.transcription === undefined) {
+      throw new RequestError(400, "invalid_summary_request");
+    }
     const requestHash = "preferences" in request ? JSON.stringify({ workspaceId, meetingId, input, preferences: request.preferences }) : JSON.stringify({ workspaceId, meetingId,
       ...("input" in request ? { input: request.input, model: request.model, detail: request.detail,
         reasoningEffort: request.reasoningEffort ?? null } : { detail: request.detail ?? null }),

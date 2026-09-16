@@ -92,7 +92,8 @@ Dahlia でないもの:
 - 負荷に応じて集約、破棄、再生成してよいのは、再生成可能な UI projection だけである。音声フレーム、確定文字起こし、
   確定翻訳、録音 range は、UI の都合で破棄しない
   ([Failure and Overload Policy](ARCHITECTURE.md#failure-and-overload-policy))。
-- 録音音声は検証済みの immutable segment として保存し ([確定手順](docs/adr/desktop/recording-storage.md#確定手順))、
+- 録音音声は検証済みの immutable segment として保存する。Local Workspace は CAF を設定期間だけ保持し、Server Workspace は
+  アップロード用 M4A を確定するまで CAF を保全する ([確定手順](docs/adr/desktop/recording-storage.md#確定手順))。
   データベースは schema generation 付きで backup と restore ができる ([Import と復元](docs/adr/desktop/database-backup.md#import-と復元))。
 - 新機能は録音クリティカルパスに同期依存を追加しない。
 
@@ -139,9 +140,9 @@ Dahlia の scope 外であり、妨げない。
 
 **設計上の判断**:
 
-- 既定の文字起こしはリアルタイムもバッチも Apple Speech の `SpeechTranscriber` が on-device で行う。Server Accountで利用者がリモート処理を明示選択した保存済み録音だけは、[処理場所のADR](docs/adr/shared/transcription-summary-processing.md) に従いServerで文字起こしできる。WhisperKit は付加機能であるバッチ自動言語判定で言語を選ぶためだけに使い、文字起こし自体は行わない。
+- 既定の文字起こしはリアルタイムもバッチも Apple Speech の `SpeechTranscriber` が on-device で行う。Server Accountで利用者がリモート処理を明示選択した保存済み録音と、Server Workspace の明示的な再文字起こしだけは、[処理場所のADR](docs/adr/shared/transcription-summary-processing.md) に従いServerで処理する。後者はアップロード済みM4Aを使うGemini専用処理で、言語指定やローカルへのフォールバックを行わない。WhisperKit はLocalのバッチ自動言語判定で言語を選ぶためだけに使い、文字起こし自体は行わない。
 - ローカルアカウントの会議データと端末固有ファイルはローカルの SQLite と file system だけで完結する。一方、ServerアカウントのWorkspace／ProjectはNotionやAsanaと同様にDesktopとWebが共有するServer canonical recordであり、Desktopからクラウドへ転送するコピーではない。SQLite は即時反映できるoffline working copyとし、
-  Workspace 名、Project の名前・説明・階層、meeting metadata、summary、transcript 原文、screenshot、OCR、AI caption を双方向同期する。翻訳文は同期しない。新規バッチ録音の結合音声は [音声保管契約](docs/adr/shared/recording-audio-archive.md) に従う
+  Workspace 名、Project の名前・説明・階層、meeting metadata、summary、transcript 原文、screenshot、OCR、AI caption を双方向同期する。翻訳文は同期しない。新規バッチ録音はLocalではCAFを設定期間だけ保持し、ServerではM4Aへ変換・保管する [音声保管契約](docs/adr/shared/recording-audio-archive.md) に従う
   ([正本とアカウント境界](docs/adr/shared/sync.md#正本とアカウント境界), [同期対象とモデル](docs/adr/shared/sync.md#同期対象とモデル), [Transaction と競合](docs/adr/shared/sync.md#transaction-と競合))。Server WorkspaceはOrganizationが所有し、明示したuser / organization / teamのadmin・editor・viewer権限で共同利用する。Organization所属だけでは内容へのアクセスを与えない。信頼済みHeaderと確認済みGoogleメールはドメインごとの参加方式（招待のみ・承認制・自動参加）に従う。初回登録では一致するすべての自動参加組織へmemberとして参加し、既存ユーザーは本人操作で参加・申請する。共有メールドメインは対象外。Team Organizationの作成・削除はServer管理者に限定し、Personalはサインアップ時だけ内部作成する
   ([共有境界](docs/adr/server/sharing-and-administration.md#共有境界))。サインインだけではローカルWorkspaceをServerアカウントへ移さず、ユーザーがWorkspace単位で明示的に移行する。ServerアカウントのWorkspaceは常時同期し、サインアウト時はServer recordを残したままローカルworking copyを削除するかローカルアカウントへ移す。
 - Server の任意 Hybrid 検索は同期済み summary、OCR、AI caption と検索時の query 原文を設定済み embedding
@@ -153,7 +154,7 @@ Dahlia の scope 外であり、妨げない。
 
 **許容する例外**: 疎結合な付加機能は外部依存を持ってよい。Google Calendar と EventKit の読み取り、Google Docs や
 Drive への書き出し、Codex による要約生成、Sparkle の更新確認、Sentry の障害報告、TelemetryDeck の匿名利用計測、
-バッチ自動言語判定の初回モデル取得、Serverアカウントのcloud-backed working copyと明示的な権限による共同編集、利用者が明示選択した保存済み録音のServer処理がこれにあたる。Codex の接続先として任意の Dahlia Server Gateway を選ぶ場合も
+バッチ自動言語判定の初回モデル取得、Serverアカウントのcloud-backed working copyと明示的な権限による共同編集、利用者が明示選択した保存済み録音のServer処理とServer WorkspaceのGemini再文字起こしがこれにあたる。Codex の接続先として任意の Dahlia Server Gateway を選ぶ場合も
 同じ境界に置き、いずれも中核の前提条件にしない。
 
 **誤読しやすい点**: 「スタンドアローン」は「オフライン専用」ではない。外部機能を持つこと自体は否定せず、
@@ -194,7 +195,7 @@ Drive への書き出し、Codex による要約生成、Sparkle の更新確認
 
 - revision競合を黙って上書きする共同編集
 - CRM や SFA との双方向同期
-- Local Accountまたはローカル選択時のクラウド音声処理（Server Accountの明示的なリモート処理だけは[承認済みの例外](docs/adr/shared/transcription-summary-processing.md)）
+- Local Accountまたはローカル選択時のクラウド音声処理（Server Accountの明示的なリモート初回処理とServer WorkspaceのGemini再文字起こしだけは[承認済みの例外](docs/adr/shared/transcription-summary-processing.md)）
 - 汎用の統合ハブ、ワークフロー自動化
 - Workspace 横断または全社の人物 identity 解決
 

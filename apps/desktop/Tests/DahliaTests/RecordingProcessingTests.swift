@@ -71,6 +71,67 @@
             #expect(restored.serverRequest?.reasoningEffort == "high")
         }
 
+        @Test
+        func forcedServerRetryStartsFreshRequestWhenPreviousJobIsUnavailable() throws {
+            var processing = Self.processing(method: .cloudTranscription)
+            processing.stage = .failed
+            processing.serverRequest = .init(
+                id: processing.id.uuidString.lowercased(), input: .init(type: "recording", recordings: []),
+                model: "gemini", detailLevel: "max", summaryLanguage: "ja", reasoningEffort: "high"
+            )
+            let previousID = processing.id
+
+            processing.prepareRetry(serverJob: nil, forceNewServerJob: true)
+
+            #expect(processing.id != previousID)
+            #expect(processing.serverRequest?.id == processing.id.uuidString.lowercased())
+            #expect(processing.retryOf == nil)
+            #expect(processing.stage == .uploading)
+        }
+
+        @Test(arguments: ["pending", "processing", "succeeded", "failed", "cancelled"])
+        func serverRetranscriptionRetryUsesTheRemoteJobState(status: String) throws {
+            var processing = Self.processing(method: .cloudTranscription)
+            processing.stage = .failed
+            processing.transcriptionOnly = true
+            processing.serverRequest = .init(
+                id: processing.id.uuidString.lowercased(), input: .init(type: "recording", recordings: []),
+                model: "gemini", detailLevel: "max", summaryLanguage: "ja", reasoningEffort: "high"
+            )
+            let originalID = processing.id
+            let job = ServerSummaryService.Job(
+                id: originalID.uuidString.lowercased(), status: status, error: nil, stage: nil
+            )
+
+            processing.prepareRetranscriptionRetry(serverJob: job)
+
+            let createsRetry = job.isRetryable
+            #expect((processing.id != originalID) == createsRetry)
+            #expect(processing.serverRequest?.id == processing.id.uuidString.lowercased())
+            #expect(processing.retryOf == (createsRetry ? job.id : nil))
+            #expect(processing.stage == .uploading)
+            #expect(processing.error == nil)
+        }
+
+        @Test
+        func serverRetranscriptionRetryStartsFreshWhenRemoteJobIsMissing() throws {
+            var processing = Self.processing(method: .cloudTranscription)
+            processing.stage = .failed
+            processing.transcriptionOnly = true
+            processing.serverRequest = .init(
+                id: processing.id.uuidString.lowercased(), input: .init(type: "recording", recordings: []),
+                model: "gemini", detailLevel: "max", summaryLanguage: "ja", reasoningEffort: "high"
+            )
+            let originalID = processing.id
+
+            processing.prepareRetranscriptionRetry(serverJob: nil)
+
+            #expect(processing.id != originalID)
+            #expect(processing.serverRequest?.id == processing.id.uuidString.lowercased())
+            #expect(processing.retryOf == nil)
+            #expect(processing.stage == .uploading)
+        }
+
         @Test(arguments: [false, true])
         func priorCancellationAllowsNewWorkButNewCancellationRejectsInFlightWork(cancelDuringWork: Bool) async throws {
             let fixture = try BatchAudioTestFixture(name: "PriorCancellation", endedAt: .now)

@@ -546,7 +546,16 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       search: { version: 1 },
       conversationAnalytics: { version: 1 },
       ...(dependencies.imageAnalysisEnabled === true ? { imageAnalysis: { version: 1 } } : {}),
-      ...(sources.length ? { meetingSummaryGeneration: { version: 2, sources, completeRecordings: true } } : {}),
+      ...(sources.length ? {
+        meetingSummaryGeneration: {
+          version: 2,
+          sources,
+          completeRecordings: true,
+          ...(sources.includes("audio")
+            ? { retranscription: { version: 1 as const, provider: "gemini" as const } }
+            : {}),
+        },
+      } : {}),
     });
   });
   registerApi(app, "getConversationAnalytics", async (context) => {

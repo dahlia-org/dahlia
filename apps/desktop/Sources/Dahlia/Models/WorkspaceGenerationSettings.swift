@@ -42,7 +42,7 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         var processing: Processing
         var summary: Summary
         var outputLanguage: SummaryLanguage
-        var transcription = Transcription()
+        var transcription: Transcription?
     }
 
     struct LocalProcessing: Codable, Equatable, Sendable {
