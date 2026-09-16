@@ -5,7 +5,7 @@ import { json, uiText } from "./api";
 export type MCPClient = "mcpJSON" | "claude" | "codex";
 
 interface MCPConnectionInfo {
-  mcp: { url: string; databricksProxy: boolean; available: boolean };
+  mcp: { url: string; proxyUrl?: string; databricksProxy: boolean; available: boolean };
 }
 
 export function parseMCPConnectionInfo(value: unknown): MCPConnectionInfo {
@@ -13,9 +13,14 @@ export function parseMCPConnectionInfo(value: unknown): MCPConnectionInfo {
   if (typeof mcp === "object" && mcp !== null && "url" in mcp && typeof mcp.url === "string"
     && "databricksProxy" in mcp && typeof mcp.databricksProxy === "boolean"
     && "available" in mcp && typeof mcp.available === "boolean") {
+    const proxyUrl = "proxyUrl" in mcp ? mcp.proxyUrl : undefined;
     try {
       const protocol = new URL(mcp.url).protocol;
-      if (protocol === "http:" || protocol === "https:") return { mcp: { url: mcp.url, databricksProxy: mcp.databricksProxy, available: mcp.available } };
+      if (!["http:", "https:"].includes(protocol)) throw new Error();
+      if (!mcp.databricksProxy) return { mcp: { url: mcp.url, databricksProxy: false, available: mcp.available } };
+      if (typeof proxyUrl === "string" && ["http:", "https:"].includes(new URL(proxyUrl).protocol)) {
+        return { mcp: { url: mcp.url, proxyUrl, databricksProxy: true, available: mcp.available } };
+      }
     } catch { /* Report the same invalid-response error below. */ }
   }
   throw new Error(uiText("The Server returned invalid MCP settings", "Server から無効な MCP 設定が返されました"));
@@ -25,18 +30,19 @@ function shellArgument(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-export function mcpConnectionOutput(client: MCPClient, url: string, databricksProxy: boolean, profile = "DEFAULT"): string {
+export function mcpConnectionOutput(client: MCPClient, mcp: MCPConnectionInfo["mcp"], profile = "DEFAULT"): string {
+  const url = mcp.databricksProxy ? mcp.proxyUrl! : mcp.url;
   const normalizedProfile = profile.trim() || "DEFAULT";
   if (client === "mcpJSON") {
     return JSON.stringify({
       mcpServers: {
-        dahlia: databricksProxy
+        dahlia: mcp.databricksProxy
           ? { type: "stdio", command: "uvx", args: ["uc-mcp-proxy", "--url", url, "--profile", normalizedProfile] }
           : { type: "http", url },
       },
     }, null, 2);
   }
-  if (databricksProxy) {
+  if (mcp.databricksProxy) {
     const command = `uvx uc-mcp-proxy --url ${shellArgument(url)} --profile ${shellArgument(normalizedProfile)}`;
     return client === "claude"
       ? `claude mcp add --scope user dahlia -- ${command}`
@@ -82,7 +88,7 @@ export function MCPConnectionDialog({ onClose }: { onClose: () => void }) {
 
   const mcpUnavailable = connection?.mcp.available === false;
   const canConfigure = !error && !mcpUnavailable;
-  const output = connection ? mcpConnectionOutput(client, connection.mcp.url, connection.mcp.databricksProxy, profile) : "";
+  const output = connection ? mcpConnectionOutput(client, connection.mcp, profile) : "";
   async function copy() {
     try {
       await navigator.clipboard.writeText(output);
