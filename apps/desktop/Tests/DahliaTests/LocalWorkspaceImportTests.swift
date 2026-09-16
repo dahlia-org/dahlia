@@ -174,14 +174,21 @@
             .some(.ready),
             .some(.recording),
             .some(.finalizing),
-        ])
+        ], [false, true])
         func importsMissingAudioMetadataButRejectsRetainedOrUnfinishedAudio(
-            additionalState: RecordingAudioSegmentState?
+            additionalState: RecordingAudioSegmentState?, hasExistingArchive: Bool
         ) throws {
             let fixture = try LocalImportFixture(role: "editor")
             defer { fixture.close() }
             try fixture.database.dbQueue.write { db in
-                try RecordingArchiveRecord.deleteOne(db, key: fixture.session.id)
+                if hasExistingArchive {
+                    try db.execute(
+                        sql: "UPDATE recording_archives SET connectionId = ?, preparedJSON = '{}', state = 'pending' WHERE sessionId = ?",
+                        arguments: [fixture.connection.id, fixture.session.id]
+                    )
+                } else {
+                    try RecordingArchiveRecord.deleteOne(db, key: fixture.session.id)
+                }
                 let now = Date.now
                 var segment = RecordingAudioSegmentRecord(
                     id: .v7(),
@@ -236,7 +243,12 @@
             }
             try fixture.database.dbQueue.read { db throws in
                 #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.workspaceId == expectedWorkspaceId)
-                #expect(try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id) == nil)
+                let archive = try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id)
+                #expect((archive != nil) == hasExistingArchive)
+                if let archive {
+                    #expect(archive.connectionId == fixture.connection.id)
+                    #expect(archive.state == (additionalState == nil ? "expired" : "pending"))
+                }
             }
         }
 
