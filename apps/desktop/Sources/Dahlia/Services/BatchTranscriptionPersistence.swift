@@ -111,8 +111,7 @@ enum BatchTranscriptionPersistence {
             let metadata = TranscriptMetadata(
                 provider: "apple",
                 model: "apple-speech",
-                runs: (!replacingMeeting && previous?.metadata?.usesAppleModel("apple-speech") == true ? previous?
-                    .metadata?.runs ?? [] : []) + executionRuns
+                runs: (!replacingMeeting ? previous?.metadata?.runs ?? [] : []) + executionRuns
             )
             let info = TranscriptInfo(
                 id: .v7(),

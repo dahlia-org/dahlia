@@ -1,4 +1,5 @@
 import DahliaMeetingAccess
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -8,6 +9,105 @@ import GRDB
 
     @MainActor
     struct BatchRetranscriptionRecoveryTests {
+        @Test
+        func partialRetranscriptionIgnoresExpiredSiblingAndPreservesItsTranscript() async throws {
+            let completedAt = Date(timeIntervalSince1970: 1_776_384_060)
+            let fixture = try BatchAudioTestFixture(
+                name: "RetranscriptionExpiredSibling",
+                endedAt: completedAt.addingTimeInterval(-30),
+                duration: 30,
+                batchCompletedAt: completedAt
+            )
+            defer { fixture.removeFiles() }
+            try await fixture.recordMicrophoneAudio()
+            let expiredSession = RecordingSessionRecord(
+                id: .v7(),
+                meetingId: fixture.meeting.id,
+                startedAt: fixture.now.addingTimeInterval(30),
+                endedAt: fixture.now.addingTimeInterval(60),
+                duration: 30,
+                offsetSeconds: 30,
+                createdAt: fixture.now,
+                updatedAt: fixture.now,
+                transcriptionMode: .batch,
+                batchCompletedAt: completedAt
+            )
+            let previousTranscript = makeTranscriptRecord(fixture: fixture, text: "selected previous transcript")
+            let expiredTranscript = TranscriptContent(
+                id: .v7(),
+                meetingId: fixture.meeting.id,
+                sessionId: expiredSession.id,
+                startTime: expiredSession.startedAt,
+                endTime: expiredSession.startedAt.addingTimeInterval(30),
+                text: "expired sibling transcript",
+                translatedText: nil,
+                isConfirmed: true,
+                audioSource: "mic"
+            )
+            let previousRun = TranscriptMetadata.Run(
+                generatedBy: "server",
+                startedAt: fixture.now,
+                completedAt: completedAt,
+                recordingSessionId: expiredSession.id
+            )
+            try await fixture.database.dbQueue.write { db in
+                try expiredSession.insert(db)
+                try RecordingArchiveRecord(
+                    sessionId: expiredSession.id,
+                    meetingId: fixture.meeting.id,
+                    workspaceId: fixture.meeting.workspaceId,
+                    state: "expired"
+                ).insert(db)
+                try previousTranscript.insert(db)
+                try expiredTranscript.insert(db)
+                try TranscriptRecord(
+                    meetingId: fixture.meeting.id,
+                    info: TranscriptInfo(
+                        id: .v7(),
+                        startedAt: fixture.now,
+                        endedAt: completedAt,
+                        metadata: .init(provider: "gemini", model: "gemini", runs: [previousRun])
+                    )
+                ).insert(db)
+            }
+            let confirmationProbe = BatchConfirmationProbe()
+            let coordinator = BatchTranscriptionCoordinator(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL,
+                speechRecognizer: TestBatchSpeechRecognizer(),
+                supportedLocalesProvider: { testSupportedSpeechLocales },
+                onStateChange: { _ in }
+            )
+
+            try await coordinator.confirmRetranscriptionAndEnqueue(
+                sessionIds: [fixture.session.id],
+                languageSelection: .manual(localeIdentifier: "en_US"),
+                automaticLanguageCandidates: nil,
+                onConfirmed: { await confirmationProbe.record($0) }
+            )
+            #expect(await pollUntil {
+                await coordinator.runningState(sessionId: fixture.session.id) == nil
+            })
+
+            let persisted = try await fixture.database.dbQueue.read { db in
+                try (
+                    RecordingSessionRecord.fetchOne(db, key: fixture.session.id),
+                    RecordingSessionRecord.fetchOne(db, key: expiredSession.id),
+                    fetchSessionTranscriptContent(sessionId: fixture.session.id, in: db),
+                    fetchSessionTranscriptContent(sessionId: expiredSession.id, in: db),
+                    TranscriptRecord.current(fixture.meeting.id, in: db)
+                )
+            }
+            #expect(await confirmationProbe.sessionIds == [fixture.session.id])
+            #expect(persisted.0?.isBatchRetranscriptionPending == false)
+            #expect(try #require(persisted.0?.batchCompletedAt) > completedAt)
+            #expect(persisted.1?.batchCompletedAt == completedAt)
+            #expect(persisted.2.isEmpty)
+            #expect(persisted.3.map(\.text) == ["expired sibling transcript"])
+            #expect(persisted.4?.metadata?.runs.first == previousRun)
+            #expect(persisted.4?.metadata?.runs.last?.recordingSessionId == fixture.session.id)
+        }
+
         @Test
         func cancelledRetranscriptionRejectsAStaleCompletion() async throws {
             let completedAt = Date(timeIntervalSince1970: 1_776_384_060)
@@ -221,6 +321,14 @@ import GRDB
 
         func record(_ update: BatchTranscriptionUpdate) {
             updates.append(update)
+        }
+    }
+
+    private actor BatchConfirmationProbe {
+        private(set) var sessionIds: [UUID] = []
+
+        func record(_ result: BatchTranscriptionConfirmationService.Result) {
+            sessionIds = result.sessionIds
         }
     }
 #endif

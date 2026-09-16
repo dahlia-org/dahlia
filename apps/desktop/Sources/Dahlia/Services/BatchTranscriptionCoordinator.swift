@@ -327,17 +327,21 @@ actor BatchTranscriptionCoordinator {
         let input = try await dbQueue.read { db in
             let current = try TranscriptRecord.current(job.meeting.id, in: db)
             let hasText = try TranscriptSegmentRecord.filter(Column("meetingId") == job.meeting.id).fetchCount(db) > 0
-            let replaceAll = job.session.isBatchRetranscriptionPending
+            let requiresReplacement = job.session.isBatchRetranscriptionPending
                 || (hasText && current?.metadata?.usesAppleModel("apple-speech") != true)
-            let sessions = replaceAll ? try RecordingSessionRecord.filter(Column("meetingId") == job.meeting.id)
+            let meetingSessions = requiresReplacement ? try RecordingSessionRecord.filter(Column("meetingId") == job.meeting.id)
                 .filter(Column("batchDiscardedAt") == nil).order(Column("startedAt"), Column("id")).fetchAll(db) : [job.session]
-            guard !replaceAll || sessions.allSatisfy({ $0.transcriptionMode == .batch && $0.endedAt != nil }) else {
+            let sessions = job.session.isBatchRetranscriptionPending
+                ? meetingSessions.filter(\.isBatchRetranscriptionPending)
+                : meetingSessions
+            let replacingMeeting = requiresReplacement && sessions.count == meetingSessions.count
+            guard !requiresReplacement || sessions.allSatisfy({ $0.transcriptionMode == .batch && $0.endedAt != nil }) else {
                 throw TranscriptVersionError.fullTranscriptionUnavailable
             }
-            if replaceAll {
+            if replacingMeeting {
                 try BatchTranscriptionPersistence.validateReplacementCoverage(meetingID: job.meeting.id, sessions: sessions, in: db)
             }
-            return (id: current?.id, replaceAll: replaceAll, sessions: sessions)
+            return (id: current?.id, replacingMeeting: replacingMeeting, sessions: sessions)
         }
         let jobs = try input.sessions.map { try fetchJob(sessionId: $0.id) }
         var records: [TranscriptContent] = []
@@ -363,7 +367,7 @@ actor BatchTranscriptionCoordinator {
         try Task.checkCancellation()
         try BatchTranscriptionPersistence.complete(
             sessionId: job.session.id, meetingId: job.meeting.id, records: records, completedAt: .now, dbQueue: dbQueue,
-            replacingMeeting: input.replaceAll, expectedTranscriptId: input.id, expectedSessions: input.sessions, runs: runs
+            replacingMeeting: input.replacingMeeting, expectedTranscriptId: input.id, expectedSessions: input.sessions, runs: runs
         )
         for session in input.sessions where session.id != job.session.id {
             await notify(meetingId: job.meeting.id, state: .completed(sessionId: session.id))

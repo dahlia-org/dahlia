@@ -84,15 +84,11 @@ extension BatchTranscriptionConfirmationService {
         return try await dbQueue.write { db in
             let uniqueSessionIds = Array(Set(sessionIds))
             guard !uniqueSessionIds.isEmpty else { throw CocoaError(.fileNoSuchFile) }
-            guard let first = try RecordingSessionRecord.fetchOne(db, key: uniqueSessionIds[0]) else {
-                throw CocoaError(.fileNoSuchFile)
-            }
             let sessions = try RecordingSessionRecord
-                .filter(Column("meetingId") == first.meetingId)
-                .filter(Column("batchDiscardedAt") == nil)
+                .filter(uniqueSessionIds.contains(Column("id")))
                 .order(Column("startedAt").asc)
                 .fetchAll(db)
-            guard Set(uniqueSessionIds).isSubset(of: Set(sessions.map(\.id))),
+            guard sessions.count == uniqueSessionIds.count,
                   let meetingId = sessions.first?.meetingId,
                   sessions.allSatisfy({ session in
                       session.meetingId == meetingId
