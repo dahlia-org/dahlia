@@ -553,6 +553,15 @@ kbd { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; font-
 .dialog-footer { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--line); background: var(--paper); }
 .dialog-status { margin-right: auto; font-size: 12px; color: var(--muted); }
 .dialog-error { margin: 20px 0 0; padding: 12px; border: 1px solid #eed3d8; border-radius: 8px; background: #fff6f7; color: var(--danger); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.mcp-dialog-body { display: flow-root; }
+.mcp-proxy-note, .mcp-unavailable-note { display: grid; gap: 5px; margin-bottom: 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--sidebar); font-size: 12px; line-height: 1.6; }
+.mcp-proxy-note span, .mcp-unavailable-note span { color: var(--muted); }
+.mcp-profile-field { display: grid; gap: 7px; margin-bottom: 18px; font-size: 12px; font-weight: 600; }
+.mcp-client-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 9px; background: var(--sidebar); }
+.mcp-client-tabs button { flex: 1; min-width: 0; padding: 8px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
+.mcp-client-tabs button[aria-pressed="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 4px #2214271a; }
+.mcp-connection-output { min-height: 140px; max-height: 280px; margin: 12px 0; padding: 14px; overflow: auto; border: 1px solid var(--line); border-radius: 9px; background: var(--canvas); font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mcp-copy-button { float: right; }
 .primary.destructive { background: var(--danger); box-shadow: none; }
 .primary.destructive:hover { background: #842735; }
 
@@ -574,6 +583,7 @@ kbd { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; font-
   .meeting-toolbar { flex-wrap: wrap; gap: 0 12px; }
   .meeting-actions { margin-left: auto; }
   .meeting-tabs { gap: 20px; max-width: 100%; }
+  .mcp-client-tabs button { min-height: 44px; }
   .primary, .secondary, .icon-button, .tree-toggle, .action-trigger, .sidebar-action, .workspace-switcher-trigger, .select-trigger, .select-menu .dropdown-option { min-height: 44px; }
   .icon-button { width: 44px; }
   .tree-toggle { flex-basis: 32px; }

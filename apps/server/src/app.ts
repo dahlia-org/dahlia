@@ -98,6 +98,8 @@ export interface AppDependencies {
   config: AppConfig;
   fetch?: typeof fetch;
   auth?: DahliaAuth;
+  /** Whether this runtime can onboard accounts-mode MCP clients through CIMD. */
+  mcpSupportsCimd?: boolean;
   authStore?: AuthStore;
   syncService?: MeetingSyncService;
   extensions?: readonly DahliaServerExtension[];
@@ -141,6 +143,10 @@ export function mutationOriginAllowed(request: Request, baseUrl: string): boolea
   return request.headers.get("origin") === new URL(baseUrl).origin;
 }
 
+export function mcpSetupAvailable(authProvider: AppConfig["authProvider"], supportsCimd = false, databricksProxy = false): boolean {
+  return authProvider === "accounts" ? supportsCimd : databricksProxy;
+}
+
 export function createApp(dependencies: AppDependencies): DahliaServerApp & { runStorageMaintenance(): Promise<void> } {
   const { config } = dependencies;
   const app = new OpenAPIHono<{ Variables: AppVariables }>({ defaultHook: async (result, context) => {
@@ -163,6 +169,9 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   if (config.authProvider === "accounts" && (!auth || !authStore)) {
     throw new Error("Better Auth must be initialized before creating the application");
   }
+  const databricksProxyUrl = config.authProvider === "header" ? config.databricksAppUrl : undefined;
+  const databricksProxy = databricksProxyUrl !== undefined;
+  const mcpAvailable = mcpSetupAvailable(config.authProvider, dependencies.mcpSupportsCimd, databricksProxy);
   const extensions = dependencies.extensions ?? [];
   const identities = new IdentityService(config, auth, async (identity) => {
     const userId = identity.source === "header" ? await store.resolveHeaderUser(identity) : identity.userId;
@@ -268,7 +277,14 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   app.all("/.well-known/*", (context) => context.json({ error: "not_found" }, 404));
 
   app.use("/api/auth/*", authBodyLimit);
-  app.get("/api/auth/mode", (context) => context.json({ provider: config.authProvider }));
+  app.get("/api/auth/mode", (context) => context.json({
+    provider: config.authProvider,
+    mcp: {
+      url: mcpResource({ baseUrl: databricksProxyUrl ?? config.baseUrl }),
+      databricksProxy,
+      available: mcpAvailable,
+    },
+  }));
   for (const extension of extensions) extension.registerAuthRoutes?.(app, services);
   app.on(["GET", "POST"], "/api/auth/*", async (context) => {
     if (config.authProvider === "header") await identities.fromBrowser(context.req.raw);

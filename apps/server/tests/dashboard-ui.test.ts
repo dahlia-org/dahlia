@@ -31,6 +31,7 @@ import { FileViewer } from "../src/client/FileViewer";
 import * as liveData from "../src/client/live-data";
 import { dashboardNavigationPath } from "../src/client/navigation";
 import { clientMutationEvent, json, type SyncedMeetingInfo, type SyncedWorkspaceInfo } from "../src/client/api";
+import { MCPConnectionDialog, mcpConnectionOutput, parseMCPConnectionInfo } from "../src/client/MCPConnectionDialog";
 
 const ExtensionPage = () => null;
 afterEach(() => vi.unstubAllGlobals());
@@ -223,8 +224,35 @@ describe("desktop-style meeting layout", () => {
     expect(footer).toContain('href="/orgs"');
     expect(navigation).toContain('href="/orgs"');
     expect(footer).toContain("Settings");
+    expect(footer).toContain("Connect with MCP");
     expect(footer).not.toContain("sidebar-settings");
     expect(footer).not.toContain("Artifacts");
+  });
+
+  it("generates direct and Databricks proxy MCP client settings", () => {
+    const url = "https://dahlia.aws.databricksapps.com/mcp";
+    expect(mcpConnectionOutput("codex", url, false)).toBe(`codex mcp add dahlia --url '${url}'`);
+    expect(mcpConnectionOutput("claude", url, false)).toBe(`claude mcp add --scope user --transport http dahlia '${url}'`);
+    expect(JSON.parse(mcpConnectionOutput("mcpJSON", url, false))).toEqual({ mcpServers: { dahlia: { type: "http", url } } });
+    expect(mcpConnectionOutput("codex", url, true, "team profile"))
+      .toContain(`uvx uc-mcp-proxy --url '${url}' --profile 'team profile'`);
+    expect(JSON.parse(mcpConnectionOutput("mcpJSON", url, true, "team"))).toEqual({
+      mcpServers: { dahlia: { type: "stdio", command: "uvx", args: ["uc-mcp-proxy", "--url", url, "--profile", "team"] } },
+    });
+    const dialog = renderToStaticMarkup(createElement(MCPConnectionDialog, { onClose: vi.fn() }));
+    expect(dialog).toContain('role="group"');
+    expect(dialog).toContain('aria-pressed="true"');
+    expect(dialog).toContain('role="status"');
+    expect(dialog).not.toContain('role="tab"');
+    expect(readFileSync(new URL("../src/client/styles.css", import.meta.url), "utf8"))
+      .toContain("  .mcp-client-tabs button { min-height: 44px; }");
+  });
+
+  it("validates MCP settings before rendering client commands", () => {
+    const settings = { mcp: { url: "https://dahlia.example/mcp", databricksProxy: false, available: true } };
+    expect(parseMCPConnectionInfo(settings)).toEqual(settings);
+    expect(() => parseMCPConnectionInfo({ provider: "header" })).toThrow("invalid MCP settings");
+    expect(() => parseMCPConnectionInfo({ mcp: { ...settings.mcp, url: "javascript:alert(1)" } })).toThrow("invalid MCP settings");
   });
 
   it("omits unsupported sign-out and sharing sections for proxy accounts", () => {

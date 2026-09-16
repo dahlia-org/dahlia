@@ -4,8 +4,9 @@ import { MeetingHoverCard, HoverPreview } from "./MeetingHoverCard";
 import { Tooltip } from "./Tooltip";
 import { Search } from "./Search";
 import { RecordingIndicator } from "./RecordingIndicator";
+import { MCPConnectionDialog } from "./MCPConnectionDialog";
 import { useLiveJSON, useLivePage } from "./live-data";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { SessionInfo } from "./App";
 import type { OrganizationInfo, SyncedMeetingInfo, SyncedProjectInfo, SyncedWorkspaceInfo } from "./api";
 import { json, uiText } from "./api";
@@ -121,6 +122,8 @@ function SignOutButton() {
 
 export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceId: resolvedWorkspaceId }: { brand: ReactNode; session: SessionInfo; children: ReactNode; serverLinks?: ReactNode; routeWorkspaceId?: string }) {
   const state = useSidebar();
+  const accountMenuTrigger = useRef<HTMLButtonElement>(null);
+  const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
   const identity = session.user.name || session.user.email || session.user.id;
   const routeWorkspaceId = resolvedWorkspaceId ?? (typeof window === "undefined" ? undefined : window.location.pathname.match(/^\/workspaces\/([^/]+)/)?.[1]);
   const selectionKey = `dahlia:sidebar:${session.user.id}:workspace`;
@@ -172,7 +175,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
       </nav>}
     </div>
     <div className="sidebar-footer">
-      <button className="organization-switcher" popoverTarget="account-menu" aria-label={uiText(`Account menu: ${identity}`, `アカウントメニュー: ${identity}`)}>
+      <button ref={accountMenuTrigger} className="organization-switcher" popoverTarget="account-menu" aria-label={uiText(`Account menu: ${identity}`, `アカウントメニュー: ${identity}`)}>
         <MenuIcon name="account" />
         <span className="identity-copy"><strong>{identity}</strong></span>
         <svg className="account-menu-chevron" width="16" height="20" viewBox="0 0 16 20" aria-hidden="true">
@@ -187,8 +190,12 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
         </>}
         <span className="nav-divider" />
         {children}
+        <button onClick={(event) => { event.currentTarget.closest<HTMLElement>("[popover]")?.hidePopover(); accountMenuTrigger.current?.focus(); setMcpDialogOpen(true); }}>
+          <MenuIcon name="document" />{uiText("Connect with MCP", "MCP による接続")}
+        </button>
         {session.capabilities.sessions && <SignOutButton />}
       </div>
+      {mcpDialogOpen && <MCPConnectionDialog onClose={() => setMcpDialogOpen(false)} />}
     </div>
   </aside>;
 }

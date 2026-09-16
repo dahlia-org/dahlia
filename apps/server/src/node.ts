@@ -61,6 +61,7 @@ const app = createApp({
   summaryService,
   config,
   auth,
+  mcpSupportsCimd: config.authProvider === "accounts",
   authStore: applicationStore,
   syncService,
   imageAnalysisEnabled: imageAnalysis !== undefined,

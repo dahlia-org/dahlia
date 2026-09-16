@@ -57,6 +57,7 @@ export interface AppConfig {
   databaseUrl?: string;
   lakebaseDatabase?: LakebaseDatabaseConfig;
   baseUrl: string;
+  databricksAppUrl?: string;
   signOutUrl?: string;
   provider?: ProviderConfig;
   googleClientId?: string;
@@ -290,6 +291,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     databaseUrl: loadDatabaseUrl(env, databaseType),
     lakebaseDatabase: loadLakebaseDatabase(env, databaseType),
     baseUrl,
+    databricksAppUrl: databricksAppUrl ? validateBaseUrl(databricksAppUrl, "DATABRICKS_APP_URL") : undefined,
     signOutUrl,
     provider: providerConfig(env, aiBackend, databricksWorkspace),
     oauthRedirectUris: csv(env.DAHLIA_OAUTH_REDIRECT_URIS),
