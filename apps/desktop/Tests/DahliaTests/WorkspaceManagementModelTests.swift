@@ -700,6 +700,7 @@
                 organizationId: nil,
                 workspaceName: nil
             ) == nil)
+            #expect(model.errorMessage == L10n.workspaceImportUnavailable)
             #expect(try repository.fetchAllWorkspaces().first(where: { $0.id == workspace.id })?.accountConnectionId == nil)
         }
 

@@ -445,7 +445,8 @@ final class WorkspaceManagementModel {
             await loadWorkspaces()
             return updated
         } catch {
-            presentError(L10n.workspaceOperationFailed, error: error, source: "confirmServerAdoption")
+            let message = error is LocalWorkspaceImportError ? error.localizedDescription : L10n.workspaceOperationFailed
+            presentError(message, error: error, source: "confirmServerAdoption")
             return nil
         }
     }

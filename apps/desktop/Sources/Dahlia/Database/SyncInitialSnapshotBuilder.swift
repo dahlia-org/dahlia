@@ -635,10 +635,17 @@ enum SyncInitialSnapshotBuilder {
               AND EXISTS (
                   SELECT 1 FROM recording_audio_segments AS segments
                   WHERE segments.recordingSessionId = sessions.id
-                    AND segments.state != ?
+                    AND segments.state NOT IN (?, ?)
                     AND segments.purgedAt IS NULL
               )
-            """, arguments: [workspaceId, connectionId, item.id, TranscriptionMode.batch.rawValue, RecordingAudioSegmentState.purged.rawValue])
+            """, arguments: [
+                workspaceId,
+                connectionId,
+                item.id,
+                TranscriptionMode.batch.rawValue,
+                RecordingAudioSegmentState.purged.rawValue,
+                RecordingAudioSegmentState.failed.rawValue,
+            ])
             let attachments = try MeetingAttachmentRecord.filter(Column("meetingId") == item.id).fetchCursor(db)
             while let attachment = try attachments.next() {
                 try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [
@@ -652,11 +659,23 @@ enum SyncInitialSnapshotBuilder {
                 SELECT EXISTS (
                     SELECT 1 FROM recording_audio_segments
                     WHERE recordingSessionId = ?
-                      AND state != ?
+                      AND state NOT IN (?, ?)
                       AND purgedAt IS NULL
                 )
-                """, arguments: [archive.sessionId, RecordingAudioSegmentState.purged.rawValue]) ?? false
-                guard !prepared.isEmpty || hasRetainedSegments else { continue }
+                """, arguments: [
+                    archive.sessionId,
+                    RecordingAudioSegmentState.purged.rawValue,
+                    RecordingAudioSegmentState.failed.rawValue,
+                ]) ?? false
+                guard !prepared.isEmpty || hasRetainedSegments else {
+                    if archive.audioJSON == "{}" {
+                        archive.state = "expired"
+                        archive.retryAt = nil
+                        archive.failureCode = nil
+                        try archive.update(db)
+                    }
+                    continue
+                }
                 if prepared.isEmpty {
                     let hasUnarchivableSegments = try Bool.fetchOne(db, sql: """
                     SELECT EXISTS (

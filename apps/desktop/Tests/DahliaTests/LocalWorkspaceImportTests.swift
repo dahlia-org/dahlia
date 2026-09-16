@@ -169,12 +169,26 @@
             #expect(archive.state == "expired")
         }
 
-        @Test
-        func rejectsImportOfRetainedCAFWithFailedSegment() throws {
+        @Test(arguments: [
+            RecordingAudioSegmentState?.none,
+            .some(.ready),
+            .some(.recording),
+            .some(.finalizing),
+        ], [false, true])
+        func importsMissingAudioMetadataButRejectsRetainedOrUnfinishedAudio(
+            additionalState: RecordingAudioSegmentState?, hasExistingArchive: Bool
+        ) throws {
             let fixture = try LocalImportFixture(role: "editor")
             defer { fixture.close() }
             try fixture.database.dbQueue.write { db in
-                try RecordingArchiveRecord.deleteOne(db, key: fixture.session.id)
+                if hasExistingArchive {
+                    try db.execute(
+                        sql: "UPDATE recording_archives SET connectionId = ?, preparedJSON = '{}', state = 'pending' WHERE sessionId = ?",
+                        arguments: [fixture.connection.id, fixture.session.id]
+                    )
+                } else {
+                    try RecordingArchiveRecord.deleteOne(db, key: fixture.session.id)
+                }
                 let now = Date.now
                 var segment = RecordingAudioSegmentRecord(
                     id: .v7(),
@@ -182,9 +196,9 @@
                     source: .microphone,
                     segmentIndex: 1,
                     generationId: .v7(),
-                    state: .ready,
-                    partialRelativePath: "",
-                    finalRelativePath: "recordings/retained.caf",
+                    state: .failed,
+                    partialRelativePath: "recordings/failed.partial.caf",
+                    finalRelativePath: "recordings/failed.caf",
                     sampleRate: 16000,
                     channelCount: 1,
                     sealedFrameCount: 160,
@@ -193,34 +207,48 @@
                     byteCount: 1,
                     sha256: Data(repeating: 0, count: 32),
                     finalizationStartedAt: now,
-                    integrityVerifiedAt: now,
+                    integrityVerifiedAt: nil,
                     finalizedAt: now,
                     purgeRequestedAt: nil,
                     purgedAt: nil,
-                    failureStage: nil,
-                    failureCode: nil,
+                    failureStage: "reconcileReady",
+                    failureCode: "missingOrAmbiguousFile",
                     createdAt: now,
                     updatedAt: now
                 )
                 try segment.insert(db)
-                segment.id = .v7()
-                segment.segmentIndex = 2
-                segment.generationId = .v7()
-                segment.state = .failed
-                segment.partialRelativePath = "recordings/failed.partial.caf"
-                segment.finalRelativePath = "recordings/failed.caf"
-                segment.integrityVerifiedAt = nil
-                segment.failureStage = "finalize"
-                segment.failureCode = "missingFinal"
-                try segment.insert(db)
+                if let additionalState {
+                    segment.id = .v7()
+                    segment.segmentIndex = 2
+                    segment.generationId = .v7()
+                    segment.state = additionalState
+                    segment.partialRelativePath = ""
+                    segment.finalRelativePath = "recordings/retained.caf"
+                    segment.integrityVerifiedAt = additionalState == .ready ? now : nil
+                    segment.failureStage = nil
+                    segment.failureCode = nil
+                    try segment.insert(db)
+                }
             }
 
-            #expect(throws: LocalWorkspaceImportError.self) {
+            let expectedWorkspaceId: UUID
+            if additionalState != nil {
+                #expect(throws: LocalWorkspaceImportError.self) {
+                    try fixture.database.dbQueue.write { db in _ = try fixture.commit(in: db) }
+                }
+                expectedWorkspaceId = fixture.source.id
+            } else {
                 try fixture.database.dbQueue.write { db in _ = try fixture.commit(in: db) }
+                expectedWorkspaceId = fixture.target.id
             }
             try fixture.database.dbQueue.read { db throws in
-                #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.workspaceId == fixture.source.id)
-                #expect(try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id) == nil)
+                #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.workspaceId == expectedWorkspaceId)
+                let archive = try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id)
+                #expect((archive != nil) == hasExistingArchive)
+                if let archive {
+                    #expect(archive.connectionId == fixture.connection.id)
+                    #expect(archive.state == (additionalState == nil ? "expired" : "pending"))
+                }
             }
         }
 

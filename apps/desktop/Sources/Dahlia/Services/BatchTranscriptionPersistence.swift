@@ -82,6 +82,22 @@ enum BatchTranscriptionPersistence {
                 _ = try TranscriptSegmentRecord.filter(Column("meetingId") == meetingId).deleteAll(db)
             } else {
                 _ = try TranscriptSegmentRecord.filter(ids.contains(Column("sessionId"))).deleteAll(db)
+                for selected in sessions {
+                    guard let endedAt = selected.endedAt else { throw TextContentError.changed }
+                    try db.execute(sql: """
+                    DELETE FROM transcript_segments
+                    WHERE meetingId = ?
+                      AND sessionId IS NULL
+                      AND startedAt >= ?
+                      AND startedAt <= ?
+                      AND NOT EXISTS (
+                          SELECT 1 FROM recording_sessions AS later
+                          WHERE later.meetingId = transcript_segments.meetingId
+                            AND later.startedAt > ?
+                            AND later.startedAt <= transcript_segments.startedAt
+                      )
+                    """, arguments: [meetingId, selected.startedAt, endedAt, selected.startedAt])
+                }
             }
             for record in records {
                 try record.insert(db)
@@ -108,11 +124,28 @@ enum BatchTranscriptionPersistence {
                 ),
                 recordingSessionId: session.id
             )] : runs
+            let replacedAudioChecksums = try RecordingArchiveRecord
+                .filter(ids.contains(Column("sessionId")))
+                .fetchAll(db)
+                .reduce(into: [String: Set<String>]()) { checksums, archive in
+                    for (source, audio) in try archive.audio {
+                        checksums[source, default: []].insert(audio.checksum)
+                    }
+                }
+            let retainedRuns: [TranscriptMetadata.Run] = !replacingMeeting ? (previous?.metadata?.runs ?? []).compactMap { run in
+                guard run.generatedBy == "server", let inputs = run.audioInputs else {
+                    return run.recordingSessionId.map(ids.contains) == true ? nil : run
+                }
+                var retained = run
+                retained.audioInputs = inputs.filter {
+                    replacedAudioChecksums[$0.source]?.contains($0.checksum) != true
+                }
+                return retained.audioInputs?.isEmpty == true ? nil : retained
+            } : []
             let metadata = TranscriptMetadata(
                 provider: "apple",
                 model: "apple-speech",
-                runs: (!replacingMeeting && previous?.metadata?.usesAppleModel("apple-speech") == true ? previous?
-                    .metadata?.runs ?? [] : []) + executionRuns
+                runs: retainedRuns + executionRuns
             )
             let info = TranscriptInfo(
                 id: .v7(),
