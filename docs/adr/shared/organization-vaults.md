@@ -30,7 +30,7 @@ Organization owner/admin の governance は配下 Workspace の ID / name / revi
 
 同期台帳と search projection job、暗号鍵の identity は Workspace 単位。receipt の user は操作者、summary / image job の user は requester であり、所有者ではない。provider 呼出前と commit 直前に現在の内容書込権限を確認する。差分90日保持、snapshot 復旧、SSE の通知専用性、receipt と pull cursor の分離は維持する。
 
-取り込み画面で Organization を作成している間は、Cancel・背景クリックを含むモーダル操作を無効にし、完了まで待つ。
+Organization の作成は Server 管理者に限定し、Desktop の取り込み画面では既存 Organization の選択だけを行う。
 
 Local から既存 Server Workspace への merge はバックアップ・ID 衝突検査後、所属変更と通常の送信 operation を1つの SQLite transaction で記録する。Server transfer の relocation primitive を再利用する。録音・本文・画像・参照を維持し、元 Workspace とその設定 / instructions を残す。確定後の編集は通常 queue へ追加し、移行時に固定した operation / blob の完了を追跡して再起動後も再開する。409 や失効時は未送信データを保持し、Server の部分確定を自動 rollback しない。
 

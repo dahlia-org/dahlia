@@ -837,7 +837,7 @@
       "previous": "new public contract",
       "reason": "Server administrators create a Team Organization with an explicit initial owner through the shared OrganizationStore.",
       "consumers": [
-        "apps/desktop/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift"
+        "apps/server/src/client/App.tsx"
       ]
     },
     {

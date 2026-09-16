@@ -3,17 +3,6 @@ import Foundation
 import OpenAPIRuntime
 import OpenAPIURLSession
 
-struct CloudOrganizationDirectory: Sendable {
-    var items: [Components.Schemas.Organization]
-    var canCreateOrganizations: Bool
-}
-
-struct CloudOrganizationOwner: Identifiable, Sendable {
-    let id: String
-    let name: String
-    let email: String
-}
-
 enum CloudWorkspaceDiscovery {
     @concurrent
     static func fetch(
@@ -43,43 +32,15 @@ enum CloudWorkspaceDiscovery {
         }
     }
 
-    static func organizations(connection: DahliaAccountConnectionRecord, api: SyncAPIClient) async throws -> CloudOrganizationDirectory {
+    static func organizations(
+        connection: DahliaAccountConnectionRecord,
+        api: SyncAPIClient
+    ) async throws -> [Components.Schemas.Organization] {
         guard let origin = URL(string: connection.origin) else { throw URLError(.badURL) }
         return try await api.perform(origin: origin, connectionId: connection.id) {
             let page = try await $0.listOrganizations().ok.body.json
-            return CloudOrganizationDirectory(items: page.items, canCreateOrganizations: page.canCreateOrganizations)
+            return page.items
         }
-    }
-
-    static func organizationOwners(
-        connection: DahliaAccountConnectionRecord,
-        api: SyncAPIClient,
-        offset: Int
-    ) async throws -> (items: [CloudOrganizationOwner], hasMore: Bool) {
-        guard let origin = URL(string: connection.origin) else { throw URLError(.badURL) }
-        return try await api.perform(origin: origin, connectionId: connection.id) {
-            let page = try await $0.listServerUsers(query: .init(offset: String(offset))).ok.body.json
-            return (page.items.map { CloudOrganizationOwner(id: $0.value1.id, name: $0.value1.name, email: $0.value1.email) }, page.hasMore)
-        }
-    }
-
-    static func createOrganization(
-        name: String,
-        slug: String,
-        initialOwnerUserId: String,
-        connection: DahliaAccountConnectionRecord,
-        api: SyncAPIClient
-    ) async throws -> UUID {
-        guard let origin = URL(string: connection.origin) else { throw URLError(.badURL) }
-        let organization = try await api.perform(origin: origin, connectionId: connection.id) {
-            try await $0.createOrganization(body: .json(.init(
-                name: name,
-                slug: slug,
-                initialOwnerUserId: initialOwnerUserId
-            ))).created.body.json
-        }
-        guard let id = UUID(uuidString: organization.id) else { throw URLError(.cannotParseResponse) }
-        return id
     }
 
     static func createWorkspace(

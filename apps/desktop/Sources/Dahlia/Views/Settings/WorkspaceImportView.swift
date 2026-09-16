@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import SwiftUI
 
 struct WorkspaceImportView: View {
@@ -5,20 +6,12 @@ struct WorkspaceImportView: View {
     let isBusy: Bool
     let onCancel: () -> Void
     let onReload: () async -> Void
-    let onCreateOrganization: (String, String, String) async -> (created: Bool, selectableID: UUID?)
-    let onLoadOwners: (Int) async -> (items: [CloudOrganizationOwner], hasMore: Bool)
-    let onImport: (UUID?, UUID?) async -> Void
+    let onImport: (UUID?, UUID?, String?) async -> Void
 
     @State private var useExisting = true
     @State private var destinationId: UUID?
     @State private var organizationId: UUID?
-    @State private var organizationName = ""
-    @State private var isCreating = false
-    @State private var organizationSlug = ""
-    @State private var ownerId = ""
-    @State private var owners: [CloudOrganizationOwner] = []
-    @State private var hasMoreOwners = true
-    @State private var isLoadingOwners = false
+    @State private var workspaceName = ""
 
     private var destinations: [CloudWorkspaceRecord] {
         pending.serverWorkspaces.filter { $0.workspaceId != pending.workspace.id && ["admin", "editor"].contains($0.role) }
@@ -42,52 +35,22 @@ struct WorkspaceImportView: View {
                 }.pickerStyle(.segmented)
                 if useExisting {
                     Picker(L10n.workspaceImportExisting, selection: $destinationId) {
-                        Text("—").tag(nil as UUID?)
+                        Text(L10n.workspaceImportSelectWorkspace).tag(nil as UUID?)
                         ForEach(destinations) { workspace in
-                            Text(workspace.name + " (" + (workspace.role == "admin" ? L10n.workspaceAdmin : L10n.workspaceEditor) + ")")
+                            Text(destinationLabel(for: workspace))
                                 .tag(Optional(workspace.workspaceId))
                         }
                     }
                 } else {
                     Picker(L10n.workspaceImportOrganization, selection: $organizationId) {
-                        Text("—").tag(nil as UUID?)
+                        Text(L10n.workspaceImportSelectOrganization).tag(nil as UUID?)
                         ForEach(pending.organizations.filter { $0.kind == .team }, id: \.id) { organization in
                             Text(organization.name).tag(UUID(uuidString: organization.id))
                         }
                     }
-                    if pending.canCreateOrganizations {
-                        TextField(L10n.workspaceImportName, text: $organizationName)
-                        TextField("slug", text: $organizationSlug)
-                        Picker(L10n.organizationInitialOwner, selection: $ownerId) {
-                            Text("—").tag("")
-                            ForEach(owners) { owner in
-                                Text(owner.name + " (" + owner.email + ")").tag(owner.id)
-                            }
-                        }
-                        Text(L10n.organizationOwnerImportRequirement)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if hasMoreOwners {
-                            Button(L10n.organizationLoadOwners) { Task { await loadOwners() } }
-                                .buttonStyle(.dahlia())
-                                .disabled(isLoadingOwners)
-                        }
-                        Button(L10n.workspaceImportCreateOrganization) {
-                            isCreating = true
-                            Task {
-                                let result = await onCreateOrganization(organizationName, organizationSlug, ownerId)
-                                if result.created {
-                                    if let selectableID = result.selectableID { organizationId = selectableID }
-                                    organizationName = ""
-                                    organizationSlug = ""
-                                }
-                                isCreating = false
-                            }
-                        }
-                        .buttonStyle(.dahlia())
-                        .disabled(organizationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || organizationSlug.isEmpty || ownerId
-                            .isEmpty || isCreating)
+                    LabeledContent(L10n.workspaceName) {
+                        TextField(L10n.workspaceName, text: $workspaceName)
+                            .labelsHidden()
                     }
                 }
                 HStack {
@@ -97,14 +60,12 @@ struct WorkspaceImportView: View {
                     Button(L10n.cancel, action: onCancel)
                         .buttonStyle(.dahlia())
                         .keyboardShortcut(.cancelAction)
-                    Button(L10n.workspaceImportStart) {
-                        Task { await onImport(useExisting ? destinationId : nil, useExisting ? nil : organizationId) }
-                    }
-                    .buttonStyle(.dahlia(.primary))
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(useExisting ? destinationId == nil : organizationId == nil)
+                    Button(L10n.workspaceImportStart, action: startImport)
+                        .buttonStyle(.dahlia(.primary))
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(useExisting ? destinationId == nil : !canImportToNewWorkspace)
                 }
-                if isBusy || isCreating { ProgressView().controlSize(.small) }
+                if isBusy { ProgressView().controlSize(.small) }
             }
             .padding(24)
             .frame(width: 520)
@@ -113,27 +74,43 @@ struct WorkspaceImportView: View {
             .shadow(color: .black.opacity(0.24), radius: 28, y: 12)
         }
         .transition(.identity)
-        .disabled(isBusy || isCreating)
+        .disabled(isBusy)
         .task {
+            workspaceName = pending.workspace.name
             destinationId = destinations.first?.workspaceId
-            let initialOrganizationID = pending.organizations.first(where: { $0.kind == .team }).flatMap { UUID(uuidString: $0.id) }
-            let teamOrganizationIDs = Set(pending.organizations.filter { $0.kind == .team }.compactMap { UUID(uuidString: $0.id) })
+            let teamOrganizations = pending.organizations.filter { $0.kind == .team }
+            let initialOrganizationID = teamOrganizations.first.flatMap { UUID(uuidString: $0.id) }
+            let teamOrganizationIDs = Set(teamOrganizations.compactMap { UUID(uuidString: $0.id) })
             let hasTeamWorkspace = destinations.contains { teamOrganizationIDs.contains($0.organizationId) }
             let requiresOrganizationSelection = !teamOrganizationIDs.isEmpty && !hasTeamWorkspace
             organizationId = requiresOrganizationSelection ? nil : initialOrganizationID
             useExisting = !destinations.isEmpty && !requiresOrganizationSelection
-            if pending.canCreateOrganizations { await loadOwners() }
         }
     }
 
-    private func loadOwners() async {
-        guard !isLoadingOwners else { return }
-        isLoadingOwners = true
-        defer { isLoadingOwners = false }
-        let page = await onLoadOwners(owners.count)
-        guard !Task.isCancelled else { return }
-        owners.append(contentsOf: page.items.filter { candidate in !owners.contains(where: { $0.id == candidate.id }) })
-        hasMoreOwners = page.hasMore
+    private var canImportToNewWorkspace: Bool {
+        organizationId != nil && !workspaceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private func startImport() {
+        Task {
+            if useExisting {
+                await onImport(destinationId, nil, nil)
+            } else {
+                await onImport(nil, organizationId, workspaceName)
+            }
+        }
+    }
+
+    private func destinationLabel(for workspace: CloudWorkspaceRecord) -> String {
+        let role = workspace.role == "admin" ? L10n.workspaceAdmin : L10n.workspaceEditor
+        let organization = pending.organizations.first(where: {
+            UUID(uuidString: $0.id) == workspace.organizationId
+        })
+        if organization?.kind == .personal {
+            return workspace.name + " (" + role + ")"
+        }
+        let organizationName = organization?.name ?? TypeID.encode(workspace.organizationId, as: .organization)
+        return organizationName + " / " + workspace.name + " (" + role + ")"
+    }
 }

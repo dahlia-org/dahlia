@@ -238,6 +238,7 @@ final class MeetingRepository {
                   try !RecordingSessionRecord.hasActiveRecording(workspaceId: id, in: db),
                   try !SyncTransactionQueue.hasPending(workspaceId: id, in: db) else { throw LocalWorkspaceImportError.changed }
             try ScreenshotContentProvider.installTransfers(files, workspaceId: id, in: db)
+            workspace.name = serverWorkspace.name
             workspace.accountConnectionId = connectionID
             workspace.organizationId = serverWorkspace.organizationId
             workspace.syncRole = serverWorkspace.role

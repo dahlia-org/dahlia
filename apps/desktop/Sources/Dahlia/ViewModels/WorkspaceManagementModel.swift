@@ -9,7 +9,6 @@ struct PendingWorkspaceServerAdoption: Identifiable {
     let connection: DahliaAccountConnection
     let serverWorkspaces: [CloudWorkspaceRecord]
     let organizations: [Components.Schemas.Organization]
-    var canCreateOrganizations = false
 
     var id: UUID { workspace.id }
 }
@@ -19,6 +18,7 @@ struct PendingWorkspaceServerAdoption: Identifiable {
 @Observable
 final class WorkspaceManagementModel {
     typealias CloudWorkspaceFetcher = (DahliaAccountConnectionRecord) async throws -> [CloudWorkspaceRecord]
+    typealias OrganizationFetcher = (DahliaAccountConnectionRecord) async throws -> [Components.Schemas.Organization]
 
     static let defaultWorkspaceURL = URL.documentsDirectory
         .appending(path: "Dahlia", directoryHint: .isDirectory)
@@ -39,22 +39,16 @@ final class WorkspaceManagementModel {
     private(set) var hasLoadedWorkspaces = false
     private var repository: MeetingRepository?
     private let cloudWorkspaceFetcher: CloudWorkspaceFetcher?
-    private let organizationFetcher: ((DahliaAccountConnectionRecord) async throws -> CloudOrganizationDirectory)?
-    private let organizationOwnerFetcher: ((DahliaAccountConnectionRecord, Int) async throws -> (items: [CloudOrganizationOwner], hasMore: Bool))?
-    private let organizationCreator: ((String, String, String, DahliaAccountConnectionRecord) async throws -> UUID)?
+    private let organizationFetcher: OrganizationFetcher?
     @ObservationIgnored private var initialLocalWorkspaceTask: Task<WorkspaceRecord?, Never>?
     private var syncObservation: AnyDatabaseCancellable?
 
     init(
         cloudWorkspaceFetcher: CloudWorkspaceFetcher? = nil,
-        organizationFetcher: ((DahliaAccountConnectionRecord) async throws -> CloudOrganizationDirectory)? = nil,
-        organizationOwnerFetcher: ((DahliaAccountConnectionRecord, Int) async throws -> (items: [CloudOrganizationOwner], hasMore: Bool))? = nil,
-        organizationCreator: ((String, String, String, DahliaAccountConnectionRecord) async throws -> UUID)? = nil
+        organizationFetcher: OrganizationFetcher? = nil
     ) {
         self.cloudWorkspaceFetcher = cloudWorkspaceFetcher
         self.organizationFetcher = organizationFetcher
-        self.organizationOwnerFetcher = organizationOwnerFetcher
-        self.organizationCreator = organizationCreator
     }
 
     func configure(appDatabase: AppDatabaseManager?) async {
@@ -140,7 +134,7 @@ final class WorkspaceManagementModel {
                 else { return nil }
                 let organizations = try await fetchOrganizations(connection)
                 try Task.checkCancellation()
-                let personalOrganizationIDs = Set(organizations.items.filter { $0.kind == .personal }.compactMap { UUID(uuidString: $0.id) })
+                let personalOrganizationIDs = Set(organizations.filter { $0.kind == .personal }.compactMap { UUID(uuidString: $0.id) })
                 return workspaces.filter {
                     $0.accountConnectionId == accountConnectionID && $0.syncConfirmedConnectionId == accountConnectionID
                 }.min {
@@ -358,8 +352,7 @@ final class WorkspaceManagementModel {
                 workspace: workspace,
                 connection: connection,
                 serverWorkspaces: serverWorkspaces,
-                organizations: organizations.items,
-                canCreateOrganizations: organizations.canCreateOrganizations
+                organizations: organizations
             )
         } catch is CancellationError {
             return
@@ -368,7 +361,7 @@ final class WorkspaceManagementModel {
         }
     }
 
-    private func fetchOrganizations(_ connection: DahliaAccountConnectionRecord) async throws -> CloudOrganizationDirectory {
+    private func fetchOrganizations(_ connection: DahliaAccountConnectionRecord) async throws -> [Components.Schemas.Organization] {
         if let organizationFetcher { return try await organizationFetcher(connection) }
         return try await CloudWorkspaceDiscovery.organizations(connection: connection, api: SyncAPIClient(session: .shared))
     }
@@ -378,50 +371,11 @@ final class WorkspaceManagementModel {
         await requestServerAdoption(for: pending.workspace, connection: pending.connection)
     }
 
-    func adoptionOrganizationOwners(offset: Int) async -> (items: [CloudOrganizationOwner], hasMore: Bool) {
-        guard let pending = pendingServerAdoption, pending.canCreateOrganizations else { return ([], false) }
-        do {
-            if let organizationOwnerFetcher { return try await organizationOwnerFetcher(pending.connection.record, offset) }
-            return try await CloudWorkspaceDiscovery.organizationOwners(
-                connection: pending.connection.record,
-                api: SyncAPIClient(session: .shared),
-                offset: offset
-            )
-        } catch {
-            guard !Task.isCancelled, pendingServerAdoption?.generation == pending.generation else { return ([], false) }
-            presentError(L10n.workspaceOperationFailed, error: error, source: "adoptionOrganizationOwners")
-            return ([], true)
-        }
-    }
-
-    func createAdoptionOrganization(
-        name: String,
-        slug: String,
-        initialOwnerUserId: String
-    ) async -> (created: Bool, selectableID: UUID?) {
-        guard let pending = pendingServerAdoption, pending.canCreateOrganizations, !initialOwnerUserId.isEmpty,
-              !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return (false, nil) }
-        do {
-            let id = if let organizationCreator {
-                try await organizationCreator(name, slug, initialOwnerUserId, pending.connection.record)
-            } else {
-                try await CloudWorkspaceDiscovery.createOrganization(
-                    name: name, slug: slug, initialOwnerUserId: initialOwnerUserId,
-                    connection: pending.connection.record,
-                    api: SyncAPIClient(session: .shared)
-                )
-            }
-            await reloadServerAdoption()
-            let isSelectable = pendingServerAdoption?.organizations.contains { UUID(uuidString: $0.id) == id } == true
-            return (true, isSelectable ? id : nil)
-        } catch {
-            presentError(L10n.workspaceOperationFailed, error: error, source: "createAdoptionOrganization")
-            return (false, nil)
-        }
-    }
-
     func confirmServerAdoption(
-        _ pending: PendingWorkspaceServerAdoption, destinationId: UUID?, organizationId: UUID?
+        _ pending: PendingWorkspaceServerAdoption,
+        destinationId: UUID?,
+        organizationId: UUID?,
+        workspaceName: String? = nil
     ) async -> WorkspaceRecord? {
         guard updatingWorkspaceAccountID == nil, let repository else { return nil }
         updatingWorkspaceAccountID = pending.workspace.id
@@ -443,9 +397,10 @@ final class WorkspaceManagementModel {
                     api: api
                 )
             } else {
-                guard let organizationId,
+                let workspaceName = workspaceName?.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let organizationId, let workspaceName, !workspaceName.isEmpty,
                       try await fetchOrganizations(connection)
-                      .items.contains(where: { $0.id == organizationId.uuidString.lowercased() && $0.kind == .team }) else {
+                      .contains(where: { $0.id == organizationId.uuidString.lowercased() && $0.kind == .team }) else {
                     throw LocalWorkspaceImportError.unavailable
                 }
                 let fence = try await repository.dbQueue.read { db in
@@ -457,8 +412,10 @@ final class WorkspaceManagementModel {
                 }
                 _ = try await backup.createGeneration(workspaceIds: [pending.workspace.id])
                 if !currentWorkspaces.contains(where: { $0.workspaceId == pending.workspace.id }) {
+                    var serverWorkspace = pending.workspace
+                    serverWorkspace.name = workspaceName
                     try await CloudWorkspaceDiscovery.createWorkspace(
-                        pending.workspace,
+                        serverWorkspace,
                         organizationId: organizationId,
                         connection: connection,
                         api: api
