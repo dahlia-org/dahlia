@@ -1,0 +1,39 @@
+resources:
+  apps:
+    hindsight:
+      name: hindsight-${bundle.target}
+      description: Hindsight backed by the shared Dahlia Lakebase database.
+      source_code_path: ../../../apps/hindsight
+      config:
+        command: ["python", "scripts/start_databricks.py"]
+        env:
+          - name: HINDSIGHT_API_DATABASE_SCHEMA
+            value: ${var.hindsight_schema}
+          - name: HINDSIGHT_API_TEXT_SEARCH_EXTENSION
+            value: lakebase_text
+          - name: HINDSIGHT_API_VECTOR_EXTENSION
+            value: lakebase_vector
+          - name: HINDSIGHT_API_LAKEBASE_TEXT_TOKENIZER
+            value: hindsight_lakebase.tokenizer:sudachi
+          - name: HINDSIGHT_API_LLM_PROVIDER
+            value: databricks
+          - name: HINDSIGHT_API_LLM_MODEL
+            value: ${var.catalog}.${var.ai_schema}.gpt-5-6-luna
+          - name: HINDSIGHT_API_EMBEDDINGS_PROVIDER
+            value: databricks
+          - name: HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL
+            value: ${var.catalog}.${var.ai_schema}.qwen3-embedding-0-6b
+          - name: HINDSIGHT_API_EMBEDDINGS_OPENAI_DIMENSIONS
+            value: ${var.search_embedding_dimensions}
+          - name: HINDSIGHT_API_RERANKER_PROVIDER
+            value: none
+          - name: HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER
+            value: databricks
+          - name: LAKEBASE_ENDPOINT
+            value_from: postgres
+      resources:
+        - name: postgres
+          postgres:
+            branch: ${resources.postgres_projects.dahlia_database_project.id}/branches/production
+            database: ${resources.postgres_projects.dahlia_database_project.id}/branches/production/databases/databricks-postgres
+            permission: CAN_CONNECT_AND_CREATE

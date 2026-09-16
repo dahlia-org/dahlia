@@ -45,7 +45,15 @@ if (command === "list-model-services") {
   console.log("{}");
 }
 `, { mode: 0o755 });
-  const run = (failCommand = "", failModel = "") => spawnSync("bash", [script, "test-profile", "test_catalog", "ai", "test-project"], {
+  const run = (failCommand = "", failModel = "") => spawnSync("bash", [
+    script,
+    "test-profile",
+    "test_catalog",
+    "ai",
+    "test-project",
+    "dahlia-app-sp",
+    "hindsight-app-sp",
+  ], {
     encoding: "utf8",
     env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, STATE: state, CALLS: calls, FAIL_COMMAND: failCommand, FAIL_MODEL: failModel },
   });
@@ -80,6 +88,12 @@ if (command === "list-model-services") {
     assert.equal(readCalls().some(args => args[1] === "create-model-service" && args[3] === "deepseek-v4-pro"), false);
     assert.ok(JSON.parse(readFileSync(state, "utf8")).includes(legacyEmbedding));
     assert.equal(readCalls().some(args => args[1] === "create-model-service" && args[3] === "embedding"), false);
+    const catalogGrant = readCalls().find(args => args[0] === "grants" && args[1] === "update");
+    assert.deepEqual(JSON.parse(catalogGrant[catalogGrant.indexOf("--json") + 1]).changes, [
+      { principal: "account users", add: ["USE_CATALOG"] },
+      { principal: "dahlia-app-sp", add: ["USE_CATALOG"] },
+      { principal: "hindsight-app-sp", add: ["USE_CATALOG"] },
+    ]);
     const resource = readFileSync(new URL("../resources/dahlia_server.yml", import.meta.url), "utf8");
     assert.match(resource, /name: DAHLIA_EMBEDDING_MODEL\s+value: \$\{var.catalog\}\.\$\{var.ai_schema\}\.qwen3-embedding-0-6b/);
     assert.ok(readCalls().every(args => args[args.indexOf("--profile") + 1] === "test-profile"));

@@ -6,14 +6,18 @@ include:
   - resources/*.yml
 
 sync:
+  include:
+    - ../../apps/hindsight/.upstream/hindsight-api-slim/**
   paths:
     - ../../apps/server
+    - ../../apps/hindsight
     - notebooks
 
 experimental:
   skip_name_prefix_for_schema: true
   scripts:
-    postdeploy: "bash scripts/postdeploy.sh '${workspace.profile}' '${var.catalog}' '${var.ai_schema}' '${var.database_project_id}'"
+    prebuild: "cd ../../apps/hindsight && uv run --no-project scripts/sync_upstream.py"
+    postdeploy: "bash scripts/postdeploy.sh '${workspace.profile}' '${var.catalog}' '${var.ai_schema}' '${var.database_project_id}' '${resources.apps.dahlia_server.service_principal_client_id}' '${resources.apps.hindsight.service_principal_client_id}'"
 
 variables:
   database_project_id:
@@ -27,6 +31,9 @@ variables:
   app_schema:
     description: Unity Catalog schema containing Dahlia Server storage.
     default: app
+  hindsight_schema:
+    description: PostgreSQL schema containing Hindsight data.
+    default: hindsight
   ai_schema:
     description: Unity Catalog schema containing AI model services.
     default: ai

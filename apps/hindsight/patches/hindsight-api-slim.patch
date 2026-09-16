@@ -4,16 +4,16 @@ index ce3d5fc..3260290 100644
 +++ b/hindsight_api/_vector_index.py
 @@ -11,7 +11,7 @@ from sqlalchemy.engine import Connection
  logger = logging.getLogger(__name__)
- 
+
  # Extensions a user can set via HINDSIGHT_API_VECTOR_EXTENSION.
 -CONFIGURABLE_EXTENSIONS = ("pgvector", "pgvectorscale", "vchord", "scann")
 +CONFIGURABLE_EXTENSIONS = ("pgvector", "pgvectorscale", "vchord", "scann", "lakebase_vector")
- 
+
  # Extensions detect_vector_extension() can return. pg_diskann is a runtime-only
  # resolution from a configured "pgvectorscale" backend on Azure (uses a different
 @@ -25,6 +25,7 @@ SCANN_MIN_ROWS_FOR_AUTO_INDEX = 10_000
- 
- 
+
+
  _EXTENSION_NAMES = {
 +    "lakebase_vector": "lakebase_vector",
      "pgvector": "vector",
@@ -21,7 +21,7 @@ index ce3d5fc..3260290 100644
      "vchord": "vchord",
 @@ -32,6 +33,7 @@ _EXTENSION_NAMES = {
  }
- 
+
  _INDEX_USING_CLAUSES = {
 +    "lakebase_vector": "USING lakebase_ann (embedding vector_cosine_ops)",
      "pgvector": "USING hnsw (embedding vector_cosine_ops)",
@@ -29,7 +29,7 @@ index ce3d5fc..3260290 100644
      "pg_diskann": "USING diskann (embedding vector_cosine_ops) WITH (max_neighbors = 50)",
 @@ -40,6 +42,7 @@ _INDEX_USING_CLAUSES = {
  }
- 
+
  _INDEX_TYPE_KEYWORDS = {
 +    "lakebase_vector": "lakebase_ann",
      "pgvector": "hnsw",
@@ -49,7 +49,7 @@ index ce3d5fc..3260290 100644
          ("hnsw.iterative_scan", "strict_order"),
 @@ -141,6 +146,7 @@ _ANN_TUNING_HIGH_RECALL: dict[str, tuple[tuple[str, str], ...]] = {
  }
- 
+
  _EXTENSION_INSTALL_SQL = {
 +    "lakebase_vector": ("CREATE EXTENSION IF NOT EXISTS lakebase_vector WITH SCHEMA public CASCADE",),
      "pgvector": ("CREATE EXTENSION IF NOT EXISTS vector",),
@@ -57,7 +57,7 @@ index ce3d5fc..3260290 100644
          "CREATE EXTENSION IF NOT EXISTS vector",
 @@ -154,6 +160,7 @@ _EXTENSION_INSTALL_SQL = {
  }
- 
+
  _INSTALL_HINTS = {
 +    "lakebase_vector": "CREATE EXTENSION lakebase_vector WITH SCHEMA public CASCADE;",
      "pgvector": "CREATE EXTENSION vector;",
@@ -69,7 +69,7 @@ index 60c9997..0902195 100644
 +++ b/hindsight_api/config.py
 @@ -3105,12 +3105,16 @@ class HindsightConfig:
              )
- 
+
          # Validate text_search_extension
 -        valid_text_search = ("native", "vchord", "pg_textsearch", "pgroonga", "pg_search")
 +        valid_text_search = ("native", "vchord", "pg_textsearch", "pgroonga", "pg_search", "lakebase_text")
@@ -77,7 +77,7 @@ index 60c9997..0902195 100644
              raise ValueError(
                  f"Invalid text_search_extension: {self.text_search_extension}. Must be one of: {', '.join(valid_text_search)}"
              )
- 
+
 +        if self.text_search_extension == "lakebase_text" or self.vector_extension == "lakebase_vector":
 +            if self.database_backend != "postgresql":
 +                raise ValueError("Lakebase search requires database_backend=postgresql")
@@ -85,17 +85,41 @@ index 60c9997..0902195 100644
          # Validate text_search_extension_native_language as a PG identifier.
          # Embedded directly into raw SQL via to_tsvector('<lang>', ...), so we
          # reject anything that isn't a plain identifier to prevent injection.
+diff --git a/hindsight_api/db_url.py b/hindsight_api/db_url.py
+index 0df4ac3..7e5d75c 100644
+--- a/hindsight_api/db_url.py
++++ b/hindsight_api/db_url.py
+@@ -12,6 +12,7 @@ marker, or to any non-PostgreSQL string (returned unchanged).
+
+ from __future__ import annotations
+
++import os
+ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+ _ASYNCPG_SCHEMES = ("postgresql+asyncpg", "postgres+asyncpg")
+@@ -47,6 +48,11 @@ def to_libpq_url(url: str) -> str:
+     if not url or "://" not in url:
+         return url
+
++    if os.getenv("HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER") == "databricks":
++        from hindsight_lakebase.databricks import refresh_lakebase_database_url
++
++        url = refresh_lakebase_database_url(url)
++
+     parts = urlsplit(url)
+     if parts.scheme not in _POSTGRES_SCHEMES:
+         return url
 diff --git a/hindsight_api/engine/consolidation/consolidator.py b/hindsight_api/engine/consolidation/consolidator.py
 index 41ca107..1726eee 100644
 --- a/hindsight_api/engine/consolidation/consolidator.py
 +++ b/hindsight_api/engine/consolidation/consolidator.py
 @@ -30,6 +30,7 @@ from itertools import combinations
  from typing import TYPE_CHECKING, Any, Literal
- 
+
  import asyncpg
 +from hindsight_lakebase.text import refresh_rows
  from pydantic import BaseModel, ValidationError, field_validator
- 
+
  from ...config import get_config
 @@ -434,6 +435,8 @@ async def _dedup_reconcile_create(
                      source_bounds.occurred_end,
@@ -130,7 +154,7 @@ index 41ca107..1726eee 100644
                  )
 +                await refresh_rows(conn, fq_table("memory_units"), bank_id, [observation_id])
                  created_id = row["id"]
- 
+
                  # Populate observation_sources junction table (Oracle only — PG uses native array ops).
 diff --git a/hindsight_api/engine/db/ops_postgresql.py b/hindsight_api/engine/db/ops_postgresql.py
 index 88941e8..2f67d10 100644
@@ -139,7 +163,7 @@ index 88941e8..2f67d10 100644
 @@ -7,6 +7,8 @@ efficient batch operations.
  import asyncio
  from datetime import datetime
- 
+
 +from hindsight_lakebase.text import indexed_write, refresh_rows
 +
  from .base import DatabaseConnection
@@ -148,7 +172,7 @@ index 88941e8..2f67d10 100644
 @@ -132,6 +134,7 @@ class PostgreSQLOps(DataAccessOps):
              bank_id,
          )
- 
+
 +    @indexed_write
      async def insert_facts_batch(
          self,
@@ -159,8 +183,137 @@ index 88941e8..2f67d10 100644
          )
 +        await refresh_rows(conn, table, bank_id, [row["id"] for row in results])
          return [str(row["id"]) for row in results]
- 
+
      async def bulk_insert_links(
+diff --git a/hindsight_api/engine/db/postgresql.py b/hindsight_api/engine/db/postgresql.py
+index d5c29f6..c5f0d2f 100644
+--- a/hindsight_api/engine/db/postgresql.py
++++ b/hindsight_api/engine/db/postgresql.py
+@@ -254,6 +254,14 @@ class PostgreSQLBackend(DatabaseBackend):
+         else:
+             pool_setup = _application_name_setup(app_name, None) if app_name else None
+
++        connect_kwargs: dict[str, Any] = {}
++        from hindsight_lakebase.databricks import lakebase_database_auth_enabled
++
++        if lakebase_database_auth_enabled():
++            from hindsight_lakebase.databricks import lakebase_database_password_async
++
++            connect_kwargs["password"] = lakebase_database_password_async
++
+         self._pool = await asyncpg.create_pool(
+             dsn,
+             min_size=min_size,
+@@ -263,6 +271,7 @@ class PostgreSQLBackend(DatabaseBackend):
+             timeout=acquire_timeout,
+             init=pool_init,
+             setup=pool_setup,
++            **connect_kwargs,
+         )
+         logger.info(
+             f"PostgreSQL pool created (min={min_size}, max={max_size}, "
+diff --git a/hindsight_api/engine/embeddings.py b/hindsight_api/engine/embeddings.py
+index 3b6b8c8..a6957fd 100644
+--- a/hindsight_api/engine/embeddings.py
++++ b/hindsight_api/engine/embeddings.py
+@@ -15,7 +15,7 @@ import os
+ import struct
+ import warnings
+ from abc import ABC, abstractmethod
+-from typing import Literal, cast
++from typing import Callable, Literal, cast
+ from urllib.parse import parse_qs, urlparse, urlunparse
+
+ import httpx
+@@ -647,7 +647,7 @@ class OpenAIEmbeddings(Embeddings):
+
+     def __init__(
+         self,
+-        api_key: str,
++        api_key: str | Callable[[], str],
+         model: str = DEFAULT_EMBEDDINGS_OPENAI_MODEL,
+         base_url: str | None = None,
+         batch_size: int = 100,
+@@ -774,6 +774,25 @@ class OpenAIEmbeddings(Embeddings):
+         return all_embeddings
+
+
++class DatabricksEmbeddings(OpenAIEmbeddings):
++    """OpenAI-compatible embeddings authenticated as the Databricks App."""
++
++    def __init__(self, model, base_url=None, **kwargs):
++        from hindsight_lakebase.databricks import DatabricksOAuthTokenProvider
++
++        self._databricks_auth = DatabricksOAuthTokenProvider.from_env()
++        super().__init__(
++            api_key=self._databricks_auth.get_token,
++            model=model,
++            base_url=self._databricks_auth.resolve_ai_gateway_base_url(base_url),
++            **kwargs,
++        )
++
++    @property
++    def provider_name(self) -> str:
++        return "databricks"
++
++
+ class CodexOAuthEmbeddings(OpenAIEmbeddings):
+     """
+     OpenAI embeddings using the Codex/ChatGPT OAuth token from the Codex
+@@ -1714,6 +1733,17 @@ def create_embeddings_from_env() -> Embeddings:
+             passage_prefix=config.embeddings_onnx_passage_prefix,
+             output_name=config.embeddings_onnx_output_name,
+         )
++    elif provider == "databricks":
++        model = os.environ.get(ENV_EMBEDDINGS_OPENAI_MODEL, DEFAULT_EMBEDDINGS_OPENAI_MODEL)
++        base_url = os.environ.get(ENV_EMBEDDINGS_OPENAI_BASE_URL) or None
++        return DatabricksEmbeddings(
++            model=model,
++            base_url=base_url,
++            batch_size=config.embeddings_openai_batch_size,
++            dimensions=config.embeddings_openai_dimensions,
++            query_prefix=query_prefix,
++            passage_prefix=passage_prefix,
++        )
+     elif provider == "openai":
+         # Use dedicated embeddings API key, or fall back to LLM API key
+         api_key = os.environ.get(ENV_EMBEDDINGS_OPENAI_API_KEY) or os.environ.get(ENV_LLM_API_KEY)
+@@ -1841,6 +1871,6 @@ def create_embeddings_from_env() -> Embeddings:
+     else:
+         raise ValueError(
+             f"Unknown embeddings provider: {provider}. "
+-            f"Supported: 'local', 'onnx', 'tei', 'openai', 'openai-codex', 'openrouter', 'requesty', 'cohere', 'google', "
++            f"Supported: 'local', 'onnx', 'tei', 'databricks', 'openai', 'openai-codex', 'openrouter', 'requesty', 'cohere', 'google', "
+             f"'zeroentropy', 'litellm', 'litellm-sdk'"
+         )
+diff --git a/hindsight_api/engine/llm_wrapper.py b/hindsight_api/engine/llm_wrapper.py
+index 553dd39..789afa9 100644
+--- a/hindsight_api/engine/llm_wrapper.py
++++ b/hindsight_api/engine/llm_wrapper.py
+@@ -322,6 +322,7 @@ _PROVIDERS_WITHOUT_API_KEY = frozenset(
+         "litellm",
+         "litellmrouter",
+         "bedrock",
++        "databricks",
+         "nous",
+         "xai-oauth",
+     }
+@@ -656,6 +657,7 @@ def create_llm_provider(
+         )
+
+     elif provider_lower in (
++        "databricks",
+         "openai",
+         "groq",
+         "ollama",
+@@ -825,6 +827,7 @@ class LLMProvider:
+
+         # Validate provider
+         valid_providers = [
++            "databricks",
+             "openai",
+             "openai-responses",
+             "groq",
 diff --git a/hindsight_api/engine/memories/pg/writes.py b/hindsight_api/engine/memories/pg/writes.py
 index 62ee5ed..83bffad 100644
 --- a/hindsight_api/engine/memories/pg/writes.py
@@ -168,12 +321,12 @@ index 62ee5ed..83bffad 100644
 @@ -19,6 +19,8 @@ import uuid
  from collections.abc import Callable
  from typing import TYPE_CHECKING, Any
- 
+
 +from hindsight_lakebase.text import refresh_rows
 +
  from ....config import get_config
  from ..base import StoredMemory
- 
+
 @@ -452,6 +454,7 @@ async def restore_memory(*, conn, fq_table, bank_id: str, unit_id: str) -> Store
          str(unit_id),
          bank_id,
@@ -195,12 +348,12 @@ index 7a75fae..16214b2 100644
 --- a/hindsight_api/engine/memory_engine.py
 +++ b/hindsight_api/engine/memory_engine.py
 @@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, Literal, NoReturn, ParamSpec, TypeVar, ca
- 
+
  import asyncpg
  import httpx
 +from hindsight_lakebase.text import refresh_rows, search_scope, write_scope
  from pydantic import ValidationError
- 
+
  from .._vector_index import (
 @@ -13682,6 +13683,7 @@ class MemoryEngine(MemoryEngineInterface):
              json.dumps(trigger) if trigger else None,
@@ -209,11 +362,11 @@ index 7a75fae..16214b2 100644
 +        await refresh_rows(conn, fq_table("mental_models"), bank_id, [mental_model_id])
          assert row is not None
          return row
- 
+
 @@ -14948,7 +14950,7 @@ class MemoryEngine(MemoryEngineInterface):
              if embedding:
                  new_embedding_str = str(embedding[0])
- 
+
 -        async with acquire_with_retry(backend) as conn:
 +        async with acquire_with_retry(backend) as conn, write_scope(conn):
              # If content is changing, fetch current content + reflect_response to record history
@@ -221,11 +374,11 @@ index 7a75fae..16214b2 100644
              previous_reflect_response: dict[str, Any] | None = None
 @@ -15115,6 +15117,8 @@ class MemoryEngine(MemoryEngineInterface):
              """
- 
+
              row = await conn.fetchrow(query, *params)
 +            if row is not None and (name is not None or content is not None):
 +                await refresh_rows(conn, fq_table("mental_models"), bank_id, [mental_model_id])
- 
+
              # Persist the previous-version snapshot in the dedicated history table
              # (one row per refresh), then trim to the configured cap. Replaces the
 @@ -15213,7 +15217,7 @@ class MemoryEngine(MemoryEngineInterface):
@@ -243,9 +396,9 @@ index 7a75fae..16214b2 100644
              )
 +            if row is not None:
 +                await refresh_rows(conn, fq_table("mental_models"), bank_id, [mental_model_id])
- 
+
          return self._row_to_mental_model(row) if row else None
- 
+
 @@ -15738,9 +15744,13 @@ class MemoryEngine(MemoryEngineInterface):
          # BM25 clauses for the configured text-search backend (same per-backend
          # dispatch the memory-recall BM25 arm uses — see knowledge_bm25_arm).
@@ -254,7 +407,7 @@ index 7a75fae..16214b2 100644
 +            from hindsight_lakebase.tokenizer import search_text
 +
 +            query = search_text(query)
- 
+
          backend = await self._get_backend()
 -        async with acquire_with_retry(backend) as conn:
 +        async with acquire_with_retry(backend) as conn, search_scope(conn, fetch):
@@ -267,8 +420,44 @@ index 7a75fae..16214b2 100644
                      )
 +                    await refresh_rows(conn, fq_table("mental_models"), bank_id, [row["mental_model_id"]])
          return self._row_to_knowledge_node(row) if row else None
- 
+
      async def update_knowledge_page(
+diff --git a/hindsight_api/engine/providers/openai_compatible_llm.py b/hindsight_api/engine/providers/openai_compatible_llm.py
+index 6125835..0f696f6 100644
+--- a/hindsight_api/engine/providers/openai_compatible_llm.py
++++ b/hindsight_api/engine/providers/openai_compatible_llm.py
+@@ -579,6 +579,7 @@ class OpenAICompatibleLLM(LLMInterface):
+
+         # Validate provider
+         valid_providers = [
++            "databricks",
+             "openai",
+             "groq",
+             "ollama",
+@@ -598,6 +599,13 @@ class OpenAICompatibleLLM(LLMInterface):
+         if self.provider not in valid_providers:
+             raise ValueError(f"OpenAICompatibleLLM only supports: {', '.join(valid_providers)}. Got: {self.provider}")
+
++        self._databricks_auth = None
++        if self.provider == "databricks":
++            from hindsight_lakebase.databricks import DatabricksOAuthTokenProvider
++
++            self._databricks_auth = DatabricksOAuthTokenProvider.from_env()
++            self.base_url = self._databricks_auth.resolve_ai_gateway_base_url(self.base_url)
++
+         # Set default base URLs
+         if not self.base_url:
+             if self.provider == "groq":
+@@ -674,7 +682,8 @@ class OpenAICompatibleLLM(LLMInterface):
+         )
+
+         # Create OpenAI client — extract query params from base_url (e.g. Azure api-version)
+-        client_kwargs: dict[str, Any] = {"api_key": self.api_key, "max_retries": 0}
++        api_key = self._databricks_auth.get_token_async if self._databricks_auth else self.api_key
++        client_kwargs: dict[str, Any] = {"api_key": api_key, "max_retries": 0}
+         if default_headers:
+             client_kwargs["default_headers"] = default_headers
+         if self.base_url:
 diff --git a/hindsight_api/engine/search/retrieval.py b/hindsight_api/engine/search/retrieval.py
 index 9227894..bdebcc4 100644
 --- a/hindsight_api/engine/search/retrieval.py
@@ -276,7 +465,7 @@ index 9227894..bdebcc4 100644
 @@ -14,6 +14,8 @@ from dataclasses import dataclass, field
  from datetime import UTC, datetime
  from typing import TYPE_CHECKING, Any, Optional
- 
+
 +from hindsight_lakebase.text import indexed_search
 +
  from ...config import get_config
@@ -284,8 +473,8 @@ index 9227894..bdebcc4 100644
  from ..memory_engine import fq_table, get_current_schema
 @@ -120,6 +122,7 @@ def set_default_graph_retriever(retriever: GraphRetriever | None) -> None:
      _default_graph_retriever = retriever
- 
- 
+
+
 +@indexed_search
  async def retrieve_semantic_bm25_combined_sql(
      conn,
@@ -295,16 +484,16 @@ index 6722d6a..2da3e9e 100644
 --- a/hindsight_api/engine/sql/postgresql.py
 +++ b/hindsight_api/engine/sql/postgresql.py
 @@ -7,6 +7,10 @@ and other non-portable patterns.
- 
+
  from dataclasses import dataclass
- 
+
 +from hindsight_lakebase.text import distance as lakebase_distance
 +from hindsight_lakebase.text import index_name as lakebase_index_name
 +from hindsight_lakebase.tokenizer import search_text as lakebase_search_text
 +
  from ..._text_search import mental_models_text_document
  from .base import SQLDialect
- 
+
 @@ -52,6 +56,9 @@ def knowledge_bm25_arm(
      """
      a = table_alias
@@ -312,7 +501,7 @@ index 6722d6a..2da3e9e 100644
 +    if text_search_extension == "lakebase_text":
 +        expr = lakebase_distance(f"{a}.search_vector", p, lakebase_index_name("mental_models"))
 +        return KnowledgeBm25Arm(f"-({expr})", f"{expr} ASC", f"AND -({expr}) > 0")
- 
+
      if text_search_extension == "vchord":
          # VectorChord BM25 over the bm25vector search_vector column, identical to
 @@ -297,7 +304,12 @@ class PostgreSQLDialect(SQLDialect):
@@ -345,7 +534,7 @@ index 1ab4370..8685db8 100644
 @@ -19,6 +19,8 @@ from dataclasses import dataclass, field
  from datetime import UTC, date, datetime
  from typing import Any, Literal
- 
+
 +from hindsight_lakebase.text import indexed_import
 +
  from ..causal_links import CANONICAL_CAUSAL_LINK_TYPE, LEGACY_CAUSAL_LINK_TYPES
@@ -353,8 +542,8 @@ index 1ab4370..8685db8 100644
  from ..db_utils import acquire_with_retry
 @@ -326,6 +328,7 @@ def _resolve_bank_rows_json_encoding(manifest: TransferManifest) -> BankRowsJSON
      return manifest.bank_rows_json_encoding or "decoded"
- 
- 
+
+
 +@indexed_import
  async def _restore_rows(
      conn: Any,
@@ -369,21 +558,21 @@ index 1dda82b..7d37d36 100644
      "vchordrq",
 +    "lakebase_ann",
  )
- 
- 
+
+
 diff --git a/hindsight_api/migrations.py b/hindsight_api/migrations.py
 index e7abdf9..20057c0 100644
 --- a/hindsight_api/migrations.py
 +++ b/hindsight_api/migrations.py
 @@ -141,7 +141,7 @@ def _ensure_pgvector_extension_in_public(conn: Connection) -> None:
- 
+
  def _bootstrap_vector_extension_for_migrations(conn: Connection, vector_extension: str) -> None:
      """Bootstrap the configured vector backend before schema migrations run."""
 -    if vector_extension == "pgvector":
 +    if vector_extension in ("pgvector", "lakebase_vector"):
          _ensure_pgvector_extension_in_public(conn)
      bootstrap_extension(conn, vector_extension)
- 
+
 @@ -187,6 +187,13 @@ def _run_migrations_internal(database_url: str, script_location: str, schema: st
          script_location: Path to alembic scripts
          schema: Target schema (None for default/public)
@@ -410,7 +599,7 @@ index e7abdf9..20057c0 100644
 @@ -474,6 +481,10 @@ def _migrate_table_embedding_dimension(
      )
      conn.commit()
- 
+
 +    if vector_ext == "lakebase_vector" and table_name == "memory_units":
 +        # Bank-scoped indexes belong to the existing maintenance sweep.
 +        return
@@ -421,16 +610,16 @@ index e7abdf9..20057c0 100644
 @@ -599,6 +610,9 @@ def ensure_vector_extension(
              ("pinned_reflections", "idx_pinned_reflections_embedding"),
          ]
- 
+
 +        if target_ext == "lakebase_vector":
 +            tables_to_check.append(("mental_models", "idx_mental_models_embedding"))
 +
          target_index_type = index_type_keyword(target_ext)
- 
+
          mismatched_tables = []
 @@ -679,7 +693,9 @@ def ensure_vector_extension(
                  continue
- 
+
              indexdef = current_index_info[0].lower()
 -            if "scann" in indexdef:
 +            if "lakebase_ann" in indexdef:
@@ -450,4 +639,25 @@ index e7abdf9..20057c0 100644
 +        return
      schema_name = schema or "public"
      pg_search_tokenizer = normalize_pg_search_tokenizer(pg_search_tokenizer)
- 
+
+diff --git a/hindsight_api/pg0.py b/hindsight_api/pg0.py
+index 5df3693..11dda9f 100644
+--- a/hindsight_api/pg0.py
++++ b/hindsight_api/pg0.py
+@@ -2,6 +2,7 @@ from __future__ import annotations
+
+ import asyncio
+ import logging
++import os
+ from dataclasses import dataclass
+ from typing import TYPE_CHECKING
+
+@@ -219,4 +220,8 @@ async def resolve_database_url(db_url: str) -> str:
+             kwargs["password"] = parsed.password
+         pg0 = EmbeddedPostgres(**kwargs)
+         return await pg0.ensure_running()
++    if os.getenv("HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER") == "databricks":
++        from hindsight_lakebase.databricks import refresh_lakebase_database_url
++
++        return refresh_lakebase_database_url(db_url)
+     return db_url

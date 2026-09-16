@@ -1,7 +1,13 @@
 # Hindsight + Lakebase
 
 Hindsight API の固定版に、`lakebase_text` / `lakebase_vector` バックエンドを追加した独立サービスです。
-Python 3.11–3.14、Git、uv を使用します。Dahlia 連携、Databricks Apps 配備、OAuth トークン自動更新は含みません。
+Python 3.11–3.14、Git、uv を使用します。Dahlia のアプリケーション連携は含みません。
+
+## Databricks Apps への配備
+
+`deploy/databricks` の DAB は Hindsight を Dahlia Server と別の Databricks App として配備します。Lakebase project と `databricks-postgres` database は共有し、Hindsight のテーブルと migration ledger は既定の `hindsight` PostgreSQL schema に分離します。
+
+App 起動時に Databricks が注入する `PG*` 変数と `LAKEBASE_ENDPOINT` から接続を作り、共有拡張 `vector`、`pg_trgm`、`lakebase_text`、`lakebase_vector` が `public` にあることを advisory lock 下で確認してから migration を実行します。Lakebase の短命 credential は `/api/2.0/postgres/credentials` から App service principal で取得し、asyncpg の新規接続ごとに自動更新します。別 schema に既存拡張がある場合はデータを破壊せず起動を停止します。`databricks` providerはApp service principalのclient credentialsでOAuth tokenを更新し、AI Gatewayの`gpt-5-6-luna`と`qwen3-embedding-0-6b`をOpenAI互換APIで使用します。ユーザーのOBO tokenとDatabricks secretは使用しません。詳細は [`deploy/databricks/README.md`](../../deploy/databricks/README.md) を参照してください。
 
 ## 起動
 
@@ -23,7 +29,7 @@ CREATE EXTENSION IF NOT EXISTS lakebase_vector WITH SCHEMA public CASCADE;
 ```
 
 拡張と依存する `vector` は `public` に配置してください。Lakebase が利用できない場合に通常 PostgreSQL へ自動切り替えはしません。
-短命のパスワード／OAuthトークンを使う場合、その更新は呼び出し側で管理してください。
+短命のDBパスワードを使う場合、その更新は呼び出し側で管理してください。Databricks Apps 配備では Lakebase credential と `databricks` model provider の OAuth token を App service principal から自動更新します。
 
 `hindsight-api`、`hindsight-worker`、`hindsight-admin` は取り込んだ本体のエントリーポイントです。
 分離 worker の構成は upstream の環境変数を使い、API と worker に同じ検索・トークナイザー設定を渡します。
@@ -39,9 +45,14 @@ HTTP API・認証設定は [upstream のドキュメント](https://hindsight.ve
 | --- | --- | --- |
 | `HINDSIGHT_API_TEXT_SEARCH_EXTENSION` | `lakebase_text` | `tsvector` + `lakebase_bm25`、BM25関連度 |
 | `HINDSIGHT_API_VECTOR_EXTENSION` | `lakebase_vector` | `vector` + `lakebase_ann`、cosine距離 |
+| `HINDSIGHT_API_LLM_PROVIDER` | `databricks` | App service principalでAI GatewayのOpenAI互換`chat/completions`を呼び出す |
+| `HINDSIGHT_API_EMBEDDINGS_PROVIDER` | `databricks` | 同じ認証でAI GatewayのOpenAI互換`embeddings`を呼び出す |
 
 独立して指定できます。未指定時は upstream の `native` / `pgvector` のままです。
 既存のバックエンドも維持しています。Lakebase は PostgreSQL バックエンドでのみ利用できます。
+`databricks` provider の既定 URL は `${DATABRICKS_HOST}/ai-gateway/mlflow/v1` です。同じ workspace origin の別経路は
+upstream 標準の `HINDSIGHT_API_LLM_BASE_URL` と `HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL` で個別に上書きできます。
+外部の OpenAI 互換 URL には App service principal token を送らず、upstream の `openai` provider と API key を使用してください。
 
 全文検索は memory の `text + context + text_signals`、Knowledge Pages の `name + content` を対象にします。
 通常登録、観察の生成・統合・更新、編集・復元、インポート、ページの更新・名称変更・内容クリアに同じ処理を適用します。
@@ -165,6 +176,9 @@ uv sync --locked
 
 | ファイル | 必要な理由 |
 | --- | --- |
+| `engine/llm_wrapper.py` | `databricks` を API key 不要の OpenAI 互換 provider として既存ディスパッチへ登録 |
+| `engine/providers/openai_compatible_llm.py` | App service principal の短命 OAuth token を各 LLM リクエストへ供給 |
+| `engine/embeddings.py` | 同じ認証と AI Gateway URL を使う `databricks` embedding provider を登録 |
 | `engine/vector_index_health.py` | 既存の索引健全性チェックが lakebase_ann を認識するための登録 |
 | `config.py` | 全文検索の選択値追加と PostgreSQL 以外での誤設定拒否 |
 | `_vector_index.py` | 拡張名・ANN索引句・検索設定を既存ディスパッチへ登録 |
