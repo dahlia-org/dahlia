@@ -28,7 +28,7 @@ let omittedFile: number | undefined;
 const filePageSize = navigationTest ? 2 : 12;
 let sharingEnabled = false;
 let meetingName = previewMode ? (ja ? "新しいオンボーディング体験のデザインレビュー" : "Design review: a better first-run experience") : "Recording meeting";
-const workspace = { workspaceId: "v1", name: previewMode ? (ja ? "プロダクト開発" : "Product & design") : "Test Workspace", role: "owner", hasResources: true, revision: 1, createdAt: "2026-09-07T00:00:00Z" };
+const workspace = { workspaceId: "v1", organizationId: "o1", organizationName: previewMode ? (ja ? "ダリア製品チーム" : "Dahlia Product Team") : "Test Organization", name: previewMode ? (ja ? "プロダクト開発" : "Product & design") : "Test Workspace", role: "owner", hasResources: true, revision: 1, createdAt: "2026-09-07T00:00:00Z" };
 const workspaces = [workspace];
 const projects = Array.from({ length: previewMode ? 4 : 40 }, (_, index) => ({ projectId: `p${index}`, workspaceId: "v1", name: previewMode ? [ja ? "デザインレビュー" : "Design reviews", ja ? "リサーチ" : "Research", ja ? "リリース計画" : "Release planning", ja ? "チーム定例" : "Team meetings"][index]! : `Project ${index}`, path: previewMode ? [ja ? "デザインレビュー" : "Design reviews", ja ? "リサーチ" : "Research", ja ? "リリース計画" : "Release planning", ja ? "チーム定例" : "Team meetings"][index]! : `Project ${index}`, revision: 1, directMeetingCount: 0, subtreeMeetingCount: 0 }));
 const previewSummary = {
@@ -69,6 +69,7 @@ window.fetch = async (input, init) => {
   if (url.pathname === "/api/v1/models") return Response.json({ data: [{ id: "gpt-5.4", display_name: "GPT-5.4" }], models: [{ slug: "gpt-5.4", supported_reasoning_levels: [{ effort: "medium" }], default_reasoning_level: "medium" }] });
   if (url.pathname === "/api/v1/capabilities") return Response.json(previewMode ? { meetingSummaryGeneration: { version: 1, sources: ["transcript"] } } : {});
   if (url.pathname === "/api/v1/session") return Response.json({ user: { id: "browser-fixture", name: previewMode ? "Yuki Tanaka" : "Tester", email: "yuki@example.com" },  capabilities: { sync: true, sharing: true, sessions: false, admin: false } });
+  if (url.pathname === "/api/auth/organization/list") return Response.json([{ id: "o1", name: previewMode ? (ja ? "ダリア製品チーム" : "Dahlia Product Team") : "Test Organization", slug: "test-organization", kind: "team" }]);
   if (url.pathname === "/api/v1/organizations") return Response.json({ items: [{ id: "o1", name: "Test Organization" }], nextCursor: null });
   if (url.pathname === "/api/v1/workspaces") return Response.json({ items: workspaces });
   if (url.pathname === "/api/v1/workspaces/v2/meetings") return Response.json({ items: [] });

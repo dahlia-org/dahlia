@@ -23,6 +23,7 @@ const contentFields = { contentOmitted: z.boolean().optional(), contentPresent: 
 export const workspace = z.object({ meetingDeletionGraceDays: meetingDeletionGraceDaysSchema, generationSettings: workspaceGenerationSettingsSchema, encryption: z.enum(["none", "server"]).optional(), workspaceId: id, organizationId: id, name: z.string(), ...appearance, ...syncFields,
   createdAt: date, updatedAt: date, role: z.enum(["admin", "editor", "viewer"]), hasResources: z.boolean().optional(),
 }).openapi("Workspace");
+export const workspaceRead = workspace.extend({ organizationName: z.string() }).openapi("WorkspaceRead");
 export const governanceWorkspace = workspace.pick({ workspaceId: true, name: true, icon: true, color: true, revision: true }).extend({ creatorId: id }).openapi("GovernanceWorkspace");
 export const project = z.object({ projectId: id, workspaceId: id, parentProjectId: id.nullable(), name: z.string(), description: z.string(),
   projectType: z.enum(["customer", "internal", "personal", "undefined"]).nullable(), ...appearance, ...syncFields,

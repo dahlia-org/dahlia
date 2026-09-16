@@ -35,6 +35,7 @@ export interface SyncWorkspaceRecord {
   meetingDeletionGraceDays: number;
   generationSettings: WorkspaceGenerationSettings;
   organizationId: string;
+  organizationName: string;
   encryption?: "none" | "server";
   hasResources?: boolean;
   icon?: string | null;

@@ -473,7 +473,10 @@ a.metadata-chip:hover { background: #e8e8e8; }
 .workspace-card-top, .workspace-card-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .workspace-symbol, .collection-icon, .empty-symbol { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 40px; height: 40px; color: var(--plum); background: var(--plum-soft); border-radius: 10px; }
 .workspace-symbol svg { width: 22px; height: 22px; }
-.workspace-card h3 { margin: 20px 0 12px; font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.workspace-card h3 { margin: 20px 0 8px; font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.workspace-organization-badge { display: flex; align-items: center; gap: 4px; width: fit-content; max-width: 100%; margin-bottom: 12px; padding: 4px 8px; border-radius: 20px; background: var(--plum-soft); color: var(--plum); font-size: 11px; font-weight: 600; }
+.workspace-organization-badge svg { flex-shrink: 0; width: 12px; height: 12px; }
+.workspace-organization-badge > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-card-bottom { font-size: 12px; color: var(--muted); }
 .workspace-card-bottom svg { color: var(--plum); }
 .status.shared { color: var(--plum); background: var(--plum-soft); }

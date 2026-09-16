@@ -724,10 +724,11 @@ function createIdentityStore(
     }
     const workspaces: WorkspaceRelocations["workspaces"] = [];
     for (const id of new Set(destinations.values())) {
-      const [workspace] = await content.read(schema.syncedWorkspace, await db.select({ encryption: schema.syncedWorkspace.encryption, encryptedPayload: schema.syncedWorkspace.encryptedPayload, workspaceId: schema.syncedWorkspace.workspaceId, organizationId: schema.syncedWorkspace.organizationId, name: schema.syncedWorkspace.name,
+      const [workspace] = await content.read(schema.syncedWorkspace, await db.select({ encryption: schema.syncedWorkspace.encryption, encryptedPayload: schema.syncedWorkspace.encryptedPayload, workspaceId: schema.syncedWorkspace.workspaceId, organizationId: schema.syncedWorkspace.organizationId, organizationName: schema.organization.name, name: schema.syncedWorkspace.name,
         generationSettings: schema.syncedWorkspace.generationSettings, icon: schema.syncedWorkspace.icon, color: schema.syncedWorkspace.color, meetingDeletionGraceDays: schema.syncedWorkspace.meetingDeletionGraceDays, revision: schema.syncedWorkspace.revision,
         createdAt: schema.syncedWorkspace.createdAt, updatedAt: schema.syncedWorkspace.updatedAt, role: workspaceRole(schema.syncedWorkspace.workspaceId),
-      }).from(schema.syncedWorkspace).where(and(eq(schema.syncedWorkspace.workspaceId, id), readable(schema.syncedWorkspace.workspaceId), isNull(schema.syncedWorkspace.deletingAt))).limit(1));
+      }).from(schema.syncedWorkspace).innerJoin(schema.organization, eq(schema.organization.id, schema.syncedWorkspace.organizationId))
+        .where(and(eq(schema.syncedWorkspace.workspaceId, id), readable(schema.syncedWorkspace.workspaceId), isNull(schema.syncedWorkspace.deletingAt))).limit(1));
       if (!workspace) throw new SyncTransactionError(403, "transfer_access_required");
       workspaces.push(workspace);
     }
@@ -2618,6 +2619,7 @@ function createIdentityStore(
       const rows = await content.read(schema.syncedWorkspace, await db.select({ encryption: schema.syncedWorkspace.encryption, encryptedPayload: schema.syncedWorkspace.encryptedPayload,
         workspaceId: schema.syncedWorkspace.workspaceId,
         organizationId: schema.syncedWorkspace.organizationId,
+        organizationName: schema.organization.name,
         name: schema.syncedWorkspace.name,
         generationSettings: schema.syncedWorkspace.generationSettings,
         icon: schema.syncedWorkspace.icon, color: schema.syncedWorkspace.color,
@@ -2626,7 +2628,7 @@ function createIdentityStore(
         createdAt: schema.syncedWorkspace.createdAt,
         updatedAt: schema.syncedWorkspace.updatedAt,
         role: workspaceRole(schema.syncedWorkspace.workspaceId),
-      }).from(schema.syncedWorkspace).where(and(
+      }).from(schema.syncedWorkspace).innerJoin(schema.organization, eq(schema.organization.id, schema.syncedWorkspace.organizationId)).where(and(
         readable(schema.syncedWorkspace.workspaceId),
         scope,
         isNull(schema.syncedWorkspace.deletingAt),
@@ -2637,6 +2639,7 @@ function createIdentityStore(
       const [row] = await content.read(schema.syncedWorkspace, await db.select({ encryption: schema.syncedWorkspace.encryption, encryptedPayload: schema.syncedWorkspace.encryptedPayload,
         workspaceId: schema.syncedWorkspace.workspaceId,
         organizationId: schema.syncedWorkspace.organizationId,
+        organizationName: schema.organization.name,
         name: schema.syncedWorkspace.name,
         generationSettings: schema.syncedWorkspace.generationSettings,
         hasResources: workspaceHasResources(schema.syncedWorkspace.workspaceId).mapWith(Boolean),
@@ -2646,7 +2649,7 @@ function createIdentityStore(
         createdAt: schema.syncedWorkspace.createdAt,
         updatedAt: schema.syncedWorkspace.updatedAt,
         role: workspaceRole(schema.syncedWorkspace.workspaceId),
-      }).from(schema.syncedWorkspace).where(and(
+      }).from(schema.syncedWorkspace).innerJoin(schema.organization, eq(schema.organization.id, schema.syncedWorkspace.organizationId)).where(and(
         readable(schema.syncedWorkspace.workspaceId),
         eq(schema.syncedWorkspace.workspaceId, workspaceId),
         isNull(schema.syncedWorkspace.deletingAt),

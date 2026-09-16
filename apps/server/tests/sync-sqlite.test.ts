@@ -434,7 +434,7 @@ describe("SQLite canonical sync", () => {
     grant.run(destinationWorkspaceId, other.userId, owner.userId);
     const resumed = await store.sync.withIdentity(other, (sync) => sync.getWorkspaceRelocations(workspaceId));
     expect(resumed.items).toContainEqual({ entity: "meeting", id: meetingId, workspaceId: destinationWorkspaceId });
-    expect(resumed.workspaces[0]?.role).toBe("viewer");
+    expect(resumed.workspaces[0]).toMatchObject({ role: "viewer", organizationName: "Test organization" });
     database.close();
     await store.close?.();
   });
@@ -1939,7 +1939,8 @@ describe("SQLite canonical sync", () => {
     expect(await service.listWorkspaces(other, testOrganizationID)).toHaveLength(1);
     const raw = new DatabaseSync(databasePath);
     raw.prepare("DELETE FROM member WHERE user_id = ? AND organization_id = ?").run(other.userId, testOrganizationID);
-    expect(await service.listWorkspaces(other, testOrganizationID)).toMatchObject([{ workspaceId, role: "editor" }]);
+    expect(await service.listWorkspaces(other, testOrganizationID)).toMatchObject([{ workspaceId, role: "editor", organizationName: "Test organization" }]);
+    expect(await service.getWorkspace(other, workspaceId)).toMatchObject({ workspaceId, role: "editor", organizationName: "Test organization" });
     await store.sync.withIdentity(owner, (sync) => sync.deletePermission(workspaceId, "user", other.userId));
     expect(await service.listWorkspaces(other, testOrganizationID)).toEqual([]);
     raw.close();
@@ -1963,7 +1964,7 @@ describe("SQLite canonical sync", () => {
       expect(response.status).toBe(200);
       return response.json();
     };
-    expect(await list("")).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ workspaceId, role: "viewer" }), expect.objectContaining({ workspaceId: other.userId, role: "admin" })]) as unknown });
+    expect(await list("")).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ workspaceId, role: "viewer", organizationName: "Test organization" }), expect.objectContaining({ workspaceId: other.userId, role: "admin" })]) as unknown });
     expect(await list("", owner.userId)).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ workspaceId, role: "admin" })]) as unknown });
     expect(await list(`?organizationId=${testOrganizationID}`)).toMatchObject({ items: [{ workspaceId, role: "viewer" }] });
     expect(await list(`?organizationId=${other.userId}`)).toMatchObject({ items: [{ workspaceId: other.userId }] });

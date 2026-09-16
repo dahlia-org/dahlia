@@ -315,6 +315,7 @@
             let workspace: [String: Any] = try [
                 "workspaceId": fixture.target.id.uuidString,
                 "organizationId": #require(fixture.target.organizationId?.uuidString),
+                "organizationName": "Organization",
                 "meetingDeletionGraceDays": 7,
                 "role": "editor",
                 "name": "Existing settings",

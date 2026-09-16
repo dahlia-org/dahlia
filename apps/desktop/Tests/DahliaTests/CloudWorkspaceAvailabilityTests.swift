@@ -260,6 +260,7 @@
             try [
                 "workspaceId": workspace.workspaceId.uuidString,
                 "organizationId": workspace.organizationId.uuidString,
+                "organizationName": "Organization",
                 "meetingDeletionGraceDays": 7,
                 "name": workspace.name,
                 "generationSettings": JSONSerialization.jsonObject(with: JSONEncoder().encode(workspace.generationSettings)),
