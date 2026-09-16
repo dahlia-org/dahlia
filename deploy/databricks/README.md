@@ -23,7 +23,7 @@ Hindsight App ─────┬─ app service principal ── same Lakebase d
 - A Databricks workspace with Databricks Apps, Lakebase Autoscaling, and access to the Lakebase Search preview.
 - Permission to create Apps and Lakebase projects and query the configured Responses and embedding models.
 - Databricks CLI 1.4.0 or newer, authenticated with a CLI profile or environment variables.
-- Bash and jq for postdeploy.
+- Bash for postdeploy.
 - Node.js 22.13 or newer, Corepack, and pnpm for local validation.
 - Python 3.11 or newer and uv for preparing the pinned Hindsight source before upload.
 
@@ -35,7 +35,7 @@ Dahlia Desktop requests `all-apis` when authorizing against a deployed Databrick
 
 The bundle temporarily sets `DAHLIA_AUTH_SECRET` directly to the fixed value `test-only-better-auth-secret-value`. It does not define a Secret resource, retrieve a Unity Catalog Secret, or grant secret permissions. This is a shared test value; replace it with a unique signing secret before production use. Header authentication uses `DAHLIA_AUTH_HEADER` (default `X-Forwarded-Email`) as the email identity and stores its normalized value in `account.account_id`. New users join their email-domain Organization; the first is owner and later users are members. Departed or removed users are not automatically added again. `DAHLIA_SIGNOUT_URL=/.auth/logout` sends the browser through the Databricks Apps proxy logout endpoint after Dahlia clears its local session.
 
-The App name is `mcp-dahlia-server-{target}`, for example `mcp-dahlia-server-dev` or `mcp-dahlia-server-prod`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. By default, both targets use the managed Volume `dahlia.app.storage`. Choose the deployment environment by overriding `catalog`; override `app_schema` only when a catalog needs more than one Dahlia Server installation. Explicit Vault sharing is available in every target; Vault Admins can grant Admin, Editor, or Viewer access to a user, Organization, or Team. Organization membership alone does not grant Vault access. The bundle lists public Gateway models in `DAHLIA_CODEX_MODELS`, routes automatic reviews to `system.ai.gpt-5-6-luna`, and uses `system.ai.qwen3-embedding-0-6b` for search embeddings. All AI models are used directly; postdeploy does not register Model Services. To disable a worker, remove its model environment value from the App resource.
+The App name is `mcp-dahlia-server-{target}`, for example `mcp-dahlia-server-dev` or `mcp-dahlia-server-prod`. The Hindsight App name is `dahlia-hindsight-{target}`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. By default, both targets use the managed Volume `dahlia.app.storage`. Choose the deployment environment by overriding `catalog`; override `app_schema` only when a catalog needs more than one Dahlia Server installation. Explicit Vault sharing is available in every target; Vault Admins can grant Admin, Editor, or Viewer access to a user, Organization, or Team. Organization membership alone does not grant Vault access. The bundle lists public Gateway models in `DAHLIA_CODEX_MODELS`, routes automatic reviews to `system.ai.gpt-5-6-luna`, and uses `system.ai.qwen3-embedding-0-6b` for search embeddings. All AI models are used directly; postdeploy does not register Model Services. To disable a worker, remove its model environment value from the App resource.
 
 The bundle syncs the self-contained `apps/server` package and the setup notebooks in `deploy/databricks/notebooks`. The Server package manifest, pnpm lockfile, runtime configuration, and source are deployed without repository-root pnpm files. `pnpm test:package` builds and packs an isolated Server source directory without sibling Desktop files or existing build output, then checks the resulting package. The Server ships its own transcript activity policy JSON; a cross-platform test keeps it equal to the Desktop resource.
 
@@ -130,7 +130,7 @@ Collector, or enable telemetry emission.
 
 The bundle exposes its Responses-compatible `system.ai.*` models through the ordered `DAHLIA_CODEX_MODELS` value. `/api/v1/models` reads this value without calling a discovery API, and Responses forwards the selected fully qualified model ID unchanged. `DAHLIA_CODEX_AUTO_REVIEW_MODEL=system.ai.gpt-5-6-luna` preserves the reserved `codex-auto-review` route without registering an alias service.
 
-Search embeddings, image analysis, and Hindsight also use their `system.ai.*` models directly. Postdeploy only grants catalog use and activates Lakebase Search extensions; it does not list, inspect, or create Model Services.
+Search embeddings, image analysis, and Hindsight also use their `system.ai.*` models directly. Postdeploy only activates Lakebase Search extensions.
 
 ## Smoke test
 
