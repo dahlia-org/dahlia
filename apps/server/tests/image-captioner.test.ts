@@ -6,7 +6,7 @@ import { fileMetadataLimits } from "../src/files/model";
 const environment = { DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
   DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "databricks",
   DATABRICKS_HOST: "https://workspace.example", DATABRICKS_CLIENT_ID: "client", DATABRICKS_CLIENT_SECRET: "secret",
-  DAHLIA_CAPTIONING_MODEL: "system.ai.gpt-5-6-luna",
+  DAHLIA_IMAGE_ANALYSIS_MODEL: "system.ai.gpt-5-6-luna",
 };
 
 describe("server image captioning", () => {
@@ -49,7 +49,7 @@ describe("server image captioning", () => {
   });
 
   it("disables an unset model and validates its backend", () => {
-    expect(createImageCaptioner(loadConfig({ ...environment, DAHLIA_CAPTIONING_MODEL: " " }))).toBeUndefined();
-    expect(() => loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", DAHLIA_AUTH_TYPE: "header", DAHLIA_CAPTIONING_MODEL: "model" })).toThrow("requires DAHLIA_AI_BACKEND=databricks");
+    expect(createImageCaptioner(loadConfig({ ...environment, DAHLIA_IMAGE_ANALYSIS_MODEL: " " }))).toBeUndefined();
+    expect(() => loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", DAHLIA_AUTH_TYPE: "header", DAHLIA_IMAGE_ANALYSIS_MODEL: "model" })).toThrow("requires DAHLIA_AI_BACKEND=databricks");
   });
 });

@@ -82,7 +82,7 @@ describe("deployment routing", () => {
     const cloudflareVite = readText("../vite.cloudflare.config.ts");
 
     expect(worker).not.toContain("ASSETS");
-    expect(worker).toContain("CODEX_AUTO_REVIEW_MODEL");
+    expect(worker).toContain("DAHLIA_CODEX_AUTO_REVIEW_MODEL");
     expect(worker).not.toContain("isApplicationPath");
     expect(worker).toContain("DAHLIA_AI_BACKEND");
     expect(worker).toContain("DATABRICKS_HOST");
@@ -258,13 +258,13 @@ describe("deployment routing", () => {
     expect(bundle).not.toContain("app_name:");
     expect(bundle).toContain("database_project_id: dahlia-db-dev");
     expect(bundle).not.toContain("codex_auto_review_model");
-    expect(resource).toContain("name: CODEX_AUTO_REVIEW_MODEL");
+    expect(resource).toContain("name: DAHLIA_CODEX_AUTO_REVIEW_MODEL");
     expect(resource).toContain("value: system.ai.gpt-5-6-luna");
     expect(bundle).toContain("database_project_id: dahlia-db");
     expect(bundle).toContain("catalog:");
     expect(bundle).toContain("default: dahlia");
     expect(bundle).toMatch(/app_schema:[\s\S]*?default: app/);
-    expect(bundle).toMatch(/ai_schema:[\s\S]*?default: ai/);
+    expect(bundle).not.toContain("ai_schema");
     expect(resource).toContain("name: ${var.app_schema}");
     expect(resource).not.toContain("${var.schema}");
     expect(bundle).toContain("'${var.catalog}' '${var.database_project_id}' 'mcp-dahlia-server-${bundle.target}' 'hindsight-${bundle.target}'");
@@ -280,8 +280,9 @@ describe("deployment routing", () => {
     expect(resource).toContain("name: DAHLIA_CODEX_MODELS");
     expect(resource).toContain("system.ai.gpt-5-6-luna");
     expect(resource).not.toContain("DATABRICKS_MODEL_SCHEMA");
-    expect(resource).toContain("name: ${var.ai_schema}");
-    expect(resource).toMatch(/ai_schema:[\s\S]*?principal: account users\s+privileges:\s+- EXECUTE/);
+    expect(resource).not.toContain("ai_schema");
+    expect(resource).toContain("name: DAHLIA_IMAGE_ANALYSIS_MODEL");
+    expect(resource).not.toContain("DAHLIA_CAPTIONING_MODEL");
     expect(resource).not.toContain("service_principal_client_id");
     expect(bundle).toMatch(/prod:[\s\S]*?volumes:[\s\S]*?prevent_destroy: true/);
     expect(bundle).toMatch(/dev:[\s\S]*?purge_on_delete: true[\s\S]*?prod:/);

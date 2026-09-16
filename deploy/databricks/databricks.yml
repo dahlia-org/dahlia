@@ -34,9 +34,6 @@ variables:
   hindsight_schema:
     description: PostgreSQL schema containing Hindsight data.
     default: hindsight
-  ai_schema:
-    description: Legacy Unity Catalog schema retained for deployed bundle state.
-    default: ai
   ops_schema:
     description: Unity Catalog schema containing OTel tables.
     default: ops
@@ -64,9 +61,6 @@ targets:
             prevent_destroy: true
       schemas:
         ops_schema:
-          lifecycle:
-            prevent_destroy: true
-        ai_schema:
           lifecycle:
             prevent_destroy: true
         app_schema:

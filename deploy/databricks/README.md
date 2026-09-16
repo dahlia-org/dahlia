@@ -128,9 +128,9 @@ Collector, or enable telemetry emission.
 
 ## AI models
 
-The bundle exposes its Responses-compatible `system.ai.*` models through the ordered `DAHLIA_CODEX_MODELS` value. `/api/v1/models` reads this value without calling a discovery API, and Responses forwards the selected fully qualified model ID unchanged. `CODEX_AUTO_REVIEW_MODEL=system.ai.gpt-5-6-luna` preserves the reserved `codex-auto-review` route without registering an alias service.
+The bundle exposes its Responses-compatible `system.ai.*` models through the ordered `DAHLIA_CODEX_MODELS` value. `/api/v1/models` reads this value without calling a discovery API, and Responses forwards the selected fully qualified model ID unchanged. `DAHLIA_CODEX_AUTO_REVIEW_MODEL=system.ai.gpt-5-6-luna` preserves the reserved `codex-auto-review` route without registering an alias service.
 
-Search embeddings, image analysis, and Hindsight also use their `system.ai.*` models directly. Postdeploy only grants catalog use and activates Lakebase Search extensions; it does not list, inspect, or create Model Services. The existing bundle-managed `${catalog}.${ai_schema}` resource remains declared to avoid a destructive removal from already deployed targets, but runtime configuration no longer references it.
+Search embeddings, image analysis, and Hindsight also use their `system.ai.*` models directly. Postdeploy only grants catalog use and activates Lakebase Search extensions; it does not list, inspect, or create Model Services.
 
 ## Smoke test
 

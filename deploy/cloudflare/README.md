@@ -64,7 +64,7 @@ pnpm exec wrangler secret put OPENAI_API_KEY
 pnpm exec wrangler secret put OPENAI_BASE_URL
 ```
 
-Use `https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/v1` as the base URL. Set `CLOUDFLARE_AI_GATEWAY_ID` to select a gateway (default: `default`). Dahlia disables gateway logging, payload collection, caching, and additional gateway attempts. List the exposed models in `DAHLIA_CODEX_MODELS`; the example config uses `gpt-5.6-luna,gpt-4.1,gemini-3-flash`. Jobs support `gpt-4.1` (text/image, reasoning `none`) and `gemini-3-flash` (audio, reasoning `minimal`, `low`, `medium`, `high`). Public short names map to `openai/gpt-4.1` and `google/gemini-3-flash`. Set `CODEX_AUTO_REVIEW_MODEL` to override the reserved automatic-review model independently of that catalog.
+Use `https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/v1` as the base URL. Set `CLOUDFLARE_AI_GATEWAY_ID` to select a gateway (default: `default`). Dahlia disables gateway logging, payload collection, caching, and additional gateway attempts. List the exposed models in `DAHLIA_CODEX_MODELS`; the example config uses `gpt-5.6-luna,gpt-4.1,gemini-3-flash`. Jobs support `gpt-4.1` (text/image, reasoning `none`) and `gemini-3-flash` (audio, reasoning `minimal`, `low`, `medium`, `high`). Public short names map to `openai/gpt-4.1` and `google/gemini-3-flash`. Set `DAHLIA_CODEX_AUTO_REVIEW_MODEL` to override the reserved automatic-review model independently of that catalog.
 
 ## 5. Validate and deploy
 

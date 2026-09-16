@@ -4,15 +4,6 @@ resources:
       catalog_name: ${var.catalog}
       name: ${var.ops_schema}
       comment: OTel tables for Dahlia Server ${bundle.target}
-    ai_schema:
-      catalog_name: ${var.catalog}
-      name: ${var.ai_schema}
-      grants:
-        - principal: account users
-          privileges:
-            - EXECUTE
-            - USE_SCHEMA
-      comment: Legacy AI schema retained for deployed bundle state
     app_schema:
       catalog_name: ${var.catalog}
       name: ${var.app_schema}
@@ -56,7 +47,7 @@ resources:
             value: databricks
           - name: DAHLIA_CODEX_MODELS
             value: system.ai.gpt-6-astra,system.ai.gpt-5-6-sol,system.ai.gpt-5-6-terra,system.ai.gpt-5-6-luna,system.ai.gpt-5-5,system.ai.glm-5-3,system.ai.glm-5-3-flash,system.ai.kimi-k3,system.ai.deepseek-v4-1-flash,system.ai.deepseek-v4-pro-0813,system.ai.gemini-3-8-flash,system.ai.gemini-3-7-flash
-          - name: CODEX_AUTO_REVIEW_MODEL
+          - name: DAHLIA_CODEX_AUTO_REVIEW_MODEL
             value: system.ai.gpt-5-6-luna
           - name: DAHLIA_STORAGE_BACKEND
             value: databricks
@@ -66,7 +57,7 @@ resources:
             value: lakebase
           - name: DAHLIA_SEARCH_EMBEDDING_MODEL
             value: system.ai.qwen3-embedding-0-6b
-          - name: DAHLIA_CAPTIONING_MODEL
+          - name: DAHLIA_IMAGE_ANALYSIS_MODEL
             value: system.ai.gpt-5-6-luna
           - name: DAHLIA_SEARCH_EMBEDDING_DIMENSIONS
             value: ${var.search_embedding_dimensions}

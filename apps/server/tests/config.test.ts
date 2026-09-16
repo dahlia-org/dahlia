@@ -27,10 +27,10 @@ describe("configuration", () => {
   });
 
   it("configures the Codex automatic review upstream without a backend-specific default", () => {
-    expect(loadConfig({ ...accounts, CODEX_AUTO_REVIEW_MODEL: " provider/reviewer " }).codexAutoReviewModel)
+    expect(loadConfig({ ...accounts, DAHLIA_CODEX_AUTO_REVIEW_MODEL: " provider/reviewer " }).codexAutoReviewModel)
       .toBe("provider/reviewer");
-    expect(loadConfig({ ...accounts, CODEX_AUTO_REVIEW_MODEL: " " }).codexAutoReviewModel).toBeUndefined();
-    expect(() => loadConfig({ ...accounts, CODEX_AUTO_REVIEW_MODEL: "m".repeat(768) })).toThrow();
+    expect(loadConfig({ ...accounts, DAHLIA_CODEX_AUTO_REVIEW_MODEL: " " }).codexAutoReviewModel).toBeUndefined();
+    expect(() => loadConfig({ ...accounts, DAHLIA_CODEX_AUTO_REVIEW_MODEL: "m".repeat(768) })).toThrow();
   });
 
   it("configures an ordered backend-independent Codex model list", () => {
@@ -53,7 +53,7 @@ describe("configuration", () => {
     expect(() => loadConfig({ ...accounts,
       DAHLIA_SEARCH_EMBEDDING_MODEL: "model",
     })).toThrow("DAHLIA_SEARCH_EMBEDDING_MODEL requires DAHLIA_AI_BACKEND=databricks");
-    for (const modelVariable of ["DAHLIA_SEARCH_EMBEDDING_MODEL", "DAHLIA_CAPTIONING_MODEL"]) {
+    for (const modelVariable of ["DAHLIA_SEARCH_EMBEDDING_MODEL", "DAHLIA_IMAGE_ANALYSIS_MODEL"]) {
       expect(() => loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
         DAHLIA_AUTH_TYPE: "header",
         DAHLIA_AI_BACKEND: "databricks",

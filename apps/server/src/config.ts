@@ -247,7 +247,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   const aiBackend = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai");
   const codexModels = z.array(z.string().max(UPSTREAM_MODEL_MAX_LENGTH))
     .parse([...new Set(csv(env.DAHLIA_CODEX_MODELS))]);
-  const codexAutoReviewModel = env.CODEX_AUTO_REVIEW_MODEL?.trim();
+  const codexAutoReviewModel = env.DAHLIA_CODEX_AUTO_REVIEW_MODEL?.trim();
   const storageBackend = storageBackendSchema.parse(env.DAHLIA_STORAGE_BACKEND?.trim() || "local");
   const searchEmbeddingModel = env.DAHLIA_SEARCH_EMBEDDING_MODEL?.trim();
   const searchEmbedding = searchEmbeddingModel ? {
@@ -256,8 +256,8 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
       .refine((value) => (value & (value - 1)) === 0, "must be a power of two")
       .parse(env.DAHLIA_SEARCH_EMBEDDING_DIMENSIONS ?? String(DEFAULT_SEARCH_EMBEDDING_DIMENSIONS)),
   } : undefined;
-  const captioningModel = env.DAHLIA_CAPTIONING_MODEL?.trim()
-    ? z.string().max(UPSTREAM_MODEL_MAX_LENGTH).parse(env.DAHLIA_CAPTIONING_MODEL.trim())
+  const captioningModel = env.DAHLIA_IMAGE_ANALYSIS_MODEL?.trim()
+    ? z.string().max(UPSTREAM_MODEL_MAX_LENGTH).parse(env.DAHLIA_IMAGE_ANALYSIS_MODEL.trim())
     : undefined;
   const databricksWorkspace = databricksWorkspaceConfig(
     env,
@@ -317,7 +317,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     throw new Error("DAHLIA_SEARCH_EMBEDDING_MODEL requires DAHLIA_AI_BACKEND=databricks or cloudflare");
   }
   if (config.captioningModel && !["databricks", "cloudflare"].includes(config.provider?.backend ?? "")) {
-    throw new Error("DAHLIA_CAPTIONING_MODEL requires DAHLIA_AI_BACKEND=databricks or cloudflare");
+    throw new Error("DAHLIA_IMAGE_ANALYSIS_MODEL requires DAHLIA_AI_BACKEND=databricks or cloudflare");
   }
 
   if (config.provider?.backend === "cloudflare") {

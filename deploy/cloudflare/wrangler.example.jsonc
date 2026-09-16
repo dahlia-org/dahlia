@@ -49,7 +49,7 @@
     "DAHLIA_APP_URL": "https://{name}.{subdomain}.workers.dev",
     "GOOGLE_CLIENT_ID": "replace-with-google-client-id",
     "CLOUDFLARE_AI_GATEWAY_ID": "default",
-    "DAHLIA_CAPTIONING_MODEL": "gpt-4.1",
+    "DAHLIA_IMAGE_ANALYSIS_MODEL": "gpt-4.1",
     "DAHLIA_SEARCH_EMBEDDING_MODEL": "@cf/baai/bge-m3",
     "DAHLIA_SEARCH_EMBEDDING_DIMENSIONS": "1024"
   },

@@ -31,7 +31,7 @@ export default {
       const config = loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_AUTH_SECRET: env.DAHLIA_AUTH_SECRET, DAHLIA_AI_BACKEND: backend,
         OPENAI_BASE_URL: "https://api.cloudflare.com/client/v4/accounts/synthetic/ai/v1", OPENAI_API_KEY: "synthetic",
         DATABRICKS_HOST: "https://synthetic.example", DATABRICKS_CLIENT_ID: "synthetic", DATABRICKS_CLIENT_SECRET: "synthetic",
-        DAHLIA_CAPTIONING_MODEL: backend === "cloudflare" ? "gpt-4.1" : "test.ai.gpt-5-6-luna",
+        DAHLIA_IMAGE_ANALYSIS_MODEL: backend === "cloudflare" ? "gpt-4.1" : "test.ai.gpt-5-6-luna",
         DAHLIA_SEARCH_EMBEDDING_MODEL: backend === "cloudflare" ? "@cf/baai/bge-m3" : "system.ai.embedding", DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: "1024" });
       const transport: typeof fetch = (url) => Promise.resolve(String(url).endsWith("/token")
         ? Response.json({ access_token: "synthetic", expires_in: 3600 })
