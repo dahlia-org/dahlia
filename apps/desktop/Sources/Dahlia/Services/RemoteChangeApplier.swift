@@ -25,7 +25,7 @@ enum RemoteChangeApplier {
                 workspaceId: workspaceId,
                 connectionId: expectedConnectionId,
                 in: db
-            ) else { return false }
+            ), try !WorkspaceTransferFence.blocksRemoteChanges(workspaceID: workspaceId, in: db) else { return false }
             if let incrementalContext {
                 guard try incrementalContext.isCurrent(in: db) else { return false }
             } else if let expectedMutationGeneration {

@@ -94,6 +94,16 @@ final class AppDatabaseManager: Sendable {
         configuration.busyMode = .timeout(5)
         configuration.prepareDatabase { db in
             try SearchFTS5Tokenizer.register(in: db)
+            if !readonly {
+                try db.execute(sql: """
+                CREATE TEMP TABLE workspace_transfer_fences (
+                    workspaceId BLOB PRIMARY KEY NOT NULL,
+                    token BLOB NOT NULL,
+                    generation INTEGER NOT NULL DEFAULT 0,
+                    blocksRemoteChanges INTEGER NOT NULL DEFAULT 0
+                )
+                """)
+            }
         }
         return configuration
     }

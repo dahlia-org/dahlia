@@ -526,12 +526,15 @@
                 revision: 1,
                 role: role
             )
+            let transferFence = try await database.dbQueue.write {
+                try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], in: $0)
+            }
             await #expect(throws: LocalWorkspaceImportError.self) {
                 try await repository.adoptWorkspaceForServerSync(
                     id: workspace.id,
                     connectionID: remote.connectionId,
                     serverWorkspace: remote,
-                    expectedMutationGeneration: 0
+                    transferFence: transferFence
                 )
             }
             #expect(try repository.fetchAllWorkspaces().first?.accountConnectionId == nil)
@@ -556,10 +559,8 @@
             )
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertWorkspace(workspace)
-            let expectedMutationGeneration = try await database.dbQueue.read {
-                try #require(try Int64.fetchOne(
-                    $0, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspace.id]
-                ))
+            let transferFence = try await database.dbQueue.write {
+                try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], in: $0)
             }
             try await database.dbQueue.write {
                 try $0.execute(sql: "UPDATE workspaces SET lastOpenedAt = lastOpenedAt WHERE id = ?", arguments: [workspace.id])
@@ -569,7 +570,7 @@
                 id: workspace.id,
                 connectionID: connection.id,
                 serverWorkspace: remote,
-                expectedMutationGeneration: expectedMutationGeneration,
+                transferFence: transferFence,
                 screenshotContent: ScreenshotContentProvider()
             )
 
@@ -596,19 +597,20 @@
             )
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertWorkspace(workspace)
-            let expectedMutationGeneration = try await database.dbQueue.read {
-                try #require(try Int64.fetchOne(
-                    $0, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspace.id]
-                ))
+            let transferFence = try await database.dbQueue.write {
+                try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], in: $0)
             }
             _ = try await repository.updateWorkspaceName(id: workspace.id, name: "Changed")
+            #expect(try await database.dbQueue.read {
+                try Int.fetchOne($0, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspace.id])
+            } == 0)
 
             await #expect(throws: LocalWorkspaceImportError.self) {
                 try await repository.adoptWorkspaceForServerSync(
                     id: workspace.id,
                     connectionID: connection.id,
                     serverWorkspace: remote,
-                    expectedMutationGeneration: expectedMutationGeneration,
+                    transferFence: transferFence,
                     screenshotContent: ScreenshotContentProvider()
                 )
             }
@@ -634,17 +636,15 @@
             )
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertWorkspace(workspace)
-            let expectedMutationGeneration = try await database.dbQueue.read {
-                try #require(try Int64.fetchOne(
-                    $0, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspace.id]
-                ))
+            let transferFence = try await database.dbQueue.write {
+                try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], in: $0)
             }
 
             let adopted = try await repository.adoptWorkspaceForServerSync(
                 id: workspace.id,
                 connectionID: connection.id,
                 serverWorkspace: remote,
-                expectedMutationGeneration: expectedMutationGeneration,
+                transferFence: transferFence,
                 requestedName: "  Second Attempt  "
             )
 

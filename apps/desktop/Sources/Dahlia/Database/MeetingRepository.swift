@@ -223,7 +223,7 @@ final class MeetingRepository {
         id: UUID,
         connectionID: UUID,
         serverWorkspace: CloudWorkspaceRecord,
-        expectedMutationGeneration: Int64,
+        transferFence: WorkspaceTransferFence,
         requestedName: String? = nil,
         screenshotContent: ScreenshotContentProvider = .shared
     ) async throws -> WorkspaceRecord? {
@@ -236,12 +236,10 @@ final class MeetingRepository {
         defer { screenshotContent.releaseOriginals(workspaceIds: [id], dbQueue: dbQueue) }
         let files = try await screenshotContent.prepareAccountTransfer(workspaceId: id, connectionId: connectionID, dbQueue: dbQueue)
         return try await dbQueue.write { db in
-            guard try Int64.fetchOne(
-                db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [id]
-            ) == expectedMutationGeneration,
-                var workspace = try WorkspaceRecord.fetchOne(db, key: id), workspace.accountConnectionId == nil,
-                try !RecordingSessionRecord.hasActiveRecording(workspaceId: id, in: db),
-                try !SyncTransactionQueue.hasPending(workspaceId: id, in: db) else { throw LocalWorkspaceImportError.changed }
+            guard try transferFence.isCurrent(in: db),
+                  var workspace = try WorkspaceRecord.fetchOne(db, key: id), workspace.accountConnectionId == nil,
+                  try !RecordingSessionRecord.hasActiveRecording(workspaceId: id, in: db),
+                  try !SyncTransactionQueue.hasPending(workspaceId: id, in: db) else { throw LocalWorkspaceImportError.changed }
             try ScreenshotContentProvider.installTransfers(files, workspaceId: id, in: db)
             workspace.name = adoptedName
             workspace.accountConnectionId = connectionID
@@ -266,6 +264,7 @@ final class MeetingRepository {
                     .map { .init(entity: entity, id: $0, workspaceId: id) }
             }
             try SyncInitialSnapshotBuilder.enqueueContents(items, workspaceId: id, in: db)
+            try transferFence.release(in: db)
             return workspace
         }
     }

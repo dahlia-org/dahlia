@@ -33,40 +33,41 @@ enum LocalWorkspaceImport {
         screenshots.retainOriginals(workspaceIds: [sourceId], dbQueue: dbQueue)
         defer { screenshots.releaseOriginals(workspaceIds: [sourceId], dbQueue: dbQueue) }
         let files = try await screenshots.prepareAccountTransfer(workspaceId: sourceId, connectionId: connection.id, dbQueue: dbQueue)
-        let fence = try await dbQueue.read { db in
+        let fence = try await dbQueue.write { db in
             try validate(sourceId: sourceId, destination: destination, in: db)
-            guard let sourceGeneration = try Int64.fetchOne(
-                db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [sourceId]
-            ), let destinationGeneration = try Int64.fetchOne(
-                db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [destination.workspaceId]
-            ) else { throw LocalWorkspaceImportError.changed }
-            return (source: sourceGeneration, destination: destinationGeneration)
-        }
-        let generation = try await backup.createGeneration(workspaceIds: [sourceId])
-        let snapshot = try await worker.importSnapshot(workspaceId: destination.workspaceId, connectionId: connection.id, origin: origin)
-        guard let current = try await CloudWorkspaceDiscovery.fetch(connection: connection, apiClient: api)
-            .first(where: { $0.workspaceId == destination.workspaceId }),
-            ["admin", "editor"].contains(current.role), current.organizationId == destination.organizationId else {
-            throw LocalWorkspaceImportError.unavailable
-        }
-        return try await dbQueue.write { db in
-            guard try Int64.fetchOne(
-                db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [sourceId]
-            ) == fence.source,
-                try Int64.fetchOne(
-                    db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [destination.workspaceId]
-                ) == fence.destination,
-                try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id) == connection else {
-                throw LocalWorkspaceImportError.changed
-            }
-            return try commit(
-                sourceId: sourceId,
-                destination: current,
-                snapshot: snapshot,
-                files: files,
-                backupPath: generation.fileURL.path,
+            return try WorkspaceTransferFence.create(
+                workspaceIDs: [sourceId, destination.workspaceId],
+                blockingRemoteChangesIn: [destination.workspaceId],
                 in: db
             )
+        }
+        do {
+            let generation = try await backup.createGeneration(workspaceIds: [sourceId])
+            let snapshot = try await worker.importSnapshot(workspaceId: destination.workspaceId, connectionId: connection.id, origin: origin)
+            guard let current = try await CloudWorkspaceDiscovery.fetch(connection: connection, apiClient: api)
+                .first(where: { $0.workspaceId == destination.workspaceId }),
+                ["admin", "editor"].contains(current.role), current.organizationId == destination.organizationId else {
+                throw LocalWorkspaceImportError.unavailable
+            }
+            return try await dbQueue.write { db in
+                guard try fence.isCurrent(in: db),
+                      try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id) == connection else {
+                    throw LocalWorkspaceImportError.changed
+                }
+                let result = try commit(
+                    sourceId: sourceId,
+                    destination: current,
+                    snapshot: snapshot,
+                    files: files,
+                    backupPath: generation.fileURL.path,
+                    in: db
+                )
+                try fence.release(in: db)
+                return result
+            }
+        } catch {
+            try? await dbQueue.write { try fence.release(in: $0) }
+            throw error
         }
     }
 
