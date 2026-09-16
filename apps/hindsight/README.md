@@ -7,7 +7,7 @@ Python 3.11–3.14、Git、uv を使用します。Dahlia のアプリケーシ�
 
 `deploy/databricks` の DAB は Hindsight を Dahlia Server と別の Databricks App として配備します。Lakebase project と `databricks-postgres` database は共有し、Hindsight のテーブルと migration ledger は既定の `hindsight` PostgreSQL schema に分離します。
 
-App 起動時に Databricks が注入する `PG*` 変数と `LAKEBASE_ENDPOINT` から接続を作り、共有拡張 `vector`、`pg_trgm`、`lakebase_text`、`lakebase_vector` が `public` にあることを advisory lock 下で確認してから migration を実行します。Lakebase の短命 credential は `/api/2.0/postgres/credentials` から App service principal で取得し、asyncpg の新規接続ごとに自動更新します。別 schema に既存拡張がある場合はデータを破壊せず起動を停止します。`databricks` providerはApp service principalのclient credentialsでOAuth tokenを更新し、AI Gatewayの`gpt-5-6-luna`と`qwen3-embedding-0-6b`をOpenAI互換APIで使用します。ユーザーのOBO tokenとDatabricks secretは使用しません。詳細は [`deploy/databricks/README.md`](../../deploy/databricks/README.md) を参照してください。
+App 起動時に Databricks が注入する `PG*` 変数と `LAKEBASE_ENDPOINT` から接続を作り、共有拡張 `vector`、`pg_trgm`、`lakebase_text`、`lakebase_vector` が `public` にあることを advisory lock 下で確認してから migration を実行します。Lakebase の短命 credential は `/api/2.0/postgres/credentials` から App service principal で取得し、asyncpg の新規接続ごとに自動更新します。別 schema に既存拡張がある場合はデータを破壊せず起動を停止します。`databricks` providerはApp service principalのclient credentialsでOAuth tokenを更新し、AI Gatewayの`system.ai.gpt-5-6-luna`と`system.ai.qwen3-embedding-0-6b`をOpenAI互換APIで使用します。ユーザーのOBO tokenとDatabricks secretは使用しません。詳細は [`deploy/databricks/README.md`](../../deploy/databricks/README.md) を参照してください。
 
 ## 起動
 

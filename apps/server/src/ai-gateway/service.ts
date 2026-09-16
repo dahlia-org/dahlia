@@ -20,12 +20,11 @@ export class GatewayService {
   ) {
     const provider = config.provider;
     if (provider?.backend === "databricks") {
-      if (!config.databricksWorkspace) throw new Error("Databricks workspace credentials are required");
-      this.backend = new DatabricksBackend(provider, config.databricksWorkspace, transport);
+      this.backend = new DatabricksBackend(provider, config.codexModels ?? [], transport);
     } else if (provider) {
       this.backend = provider.backend === "cloudflare"
-        ? new CloudflareBackend(provider, transport)
-        : new OpenAIBackend(provider, transport);
+        ? new CloudflareBackend(provider, transport, config.codexModels ?? [])
+        : new OpenAIBackend(provider, transport, config.codexModels ?? []);
     }
   }
 
@@ -66,8 +65,11 @@ export class GatewayService {
     }
     if (!this.backend) throw new GatewayRequestError("AI provider is not configured", 503, "provider_not_configured");
     let upstreamModel: string | undefined;
-    if (body.model === CODEX_AUTO_REVIEW_ALIAS) {
-      upstreamModel = this.config.codexAutoReviewModel?.trim() || undefined;
+    const autoReviewModel = this.config.codexAutoReviewModel?.trim();
+    if (body.model === CODEX_AUTO_REVIEW_ALIAS && autoReviewModel) {
+      upstreamModel = autoReviewModel;
+    } else if (!this.config.codexModels?.includes(body.model)) {
+      throw new GatewayRequestError("Model is not configured", 400, "model_not_configured");
     }
     return proxyUpstreamResponse(await this.backend.responses(body as RequestBody, {
       identity: { userId: identity.userId }, headers: request.headers, signal: request.signal, upstreamModel,

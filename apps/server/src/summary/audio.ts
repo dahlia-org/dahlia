@@ -13,7 +13,6 @@ import { cloudTranscriptionSchema, combinedSummaryResponseSchema, generatedTrans
 import type { RecordingManifest, RecordingSource, RecordingRecord } from "../recordings/model";
 import { SummaryError, summaryDocument, summaryResponseSchema, type SummaryMethod, type SummaryJob, type SummaryInput, type SummaryGenerationResult } from "./model";
 import { summaryResponseMetadataSchema } from "./metadata";
-import { summaryStyleDetail } from "../workspace-generation-settings";
 import { resolveSummaryPreferences } from "./preferences";
 import { isAudioSummaryModel, isSummaryModel } from "./audio-model";
 import { assertSummaryAccess, boundedBytes, collectSummaryInput, fingerprint, summaryImageContent, summaryInstructions, summaryXMLText } from "./transcript";
@@ -122,10 +121,15 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
   const cloudflare = audioProvider.backend === "cloudflare";
   return {
     id: "audio",
-    captureSettings: (settings, detail) => ({
-      model: settings.processing.remote.summaryModel ?? "gemini-3-8-flash", reasoningEffort: settings.processing.remote.reasoningEffort ?? "medium",
-      detail: detail ?? summaryStyleDetail(settings.summary.style), transcription: settings.transcription,
-    }),
+    async captureSettings(settings, detail, input) {
+      const resolved = resolveSummaryPreferences(
+        settings,
+        input ?? { type: "recording", recordings: [] },
+        await backend.listModels({ signal: AbortSignal.timeout(30_000) }),
+        normalizeModel,
+      ).settings;
+      return { ...resolved, detail: detail ?? resolved.detail };
+    },
     async resolvePreferences(preferences, input) {
       return resolveSummaryPreferences(preferences, input, await backend.listModels({ signal: AbortSignal.timeout(30_000) }), normalizeModel);
     },

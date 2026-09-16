@@ -18,11 +18,11 @@ resources:
           - name: HINDSIGHT_API_LLM_PROVIDER
             value: databricks
           - name: HINDSIGHT_API_LLM_MODEL
-            value: ${var.catalog}.${var.ai_schema}.gpt-5-6-luna
+            value: system.ai.gpt-5-6-luna
           - name: HINDSIGHT_API_EMBEDDINGS_PROVIDER
             value: databricks
           - name: HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL
-            value: ${var.catalog}.${var.ai_schema}.qwen3-embedding-0-6b
+            value: system.ai.qwen3-embedding-0-6b
           - name: HINDSIGHT_API_EMBEDDINGS_OPENAI_DIMENSIONS
             value: ${var.search_embedding_dimensions}
           - name: HINDSIGHT_API_RERANKER_PROVIDER

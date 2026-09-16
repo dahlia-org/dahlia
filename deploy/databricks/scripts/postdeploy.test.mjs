@@ -7,125 +7,68 @@ import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { it } from "node:test";
 
-it("registers missing models, resumes partial deployments, and preserves failure diagnostics", () => {
+it("activates search extensions without registering model services", () => {
   const dir = mkdtempSync(join(tmpdir(), "dahlia-postdeploy-"));
   const script = fileURLToPath(new URL("./postdeploy.sh", import.meta.url));
-  const state = join(dir, "state.json");
   const calls = join(dir, "calls.jsonl");
-  writeFileSync(state, "[]");
   writeFileSync(calls, "");
   writeFileSync(join(dir, "databricks"), `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.CALLS, JSON.stringify(args) + "\\n");
-const names = JSON.parse(fs.readFileSync(process.env.STATE, "utf8"));
-const command = args[1];
-if (command === process.env.FAIL_COMMAND && (!process.env.FAIL_MODEL || args[3] === process.env.FAIL_MODEL)) {
-  console.error("PERMISSION_DENIED: missing CREATE_SERVICE");
+if (args[0] === process.env.FAIL_COMMAND) {
+  console.error("PERMISSION_DENIED");
   process.exit(1);
 }
+const command = args[1];
 if (args[0] === "apps" && command === "get") {
   const principals = {
     "mcp-dahlia-server-test": "dahlia-app-sp",
     "hindsight-test": "hindsight-app-sp",
   };
   console.log(JSON.stringify({service_principal_client_id: principals[args[2]]}));
-} else if (command === "list-model-services") {
-  console.log(JSON.stringify(names.map(name => ({name}))));
-} else if (command === "get-model-service") {
-  const model = args[2].replace("model-services/", "models/");
-  console.log(JSON.stringify({config: {routing: {destinations: [{
-    destination_type: "DESTINATION_TYPE_PAY_PER_TOKEN_FOUNDATION_MODEL",
-    pay_per_token_config: {model}
-  }]}}}));
-} else if (command === "create-model-service") {
-  const name = "model-services/" + args[2].replace("schemas/", "") + "." + args[3];
-  if (names.includes(name)) {
-    console.error("ALREADY_EXISTS");
-    process.exit(1);
-  }
-  names.push(name);
-  fs.writeFileSync(process.env.STATE, JSON.stringify(names));
-  console.log("{}");
 } else {
   console.log("{}");
 }
 `, { mode: 0o755 });
-  const run = (failCommand = "", failModel = "", dahliaAppName = "mcp-dahlia-server-test", hindsightAppName = "hindsight-test") => spawnSync("bash", [
+  const run = (failCommand = "", dahliaAppName = "mcp-dahlia-server-test", hindsightAppName = "hindsight-test") => spawnSync("bash", [
     script,
     "test-profile",
     "test_catalog",
-    "ai",
     "test-project",
     dahliaAppName,
     hindsightAppName,
   ], {
     encoding: "utf8",
-    env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, STATE: state, CALLS: calls, FAIL_COMMAND: failCommand, FAIL_MODEL: failModel },
+    env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, CALLS: calls, FAIL_COMMAND: failCommand },
   });
-  const readCalls = () => readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
+  const readCalls = () => readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
   try {
-    const partial = run("create-model-service", "gpt-6-astra");
-    assert.equal(partial.status, 1);
-    assert.match(partial.stderr, /PERMISSION_DENIED/);
-    assert.match(partial.stdout, /test_catalog.ai.gpt-6-astra/);
-    assert.equal(JSON.parse(readFileSync(state, "utf8")).length, 1);
-
-    const legacyEmbedding = "model-services/test_catalog.ai.embedding";
-    writeFileSync(state, JSON.stringify([...JSON.parse(readFileSync(state, "utf8")), legacyEmbedding]));
-    const resumed = run();
-    assert.equal(resumed.status, 0, resumed.stderr);
-    assert.match(resumed.stdout, /Keeping existing model service: model-services\/test_catalog.ai.gpt-5-6-luna/);
-    assert.equal(JSON.parse(readFileSync(state, "utf8")).length, 14);
-    for (const [name, source] of [
-      ["deepseek-v4-1-flash", "deepseek-v4-1-flash"],
-      ["deepseek-v4-pro-0813", "deepseek-v4-pro-0813"],
-      ["glm-5-3-flash", "glm-5-3-flash"],
-      ["glm-5-3", "glm-5-3"],
-      ["gemini-3-8-flash", "gemini-3-8-flash"],
-      ["gemini-3-7-flash", "gemini-3-7-flash"],
-      ["qwen3-embedding-0-6b", "qwen3-embedding-0-6b"],
-      ["codex-auto-review", "gpt-5-6-luna"],
-    ]) {
-      const call = readCalls().find(args => args[1] === "create-model-service" && args[3] === name);
-      const config = JSON.parse(call[call.indexOf("--json") + 1]);
-      assert.equal(config.config.routing.destinations[0].pay_per_token_config.model, `models/system.ai.${source}`);
-    }
-    assert.equal(readCalls().some(args => args[1] === "create-model-service" && args[3] === "deepseek-v4-pro"), false);
-    assert.ok(JSON.parse(readFileSync(state, "utf8")).includes(legacyEmbedding));
-    assert.equal(readCalls().some(args => args[1] === "create-model-service" && args[3] === "embedding"), false);
-    const catalogGrant = readCalls().find(args => args[0] === "grants" && args[1] === "update");
+    const result = run();
+    assert.equal(result.status, 0, result.stderr);
+    const callsMade = readCalls();
+    const catalogGrant = callsMade.find((args) => args[0] === "grants" && args[1] === "update");
     assert.deepEqual(JSON.parse(catalogGrant[catalogGrant.indexOf("--json") + 1]).changes, [
       { principal: "account users", add: ["USE_CATALOG"] },
       { principal: "dahlia-app-sp", add: ["USE_CATALOG"] },
       { principal: "hindsight-app-sp", add: ["USE_CATALOG"] },
     ]);
-    const schemaGrant = readCalls().find(args => args[0] === "grants" && args[1] === "update" && args[2] === "schema");
-    assert.equal(schemaGrant[3], "test_catalog.ai");
-    assert.deepEqual(JSON.parse(schemaGrant[schemaGrant.indexOf("--json") + 1]).changes, [
-      { principal: "dahlia-app-sp", add: ["USE_SCHEMA", "EXECUTE"] },
-      { principal: "hindsight-app-sp", add: ["USE_SCHEMA", "EXECUTE"] },
-    ]);
-    const resource = readFileSync(new URL("../resources/dahlia_server.yml", import.meta.url), "utf8");
-    assert.match(resource, /name: DAHLIA_EMBEDDING_MODEL\s+value: \$\{var.catalog\}\.\$\{var.ai_schema\}\.qwen3-embedding-0-6b/);
-    assert.ok(readCalls().every(args => args[args.indexOf("--profile") + 1] === "test-profile"));
+    assert.ok(callsMade.some((args) => args[0] === "api" && args[1] === "post"
+      && args[2] === "/api/2.0/postgres/projects/test-project/search-extensions"));
+    assert.equal(callsMade.some((args) => args.includes("ai-gateway")), false);
+    assert.ok(callsMade.every((args) => args[args.indexOf("--profile") + 1] === "test-profile"));
 
     writeFileSync(calls, "");
-    const repeated = run();
-    assert.equal(repeated.status, 0, repeated.stderr);
-    assert.equal(readCalls().some(args => ["create-model-service", "get-model-service"].includes(args[1])), false);
-
-    writeFileSync(calls, "");
-    const denied = run("list-model-services");
-    assert.notEqual(denied.status, 0);
+    const denied = run("grants");
+    assert.equal(denied.status, 1);
     assert.match(denied.stderr, /PERMISSION_DENIED/);
-    assert.equal(readCalls().some(args => args[1] === "create-model-service"), false);
+    assert.equal(readCalls().some((args) => args[0] === "api"), false);
 
     writeFileSync(calls, "");
-    const missingPrincipal = run("", "", "missing-dahlia-app");
+    const missingPrincipal = run("", "missing-dahlia-app");
     assert.notEqual(missingPrincipal.status, 0);
     assert.match(missingPrincipal.stderr, /App service principal not found for app 'missing-dahlia-app'/);
-    assert.equal(readCalls().some(args => args[0] === "grants" && args[1] === "update"), false);
+    assert.equal(readCalls().some((args) => args[0] === "grants" && args[1] === "update"), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

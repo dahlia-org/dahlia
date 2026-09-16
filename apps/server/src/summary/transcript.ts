@@ -1,6 +1,5 @@
 import { canWriteWorkspace } from "../auth/workspace-permissions";
 import { summaryResponseMetadataSchema } from "./metadata";
-import { summaryStyleDetail } from "../workspace-generation-settings";
 import { resolveSummaryPreferences } from "./preferences";
 import { Buffer } from "node:buffer";
 import { z } from "zod";
@@ -69,10 +68,15 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
   const { provider, backend } = execution;
   return {
     id: "transcript",
-    captureSettings: (settings, detail) => ({
-      model: settings.processing.remote.summaryModel ?? "gemini-3-8-flash", reasoningEffort: settings.processing.remote.reasoningEffort ?? "medium",
-      detail: detail ?? summaryStyleDetail(settings.summary.style), transcription: settings.transcription,
-    }),
+    async captureSettings(settings, detail, input) {
+      const resolved = resolveSummaryPreferences(
+        settings,
+        input ?? { type: "transcript", version: "current" },
+        await backend.listModels({ signal: AbortSignal.timeout(30_000) }),
+        execution.normalizeModel,
+      ).settings;
+      return { ...resolved, detail: detail ?? resolved.detail };
+    },
     async resolvePreferences(preferences, input) {
       return resolveSummaryPreferences(preferences, input, await backend.listModels({ signal: AbortSignal.timeout(30_000) }), execution.normalizeModel);
     },

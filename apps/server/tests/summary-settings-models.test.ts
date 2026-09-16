@@ -9,7 +9,7 @@ import { modelList } from "../src/ai-gateway/models";
 import { isAudioSummaryModel, isStructuredSummaryModel, isSummaryModel } from "../src/summary/audio-model";
 
 it("treats listed models as structured-output capable and rejects unregistered models", () => {
-  const supported = ["gemini-3-8-flash", "gpt-6-astra", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-5-6-luna", "gpt-5-5"];
+  const supported = ["system.ai.gemini-3-8-flash", "system.ai.gpt-6-astra", "system.ai.gpt-5-6-sol", "system.ai.gpt-5-6-terra", "system.ai.gpt-5-6-luna", "system.ai.gpt-5-5"];
   const unsupported = ["gpt-5.4-mini", "gpt-5.2", "gpt-5.4-pro", "gpt-unknown"];
   const catalog = modelList([...supported, ...unsupported].map((id) => ({ id })));
   for (const id of supported) expect(isStructuredSummaryModel(id, catalog)).toBe(true);
@@ -18,8 +18,8 @@ it("treats listed models as structured-output capable and rejects unregistered m
 });
 
 it.each([false, undefined])("does not require the legacy schema flag for a listed audio model (%s)", (support) => {
-  const catalog = modelList([{ id: "gemini-3-8-flash" }]);
-  const model = catalog.models.find(({ slug }) => slug === "gemini-3-8-flash")!;
+  const catalog = modelList([{ id: "system.ai.gemini-3-8-flash" }]);
+  const model = catalog.models.find(({ slug }) => slug === "system.ai.gemini-3-8-flash")!;
   model.supports_json_schema = support;
   expect(isAudioSummaryModel(model.slug, catalog)).toBe(true);
   expect(isSummaryModel(model.slug, catalog, "audio")).toBe(true);
@@ -105,13 +105,13 @@ it("explains the selected style and the data sent by Mac processing", () => {
 
 it.each([
   ["audio", undefined, true, false],
-  ["audio", "gemini-3-8-flash", true, false],
-  ["audio", "gpt-5-6-terra", false, false],
-  ["transcript", "gpt-5-6-terra", true, false],
-  ["audio", "gpt-5-6-terra", false, true],
+  ["audio", "system.ai.gemini-3-8-flash", true, false],
+  ["audio", "system.ai.gpt-5-6-terra", false, false],
+  ["transcript", "system.ai.gpt-5-6-terra", true, false],
+  ["audio", "system.ai.gpt-5-6-terra", false, true],
 ] as const)("validates %s (model: %s, available: %s, empty catalog: %s)", (source, summaryModel, available, emptyCatalog) => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: url === "/api/v1/models" ? modelList(emptyCatalog ? [] : [{ id: "gemini-3-8-flash" }, { id: "gpt-5-6-terra" }]) : typeof url === "object" && url.key.startsWith('["getCapabilities"')
+    data: url === "/api/v1/models" ? modelList(emptyCatalog ? [] : [{ id: "system.ai.gemini-3-8-flash" }, { id: "system.ai.gpt-5-6-terra" }]) : typeof url === "object" && url.key.startsWith('["getCapabilities"')
       ? { meetingSummaryGeneration: { version: 2, sources: [source], completeRecordings: true } }
       : typeof url === "object" && url.key.startsWith('["getWorkspace"')
         ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: {
@@ -139,7 +139,7 @@ it.each([
       ? { meetingSummaryGeneration: { version: 2, sources: ["transcript"], completeRecordings: true } }
       : typeof url === "object" && url.key.startsWith('["getWorkspace"')
         ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: {
-          location: "remote", remote: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing.remote, summaryModel: "gpt-5-6-terra" },
+          location: "remote", remote: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing.remote, summaryModel: "system.ai.gpt-5-6-terra" },
         } } }
         : typeof url === "object" && url.key.startsWith('["summaryTranscriptAvailability"') ? transcript(true)
         : { job: null },
@@ -149,7 +149,7 @@ it.each([
   }));
   const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
   expect(html).toContain('<button class="primary">Generate summary</button>');
-  expect(html).toContain('<option value="gpt-5-6-terra" disabled="" selected="">gpt-5-6-terra</option>');
+  expect(html).toContain('<option value="system.ai.gpt-5-6-terra" disabled="" selected="">system.ai.gpt-5-6-terra</option>');
   expect(html).not.toContain("Unavailable");
   const settingsHTML = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
   expect(settingsHTML).not.toContain("Unavailable");
@@ -249,7 +249,7 @@ it("disables generation when neither source is available", () => {
 it.each([false, true])("hides the automatic review alias from summary model choices (alias only: %s)", (aliasOnly) => {
   const catalog = modelList([
     { id: "codex-auto-review" },
-    ...aliasOnly ? [] : [{ id: "gemini-3-8-flash" }],
+    ...aliasOnly ? [] : [{ id: "system.ai.gemini-3-8-flash" }],
   ]);
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
     data: url === "/api/v1/models" ? catalog
@@ -261,25 +261,25 @@ it.each([false, true])("hides the automatic review alias from summary model choi
   expect(catalog.data.some(({ id }) => id === "codex-auto-review")).toBe(true);
   expect(html).not.toContain('value="codex-auto-review"');
   if (aliasOnly) expect(html).toContain("No models available");
-  else expect(html).toContain('value="gemini-3-8-flash"');
+  else expect(html).toContain('value="system.ai.gemini-3-8-flash"');
 });
 
 it.each([true, false])("filters audio choices to available audio-capable Gemini (available: %s)", (available) => {
-  const catalog = modelList([{ id: "gpt-5-6-terra" }, { id: "gemini-unknown" }, { id: "codex-auto-review" },
-    ...(available ? [{ id: "gemini-3-8-flash" }, { id: "gemini-3-7-flash" }] : [])]);
+  const catalog = modelList([{ id: "system.ai.gpt-5-6-terra" }, { id: "system.ai.gemini-unknown" }, { id: "codex-auto-review" },
+    ...(available ? [{ id: "system.ai.gemini-3-8-flash" }, { id: "system.ai.gemini-3-7-flash" }] : [])]);
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
     data: url === "/api/v1/models" ? catalog
       : typeof url === "object" && url.key.startsWith('["getCapabilities"') ? { meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"], completeRecordings: true } }
       : { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, summary: { style: "standard" }, processing: { location: "remote", remote: {
-        workflow: "combined", summaryModel: "gemini-3-8-flash", reasoningEffort: "medium",
+        workflow: "combined", summaryModel: "system.ai.gemini-3-8-flash", reasoningEffort: "medium",
       } } } },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
   const html = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
   expect(html).toContain("Transcription location");
-  expect(html).not.toContain('value="gpt-5-6-terra"'); expect(html).not.toContain('value="codex-auto-review"');
-  expect(html).not.toContain('value="gemini-unknown"');
-  if (available) { expect(html).toContain('value="gemini-3-8-flash" selected'); expect(html).toContain('value="gemini-3-7-flash"'); }
+  expect(html).not.toContain('value="system.ai.gpt-5-6-terra"'); expect(html).not.toContain('value="codex-auto-review"');
+  expect(html).not.toContain('value="system.ai.gemini-unknown"');
+  if (available) { expect(html).toContain('value="system.ai.gemini-3-8-flash" selected'); expect(html).toContain('value="system.ai.gemini-3-7-flash"'); }
   else {
     expect(html).toContain("No models available");
     expect(html).toContain("A selected model is unavailable. Open advanced settings");

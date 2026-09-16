@@ -18,7 +18,7 @@ PostgreSQL は generated tsvector / GIN、Lakebase は `lakebase_text` / BM25、
 
 検索文書テーブルに nullable な `embedding` と `embedding_model` を統合する。独立した `search_embeddings` と `embedding_text` 列、文書の dimensions 列は持たない。既存の `search_text` を入力とし、その hash は既存の `embedding_content_hash` にのみ保存する。会議名・summary・OCR・caption を含む入力が変わると、同じ transaction で vector と model を NULL にする。`jobs.search_index` は raw text を持たない lease 付き durable queue。Node worker がVault単位の限定された内部読取で文書を読み、App service principal により最大16文書ずつ非同期推論する。保存の UPDATE 条件で最新 hash、claim の generation / model / dimensions、Vault・文書と親の存在を確認する。Meeting / 画像の version は追加しない。モデルとベクトル長が設定に一致する結果だけ検索に使用する。
 
-- `DAHLIA_EMBEDDING_MODEL` が空なら無効。dimensions は32〜1024の2の冪、既定1024。DAB は `${var.catalog}.${var.ai_schema}.embedding` を使い、未登録時に `qwen3-embedding-0-6b` を登録する。
+- `DAHLIA_SEARCH_EMBEDDING_MODEL` が空なら無効。dimensions は32〜1024の2の冪、既定1024。DAB は `system.ai.qwen3-embedding-0-6b` を直接使う。
 - Lakebase は `lakebase_vector` / ANN、他 PostgreSQL は pgvector / HNSW、SQLite Node は Float32 BLOB の exact cosine。model / dimensions を index と query の条件に含める。
 - FTS と vector の上位100件を並行取得し RRF（k=60）で統合する。query embedding の失敗、未生成、model 切替中は FTS を返し、REST / MCP / Web の型や URL は変えない。
 - 文書は instruction なし、query は固定検索 instruction 付きで設定済み Databricks endpoint へ送る。summary、OCR、caption、query 原文が provider に渡ることを明示し、query を永続化・log しない。forwarded user token は使わない。
@@ -51,7 +51,7 @@ Node / Worker は tokenizer と vector capability が異なり、同じ DB の r
 
 ## Server 画像解析（2026-09-07）
 
-Node は `DAHLIA_CAPTIONING_MODEL` がある場合だけ、アップロードと canonical 登録を終えた会議画像をファイル単位の durable job で解析する。DAB は `${var.catalog}.${var.ai_schema}.gpt-5-6-luna` を使い、captioning alias を作らない。推論は App service principal、入力は既存の1280px WebP variant、出力上限は既存解析と同じ OCR 20,000文字・caption 500文字。画像内の指示は信用しない。OCR は原文、caption は owner のアカウント出力言語。設定未作成時は日本語・全言語とする。
+Node は `DAHLIA_IMAGE_ANALYSIS_MODEL` がある場合だけ、アップロードと canonical 登録を終えた会議画像をファイル単位の durable job で解析する。DAB は `system.ai.gpt-5-6-luna` を使い、captioning alias を作らない。推論は App service principal、入力は既存の1280px WebP variant、出力上限は既存解析と同じ OCR 20,000文字・caption 500文字。画像内の指示は信用しない。OCR は原文、caption は owner のアカウント出力言語。設定未作成時は日本語・全言語とする。
 
 job は5分 lease、失敗分類と指数 backoff、起動時と60秒ごとの不足分探索で復旧する。推論は正本保存と同期を待たせない。既存値は保持し、空 OCR も完了とする。結果確定時は現在の所有権、参照、画像 checksum と revision、lease を再確認し、正本・delta・FTS・embedding job と解析 job の削除を同じ transaction で確定する。共有参照の数だけ推論しない。設定変更による再解析は行わない。
 

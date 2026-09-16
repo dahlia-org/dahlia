@@ -12,7 +12,8 @@ import { geminiChatResponse } from "../src/summary/gemini";
 
 const env = { DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "cloudflare", OPENAI_API_KEY: "test-token",
   OPENAI_BASE_URL: "https://api.cloudflare.com/client/v4/accounts/test/ai/v1", CLOUDFLARE_AI_GATEWAY_ID: "jobs",
-  DAHLIA_EMBEDDING_MODEL: "@cf/baai/bge-m3", DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: "1024", DAHLIA_CAPTIONING_MODEL: "gpt-4.1" };
+  DAHLIA_CODEX_MODELS: "gpt-5.6-luna,gpt-4.1,gemini-3-flash",
+  DAHLIA_SEARCH_EMBEDDING_MODEL: "@cf/baai/bge-m3", DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: "1024", DAHLIA_IMAGE_ANALYSIS_MODEL: "gpt-4.1" };
 const config = loadConfig(env);
 const native = { candidates: [{ finishReason: "STOP", content: { parts: [{ text: "secret", thought: true }, { text: "result" }] } }],
   usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 20, thoughtsTokenCount: 5, totalTokenCount: 35 } };
@@ -23,7 +24,7 @@ describe("Cloudflare background provider contracts", () => {
   });
   it("rejects unsupported embedding dimensions and caption models", () => {
     expect(() => loadConfig({ ...env, DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: "32" })).toThrow();
-    expect(() => loadConfig({ ...env, DAHLIA_CAPTIONING_MODEL: "gemini-3-flash" })).toThrow();
+    expect(() => loadConfig({ ...env, DAHLIA_IMAGE_ANALYSIS_MODEL: "gemini-3-flash" })).toThrow();
   });
   it("advertises explicit text/image and audio reasoning capabilities", () => {
     const models = cloudflareModels().models;

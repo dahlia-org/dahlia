@@ -1,6 +1,6 @@
 import type { ProviderConfig } from "../config";
 import { sendOpenAIResponses, type GatewayFetch } from "./adapters";
-import type { AIGatewayBackend, RequestBody, RequestContext } from "./backend";
+import type { AIGatewayBackend, ListModelsRequest, RequestBody, RequestContext } from "./backend";
 import { modelList } from "./models";
 import catalog from "./cloudflare-models.json";
 
@@ -15,18 +15,20 @@ export function cloudflareModel(model: string): string {
   return model;
 }
 
-export function cloudflareModels() {
-  return modelList(catalog.models.map((model) => ({ id: model.slug })), catalog.models);
+export function cloudflareModels(models: readonly string[] = catalog.models.map((model) => model.slug)) {
+  return modelList(models.map((id) => ({ id })), catalog.models);
 }
 
 export class CloudflareBackend implements AIGatewayBackend {
   constructor(
     private readonly provider: Extract<ProviderConfig, { apiKey: string }>,
     private readonly transport: GatewayFetch = fetch,
+    private readonly models: readonly string[] = [],
   ) {}
 
-  listModels() {
-    return Promise.resolve(cloudflareModels());
+  listModels(request: ListModelsRequest) {
+    void request;
+    return Promise.resolve(cloudflareModels(this.models));
   }
 
   responses(body: RequestBody, context: RequestContext): Promise<Response> {
