@@ -1817,6 +1817,12 @@ export interface components {
                 version: number;
                 sources: ("transcript" | "audio")[];
                 completeRecordings?: boolean;
+                retranscription?: {
+                    /** @enum {number} */
+                    version: 1;
+                    /** @enum {string} */
+                    provider: "gemini";
+                };
             };
         };
         DeletedMeeting: {
@@ -1959,6 +1965,8 @@ export interface components {
                     systemFileId: string | null;
                 }[];
                 transcriptionModel?: string;
+                /** @enum {boolean} */
+                transcriptionOnly?: true;
             };
             /** @enum {string|null} */
             stage?: "transcribing" | "summarizing" | "generating" | "saving" | null;
@@ -3588,6 +3596,8 @@ export interface operations {
                             systemFileId: string | null;
                         }[];
                         transcriptionModel?: string;
+                        /** @enum {boolean} */
+                        transcriptionOnly?: true;
                     };
                     model: string;
                     /** @enum {string} */
@@ -3615,6 +3625,8 @@ export interface operations {
                             micFileId: string | null;
                             systemFileId: string | null;
                         }[];
+                        /** @enum {boolean} */
+                        transcriptionOnly?: true;
                     };
                     preferences: {
                         /** @enum {string} */
@@ -3635,7 +3647,7 @@ export interface operations {
                             /** @enum {string} */
                             style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
                         };
-                        transcription: {
+                        transcription?: {
                             localeIdentifier: string;
                             automaticLanguageDetection: boolean;
                             /** @enum {string} */
@@ -3698,6 +3710,8 @@ export interface operations {
                                     systemFileId: string | null;
                                 }[];
                                 transcriptionModel?: string;
+                                /** @enum {boolean} */
+                                transcriptionOnly?: true;
                             };
                             /** @enum {string|null} */
                             stage?: "transcribing" | "summarizing" | "generating" | "saving" | null;

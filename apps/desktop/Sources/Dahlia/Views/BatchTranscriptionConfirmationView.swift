@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct BatchTranscriptionConfirmationView: View {
+    @ObservedObject private var viewModel: CaptionViewModel
+
     let locales: [Locale]
     let automaticLanguageLocales: [Locale]
     let displayLocale: Locale
@@ -21,6 +23,7 @@ struct BatchTranscriptionConfirmationView: View {
     @State private var errorMessage: String?
 
     init(
+        viewModel: CaptionViewModel,
         locales: [Locale],
         automaticLanguageLocales: [Locale],
         displayLocale: Locale,
@@ -37,6 +40,7 @@ struct BatchTranscriptionConfirmationView: View {
         onStart: @escaping (BatchTranscriptionLanguageSelection, Bool, SummaryGenerationOptions, UUID?) -> String?,
         onPostpone: @escaping () -> Void
     ) {
+        _viewModel = ObservedObject(wrappedValue: viewModel)
         self.locales = locales
         self.automaticLanguageLocales = automaticLanguageLocales
         self.displayLocale = displayLocale
@@ -83,8 +87,27 @@ struct BatchTranscriptionConfirmationView: View {
                 projects: projects,
                 selectedProjectId: $selectedProjectId,
                 processingMethod: processingMethod,
-                usesServerSummary: usesServerSummary
+                usesServerSummary: usesServerSummary,
+                isRetranscription: isRetranscription
             )
+
+            if isRetranscription, usesServerSummary,
+               let serverRetranscriptionUnavailableReason = viewModel.serverRetranscriptionUnavailableReason {
+                HStack(alignment: .top, spacing: 8) {
+                    Label(serverRetranscriptionUnavailableReason, systemImage: "info.circle")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    if viewModel.canRetryServerRetranscriptionAvailability {
+                        Button(L10n.retry, action: viewModel.retryServerRetranscriptionAvailability)
+                            .buttonStyle(.link)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
+            }
 
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -112,7 +135,12 @@ struct BatchTranscriptionConfirmationView: View {
             }
             .padding(20)
         }
-        .frame(minWidth: 500, idealWidth: 520, minHeight: 440, idealHeight: 500)
+        .frame(
+            minWidth: 500,
+            idealWidth: 520,
+            minHeight: isRetranscription ? 300 : 440,
+            idealHeight: isRetranscription ? 340 : 500
+        )
         .onChange(of: generateSummaryAfterBatchTranscription) { _, _ in persistSummaryPreferencesIfNeeded() }
         .onChange(of: exportBatchSummaryToWorkspace) { _, _ in persistSummaryPreferencesIfNeeded() }
         .onChange(of: exportBatchSummaryToGoogleDocs) { _, _ in persistSummaryPreferencesIfNeeded() }
@@ -129,8 +157,25 @@ struct BatchTranscriptionConfirmationView: View {
     }
 
     private var isStartDisabled: Bool {
-        (processingMethod == nil || processingMethod == .transcript)
-            && languageSelection == .automatic && automaticLanguageLocales.isEmpty
+        Self.startDisabled(
+            processingMethod: processingMethod,
+            languageSelection: languageSelection,
+            automaticLanguageLocales: automaticLanguageLocales,
+            serverRetranscriptionUnavailable: isRetranscription
+                && usesServerSummary
+                && (viewModel.isCheckingServerRetranscriptionAvailability
+                    || viewModel.serverRetranscriptionUnavailableReason != nil)
+        )
+    }
+
+    static func startDisabled(
+        processingMethod: RecordingProcessingMethod?,
+        languageSelection: BatchTranscriptionLanguageSelection,
+        automaticLanguageLocales: [Locale],
+        serverRetranscriptionUnavailable: Bool = false
+    ) -> Bool {
+        serverRetranscriptionUnavailable || ((processingMethod == nil || processingMethod == .transcript)
+            && languageSelection == .automatic && automaticLanguageLocales.isEmpty)
     }
 
     private func startTranscription() {
@@ -143,8 +188,8 @@ struct BatchTranscriptionConfirmationView: View {
         )
         errorMessage = onStart(
             languageSelection,
-            processingMethod != nil || generateSummaryAfterBatchTranscription,
-            summaryOptions,
+            !isRetranscription && (processingMethod != nil || generateSummaryAfterBatchTranscription),
+            isRetranscription ? .manual : summaryOptions,
             selectedProjectId
         )
     }

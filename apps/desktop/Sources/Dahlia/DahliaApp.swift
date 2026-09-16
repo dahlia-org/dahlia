@@ -190,6 +190,7 @@ struct DahliaApp: App {
             }
             .sheet(item: $viewModel.pendingBatchTranscriptionConfirmation) { confirmation in
                 BatchTranscriptionConfirmationView(
+                    viewModel: viewModel,
                     locales: viewModel.batchTranscriptionLocaleOptions(
                         preferredIdentifier: confirmation.suggestedLocaleIdentifier
                     ),

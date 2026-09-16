@@ -904,7 +904,7 @@ actor RecordingAudioStore {
         let didRequestPurge = try await dbQueue.write { db in
             if retentionCutoff != nil,
                let archive = try RecordingArchiveRecord.fetchOne(db, key: sessionId),
-               archive.connectionId != nil || archive.state != "saved" {
+               archive.connectionId != nil {
                 // Server archives own retention: never expire the only re-transcribable audio.
                 return false
             }

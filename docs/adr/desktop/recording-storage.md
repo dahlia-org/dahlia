@@ -80,3 +80,9 @@ partial と final が両方あれば期待 metadata と一致する方だけを�
 ## 新規バッチ録音の結合保存
 
 2026-09-07: [結合音声保管のADR](../shared/recording-audio-archive.md) に従い、新規 Local／Server Account バッチ録音を音源別M4Aに結合する。Local は既存保存期間を維持し、Server は確定音声を期限なく保管する。2026-09-08の方針変更により、全音源の保存・整合性検証後に元CAFを削除する（Serverは確定・再取得検証後）。
+
+2026-09-16: 上記をアカウント境界で上書きする。新規 Local Workspace は M4A archive を作らず、検証済み CAF を
+保持期間の正本とする。既存 Local M4A／準備途中 archive は期限前に削除・再変換せず、互換入力として保持する。
+保持期限は CAF と互換 M4A に適用し、未完了・失敗・再処理中の音声を保護したまま既存 purge state machine で削除する。
+準備途中の旧 Local archive は Local のままでは再開せず、保持対象として残し、Server への移行時だけ upload job として再開する。
+Server Workspace は M4A の変換、アップロード、照合、CAF 削除を維持し、Local の保持期間を適用しない。

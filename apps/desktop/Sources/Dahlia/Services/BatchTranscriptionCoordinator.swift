@@ -62,7 +62,6 @@ actor BatchTranscriptionCoordinator {
     private var progressNotificationTask: Task<Void, Never>?
     private var audioRetentionPeriod: BatchAudioRetentionPeriod
     private var audioRetentionTask: Task<Void, Never>?
-    private var audioArchiveTask: Task<Void, Never>?
     private let startupDate = Date.now
     private var isShuttingDown = false
     private var shutdownInterruptionSessionIds: Set<UUID> = []
@@ -129,7 +128,6 @@ actor BatchTranscriptionCoordinator {
             }
         }
         _ = await recordingAudioStore?.reconcileStartup()
-        startAudioArchiving()
         await purgeExpiredAudio()
         restartAudioRetentionTask()
         try await markPreviouslyQueuedSessionsInterrupted()
@@ -228,9 +226,6 @@ actor BatchTranscriptionCoordinator {
         retentionTask?.cancel()
         await retentionTask?.value
         audioRetentionTask = nil
-        audioArchiveTask?.cancel()
-        await audioArchiveTask?.value
-        audioArchiveTask = nil
 
         var firstError: (any Error)?
         for sessionId in Array(shutdownInterruptionSessionIds) {
@@ -384,7 +379,6 @@ actor BatchTranscriptionCoordinator {
         } catch {
             ErrorReportingService.capture(error, context: ["source": "batchTranscriptExport"])
         }
-        startAudioArchiving()
         await purgeExpiredAudio()
     }
 
@@ -856,21 +850,6 @@ extension BatchTranscriptionCoordinator {
         await purgeExpiredAudio(now: now)
     }
 
-    private func startAudioArchiving() {
-        guard audioArchiveTask == nil, !isShuttingDown else { return }
-        audioArchiveTask = Task(priority: .utility) { [weak self] in
-            guard let self else { return }
-            try? await self.recordingArchiveService.runNext(localOnly: true)
-            await self.finishAudioArchiving()
-        }
-    }
-
-    private func finishAudioArchiving() { audioArchiveTask = nil }
-
-    func retryRecordingArchives() async {
-        startAudioArchiving()
-    }
-
     func refreshExpiredAudio(now: Date = .now) async {
         await purgeExpiredAudio(now: now)
     }
@@ -887,7 +866,6 @@ extension BatchTranscriptionCoordinator {
                     return
                 }
                 guard let self else { return }
-                await self.startAudioArchiving()
                 await self.purgeExpiredAudio()
             }
         }
@@ -917,7 +895,7 @@ extension BatchTranscriptionCoordinator {
                       SELECT 1 FROM recording_audio_segments AS segments
                       WHERE segments.recordingSessionId = sessions.id
                         AND segments.state != ?
-                  ) OR EXISTS (SELECT 1 FROM recording_archives a WHERE a.sessionId = sessions.id AND a.connectionId IS NULL AND a.state = 'saved'))
+                  ) OR EXISTS (SELECT 1 FROM recording_archives a WHERE a.sessionId = sessions.id AND a.connectionId IS NULL AND a.preparedJSON <> '{}'))
                   AND NOT EXISTS (
                       SELECT 1 FROM recording_audio_segments AS segments
                       WHERE segments.recordingSessionId = sessions.id

@@ -15,7 +15,8 @@ import Foundation
               "search": { "version": 1 },
               "imageAnalysis": { "version": 1 },
               "conversationAnalytics": { "version": 1 },
-              "meetingSummaryGeneration": { "version": 1, "sources": ["transcript", "audio"], "completeRecordings": true },
+              "meetingSummaryGeneration": { "version": 1, "sources": ["transcript", "audio"], "completeRecordings": true,
+                "retranscription": { "version": 1, "provider": "gemini" } },
               "futureFeature": { "enabled": true }
             }
             """#.utf8)
@@ -29,6 +30,8 @@ import Foundation
             #expect(capabilities.meetingSummaryGeneration?.version == 1)
             #expect(capabilities.meetingSummaryGeneration?.sources == ["transcript", "audio"])
             #expect(capabilities.meetingSummaryGeneration?.completeRecordings == true)
+            #expect(capabilities.meetingSummaryGeneration?.retranscription?.version == 1)
+            #expect(capabilities.meetingSummaryGeneration?.retranscription?.provider == "gemini")
         }
 
         @Test(arguments: [#"{"version":3}"#, #"{"version":3,"sources":{"future":true}}"#])

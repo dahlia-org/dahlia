@@ -8,13 +8,100 @@ import GRDB
 
     @MainActor
     struct RecordingArchiveTests {
+        @Test
+        func localRecordingDoesNotEnqueueM4AArchive() async throws {
+            let fixture = try BatchAudioTestFixture(name: "LocalCAFOnly")
+            defer { fixture.removeFiles() }
+            try await fixture.database.dbQueue.write { db in
+                try RecordingArchiveRecord.enqueue(fixture.session, in: db)
+                #expect(try RecordingArchiveRecord.fetchCount(db) == 0)
+            }
+        }
+
+        @Test
+        func retryDoesNotReactivateLegacyLocalArchive() async throws {
+            let fixture = try BatchAudioTestFixture(name: "LegacyLocalArchiveRetry")
+            defer { fixture.removeFiles() }
+            try await fixture.database.dbQueue.write { db in
+                try RecordingArchiveRecord(
+                    sessionId: fixture.session.id,
+                    meetingId: fixture.meeting.id,
+                    workspaceId: fixture.meeting.workspaceId,
+                    state: "failed"
+                ).insert(db)
+            }
+
+            try await MeetingRepository(dbQueue: fixture.database.dbQueue)
+                .retryRecordingArchives(meetingId: fixture.meeting.id)
+
+            #expect(try await fixture.database.dbQueue.read {
+                try RecordingArchiveRecord.fetchOne($0, key: fixture.session.id)?.state == "failed"
+            })
+        }
+
+        @Test
+        func adoptingLocalCAFRecordingCreatesProtectedServerArchive() async throws {
+            let fixture = try BatchAudioTestFixture(
+                name: "AdoptLocalCAF",
+                endedAt: .now,
+                duration: 1,
+                batchCompletedAt: .now
+            )
+            defer { fixture.removeFiles() }
+            try await fixture.recordMicrophoneAudio()
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(),
+                origin: "https://server.example.com",
+                clientID: "test",
+                createdAt: .now
+            )
+            let expectedChanges = try await fixture.database.dbQueue.write { db in
+                try connection.insert(db)
+                return db.totalChangesCount
+            }
+            let remote = CloudWorkspaceRecord(
+                workspaceId: fixture.meeting.workspaceId,
+                connectionId: connection.id,
+                organizationId: .v7(),
+                name: "Server",
+                createdAt: .now,
+                revision: 1,
+                role: "admin"
+            )
+
+            _ = try await MeetingRepository(dbQueue: fixture.database.dbQueue).adoptWorkspaceForServerSync(
+                id: fixture.meeting.workspaceId,
+                connectionID: connection.id,
+                serverWorkspace: remote,
+                expectedChanges: expectedChanges
+            )
+
+            let archive = try #require(try await fixture.database.dbQueue.read {
+                try RecordingArchiveRecord.fetchOne($0, key: fixture.session.id)
+            })
+            #expect(archive.connectionId == connection.id)
+            #expect(archive.state == "pending")
+            let store = try RecordingAudioStore(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL
+            )
+            try await store.requestRetentionPurge(sessionId: fixture.session.id, cutoff: .distantFuture)
+            #expect(try await fixture.database.dbQueue.read {
+                try RecordingAudioSegmentRecord.fetchOne($0)?.state == .ready
+            })
+        }
+
         @Test(arguments: [false, true])
         func archiveDoesNotWaitForFinalTranscription(failed: Bool) async throws {
             let fixture = try BatchAudioTestFixture(name: "ArchiveBeforeTranscription")
             defer { fixture.removeFiles() }
             try await fixture.recordMicrophoneAudio()
             try await fixture.database.dbQueue.write { db in
-                try RecordingArchiveRecord.enqueue(fixture.session, in: db)
+                try RecordingArchiveRecord(
+                    sessionId: fixture.session.id,
+                    meetingId: fixture.meeting.id,
+                    workspaceId: fixture.meeting.workspaceId
+                ).insert(db)
                 try db.execute(sql: """
                 UPDATE recording_sessions SET endedAt = ?, batchLastAttemptAt = ?, batchLastError = ? WHERE id = ?
                 """, arguments: [fixture.now, failed ? fixture.now : nil, failed ? "transcription failed" : nil, fixture.session.id])
@@ -38,7 +125,11 @@ import GRDB
             defer { fixture.removeFiles() }
             try await fixture.recordMicrophoneAudio()
             try await fixture.database.dbQueue.write { db in
-                try RecordingArchiveRecord.enqueue(fixture.session, in: db)
+                try RecordingArchiveRecord(
+                    sessionId: fixture.session.id,
+                    meetingId: fixture.meeting.id,
+                    workspaceId: fixture.meeting.workspaceId
+                ).insert(db)
                 try db.execute(
                     sql: "UPDATE recording_sessions SET endedAt = ?, batchCompletedAt = ? WHERE id = ?",
                     arguments: [fixture.now, fixture.now, fixture.session.id]
@@ -142,7 +233,11 @@ import GRDB
             writer.appendBuffer(buffer)
             try await recorder.finish()
             let sources = try await fixture.database.dbQueue.write { db in
-                try RecordingArchiveRecord.enqueue(fixture.session, in: db)
+                try RecordingArchiveRecord(
+                    sessionId: fixture.session.id,
+                    meetingId: fixture.meeting.id,
+                    workspaceId: fixture.meeting.workspaceId
+                ).insert(db)
                 try db.execute(
                     sql: "UPDATE recording_sessions SET endedAt = ?, batchCompletedAt = ? WHERE id = ?",
                     arguments: [fixture.now, fixture.now, fixture.session.id]
@@ -245,7 +340,11 @@ import GRDB
             defer { fixture.removeFiles() }
             try await fixture.recordMicrophoneAudio()
             let segment = try await fixture.database.dbQueue.write { db in
-                try RecordingArchiveRecord.enqueue(fixture.session, in: db)
+                try RecordingArchiveRecord(
+                    sessionId: fixture.session.id,
+                    meetingId: fixture.meeting.id,
+                    workspaceId: fixture.meeting.workspaceId
+                ).insert(db)
                 try db.execute(
                     sql: "UPDATE recording_sessions SET endedAt = ?, batchCompletedAt = ? WHERE id = ?",
                     arguments: [fixture.now, fixture.now, fixture.session.id]
@@ -355,6 +454,11 @@ import GRDB
                 #expect(try RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db))
                 #expect(try RecordingArchiveRecord.fetchOne(db, key: sessionId)?.number == 12)
                 #expect(try RecordingSessionRecord.fetchOne(db, key: sessionId)?.batchCompletedAt != nil)
+                try db.execute(
+                    sql: "UPDATE recording_archives SET state = 'syncing' WHERE sessionId = ?",
+                    arguments: [sessionId]
+                )
+                #expect(try RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db))
                 let prepared = try String(
                     decoding: JSONSerialization.data(withJSONObject: [
                         "mic": [

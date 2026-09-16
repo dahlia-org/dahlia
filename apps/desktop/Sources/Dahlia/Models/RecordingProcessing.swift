@@ -35,6 +35,7 @@ struct RecordingProcessing: Codable, Sendable {
     var summaryExpectation: SummaryGenerationExpectation?
     var generatedSummary: SummaryService.GeneratedSummary?
     var summaryApplied: Bool?
+    var transcriptionOnly: Bool?
 
     var usesServerSummary: Bool? {
         if let summaryMode { return summaryMode == .remote }
@@ -42,11 +43,11 @@ struct RecordingProcessing: Codable, Sendable {
         return nil
     }
 
-    mutating func prepareRetry(serverJob: ServerSummaryService.Job?) {
-        if serverRequest == nil || serverJob?.isRetryable == true {
+    mutating func prepareRetry(serverJob: ServerSummaryService.Job?, forceNewServerJob: Bool = false) {
+        if forceNewServerJob || serverRequest == nil || serverJob?.isRetryable == true {
             id = .v7()
             summaryExpectation?.jobID = id
-            retryOf = serverJob?.id
+            retryOf = serverJob?.isRetryable == true ? serverJob?.id : nil
             if let body = serverRequest {
                 serverRequest = .init(
                     id: id.uuidString.lowercased(), input: body.input, model: body.model,
@@ -57,6 +58,12 @@ struct RecordingProcessing: Codable, Sendable {
         }
         stage = method == .transcript ? .transcribing : .uploading
         error = nil
+    }
+
+    /// Reuses an accepted Server retranscription job, while giving terminal jobs a
+    /// retry identity and an unavailable job a fresh start identity.
+    mutating func prepareRetranscriptionRetry(serverJob: ServerSummaryService.Job?) {
+        prepareRetry(serverJob: serverJob, forceNewServerJob: serverJob == nil)
     }
 
     static func load(sessionID: UUID, in db: Database) throws -> Self? {
