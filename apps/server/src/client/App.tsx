@@ -235,6 +235,39 @@ function Brand({ brand }: { brand: DashboardBrand }) {
   );
 }
 
+export async function accountSignInRequired(signal?: AbortSignal): Promise<boolean> {
+  const { provider } = await json<{ provider: "accounts" | "header" }>("/api/auth/mode", { signal });
+  return provider === "accounts";
+}
+
+function AccountsOnly({ brand, children }: { brand: DashboardBrand; children: ReactNode }) {
+  const [accountSignIn, setAccountSignIn] = useState(false);
+  const [authModeError, setAuthModeError] = useState<string>();
+  const [authModeAttempt, setAuthModeAttempt] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setAuthModeError(undefined);
+    void accountSignInRequired(controller.signal)
+      .then((required) => {
+        if (controller.signal.aborted) return;
+        if (required) setAccountSignIn(true);
+        else window.location.replace("/dashboard");
+      })
+      .catch((caught: unknown) => {
+        if (!controller.signal.aborted) setAuthModeError(caught instanceof Error ? caught.message : "Could not load your account");
+      });
+    return () => controller.abort();
+  }, [authModeAttempt]);
+
+  if (accountSignIn) return children;
+  return <main className="loading">
+    <Brand brand={brand} />
+    <span>{authModeError ?? uiText("Loading account…", "アカウントを読み込み中…")}</span>
+    {authModeError && <button className="secondary" onClick={() => setAuthModeAttempt((attempt) => attempt + 1)}>{uiText("Try again", "再試行")}</button>}
+  </main>;
+}
+
 function SignIn({ brand }: { brand: DashboardBrand }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
@@ -1967,8 +2000,8 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
         : apiQuery("getFile", { params: { path: { fileId: decodeURIComponent(detailPath[2]!) } } }));
   const detailWorkspaceId = detailQuery.data?.workspaceId;
 
-  if (path === "/sign-in") return <SignIn brand={brand} />;
-  if (path === "/oauth/consent") return <Consent brand={brand} />;
+  if (path === "/sign-in") return <AccountsOnly brand={brand}><SignIn brand={brand} /></AccountsOnly>;
+  if (path === "/oauth/consent") return <AccountsOnly brand={brand}><Consent brand={brand} /></AccountsOnly>;
   if (unauthorized) return null;
   if (sessionError && !session) {
     return (

@@ -87,7 +87,7 @@ Then sign in with Google, create a Model Alias, and complete a streaming Respons
 
 ## Operational notes
 
-- `/.well-known/*`, `/api/*`, `/mcp`, and `/healthz` are the only `assets.run_worker_first` paths. They always reach Hono, including browser navigation, so protocol and OAuth errors cannot become the SPA shell.
+- `/.well-known/*`, `/api/*`, `/mcp`, `/sign-out`, and `/healthz` are the only `assets.run_worker_first` paths. They always reach Hono, including browser navigation, so protocol, OAuth, and sign-out responses cannot become the SPA shell.
 - The Worker does not advertise CIMD because the required DNS-resolve-once and connection-pinning transport is Node-only. Cloudflare `accounts` mode therefore cannot onboard a remote MCP client; use trusted-proxy `header` authentication for `/mcp`, and do not replace the transport with unrestricted Worker `fetch`.
 - Matching static files and `/dashboard/**` navigations are handled by Workers Static Assets. The Worker has no `ASSETS` binding and does not fetch assets programmatically.
 - Use `pnpm dev:cloudflare` for workerd with a development PostgreSQL connection and production-equivalent asset routing. Local Worker secrets belong in the ignored `apps/server/.dev.vars`; regular `pnpm dev` uses `apps/server/.env.local` and Node.

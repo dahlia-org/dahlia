@@ -197,8 +197,18 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     auth,
     browserIdentity: (request) => identities.fromBrowser(request),
   };
+  const signOutUrl = config.signOutUrl ?? (config.authProvider === "accounts" ? "/sign-in" : "/dashboard");
 
   app.use("*", secureHeaders());
+  app.get("/sign-in", async (context, next) => {
+    if (config.authProvider === "accounts") return next();
+    context.header("Cache-Control", "no-store");
+    return context.redirect("/dashboard");
+  });
+  app.get("/sign-out", (context) => {
+    context.header("Cache-Control", "no-store");
+    return context.redirect(signOutUrl);
+  });
   app.use("/api/v1/*", problemMiddleware);
   app.use("/api/v1/*", async (context, next) => {
     if (!["GET", "HEAD", "OPTIONS"].includes(context.req.method)
@@ -263,6 +273,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   app.all("/.well-known/*", (context) => context.json({ error: "not_found" }, 404));
 
   app.use("/api/auth/*", authBodyLimit);
+  app.get("/api/auth/mode", (context) => context.json({ provider: config.authProvider }));
   for (const extension of extensions) extension.registerAuthRoutes?.(app, services);
   app.on(["GET", "POST"], "/api/auth/*", async (context) => {
     if (config.authProvider === "header") await identities.fromBrowser(context.req.raw);

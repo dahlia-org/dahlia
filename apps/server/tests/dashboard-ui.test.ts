@@ -13,10 +13,12 @@ import { MeetingTabs, parseSummary, SummaryContent, SummaryTags, TranscriptTime 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  App,
   ScreenshotFigure,
   SyncedMeeting,
   Workspaces,
   MeetingList,
+  accountSignInRequired,
   resolveDashboardExtensionRoute,
   type DashboardExtension,
 } from "../src/client/App";
@@ -192,6 +194,8 @@ describe("desktop-style meeting layout", () => {
     expect(footer).toContain('class="menu-account" href="/dashboard"');
     expect(footer).toContain('class="menu-icon"');
     expect(footer).toContain("Sign out");
+    expect(readFileSync(new URL("../src/client/Sidebar.tsx", import.meta.url), "utf8"))
+      .toContain('window.location.replace("/sign-out")');
     expect(footer).not.toContain("personal:");
     expect(footer).not.toContain("Local account");
     expect(footer).toContain('href="/orgs"');
@@ -243,6 +247,26 @@ describe("desktop-style meeting layout", () => {
 });
 
 describe("dashboard navigation", () => {
+  it("keeps every accounts-only screen hidden until accounts authentication is confirmed", () => {
+    vi.stubGlobal("navigator", { language: "en-US" });
+    for (const pathname of ["/sign-in", "/oauth/consent"]) {
+      vi.stubGlobal("window", { location: { pathname } });
+      const html = renderToStaticMarkup(createElement(App));
+      expect(html).toContain("Loading account…");
+      expect(html).not.toContain("Continue with Google");
+      expect(html).not.toContain("Allow this Mac to use the Dahlia AI Gateway?");
+    }
+  });
+
+  it("shows account sign-in only when the deployment explicitly uses accounts authentication", async () => {
+    for (const [provider, required] of [["accounts", true], ["header", false]] as const) {
+      vi.stubGlobal("fetch", vi.fn(async () => Response.json({ provider })));
+      await expect(accountSignInRequired()).resolves.toBe(required);
+    }
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "unavailable" }, { status: 503 })));
+    await expect(accountSignInRequired()).rejects.toMatchObject({ status: 503 });
+  });
+
   it("uses advertised thumbnails for browsing and preserves the original link", () => {
     const file = { id: "file", workspaceId: "workspace", name: "image.png", size: 1, checksum: "hash", revision: 1, createdAt: "2026-09-07T00:00:00Z", updatedAt: "2026-09-07T00:00:00Z", contentType: "image/png", metadata: { source: "screenshot" as const },
       variants: { thumb_480: "/small", thumb_1280: "/medium", thumb_1568: "/preview", thumb_1920: "/large" } };
