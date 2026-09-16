@@ -2258,6 +2258,12 @@ final class CaptionViewModel: ObservableObject {
                 .filter(Column("meetingId") == meetingId)
                 .filter(Column("transcriptionMode") == TranscriptionMode.batch.rawValue)
                 .filter(Column("batchDiscardedAt") == nil)
+                .filter(sql: """
+                NOT EXISTS (
+                    SELECT 1 FROM recording_archives
+                    WHERE sessionId = recording_sessions.id AND state = 'expired'
+                )
+                """)
                 .order(Column("startedAt").asc)
                 .fetchAll(db)
             guard !sessions.isEmpty,
