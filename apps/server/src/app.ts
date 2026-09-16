@@ -169,8 +169,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   if (config.authProvider === "accounts" && (!auth || !authStore)) {
     throw new Error("Better Auth must be initialized before creating the application");
   }
-  const databricksProxyUrl = config.authProvider === "header" ? config.databricksAppUrl : undefined;
-  const databricksProxy = databricksProxyUrl !== undefined;
+  const databricksProxy = config.authProvider === "header" && config.databricksAppUrl !== undefined;
   const mcpAvailable = mcpSetupAvailable(config.authProvider, dependencies.mcpSupportsCimd, databricksProxy);
   const extensions = dependencies.extensions ?? [];
   const identities = new IdentityService(config, auth, async (identity) => {
@@ -280,7 +279,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   app.get("/api/auth/mode", (context) => context.json({
     provider: config.authProvider,
     mcp: {
-      url: mcpResource({ baseUrl: databricksProxyUrl ?? config.baseUrl }),
+      url: mcpResource(config),
       databricksProxy,
       available: mcpAvailable,
     },
