@@ -568,7 +568,7 @@ export function Workspaces({ home = false }: { home?: boolean }) {
       <div className="workspace-grid">{workspaces?.map((workspace) => <a className="workspace-card" href={`/workspaces/${workspace.workspaceId}`} key={workspace.workspaceId}>
           <div className="workspace-card-top"><span className="workspace-symbol"><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} size={22} /></span><span className={`status${workspace.role === "admin" ? "" : " shared"}`}>{workspaceRoleLabel(workspace.role)}</span></div>
           <h3>{workspace.name}</h3>
-          <span className="workspace-organization-badge" aria-label={uiText(`Organization: ${workspace.organizationName}`, `組織: ${workspace.organizationName}`)} title={workspace.organizationName}><MenuIcon name="organization" /><span>{workspace.organizationName}</span></span>
+          <span className="workspace-organization-badge" role="img" aria-label={uiText(`Organization: ${workspace.organizationName}`, `組織: ${workspace.organizationName}`)} title={workspace.organizationName}><MenuIcon name="organization" /><span>{workspace.organizationName}</span></span>
           <div className="workspace-card-bottom"><span>{uiText("Updated", "更新日")} {new Date(workspace.updatedAt ?? workspace.createdAt).toLocaleDateString()}</span><MenuIcon name="arrow" /></div>
         </a>)}</div>
     </section>
@@ -778,6 +778,7 @@ export function WorkspaceMeetings({ session, workspaceId }: { session: SessionIn
     {dialog}
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
     <DataError error={workspaceQuery.error} retry={workspaceQuery.reload} />
+    {!workspace && workspaceQuery.loading && <p role="status">{uiText("Loading Workspace…", "ワークスペースを読み込み中…")}</p>}
     {workspace && <DetailTabs label={uiText("Workspace content", "ワークスペースの内容")} tabs={[
       { id: "meetings", label: uiText("Meetings", "ミーティング"), content: <>
         <div className="collection-filters">

@@ -117,6 +117,7 @@ describe("desktop-style meeting layout", () => {
       const workspace = renderToStaticMarkup(createElement(WorkspaceMeetings, { session, workspaceId: "workspace" }));
       const organization = renderToStaticMarkup(createElement(Organization, { session, organizationId: "organization" }));
       expect(workspace).toContain('aria-busy="true"');
+      expect(workspace).toContain("ワークスペースを読み込み中…");
       expect(workspace).not.toContain("<h1>");
       expect(workspace).not.toContain('role="tab"');
       expect(organization).toContain("組織を読み込み中…");
@@ -603,8 +604,7 @@ it("labels each Workspace with its owning Organization", () => {
   const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue({ data: undefined, loading: false, error: undefined, reload: vi.fn(), replace: vi.fn() });
   try {
     const html = renderToStaticMarkup(createElement(Workspaces));
-    expect(html).toContain('class="workspace-organization-badge"');
-    expect(html).toContain('aria-label="組織: Alpha"');
+    expect(html).toContain('class="workspace-organization-badge" role="img" aria-label="組織: Alpha"');
     expect(html).toContain("<span>Alpha</span>");
   } finally { scope.mockRestore(); query.mockRestore(); }
 });
