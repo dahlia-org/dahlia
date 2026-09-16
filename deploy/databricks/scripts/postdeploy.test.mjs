@@ -24,7 +24,13 @@ if (command === process.env.FAIL_COMMAND && (!process.env.FAIL_MODEL || args[3] 
   console.error("PERMISSION_DENIED: missing CREATE_SERVICE");
   process.exit(1);
 }
-if (command === "list-model-services") {
+if (args[0] === "apps" && command === "get") {
+  const principals = {
+    "mcp-dahlia-server-test": "dahlia-app-sp",
+    "hindsight-test": "hindsight-app-sp",
+  };
+  console.log(JSON.stringify({service_principal_client_id: principals[args[2]]}));
+} else if (command === "list-model-services") {
   console.log(JSON.stringify(names.map(name => ({name}))));
 } else if (command === "get-model-service") {
   const model = args[2].replace("model-services/", "models/");
@@ -45,14 +51,14 @@ if (command === "list-model-services") {
   console.log("{}");
 }
 `, { mode: 0o755 });
-  const run = (failCommand = "", failModel = "", dahliaAppSp = "dahlia-app-sp", hindsightAppSp = "hindsight-app-sp") => spawnSync("bash", [
+  const run = (failCommand = "", failModel = "", dahliaAppName = "mcp-dahlia-server-test", hindsightAppName = "hindsight-test") => spawnSync("bash", [
     script,
     "test-profile",
     "test_catalog",
     "ai",
     "test-project",
-    dahliaAppSp,
-    hindsightAppSp,
+    dahliaAppName,
+    hindsightAppName,
   ], {
     encoding: "utf8",
     env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, STATE: state, CALLS: calls, FAIL_COMMAND: failCommand, FAIL_MODEL: failModel },
@@ -94,6 +100,12 @@ if (command === "list-model-services") {
       { principal: "dahlia-app-sp", add: ["USE_CATALOG"] },
       { principal: "hindsight-app-sp", add: ["USE_CATALOG"] },
     ]);
+    const schemaGrant = readCalls().find(args => args[0] === "grants" && args[1] === "update" && args[2] === "schema");
+    assert.equal(schemaGrant[3], "test_catalog.ai");
+    assert.deepEqual(JSON.parse(schemaGrant[schemaGrant.indexOf("--json") + 1]).changes, [
+      { principal: "dahlia-app-sp", add: ["USE_SCHEMA", "EXECUTE"] },
+      { principal: "hindsight-app-sp", add: ["USE_SCHEMA", "EXECUTE"] },
+    ]);
     const resource = readFileSync(new URL("../resources/dahlia_server.yml", import.meta.url), "utf8");
     assert.match(resource, /name: DAHLIA_EMBEDDING_MODEL\s+value: \$\{var.catalog\}\.\$\{var.ai_schema\}\.qwen3-embedding-0-6b/);
     assert.ok(readCalls().every(args => args[args.indexOf("--profile") + 1] === "test-profile"));
@@ -110,10 +122,10 @@ if (command === "list-model-services") {
     assert.equal(readCalls().some(args => args[1] === "create-model-service"), false);
 
     writeFileSync(calls, "");
-    const missingPrincipal = run("", "", "", "hindsight-app-sp");
-    assert.equal(missingPrincipal.status, 1);
-    assert.match(missingPrincipal.stderr, /App service principal IDs must not be empty/);
-    assert.equal(readCalls().length, 0);
+    const missingPrincipal = run("", "", "missing-dahlia-app");
+    assert.notEqual(missingPrincipal.status, 0);
+    assert.match(missingPrincipal.stderr, /App service principal not found for app 'missing-dahlia-app'/);
+    assert.equal(readCalls().some(args => args[0] === "grants" && args[1] === "update"), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
