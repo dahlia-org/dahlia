@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { createApp } from "../src/app";
+import { createApp, mcpSetupAvailable } from "../src/app";
 import type { AppConfig } from "../src/config";
 import { createWorkerHandler, initializeWorkerApp } from "../src/worker";
 import viteConfig from "../vite.config";
@@ -115,8 +115,25 @@ describe("deployment routing", () => {
     expect(signOut.status).toBe(302);
     expect(signOut.headers.get("location")).toBe("/.auth/logout");
     expect(signOut.headers.get("cache-control")).toBe("no-store");
-    expect(await authMode.json()).toEqual({ provider: "header" });
+    expect(await authMode.json()).toEqual({
+      provider: "header",
+      mcp: { url: "https://dahlia.example/mcp", databricksProxy: false, available: true },
+    });
     expect(authMode.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("uses the Databricks App URL for proxy-backed MCP setup", async () => {
+    const app = createApp({ config: { ...headerConfig, databricksAppUrl: "https://dahlia.aws.databricksapps.com" }, authStore: testStore() });
+    expect(await (await app.request("/api/auth/mode")).json()).toEqual({
+      provider: "header",
+      mcp: { url: "https://dahlia.aws.databricksapps.com/mcp", databricksProxy: true, available: true },
+    });
+  });
+
+  it("only advertises accounts MCP setup when the runtime supports CIMD", () => {
+    expect(mcpSetupAvailable("accounts")).toBe(false);
+    expect(mcpSetupAvailable("accounts", true)).toBe(true);
+    expect(mcpSetupAvailable("header")).toBe(true);
   });
 
   it("initializes the Cloudflare application per event and keeps health independent", async () => {

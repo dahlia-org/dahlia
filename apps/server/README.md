@@ -50,7 +50,7 @@ Meeting and Project detail reads are unscoped (`/meetings/{meetingId}`, `/projec
 | `/orgs/{organizationId}` | Organization TypeID (`org_…`); Members, Teams, and Settings tabs | Same Organization UI |
 | `/accept-invitation/**` | Better Auth invitation management | Same invitation management with verified proxy identity |
 | `/api/auth/**` | Browser sessions, Organization management, Google sign-in and OAuth 2.1 | Browser sessions and Organization management; Google/OAuth disabled |
-| `/api/auth/mode` | Publicly reports `accounts` so the SPA can offer Google sign-in | Publicly reports `header` so the SPA never offers accounts sign-in |
+| `/api/auth/mode` | Publicly reports `accounts` plus MCP `{ url, databricksProxy, available }` so the SPA can offer Google sign-in and setup guidance | Publicly reports `header` plus MCP `{ url, databricksProxy, available }` so the SPA never offers accounts sign-in |
 | `/api/v1/session` | Account session and capabilities | Validated email-header identity and capabilities |
 | `/api/v1/admin/**` | Platform administrators only | Platform administrators only |
 | `/api/v1/models` | Dahlia OAuth with `all-apis` | Platform U2M / proxy authentication |
@@ -396,6 +396,8 @@ In `accounts` mode, `/mcp` requires a DPoP-bound access token for the exact MCP 
 As in [Omnigent](https://github.com/omnigent-ai/omnigent/commit/c152857d26760bdc67e90c3cb00a684e7f8c539c), the header name is configurable for different authenticating proxies. The proxy must strip client-supplied copies, supply a verified email, and prevent direct application access. Domain enrollment is Dahlia's registration policy. The unpublished Server baseline assumes an empty database; existing databases are neither migrated to this identity scheme nor erased automatically. `X-Forwarded-Preferred-Username` supplies the display name; it is supplementary and never identifies the user, and when it is missing or blank the identity address itself becomes the display name.
 
 `DAHLIA_APP_URL` sets the canonical public application origin used for OAuth metadata and browser mutation checks. When it is absent, Dahlia uses `DATABRICKS_APP_URL`, then falls back to `http://localhost:5173` for local development.
+
+The account menu's **Connect with MCP** dialog shows `mcp.json`, Claude Code, and Codex setup. When `DATABRICKS_APP_URL` is present in Header authentication, it uses that URL and generates `uvx uc-mcp-proxy` commands with a selectable Databricks CLI profile; other Node deployments connect directly to the Server's Streamable HTTP MCP endpoint through CIMD. Accounts-mode Cloudflare Workers do not advertise setup because their runtime cannot provide the required CIMD transport.
 
 `DAHLIA_SIGNOUT_URL` sets the browser destination after Dahlia clears its local session. It accepts a same-origin root-relative path or an HTTPS URL (HTTP is allowed only for localhost); control characters are rejected. The default is `/sign-in` for `accounts` authentication and `/dashboard` for Header authentication. Set it to the authenticating proxy's logout endpoint when signing out must also end the upstream session; Databricks Apps uses `/.auth/logout`.
 

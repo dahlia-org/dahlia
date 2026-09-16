@@ -261,12 +261,12 @@ describe("configuration", () => {
     expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       DAHLIA_AUTH_TYPE: "header",
       DATABRICKS_APP_URL: "https://dahlia-dev.example/",
-    }).baseUrl).toBe("https://dahlia-dev.example");
+    })).toMatchObject({ baseUrl: "https://dahlia-dev.example", databricksAppUrl: "https://dahlia-dev.example" });
     expect(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_APP_URL: "https://dahlia.example",
       DATABRICKS_APP_URL: "https://dahlia-dev.example",
-    }).baseUrl).toBe("https://dahlia.example");
+    })).toMatchObject({ baseUrl: "https://dahlia.example", databricksAppUrl: "https://dahlia-dev.example" });
   });
 
   it("configures a safe sign-out destination with authentication-specific defaults", () => {
