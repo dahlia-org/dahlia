@@ -12,6 +12,7 @@
       "/api/*",
       "/.well-known/*",
       "/mcp",
+      "/sign-out",
       "/healthz"
     ]
   },

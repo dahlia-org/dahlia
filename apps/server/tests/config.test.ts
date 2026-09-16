@@ -16,6 +16,7 @@ describe("configuration", () => {
       databaseType: "sqlite",
       databaseUrl: "file:.data/dahlia-auth.sqlite",
       baseUrl: "http://localhost:5173",
+      signOutUrl: "/sign-in",
       oauthRedirectUris: ["http://127.0.0.1:1455/oauth/callback", "http://localhost:8020"],
       storageBackend: "local",
       storageLocalPath: ".data/storage",
@@ -266,6 +267,17 @@ describe("configuration", () => {
       DAHLIA_APP_URL: "https://dahlia.example",
       DATABRICKS_APP_URL: "https://dahlia-dev.example",
     }).baseUrl).toBe("https://dahlia.example");
+  });
+
+  it("configures a safe sign-out destination with authentication-specific defaults", () => {
+    expect(loadConfig(accounts).signOutUrl).toBe("/sign-in");
+    expect(loadConfig({ ...accounts, DAHLIA_AUTH_TYPE: "header" }).signOutUrl).toBe("/dashboard");
+    expect(loadConfig({ ...accounts, DAHLIA_SIGNOUT_URL: " /.auth/logout " }).signOutUrl).toBe("/.auth/logout");
+    expect(loadConfig({ ...accounts, DAHLIA_SIGNOUT_URL: "https://access.example/logout" }).signOutUrl)
+      .toBe("https://access.example/logout");
+    for (const value of ["sign-out", "//access.example/logout", "/\\access.example/logout", "/\t/access.example", "http://access.example/logout", "javascript:location.reload()"]) {
+      expect(() => loadConfig({ ...accounts, DAHLIA_SIGNOUT_URL: value })).toThrow("DAHLIA_SIGNOUT_URL");
+    }
   });
 
   it("validates account secrets and provider URLs", () => {

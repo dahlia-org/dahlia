@@ -42,6 +42,7 @@ export interface RuntimeSecrets {
   DAHLIA_AUTH_TYPE?: string;
   DAHLIA_LOCAL_SINGLE_USER?: string;
   DAHLIA_APP_URL?: string;
+  DAHLIA_SIGNOUT_URL?: string;
   DAHLIA_DATABASE_TYPE?: string;
   DAHLIA_DATABASE_URL?: string;
   DAHLIA_MAX_REQUEST_BYTES?: string;
@@ -123,6 +124,7 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     DAHLIA_AUTH_PROVIDER_ID: env.DAHLIA_AUTH_PROVIDER_ID,
     DAHLIA_AUTH_TYPE: env.DAHLIA_AUTH_TYPE,
     DAHLIA_APP_URL: env.DAHLIA_APP_URL,
+    DAHLIA_SIGNOUT_URL: env.DAHLIA_SIGNOUT_URL,
     DAHLIA_DATABASE_TYPE: env.DAHLIA_DATABASE_TYPE,
     DAHLIA_DATABASE_URL: env.DAHLIA_DATABASE_URL,
     DAHLIA_MAX_REQUEST_BYTES: String(Math.min(

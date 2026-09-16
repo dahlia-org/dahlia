@@ -57,6 +57,7 @@ export interface AppConfig {
   databaseUrl?: string;
   lakebaseDatabase?: LakebaseDatabaseConfig;
   baseUrl: string;
+  signOutUrl?: string;
   provider?: ProviderConfig;
   googleClientId?: string;
   googleClientSecret?: string;
@@ -112,6 +113,28 @@ function validateBaseUrl(value: string, name: string): string {
   url.search = "";
   url.hash = "";
   return url.toString().replace(/\/$/, "");
+}
+
+function validateSignOutUrl(value: string, baseUrl: string): string {
+  if ([...value].some((character) => character.charCodeAt(0) <= 31 || character.charCodeAt(0) === 127)) {
+    throw new Error("DAHLIA_SIGNOUT_URL must not contain control characters");
+  }
+  if (value.startsWith("/")) {
+    if (new URL(value, baseUrl).origin !== new URL(baseUrl).origin) {
+      throw new Error("DAHLIA_SIGNOUT_URL must be a same-origin root-relative path");
+    }
+    return value;
+  }
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("DAHLIA_SIGNOUT_URL must be a root-relative path or HTTPS URL");
+  }
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLocalUrl(url))) {
+    throw new Error("DAHLIA_SIGNOUT_URL must use HTTPS except on localhost");
+  }
+  return value;
 }
 
 function loadDatabaseUrl(env: Record<string, string | undefined>, type: DatabaseType): string | undefined {
@@ -213,6 +236,10 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     configuredAppUrl || databricksAppUrl || LOCAL_BASE_URL,
     configuredAppUrl ? "DAHLIA_APP_URL" : databricksAppUrl ? "DATABRICKS_APP_URL" : "DAHLIA_APP_URL",
   );
+  const signOutUrl = validateSignOutUrl(
+    env.DAHLIA_SIGNOUT_URL?.trim() || (authProvider === "accounts" ? "/sign-in" : "/dashboard"),
+    baseUrl,
+  );
   const maxRequestBytes = z.coerce
     .number()
     .int()
@@ -263,6 +290,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     databaseUrl: loadDatabaseUrl(env, databaseType),
     lakebaseDatabase: loadLakebaseDatabase(env, databaseType),
     baseUrl,
+    signOutUrl,
     provider: providerConfig(env, aiBackend, databricksWorkspace),
     oauthRedirectUris: csv(env.DAHLIA_OAUTH_REDIRECT_URIS),
     maxRequestBytes,

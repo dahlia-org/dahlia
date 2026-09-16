@@ -106,7 +106,7 @@ function SignOutButton() {
     setError(undefined);
     try {
       await json("/api/auth/sign-out", { method: "POST", body: "{}" });
-      window.location.replace("/sign-in");
+      window.location.replace("/sign-out");
     } catch {
       setError(uiText("Could not sign out. Please try again.", "サインアウトできませんでした。再試行してください。"));
       setPending(false);

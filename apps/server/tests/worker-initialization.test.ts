@@ -24,6 +24,7 @@ describe("Worker initialization", () => {
       DAHLIA_ENCRYPTION_ACTIVE_KEY_ID: "3",
       DAHLIA_AUTH_TYPE: "accounts",
       DAHLIA_AUTH_PROVIDER_ID: "databricks",
+      DAHLIA_SIGNOUT_URL: "/.auth/logout",
       DAHLIA_STORAGE_BACKEND: "r2",
       DAHLIA_DATABASE_TYPE: "postgres",
       DAHLIA_DATABASE_URL: "postgresql://dahlia.example/dahlia",
@@ -33,6 +34,7 @@ describe("Worker initialization", () => {
     })).rejects.toThrow("seed failed");
     expect(vi.mocked(initializeDahliaAuth).mock.calls.at(-1)?.[0].encryption?.activeKeyId).toBe("3");
     expect(vi.mocked(initializeDahliaAuth).mock.calls.at(-1)?.[0].authProviderId).toBe("databricks");
+    expect(vi.mocked(initializeDahliaAuth).mock.calls.at(-1)?.[0].signOutUrl).toBe("/.auth/logout");
     expect(close).toHaveBeenCalledOnce();
   });
 });

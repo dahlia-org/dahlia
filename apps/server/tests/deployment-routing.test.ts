@@ -43,7 +43,7 @@ describe("deployment routing", () => {
 
     expect(wrangler.assets).toEqual({
       not_found_handling: "single-page-application",
-      run_worker_first: ["/api/*", "/.well-known/*", "/mcp", "/healthz"],
+      run_worker_first: ["/api/*", "/.well-known/*", "/mcp", "/sign-out", "/healthz"],
     });
     expect(wrangler.vars).toMatchObject({
       DAHLIA_AI_BACKEND: "cloudflare",
@@ -104,6 +104,21 @@ describe("deployment routing", () => {
     expect(await discovery.json()).toEqual({ error: "not_found" });
   });
 
+  it("leaves sign-in to the SPA and routes sign-out through configuration", async () => {
+    const app = createApp({ config: { ...headerConfig, signOutUrl: "/.auth/logout" }, authStore: testStore() });
+    const signIn = await app.request("/sign-in");
+    const signOut = await app.request("/sign-out");
+    const authMode = await app.request("/api/auth/mode");
+
+    expect(signIn.status).toBe(404);
+    expect(signIn.headers.get("location")).toBeNull();
+    expect(signOut.status).toBe(302);
+    expect(signOut.headers.get("location")).toBe("/.auth/logout");
+    expect(signOut.headers.get("cache-control")).toBe("no-store");
+    expect(await authMode.json()).toEqual({ provider: "header" });
+    expect(authMode.headers.get("cache-control")).toBe("no-store");
+  });
+
   it("initializes the Cloudflare application per event and keeps health independent", async () => {
     const initialize = vi.fn(async () => createApp({ config: headerConfig, authStore: testStore() }));
     const handler = createWorkerHandler(initialize);
@@ -157,6 +172,7 @@ describe("deployment routing", () => {
     expect(viteConfig.envDir).toBeUndefined();
     expect(viteConfig.server?.proxy).toHaveProperty("/.well-known");
     expect(viteConfig.server?.proxy).toHaveProperty("/mcp");
+    expect(viteConfig.server?.proxy).toHaveProperty("/sign-out");
   });
 
   it("uses the current database variables in Server CI", () => {
@@ -195,6 +211,7 @@ describe("deployment routing", () => {
     const bundle = readText("../../../deploy/databricks/databricks.yml");
     const resource = readText("../../../deploy/databricks/resources/dahlia_server.yml");
     expect(resource).toMatch(/name: DAHLIA_AUTH_PROVIDER_ID\s+value: databricks/);
+    expect(resource).toMatch(/name: DAHLIA_SIGNOUT_URL\s+value: \/\.auth\/logout/);
     const serverPackage = JSON.parse(readText("../package.json")) as {
       exports: Record<string, unknown>;
       name: string;
