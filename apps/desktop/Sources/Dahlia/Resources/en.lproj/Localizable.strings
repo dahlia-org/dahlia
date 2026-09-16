@@ -1676,18 +1676,14 @@
 "Existing Server Workspace" = "Existing Server Workspace";
 "New Server Workspace" = "New Server Workspace";
 "Organization" = "Organization";
-"Create Organization" = "Create Organization";
+"Select a Server Workspace" = "Select a Server Workspace";
+"Select an Organization" = "Select an Organization";
 "Reload destinations" = "Reload destinations";
 "A backup is saved before importing. Existing Workspace settings stay unchanged. The original Local Workspace remains available." = "A backup is saved before importing. Existing Workspace settings stay unchanged. The original Local Workspace remains available.";
 "Import" = "Import";
-"Organization name" = "Organization name";
 
 "Workspace Admin" = "Admin";
 "Workspace Editor" = "Editor";
-
-"Initial organization owner" = "Initial owner";
-"Load more owners" = "Load more owners";
-"Choose yourself as owner to import immediately. If you choose someone else, ask them to invite you before importing." = "Choose yourself as owner to import immediately. If you choose someone else, ask them to invite you before importing.";
 
 "setup.preparingWorkspace" = "Preparing your workspace…";
 "setup.workspaceUnavailable" = "Your workspace is not ready yet. Check your connection and retry.";
