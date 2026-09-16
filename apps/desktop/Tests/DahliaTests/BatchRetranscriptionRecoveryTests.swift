@@ -44,9 +44,15 @@ import GRDB
                 isConfirmed: true,
                 audioSource: "mic"
             )
-            let previousRun = TranscriptMetadata.Run(
+            let selectedPreviousRun = TranscriptMetadata.Run(
                 generatedBy: "server",
                 startedAt: fixture.now,
+                completedAt: completedAt,
+                recordingSessionId: fixture.session.id
+            )
+            let siblingPreviousRun = TranscriptMetadata.Run(
+                generatedBy: "server",
+                startedAt: expiredSession.startedAt,
                 completedAt: completedAt,
                 recordingSessionId: expiredSession.id
             )
@@ -60,13 +66,21 @@ import GRDB
                 ).insert(db)
                 try previousTranscript.insert(db)
                 try expiredTranscript.insert(db)
+                try db.execute(
+                    sql: "UPDATE transcript_segments SET sessionId = NULL WHERE meetingId = ?",
+                    arguments: [fixture.meeting.id]
+                )
                 try TranscriptRecord(
                     meetingId: fixture.meeting.id,
                     info: TranscriptInfo(
                         id: .v7(),
                         startedAt: fixture.now,
                         endedAt: completedAt,
-                        metadata: .init(provider: "gemini", model: "gemini", runs: [previousRun])
+                        metadata: .init(
+                            provider: "gemini",
+                            model: "gemini",
+                            runs: [selectedPreviousRun, siblingPreviousRun]
+                        )
                     )
                 ).insert(db)
             }
@@ -74,7 +88,7 @@ import GRDB
             let coordinator = BatchTranscriptionCoordinator(
                 dbQueue: fixture.database.dbQueue,
                 managedRootURL: fixture.managedRootURL,
-                speechRecognizer: TestBatchSpeechRecognizer(),
+                speechRecognizer: ReplacementBatchSpeechRecognizer(),
                 supportedLocalesProvider: { testSupportedSpeechLocales },
                 onStateChange: { _ in }
             )
@@ -93,8 +107,7 @@ import GRDB
                 try (
                     RecordingSessionRecord.fetchOne(db, key: fixture.session.id),
                     RecordingSessionRecord.fetchOne(db, key: expiredSession.id),
-                    fetchSessionTranscriptContent(sessionId: fixture.session.id, in: db),
-                    fetchSessionTranscriptContent(sessionId: expiredSession.id, in: db),
+                    TextContentAccess.transcript(meetingId: fixture.meeting.id, in: db),
                     TranscriptRecord.current(fixture.meeting.id, in: db)
                 )
             }
@@ -102,10 +115,13 @@ import GRDB
             #expect(persisted.0?.isBatchRetranscriptionPending == false)
             #expect(try #require(persisted.0?.batchCompletedAt) > completedAt)
             #expect(persisted.1?.batchCompletedAt == completedAt)
-            #expect(persisted.2.isEmpty)
-            #expect(persisted.3.map(\.text) == ["expired sibling transcript"])
-            #expect(persisted.4?.metadata?.runs.first == previousRun)
-            #expect(persisted.4?.metadata?.runs.last?.recordingSessionId == fixture.session.id)
+            #expect(persisted.2.map(\.text) == ["replacement transcript", "expired sibling transcript"])
+            #expect(persisted.2.map(\.sessionId) == [fixture.session.id, nil])
+            let persistedRuns = try #require(persisted.3?.metadata?.runs)
+            #expect(persistedRuns.count == 2)
+            #expect(persistedRuns.first == siblingPreviousRun)
+            #expect(!persistedRuns.contains(selectedPreviousRun))
+            #expect(persistedRuns.last?.recordingSessionId == fixture.session.id)
         }
 
         @Test
@@ -302,6 +318,20 @@ import GRDB
         private func failAfterRelease() async throws -> [BatchSpeechRecognition] {
             await gate.wait()
             throw DeferredRecognitionError.failed
+        }
+    }
+
+    private struct ReplacementBatchSpeechRecognizer: BatchSpeechRecognizing {
+        func recognize(audioURL _: URL, locale _: Locale) -> [BatchSpeechRecognition] {
+            replacement
+        }
+
+        func recognize(audioSlices _: [BatchSpeechAudioSlice], locale _: Locale) -> [BatchSpeechRecognition] {
+            replacement
+        }
+
+        private var replacement: [BatchSpeechRecognition] {
+            [BatchSpeechRecognition(startSeconds: 0, endSeconds: 0.005, text: "replacement transcript")]
         }
     }
 

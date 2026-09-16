@@ -82,6 +82,22 @@ enum BatchTranscriptionPersistence {
                 _ = try TranscriptSegmentRecord.filter(Column("meetingId") == meetingId).deleteAll(db)
             } else {
                 _ = try TranscriptSegmentRecord.filter(ids.contains(Column("sessionId"))).deleteAll(db)
+                for selected in sessions {
+                    guard let endedAt = selected.endedAt else { throw TextContentError.changed }
+                    try db.execute(sql: """
+                    DELETE FROM transcript_segments
+                    WHERE meetingId = ?
+                      AND sessionId IS NULL
+                      AND startedAt >= ?
+                      AND startedAt <= ?
+                      AND NOT EXISTS (
+                          SELECT 1 FROM recording_sessions AS later
+                          WHERE later.meetingId = transcript_segments.meetingId
+                            AND later.startedAt > ?
+                            AND later.startedAt <= transcript_segments.startedAt
+                      )
+                    """, arguments: [meetingId, selected.startedAt, endedAt, selected.startedAt])
+                }
             }
             for record in records {
                 try record.insert(db)
@@ -111,7 +127,9 @@ enum BatchTranscriptionPersistence {
             let metadata = TranscriptMetadata(
                 provider: "apple",
                 model: "apple-speech",
-                runs: (!replacingMeeting ? previous?.metadata?.runs ?? [] : []) + executionRuns
+                runs: (!replacingMeeting ? (previous?.metadata?.runs ?? []).filter { run in
+                    run.recordingSessionId.map { !ids.contains($0) } ?? true
+                } : []) + executionRuns
             )
             let info = TranscriptInfo(
                 id: .v7(),
