@@ -5,7 +5,7 @@ struct WorkspaceImportView: View {
     let isBusy: Bool
     let onCancel: () -> Void
     let onReload: () async -> Void
-    let onCreateOrganization: (String, String, String) async -> Void
+    let onCreateOrganization: (String, String, String) async -> (created: Bool, selectableID: UUID?)
     let onLoadOwners: (Int) async -> (items: [CloudOrganizationOwner], hasMore: Bool)
     let onImport: (UUID?, UUID?) async -> Void
 
@@ -70,26 +70,37 @@ struct WorkspaceImportView: View {
                             .fixedSize(horizontal: false, vertical: true)
                         if hasMoreOwners {
                             Button(L10n.organizationLoadOwners) { Task { await loadOwners() } }
+                                .buttonStyle(.dahlia())
                                 .disabled(isLoadingOwners)
                         }
                         Button(L10n.workspaceImportCreateOrganization) {
                             isCreating = true
                             Task {
-                                await onCreateOrganization(organizationName, organizationSlug, ownerId)
+                                let result = await onCreateOrganization(organizationName, organizationSlug, ownerId)
+                                if result.created {
+                                    if let selectableID = result.selectableID { organizationId = selectableID }
+                                    organizationName = ""
+                                    organizationSlug = ""
+                                }
                                 isCreating = false
                             }
                         }
+                        .buttonStyle(.dahlia())
                         .disabled(organizationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || organizationSlug.isEmpty || ownerId
                             .isEmpty || isCreating)
                     }
                 }
                 HStack {
                     Button(L10n.workspaceImportRefresh) { Task { await onReload() } }
+                        .buttonStyle(.dahlia())
                     Spacer()
-                    Button(L10n.cancel, action: onCancel).keyboardShortcut(.cancelAction)
+                    Button(L10n.cancel, action: onCancel)
+                        .buttonStyle(.dahlia())
+                        .keyboardShortcut(.cancelAction)
                     Button(L10n.workspaceImportStart) {
                         Task { await onImport(useExisting ? destinationId : nil, useExisting ? nil : organizationId) }
                     }
+                    .buttonStyle(.dahlia(.primary))
                     .keyboardShortcut(.defaultAction)
                     .disabled(useExisting ? destinationId == nil : organizationId == nil)
                 }
@@ -97,13 +108,20 @@ struct WorkspaceImportView: View {
             }
             .padding(24)
             .frame(width: 520)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .background(Color(nsColor: .windowBackgroundColor))
+            .clipShape(.rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
+            .shadow(color: .black.opacity(0.24), radius: 28, y: 12)
         }
+        .transition(.identity)
         .disabled(isBusy || isCreating)
         .task {
             destinationId = destinations.first?.workspaceId
-            organizationId = pending.organizations.first(where: { $0.kind == .team }).flatMap { UUID(uuidString: $0.id) }
-            useExisting = !destinations.isEmpty
+            let initialOrganizationID = pending.organizations.first(where: { $0.kind == .team }).flatMap { UUID(uuidString: $0.id) }
+            let teamOrganizationIDs = Set(pending.organizations.filter { $0.kind == .team }.compactMap { UUID(uuidString: $0.id) })
+            let hasTeamWorkspace = destinations.contains { teamOrganizationIDs.contains($0.organizationId) }
+            let requiresOrganizationSelection = !teamOrganizationIDs.isEmpty && !hasTeamWorkspace
+            organizationId = requiresOrganizationSelection ? nil : initialOrganizationID
+            useExisting = !destinations.isEmpty && !requiresOrganizationSelection
             if pending.canCreateOrganizations { await loadOwners() }
         }
     }

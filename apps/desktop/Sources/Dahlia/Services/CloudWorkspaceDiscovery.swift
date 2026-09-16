@@ -69,11 +69,17 @@ enum CloudWorkspaceDiscovery {
         initialOwnerUserId: String,
         connection: DahliaAccountConnectionRecord,
         api: SyncAPIClient
-    ) async throws {
+    ) async throws -> UUID {
         guard let origin = URL(string: connection.origin) else { throw URLError(.badURL) }
-        _ = try await api.perform(origin: origin, connectionId: connection.id) {
-            try await $0.createOrganization(body: .json(.init(name: name, slug: slug, initialOwnerUserId: initialOwnerUserId))).created
+        let organization = try await api.perform(origin: origin, connectionId: connection.id) {
+            try await $0.createOrganization(body: .json(.init(
+                name: name,
+                slug: slug,
+                initialOwnerUserId: initialOwnerUserId
+            ))).created.body.json
         }
+        guard let id = UUID(uuidString: organization.id) else { throw URLError(.cannotParseResponse) }
+        return id
     }
 
     static func createWorkspace(

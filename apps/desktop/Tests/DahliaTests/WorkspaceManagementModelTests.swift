@@ -511,6 +511,79 @@
             #expect(try repository.fetchAllWorkspaces().first?.accountConnectionId == nil)
         }
 
+        @Test
+        func createdAdoptionOrganizationReturnsTheRefreshedCandidate() async throws {
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            let createdID = UUID.v7()
+            var didCreate = false
+            let model = WorkspaceManagementModel(
+                cloudWorkspaceFetcher: { _ in [] },
+                organizationFetcher: { _ in
+                    .init(
+                        items: didCreate ? [.init(
+                            id: createdID.uuidString.lowercased(),
+                            name: "Created",
+                            slug: "created",
+                            kind: .team
+                        )] : [],
+                        canCreateOrganizations: true
+                    )
+                },
+                organizationCreator: { name, slug, ownerID, receivedConnection in
+                    #expect(name == "Created")
+                    #expect(slug == "created")
+                    #expect(ownerID == "owner")
+                    #expect(receivedConnection == connection)
+                    didCreate = true
+                    return createdID
+                }
+            )
+            let account = DahliaAccountConnection(
+                record: connection,
+                account: DahliaCloudAccount(id: "owner", name: "Owner", email: nil),
+                isCloud: false,
+                grantedScopes: ["all-apis"]
+            )
+            await model.requestServerAdoption(for: makeWorkspace(name: "Local", lastOpenedAt: .now), connection: account)
+
+            let result = await model.createAdoptionOrganization(
+                name: "Created", slug: "created", initialOwnerUserId: "owner"
+            )
+
+            #expect(result.created)
+            #expect(result.selectableID == createdID)
+            #expect(model.pendingServerAdoption?.organizations.map(\.id) == [createdID.uuidString.lowercased()])
+        }
+
+        @Test
+        func createdAdoptionOrganizationReportsSuccessWithoutARefreshedCandidate() async throws {
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            let createdID = UUID.v7()
+            let model = WorkspaceManagementModel(
+                cloudWorkspaceFetcher: { _ in [] },
+                organizationFetcher: { _ in .init(items: [], canCreateOrganizations: true) },
+                organizationCreator: { _, _, _, _ in createdID }
+            )
+            let account = DahliaAccountConnection(
+                record: connection,
+                account: DahliaCloudAccount(id: "administrator", name: "Administrator", email: nil),
+                isCloud: false,
+                grantedScopes: ["all-apis"]
+            )
+            await model.requestServerAdoption(for: makeWorkspace(name: "Local", lastOpenedAt: .now), connection: account)
+
+            let result = await model.createAdoptionOrganization(
+                name: "Created", slug: "created", initialOwnerUserId: "another-owner"
+            )
+
+            #expect(result.created)
+            #expect(result.selectableID == nil)
+        }
+
         @Test(arguments: ["failure", "cancelled", "dismissed", "reloaded"])
         func organizationOwnerLoadingPreservesRetryAndIgnoresObsoleteErrors(outcome: String) async {
             let connection = DahliaAccountConnectionRecord(
