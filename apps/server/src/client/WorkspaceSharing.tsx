@@ -76,6 +76,7 @@ export function WorkspaceSharing({ workspace }: { workspace: SyncedWorkspaceInfo
         <div className="share-list sharing-results" aria-busy={(searching && !resultsCurrent) || targets.loading || saving}>
           {!searching && <p className="muted">{uiText("Search by name or email to find a sharing target.", "名前またはメールアドレスを入力して共有先を検索します。")}</p>}
           {searching && (!resultsCurrent || targets.loading) && <p role="status">{uiText("Searching…", "検索中…")}</p>}
+          {resultsCurrent && !targets.loading && targets.data?.items.length === 0 && <p className="muted" role="status">{uiText("No matching people or teams.", "該当するユーザーやチームはありません。")}</p>}
           {resultsCurrent && targets.data?.items.map((target) => <div className="share-row" key={`${target.principalType}:${target.principalId}`}>
             <MenuIcon name={icons[target.principalType]} /><span className="share-identity"><strong>{target.name}</strong><small>{principalLabel(target.principalType)} · {target.detail}</small></span>
             {rolePicker(target.principalType, target.principalId, target.name)}

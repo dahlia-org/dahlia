@@ -495,10 +495,10 @@ export function Workspaces({ home = false }: { home?: boolean }) {
     title: uiText("New Workspace", "ワークスペースを作成"),
     description: uiText("Choose the Team Organization that will own this Workspace. Sharing is configured after creation.", "ワークスペースを所有するTeam組織を選んでください。共有は作成後に設定できます。"),
     confirmLabel: uiText("Create Workspace", "ワークスペースを作成"),
-    fields: [{ name: "organizationId", label: uiText("Organization", "組織"), required: true,
+    fields: [{ name: "name", label: uiText("Workspace name", "ワークスペース名"), required: true },
+      { name: "organizationId", label: uiText("Organization", "組織"), required: true,
       value: teamOrganizations[0]?.id,
       options: teamOrganizations.map((organization) => ({ value: organization.id, label: organization.name })) },
-      { name: "name", label: uiText("Workspace name", "ワークスペース名"), required: true },
       ...workspaceEncryptionFields(Boolean(encryptionCapabilities?.workspaceEncryption))],
     onSubmit: async ({ name, encryption, organizationId: targetOrganizationId }) => {
       const id = await createWorkspaceRecord(targetOrganizationId!, name!, encryption, setRecovering);
@@ -1023,7 +1023,7 @@ function OrganizationWorkspaces({ organization }: { organization: OrganizationIn
   const query = useLivePage<import("./generated-api").components["schemas"]["GovernanceWorkspace"]>(apiQuery("listGovernanceWorkspaces", { params: { path: { organizationId: organization.id } } }));
   const { workspaces } = useSidebar();
   const { dialog, openDialog } = useActionDialog();
-  const { data: encryptionCapabilities } = useLiveJSON<{ workspaceEncryption?: { version: number } }>(apiQuery("getCapabilities", {}));
+  const encryptionCapabilities = useLiveJSON<{ workspaceEncryption?: { version: number } }>(apiQuery("getCapabilities", {}));
   const [recovering, setRecovering] = useState(false);
   const [error, setError] = useState<string>();
   function createWorkspace() {
@@ -1031,7 +1031,7 @@ function OrganizationWorkspaces({ organization }: { organization: OrganizationIn
       description: uiText(`Create a Workspace owned by “${organization.name}”. Sharing is configured after creation.`, `「${organization.name}」が所有するワークスペースを作成します。共有は作成後に設定できます。`),
       confirmLabel: uiText("Create Workspace", "ワークスペースを作成"),
       fields: [{ name: "name", label: uiText("Workspace name", "ワークスペース名"), required: true },
-        ...workspaceEncryptionFields(Boolean(encryptionCapabilities?.workspaceEncryption))],
+        ...workspaceEncryptionFields(Boolean(encryptionCapabilities.data?.workspaceEncryption))],
       onSubmit: async ({ name, encryption }) => {
         const id = await createWorkspaceRecord(organization.id, name!, encryption, setRecovering);
         navigateDashboard(`/workspaces/${id}`);
@@ -1055,8 +1055,9 @@ function OrganizationWorkspaces({ organization }: { organization: OrganizationIn
   }
   return <section>{dialog}
     <div className="org-section-header"><p>{uiText("Organization governance shows Workspace metadata. Content requires a separate Workspace permission.", "組織の管理用情報を表示しています。内容の閲覧にはワークスペースのアクセス権が必要です。")}</p>
-      {organization.kind === "team" && <button className="primary" onClick={createWorkspace}><MenuIcon name="plus" />{uiText("New Workspace", "ワークスペースを作成")}</button>}
+      {organization.kind === "team" && <button className="primary" disabled={!encryptionCapabilities.data} onClick={createWorkspace}><MenuIcon name="plus" />{uiText("New Workspace", "ワークスペースを作成")}</button>}
     </div>
+    <DataError error={encryptionCapabilities.error} retry={encryptionCapabilities.reload} />
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
     {query.data?.items.map((workspace) => <div className="row" key={workspace.workspaceId}>
       {workspaces?.some(({ workspaceId }) => workspaceId === workspace.workspaceId)
@@ -1166,6 +1167,7 @@ function OrganizationJoinRequests({ organizationId }: { organizationId?: string 
 function OrganizationDetails({ organization, session }: { organization: OrganizationInfo; session: SessionInfo }) {
   const { dialog, openDialog } = useActionDialog();
   const [members, setMembers] = useState<OrganizationMember[]>();
+  const [currentRole, setCurrentRole] = useState<string>();
   const [teams, setTeams] = useState<TeamInfo[]>([]);
   const [teamMembers, setTeamMembers] = useState<Record<string, TeamMember[]>>({});
   const [invitations, setInvitations] = useState<OrganizationInvitation[]>();
@@ -1178,13 +1180,14 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
   const load = useCallback(async () => {
     setError(undefined);
     try {
-      const [memberPage, teamItems] = await Promise.all([
+      const [memberPage, teamItems, activeMember] = await Promise.all([
         json<{ members: OrganizationMember[] }>(`/api/auth/organization/list-members?organizationId=${organizationId}`),
         json<TeamInfo[]>(`/api/auth/organization/list-teams?organizationId=${organizationId}`),
+        json<{ role: string }>(`/api/auth/organization/get-active-member-role?organizationId=${organizationId}`),
       ]);
       setMembers(memberPage.members);
-      const role = memberPage.members.find((member) => member.userId === session.user.id)?.role;
-      const canManageTeams = ["owner", "admin"].includes(role ?? "");
+      setCurrentRole(activeMember.role);
+      const canManageTeams = ["owner", "admin"].includes(activeMember.role);
       const [invitationItems, teamMemberEntries] = await Promise.all([
         canManageTeams
           ? json<OrganizationInvitation[]>(
@@ -1364,7 +1367,6 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
     }
   }
 
-  const currentRole = members?.find((member) => member.userId === session.user.id)?.role;
   const personal = organization.kind === "personal";
   const canGovern = ["owner", "admin"].includes(currentRole ?? "");
   const canManage = canGovern && !personal;
@@ -1382,6 +1384,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
           <div className="org-section-header org-member-toolbar">
             {members && members.length > 0 && <input className="org-search" type="search" aria-label={uiText("Find members", "メンバーを検索")} placeholder={uiText("Search by name or email", "名前・メールアドレスで検索")} value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} />}
             {canManage && <button className="primary" onClick={invite}><MenuIcon name="plus" />{uiText("Invite member", "メンバーを招待")}</button>}
+            {!personal && currentRole && <button className="secondary danger-button" onClick={leaveOrganization}>{uiText("Leave", "脱退")}</button>}
           </div>
           {visibleMembers?.length === 0 && <p className="empty-state">{uiText("No matching members.", "該当するメンバーはいません。")}</p>}
           {!members && !error && <p className="muted">{uiText("Loading members…", "メンバーを読み込み中…")}</p>}
@@ -1392,9 +1395,6 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
               {canManage && <button className="secondary" onClick={() => changeMemberRole(member)}>{uiText("Change role", "権限を変更")}</button>}
               {canManage && member.userId !== session.user.id && (
                 <button className="secondary danger-button" onClick={() => removeMember(member)}>{uiText("Remove", "解除")}</button>
-              )}
-              {!personal && member.userId === session.user.id && (
-                <button className="secondary danger-button" onClick={leaveOrganization}>{uiText("Leave", "脱退")}</button>
               )}
             </div>
           ))}

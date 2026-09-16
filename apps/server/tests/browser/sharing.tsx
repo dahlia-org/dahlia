@@ -76,6 +76,9 @@ async function run() {
   await until(() => pickers().length === 52);
   const iconPaths = [...document.querySelectorAll(".sharing-results .share-row > svg path")].map((path) => path.getAttribute("d"));
   assert(new Set(iconPaths).size === 3, "Organizations, teams, and users have distinct icons");
+  searchFor("nothing matches");
+  await until(() => document.querySelector('.sharing-results > .muted[role="status"]'));
+  assert(pickers().length === 0, "No-result search kept stale targets");
   searchFor("Repeated team");
   await new Promise(requestAnimationFrame);
   assert(pickers().length === 0, "Results from the previous search remain actionable during debounce");
