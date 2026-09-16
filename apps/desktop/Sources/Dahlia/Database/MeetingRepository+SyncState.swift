@@ -142,8 +142,8 @@ extension MeetingRepository {
             UPDATE recording_archives SET state = 'pending', retryAt = NULL, failureCode = NULL
             WHERE meetingId = ? AND state = 'failed'
               AND EXISTS (SELECT 1 FROM workspaces v WHERE v.id = recording_archives.workspace_id
-                AND v.accountConnectionId IS recording_archives.connectionId
-                AND (v.accountConnectionId IS NULL OR v.syncRole IN ('admin', 'editor')) AND v.syncRecoveryState IS NULL)
+                AND v.accountConnectionId = recording_archives.connectionId
+                AND v.syncRole IN ('admin', 'editor') AND v.syncRecoveryState IS NULL)
             """, arguments: [meetingId])
         }
     }

@@ -623,6 +623,22 @@ enum SyncInitialSnapshotBuilder {
             ], in: db)
         }
         for item in items where item.entity == .meeting {
+            guard let target = try WorkspaceRecord.fetchOne(db, key: workspaceId),
+                  let connectionId = target.accountConnectionId else { throw LocalWorkspaceImportError.changed }
+            try db.execute(sql: """
+            INSERT OR IGNORE INTO recording_archives(sessionId, meetingId, workspace_id, connectionId)
+            SELECT sessions.id, sessions.meetingId, ?, ?
+            FROM recording_sessions AS sessions
+            WHERE sessions.meetingId = ?
+              AND sessions.transcriptionMode = ?
+              AND sessions.batchDiscardedAt IS NULL
+              AND EXISTS (
+                  SELECT 1 FROM recording_audio_segments AS segments
+                  WHERE segments.recordingSessionId = sessions.id
+                    AND segments.state != ?
+                    AND segments.purgedAt IS NULL
+              )
+            """, arguments: [workspaceId, connectionId, item.id, TranscriptionMode.batch.rawValue, RecordingAudioSegmentState.purged.rawValue])
             let attachments = try MeetingAttachmentRecord.filter(Column("meetingId") == item.id).fetchCursor(db)
             while let attachment = try attachments.next() {
                 try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [
@@ -631,15 +647,16 @@ enum SyncInitialSnapshotBuilder {
             }
             let archives = try RecordingArchiveRecord.filter(Column("meetingId") == item.id).fetchCursor(db)
             while var archive = try archives.next() {
-                guard let target = try WorkspaceRecord.fetchOne(db, key: workspaceId) else { throw LocalWorkspaceImportError.changed }
                 let prepared = try SyncJSON.decoder.decode([String: RecordingArchiveEncoder.Prepared].self, from: Data(archive.preparedJSON.utf8))
-                guard !prepared.isEmpty else { throw LocalWorkspaceImportError.unavailable }
-                archive.connectionId = target.accountConnectionId
+                archive.connectionId = connectionId
                 archive.number = nil
                 archive.audioJSON = "{}"
                 archive.verifiedAt = nil
-                archive.state = "syncing"
+                archive.state = prepared.isEmpty ? "pending" : "syncing"
+                archive.retryAt = nil
+                archive.failureCode = nil
                 try archive.update(db)
+                guard !prepared.isEmpty else { continue }
                 for (source, file) in prepared.sorted(by: { $0.key < $1.key }) {
                     let payload = RecordingArchiveService.Commit(source: source, checksum: file.checksum, manifest: file.manifest)
                     try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [

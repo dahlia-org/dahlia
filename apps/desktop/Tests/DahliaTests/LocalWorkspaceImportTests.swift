@@ -84,6 +84,61 @@
             }
         }
 
+        @Test
+        func importsRetainedLocalCAFAsPendingServerArchive() async throws {
+            let fixture = try LocalImportFixture(role: "editor")
+            defer { fixture.close() }
+            let segmentId = UUID.v7()
+            try await fixture.database.dbQueue.write { db in
+                try RecordingArchiveRecord.deleteOne(db, key: fixture.session.id)
+                let now = Date.now
+                try RecordingAudioSegmentRecord(
+                    id: segmentId,
+                    recordingSessionId: fixture.session.id,
+                    source: .microphone,
+                    segmentIndex: 1,
+                    generationId: .v7(),
+                    state: .ready,
+                    partialRelativePath: "",
+                    finalRelativePath: "recordings/retained.caf",
+                    sampleRate: 16000,
+                    channelCount: 1,
+                    sealedFrameCount: 160,
+                    sessionStartOffsetSeconds: 0,
+                    sessionEndOffsetSeconds: 0.01,
+                    byteCount: 1,
+                    sha256: Data(repeating: 0, count: 32),
+                    finalizationStartedAt: now,
+                    integrityVerifiedAt: now,
+                    finalizedAt: now,
+                    purgeRequestedAt: nil,
+                    purgedAt: nil,
+                    failureStage: nil,
+                    failureCode: nil,
+                    createdAt: now,
+                    updatedAt: now
+                ).insert(db)
+                try RecordingAudioSegmentRangeRecord(
+                    id: .v7(),
+                    audioSegmentId: segmentId,
+                    startFrame: 0,
+                    frameCount: 160,
+                    sessionOffsetSeconds: 0,
+                    localeIdentifier: "ja_JP",
+                    createdAt: now,
+                    updatedAt: now
+                ).insert(db)
+                _ = try fixture.commit(in: db)
+            }
+
+            let archive = try #require(try await fixture.database.dbQueue.read {
+                try RecordingArchiveRecord.fetchOne($0, key: fixture.session.id)
+            })
+            #expect(archive.connectionId == fixture.connection.id)
+            #expect(archive.state == "pending")
+            #expect(archive.preparedJSON == "{}")
+        }
+
         @Test(arguments: ["collision", "pending", "blocked", "recording", "viewer", "unknown", "metadata", "connection", "rollback"])
         func failedPreflightAndCommitPreserveTheLocalWorkingCopy(reason: String) throws {
             let fixture = try LocalImportFixture(role: "editor")

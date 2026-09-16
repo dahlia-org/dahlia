@@ -163,7 +163,8 @@ struct BatchTranscriptionConfirmationView: View {
             automaticLanguageLocales: automaticLanguageLocales,
             serverRetranscriptionUnavailable: isRetranscription
                 && usesServerSummary
-                && viewModel.serverRetranscriptionUnavailableReason != nil
+                && (viewModel.isCheckingServerRetranscriptionAvailability
+                    || viewModel.serverRetranscriptionUnavailableReason != nil)
         )
     }
 

@@ -177,6 +177,7 @@ final class CaptionViewModel: ObservableObject {
     @Published private(set) var offscreenBatchTranscriptionChangeToken: UInt64 = 0
     @Published private(set) var retranscribableBatchSessionIds: [UUID] = []
     @Published private(set) var serverRetranscriptionUnavailableReason: String?
+    @Published private(set) var isCheckingServerRetranscriptionAvailability = false
     @Published private(set) var canRetryServerRetranscriptionAvailability = false
     @Published private(set) var failedPersistenceMeetingId: UUID?
     @Published var pendingBatchTranscriptionConfirmation: BatchTranscriptionConfirmation?
@@ -255,6 +256,7 @@ final class CaptionViewModel: ObservableObject {
 
     var canRetranscribeBatchAudio: Bool {
         guard !retranscribableBatchSessionIds.isEmpty, !isListening,
+              !isCheckingServerRetranscriptionAvailability,
               serverRetranscriptionUnavailableReason == nil else { return false }
         return switch batchTranscriptionState {
         case nil, .failed, .retranscriptionFailed, .interrupted:
@@ -272,7 +274,9 @@ final class CaptionViewModel: ObservableObject {
         case .failed, .interrupted(_, false):
             !retranscribableBatchSessionIds.isEmpty
         case .retranscriptionFailed, .interrupted(_, true):
-            !retranscribableBatchSessionIds.isEmpty && serverRetranscriptionUnavailableReason == nil
+            !retranscribableBatchSessionIds.isEmpty
+                && !isCheckingServerRetranscriptionAvailability
+                && serverRetranscriptionUnavailableReason == nil
         default:
             false
         }
@@ -1514,7 +1518,8 @@ final class CaptionViewModel: ObservableObject {
               let coordinator = batchTranscriptionCoordinator else { return }
         guard !confirmation.isRetranscription
             || !confirmation.usesServerSummary
-            || serverRetranscriptionUnavailableReason == nil else { return }
+            || (!isCheckingServerRetranscriptionAvailability
+                && serverRetranscriptionUnavailableReason == nil) else { return }
         let resolvedLanguageSelection = confirmation.isRetranscription
             ? (confirmation.usesServerSummary ? .recorded : .automatic)
             : languageSelection
@@ -2810,10 +2815,12 @@ final class CaptionViewModel: ObservableObject {
         let generation = serverRetranscriptionAvailabilityGeneration
         guard let connectionID, let meetingID = currentMeetingId, let dbQueue = currentDbQueue else {
             serverRetranscriptionUnavailableReason = nil
+            isCheckingServerRetranscriptionAvailability = false
             canRetryServerRetranscriptionAvailability = false
             return
         }
-        serverRetranscriptionUnavailableReason = L10n.serverRetranscriptionChecking
+        serverRetranscriptionUnavailableReason = nil
+        isCheckingServerRetranscriptionAvailability = true
         canRetryServerRetranscriptionAvailability = false
         Task {
             do {
@@ -2830,6 +2837,7 @@ final class CaptionViewModel: ObservableObject {
                       serverRetranscriptionAvailabilityGeneration == generation,
                       targetStillMatches else { return }
                 serverRetranscriptionUnavailableReason = supported ? nil : L10n.serverRetranscriptionUnsupported
+                isCheckingServerRetranscriptionAvailability = false
                 canRetryServerRetranscriptionAvailability = false
             } catch {
                 guard !Task.isCancelled,
@@ -2838,6 +2846,7 @@ final class CaptionViewModel: ObservableObject {
                       meetingSyncSnapshot?.connectionId == connectionID,
                       serverRetranscriptionAvailabilityGeneration == generation else { return }
                 serverRetranscriptionUnavailableReason = L10n.serverRetranscriptionCheckFailed
+                isCheckingServerRetranscriptionAvailability = false
                 canRetryServerRetranscriptionAvailability = true
             }
         }
@@ -2957,6 +2966,7 @@ final class CaptionViewModel: ObservableObject {
         meetingSyncSnapshot = nil
         recordingArchiveState = nil
         serverRetranscriptionUnavailableReason = nil
+        isCheckingServerRetranscriptionAvailability = false
         canRetryServerRetranscriptionAvailability = false
         appliedMeetingSyncSnapshot = nil
         meetingSyncState = nil

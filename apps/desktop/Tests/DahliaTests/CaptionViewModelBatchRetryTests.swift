@@ -604,8 +604,13 @@ import Synchronization
             #expect(viewModel.retranscribableBatchSessionIds.isEmpty)
 
             viewModel.retryServerRetranscriptionAvailability()
+            #expect(viewModel.isCheckingServerRetranscriptionAvailability)
+            #expect(viewModel.serverRetranscriptionUnavailableReason == nil)
+            #expect(!viewModel.canRetranscribeBatchAudio)
             #expect(await waitUntil {
-                viewModel.serverRetranscriptionUnavailableReason == nil && requests.withLock { $0 } >= 2
+                !viewModel.isCheckingServerRetranscriptionAvailability
+                    && viewModel.serverRetranscriptionUnavailableReason == nil
+                    && requests.withLock { $0 } >= 2
             })
             #expect(viewModel.retranscribableBatchSessionIds.isEmpty)
 

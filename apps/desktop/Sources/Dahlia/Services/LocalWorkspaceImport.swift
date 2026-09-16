@@ -78,9 +78,9 @@ enum LocalWorkspaceImport {
             throw LocalWorkspaceImportError.unavailable
         }
         let pendingAudio = try Bool.fetchOne(db, sql: """
-        SELECT EXISTS(SELECT 1 FROM recording_archives WHERE workspace_id IN (?, ?)
+        SELECT EXISTS(SELECT 1 FROM recording_archives WHERE workspace_id = ?
           AND state NOT IN ('saved', 'remote'))
-        """, arguments: [sourceId, target.id]) == true
+        """, arguments: [target.id]) == true
         guard !pendingAudio else { throw LocalWorkspaceImportError.unavailable }
     }
 

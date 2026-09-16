@@ -1577,7 +1577,6 @@
 "transcription.retranscription.localDescription" = "保持期間内のCAF録音を使い、区間ごとに言語を自動判定してこのMacで処理します。";
 "transcription.retranscription.serverDescription" = "アップロード済みのM4A録音を使い、Geminiが言語判定と文字起こしを行います。言語設定やローカル処理へのフォールバックは使用しません。";
 "transcription.retranscription.keepsSummary" = "再文字起こしでは文字起こしだけを置き換え、既存の要約は変更しません。";
-"transcription.retranscription.checking" = "Serverの再文字起こし対応を確認しています。";
 "transcription.retranscription.checkFailed" = "Serverの再文字起こし対応を確認できませんでした。";
 "transcription.retranscription.unsupported" = "このServerはGemini再文字起こしに対応していません。";
 "Local CAF Recording Retention" = "Local WorkspaceのCAF録音保持期間";

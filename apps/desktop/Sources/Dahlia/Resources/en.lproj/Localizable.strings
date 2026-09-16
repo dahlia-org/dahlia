@@ -1577,7 +1577,6 @@
 "transcription.retranscription.localDescription" = "Uses retained CAF recordings on this Mac and detects the language of each segment automatically.";
 "transcription.retranscription.serverDescription" = "Uses uploaded M4A recordings. Gemini detects languages and retranscribes without language settings or local fallback.";
 "transcription.retranscription.keepsSummary" = "Retranscription replaces only the transcript and leaves the existing summary unchanged.";
-"transcription.retranscription.checking" = "Checking Server retranscription support.";
 "transcription.retranscription.checkFailed" = "Could not check Server retranscription support.";
 "transcription.retranscription.unsupported" = "This Server does not support Gemini retranscription.";
 "Local CAF Recording Retention" = "Local Workspace CAF Recording Retention";

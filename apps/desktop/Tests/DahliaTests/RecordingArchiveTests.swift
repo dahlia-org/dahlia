@@ -18,6 +18,79 @@ import GRDB
             }
         }
 
+        @Test
+        func retryDoesNotReactivateLegacyLocalArchive() async throws {
+            let fixture = try BatchAudioTestFixture(name: "LegacyLocalArchiveRetry")
+            defer { fixture.removeFiles() }
+            try await fixture.database.dbQueue.write { db in
+                try RecordingArchiveRecord(
+                    sessionId: fixture.session.id,
+                    meetingId: fixture.meeting.id,
+                    workspaceId: fixture.meeting.workspaceId,
+                    state: "failed"
+                ).insert(db)
+            }
+
+            try await MeetingRepository(dbQueue: fixture.database.dbQueue)
+                .retryRecordingArchives(meetingId: fixture.meeting.id)
+
+            #expect(try await fixture.database.dbQueue.read {
+                try RecordingArchiveRecord.fetchOne($0, key: fixture.session.id)?.state == "failed"
+            })
+        }
+
+        @Test
+        func adoptingLocalCAFRecordingCreatesProtectedServerArchive() async throws {
+            let fixture = try BatchAudioTestFixture(
+                name: "AdoptLocalCAF",
+                endedAt: .now,
+                duration: 1,
+                batchCompletedAt: .now
+            )
+            defer { fixture.removeFiles() }
+            try await fixture.recordMicrophoneAudio()
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(),
+                origin: "https://server.example.com",
+                clientID: "test",
+                createdAt: .now
+            )
+            let expectedChanges = try await fixture.database.dbQueue.write { db in
+                try connection.insert(db)
+                return db.totalChangesCount
+            }
+            let remote = CloudWorkspaceRecord(
+                workspaceId: fixture.meeting.workspaceId,
+                connectionId: connection.id,
+                organizationId: .v7(),
+                name: "Server",
+                createdAt: .now,
+                revision: 1,
+                role: "admin"
+            )
+
+            _ = try await MeetingRepository(dbQueue: fixture.database.dbQueue).adoptWorkspaceForServerSync(
+                id: fixture.meeting.workspaceId,
+                connectionID: connection.id,
+                serverWorkspace: remote,
+                expectedChanges: expectedChanges
+            )
+
+            let archive = try #require(try await fixture.database.dbQueue.read {
+                try RecordingArchiveRecord.fetchOne($0, key: fixture.session.id)
+            })
+            #expect(archive.connectionId == connection.id)
+            #expect(archive.state == "pending")
+            let store = try RecordingAudioStore(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL
+            )
+            try await store.requestRetentionPurge(sessionId: fixture.session.id, cutoff: .distantFuture)
+            #expect(try await fixture.database.dbQueue.read {
+                try RecordingAudioSegmentRecord.fetchOne($0)?.state == .ready
+            })
+        }
+
         @Test(arguments: [false, true])
         func archiveDoesNotWaitForFinalTranscription(failed: Bool) async throws {
             let fixture = try BatchAudioTestFixture(name: "ArchiveBeforeTranscription")

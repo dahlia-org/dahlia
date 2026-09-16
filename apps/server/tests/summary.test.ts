@@ -929,6 +929,20 @@ describe("audio summary jobs", () => {
     } finally { await store.close?.(); }
   });
 
+  it("accepts a complete recording request independent of upload order", async () => {
+    const value = await setup(); const { store, workspaceId, meetingId } = value;
+    try {
+      await addRecording(value, ["mic"]);
+      await addRecording(value, ["system"]);
+      const request = await recordingInput(value);
+      const { method } = audioMethod(value);
+      await expect(store.sync.withIdentity(owner, (scoped) => method.version(
+        scoped, workspaceId, meetingId, { ...request, recordings: request.recordings.toReversed() },
+        { requireCompleteMeeting: true },
+      ))).resolves.toBeDefined();
+    } finally { await store.close?.(); }
+  });
+
   it("keeps an accepted recording snapshot valid when a later session is pending", async () => {
     const value = await setup(); const { store, sync, workspaceId, meetingId } = value;
     try {
@@ -1192,7 +1206,7 @@ describe("staged summary generation", () => {
   });
 });
 
-it("requires the complete canonical audio-pair order and rejects foreign, partial, or duplicated pairs", async () => {
+it("requires the complete audio-pair set and rejects foreign, partial, or duplicated pairs", async () => {
   const value = await setup(); const { store, workspaceId, meetingId, sync } = value;
   try {
     await addRecording(value); await addRecording(value, ["system"]);
@@ -1206,7 +1220,6 @@ it("requires the complete canonical audio-pair order and rejects foreign, partia
     const request = { id: uuidV7(), input, model: "gemini-3-8-flash", detail: "high", outputLanguage: "ja" };
     await expect(service.start(owner, workspaceId, meetingId, { ...request, meetingId })).rejects.toMatchObject({ code: "invalid_summary_request" });
     for (const recordings of [
-      [...originalInput.recordings].reverse(),
       [{ micFileId: uuidV7(), systemFileId: null }],
       [{ ...originalInput.recordings[0], systemFileId: null }],
       [originalInput.recordings[0], originalInput.recordings[0]],

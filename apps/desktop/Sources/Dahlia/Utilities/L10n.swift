@@ -118,7 +118,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var localRetranscriptionPolicyDescription: String { String(localized: "transcription.retranscription.localDescription", bundle: bundle) }
     static var serverRetranscriptionPolicyDescription: String { String(localized: "transcription.retranscription.serverDescription", bundle: bundle) }
     static var retranscriptionKeepsSummary: String { String(localized: "transcription.retranscription.keepsSummary", bundle: bundle) }
-    static var serverRetranscriptionChecking: String { String(localized: "transcription.retranscription.checking", bundle: bundle) }
     static var serverRetranscriptionCheckFailed: String { String(localized: "transcription.retranscription.checkFailed", bundle: bundle) }
     static var serverRetranscriptionUnsupported: String { String(localized: "transcription.retranscription.unsupported", bundle: bundle) }
     static var imageAnalysisLanguages: String { String(localized: "account.settings.imageLanguages", bundle: bundle) }

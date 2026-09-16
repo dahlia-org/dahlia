@@ -38,7 +38,8 @@ struct SettingsDetailView: View {
                 }
             }
             .formStyle(.grouped)
-            .frame(height: 90)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(minHeight: 90)
             .padding(.top, DahliaDesign.windowHeaderHeight)
 
             selectedSettings

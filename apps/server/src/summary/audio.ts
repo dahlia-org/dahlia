@@ -37,12 +37,14 @@ async function collectAudio(store: IdentitySyncStore, workspaceId: string, meeti
     after = page.at(-1)!.number;
   }
   if (requireCompleteMeeting && reference?.type === "recording") {
-    const complete = records.map((record) => ({
+    const pairKey = (pair: { micFileId: string | null; systemFileId: string | null }) =>
+      `${pair.micFileId ?? ""}\n${pair.systemFileId ?? ""}`;
+    const complete = records.map((record) => pairKey({
       micFileId: record.audio.mic?.generation ?? null,
       systemFileId: record.audio.system?.generation ?? null,
-    }));
-    if (reference.recordings.length !== complete.length || reference.recordings.some((pair, index) =>
-      pair.micFileId !== complete[index]!.micFileId || pair.systemFileId !== complete[index]!.systemFileId)) {
+    })).sort();
+    const requested = reference.recordings.map(pairKey).sort();
+    if (requested.length !== complete.length || requested.some((pair, index) => pair !== complete[index])) {
       throw new SummaryError("summary_audio_pair_incomplete");
     }
   }
