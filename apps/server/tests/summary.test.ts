@@ -32,6 +32,36 @@ const owner: Identity = { userId: testUserID("owner"),  source: "header" };
 const output = { title: "Decisions", description: "Launch discussion", tags: ["launch"], action_items: [],
   sections: [{ heading: "Decisions", blocks: [{ type: "paragraph", level: 3, content: { text: "Ship next week", transcript_ref: null }, items: [], language: "", image_id: "" }] }] };
 const doc = () => summaryDocument(output, new Set());
+
+describe("summary model capture", () => {
+  const cloudflare = {
+    DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",
+    DAHLIA_AUTH_TYPE: "header",
+    DAHLIA_AI_BACKEND: "cloudflare",
+    OPENAI_API_KEY: "test-token",
+    OPENAI_BASE_URL: "https://api.cloudflare.com/client/v4/accounts/test/ai/v1",
+  };
+
+  it("uses configured catalog defaults for transcript and audio jobs", async () => {
+    const transcript = createTranscriptSummaryMethod(loadConfig({
+      ...cloudflare, DAHLIA_CODEX_MODELS: "gpt-4.1",
+    }), {} as never, {} as never)!;
+    expect(await transcript.captureSettings(DEFAULT_GENERATION_PREFERENCES)).toMatchObject({
+      model: "gpt-4.1", reasoningEffort: "none",
+    });
+
+    const audio = createAudioSummaryMethod(loadConfig({
+      ...cloudflare, DAHLIA_CODEX_MODELS: "gemini-3-flash",
+    }), {} as never, {} as never)!;
+    const combined = { ...DEFAULT_GENERATION_PREFERENCES, processing: {
+      location: "remote" as const, remote: { workflow: "combined" as const },
+    } };
+    expect(await audio.captureSettings(combined, undefined, {
+      type: "recording", recordings: [],
+    })).toMatchObject({ model: "gemini-3-flash", reasoningEffort: "medium" });
+  });
+});
+
 async function setup() {
   const dir = mkdtempSync(join(tmpdir(), "dahlia-summary-")); dirs.push(dir);
   const path = join(dir, "db.sqlite");

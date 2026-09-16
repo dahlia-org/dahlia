@@ -19,8 +19,6 @@ export type ProviderConfig = {
 } | {
   backend: "databricks";
   baseUrl: string;
-  /** @deprecated Model discovery was removed; use AppConfig.codexModels. */
-  modelSchema?: string;
 };
 
 export interface LakebaseDatabaseConfig {

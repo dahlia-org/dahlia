@@ -1,19 +1,15 @@
-import type { DatabricksWorkspaceConfig, ProviderConfig } from "../config";
+import type { ProviderConfig } from "../config";
 import { sendOpenAIResponses, type GatewayFetch } from "./adapters";
 import type { AIGatewayBackend, ListModelsRequest, RequestBody, RequestContext } from "./backend";
 import { GatewayRequestError } from "./errors";
 import { modelList } from "./models";
 
 export class DatabricksBackend implements AIGatewayBackend {
-  private readonly models: readonly string[];
-
   constructor(
     private readonly provider: Extract<ProviderConfig, { backend: "databricks" }>,
-    modelsOrLegacyWorkspace: readonly string[] | DatabricksWorkspaceConfig,
+    private readonly models: readonly string[],
     private readonly transport: GatewayFetch = fetch,
-  ) {
-    this.models = Array.isArray(modelsOrLegacyWorkspace) ? modelsOrLegacyWorkspace : [];
-  }
+  ) {}
 
   responses(body: RequestBody, context: RequestContext): Promise<Response> {
     return sendOpenAIResponses(this.provider, forwardedDatabricksAuthorization(context.headers), {

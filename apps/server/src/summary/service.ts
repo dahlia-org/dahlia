@@ -122,11 +122,7 @@ export class SummaryService {
     const methodID = (input?.type === "recording" ? "audio" : input?.type) ?? "transcript";
     const method = this.methods.find((method) => method.id === methodID);
     if (!method) throw new RequestError(400, "summary_method_unavailable");
-    let captured = method.captureSettings(settings, "detail" in request ? request.detail : undefined);
-    if ("model" in request) {
-      captured.model = request.model;
-      if (request.reasoningEffort !== undefined) captured.reasoningEffort = request.reasoningEffort;
-    }
+    let captured: SummaryJob["settings"];
     try {
       if ("preferences" in request) {
         if (!method.resolvePreferences) throw new SummaryError("summary_method_unavailable");
@@ -134,6 +130,22 @@ export class SummaryService {
         captured = resolved.settings;
         input = resolved.input;
       } else {
+        const capturePreferences = "model" in request ? {
+          ...settings,
+          processing: { ...settings.processing, remote: {
+            ...settings.processing.remote,
+            summaryModel: request.model,
+            ...(request.reasoningEffort === undefined ? {} : { reasoningEffort: request.reasoningEffort }),
+            ...(input?.type === "recording" && input.transcriptionModel
+              ? { workflow: "transcribeThenSummarize" as const, transcriptionModel: input.transcriptionModel }
+              : { workflow: "combined" as const }),
+          } },
+        } : settings;
+        captured = await method.captureSettings(
+          capturePreferences,
+          "detail" in request ? request.detail : undefined,
+          input,
+        );
         await method.validateSettings?.(captured, input);
       }
     }

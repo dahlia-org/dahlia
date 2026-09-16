@@ -403,7 +403,9 @@ The account menu's **Connect with MCP** dialog shows `mcp.json`, Claude Code, an
 
 ## Provider and model configuration
 
-The AI backend uses the OpenAI Responses-compatible contract and is independent of the database. Select `databricks`, `cloudflare`, or `openai` with `DAHLIA_AI_BACKEND`; it defaults to `openai`. `DAHLIA_CODEX_MODELS` is a comma-separated, ordered list of model IDs exposed by `/api/v1/models` for every backend. Empty or missing values expose no picker-visible models. While the selected non-Databricks backend has no `OPENAI_API_KEY`, Responses returns `503 provider_not_configured`.
+The AI backend uses the OpenAI Responses-compatible contract and is independent of the database. Select `databricks`, `cloudflare`, or `openai` with `DAHLIA_AI_BACKEND`; it defaults to `openai`. `DAHLIA_CODEX_MODELS` is a comma-separated, ordered list of model IDs exposed by `/api/v1/models` for every backend. Empty or missing values expose no picker-visible models, reject Responses model IDs, and leave Server summary generation without a selectable model. While the selected non-Databricks backend has no `OPENAI_API_KEY`, Responses returns `503 provider_not_configured`.
+
+Upgrade note: deployments upgrading to this model-list contract must set `DAHLIA_CODEX_MODELS` explicitly. Use `gpt-5.6-luna` for the bundled OpenAI example, the Cloudflare list shown below, or fully qualified `system.ai.*` IDs for Databricks.
 
 `GET /api/v1/models` returns the standard OpenAI `object` and `data` fields together with the `models` catalog required by Dahlia's bundled Codex. Omitting `client_version` selects the latest supported bundled version, currently `0.153.4`; callers may also request `client_version=0.153.4` explicitly. Other explicit versions return `400 unsupported_codex_client_version`. The configured IDs are joined by exact slug to the selected backend's Dahlia-owned JSON catalog; unknown IDs remain in `data` but are not added as usable Codex models. Cloudflare short IDs map to their `openai/` or `google/` upstream names. Web and Desktop use catalog metadata for both direct and staged summary model choices. The Server owns the reserved `codex-auto-review` override independently of every backend. Set `DAHLIA_CODEX_AUTO_REVIEW_MODEL` to expose that alias as `Codex Auto Review` and route automatic approval reviews to the configured upstream model. The override is forwarded verbatim. TypeScript does not infer capabilities from model names. Updating the bundled Codex requires updating this Server catalog and its contract test in the same change.
 
@@ -433,6 +435,7 @@ OpenAI or another OpenAI-compatible provider:
 
 ```dotenv
 DAHLIA_AI_BACKEND=openai
+DAHLIA_CODEX_MODELS=gpt-5.6-luna
 OPENAI_API_KEY=...
 # OPENAI_BASE_URL=https://api.openai.com/v1
 ```

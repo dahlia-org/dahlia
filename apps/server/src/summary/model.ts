@@ -82,7 +82,8 @@ export function summaryDocument(value: unknown, imageIds: ReadonlySet<string>) {
 export type SummaryDocument = ReturnType<typeof summaryDocument> & { metadata?: SummaryMetadata };
 export interface SummaryMethod {
   readonly id: SummaryJob["method"];
-  captureSettings(settings: GenerationPreferences, detail?: z.infer<typeof summaryDetailSchema>): SummaryJob["settings"];
+  captureSettings(settings: GenerationPreferences, detail?: z.infer<typeof summaryDetailSchema>, input?: SummaryInput):
+    SummaryJob["settings"] | Promise<SummaryJob["settings"]>;
   resolvePreferences?(preferences: GenerationPreferences, input: SummaryInput): Promise<{ settings: TranscriptSettings; input: SummaryInput }>;
   validateSettings?(settings: TranscriptSettings, input?: SummaryInput): Promise<void>;
   version(store: IdentitySyncStore, workspaceId: string, meetingId: string, input?: SummaryInput | null,

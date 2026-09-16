@@ -76,8 +76,8 @@ HTTP の会議詳細（Vault 配下と ID 解決用の両経路）は会議情�
 
 Node / Databricks に `audio` 方法を追加する。Private Web の「要約のソース」で文字起こしと画像／音声と画像を選び、
 `summary.methodSettings.audio` にモデル・推論強度を保存し、詳細度は方式共通の `summary.detail` を使う。既存設定の既定は `transcript` を維持し、
-音声モデル・推論強度の初期値は Databricks では `system.ai.gemini-3-8-flash` / `medium`、Cloudflare では `gemini-3-8-flash` / `medium`、共通詳細度の初期値は `detailed` とする。設定は葉ごとの PATCH で更新し、
-モデル候補は既存の一覧に存在し、カタログで audio 入力を持つ Gemini に限定する。worker でも同条件を再検証する。
+モデル・推論強度の初期値は `DAHLIA_CODEX_MODELS` とカタログ metadata に対して共通の優先順を解決し、backend ごとの固定 ID は持たない。共通詳細度の初期値は `detailed` とする。設定は葉ごとの PATCH で更新し、
+モデル候補は既存の一覧に存在し、音声方式ではカタログで audio 入力を持つ Gemini に限定する。worker でも同条件を再検証する。
 
 確定済み録音の全セッションから、存在する mic / system の両音声を取得する。保存済みの audio/mp4 を再エンコードせず、
 録音開始時刻と manifest の範囲を添え、Databricks Chat Completions の `audio_url` に Base64 inline で送る。

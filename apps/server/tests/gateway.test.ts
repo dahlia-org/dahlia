@@ -49,10 +49,9 @@ describe("AI Gateway", () => {
       const list = await fallback.models();
       expect(list.data.some((m) => m.id === "codex-auto-review")).toBe(false);
       expect(list.models.find((m) => m.slug === "codex-auto-review")?.visibility).toBeUndefined();
-      await fallback.responses(request({ model: "codex-auto-review", input: [] }, {
+      await expect(fallback.responses(request({ model: "codex-auto-review", input: [] }, {
         "x-forwarded-access-token": "user-token",
-      }), identity);
-      expect(JSON.parse(String(sent.mock.calls.at(-1)![1]?.body))).toMatchObject({ model: "codex-auto-review" });
+      }), identity)).rejects.toMatchObject({ status: 400, code: "model_not_configured" });
     }
   });
 
@@ -60,6 +59,18 @@ describe("AI Gateway", () => {
     const transport = vi.fn<GatewayFetch>();
     const models = await new GatewayService(backendConfig, transport).models();
     expect(models.data.map((m) => m.id)).toEqual(backendConfig.codexModels);
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it.each(configs)("publishes nothing when the model list is unset ($provider.backend)", async (backendConfig) => {
+    expect((await new GatewayService({ ...backendConfig, codexModels: undefined }).models()).data).toEqual([]);
+  });
+
+  it.each(configs)("rejects models outside the configured list ($provider.backend)", async (backendConfig) => {
+    const transport = vi.fn<GatewayFetch>();
+    await expect(new GatewayService(backendConfig, transport).responses(request({ model: "unconfigured", input: [] }, {
+      "x-forwarded-access-token": "user-token",
+    }), identity)).rejects.toMatchObject({ status: 400, code: "model_not_configured" });
     expect(transport).not.toHaveBeenCalled();
   });
 
@@ -108,23 +119,6 @@ describe("AI Gateway", () => {
     expect(init?.signal?.aborted).toBe(true);
   });
 
-  it("keeps the legacy Databricks constructor usable without schema discovery", async () => {
-    const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
-    const backend = new DatabricksBackend({ ...databricksProvider, modelSchema: "legacy.ai" }, {
-      host: "https://workspace.example",
-      clientId: "legacy-client",
-      clientSecret: "legacy-secret",
-      tokenUrl: "https://workspace.example/oidc/v1/token",
-    }, transport);
-    expect((await backend.listModels({ signal: new AbortController().signal })).data).toEqual([]);
-    await backend.responses({ model: "system.ai.gpt-5-6-luna", input: [] }, {
-      identity,
-      signal: new AbortController().signal,
-      headers: new Headers({ "x-forwarded-access-token": "obo" }),
-    });
-    expect(transport).toHaveBeenCalledOnce();
-  });
-
   it("uses API identity instead of body or client tag fields", async () => {
     const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
     const app = createApp({ config: databricksConfig, authStore: testStore(), fetch: transport });
@@ -165,20 +159,24 @@ describe("AI Gateway", () => {
   it.each(configs)("preserves optional Responses fields ($provider.backend)", async (backendConfig) => {
     const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
     const service = new GatewayService(backendConfig, transport);
+    const model = backendConfig.codexModels![0]!;
     for (const body of [
-      { model: "model", input: [], max_output_tokens: null },
-      { model: "model", input: [], stream: null },
-      { model: "model", prompt: { id: "pmpt_example" } },
+      { model, input: [], max_output_tokens: null },
+      { model, input: [], stream: null },
+      { model, prompt: { id: "pmpt_example" } },
     ]) {
       await service.responses(request(body, { "x-forwarded-access-token": "obo" }), identity);
-      expect(JSON.parse(String(transport.mock.calls.at(-1)![1]?.body))).toEqual(body);
+      expect(JSON.parse(String(transport.mock.calls.at(-1)![1]?.body))).toEqual({
+        ...body,
+        model: backendConfig.provider?.backend === "cloudflare" ? `openai/${model}` : model,
+      });
     }
   });
 
   it("rejects invalid input, compression, and excessive bytes without calling upstream", async () => {
     const transport = vi.fn<GatewayFetch>();
     const service = new GatewayService(config, transport);
-    for (const body of [{ input: [] }, { model: "model", input: 1 }, { model: "model", input: [null] }, { model: "model", input: [], stream: "true" }, { model: "model", input: [], max_output_tokens: -1 }]) {
+    for (const body of [{ input: [] }, { model: "gpt-5.6-luna", input: 1 }, { model: "gpt-5.6-luna", input: [null] }, { model: "gpt-5.6-luna", input: [], stream: "true" }, { model: "gpt-5.6-luna", input: [], max_output_tokens: -1 }]) {
       await expect(service.responses(request(body), identity)).rejects.toMatchObject({ status: 400 });
     }
     await expect(service.responses(request({}, { "content-encoding": "zstd" }), identity)).rejects.toMatchObject({ status: 415 });
