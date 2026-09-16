@@ -242,6 +242,7 @@ describe("desktop-style meeting layout", () => {
     const dialog = renderToStaticMarkup(createElement(MCPConnectionDialog, { onClose: vi.fn() }));
     expect(dialog).toContain('role="group"');
     expect(dialog).toContain('aria-pressed="true"');
+    expect(dialog).toContain('role="status"');
     expect(dialog).not.toContain('role="tab"');
     expect(readFileSync(new URL("../src/client/styles.css", import.meta.url), "utf8"))
       .toContain("  .mcp-client-tabs button { min-height: 44px; }");

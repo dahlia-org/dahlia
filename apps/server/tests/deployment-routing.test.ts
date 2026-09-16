@@ -117,7 +117,7 @@ describe("deployment routing", () => {
     expect(signOut.headers.get("cache-control")).toBe("no-store");
     expect(await authMode.json()).toEqual({
       provider: "header",
-      mcp: { url: "https://dahlia.example/mcp", databricksProxy: false, available: true },
+      mcp: { url: "https://dahlia.example/mcp", databricksProxy: false, available: false },
     });
     expect(authMode.headers.get("cache-control")).toBe("no-store");
   });
@@ -130,10 +130,11 @@ describe("deployment routing", () => {
     });
   });
 
-  it("only advertises accounts MCP setup when the runtime supports CIMD", () => {
+  it("only advertises MCP setup with an authenticated client transport", () => {
     expect(mcpSetupAvailable("accounts")).toBe(false);
     expect(mcpSetupAvailable("accounts", true)).toBe(true);
-    expect(mcpSetupAvailable("header")).toBe(true);
+    expect(mcpSetupAvailable("header")).toBe(false);
+    expect(mcpSetupAvailable("header", false, true)).toBe(true);
   });
 
   it("initializes the Cloudflare application per event and keeps health independent", async () => {

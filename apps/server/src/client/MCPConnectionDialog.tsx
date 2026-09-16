@@ -115,8 +115,8 @@ export function MCPConnectionDialog({ onClose }: { onClose: () => void }) {
       {mcpUnavailable && <div className="mcp-unavailable-note" role="status">
         <strong>{uiText("MCP setup is unavailable in this deployment", "この環境では MCP 接続を設定できません")}</strong>
         <span>{uiText(
-          "This accounts deployment does not support remote MCP client registration. Use a Node Server deployment or a trusted authentication proxy instead.",
-          "この accounts 環境はリモート MCP クライアントの OAuth 登録に対応していません。Node 版 Server または認証プロキシをご利用ください。",
+          "This deployment does not provide an authenticated remote MCP transport. Use a Node accounts deployment or Databricks Apps instead.",
+          "この環境では認証済みのリモート MCP transport を提供していません。Node の accounts 環境または Databricks Apps をご利用ください。",
         )}</span>
       </div>}
       {canConfigure && connection?.mcp.databricksProxy && <label className="mcp-profile-field">
@@ -136,7 +136,7 @@ export function MCPConnectionDialog({ onClose }: { onClose: () => void }) {
           "Could not copy. Select the settings above and copy them manually.",
           "コピーできませんでした。上の設定を選択して手動でコピーしてください。",
         )}</p>}
-      </> : <p className="muted">{uiText("Loading MCP settings…", "MCP 設定を読み込み中…")}</p>}
+      </> : <p className="muted" role="status">{uiText("Loading MCP settings…", "MCP 設定を読み込み中…")}</p>}
     </div>
     <footer className="dialog-footer"><button type="button" className="primary" onClick={onClose}>{uiText("Done", "完了")}</button></footer>
   </dialog>;

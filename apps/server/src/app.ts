@@ -143,8 +143,8 @@ export function mutationOriginAllowed(request: Request, baseUrl: string): boolea
   return request.headers.get("origin") === new URL(baseUrl).origin;
 }
 
-export function mcpSetupAvailable(authProvider: AppConfig["authProvider"], supportsCimd = false): boolean {
-  return authProvider !== "accounts" || supportsCimd;
+export function mcpSetupAvailable(authProvider: AppConfig["authProvider"], supportsCimd = false, databricksProxy = false): boolean {
+  return authProvider === "accounts" ? supportsCimd : databricksProxy;
 }
 
 export function createApp(dependencies: AppDependencies): DahliaServerApp & { runStorageMaintenance(): Promise<void> } {
@@ -171,7 +171,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   }
   const databricksProxyUrl = config.authProvider === "header" ? config.databricksAppUrl : undefined;
   const databricksProxy = databricksProxyUrl !== undefined;
-  const mcpAvailable = mcpSetupAvailable(config.authProvider, dependencies.mcpSupportsCimd);
+  const mcpAvailable = mcpSetupAvailable(config.authProvider, dependencies.mcpSupportsCimd, databricksProxy);
   const extensions = dependencies.extensions ?? [];
   const identities = new IdentityService(config, auth, async (identity) => {
     const userId = identity.source === "header" ? await store.resolveHeaderUser(identity) : identity.userId;
