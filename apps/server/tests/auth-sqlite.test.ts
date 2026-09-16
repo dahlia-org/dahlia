@@ -91,7 +91,7 @@ describe("SQLite Better Auth store", () => {
       raw.prepare('INSERT INTO member (id, organization_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)').run(uuidV7(), otherOrg, memberID, "owner", Date.now());
       raw.prepare('INSERT INTO team (id, name, organization_id, created_at) VALUES (?, ?, ?, ?)').run(uuidV7(), "Other team", otherOrg, Date.now());
       const organizations = page.parse(await (await send("/api/v1/admin/organizations")).json());
-      expect(organizations.items).toContainEqual({ id: encodeId("organization", otherOrg), name: "Other organization", slug: "other", kind: "team", memberCount: 1, teamCount: 1 });
+      expect(organizations.items).toEqual([{ id: encodeId("organization", otherOrg), name: "Other organization", slug: "other", kind: "team", memberCount: 1, teamCount: 1 }]);
       expect(organizations.hasMore).toBe(false);
       const users = page.parse(await (await send("/api/v1/admin/users")).json());
       expect(users.items.map(({ email, role }) => ({ email, role }))).toEqual([{ email: "admin@example.com", role: "admin" }, { email: "member@example.com", role: "user" }]);

@@ -18,6 +18,10 @@ let teamCreates = 0;
 let candidatesVisible = true;
 const organizations = [{ id: "org_00000000000000000000000001", name: "Alpha", slug: "alpha-team", kind: "team" }];
 const member = { id: "member-id", userId: "owner", role: "owner", user: { name: "Owner", email: "owner@example.com" } };
+const listedMember = { id: "listed-member-id", userId: "listed", role: "member", user: { name: "Listed", email: "listed@example.com" } };
+let activeRole = "owner";
+let capabilitiesReady = false;
+let releaseCapabilities: (() => void) | undefined;
 let domains: { domain: string; joinPolicy: "invite_only" | "need_approval" | "auto_join" }[] = [];
 const requests = [{ id: "ojr_other", organizationId: organizations[0]!.id, userId: "applicant", userName: "Applicant", userEmail: "applicant@example.com", organizationName: "Alpha", status: "pending" }];
 const candidateId = "org_00000000000000000000000004";
@@ -58,6 +62,11 @@ window.fetch = async (input, init) => {
   }
   if (url.pathname === "/api/v1/session") return Response.json({ user: { id: "owner", name: "Owner" },
     capabilities: { sessions: accounts, sharing: true, sync: false, admin: serverAdmin } });
+  if (url.pathname === "/api/v1/capabilities") {
+    if (capabilitiesReady) return Response.json({ workspaceEncryption: { version: 1 } });
+    return new Promise<Response>((resolve) => { releaseCapabilities = () => { capabilitiesReady = true; resolve(Response.json({ workspaceEncryption: { version: 1 } })); }; });
+  }
+  if (url.pathname.endsWith("/get-active-member-role")) return Response.json({ role: activeRole });
   if (url.pathname.endsWith("/invite-member")) {
     invites++;
     return invites === 1 ? Response.json({ error: "Invitation failed" }, { status: 500 }) : Response.json({ id: "invite-id" });
@@ -87,7 +96,7 @@ window.fetch = async (input, init) => {
   if (url.pathname === "/api/v1/organizations/org_00000000000000000000000001/teams") return Response.json({ items: [{ id: "team-id", organizationId: "org_00000000000000000000000001", name: "Design" }], nextCursor: null });
   if (url.pathname.endsWith("/list-members") || url.pathname.endsWith("/members")) {
     if (url.pathname.includes("/teams/")) return Response.json({ items: [{ id: "tm", teamId: "team-id", userId: "owner" }], nextCursor: null });
-    return Response.json({ members: [member] });
+    return Response.json({ members: [listedMember] });
   }
   if (url.pathname.endsWith("/list-teams") || url.pathname.endsWith("/list-user-teams") || url.pathname.endsWith("/teams")) {
     return Response.json([{ id: "team-id", organizationId: "org_00000000000000000000000001", name: "Design" }]);
@@ -141,10 +150,21 @@ async function run() {
   await until(() => button("Workspace governance"));
   button("Workspace governance").click();
   await until(() => panel()?.textContent?.includes("Team workspace"));
+  const workspaceButton = button("New Workspace", panel());
+  assert(workspaceButton, "Organization workspace creation is missing");
+  assert(workspaceButton.disabled, "Workspace creation opened before encryption capabilities loaded");
+  releaseCapabilities!();
+  await until(() => !workspaceButton.disabled);
+  workspaceButton.click();
+  await until(() => document.querySelector(".action-dialog:modal"));
+  assert(!document.querySelector('.action-dialog [aria-label="Organization"]'), "Organization-scoped creation asks for an Organization again");
+  button("Cancel", document.querySelector(".action-dialog")!).click();
+  await until(() => !document.querySelector(".action-dialog"));
   assert(panel().querySelector(".workspace-governance-identity .appearance-icon"), "Workspace icon is missing");
   assert(!panel().textContent?.includes("workspace-id") && !panel().textContent?.includes("revision 1") && !panel().textContent?.includes("Creator"), "Internal Workspace metadata is visible");
   button("Members").click();
-  await until(() => panel()?.textContent?.includes("owner@example.com"));
+  await until(() => panel()?.textContent?.includes("listed@example.com"));
+  assert(button("Leave", panel()).classList.contains("danger-button"), "Leave action depends on the visible member page or is not styled as dangerous");
   assert(location.pathname === "/orgs/org_00000000000000000000000001", "Detail did not use TypeID");
   assert(document.querySelector('#account-menu a[href="/orgs"][aria-current="page"]'), "Organization detail is not selected");
   await until(() => [...document.querySelectorAll('[role="tab"]')].map((el) => el.textContent).join() === "Workspace governance,Members 1,Teams 1,Settings");
@@ -175,6 +195,7 @@ async function run() {
   button("Settings").click();
   await until(() => panel()?.textContent?.includes("alpha-team"));
   assert(!button("Delete organization", panel()), "Organization owner can delete from Settings");
+  assert(!button("Leave organization", panel()), "Leave action remained in Settings");
   assert(button("Rename", panel()).closest("dd")?.previousElementSibling?.textContent === "Organization name", "Rename is detached from its setting");
   assert(button("Change slug", panel()).closest("dd")?.previousElementSibling?.textContent === "slug", "Slug edit is detached from its setting");
   const settings = panel().querySelector<HTMLElement>(".org-settings")!;
@@ -269,8 +290,11 @@ async function run() {
   await until(() => location.pathname === "/admin/orgs" && !document.querySelector(".action-dialog"));
   assert(creates === 2, "Create did not complete exactly once after retry");
   navigateDashboard("/admin/orgs/org_00000000000000000000000002");
-  await until(() => button("Delete organization", main()));
-  button("Delete organization", main()).click();
+  await until(() => button("Settings", main()));
+  assert(!main().querySelector(":scope > button.danger-button"), "Organization deletion is detached from Settings");
+  button("Settings", main()).click();
+  await until(() => button("Delete organization", panel()));
+  button("Delete organization", panel()).click();
   await until(() => document.querySelector(".action-dialog:modal"));
   document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
   await until(() => location.pathname === "/admin/orgs" && !document.querySelector(".action-dialog"));
@@ -283,27 +307,33 @@ async function run() {
   (document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') as HTMLElement).click();
   await until(() => button("Members"));
   button("Members").click();
-  await until(() => panel()?.textContent?.includes("owner@example.com"));
+  await until(() => panel()?.textContent?.includes("listed@example.com"));
   button("Settings").click();
   await until(() => panel()?.textContent?.includes("external"));
   assert(button("Change slug", panel()), "Header organization slug editor missing");
   await until(() => button("Add domain", panel()));
   button("Add domain", panel()).click();
   await until(() => document.querySelector('.action-dialog input[name="domain"]'));
-  assert(document.querySelector(".action-dialog")?.querySelector("select")?.value === "invite_only", "New domain is not invitation-only");
+  const policy = document.querySelector<HTMLButtonElement>('.action-dialog [role="combobox"]')!;
+  await until(() => document.getElementById(policy.getAttribute("aria-controls")!));
+  assert(policy.value === "invite_only", "New domain is not invitation-only");
   fill("domain", "gmail.com");
   document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
   await until(() => document.querySelector(".action-dialog")?.textContent?.includes("Shared email domains cannot"));
   fill("domain", "company.example");
-  const policy = document.querySelector(".action-dialog")!.querySelector("select")!;
-  policy.value = "auto_join"; policy.dispatchEvent(new Event("change", { bubbles: true }));
+  policy.click();
+  document.getElementById(policy.getAttribute("aria-controls")!)!.querySelector<HTMLButtonElement>('button[value="auto_join"]')!.click();
+  await until(() => policy.value === "auto_join");
   document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
-  await until(() => !document.querySelector(".action-dialog") && panel()?.textContent?.includes("company.example · Auto join"));
-  button("Remove", panel()).click();
+  await until(() => !document.querySelector(".action-dialog") && panel()?.textContent?.includes("company.example"));
+  const domainRow = panel().querySelector<HTMLElement>(".org-domain-row")!;
+  assert(domainRow.querySelector(".org-domain-policy")?.textContent === "Auto join", "Domain join policy is unclear");
+  assert(button("Remove", domainRow).classList.contains("danger-button"), "Domain removal is not styled as dangerous");
+  button("Remove", domainRow).click();
   await until(() => document.querySelector(".action-dialog:modal"));
   document.querySelector<HTMLButtonElement>(".action-dialog [data-confirm]")!.click();
-  await until(() => !document.querySelector(".action-dialog") && panel()?.textContent?.includes("No domains configured"));
-  assert(!button("Delete organization", panel()), "Organization settings exposed deletion in Header mode");
+  await until(() => !document.querySelector(".action-dialog") && panel()?.textContent?.includes("No email domains yet"));
+  assert(!button("Delete organization", panel()), "Server administrator deletion leaked into the member-facing organization page");
   organizations[0]!.kind = "personal";
   navigateDashboard("/orgs");
   await until(() => main().textContent?.includes("No organizations"));
@@ -311,6 +341,7 @@ async function run() {
   assert(!document.querySelector('a[href="/orgs/org_00000000000000000000000001"]'), "Personal organization is listed as a joined organization");
   navigateDashboard("/orgs/org_00000000000000000000000001");
   await until(() => button("Settings"));
+  assert(!button("New Workspace", panel()), "Personal organization exposed Workspace creation");
   button("Settings").click();
   await until(() => button("Change slug", panel()));
   assert(!button("Add domain", panel()), "Personal organization exposed auto-join settings");
@@ -324,14 +355,14 @@ async function run() {
   await until(() => panel()?.textContent?.includes("personal_updated"));
   assert(location.pathname === "/orgs/org_00000000000000000000000001", "Personal slug edit changed the TypeID URL");
   organizations[0]!.kind = "team";
-  member.role = "member";
+  activeRole = "member";
   navigateDashboard("/orgs");
   await until(() => document.querySelector('a[href="/orgs/org_00000000000000000000000001"]'));
   (document.querySelector('a[href="/orgs/org_00000000000000000000000001"]') as HTMLElement).click();
   await until(() => button("Settings"));
   button("Settings").click();
   await until(() => panel()?.textContent?.includes("personal_updated"));
-  await until(() => panel()?.textContent?.includes("No domains configured"));
+  await until(() => panel()?.textContent?.includes("No email domains yet"));
   assert(!button("Add domain", panel()), "Member can edit auto-join settings");
   assert(!button("Change slug", panel()), "Member can edit organization slug");
   document.body.dataset.testResult = "passed";

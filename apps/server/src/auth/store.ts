@@ -279,10 +279,14 @@ export function createPostgresApplicationStore(
       id: postgresAuthSchema.organization.id, name: postgresAuthSchema.organization.name, slug: postgresAuthSchema.organization.slug, kind: postgresAuthSchema.organization.kind,
       memberCount: sql<number>`(select count(*) from ${postgresAuthSchema.member} where ${postgresAuthSchema.member.organizationId} = ${postgresAuthSchema.organization}."id")`.mapWith(Number),
       teamCount: sql<number>`(select count(*) from ${postgresAuthSchema.team} where ${postgresAuthSchema.team.organizationId} = ${postgresAuthSchema.organization}."id")`.mapWith(Number),
-    }).from(postgresAuthSchema.organization).orderBy(asc(postgresAuthSchema.organization.name), asc(postgresAuthSchema.organization.id)).limit(limit).offset(offset),
+    }).from(postgresAuthSchema.organization).where(eq(postgresAuthSchema.organization.kind, "team"))
+      .orderBy(asc(postgresAuthSchema.organization.name), asc(postgresAuthSchema.organization.id)).limit(limit).offset(offset),
     async getServerOrganization(organizationId, limit, membersOffset, teamsOffset) {
       const [organization] = await db.select({ id: postgresAuthSchema.organization.id, name: postgresAuthSchema.organization.name, slug: postgresAuthSchema.organization.slug, kind: postgresAuthSchema.organization.kind })
-        .from(postgresAuthSchema.organization).where(eq(postgresAuthSchema.organization.id, organizationId)).limit(1);
+        .from(postgresAuthSchema.organization).where(and(
+          eq(postgresAuthSchema.organization.id, organizationId),
+          eq(postgresAuthSchema.organization.kind, "team"),
+        )).limit(1);
       if (!organization) return null;
       const members = await db.select({ id: postgresAuthSchema.member.id, userId: postgresAuthSchema.user.id, role: postgresAuthSchema.member.role,
         name: postgresAuthSchema.user.name, email: postgresAuthSchema.user.email })
@@ -509,10 +513,14 @@ export function createSqliteApplicationStore(
       id: sqliteAuthSchema.organization.id, name: sqliteAuthSchema.organization.name, slug: sqliteAuthSchema.organization.slug, kind: sqliteAuthSchema.organization.kind,
       memberCount: sql<number>`(select count(*) from ${sqliteAuthSchema.member} where ${sqliteAuthSchema.member.organizationId} = ${sqliteAuthSchema.organization}."id")`.mapWith(Number),
       teamCount: sql<number>`(select count(*) from ${sqliteAuthSchema.team} where ${sqliteAuthSchema.team.organizationId} = ${sqliteAuthSchema.organization}."id")`.mapWith(Number),
-    }).from(sqliteAuthSchema.organization).orderBy(asc(sqliteAuthSchema.organization.name), asc(sqliteAuthSchema.organization.id)).limit(limit).offset(offset),
+    }).from(sqliteAuthSchema.organization).where(eq(sqliteAuthSchema.organization.kind, "team"))
+      .orderBy(asc(sqliteAuthSchema.organization.name), asc(sqliteAuthSchema.organization.id)).limit(limit).offset(offset),
     async getServerOrganization(organizationId, limit, membersOffset, teamsOffset) {
       const [organization] = await db.select({ id: sqliteAuthSchema.organization.id, name: sqliteAuthSchema.organization.name, slug: sqliteAuthSchema.organization.slug, kind: sqliteAuthSchema.organization.kind })
-        .from(sqliteAuthSchema.organization).where(eq(sqliteAuthSchema.organization.id, organizationId)).limit(1);
+        .from(sqliteAuthSchema.organization).where(and(
+          eq(sqliteAuthSchema.organization.id, organizationId),
+          eq(sqliteAuthSchema.organization.kind, "team"),
+        )).limit(1);
       if (!organization) return null;
       const members = await db.select({ id: sqliteAuthSchema.member.id, userId: sqliteAuthSchema.user.id, role: sqliteAuthSchema.member.role,
         name: sqliteAuthSchema.user.name, email: sqliteAuthSchema.user.email })

@@ -130,18 +130,26 @@ integration("PostgreSQL application store", () => {
   it("lists server directory records with correlated organization counts", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const id = crypto.randomUUID();
+    const personalId = crypto.randomUUID();
     const now = new Date();
     await connection!.db.insert(schema.user).values({ id, name: "Directory member", email: `${id}@example.com`, emailVerified: true });
-    await connection!.db.insert(schema.organization).values({ id, name: "Directory organization", slug: id, createdAt: now });
+    await connection!.db.insert(schema.organization).values([
+      { id, name: "Directory organization", slug: id, createdAt: now },
+      { id: personalId, name: "Personal", slug: personalId, kind: "personal", createdAt: now },
+    ]);
     try {
       await connection!.db.insert(schema.member).values({ id, organizationId: id, userId: id, role: "member", createdAt: now });
       await connection!.db.insert(schema.team).values({ id, organizationId: id, name: "Directory team", createdAt: now });
-      expect(await store.listServerOrganizations(1000, 0)).toContainEqual({ id, name: "Directory organization", slug: id, kind: "team", memberCount: 1, teamCount: 1 });
+      const organizations = await store.listServerOrganizations(1000, 0);
+      expect(organizations).toContainEqual({ id, name: "Directory organization", slug: id, kind: "team", memberCount: 1, teamCount: 1 });
+      expect(organizations).not.toContainEqual(expect.objectContaining({ id: personalId }));
       expect(await store.getServerOrganization(id, 100, 0, 0)).toMatchObject({ id, name: "Directory organization", members: [{ userId: id, email: `${id}@example.com` }], teams: [{ id, name: "Directory team" }] });
       expect(await store.getServerOrganization(id, 100, 1, 1)).toMatchObject({ members: [], teams: [] });
+      expect(await store.getServerOrganization(personalId, 100, 0, 0)).toBeNull();
       expect(await store.getServerOrganization(crypto.randomUUID(), 100, 0, 0)).toBeNull();
       expect(await store.listServerUsers(1000, 0)).toEqual(expect.arrayContaining([expect.objectContaining({ id, email: `${id}@example.com` })]));
     } finally {
+      await connection!.db.delete(schema.organization).where(eq(schema.organization.id, personalId));
       await connection!.db.delete(schema.organization).where(eq(schema.organization.id, id));
       await connection!.db.delete(schema.user).where(eq(schema.user.id, id));
     }

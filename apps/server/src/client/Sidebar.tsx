@@ -122,7 +122,6 @@ function SignOutButton() {
 export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceId: resolvedWorkspaceId }: { brand: ReactNode; session: SessionInfo; children: ReactNode; serverLinks?: ReactNode; routeWorkspaceId?: string }) {
   const state = useSidebar();
   const identity = session.user.name || session.user.email || session.user.id;
-  const current = uiText("All accessible Workspaces", "アクセス可能なすべてのワークスペース");
   const routeWorkspaceId = resolvedWorkspaceId ?? (typeof window === "undefined" ? undefined : window.location.pathname.match(/^\/workspaces\/([^/]+)/)?.[1]);
   const selectionKey = `dahlia:sidebar:${session.user.id}:workspace`;
   const routedWorkspace = useLiveJSON<SyncedWorkspaceInfo>(resolvedWorkspaceId ? apiQuery("getWorkspace", { params: { path: { workspaceId: resolvedWorkspaceId } } }) : undefined);
@@ -175,7 +174,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
     <div className="sidebar-footer">
       <button className="organization-switcher" popoverTarget="account-menu" aria-label={uiText(`Account menu: ${identity}`, `アカウントメニュー: ${identity}`)}>
         <MenuIcon name="account" />
-        <span className="identity-copy"><strong>{identity}</strong><small>{current}</small></span>
+        <span className="identity-copy"><strong>{identity}</strong></span>
         <svg className="account-menu-chevron" width="16" height="20" viewBox="0 0 16 20" aria-hidden="true">
           <path d="m5 6 3-3 3 3M5 14l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>

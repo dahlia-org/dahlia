@@ -161,7 +161,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Administrator organization directory */
+        /** Administrator Team Organization directory */
         get: operations["listServerOrganizations"];
         put?: never;
         post?: never;
@@ -178,7 +178,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Organization directory details; administrator only, independent of membership */
+        /** Team Organization directory details; administrator only, independent of membership */
         get: operations["getServerOrganization"];
         put?: never;
         post?: never;

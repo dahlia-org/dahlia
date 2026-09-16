@@ -14,6 +14,7 @@ const targets = [
 ];
 const grants = new Map<string, string>([["team50", "viewer"]]);
 let fail = false;
+let targetReads = 0;
 window.fetch = async (input, init) => {
   const request = new Request(input instanceof Request ? input : new URL(String(input), location.origin), init);
   const url = new URL(request.url);
@@ -23,6 +24,7 @@ window.fetch = async (input, init) => {
   ]));
   if (url.pathname === "/api/v1/workspaces") return Promise.resolve(Response.json({ items: [] }));
   if (url.pathname.endsWith("/permission-targets")) {
+    targetReads++;
     const q = (url.searchParams.get("q") ?? "").toLowerCase();
     const offset = Number(url.searchParams.get("cursor") ?? 0);
     const groups = ["organization", "team", "user"].map((type) => targets.filter((target) => target.principalType === type
@@ -42,10 +44,11 @@ async function until(predicate: () => unknown) {
   const deadline = performance.now() + 5000;
   while (!predicate()) { if (performance.now() > deadline) throw new Error("Timed out"); await new Promise(requestAnimationFrame); }
 }
-const pickers = () => [...document.querySelectorAll(".sharing-results select")] as unknown as HTMLSelectElement[];
-const choose = (picker: HTMLSelectElement, role: string) => {
-  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(picker, role);
-  picker.dispatchEvent(new Event("change", { bubbles: true }));
+const pickers = () => [...document.querySelectorAll<HTMLButtonElement>('.sharing-results [role="combobox"]')];
+const choose = async (picker: HTMLButtonElement, role: string) => {
+  await until(() => document.getElementById(picker.getAttribute("aria-controls")!));
+  picker.click();
+  document.getElementById(picker.getAttribute("aria-controls")!)!.querySelector<HTMLButtonElement>(`button[value="${role}"]`)!.click();
 };
 async function run() {
   const workspace: SyncedWorkspaceInfo = { meetingDeletionGraceDays: 7, generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS, workspaceId: "workspace", organizationId: "org", name: "Shared", role: "admin", revision: 1,
@@ -57,36 +60,46 @@ async function run() {
   await until(() => document.querySelector(".collection-heading button"));
   const opener = document.querySelector<HTMLButtonElement>(".collection-heading button")!;
   opener.focus(); opener.click();
-  await until(() => pickers().length === 52);
+  await until(() => document.querySelector("dialog")?.open);
   assert(document.querySelector("dialog")?.open, "Button opens native modal");
+  assert(!document.querySelector(".sharing-dialog form"), "Direct ID sharing is still visible");
   const search = document.querySelector<HTMLInputElement>('input[type="search"]')!;
+  assert(pickers().length === 0 && targetReads === 0, "Targets load before a search is entered");
+  assert(document.querySelector(".sharing-results > .muted")?.textContent, "Empty search guidance is missing");
   assert(document.activeElement === search, "Search receives focus");
   assert(search.getAttribute("aria-label"), "Search has an accessible name");
-  const iconPaths = [...document.querySelectorAll(".sharing-results .share-row > svg path")].map((path) => path.getAttribute("d"));
-  assert(new Set(iconPaths).size === 3, "Organizations, teams, and users have distinct icons");
   const searchFor = (value: string) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, value);
     search.dispatchEvent(new Event("input", { bubbles: true }));
   };
+  searchFor("example");
+  await until(() => pickers().length === 52);
+  const iconPaths = [...document.querySelectorAll(".sharing-results .share-row > svg path")].map((path) => path.getAttribute("d"));
+  assert(new Set(iconPaths).size === 3, "Organizations, teams, and users have distinct icons");
+  searchFor("nothing matches");
+  await until(() => document.querySelector('.sharing-results > .muted[role="status"]'));
+  assert(pickers().length === 0, "No-result search kept stale targets");
   searchFor("Repeated team");
+  await new Promise(requestAnimationFrame);
+  assert(pickers().length === 0, "Results from the previous search remain actionable during debounce");
   await until(() => pickers().length === 50 && !pickers()[0]!.disabled);
-  document.querySelector<HTMLButtonElement>(".sharing-results button")!.click();
+  document.querySelector<HTMLButtonElement>(".sharing-results > button")!.click();
   await until(() => pickers().length === 51 && !pickers().at(-1)!.disabled);
   assert(pickers().at(-1)!.value === "viewer", "Existing grant beyond first page is visible");
-  choose(pickers().at(-1)!, "");
+  await choose(pickers().at(-1)!, "");
   await until(() => pickers().at(-1)!.value === "" && !pickers().at(-1)!.disabled);
   assert(!grants.has("team50"), "Grant beyond first page can be revoked");
   searchFor("yuki@");
   await until(() => pickers().length === 1 && !pickers()[0]!.disabled);
   for (const role of ["viewer", "editor", "admin"]) {
-    choose(pickers()[0]!, role);
+    await choose(pickers()[0]!, role);
     await until(() => grants.get("user") === role && !pickers()[0]!.disabled);
     assert(pickers()[0]!.value === role, "Selected role is persisted");
   }
-  fail = true; choose(pickers()[0]!, "");
+  fail = true; await choose(pickers()[0]!, "");
   await until(() => document.querySelector('[role="alert"]') && !pickers()[0]!.disabled);
   assert(pickers()[0]!.value === "admin" && grants.has("user"), "Failed revoke preserves existing access");
-  fail = false; choose(pickers()[0]!, "");
+  fail = false; await choose(pickers()[0]!, "");
   await until(() => pickers()[0]!.value === "" && !pickers()[0]!.disabled);
   assert(!grants.has("user"), "Retry revokes direct user grant");
   document.querySelector<HTMLButtonElement>(".dialog-footer button")!.click();
