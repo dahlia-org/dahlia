@@ -261,7 +261,7 @@ function AccountsOnly({ brand, children }: { brand: DashboardBrand; children: Re
   }, [authModeAttempt]);
 
   if (accountSignIn) return children;
-  if (accountSignIn === false) return <HeaderAuthenticationUnavailable brand={brand} />;
+  if (accountSignIn === false) return <HeaderAuthenticationNotice brand={brand} />;
   return <main className="loading">
     <Brand brand={brand} />
     <span>{authModeError ?? uiText("Loading account…", "アカウントを読み込み中…")}</span>
@@ -269,13 +269,14 @@ function AccountsOnly({ brand, children }: { brand: DashboardBrand; children: Re
   </main>;
 }
 
-export function HeaderAuthenticationUnavailable({ brand }: { brand: DashboardBrand }) {
+export function HeaderAuthenticationNotice({ brand }: { brand: DashboardBrand }) {
   return <main className="loading">
     <Brand brand={brand} />
     <span>{uiText(
-      "Your external authentication session is unavailable. Contact your administrator.",
-      "外部認証セッションを確認できません。管理者にお問い合わせください。",
+      "This deployment uses external authentication. Contact your administrator if you cannot sign in.",
+      "この環境では外部認証を使用しています。サインインできない場合は管理者にお問い合わせください。",
     )}</span>
+    <a className="secondary" href="/dashboard">{uiText("Return to dashboard", "ダッシュボードに戻る")}</a>
   </main>;
 }
 

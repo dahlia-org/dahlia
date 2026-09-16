@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   App,
-  HeaderAuthenticationUnavailable,
+  HeaderAuthenticationNotice,
   ScreenshotFigure,
   SyncedMeeting,
   Workspaces,
@@ -268,12 +268,13 @@ describe("dashboard navigation", () => {
     await expect(accountSignInRequired()).rejects.toMatchObject({ status: 503 });
   });
 
-  it("shows a stable terminal screen when Header authentication is unavailable", () => {
+  it("shows a stable notice with an explicit escape when Header authentication handles sign-in", () => {
     vi.stubGlobal("navigator", { language: "en-US" });
-    const html = renderToStaticMarkup(createElement(HeaderAuthenticationUnavailable, {
+    const html = renderToStaticMarkup(createElement(HeaderAuthenticationNotice, {
       brand: { name: "Dahlia", product: "Server" },
     }));
-    expect(html).toContain("Your external authentication session is unavailable. Contact your administrator.");
+    expect(html).toContain("This deployment uses external authentication.");
+    expect(html).toContain('<a class="secondary" href="/dashboard">Return to dashboard</a>');
     expect(html).not.toContain("Continue with Google");
   });
 
