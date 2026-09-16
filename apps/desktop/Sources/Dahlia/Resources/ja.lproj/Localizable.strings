@@ -34,8 +34,12 @@
 "settings.preferences.localModelPreferencesDescription" = "AIプロバイダーと認証情報はこのMac固有です。生成モデルはワークスペースごとに設定します。";
 "settings.preferences.serverProcessingAdvanced" = "サーバー処理の詳細設定";
 "settings.preferences.processingWorkflow" = "新しい録音の自動処理";
-"settings.preferences.transcribeThenSummarize" = "文字起こししてから要約";
-"settings.preferences.combinedTranscriptionSummary" = "文字起こしと要約を一括生成";
+"settings.preferences.transcribeThenSummarize" = "文字起こし後に要約";
+"settings.preferences.combinedTranscriptionSummary" = "音声から直接要約";
+"settings.preferences.transcribeThenSummarizeDescription" = "Geminiが先に音声を文字起こしし、その文字起こしから要約を作成します。";
+"settings.preferences.combinedTranscriptionSummaryDescription" = "Geminiが音声から直接要約し、同じ処理内で文字起こしも作成します。";
+"settings.preferences.serverTranscriptionLanguageDescription" = "Geminiが文字起こしの処理中に発話言語を判定するため、言語設定は不要です。";
+"settings.preferences.localTranscriptionSettingsDescription" = "言語とライブ文字起こしは、このMacの「録音」設定と録音パネルで設定します。";
 "settings.preferences.summaryModel" = "要約モデル";
 "settings.preferences.automaticModelPreference" = "自動";
 "settings.preferences.unavailableModelPreference" = "この方式では利用不可";

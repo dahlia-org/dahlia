@@ -13,9 +13,8 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
     }
 
     struct RemoteProcessing: Codable, Equatable, Sendable {
-        var workflow: Workflow = .transcribeThenSummarize
+        var workflow: Workflow = .combined
         var summaryModel: String?
-        var transcriptionModel: String?
         var reasoningEffort: String?
     }
 
@@ -23,14 +22,6 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         /// Transcription location. Summary routing follows Workspace ownership.
         var location: SummaryMode = .local
         var remote = RemoteProcessing()
-    }
-
-    struct Transcription: Codable, Equatable, Sendable {
-        var localeIdentifier = "ja-JP"
-        var automaticLanguageDetection = false
-        var languageScope: TranscriptionLanguageScope = .all
-        var languageIdentifiers: [String] = []
-        var liveTranscriptDraft = false
     }
 
     struct Summary: Codable, Equatable, Sendable {
@@ -42,7 +33,6 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         var processing: Processing
         var summary: Summary
         var outputLanguage: SummaryLanguage
-        var transcription: Transcription?
     }
 
     struct LocalProcessing: Codable, Equatable, Sendable {
@@ -54,10 +44,9 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
     var summary = Summary()
     var outputLanguage: SummaryLanguage = .ja
     var local = LocalProcessing()
-    var transcription = Transcription()
     var automaticProcessing = true
 
     var generationPreferences: GenerationPreferences {
-        .init(processing: processing, summary: summary, outputLanguage: outputLanguage, transcription: transcription)
+        .init(processing: processing, summary: summary, outputLanguage: outputLanguage)
     }
 }

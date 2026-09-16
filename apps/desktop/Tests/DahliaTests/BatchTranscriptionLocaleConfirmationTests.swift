@@ -7,18 +7,20 @@ import GRDB
 
     @MainActor
     struct BatchTranscriptionLocaleConfirmationTests {
-        @Test(arguments: [false, true], [false, true])
-        func confirmationPreservesStoredLocale(automaticDetection: Bool, retry: Bool) async throws {
+        @Test(arguments: [false, true])
+        func confirmationPreservesStoredLocale(retry: Bool) async throws {
+            let settings = AppSettings.shared
+            let previous = (settings.appLanguageScope, settings.enabledLanguageIdentifiers)
+            defer {
+                settings.appLanguageScope = previous.0
+                settings.enabledLanguageIdentifiers = previous.1
+            }
+            settings.appLanguageScope = .selected
+            settings.enabledLanguageIdentifiers = ["en", "ja"]
             let batch = try BatchAudioTestFixture(name: "stored-recording-locale", endedAt: .now, duration: 1)
             defer { batch.removeFiles() }
             try await batch.recordMicrophoneAudio(localeIdentifier: "en_US")
             try await batch.database.dbQueue.write { db in
-                var workspace = try #require(try WorkspaceRecord.fetchOne(db, key: batch.meeting.workspaceId))
-                workspace.generationSettings.transcription.localeIdentifier = "ja-JP"
-                workspace.generationSettings.transcription.automaticLanguageDetection = automaticDetection
-                workspace.generationSettings.transcription.languageScope = .selected
-                workspace.generationSettings.transcription.languageIdentifiers = ["en", "ja"]
-                try workspace.update(db)
                 if retry {
                     var session = batch.session
                     session.batchSelectedLocaleIdentifier = "en_US"
@@ -47,8 +49,8 @@ import GRDB
             #expect(locales == ["en_US"])
         }
 
-        @Test(arguments: [false, true], [false, true])
-        func confirmationPreservesLocalesChangedWhileRecording(automaticDetection: Bool, capturesProcessing: Bool) async throws {
+        @Test(arguments: [false, true])
+        func confirmationPreservesLocalesChangedWhileRecording(capturesProcessing: Bool) async throws {
             let batch = try BatchAudioTestFixture(
                 name: "recording-locale-ranges",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
@@ -70,11 +72,6 @@ import GRDB
                 }
             }
             try await batch.recordMicrophoneAudio()
-            try await batch.database.dbQueue.write { db in
-                var workspace = try #require(try WorkspaceRecord.fetchOne(db, key: batch.meeting.workspaceId))
-                workspace.generationSettings.transcription.automaticLanguageDetection = automaticDetection
-                try workspace.update(db)
-            }
             try await batch.database.dbQueue.write { db in
                 let fetchedRange = try RecordingAudioSegmentRangeRecord.fetchOne(db)
                 let firstRange = try #require(fetchedRange)

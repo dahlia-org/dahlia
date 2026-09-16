@@ -293,7 +293,7 @@ Run `pnpm exec vitest run tests/search-weighting.test.ts` for SQLite regression 
 
 ### Workspace processing settings
 
-Workspace `generationSettings` owns transcription location/model, locale, automatic language detection and candidate languages, live transcript drafts, summary style/model/effort/output language, and automatic processing after recording. Administrators update the full object through the existing Workspace transaction with `baseRevision`; members can read it. Receipts, deltas, snapshots and SSE use the existing Workspace sync path. Desktop caches the same object for local and Server Workspaces; recording never waits for a settings fetch.
+Workspace `generationSettings` owns transcription location, summary style/model/effort/output language, and automatic processing after recording. Administrators update the full object through the existing Workspace transaction with `baseRevision`; members can read it. Receipts, deltas, snapshots and SSE use the existing Workspace sync path. Desktop caches the same object for local and Server Workspaces; recording never waits for a settings fetch. Local transcription language, detection candidates, and live transcript drafts remain device-local Mac settings.
 
 Local Workspace summaries use this Mac's model provider and credentials. Server Workspace summaries always run on the Server, including when Apple Speech transcribes locally. Web directs users to Dahlia for Mac for local transcription. Provider credentials and hardware/storage preferences remain on this Mac; Accounts manages Server connections. There is no account language settings endpoint or table. Image captions use the Workspace output language, while OCR preserves the original languages.
 
@@ -301,14 +301,14 @@ Set `DAHLIA_SEARCH_EMBEDDING_MODEL` to enable asynchronous semantic indexing on 
 
 ### Server summary generation
 
-The optional `transcriptionModel` must support JSON Schema output, because remote transcription returns structured transcript segments rather than plain text.
+Server transcription automatically selects an audio-capable Gemini model and returns structured transcript segments rather than plain text.
 
 `GET /api/v1/capabilities` includes `meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"] }` when the runtime has registered those generators. Sources identify the accepted primary inputs: transcript or recorded audio, and both may also use images. Node supports the configured Databricks backend; PostgreSQL/Hyperdrive Workers advertise the capability when a supported backend, summary Queue, and Images binding are configured. Unsupported backends omit it. An empty capabilities object also means summary generation is unsupported. There is no separate summary methods endpoint.
 
 Workspace generation settings separate intent from model API parameters:
 `summary: { style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline" }` and
-`processing: { location: "local" | "remote", remote: { workflow: "transcribeThenSummarize" | "combined", summaryModel?, transcriptionModel?, reasoningEffort? } }`.
-Defaults are local transcription, detailed style, and transcribe-then-summarize. Server Workspace summaries always run on the Server. Remote model and effort overrides are absent by default (Automatic); local Workspace summaries default to `gpt-5.6-luna` with `high` effort and Japanese output. The Server resolves known preferred models against the shared `/api/v1/models` catalog and uses its default reasoning level. Explicit unavailable choices fail instead of being silently replaced. Styles map to existing job detail values only at execution.
+`processing: { location: "local" | "remote", remote: { workflow: "transcribeThenSummarize" | "combined", summaryModel?, reasoningEffort? } }`.
+Defaults are local transcription, detailed style, and direct summary generation from audio (`combined`) when Server transcription is selected. Server Workspace summaries always run on the Server. Server transcription automatically uses Gemini and does not consume Workspace language settings. Two-stage processing separately selects that transcription model and an automatic transcript-summary model, preferring Gemini when the provider supports it. Combined processing may override its Gemini summary model and effort; those overrides are absent by default (Automatic). Local Workspace summaries default to `gpt-5.6-luna` with `high` effort and Japanese output. The Server resolves known preferred models against the shared `/api/v1/models` catalog and uses its default reasoning level. Explicit unavailable choices fail instead of being silently replaced. Styles map to existing job detail values only at execution.
 
 `outputLanguage` applies to summaries and image captions. Each job captures it when processing starts and retains it across retries. Provider selection and credentials remain on this Mac. Web cannot execute local transcription.
 
@@ -318,7 +318,7 @@ Web settings separate summary/image output, transcription, and automatic process
 
 Desktop and Web mark an effective summary model as unavailable and disable generation when it does not support the selected input source. This applies to Workspace defaults as well as one-time model choices; selecting a compatible model or Automatic permits generation without changing the saved default. Neither client claims unavailability while the model catalog is still loading or has failed to load, even when an older catalog is cached. A successfully loaded catalog with no matching models still shows the explanation. Web keeps generation enabled while availability is unknown and lets the Server validate the request; catalog errors are surfaced separately.
 
-Updates use the existing Workspace revision and authorization checks. Switching transcription location/workflow preserves inactive model overrides. Each generation captures a separate settings snapshot; one-time overrides never modify Workspace defaults. Server is unreleased and the initial migration creates the current schema directly. Desktop preserves released v41 data and inherits historical Mac processing defaults once during v42, preserving each Workspace's existing model and effort.
+Updates use the existing Workspace revision and authorization checks. Switching transcription location/workflow preserves inactive model overrides. Each generation captures a separate settings snapshot; one-time overrides never modify Workspace defaults. Server is unreleased and the initial migration creates the current schema directly. Desktop preserves released v41 data and inherits historical summary defaults once during v42, preserving each Workspace's existing model and effort while leaving transcription preferences in UserDefaults.
 
 Explicit job retries retain the captured input references and settings, but recapture summary/transcript revisions and the input fingerprint under the Workspace lock. Changes after retry acceptance still reject the result.
 
@@ -340,7 +340,6 @@ type SummaryRequest = {
       remote: {
         workflow: "transcribeThenSummarize" | "combined";
         summaryModel?: string;
-        transcriptionModel?: string;
         reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
       };
     };
@@ -348,7 +347,7 @@ type SummaryRequest = {
 };
 ```
 
-The meeting is identified only by the route. Transcript version selects an exact retained version; missing versions never fall back to latest. Recording pairs are ordered, nonempty and canonically attached to this meeting, with at least one track each. Unauthorized/mismatched files are rejected. Workflow explicitly selects separate recognition/summary or combined audio generation; inactive transcription overrides are ignored for combined generation. Both audio paths share the same transcript schema and validate model audio/structured-output capabilities. The preferences snapshot carries the account's output language independently of recognition language.
+The meeting is identified only by the route. Transcript version selects an exact retained version; missing versions never fall back to latest. Recording pairs are ordered, nonempty and canonically attached to this meeting, with at least one track each. Unauthorized/mismatched files are rejected. Workflow explicitly selects separate recognition/summary or combined audio generation. Both audio paths share the same transcript schema, let Gemini identify the spoken language, and validate model audio/structured-output capabilities. The preferences snapshot carries the Workspace output language independently of recognition language.
 
 Acceptance freezes input, settings, language and conflict revisions and returns 202 with `{ job }` and `Location: /api/v1/meetings/{meetingId}/summary-jobs/{jobId}`. Reuse the same ID and body after an uncertain response; different content with that ID or another active job returns 409. GET that location returns that individual job; `/summary-jobs/latest` returns the most recent job. States are `pending`, `processing`, `succeeded`, `failed`, and `cancelled`. Processing stages are `transcribing`, `summarizing`, `generating` (combined), and `saving`. Failures include a bounded error code and the retained stage.
 

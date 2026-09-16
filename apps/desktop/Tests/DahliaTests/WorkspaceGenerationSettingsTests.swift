@@ -6,6 +6,11 @@
 
     @MainActor
     struct WorkspaceGenerationSettingsTests {
+        @Test
+        func remoteProcessingDefaultsToDirectAudioSummary() {
+            #expect(WorkspaceGenerationSettings().processing.remote.workflow == .combined)
+        }
+
         @Test(arguments: ["local", "admin", "editor", "viewer"])
         func sharedSettingsRequireAdministrationAndQueueAtomically(role: String) async throws {
             let database = try AppDatabaseManager(path: ":memory:")
@@ -30,14 +35,6 @@
             )
             snapshot.generationSettings.outputLanguage = .fr
             snapshot.generationSettings.local.model = "shared-model"
-            snapshot.generationSettings.transcription.localeIdentifier = "fr-FR"
-            snapshot.generationSettings.transcription.automaticLanguageDetection = true
-            snapshot.generationSettings.transcription.languageScope = .selected
-            // The settings checkbox uses this helper, which must retain the last candidate.
-            snapshot.generationSettings.transcription.languageIdentifiers = AppLanguageSelection.updating(
-                ["ja"], identifier: "ja", isEnabled: false
-            ).sorted()
-            #expect(snapshot.generationSettings.transcription.languageIdentifiers == ["ja"])
             snapshot.generationSettings.automaticProcessing = false
             if role == "local" || role == "admin" {
                 let updated = try #require(try await repository.updateWorkspaceAISettings(snapshot))
@@ -74,7 +71,6 @@
             changed.outputLanguage = .en
             changed.summary.style = .concise
             changed.local.model = "shared-model"
-            changed.transcription.localeIdentifier = "en-US"
             changed.automaticProcessing = false
             let encoded = try String(decoding: JSONEncoder().encode(changed), as: UTF8.self)
             let payload = try SyncJSON.decoder.decode(

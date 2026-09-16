@@ -417,7 +417,14 @@ import DahliaRuntimeSupport
         func compatibleCapabilityEnablesGeminiRetranscription() async throws {
             let origin = "https://capabilities-\(UUID.v7().uuidString.lowercased()).test"
             ImageURLProtocol.register(origin: origin) { _ in
-                (200, [:], Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#.utf8))
+                (
+                    200,
+                    [:],
+                    Data(
+                        #"{"meetingSummaryGeneration":{"version":2,"sources":["audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#
+                            .utf8
+                    )
+                )
             }
             defer { ImageURLProtocol.remove(origin: origin) }
             let configuration = URLSessionConfiguration.ephemeral
@@ -493,7 +500,7 @@ import DahliaRuntimeSupport
             }
             let settings = WorkspaceGenerationSettings(
                 processing: .init(location: .remote, remote: .init(
-                    summaryModel: "summary-model", transcriptionModel: "gemini-audio", reasoningEffort: "low"
+                    summaryModel: "summary-model", reasoningEffort: "low"
                 )),
                 summary: .init(style: .eventTimeline),
                 outputLanguage: .en
@@ -522,7 +529,10 @@ import DahliaRuntimeSupport
                     return (
                         200,
                         [:],
-                        Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#.utf8)
+                        Data(
+                            #"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#
+                                .utf8
+                        )
                     )
                 }
                 if request.url!.path.hasSuffix("/recordings") {
@@ -581,12 +591,10 @@ import DahliaRuntimeSupport
             #expect(body.input.recordings?.first?.micFileId == fileID.uuidString.lowercased())
             #expect(body.input.transcriptionModel == nil)
             #expect(body.input.transcriptionOnly == (transcriptionOnly ? true : nil))
-            #expect(body.preferences?.processing.remote.transcriptionModel == "gemini-audio")
             #expect(body.preferences?.processing.remote.summaryModel == "summary-model")
             #expect(body.preferences?.processing.remote.reasoningEffort == "low")
             #expect(body.preferences?.outputLanguage == .en)
             #expect(body.preferences?.summary.style == .eventTimeline)
-            #expect((body.preferences?.transcription == nil) == transcriptionOnly)
             let sessions = try await queue.read { db in try RecordingSessionRecord.fetchAll(db) }
             #expect((sessions.first { $0.id == first }?.batchCompletedAt != nil) == (status == "succeeded"))
             #expect(sessions.first { $0.id == later }?.batchCompletedAt == nil)

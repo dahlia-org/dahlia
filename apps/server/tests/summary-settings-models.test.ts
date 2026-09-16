@@ -6,6 +6,7 @@ import { useLiveJSON } from "../src/client/live-data";
 import { apiOperations as api } from "../src/client/generated-operations";
 import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../src/workspace-generation-settings";
 import { modelList } from "../src/ai-gateway/models";
+import { cloudflareModels } from "../src/ai-gateway/cloudflare";
 import { isAudioSummaryModel, isStructuredSummaryModel, isSummaryModel } from "../src/summary/audio-model";
 
 it("treats listed models as structured-output capable and rejects unregistered models", () => {
@@ -69,6 +70,8 @@ it.each([{}, { meetingSummaryGeneration: { version: 1, sources: ["transcript", "
     const settings = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
     expect(settings).toContain("Output language");
     expect(settings).not.toContain("Summary source");
+    expect(settings).toContain("Summary model");
+    expect(settings).toContain('<select disabled=""><option value="" selected="">Automatic</option>');
     const generation = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
     expect(generation).toBe("");
   },
@@ -96,10 +99,20 @@ it("explains the selected style and the data sent by Mac processing", () => {
   expect(html).toContain("The original transcript is synchronized and summarized on the server, including transcripts created in Dahlia for Mac.");
   const transcriptionSection = html.split('<h2 class="section-label">Transcription</h2>')[1]?.split("</section>")[0];
   expect(transcriptionSection).toContain("Transcription location");
+  expect(transcriptionSection).not.toContain("Transcription language");
+  expect(transcriptionSection).not.toContain("Automatic language detection");
+  expect(transcriptionSection).not.toContain("Live transcript draft");
   expect(transcriptionSection).not.toContain("Summary processing: Server");
   expect(transcriptionSection).not.toContain("Automatically transcribe and summarize after recording");
-  expect(html).toContain('<h2 class="section-label">Summary and image descriptions</h2>');
+  expect(html).toContain('<h2 class="section-label">Summary</h2>');
+  expect(html).toContain('<h2 class="section-label">Generated content language</h2>');
+  expect(html.indexOf("Generated content language")).toBeLessThan(html.indexOf("Transcription</h2>"));
+  expect(html.indexOf("Transcription</h2>")).toBeLessThan(html.indexOf("Summary</h2>"));
   expect(html).toContain('<h2 class="section-label">After recording</h2>');
+  expect(html).toContain('type="checkbox" role="switch"');
+  const summarySection = html.split('<h2 class="section-label">Summary</h2>')[1]?.split("</section>")[0];
+  expect(summarySection).toContain("Summary model");
+  expect(summarySection).not.toContain("Output language");
   expect(html).not.toContain("Advanced server settings");
 });
 
@@ -129,6 +142,28 @@ it.each([
     expect(html).toContain('<button class="primary" disabled="">');
   }
   expect(html).not.toContain("This workspace processes summaries in Dahlia for Mac.");
+});
+
+it("does not apply a combined-audio model override to manual transcript generation", () => {
+  vi.mocked(useLiveJSON).mockImplementation((url) => ({
+    data: url === "/api/v1/models" ? cloudflareModels()
+      : typeof url === "object" && url.key.startsWith('["getCapabilities"')
+        ? { meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"], completeRecordings: true } }
+        : typeof url === "object" && url.key.startsWith('["getWorkspace"')
+          ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: {
+            location: "remote", remote: { workflow: "combined", summaryModel: "gemini-3-flash", reasoningEffort: "high" },
+          } } }
+          : typeof url === "object" && url.key.startsWith('["summaryTranscriptAvailability"') ? transcript(true)
+          : typeof url === "object" && url.key.startsWith('["summaryRecordingAvailability"') ? recordings(true)
+          : { job: null },
+    loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
+  }));
+  const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
+  expect(html).toContain('checked="" value="transcript"');
+  expect(html).toContain('<select><option value="" selected="">Automatic</option><option value="gpt-4.1">GPT-4.1</option></select>');
+  expect(html).toContain('<button class="primary">Generate summary</button>');
+  expect(html).not.toContain('gemini-3-flash — Unavailable');
+  expect(html).not.toContain('high — Check model compatibility');
 });
 
 it.each([
@@ -282,8 +317,37 @@ it.each([true, false])("filters audio choices to available audio-capable Gemini 
   if (available) { expect(html).toContain('value="system.ai.gemini-3-8-flash" selected'); expect(html).toContain('value="system.ai.gemini-3-7-flash"'); }
   else {
     expect(html).toContain("No models available");
-    expect(html).toContain("A selected model is unavailable. Open advanced settings");
+    expect(html).toContain("A selected model is unavailable. Change it or choose Automatic.");
   }
+});
+
+it("shows only settings that affect each remote workflow", () => {
+  const catalog = modelList([{ id: "system.ai.gemini-3-8-flash" }]);
+  const render = (workflow: "combined" | "transcribeThenSummarize") => {
+    vi.mocked(useLiveJSON).mockImplementation((url) => ({
+      data: url === "/api/v1/models" ? catalog
+        : typeof url === "object" && url.key.startsWith('["getCapabilities"')
+          ? { meetingSummaryGeneration: { version: 2, sources: ["audio"], completeRecordings: true } }
+          : { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS,
+            processing: { location: "remote", remote: { workflow } } } },
+      loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
+    }));
+    return renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
+  };
+  const combined = render("combined");
+  expect(combined).toContain("Summarize directly from audio");
+  expect(combined).toContain("produces a transcript in the same process");
+  expect(combined).toContain("Summary model");
+  expect(combined).not.toContain("Transcription language");
+  expect(combined).not.toContain("Automatic language detection");
+  expect(combined).not.toContain("Transcription model");
+
+  const twoStage = render("transcribeThenSummarize");
+  expect(twoStage).toContain("Summarize the transcript");
+  expect(twoStage).toContain("transcribes the audio first");
+  expect(twoStage).not.toContain("Summary model");
+  expect(twoStage).not.toContain("Reasoning effort");
+  expect(twoStage).not.toContain("Transcription model");
 });
 
 
@@ -310,7 +374,7 @@ it("keeps the shared output language editable without summary capability", () =>
   }));
   const html = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
   expect(html).toContain('value="fr" selected');
-  expect(html).toContain("Shared by summaries and image analysis");
+  expect(html).toContain("Shared by summaries and image descriptions");
   expect(html).not.toContain("Summary source");
 });
 
@@ -319,5 +383,5 @@ it.each(["editor", "viewer"])("renders shared settings read-only for %s", (role)
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn() }));
   const html = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
   expect(html).toMatch(/<fieldset[^>]*disabled=""/);
-  expect(html).toContain("Only admins can change these defaults");
+  expect(html).not.toContain("Only admins can change these defaults");
 });

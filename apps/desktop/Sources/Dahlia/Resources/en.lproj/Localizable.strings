@@ -34,8 +34,12 @@
 "settings.preferences.localModelPreferencesDescription" = "AI provider and credentials are specific to this Mac. Generation models are configured per workspace.";
 "settings.preferences.serverProcessingAdvanced" = "Advanced server settings";
 "settings.preferences.processingWorkflow" = "New recording automatic processing";
-"settings.preferences.transcribeThenSummarize" = "Transcribe, then summarize";
-"settings.preferences.combinedTranscriptionSummary" = "Generate transcription and summary together";
+"settings.preferences.transcribeThenSummarize" = "Summarize the transcript";
+"settings.preferences.combinedTranscriptionSummary" = "Summarize directly from audio";
+"settings.preferences.transcribeThenSummarizeDescription" = "Gemini transcribes the audio first, then creates the summary from that transcript.";
+"settings.preferences.combinedTranscriptionSummaryDescription" = "Gemini creates the summary directly from the audio and produces a transcript in the same process.";
+"settings.preferences.serverTranscriptionLanguageDescription" = "Gemini detects the spoken language while transcribing. No language setting is required.";
+"settings.preferences.localTranscriptionSettingsDescription" = "Configure language and live transcription for this Mac in Recording settings and the recording panel.";
 "settings.preferences.summaryModel" = "Summary model";
 "settings.preferences.automaticModelPreference" = "Automatic";
 "settings.preferences.unavailableModelPreference" = "Unavailable for this workflow";

@@ -27,11 +27,6 @@ enum MeetingSyncMigration {
         if let detail = defaults.string(forKey: "summaryDetailLevel") {
             settings.summary.style = SummaryStyle(detailLevel: .fromPersistedValue(detail))
         }
-        settings.transcription.localeIdentifier = defaults.string(forKey: "transcriptionLocale") ?? Locale.current.identifier
-        settings.transcription.liveTranscriptDraft = defaults.bool(forKey: "liveTranscriptDraftEnabled")
-        settings.transcription.languageScope = defaults.string(forKey: "appLanguageScope")
-            .flatMap(TranscriptionLanguageScope.init(rawValue:)) ?? .selected
-        settings.transcription.languageIdentifiers = AppSettings.enabledLanguageIdentifiers(in: defaults).sorted()
         settings.automaticProcessing = defaults.object(forKey: "automaticRecordingProcessingEnabled") as? Bool
             ?? defaults.object(forKey: "generateSummaryAfterBatchTranscription") as? Bool ?? true
         let inheritedSettings = try String(decoding: encoder.encode(settings), as: UTF8.self)

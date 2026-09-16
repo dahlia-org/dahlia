@@ -373,7 +373,6 @@ actor ServerSummaryService {
                 var preferences = settings.generationPreferences
                 preferences.processing.remote.workflow = method == .audio ? .combined : .transcribeThenSummarize
                 preferences.summary.style = detail.map { SummaryStyle(detailLevel: .fromPersistedValue($0)) } ?? summary.style
-                if processing?.transcriptionOnly == true { preferences.transcription = nil }
                 body = Request(id: id.uuidString.lowercased(), input: input, preferences: preferences)
                 try await onPrepared(body)
             }

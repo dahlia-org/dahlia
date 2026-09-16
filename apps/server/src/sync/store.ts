@@ -1,4 +1,4 @@
-import type { WorkspaceGenerationSettings } from "../workspace-generation-settings";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "../workspace-generation-settings";
 import type { CalendarEventSnapshot } from "./schemas";
 import { createContentEncryption } from "../encryption/store";
 import { readAuthorization, validateAuthorization } from "../auth/authorization";
@@ -1579,7 +1579,8 @@ function createIdentityStore(
             const [restored] = await db.update(schema.syncedWorkspace).set(await content.write(schema.syncedWorkspace, {
               name: String(data.name),
               meetingDeletionGraceDays: data.meetingDeletionGraceDays as number | undefined,
-              generationSettings: data.generationSettings as WorkspaceGenerationSettings | undefined,
+              generationSettings: data.generationSettings as WorkspaceGenerationSettings | undefined
+                ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS,
               icon: data.icon as string | null | undefined,
               color: data.color as string | null | undefined,
               revision: 1,
@@ -1607,7 +1608,8 @@ function createIdentityStore(
               workspaceId: transaction.workspaceId,
               name: String(data.name),
               meetingDeletionGraceDays: data.meetingDeletionGraceDays as number | undefined,
-              generationSettings: data.generationSettings as WorkspaceGenerationSettings | undefined,
+              generationSettings: data.generationSettings as WorkspaceGenerationSettings | undefined
+                ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS,
               icon: data.icon as string | null | undefined,
               color: data.color as string | null | undefined,
               revision: 1,

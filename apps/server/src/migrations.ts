@@ -32,8 +32,13 @@ const postgresAuthBaseline = "20260912095619_initial/migration.sql";
 const postgresFiles = [
   "20260912095620_initial/migration.sql",
   "20260912180000_runtime_support/migration.sql",
+  "20260916153014_gifted_random/migration.sql",
 ];
-const sqliteFiles = ["20260912095621_initial/migration.sql", "20260912180000_runtime_support/migration.sql"];
+const sqliteFiles = [
+  "20260912095621_initial/migration.sql",
+  "20260912180000_runtime_support/migration.sql",
+  "20260916153015_thankful_wrecker/migration.sql",
+];
 
 export const serverMigrationManifest: MigrationManifest = {
   postgres: {

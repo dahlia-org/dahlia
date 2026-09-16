@@ -67,6 +67,22 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var processingWorkflow: String { String(localized: "settings.preferences.processingWorkflow", bundle: bundle) }
     static var transcribeThenSummarize: String { String(localized: "settings.preferences.transcribeThenSummarize", bundle: bundle) }
     static var combinedTranscriptionSummary: String { String(localized: "settings.preferences.combinedTranscriptionSummary", bundle: bundle) }
+    static var transcribeThenSummarizeDescription: String { String(
+        localized: "settings.preferences.transcribeThenSummarizeDescription",
+        bundle: bundle
+    ) }
+    static var combinedTranscriptionSummaryDescription: String { String(
+        localized: "settings.preferences.combinedTranscriptionSummaryDescription",
+        bundle: bundle
+    ) }
+    static var serverTranscriptionLanguageDescription: String { String(
+        localized: "settings.preferences.serverTranscriptionLanguageDescription",
+        bundle: bundle
+    ) }
+    static var localTranscriptionSettingsDescription: String { String(
+        localized: "settings.preferences.localTranscriptionSettingsDescription",
+        bundle: bundle
+    ) }
     static var summaryModel: String { String(localized: "settings.preferences.summaryModel", bundle: bundle) }
     static var automaticModelPreference: String { String(localized: "settings.preferences.automaticModelPreference", bundle: bundle) }
     static var unavailableModelPreference: String { String(localized: "settings.preferences.unavailableModelPreference", bundle: bundle) }

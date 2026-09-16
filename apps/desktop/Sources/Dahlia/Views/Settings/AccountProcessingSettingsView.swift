@@ -1,4 +1,3 @@
-import Speech
 import SwiftUI
 
 struct WorkspaceProcessingSettingsView: View {
@@ -7,8 +6,6 @@ struct WorkspaceProcessingSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
     @Bindable private var accountSettings = ServerAccountSettingsModel.shared
-
-    @State private var supportedLocales: [Locale] = []
 
     private var workspace: WorkspaceRecord? { settings.currentWorkspace }
     private var connectionID: UUID? { workspace?.accountConnectionId }
@@ -42,21 +39,13 @@ struct WorkspaceProcessingSettingsView: View {
                     if connectionID == nil || workspaceSettings.generationSettings.processing.location == .local {
                         LabeledContent(L10n.transcriptionModel, value: "Apple Speech")
                     }
-                    Picker(L10n.transcriptionLanguage, selection: $workspaceSettings.generationSettings.transcription.localeIdentifier) {
-                        ForEach(SettingsLanguageOptions.locales(
-                            from: supportedLocales, including: workspaceSettings.generationSettings.transcription.localeIdentifier
-                        ), id: \.identifier) { locale in
-                            Text(locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier).tag(locale.identifier)
-                        }
+                    if workspaceSettings.generationSettings.processing.location == .remote {
+                        Text(L10n.serverTranscriptionLanguageDescription).foregroundStyle(.secondary)
+                    } else {
+                        Text(L10n.localTranscriptionSettingsDescription).foregroundStyle(.secondary)
                     }
-                    Toggle(
-                        L10n.automaticDetectionMultilingualTitle,
-                        isOn: $workspaceSettings.generationSettings.transcription.automaticLanguageDetection
-                    )
-                    Toggle(L10n.liveTranscriptDraft, isOn: $workspaceSettings.generationSettings.transcription.liveTranscriptDraft)
                 }
                 .disabled(!canEdit)
-                WorkspaceTranscriptionLanguagesSection().disabled(!canEdit)
 
                 Section(L10n.retranscription) {
                     LabeledContent(
@@ -107,7 +96,6 @@ struct WorkspaceProcessingSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .task { supportedLocales = await SpeechSupportedLocales.load() }
         .task(id: connectionID) {
             if let connectionID, let task = accountSettings.refresh(connectionID: connectionID) { await task.value }
         }

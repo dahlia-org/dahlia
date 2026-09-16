@@ -88,9 +88,14 @@ it("creates calendar metadata in the initial schema and preserves it through run
       INSERT INTO workspaces(workspace_id, organization_id, created_by, name) VALUES ('workspace', 'org', '{"id":"owner","name":"Owner","email":"owner@example.com"}', 'Workspace')`);
     db.exec("INSERT INTO meetings(meeting_id, workspace_id, name, status, created_at, updated_at) VALUES ('meeting', 'workspace', 'Preserved', 'READY', 1, 2)");
     db.exec("UPDATE meetings SET ical_uid = 'shared@example.com', recurrence_id = '20260903T000000Z'");
+    db.exec(`UPDATE workspaces SET generation_settings = '{"outputLanguage":"ja","processing":{"location":"remote","remote":{"workflow":"transcribeThenSummarize","transcriptionModel":"gemini"}},"summary":{"style":"detailed"},"transcription":{"localeIdentifier":"ja-JP","automaticLanguageDetection":false,"languageScope":"all","languageIdentifiers":[],"liveTranscriptDraft":false},"local":{"model":"gpt-5.6-luna","reasoningEffort":"high"},"automaticProcessing":true}'`);
     migrate(files.at(-1)!);
     expect(db.prepare("SELECT name, created_at, updated_at, ical_uid, recurrence_id, calendar_event FROM meetings").get())
       .toEqual({ name: "Preserved", created_at: 1, updated_at: 2, ical_uid: "shared@example.com", recurrence_id: "20260903T000000Z", calendar_event: null });
+    expect(JSON.parse(String(db.prepare("SELECT generation_settings FROM workspaces").get()?.generation_settings)))
+      .toMatchObject({ processing: { location: "remote", remote: { workflow: "transcribeThenSummarize" } } });
+    expect(db.prepare("SELECT generation_settings FROM workspaces").get()?.generation_settings).not.toContain("transcriptionModel");
+    expect(db.prepare("SELECT generation_settings FROM workspaces").get()?.generation_settings).not.toContain('"transcription"');
     db.exec("UPDATE meetings SET ical_uid = 'shared@example.com', recurrence_id = ''");
     expect(db.prepare("SELECT recurrence_id FROM meetings").get()).toEqual({ recurrence_id: "" });
   } finally { db.close(); }

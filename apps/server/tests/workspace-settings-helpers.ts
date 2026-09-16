@@ -18,7 +18,7 @@ export async function updateGenerationSettings(store: AuthStore, identity: Ident
   if (!workspace) throw new Error("Workspace unavailable");
   const previous = workspace.generationSettings;
   const remote = { ...previous.processing.remote, ...patch.processing?.remote };
-  for (const key of ["summaryModel", "transcriptionModel", "reasoningEffort"] as const) if (remote[key] === null) delete remote[key];
+  for (const key of ["summaryModel", "reasoningEffort"] as const) if (remote[key] === null) delete remote[key];
   const settings = workspaceGenerationSettingsSchema.parse({ ...previous, ...patch,
     processing: { ...previous.processing, ...patch.processing, remote } });
   await new MeetingSyncService(store.sync).commitTransaction(identity, { schemaVersion: 3, id: uuidV7(), workspaceId,

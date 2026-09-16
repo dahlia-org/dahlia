@@ -106,6 +106,9 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let appLanguageScopeUserDefaultsKey = "appLanguageScope"
     nonisolated static let enabledLanguageIdentifiersUserDefaultsKey = "enabledLanguageIdentifiers"
     nonisolated static let transcriptionLocaleUserDefaultsKey = "transcriptionLocale"
+    nonisolated static let automaticTranscriptionLanguageDetectionUserDefaultsKey =
+        "automaticTranscriptionLanguageDetectionEnabled"
+    nonisolated static let liveTranscriptDraftUserDefaultsKey = "liveTranscriptDraftEnabled"
     nonisolated static let liveSubtitleLocaleUserDefaultsKey = "liveSubtitleLocale"
     nonisolated static let liveSubtitleTranslationEnabledKey = "transcriptTranslationEnabled"
     nonisolated static let liveSubtitleTranslationTargetLanguageKey = "transcriptTranslationTargetLanguage"
@@ -264,6 +267,9 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     // MARK: - 音声認識設定
 
     @AppStorage(AppSettings.transcriptionLocaleUserDefaultsKey) var transcriptionLocale: String = Locale.current.identifier
+    @AppStorage(AppSettings.automaticTranscriptionLanguageDetectionUserDefaultsKey)
+    var automaticTranscriptionLanguageDetectionEnabled = false
+    @AppStorage(AppSettings.liveTranscriptDraftUserDefaultsKey) var liveTranscriptDraftEnabled = false
     @AppStorage(AppSettings.liveSubtitleLocaleUserDefaultsKey) var liveSubtitleLocale: String = Locale.current.identifier
     @AppStorage("forceEchoCancellationForExternalMicrophone") var forceEchoCancellationForExternalMicrophone = false
     @AppStorage(AppSettings.batchTranscriptionStallTimeoutUserDefaultsKey) private var batchTranscriptionStallTimeoutRawValue =

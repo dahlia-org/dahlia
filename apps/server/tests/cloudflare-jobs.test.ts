@@ -6,6 +6,8 @@ import { cloudflareModels } from "../src/ai-gateway/cloudflare";
 import { isSummaryModel } from "../src/summary/audio-model";
 import { createTranscriptSummaryMethod } from "../src/summary/transcript";
 import { createAudioSummaryMethod } from "../src/summary/audio";
+import { resolveSummaryPreferences } from "../src/summary/preferences";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../src/workspace-generation-settings";
 import type { MeetingSyncStore } from "../src/sync/types";
 import type { MeetingSyncService } from "../src/sync/service";
 import { geminiChatResponse } from "../src/summary/gemini";
@@ -48,6 +50,19 @@ describe("Cloudflare background provider contracts", () => {
       if (isSummaryModel(model, catalog, "transcript")) await expect(staged).resolves.toBeUndefined();
       else await expect(staged).rejects.toThrow();
     }
+  });
+  it("captures separate compatible models for two-stage summaries", async () => {
+    const catalog = cloudflareModels();
+    const resolved = resolveSummaryPreferences({
+      ...DEFAULT_WORKSPACE_GENERATION_SETTINGS,
+      processing: { location: "remote", remote: { workflow: "transcribeThenSummarize" } },
+    }, { type: "recording", recordings: [] }, catalog, (model) => model);
+    expect(resolved).toMatchObject({
+      settings: { model: "gpt-4.1", reasoningEffort: "none" },
+      input: { transcriptionModel: "gemini-3-flash" },
+    });
+    const audio = createAudioSummaryMethod(config, {} as MeetingSyncStore, {} as MeetingSyncService)!;
+    await expect(audio.validateSettings!(resolved.settings, resolved.input)).resolves.toBeUndefined();
   });
   it("sends BGE native text input and validates 1024-dimensional results", async () => {
     const transport: typeof fetch = (url, init) => {

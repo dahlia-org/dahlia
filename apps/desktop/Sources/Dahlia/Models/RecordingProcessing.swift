@@ -21,6 +21,8 @@ struct RecordingProcessing: Codable, Sendable {
     let automatic: Bool
     let liveDraft: Bool
     let localeIdentifier: String
+    var automaticLanguageDetection: Bool?
+    var automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?
     let method: RecordingProcessingMethod
     var options: SummaryGenerationOptions
     var generationSettings: SummaryGenerationSettings
