@@ -314,12 +314,7 @@ final class AppDatabaseManager: Sendable {
             try CustomerIntelligenceRemovalMigration.migrate(in: db)
             try WorkspaceNamingMigration.migrate(in: db)
             try addColumnIfNeeded(in: db, table: "jobs_search_index", column: "captionLanguage", type: .text)
-
-        }
-
-        migrator.registerMigration("v43_syncRecoveryErrors") { db in
             try addColumnIfNeeded(in: db, table: "dahlia_account_connections", column: "syncDiscoveryErrorJSON", type: .text)
-            try addColumnIfNeeded(in: db, table: "workspaces", column: "syncPullErrorJSON", type: .text)
         }
 
         return migrator
