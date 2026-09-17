@@ -152,7 +152,7 @@
                 #expect(try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id)?.syncDiscoveryErrorJSON == nil)
                 let account = try MeetingRepository.fetchSyncProgress(in: db)[connection.id]
                 #expect(account?.discoveryIssue == nil)
-                #expect(account?.state == .synced)
+                #expect(account?.state == .pending)
             }
         }
 

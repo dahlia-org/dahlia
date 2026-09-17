@@ -74,3 +74,11 @@ it("normalizes legacy details without changing their meaning or reasoning effort
   const { summaryInstructions } = await import("../src/summary/transcript");
   expect(summaryInstructions("en", "max")).toContain("event play-by-play");
 });
+
+it("keeps transcript references null in the response schema and shared prompt", async () => {
+  const { summaryInstructions } = await import("../src/summary/transcript");
+  const instructions = summaryInstructions("en", "high");
+  expect(instructions).toContain("Always set transcript_ref to null");
+  expect(instructions).not.toContain("Set transcript_ref to a supplied HH:MM:SS");
+  expect(JSON.stringify(z.toJSONSchema(summaryResponseSchema))).toContain('"transcript_ref":{"type":"null"}');
+});
