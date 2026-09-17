@@ -30,6 +30,8 @@ PostgreSQL は既存の生成 Auth baseline → application initial → runtime_
 
 2026-09-13: ユーザー承認により、Vault → Workspace の変更も現行 Drizzle schema から初期 migration を再生成して統合した。旧 Server DB、暗号化ドメイン、保存済み receipt の互換変換は提供しない。リリース済み Desktop v41 のデータ移行は維持する。
 
+2026-09-17: ユーザー承認により、Workspace の生成設定変更を PostgreSQL / SQLite の initial に統合し、未公開の `20260916153014_gifted_random` / `20260916153015_thankful_wrecker` を撤回した。既存開発 DB の設定変換は提供せず、新しい baseline を使うには DB を再作成する。
+
 以下の forward migration の説明は統合前の経緯であり、旧開発 DB からの移行保証ではない。リリース後は従来どおり forward-only とする。
 
 ## Header identity

@@ -59,7 +59,7 @@ Desktop は `meetingSummaryGeneration.retranscription: { version: 1, provider: "
 
 PATCHの省略は維持。要約モデル・推論強度overrideは `null` で自動へ戻せるが、workflowとstyleはnull不可。場所・方式の切替は非アクティブなoverrideを削除しない。生成要求には入力とpreferencesのsnapshotを送り、Serverは受付時に実行値を固定する。既存job要求・保存済み処理の読み取り互換は維持し、retryで現在の設定へ置換しない。
 
-Forward migrationで従来の `summary.mode/remote` を新しいprocessing列とsummary.styleへ分ける。従来のtranscriptionModelの有無は移行時だけworkflow判定に使う。Workspaceの言語設定は削除し、Macローカルの設定を維持する。明示モデル、推論強度、要約の意味は保持する。公開アカウント設定APIに旧形式の互換アダプターは置かず、Server/Web/Desktopを合わせて更新する。
+初回リリース前の Server は従来の `summary.mode/remote`、transcriptionModel、Workspace の言語設定を変換する forward migration を配布せず、現行形式を initial baseline に統合する。既存開発 DB の自動変換は提供しない。公開アカウント設定APIに旧形式の互換アダプターは置かず、Server/Web/Desktopを合わせて更新する。
 
 Mac設定は既存UserDefaultsを正本とし、初回だけ最後に開いたLocal Account Vaultの要約モデル・推論強度を引き継ぐ。保存キー・既存Vault列・内部の旧処理値は移行および開始済み処理のdecodeのため残す。
 
