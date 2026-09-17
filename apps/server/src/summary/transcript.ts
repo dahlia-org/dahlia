@@ -179,7 +179,7 @@ For xhigh detail, organize by speaker/topic and preserve explanations and lesson
 For max detail, create an event play-by-play in chronological order: preserve the substance of statements, how explanations develop,
 demonstration steps and results, and questions and answers in finer detail than xhigh. Use timestamps, speakers, and screen references
 only when supported by the input. Never invent content or audience reactions or simply reproduce the full transcript.
-Use image blocks only with supplied <image_id> values. Set transcript_ref to a supplied HH:MM:SS <time> when supported; otherwise null.
+Use image blocks only with supplied <image_id> values. Always set transcript_ref to null.
 Unused block fields must be empty arrays/strings, level 3. Never generate identifiers.`;
 }
 
