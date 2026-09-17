@@ -1024,7 +1024,8 @@ actor SyncWorker {
             ) { return false }
         }
         if target.cursor == nil {
-            return try await recoverSnapshot(target)
+            _ = try await recoverSnapshot(target)
+            return true
         }
 
         var cursor = target.cursor
