@@ -36,7 +36,7 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
   async function reconcilePage(model: string, userId: string, after?: string, batchSize = 100): Promise<string | undefined> {
     const rows = await withOwner(userId, async (transaction) => {
       const content = createContentEncryption(transaction, schema, userId, encryption);
-      const page = await content.read(files, await transaction.select({ encryptedPayload: files.encryptedPayload, fileId: files.fileId, workspaceId: files.workspaceId, metadata: files.metadata })
+      const page = await content.read(files, await transaction.select({ encryptedPayload: files.encryptedPayload, fileId: files.fileId, workspaceId: files.workspaceId, metadata: files.metadata, mode: jobs.mode })
         .from(files).leftJoin(jobs, eq(jobs.fileId, files.fileId))
         .where(and(
           eq(files.active, true), isNotNull(files.uploadedAt), inArray(files.contentType, [...imageContentTypes]),
@@ -52,10 +52,10 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
               eq(schema.syncedMeeting.meetingId, schema.meetingAttachment.meetingId),
             )).where(and(eq(schema.meetingAttachment.fileId, files.fileId), isNull(schema.syncedMeeting.deletingAt), isNull(schema.syncedMeeting.deletedAt)))),
         )).orderBy(asc(files.fileId)).limit(batchSize));
-      const missing = page.filter((row) => needsImageAnalysis(row.metadata));
+      const missing = page.filter((row) => needsImageAnalysis(row.metadata, row.mode ?? "fill_missing"));
       if (missing.length) {
-        await transaction.insert(jobs).values(missing.map(({ fileId, workspaceId }) => ({
-          fileId, workspaceId, ownerUserId: userId, model,
+        await transaction.insert(jobs).values(missing.map(({ fileId, workspaceId, mode }) => ({
+          fileId, workspaceId, ownerUserId: userId, model, mode: mode ?? "fill_missing",
         }))).onConflictDoUpdate({
           target: jobs.fileId,
           set: { model, outputLanguage: null, status: "pending", attempts: 0, availableAt: new Date(), claimedAt: null, leaseExpiresAt: null, lastErrorCode: null },
@@ -89,9 +89,19 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
     claim(model, reference) {
       return db.transaction(async (transaction) => {
         const now = new Date();
+        const ready = exists(transaction.select({ id: files.fileId }).from(files).where(and(
+          eq(files.fileId, jobs.fileId), eq(files.workspaceId, jobs.workspaceId), eq(files.active, true),
+          isNotNull(files.uploadedAt), inArray(files.contentType, [...imageContentTypes]),
+          exists(transaction.select({ id: schema.meetingAttachment.id }).from(schema.meetingAttachment)
+            .innerJoin(schema.syncedMeeting, and(
+              eq(schema.syncedMeeting.workspaceId, schema.meetingAttachment.workspaceId),
+              eq(schema.syncedMeeting.meetingId, schema.meetingAttachment.meetingId),
+            )).where(and(eq(schema.meetingAttachment.fileId, jobs.fileId),
+              isNull(schema.syncedMeeting.deletingAt), isNull(schema.syncedMeeting.deletedAt)))),
+        )));
         const query = transaction.select().from(jobs).where(and(
           reference ? and(eq(jobs.fileId, reference.fileId), eq(jobs.ownerUserId, reference.ownerUserId), eq(jobs.model, reference.model)) : undefined,
-          eq(jobs.model, model), lte(jobs.availableAt, now),
+          eq(jobs.model, model), lte(jobs.availableAt, now), ready,
           or(eq(jobs.status, "pending"), and(eq(jobs.status, "processing"), lte(jobs.leaseExpiresAt, now))),
         )).orderBy(asc(jobs.availableAt), asc(jobs.fileId)).limit(1);
         const [row] = isPostgres ? await query.for("update", { skipLocked: true }) : await query;

@@ -12,7 +12,34 @@
         }
 
         @Test
-        func legacyTranscriptionSettingsAreDecodedButNotReencoded() throws {
+        func remoteProcessingDecodesWithoutSeparateTranscriptSummarySettings() throws {
+            let settings = try JSONDecoder().decode(
+                WorkspaceGenerationSettings.self,
+                from: Data(#"{"processing":{"location":"remote","remote":{"workflow":"combined","summaryModel":"audio","reasoningEffort":"medium"}}}"#.utf8)
+            )
+
+            #expect(settings.processing.remote.summaryModel == "audio")
+            #expect(settings.processing.remote.transcriptSummaryModel == nil)
+            #expect(settings.processing.remote.transcriptSummaryReasoningEffort == nil)
+        }
+
+        @Test
+        func currentTranscriptSummaryChoicesSupersedeLegacyLocalFallbacks() {
+            var settings = WorkspaceGenerationSettings()
+            settings.processing.remote.summaryModel = "legacy-model"
+            settings.processing.remote.reasoningEffort = "high"
+
+            settings.setTranscriptSummaryModel("current-model")
+            settings.setTranscriptSummaryReasoningEffort(nil)
+
+            #expect(settings.processing.remote.transcriptSummaryModel == "current-model")
+            #expect(settings.processing.remote.transcriptSummaryReasoningEffort == nil)
+            #expect(settings.processing.remote.summaryModel == nil)
+            #expect(settings.processing.remote.reasoningEffort == nil)
+        }
+
+        @Test
+        func legacyTranscriptionSettingsRestoreTheSharedLiveDraftOnly() throws {
             let settings = try JSONDecoder().decode(
                 WorkspaceGenerationSettings.self,
                 from: Data("""
@@ -23,8 +50,19 @@
             #expect(settings.legacyTranscription?.localeIdentifier == "fr_FR")
             #expect(settings.legacyTranscription?.automaticLanguageDetection == true)
             #expect(settings.legacyTranscription?.languageIdentifiers == ["en", "fr"])
+            #expect(settings.liveTranscriptDraft)
             let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
             #expect(encoded["transcription"] == nil)
+            #expect(encoded["liveTranscriptDraft"] as? Bool == true)
+        }
+
+        @Test
+        func disabledLiveDraftIsOmittedForOlderServers() throws {
+            let encoded = try #require(JSONSerialization.jsonObject(
+                with: JSONEncoder().encode(WorkspaceGenerationSettings())
+            ) as? [String: Any])
+
+            #expect(encoded["liveTranscriptDraft"] == nil)
         }
 
         @Test(arguments: ["local", "admin", "editor", "viewer"])
@@ -52,6 +90,7 @@
             snapshot.generationSettings.outputLanguage = .fr
             snapshot.generationSettings.local.model = "shared-model"
             snapshot.generationSettings.automaticProcessing = false
+            snapshot.generationSettings.liveTranscriptDraft = true
             if role == "local" || role == "admin" {
                 let updated = try #require(try await repository.updateWorkspaceAISettings(snapshot))
                 #expect(updated.generationSettings == snapshot.generationSettings)

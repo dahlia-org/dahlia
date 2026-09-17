@@ -82,7 +82,7 @@ struct WorkspaceSettingsView: View {
             if model.isLoading, model.workspaces.isEmpty {
                 ProgressView(L10n.loadingWorkspaces)
             } else if model.workspaces.isEmpty {
-                Label(L10n.noWorkspaces, systemImage: "externaldrive.badge.plus")
+                Label(L10n.noWorkspaces, systemImage: ProjectIcon.workspace.systemImageName)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
             } else {
                 ForEach(model.workspaces) { workspace in

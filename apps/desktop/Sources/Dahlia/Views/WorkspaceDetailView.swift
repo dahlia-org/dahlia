@@ -42,13 +42,13 @@ struct WorkspaceDetailView: View {
             .formStyle(.grouped)
         } else if hasRegisteredWorkspaces {
             ContentUnavailableView {
-                Label(L10n.noWorkspaceSelected, systemImage: "externaldrive")
+                Label(L10n.noWorkspaceSelected, systemImage: ProjectIcon.workspace.systemImageName)
             } description: {
                 Text(L10n.selectWorkspaceDescription)
             }
         } else {
             ContentUnavailableView {
-                Label(L10n.noWorkspaces, systemImage: "externaldrive.badge.plus")
+                Label(L10n.noWorkspaces, systemImage: ProjectIcon.workspace.systemImageName)
             } description: {
                 Text(L10n.noWorkspacesDescription)
             } actions: {

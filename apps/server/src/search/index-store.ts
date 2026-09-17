@@ -1,4 +1,4 @@
-import { and, asc, eq, exists, gt, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, exists, gt, inArray, isNotNull, isNull, lte, ne, notExists, or, sql } from "drizzle-orm";
 import type { AnyColumn } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Buffer } from "node:buffer";
@@ -201,6 +201,16 @@ function createSearchIndexStore(
           or(isNull(schema.searchDocument.embedding), isNull(schema.searchDocument.embeddingModel),
             ne(schema.searchDocument.embeddingModel, model),
             sql`${isPostgres ? sql`cardinality(${schema.searchDocument.embedding})` : sql`length(${schema.searchDocument.embedding}) / 4`} <> ${dimensions}`),
+          notExists(transaction.select({ id: schema.imageAnalysisJob.fileId }).from(schema.imageAnalysisJob)
+            .innerJoin(schema.meetingAttachment, and(
+              eq(schema.meetingAttachment.workspaceId, schema.searchDocument.workspaceId),
+              eq(schema.meetingAttachment.id, schema.searchDocument.documentId),
+              eq(schema.meetingAttachment.fileId, schema.imageAnalysisJob.fileId),
+            )).where(and(
+              eq(schema.imageAnalysisJob.workspaceId, schema.searchDocument.workspaceId),
+              eq(schema.imageAnalysisJob.mode, "replace"),
+              inArray(schema.imageAnalysisJob.status, ["pending", "processing"]),
+            ))),
           afterDocument(schema.searchDocument.documentId, schema.searchDocument.workspaceId, after),
           or(
             isNull(schema.searchIndexJob.documentId),

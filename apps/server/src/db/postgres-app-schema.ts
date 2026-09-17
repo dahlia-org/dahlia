@@ -424,7 +424,7 @@ export const meetingAttachment = appSchema.table("meeting_attachments", {
   unique("meeting_attachments_meeting_attachment_unique").on(table.meetingId, table.fileId),
   index("meeting_attachments_file_idx").on(table.fileId),
   index("meeting_attachments_workspace_meeting_id_idx").on(table.workspaceId, table.meetingId, table.id),
-  pgPolicy("meeting_attachment_select", { for: "select", using: sql`(${meetingRetentionWorkspace(table.workspaceId)}) OR "app"."current_identity_can_read_workspace"(${table.workspaceId}) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.workspace_id = ${table.workspaceId} AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)` }),
+  pgPolicy("meeting_attachment_select", { for: "select", using: sql`(${meetingRetentionWorkspace(table.workspaceId)}) OR "app"."current_identity_can_read_workspace"(${table.workspaceId}) OR (current_setting('app.maintenance', true) = 'search' AND ${table.workspaceId} = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.workspace_id = ${table.workspaceId} AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)` }),
   pgPolicy("meeting_attachment_write", { for: "all", using: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId})`, withCheck: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId})` })
 ]).enableRLS();
 
@@ -595,6 +595,7 @@ export const imageAnalysisJob = jobsSchema.table("image_analysis", {
   workspaceId: uuid("workspace_id").notNull(),
   ownerUserId: uuid("owner_user_id").notNull(),
   model: text("model").notNull(),
+  mode: text("mode").$type<"fill_missing" | "replace">().default("fill_missing").notNull(),
   outputLanguage: text("output_language"),
   status: text("status").default("pending").notNull(),
   attempts: integer("attempts").default(0).notNull(),
@@ -607,6 +608,7 @@ export const imageAnalysisJob = jobsSchema.table("image_analysis", {
   foreignKey({ name: "jobs_image_analysis_workspace_id_workspaces_workspace_id_fkey", columns: [table.workspaceId], foreignColumns: [syncedWorkspace.workspaceId] }).onDelete("cascade"),
   foreignKey({ name: "jobs_image_analysis_owner_user_id_user_id_fkey", columns: [table.ownerUserId], foreignColumns: [authUser.id] }).onDelete("cascade"),
   check("image_analysis_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
+  check("image_analysis_job_mode_check", sql`${table.mode} IN ('fill_missing', 'replace')`),
   index("image_analysis_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
 ]);
 

@@ -20,6 +20,7 @@
             let operation = try SyncInitialSnapshotBuilder.screenshotOperation(screenshot, action: .upsert)
             let payload = try SyncJSON.decoder.decode(FileOperationPayload.self, from: #require(operation.payloadJSON))
             #expect(payload.name == "capture.\(extensionName)")
+            #expect(payload.imageAnalysis == nil)
         }
 
         @Test(arguments: ["none", "meeting", "link"])
@@ -214,8 +215,18 @@
                     role: "admin"
                 ),
                 transferFence: transferFence,
+                replaceServerImageAnalysis: true,
                 screenshotContent: fixture.provider
             )
+            let filePayload = try await queue.read { db in
+                let value = try String.fetchOne(
+                    db,
+                    sql: "SELECT payloadJSON FROM sync_operations WHERE entity = 'file' LIMIT 1"
+                )
+                let json = try #require(value)
+                return try SyncJSON.decoder.decode(FileOperationPayload.self, from: Data(json.utf8))
+            }
+            #expect(filePayload.imageAnalysis == "replace")
             try await fixture.provider.trimFiles(dbQueue: queue, budget: 0)
             #expect(try fixture.files.read(fixture.source, variant: .original)?.data == fixture.bytes)
             #expect(try await queue.read { try MeetingScreenshotRecord.fetchOne($0, key: fixture.image.id)?.imageData } == nil)

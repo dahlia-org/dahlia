@@ -204,7 +204,7 @@ Server は meeting の名前・説明・summary 表示本文と screenshot の O
 その他の PostgreSQL は pgvector、SQLite は exact cosine を使う。query 時は FTS と vector の上位候補を
 RRF で統合し、embedding の未設定・未完成・障害時は FTS に縮退する。transcript と内部識別子は Server 検索対象に含めず、
 すべての検索 query は `workspace_id` 経由の permission／RLS を通す。D1 adapterは削除し、WorkerはPostgreSQL／Hyperdriveを使用する。
-Node の画像解析 worker は canonical 登録済みの会議画像をファイル単位で扱い、既存1280px variant と App service principal を使って不足する OCR・caption を生成する。requesterの現在のAdmin／Editor権限・checksum・revision・lease を再確認し、正本・差分・検索 projection・embedding job を同じ transaction で更新する。Desktop は Local Account の画像だけを解析する。
+Node の画像解析 worker は canonical 登録済みの会議画像をファイル単位で扱い、既存1280px variant と App service principal を使って不足する OCR・caption を生成する。Local Workspace から新規 Server Workspace へ登録された画像は `replace` job とし、既存値を再生成成功まで維持してから OCR・caption を両方置換する。requesterの現在のAdmin／Editor権限・checksum・revision・lease を再確認し、正本・差分・FTS と共通 embedding job を同じ transaction で更新する。待機中の既存値から embedding は生成しない。Desktop は Local Account の画像だけを解析する。
 Server の出力言語・画像解析言語は本人の account settings API を正本とし、Desktop はメモリに保持する。SSE は invalidation のみ、再接続時に再取得する。設定用のローカル table・revision・再送 queue は作らず、設定や認証の取得を録音開始・継続・停止の前提にしない。文字起こしと要約は[処理場所の契約](docs/adr/shared/transcription-summary-processing.md)に従い、localではDesktop、remoteではServerが担当する。
 翻訳文、音声、SQLite file、note、tag、calendar、
 Project は階層参照と meeting 絞り込みのためだけに同期し、Server の全文・vector projection へは含めない。transcript の `audio_source` は `mic`／`system` の収録経路、nullable な `speaker_label` は将来の話者分離ラベルとし、音声特徴量は同期しない。runtime と data boundary の判断は次を正本とする。

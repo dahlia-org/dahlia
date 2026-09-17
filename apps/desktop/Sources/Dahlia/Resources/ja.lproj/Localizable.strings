@@ -8,14 +8,15 @@
 "settings.organization.settingsAccountSelectionDescription" = "編集対象を選んでも、開いているワークスペースは変わりません。";
 "settings.organization.settingsLoading" = "設定を読み込み中…";
 "settings.organization.settingsApplyNextGeneration" = "変更は自動保存され、次回の生成から適用されます。";
-"settings.organization.settingsSummaryOutput" = "生成結果";
+"settings.organization.settingsSummaryOutput" = "要約";
 "settings.organization.settingsOutputLanguageDescription" = "出力言語は要約と画像の説明に共通です。音声認識の言語は変更しません。";
-"settings.organization.settingsServerProcessingDescription" = "新しい録音はサーバーへ送り、選択した自動処理で文字起こしと要約を作成します。手動生成ではミーティング画面のソース選択が優先されます。";
+"settings.organization.generatedContentLanguage" = "生成コンテンツの言語";
 "settings.organization.settingsLocalAnalysisLanguages" = "画像の解析には「一般」で選んだ、このMacの対象言語を使用します。";
 "settings.organization.settingsAnalysisLanguagesDescription" = "画像に含まれる文字の言語を指定します。録音や字幕の言語は変更しません。";
 "settings.organization.settingsDuringRecording" = "録音中";
 "settings.organization.settingsAfterRecording" = "録音後";
 "settings.organization.settingsAudioStorage" = "音声の保存";
+"settings.organization.transcriptionRecoverySettings" = "データ保護と復旧";
 "settings.organization.settingsAutomaticExport" = "自動書き出し";
 "settings.organization.settingsChooseSummaryPreferences" = "まとめ方・処理場所を設定…";
 "settings.organization.summaryStyleConciseDescription" = "決定事項・課題・次のアクションを短くまとめます。";
@@ -24,27 +25,30 @@
 "settings.organization.summaryStyleEventDescription" = "講演やセッションの主張・デモ・学びを流れに沿ってまとめます。";
 "settings.organization.summaryStyleTimelineDescription" = "発言やデモ、質疑応答を時系列で詳しく辿れる形にします。";
 "settings.preferences.macInferencePreferences" = "モデルプロバイダー";
-"settings.preferences.usesMacInferencePreferences" = "このMacで文字起こしし、文字起こしと画像をこのMacで設定したAIプロバイダーへ送信します。生成モデルはワークスペース設定を使用します。";
 "settings.preferences.accountPreferences" = "ワークスペースの生成設定";
 "settings.preferences.accountPreferencesScope" = "表示中のワークスペースの全員で共有する既定値です。";
 "settings.preferences.accountSummaryPreferencesDescription" = "まとめ方と出力言語は処理場所にかかわらず共通です。変更は次回の処理から適用されます。Macでの要約も、接続先のAIへ文字起こしや画像を送信します。";
 "settings.preferences.summaryStyle" = "まとめ方";
 "settings.preferences.recordingSettings" = "録音・保存";
-"settings.preferences.localModelPreferences" = "ローカル要約モデル";
+"settings.preferences.recordingStopDetection" = "停止検出";
+"settings.preferences.macTranscriptionPreferences" = "このMacの文字起こし設定";
 "settings.preferences.localModelPreferencesDescription" = "AIプロバイダーと認証情報はこのMac固有です。生成モデルはワークスペースごとに設定します。";
-"settings.preferences.serverProcessingAdvanced" = "サーバー処理の詳細設定";
-"settings.preferences.processingWorkflow" = "新しい録音の自動処理";
-"settings.preferences.transcribeThenSummarize" = "文字起こし後に要約";
-"settings.preferences.combinedTranscriptionSummary" = "音声から直接要約";
-"settings.preferences.transcribeThenSummarizeDescription" = "Geminiが先に音声を文字起こしし、その文字起こしから要約を作成します。";
-"settings.preferences.combinedTranscriptionSummaryDescription" = "Geminiが音声から直接要約し、同じ処理内で文字起こしも作成します。";
+"settings.preferences.summaryProcessingLocation" = "要約の処理場所";
+"settings.preferences.serverSummaryProcessingDescription" = "Dahlia for Macで作成した文字起こしも、原文を同期してからサーバーで要約します。";
+"settings.preferences.processingWorkflow" = "要約方法";
+"settings.preferences.transcribeThenSummarize" = "文字起こしから生成";
+"settings.preferences.combinedTranscriptionSummary" = "音声から直接生成";
+"settings.preferences.transcribeThenSummarizeDescription" = "録音後の自動処理では、Geminiが先に音声を文字起こしし、その文字起こしから要約を作成します。";
+"settings.preferences.combinedTranscriptionSummaryDescription" = "録音後の自動処理では、Geminiが音声から直接要約し、同じ処理内で文字起こしも作成します。";
 "settings.preferences.serverTranscriptionLanguageDescription" = "Geminiが文字起こしの処理中に発話言語を判定するため、言語設定は不要です。";
-"settings.preferences.localTranscriptionSettingsDescription" = "言語とライブ文字起こしは、このMacの「録音」設定と録音パネルで設定します。";
+"settings.preferences.appleSpeechSettingsScopeDescription" = "Apple Speechの言語設定は、このMacでローカル文字起こしを行うすべてのワークスペースで共通です。";
 "settings.preferences.summaryModel" = "要約モデル";
+"settings.preferences.audioProcessingModel" = "音声処理モデル";
+"settings.preferences.audioProcessingReasoningEffort" = "音声処理の推論強度";
+"settings.preferences.summaryReasoningEffort" = "要約の推論強度";
 "settings.preferences.automaticModelPreference" = "自動";
 "settings.preferences.unavailableModelPreference" = "この方式では利用不可";
 "settings.preferences.checkModelPreference" = "モデルとの対応を確認";
-"settings.preferences.automaticModelPreferenceDescription" = "新しい録音後の自動処理に適用されます。手動生成では選択したソースを使用します。明示したモデルが利用できない場合は置き換えず、エラーを表示します。";
 /* Common */
 "Delete" = "削除";
 "Remove from Project" = "プロジェクトを解除";
@@ -1717,11 +1721,10 @@
 
 "setup.preparingWorkspace" = "ワークスペースを準備しています…";
 "setup.workspaceUnavailable" = "ワークスペースを準備できませんでした。接続を確認して再試行してください。";
-"Generation defaults are shared by everyone in this workspace. Only admins can change them." = "生成の既定値はこのワークスペースの全員で共有します。変更できるのは管理者のみです。";
 "For this generation only" = "今回の生成のみ";
 "Workspace default" = "ワークスペース設定";
 
 "summary.source.useSaved" = "保存済みの文字起こしを使う";
 "summary.source.useSaved.description" = "サーバーの最新版を取得せず、このMacに保存された版から生成します。内容が古い可能性があります。オフライン時に選択できます。";
 
-"settings.serverConnections" = "サーバー接続";
+"settings.serverConnections" = "アカウント管理";

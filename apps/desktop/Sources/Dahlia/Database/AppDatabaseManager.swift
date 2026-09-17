@@ -321,6 +321,14 @@ final class AppDatabaseManager: Sendable {
             try addColumnIfNeeded(in: db, table: "dahlia_account_connections", column: "syncDiscoveryErrorJSON", type: .text)
         }
 
+        migrator.registerMigration("v44_workspaceSyncPullError") { db in
+            try addColumnIfNeeded(in: db, table: "workspaces", column: "syncPullErrorJSON", type: .text)
+        }
+
+        migrator.registerMigration("v45_workspaceLiveTranscriptDraft") { db in
+            try WorkspaceLiveTranscriptDraftMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

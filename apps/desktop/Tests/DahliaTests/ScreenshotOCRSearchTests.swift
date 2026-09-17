@@ -1,6 +1,7 @@
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
+import Synchronization
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -47,15 +48,17 @@ import GRDB
             } == "French caption")
         }
 
-        @Test
-        func serverWorkspaceNeverUsesDeviceAnalysis() async throws {
+        @Test(arguments: ["enabled", "disabled", "future", "legacy", "missing", "unavailable", "detached"])
+        func serverAnalysisCapabilityControlsDeviceFallback(capability: String) async throws {
             let analyzer = StubScreenshotAnalyzer(text: "device OCR")
             let database = try makeDatabase(screenshotAnalyzer: analyzer)
             let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.test", clientID: "test", createdAt: .now
+                id: .v7(), origin: "https://capability-\(UUID().uuidString.lowercased()).invalid", clientID: "test", createdAt: .now
             )
             var workspace = makeWorkspace()
             workspace.accountConnectionId = connection.id
+            workspace.syncConfirmedConnectionId = connection.id
+            workspace.syncRole = "admin"
             workspace.organizationId = workspace.accountConnectionId == nil ? nil : (workspace.organizationId ?? .v7())
             let meeting = makeMeeting(workspaceID: workspace.id)
             let screenshot = MeetingScreenshotRecord(
@@ -66,13 +69,64 @@ import GRDB
                 try workspace.insert(db)
                 try meeting.insert(db)
                 try screenshot.insertLegacyForTesting(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'file', ?, 1)",
+                    arguments: [workspace.id, screenshot.originalFileId]
+                )
+                try TextContentStore.registerLocal(entity: .file, id: screenshot.originalFileId, workspaceId: workspace.id, in: db)
             }
-            await database.searchIndexer.drain()
-            #expect(await analyzer.runtimeProviders[screenshot.id] == nil)
+            let unavailable = Mutex(capability == "unavailable")
+            ImageURLProtocol.register(origin: connection.origin) { [queue = database.dbQueue, workspaceID = workspace.id] request in
+                #expect(request.url?.path == "/api/v1/capabilities")
+                if capability == "detached" {
+                    do {
+                        try queue.write { db in
+                            try db.execute(
+                                sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?",
+                                arguments: [workspaceID]
+                            )
+                        }
+                    } catch { Issue.record(error) }
+                }
+                let status = capability == "missing" ? 404 : unavailable.withLock { $0 } ? 503 : 200
+                let body = switch capability {
+                case "enabled", "detached": #"{"imageAnalysis":{"version":2}}"#
+                case "future": #"{"imageAnalysis":{"version":3}}"#
+                default: "{}"
+                }
+                return (status, [:], Data(body.utf8))
+            }
+            defer { ImageURLProtocol.remove(origin: connection.origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let indexer = SearchIndexer(
+                dbQueue: database.dbQueue,
+                screenshotAnalyzer: analyzer,
+                apiClient: SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" }),
+                runtimeProviderResolver: { .dahlia(connectionID: connection.id) }
+            )
+            await indexer.drain()
+            let fallsBack = capability != "enabled" && capability != "unavailable" && capability != "detached"
+            #expect(await analyzer.runtimeProviders[screenshot.id] == (fallsBack ? .dahlia(connectionID: connection.id) : nil))
             try await database.dbQueue.read { db throws in
-                #expect(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText == nil)
+                #expect(try String.fetchOne(
+                    db,
+                    sql: "SELECT ocrText FROM meeting_images WHERE id = ?",
+                    arguments: [screenshot.id]
+                ) == (fallsBack ? "device OCR" : nil))
                 let jobs = try Int.fetchOne(db, sql: "SELECT count(*) FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis'")
-                #expect(jobs == 0)
+                #expect(jobs == (capability == "unavailable" || capability == "detached" ? 1 : 0))
+            }
+            if capability == "unavailable" {
+                unavailable.withLock { $0 = false }
+                try await database.dbQueue.write { db in
+                    try db.execute(sql: "UPDATE jobs_search_index SET availableAt = ? WHERE targetKind = 'screenshotAnalysis'", arguments: [Date.distantPast])
+                }
+                await indexer.drain()
+                #expect(await analyzer.runtimeProviders[screenshot.id] == .dahlia(connectionID: connection.id))
+                #expect(try await database.dbQueue.read { db in
+                    try String.fetchOne(db, sql: "SELECT ocrText FROM meeting_images WHERE id = ?", arguments: [screenshot.id])
+                } == "device OCR")
             }
         }
 
@@ -85,6 +139,8 @@ import GRDB
             )
             var workspace = makeWorkspace()
             workspace.accountConnectionId = connection.id
+            workspace.syncConfirmedConnectionId = connection.id
+            workspace.syncRole = "admin"
             workspace.organizationId = .v7()
             let meeting = makeMeeting(workspaceID: workspace.id)
             let screenshotID = UUID.v7()
@@ -110,6 +166,11 @@ import GRDB
                 try workspace.insert(db)
                 try meeting.insert(db)
                 try screenshot.insertLegacyForTesting(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'file', ?, 1)",
+                    arguments: [workspace.id, screenshot.originalFileId]
+                )
+                try TextContentStore.registerLocal(entity: .file, id: screenshot.originalFileId, workspaceId: workspace.id, in: db)
                 try localWorkspace.insert(db)
                 try localMeeting.insert(db)
                 try localScreenshot.insertLegacyForTesting(db)
@@ -141,18 +202,84 @@ import GRDB
                 #expect(try WorkspaceRecord.fetchOne(db, key: workspaceID)?.accountConnectionId == nil)
                 #expect(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText == nil)
                 #expect(try MeetingScreenshotRecord.fetchOne(db, key: localScreenshot.id)?.ocrText == "device OCR")
-                let serverJob = try Row.fetchOne(
+                let serverJob = try #require(try Row.fetchOne(
                     db,
                     sql: "SELECT status, attempts FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
                     arguments: [screenshot.id]
-                )
-                #expect(serverJob?["status"] as String? == "pending")
-                #expect(serverJob?["attempts"] as Int? == 1)
+                ))
+                let status: String = serverJob["status"]
+                let attempts: Int = serverJob["attempts"]
+                #expect(status == "pending")
+                #expect(attempts == 1)
                 #expect(try Int.fetchOne(
                     db,
                     sql: "SELECT count(*) FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
                     arguments: [localScreenshot.id]
                 ) == 0)
+            }
+        }
+
+        @Test
+        func serverFallbackKeepsItsJobWhenDetachedDuringAnalysis() async throws {
+            let analyzer = ConcurrentScreenshotAnalyzer()
+            let database = try makeDatabase(screenshotAnalyzer: analyzer)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://fallback-\(UUID().uuidString.lowercased()).invalid", clientID: "test", createdAt: .now
+            )
+            var workspace = makeWorkspace()
+            workspace.accountConnectionId = connection.id
+            workspace.syncConfirmedConnectionId = connection.id
+            workspace.syncRole = "admin"
+            workspace.organizationId = .v7()
+            let meeting = makeMeeting(workspaceID: workspace.id)
+            let screenshot = MeetingScreenshotRecord(
+                id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now,
+                imageData: Data([1]), mimeType: "image/png"
+            )
+            try await database.dbQueue.write { [workspace] db in
+                try connection.insert(db)
+                try workspace.insert(db)
+                try meeting.insert(db)
+                try screenshot.insertLegacyForTesting(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'file', ?, 1)",
+                    arguments: [workspace.id, screenshot.originalFileId]
+                )
+                try TextContentStore.registerLocal(entity: .file, id: screenshot.originalFileId, workspaceId: workspace.id, in: db)
+            }
+            ImageURLProtocol.register(origin: connection.origin) { _ in (200, [:], Data("{}".utf8)) }
+            defer { ImageURLProtocol.remove(origin: connection.origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let indexer = SearchIndexer(
+                dbQueue: database.dbQueue,
+                screenshotAnalyzer: analyzer,
+                apiClient: SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" }),
+                runtimeProviderResolver: { .dahlia(connectionID: connection.id) }
+            )
+
+            let drain = Task { await indexer.drain() }
+            #expect(await pollUntil { await analyzer.callSizes.count == 1 })
+            try await database.dbQueue.write { [workspaceID = workspace.id] db in
+                try db.execute(
+                    sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?",
+                    arguments: [workspaceID]
+                )
+            }
+            await analyzer.releaseFirstWave()
+            await drain.value
+
+            try await database.dbQueue.read { db throws in
+                #expect(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText == nil)
+                let row = try #require(try Row.fetchOne(
+                    db,
+                    sql: "SELECT status, attempts FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                    arguments: [screenshot.id]
+                ))
+                let status: String = row["status"]
+                let attempts: Int = row["attempts"]
+                #expect(status == "pending")
+                #expect(attempts == 1)
             }
         }
 
@@ -658,8 +785,16 @@ import GRDB
 
             await database.searchIndexer.drain()
 
-            let state = try database.dbQueue.read { db -> (Int, Int, Row?) in
-                try (
+            let state = try await database.dbQueue.read { db in
+                let failure = try Row.fetchOne(
+                    db,
+                    sql: """
+                    SELECT status, attempts FROM jobs_search_index
+                    WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?
+                    """,
+                    arguments: [failingID]
+                )
+                return try (
                     Int.fetchOne(db, sql: "SELECT COUNT(*) FROM meeting_images WHERE ocrText = 'stored text'") ?? 0,
                     Int.fetchOne(
                         db,
@@ -669,20 +804,14 @@ import GRDB
                         """,
                         arguments: [failingID]
                     ) ?? 0,
-                    Row.fetchOne(
-                        db,
-                        sql: """
-                        SELECT status, attempts FROM jobs_search_index
-                        WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?
-                        """,
-                        arguments: [failingID]
-                    )
+                    failure?["status"] as String?,
+                    failure?["attempts"] as Int?
                 )
             }
             #expect(state.0 == 7)
             #expect(state.1 == 0)
-            #expect(state.2?["status"] as String? == "pending")
-            #expect(state.2?["attempts"] as Int? == 1)
+            #expect(state.2 == "pending")
+            #expect(state.3 == 1)
         }
 
         @Test(.timeLimit(.minutes(1)))
@@ -718,19 +847,24 @@ import GRDB
             let triggeredFailure = await analyzer.failFirstWave()
             if !triggeredFailure { drainTask.cancel() }
             await drainTask.value
-            let deferred = try database.dbQueue.read { db in
-                try Row.fetchOne(
+            let deferred = try await database.dbQueue.read { db in
+                let row = try Row.fetchOne(
                     db,
                     sql: """
                     SELECT COUNT(*) AS pendingCount, SUM(attempts = 3) AS preservedAttempts, MIN(availableAt) AS availableAt
                     FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND status = 'pending'
                     """
                 )
+                return (
+                    row?["pendingCount"] as Int?,
+                    row?["preservedAttempts"] as Int?,
+                    row?["availableAt"] as Date?
+                )
             }
             #expect(startedFirstWave)
-            #expect(deferred?["pendingCount"] as Int? == 9)
-            #expect(deferred?["preservedAttempts"] as Int? == 9)
-            #expect((deferred?["availableAt"] as Date? ?? .distantPast) > .now)
+            #expect(deferred.0 == 9)
+            #expect(deferred.1 == 9)
+            #expect((deferred.2 ?? .distantPast) > .now)
             #expect(await analyzer.firstWaveStartedCount == 8)
             #expect(await analyzer.firstWaveCancelledCount == 7)
 
@@ -795,15 +929,16 @@ import GRDB
 
             await database.searchIndexer.pauseForRecording()
             try await database.searchIndexer.requestRebuild()
-            let reset = try database.dbQueue.read { db in
-                try Row.fetchOne(
+            let reset = try await database.dbQueue.read { db in
+                let row = try Row.fetchOne(
                     db,
                     sql: "SELECT status, attempts FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
                     arguments: [screenshot.id]
                 )
+                return (row?["status"] as String?, row?["attempts"] as Int?)
             }
-            #expect(reset?["status"] as String? == "pending")
-            #expect(reset?["attempts"] as Int? == 0)
+            #expect(reset.0 == "pending")
+            #expect(reset.1 == 0)
         }
 
         @Test

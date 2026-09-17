@@ -81,7 +81,7 @@ struct WorkspaceSetupStepView: View {
                 VStack(spacing: 0) {
                     ForEach(workspaceManagementModel.workspaces.filter { $0.accountConnectionId == model.selectedAccountConnectionID }) { workspace in
                         HStack {
-                            Label(workspace.name, systemImage: "archivebox")
+                            Label(workspace.name, systemImage: ProjectIcon.workspace.systemImageName)
                             Spacer()
                             Button(model.selectedExistingWorkspaceID == workspace.id ? L10n.selected : L10n.select) {
                                 model.selectExistingWorkspace(workspace)

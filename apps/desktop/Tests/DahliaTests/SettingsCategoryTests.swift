@@ -16,6 +16,7 @@ import Foundation
                 .mcp,
                 .language,
                 .appearance,
+                .recordingStopDetection,
             ]
             let expectedCategories = SettingsCategory.allCases.filter { !hiddenCategories.contains($0) }
 
@@ -27,6 +28,7 @@ import Foundation
         func everySelectionResolvesToAnAccessibleDestination() {
             #expect(SettingsNavigation.visibleSelection(.language) == .general)
             #expect(SettingsNavigation.visibleSelection(.appearance) == .general)
+            #expect(SettingsNavigation.visibleSelection(.recordingStopDetection) == .general)
             #expect(SettingsNavigation.visibleSelection(.instructions) == .accountPreferences)
             #expect(SettingsNavigation.visibleSelection(.mcp) == .accountPreferences)
             #expect(SettingsNavigation.visibleSelection(.aiSummary) == .accountPreferences)
@@ -45,6 +47,8 @@ import Foundation
         func searchFindsControlsAndDoesNotDependOnTechnicalCategoryNames() {
             #expect(SettingsCategory.general.matches(L10n.appLanguage))
             #expect(SettingsCategory.transcription.matches(L10n.batchAudioRetentionPeriod))
+            #expect(SettingsCategory.general.matches(L10n.automaticRecordingStop))
+            #expect(SettingsCategory.general.matches(L10n.externalMicrophoneEchoCancellation))
             #expect(SettingsCategory.liveSubtitles.matches(L10n.translationTargetLanguage))
             #expect(SettingsCategory.macInference.matches("  chatGPT \n "))
             #expect(SettingsCategory.cloudStorage.matches("google"))
@@ -68,6 +72,9 @@ import Foundation
 
             defaults.set(SettingsCategory.dahliaAccounts.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
             #expect(SettingsNavigation.savedSelection(in: defaults) == .accountsAndWorkspaces)
+
+            defaults.set(SettingsCategory.recordingStopDetection.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .general)
         }
 
         @Test
@@ -88,6 +95,7 @@ import Foundation
             #expect(SettingsCategory.dahliaAccounts.rawValue == "dahliaAccounts")
             #expect(SettingsCategory.workspace.rawValue == "workspace")
             #expect(SettingsCategory.liveSubtitles.rawValue == "liveSubtitles")
+            #expect(SettingsCategory.recordingStopDetection.rawValue == "recordingStopDetection")
             #expect(SettingsCategory.cloudStorage.rawValue == "cloudStorage")
             #expect(SettingsCategory.mcp.rawValue == "mcp")
             #expect(SettingsCategory.audioDiagnostics.rawValue == "audioDiagnostics")

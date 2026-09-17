@@ -68,6 +68,7 @@ export class MeetingSyncService {
     private readonly screenshotTransformer?: ScreenshotTransformer,
     private readonly fileStorageRoot?: string,
     private readonly automaticStorageMaintenance = true,
+    private readonly imageAnalysisModel?: string,
   ) {
     if (storage) this.scheduleStorageDeletes();
     else this.scheduleStorageDeleteRetry();
@@ -188,15 +189,16 @@ export class MeetingSyncService {
 
   async completeImageAnalysis(identity: Identity, input: ImageAnalysisInput, output: ImageAnalysis): Promise<boolean> {
     const analysis = imageAnalysisSchema.parse(output);
-    const generatedMetadata = {
-      ...(input.file.metadata.ocr_text == null ? { ocrText: analysis.ocr_text } : {}),
-      ...(!input.file.metadata.caption?.trim() ? { caption: analysis.caption } : {}),
-    };
-    const metadata = {
-      ...input.file.metadata,
-      ocr_text: input.file.metadata.ocr_text ?? analysis.ocr_text,
-      caption: input.file.metadata.caption?.trim() ? input.file.metadata.caption : analysis.caption,
-    };
+    const metadata = { ...input.file.metadata };
+    const generatedMetadata: { ocrText?: string; caption?: string } = {};
+    if (input.mode === "replace" || metadata.ocr_text == null) {
+      metadata.ocr_text = analysis.ocr_text;
+      generatedMetadata.ocrText = analysis.ocr_text;
+    }
+    if (input.mode === "replace" || !metadata.caption?.trim()) {
+      metadata.caption = analysis.caption;
+      generatedMetadata.caption = analysis.caption;
+    }
     const transaction = await normalizeTransaction({
       schemaVersion: 3, id: uuidV7(), workspaceId: input.workspaceId, createdAt: new Date().toISOString(),
       operations: [{
@@ -270,6 +272,10 @@ export class MeetingSyncService {
             const metadata = { ...file, ...(operation.entity === "file" ? data.metadata as object : {}) };
             if (metadata.source) fileMetadata.set(fileId, metadata as FileRecord["metadata"]);
             Object.assign(data, await this.fileSearchData(metadata));
+            if (operation.entity === "file" && data.imageAnalysis === "replace") {
+              if (!this.imageAnalysisModel) throw new SyncTransactionError(422, "image_analysis_unavailable", [], operation.id);
+              Object.assign(data, { imageAnalysisModel: this.imageAnalysisModel });
+            }
           }
           prepared.push({ ...operation, data });
         }

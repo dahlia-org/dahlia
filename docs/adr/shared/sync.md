@@ -161,9 +161,13 @@ manifest hash は各 nullable UTF-8 field の `byteLength:bytes`、NULL は `-:`
 
 会話分析はDesktopの本文保持・Repository・バックグラウンド処理から分離し、Serverが指定された文字起こし版と確定録音から同期計算する。Desktopは版付き結果を表示するだけとする。詳細は [会話分析の Server ownership](conversation-analytics.md) を参照する。
 
-Local Account と未同期画像は端末解析 job の待機・処理・失敗表示を維持する。Server Account は capabilities API で `imageAnalysis: { version: 1 }` を確認した場合だけ端末解析を省略する。未対応・未設定の Server では端末解析を使い、同期済み画像の OCR / caption は端末 job の有無によらず共通 provider で取得する。
+Local Account と未同期画像は端末解析 job の待機・処理・失敗表示を維持する。Server Account は capabilities API で `imageAnalysis: { version: 2 }` を確認した場合だけ端末解析を省略する。Local Workspace を Server 管理へ移す際は、新規 file の初回 `file:upsert` に `imageAnalysis: "replace"` を指定し、既存 OCR / caption を表示・FTS 用に維持したまま Server 解析 job を予約する。成功時に両方を置換して embedding job を初めて生成する。移管済み画像、Server 間移管、通常の file 更新は再解析しない。未対応・未設定の Server では端末解析を使い、同期済み画像の OCR / caption は端末 job の有無によらず共通 provider で取得する。
+
+Workspace の生成設定はオブジェクト全体を置換するため、文字起こし後の要約モデル設定とライブ下書き設定を含む契約を `sync.version = 6` とする。Server / Web / Desktop は同一リリースで切り替え、旧契約の相手とは同期せず更新要求にする。
 
 2026-09-18: 上記の Server Account 向け端末 fallback 契約を廃止する。端末解析 job は Local Account の画像だけを処理し、Server Workspace の画像は未同期を含めて `imageAnalysis` capability の有無・version・取得成否や Server のモデル設定にかかわらず処理しない。Server 側で解析されない場合も端末へ切り替えず、OCR / caption は未生成のままにする。Server の解析結果は従来どおり共通 provider で取得する。
+
+2026-09-18（再改定）: 直前の fallback 廃止を撤回する。Server Workspace は `imageAnalysis: { version: 2 }` のときだけ端末解析を省略し、未対応・未設定・旧 version では端末解析を維持する。capability 取得失敗時は端末解析へ即時切り替えず job を再試行する。Local→Server の `replace` が終端失敗した場合は imported OCR / caption を保持し、その内容の embedding job を共通 search worker へ復旧する。
 
 全 Server Account 合計128 MiBを超えると、再取得可能な検証済み本文を LRU で80%まで解放する。直近20会議は空き枠内だけ先読みする。閲覧済み本文を先読みのために追い出さず、解放した項目を次の先読みで取り直さない。Local Account、使用中、未送信・競合・復旧中の Workspace、録音中は対象外。容量は本文だけを数え、metadata・翻訳・session・音声特徴量・ユーザーの Markdown・backup を含めない。解放は本文行だけを削除し、transcript metadata・summary header・file metadata と export 参照、端末固有属性を保持する。対応する FTS・旧 vector を除去し metadata 索引を再構築する。既存の起動時 VACUUM と録音外 incremental vacuum で空きページを回収する。
 

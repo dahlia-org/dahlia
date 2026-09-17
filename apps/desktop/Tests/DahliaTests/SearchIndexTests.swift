@@ -704,15 +704,15 @@ import GRDB
                     arguments: ["Changed", child.id]
                 )
             }
-            let contentJobs = try database.dbQueue.read { db in
+            let contentJobs = try await database.dbQueue.read { db in
                 try Row.fetchAll(
                     db,
                     sql: "SELECT targetKind, targetKey FROM jobs_search_index WHERE indexKind = 'fts'"
-                )
+                ).map { ($0["targetKind"] as String, $0["targetKey"] as UUID) }
             }
             #expect(contentJobs.count == 1)
-            #expect(contentJobs.first?["targetKind"] as String? == "project")
-            #expect(contentJobs.first?["targetKey"] as UUID? == child.id)
+            #expect(contentJobs.first?.0 == "project")
+            #expect(contentJobs.first?.1 == child.id)
             await database.searchIndexer.drain()
 
             let unrelatedUpdatedAt = try await database.dbQueue.read { db in
@@ -728,15 +728,15 @@ import GRDB
                     arguments: ["Renamed", firstRoot.id]
                 )
             }
-            let hierarchyJobs = try database.dbQueue.read { db in
+            let hierarchyJobs = try await database.dbQueue.read { db in
                 try Row.fetchAll(
                     db,
                     sql: "SELECT targetKind, targetKey FROM jobs_search_index WHERE indexKind = 'fts'"
-                )
+                ).map { ($0["targetKind"] as String, $0["targetKey"] as UUID) }
             }
             #expect(hierarchyJobs.count == 1)
-            #expect(hierarchyJobs.first?["targetKind"] as String? == "projectHierarchy")
-            #expect(hierarchyJobs.first?["targetKey"] as UUID? == firstRoot.id)
+            #expect(hierarchyJobs.first?.0 == "projectHierarchy")
+            #expect(hierarchyJobs.first?.1 == firstRoot.id)
             await database.searchIndexer.drain()
 
             let unrelatedUpdatedAfterHierarchyChange = try await database.dbQueue.read { db in

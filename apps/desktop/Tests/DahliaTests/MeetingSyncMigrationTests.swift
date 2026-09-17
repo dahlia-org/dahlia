@@ -298,7 +298,7 @@
 
             try await SyncTransactionQueue.reapplyLocalVersion(workspaceId: workspace.id, dbQueue: database.dbQueue)
 
-            let operations = try database.dbQueue.read { db in
+            let operations = try await database.dbQueue.read { db in
                 try Row.fetchAll(
                     db,
                     sql: """
@@ -307,18 +307,23 @@
                     WHERE t.workspace_id = ? ORDER BY t.sequence, o.position
                     """,
                     arguments: [workspace.id]
-                )
+                ).map { ($0["entityId"] as UUID, $0["action"] as String) }
             }
             #expect(operations.count == 2)
-            #expect(operations[0]["entityId"] as UUID == root.id)
-            #expect(operations[0]["action"] as String == "create")
-            #expect(operations[1]["entityId"] as UUID == child.id)
-            #expect(operations[1]["action"] as String == "create")
+            #expect(operations[0].0 == root.id)
+            #expect(operations[0].1 == "create")
+            #expect(operations[1].0 == child.id)
+            #expect(operations[1].1 == "create")
         }
 
         @Test
         func reapplyingADeletedWorkspaceQueuesTheCompleteLocalSnapshot() async throws {
             let (database, workspace) = try await syncedDatabase()
+            var otherPending = WorkspaceRecord(id: .v7(), name: "Older pending", createdAt: workspace.createdAt.addingTimeInterval(-1), lastOpenedAt: .distantPast)
+            otherPending.accountConnectionId = workspace.accountConnectionId
+            otherPending.organizationId = workspace.organizationId
+            otherPending.syncRole = "admin"
+            let pendingWorkspace = otherPending
             let project = ProjectRecord(
                 id: .v7(), workspaceId: workspace.id, parentProjectId: nil, name: "Project",
                 createdAt: .now, projectType: .undefined
@@ -327,12 +332,21 @@
                 id: .v7(), workspaceId: workspace.id, projectId: project.id, name: "Meeting",
                 createdAt: .now, updatedAt: .now
             )
+            let screenshot = MeetingScreenshotRecord(id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now, imageData: Data([1, 2, 3]), mimeType: "image/png",
+                                                     ocrText: "text", caption: "caption")
             try await database.dbQueue.write { db in
+                try pendingWorkspace.insert(db)
                 try project.insert(db)
                 try meeting.insert(db)
+                try screenshot.insertLegacyForTesting(db)
                 try SyncTransactionRecorder.record(
                     workspaceId: workspace.id,
-                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
+                    operations: [
+                        SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update),
+                        SyncInitialSnapshotBuilder.fileOperation(
+                            #require(try FileRecord.fetchOne(db, key: screenshot.id)), replaceServerImageAnalysis: true, in: db
+                        ),
+                    ],
                     in: db
                 )
             }
@@ -348,18 +362,25 @@
 
             try await SyncTransactionQueue.reapplyLocalVersion(workspaceId: workspace.id, dbQueue: database.dbQueue)
 
-            let entities = try await database.dbQueue.read { db in
-                try String.fetchAll(
-                    db,
-                    sql: """
+            let state = try await database.dbQueue.read { db in
+                try (
+                    String.fetchAll(db, sql: """
                     SELECT o.entity FROM sync_operations o
                     JOIN sync_transactions t ON t.id = o.transactionId
                     WHERE t.workspace_id = ? ORDER BY t.sequence, o.position
-                    """,
-                    arguments: [workspace.id]
+                    """, arguments: [workspace.id]),
+                    String.fetchOne(db, sql: """
+                    SELECT o.payloadJSON FROM sync_operations o
+                    JOIN sync_transactions t ON t.id = o.transactionId
+                    WHERE t.workspace_id = ? AND o.entity = 'file'
+                    """, arguments: [workspace.id]),
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE workspace_id = ?",
+                                 arguments: [pendingWorkspace.id]) ?? 0
                 )
             }
-            #expect(entities == ["workspace", "project", "meeting"])
+            #expect(state.0 == ["workspace", "project", "meeting", "file", "meeting_attachment"])
+            #expect(try SyncJSON.decoder.decode(FileOperationPayload.self, from: #require(state.1?.data(using: .utf8))).imageAnalysis == "replace")
+            #expect(state.2 == 0)
         }
 
         @Test
@@ -404,7 +425,7 @@
 
             try await SyncTransactionQueue.reapplyLocalVersion(workspaceId: workspace.id, dbQueue: database.dbQueue)
 
-            let operations = try database.dbQueue.read { db in
+            let operations = try await database.dbQueue.read { db in
                 try Row.fetchAll(
                     db,
                     sql: """
@@ -414,14 +435,14 @@
                     WHERE t.workspace_id = ? ORDER BY t.sequence, o.position
                     """,
                     arguments: [workspace.id]
-                )
+                ).map { ($0["entity"] as String, $0["action"] as String, $0["baseRevision"] as Int?) }
             }
             #expect(operations.count == 2)
-            #expect(operations[0]["entity"] as String == "meeting")
-            #expect(operations[0]["action"] as String == "create")
-            #expect(operations[0]["baseRevision"] as Int? == nil)
-            #expect(operations[1]["entity"] as String == "summary")
-            #expect(operations[1]["baseRevision"] as Int? == 0)
+            #expect(operations[0].0 == "meeting")
+            #expect(operations[0].1 == "create")
+            #expect(operations[0].2 == nil)
+            #expect(operations[1].0 == "summary")
+            #expect(operations[1].2 == 0)
         }
 
         @Test
@@ -445,7 +466,11 @@
                 try SyncTransactionRecorder.record(
                     workspaceId: workspace.id,
                     operations: [
-                        SyncInitialSnapshotBuilder.fileOperation(#require(try FileRecord.fetchOne(db, key: screenshot.id)), in: db),
+                        SyncInitialSnapshotBuilder.fileOperation(
+                            #require(try FileRecord.fetchOne(db, key: screenshot.id)),
+                            replaceServerImageAnalysis: true,
+                            in: db
+                        ),
                         SyncInitialSnapshotBuilder.meetingAttachmentOperation(screenshot),
                     ],
                     in: db
@@ -466,7 +491,7 @@
 
             try await SyncTransactionQueue.reapplyLocalVersion(workspaceId: workspace.id, dbQueue: database.dbQueue)
 
-            let rows = try database.dbQueue.read { db in
+            let rows = try await database.dbQueue.read { db in
                 try Row.fetchAll(
                     db,
                     sql: """
@@ -477,18 +502,21 @@
                     WHERE t.workspace_id = ? ORDER BY t.sequence, o.position
                     """,
                     arguments: [workspace.id]
-                )
+                ).map { (id: $0["id"] as UUID, entity: $0["entity"] as String, action: $0["action"] as String, baseRevision: $0["baseRevision"] as Int?,
+                    payloadJSON: $0["payloadJSON"] as String?, attachmentSHA256: $0["attachmentSHA256"] as String?, attachmentLength: $0["attachmentLength"] as Int?)
+                }
             }
             #expect(rows.count == 3)
-            #expect(rows[0]["entity"] as String == "meeting")
-            #expect(rows[0]["action"] as String == "create")
-            #expect(rows[1]["entity"] as String == "file")
-            #expect(rows[1]["baseRevision"] as Int? == nil)
-            #expect(rows[1]["attachmentLength"] as Int? == nil)
-            let hash: String = rows[1]["attachmentSHA256"]
-            let payload: String = rows[1]["payloadJSON"]
+            #expect(rows[0].entity == "meeting")
+            #expect(rows[0].action == "create")
+            #expect(rows[1].entity == "file")
+            #expect(rows[1].baseRevision == nil)
+            #expect(rows[1].attachmentLength == nil)
+            let hash = try #require(rows[1].attachmentSHA256)
+            let payload = try #require(rows[1].payloadJSON)
             #expect(payload.contains(hash))
-            let operationId: UUID = rows[1]["id"]
+            #expect(try SyncJSON.decoder.decode(FileOperationPayload.self, from: Data(payload.utf8)).imageAnalysis == "replace")
+            let operationId = rows[1].id
             #expect(try await SyncTransactionQueue.screenshotAttachment(
                 operationId: operationId,
                 dbQueue: database.dbQueue
@@ -1011,14 +1039,14 @@
             }
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
-            let first = try database.dbQueue.read { db in
+            let first = try await database.dbQueue.read { db in
                 let count = try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") ?? 0
                 let operation = try Row.fetchOne(db, sql: "SELECT entity, action FROM sync_operations")
-                return (count, operation)
+                return (count, operation?["entity"] as String?, operation?["action"] as String?)
             }
             #expect(first.0 == 1)
-            #expect(first.1?["entity"] as String? == "workspace")
-            #expect(first.1?["action"] as String? == "create")
+            #expect(first.1 == "workspace")
+            #expect(first.2 == "create")
 
             try await database.dbQueue.write { db in
                 try SyncTransactionQueue.discard(workspaceId: workspace.id, in: db)
@@ -1123,7 +1151,7 @@
             }
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
 
-            let batches = try database.dbQueue.read { db in
+            let batches = try await database.dbQueue.read { db in
                 try Row.fetchAll(
                     db,
                     sql: """
@@ -1133,11 +1161,11 @@
                     WHERE o.entity = 'project'
                     GROUP BY t.id
                     """
-                )
+                ).map { ($0["operationCount"] as Int, $0["payloadBytes"] as Int) }
             }
             #expect(batches.count == 4)
-            #expect(batches.reduce(0) { $0 + ($1["operationCount"] as Int) } == 330)
-            #expect(batches.allSatisfy { ($0["payloadBytes"] as Int) < 8 * 1024 * 1024 })
+            #expect(batches.reduce(0) { $0 + $1.0 } == 330)
+            #expect(batches.allSatisfy { $0.1 < 8 * 1024 * 1024 })
         }
 
         @Test
@@ -1657,7 +1685,7 @@
                 )
             }
 
-            let queued = try database.dbQueue.read { db in
+            let queued = try await database.dbQueue.read { db in
                 try Row.fetchAll(
                     db,
                     sql: """
@@ -1670,12 +1698,12 @@
                     ORDER BY t.sequence, o.position
                     """,
                     arguments: [workspace.id]
-                )
+                ).map { ($0["sequence"] as Int64, $0["entity"] as String, $0["itemCount"] as Int) }
             }
             #expect(queued.count == 2)
-            #expect(Set(queued.map { $0["sequence"] as Int64 }).count == 1)
-            #expect(queued.map { $0["entity"] as String } == ["transcript", "meeting"])
-            #expect(queued.map { $0["itemCount"] as Int } == [101, 0])
+            #expect(Set(queued.map(\.0)).count == 1)
+            #expect(queued.map(\.1) == ["transcript", "meeting"])
+            #expect(queued.map(\.2) == [101, 0])
         }
 
         @Test(arguments: ["target", "local", "server"])
@@ -1765,9 +1793,7 @@
 
         private func syncedDatabase() async throws -> (AppDatabaseManager, WorkspaceRecord) {
             let database = try AppDatabaseManager(path: ":memory:")
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
-            )
+            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now)
             var workspace = WorkspaceRecord(id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
             workspace.accountConnectionId = connection.id
             if workspace.syncRole == nil { workspace.syncRole = "admin" }

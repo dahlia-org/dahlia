@@ -32,6 +32,8 @@ PostgreSQL は既存の生成 Auth baseline → application initial → runtime_
 
 2026-09-17: ユーザー承認により、Workspace の生成設定変更を PostgreSQL / SQLite の initial に統合し、未公開の `20260916153014_gifted_random` / `20260916153015_thankful_wrecker` を撤回した。既存開発 DB の設定変換は提供せず、新しい baseline を使うには DB を再作成する。
 
+2026-09-18: ユーザー承認により、Local→Server 移管画像の再構築に必要な schema と `meeting_attachment_select` の search maintenance 条件も未リリース baseline に統合した。QA を含め、旧 `runtime_support` を適用済みのすべての Server DB は再作成を必要とし、環境別の forward migration は提供しない。
+
 以下の forward migration の説明は統合前の経緯であり、旧開発 DB からの移行保証ではない。リリース後は従来どおり forward-only とする。
 
 ## Header identity

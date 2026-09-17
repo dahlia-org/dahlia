@@ -56,10 +56,6 @@ struct ProjectManagementView: View {
             } settingsContent: {
                 SettingsSidebarView(
                     selection: $mainWindowNavigation.settingsCategory,
-                    workspaces: workspaceManagementModel.workspaces,
-                    currentWorkspace: sidebarViewModel.currentWorkspace,
-                    updateController: updateController,
-                    onSelectWorkspace: onSelectWorkspace,
                     onReturnToApp: mainWindowNavigation.dismissSettings
                 )
             }
@@ -73,6 +69,7 @@ struct ProjectManagementView: View {
                     sidebarViewModel: sidebarViewModel,
                     appDatabase: appDatabase,
                     workspaceManagementModel: workspaceManagementModel,
+                    onSelectWorkspace: onSelectWorkspace,
                     onShowUnprocessedRecordings: openUnprocessedRecordingsFromSettings
                 )
             }
@@ -97,7 +94,7 @@ struct ProjectManagementView: View {
     private var projectCatalog: some View {
         if AppSettings.shared.currentWorkspace == nil {
             ContentUnavailableView {
-                Label(L10n.noWorkspaceSelected, systemImage: "externaldrive")
+                Label(L10n.noWorkspaceSelected, systemImage: ProjectIcon.workspace.systemImageName)
             } description: {
                 Text(L10n.projectManagementNoWorkspaceDescription)
             }

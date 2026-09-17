@@ -24,10 +24,8 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(localized: "settings.organization.settingsOutputLanguageDescription", bundle: bundle)
     }
 
-    static var settingsServerProcessingDescription: String { String(
-        localized: "settings.organization.settingsServerProcessingDescription",
-        bundle: bundle
-    ) }
+    static var generatedContentLanguage: String { String(localized: "settings.organization.generatedContentLanguage", bundle: bundle) }
+
     static var settingsLocalAnalysisLanguages: String { String(localized: "settings.organization.settingsLocalAnalysisLanguages", bundle: bundle) }
     static var settingsAnalysisLanguagesDescription: String { String(
         localized: "settings.organization.settingsAnalysisLanguagesDescription",
@@ -36,6 +34,10 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var settingsDuringRecording: String { String(localized: "settings.organization.settingsDuringRecording", bundle: bundle) }
     static var settingsAfterRecording: String { String(localized: "settings.organization.settingsAfterRecording", bundle: bundle) }
     static var settingsAudioStorage: String { String(localized: "settings.organization.settingsAudioStorage", bundle: bundle) }
+    static var transcriptionRecoverySettings: String { String(
+        localized: "settings.organization.transcriptionRecoverySettings",
+        bundle: bundle
+    ) }
     static var settingsAutomaticExport: String { String(localized: "settings.organization.settingsAutomaticExport", bundle: bundle) }
     static var settingsChooseSummaryPreferences: String { String(localized: "settings.organization.settingsChooseSummaryPreferences", bundle: bundle)
     }
@@ -46,24 +48,30 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var summaryStyleEventDescription: String { String(localized: "settings.organization.summaryStyleEventDescription", bundle: bundle) }
     static var summaryStyleTimelineDescription: String { String(localized: "settings.organization.summaryStyleTimelineDescription", bundle: bundle) }
     static var macInferencePreferences: String { String(localized: "settings.preferences.macInferencePreferences", bundle: bundle) }
-    static var usesMacInferencePreferences: String { String(localized: "settings.preferences.usesMacInferencePreferences", bundle: bundle) }
     static var accountPreferences: String { String(localized: "settings.preferences.accountPreferences", bundle: bundle) }
     static var accountPreferencesScope: String { String(localized: "settings.preferences.accountPreferencesScope", bundle: bundle) }
     static var accountSummaryPreferencesDescription: String { String(
         localized: "settings.preferences.accountSummaryPreferencesDescription",
         bundle: bundle
     ) }
-    static var workspaceGenerationSettingsDescription: String { String(
-        localized: "Generation defaults are shared by everyone in this workspace. Only admins can change them.",
-        bundle: bundle
-    ) }
     static var generationOverrides: String { String(localized: "For this generation only", bundle: bundle) }
     static var workspaceGenerationDefault: String { String(localized: "Workspace default", bundle: bundle) }
     static var summaryStyle: String { String(localized: "settings.preferences.summaryStyle", bundle: bundle) }
     static var recordingSettings: String { String(localized: "settings.preferences.recordingSettings", bundle: bundle) }
-    static var localModelPreferences: String { String(localized: "settings.preferences.localModelPreferences", bundle: bundle) }
+    static var recordingStopDetection: String { String(
+        localized: "settings.preferences.recordingStopDetection",
+        bundle: bundle
+    ) }
+    static var macTranscriptionPreferences: String { String(
+        localized: "settings.preferences.macTranscriptionPreferences",
+        bundle: bundle
+    ) }
     static var localModelPreferencesDescription: String { String(localized: "settings.preferences.localModelPreferencesDescription", bundle: bundle) }
-    static var serverProcessingAdvanced: String { String(localized: "settings.preferences.serverProcessingAdvanced", bundle: bundle) }
+    static var summaryProcessingLocation: String { String(localized: "settings.preferences.summaryProcessingLocation", bundle: bundle) }
+    static var serverSummaryProcessingDescription: String { String(
+        localized: "settings.preferences.serverSummaryProcessingDescription",
+        bundle: bundle
+    ) }
     static var processingWorkflow: String { String(localized: "settings.preferences.processingWorkflow", bundle: bundle) }
     static var transcribeThenSummarize: String { String(localized: "settings.preferences.transcribeThenSummarize", bundle: bundle) }
     static var combinedTranscriptionSummary: String { String(localized: "settings.preferences.combinedTranscriptionSummary", bundle: bundle) }
@@ -79,18 +87,20 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "settings.preferences.serverTranscriptionLanguageDescription",
         bundle: bundle
     ) }
-    static var localTranscriptionSettingsDescription: String { String(
-        localized: "settings.preferences.localTranscriptionSettingsDescription",
+    static var appleSpeechSettingsScopeDescription: String { String(
+        localized: "settings.preferences.appleSpeechSettingsScopeDescription",
         bundle: bundle
     ) }
     static var summaryModel: String { String(localized: "settings.preferences.summaryModel", bundle: bundle) }
+    static var audioProcessingModel: String { String(localized: "settings.preferences.audioProcessingModel", bundle: bundle) }
+    static var audioProcessingReasoningEffort: String { String(
+        localized: "settings.preferences.audioProcessingReasoningEffort",
+        bundle: bundle
+    ) }
+    static var summaryReasoningEffort: String { String(localized: "settings.preferences.summaryReasoningEffort", bundle: bundle) }
     static var automaticModelPreference: String { String(localized: "settings.preferences.automaticModelPreference", bundle: bundle) }
     static var unavailableModelPreference: String { String(localized: "settings.preferences.unavailableModelPreference", bundle: bundle) }
     static var checkModelPreference: String { String(localized: "settings.preferences.checkModelPreference", bundle: bundle) }
-    static var automaticModelPreferenceDescription: String { String(
-        localized: "settings.preferences.automaticModelPreferenceDescription",
-        bundle: bundle
-    ) }
     static var transcriptionAndSummary: String { String(localized: "settings.processing.title", bundle: bundle) }
     static var appliesToAccount: String { String(localized: "settings.processing.account", bundle: bundle) }
     static var settingsScope: String { String(localized: "settings.processing.scope", bundle: bundle) }

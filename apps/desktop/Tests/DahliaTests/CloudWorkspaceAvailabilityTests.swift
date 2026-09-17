@@ -76,7 +76,7 @@
                 let path = request.url!.path
                 if path == "/api/v1/workspaces" { return (200, [:], listing) }
                 if path == "/api/v1/organizations" { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
-                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8)) }
                 if path.hasSuffix("/snapshot") { return (200, [:], snapshot) }
                 if path.hasSuffix("/changes") { return (
                     200,

@@ -374,6 +374,10 @@ final class WorkspaceManagementModel {
             let api = SyncAPIClient(session: .shared)
             let connection = pending.connection.record
             let backup = BackupService(dbQueue: repository.dbQueue)
+            let replaceServerImageAnalysis = try await CloudWorkspaceDiscovery.supportsImageAnalysisReplacement(
+                connection: connection,
+                api: api
+            )
             let currentWorkspaces = try await fetchCloudWorkspaces(from: connection)
             let updated: WorkspaceRecord
             if let destinationId, destinationId != pending.workspace.id {
@@ -384,7 +388,8 @@ final class WorkspaceManagementModel {
                     destination: destination,
                     dbQueue: repository.dbQueue,
                     backup: backup,
-                    api: api
+                    api: api,
+                    replaceServerImageAnalysis: replaceServerImageAnalysis
                 )
             } else {
                 let workspaceName = workspaceName?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -428,7 +433,8 @@ final class WorkspaceManagementModel {
                         connectionID: connection.id,
                         serverWorkspace: serverWorkspace,
                         transferFence: transferFence,
-                        requestedName: workspaceName
+                        requestedName: workspaceName,
+                        replaceServerImageAnalysis: replaceServerImageAnalysis
                     ) else {
                         throw LocalWorkspaceImportError.changed
                     }

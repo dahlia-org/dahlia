@@ -1,9 +1,9 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "36fefe06-5ed6-48c7-a1cf-f966c679cd9c",
+  "id": "23c32ae9-f7d5-4e19-a1de-754ce5c89b8c",
   "prevIds": [
-    "00000000-0000-0000-0000-000000000000"
+    "36fefe06-5ed6-48c7-a1cf-f966c679cd9c"
   ],
   "ddl": [
     {
@@ -220,6 +220,19 @@
       "generated": null,
       "identity": null,
       "name": "model",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "image_analysis"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'fill_missing'",
+      "generated": null,
+      "identity": null,
+      "name": "mode",
       "entityType": "columns",
       "schema": "jobs",
       "table": "image_analysis"
@@ -5126,6 +5139,13 @@
       "table": "image_analysis"
     },
     {
+      "value": "\"mode\" IN ('fill_missing', 'replace')",
+      "name": "image_analysis_job_mode_check",
+      "entityType": "checks",
+      "schema": "jobs",
+      "table": "image_analysis"
+    },
+    {
       "value": "\"kind\" IN ('meeting_created', 'meeting_updated', 'meeting_deleted', 'tag_added', 'tag_removed', 'recording_started', 'recording_ended', 'segment_rotated')",
       "name": "meeting_events_kind_check",
       "entityType": "checks",
@@ -5327,7 +5347,7 @@
       "roles": [
         "public"
       ],
-      "using": "(current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"meeting_attachments\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR \"app\".\"current_identity_can_read_workspace\"(\"app\".\"meeting_attachments\".\"workspace_id\") OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.workspace_id = \"app\".\"meeting_attachments\".\"workspace_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
+      "using": "(current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"meeting_attachments\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR \"app\".\"current_identity_can_read_workspace\"(\"app\".\"meeting_attachments\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"app\".\"meeting_attachments\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.workspace_id = \"app\".\"meeting_attachments\".\"workspace_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
       "withCheck": null,
       "name": "meeting_attachment_select",
       "entityType": "policies",

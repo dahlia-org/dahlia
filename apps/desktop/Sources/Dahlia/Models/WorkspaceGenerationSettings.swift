@@ -16,6 +16,8 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         var workflow: Workflow = .combined
         var summaryModel: String?
         var reasoningEffort: String?
+        var transcriptSummaryModel: String?
+        var transcriptSummaryReasoningEffort: String?
     }
 
     struct Processing: Codable, Equatable, Sendable {
@@ -53,6 +55,7 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
     var outputLanguage: SummaryLanguage = .ja
     var local = LocalProcessing()
     var automaticProcessing = true
+    var liveTranscriptDraft = false
     private(set) var legacyTranscription: LegacyTranscription?
 
     init(
@@ -60,17 +63,19 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         summary: Summary = Summary(),
         outputLanguage: SummaryLanguage = .ja,
         local: LocalProcessing = LocalProcessing(),
-        automaticProcessing: Bool = true
+        automaticProcessing: Bool = true,
+        liveTranscriptDraft: Bool = false
     ) {
         self.processing = processing
         self.summary = summary
         self.outputLanguage = outputLanguage
         self.local = local
         self.automaticProcessing = automaticProcessing
+        self.liveTranscriptDraft = liveTranscriptDraft
     }
 
     private enum CodingKeys: String, CodingKey {
-        case processing, summary, outputLanguage, local, automaticProcessing, transcription
+        case processing, summary, outputLanguage, local, automaticProcessing, liveTranscriptDraft, transcription
     }
 
     init(from decoder: Decoder) throws {
@@ -81,6 +86,8 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         local = try values.decodeIfPresent(LocalProcessing.self, forKey: .local) ?? LocalProcessing()
         automaticProcessing = try values.decodeIfPresent(Bool.self, forKey: .automaticProcessing) ?? true
         legacyTranscription = try values.decodeIfPresent(LegacyTranscription.self, forKey: .transcription)
+        liveTranscriptDraft = try values.decodeIfPresent(Bool.self, forKey: .liveTranscriptDraft)
+            ?? legacyTranscription?.liveTranscriptDraft ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -90,11 +97,25 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         try values.encode(outputLanguage, forKey: .outputLanguage)
         try values.encode(local, forKey: .local)
         try values.encode(automaticProcessing, forKey: .automaticProcessing)
+        if liveTranscriptDraft {
+            try values.encode(true, forKey: .liveTranscriptDraft)
+        }
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.processing == rhs.processing && lhs.summary == rhs.summary && lhs.outputLanguage == rhs.outputLanguage
             && lhs.local == rhs.local && lhs.automaticProcessing == rhs.automaticProcessing
+            && lhs.liveTranscriptDraft == rhs.liveTranscriptDraft
+    }
+
+    mutating func setTranscriptSummaryModel(_ model: String?) {
+        processing.remote.transcriptSummaryModel = model
+        if processing.location == .local { processing.remote.summaryModel = nil }
+    }
+
+    mutating func setTranscriptSummaryReasoningEffort(_ effort: String?) {
+        processing.remote.transcriptSummaryReasoningEffort = effort
+        if processing.location == .local { processing.remote.reasoningEffort = nil }
     }
 
     var generationPreferences: GenerationPreferences {

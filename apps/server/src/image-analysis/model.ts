@@ -6,6 +6,7 @@ export interface ImageAnalysisClaim {
   workspaceId: string;
   ownerUserId: string;
   model: string;
+  mode: "fill_missing" | "replace";
   outputLanguage: string;
   attempts: number;
   claimedAt: Date;
@@ -21,8 +22,8 @@ export const imageAnalysisSchema = z.object({
 }).strict();
 export type ImageAnalysis = z.infer<typeof imageAnalysisSchema>;
 
-export function needsImageAnalysis(metadata: FileRecord["metadata"]): boolean {
-  return metadata.ocr_text == null || !metadata.caption?.trim();
+export function needsImageAnalysis(metadata: FileRecord["metadata"], mode: ImageAnalysisClaim["mode"] = "fill_missing"): boolean {
+  return mode === "replace" || metadata.ocr_text == null || !metadata.caption?.trim();
 }
 
 export class ImageAnalysisError extends Error {

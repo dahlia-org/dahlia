@@ -94,10 +94,6 @@ struct ContentView: View {
                         } settingsContent: {
                             SettingsSidebarView(
                                 selection: $mainWindowNavigation.settingsCategory,
-                                workspaces: workspaceManagementModel.workspaces,
-                                currentWorkspace: sidebarViewModel.currentWorkspace,
-                                updateController: updateController,
-                                onSelectWorkspace: onSelectWorkspace,
                                 onReturnToApp: mainWindowNavigation.dismissSettings
                             )
                         }
@@ -125,6 +121,7 @@ struct ContentView: View {
                                 sidebarViewModel: sidebarViewModel,
                                 appDatabase: appDatabase,
                                 workspaceManagementModel: workspaceManagementModel,
+                                onSelectWorkspace: onSelectWorkspace,
                                 onShowUnprocessedRecordings: openUnprocessedRecordingsFromSettings
                             )
                         }

@@ -50,10 +50,6 @@ struct WorkspacePickerView: View {
             } settingsContent: {
                 SettingsSidebarView(
                     selection: $mainWindowNavigation.settingsCategory,
-                    workspaces: model.workspaces,
-                    currentWorkspace: settings.currentWorkspace,
-                    updateController: updateController,
-                    onSelectWorkspace: onWorkspaceSelected,
                     onReturnToApp: mainWindowNavigation.dismissSettings
                 )
             }
@@ -102,6 +98,7 @@ struct WorkspacePickerView: View {
                     sidebarViewModel: sidebarViewModel,
                     appDatabase: appDatabase,
                     workspaceManagementModel: model,
+                    onSelectWorkspace: onWorkspaceSelected,
                     onShowUnprocessedRecordings: openUnprocessedRecordingsFromSettings
                 )
             }

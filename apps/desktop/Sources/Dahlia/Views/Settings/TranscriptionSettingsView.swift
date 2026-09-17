@@ -1,46 +1,45 @@
+import Speech
 import SwiftUI
 
 /// このMac固有の録音設定。アカウントの生成設定とは独立する。
 struct TranscriptionSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @State private var supportedLocales: [Locale] = []
+    @State private var isLoadingLocales = true
     @State private var pendingShorterAudioRetentionPeriod: BatchAudioRetentionPeriod?
     @State private var isShowingAudioRetentionConfirmation = false
 
     var body: some View {
         Form {
-            Section {
-                Toggle(isOn: $settings.automaticMeetingEndRecordingStopEnabled) {
-                    Text(L10n.automaticMeetingEndRecordingStop)
-                    Text(L10n.automaticMeetingEndRecordingStopDescription)
-                }
-                .toggleStyle(.switch)
-            } header: {
-                Text(L10n.settingsDuringRecording)
-            }
-
             Section(L10n.transcription) {
-                Toggle(isOn: $settings.automaticTranscriptionLanguageDetectionEnabled) {
-                    Text(L10n.automaticDetectionMultilingualTitle)
-                    Text(L10n.automaticDetectionMultilingualDescription)
+                LabeledContent(L10n.transcriptionModel, value: "Apple Speech")
+                DahliaMenuPicker(
+                    title: L10n.transcriptionLanguage,
+                    description: L10n.appleSpeechSettingsScopeDescription,
+                    selection: transcriptionLanguageSelection,
+                    options: [SettingsLanguageOptions.automaticTranscription] + SettingsLanguageOptions.locales(
+                        from: supportedLocales.filter { settings.isLanguageEnabled($0.identifier) },
+                        including: settings.transcriptionLocale
+                    ).map(\.identifier)
+                ) { identifier in
+                    identifier == SettingsLanguageOptions.automaticTranscription
+                        ? L10n.auto
+                        : Locale(identifier: identifier).localizedString(forIdentifier: identifier) ?? identifier
                 }
-                .toggleStyle(.switch)
-                Toggle(L10n.liveTranscriptDraft, isOn: $settings.liveTranscriptDraftEnabled)
-                    .toggleStyle(.switch)
+                .disabled(isLoadingLocales)
             }
 
             Section {
-                DisclosureGroup(L10n.settingsAutomaticExport) {
-                    Toggle(isOn: $settings.exportBatchSummaryToWorkspace) {
-                        Text(L10n.exportBatchSummaryToWorkspace)
-                        Text(L10n.exportBatchSummaryToWorkspaceDescription)
-                    }
-                    .toggleStyle(.switch)
-                    Toggle(isOn: $settings.exportBatchSummaryToGoogleDocs) {
-                        Text(L10n.exportBatchSummaryToGoogleDocs)
-                        Text(L10n.exportBatchSummaryToGoogleDocsDescription)
-                    }
-                    .toggleStyle(.switch)
+                Toggle(isOn: $settings.exportBatchSummaryToWorkspace) {
+                    Text(L10n.exportBatchSummaryToWorkspace)
+                    Text(L10n.exportBatchSummaryToWorkspaceDescription)
                 }
+                .toggleStyle(.switch)
+                Toggle(isOn: $settings.exportBatchSummaryToGoogleDocs) {
+                    Text(L10n.exportBatchSummaryToGoogleDocs)
+                    Text(L10n.exportBatchSummaryToGoogleDocsDescription)
+                }
+                .toggleStyle(.switch)
             } header: {
                 Text(L10n.settingsAfterRecording)
             }
@@ -53,26 +52,15 @@ struct TranscriptionSettingsView: View {
                     options: BatchAudioRetentionPeriod.allCases,
                     label: \.displayName
                 )
+                DahliaMenuPicker(
+                    title: L10n.batchTranscriptionStallTimeout,
+                    description: L10n.batchTranscriptionStallTimeoutDescription,
+                    selection: $settings.batchTranscriptionStallTimeout,
+                    options: BatchTranscriptionStallTimeout.allCases,
+                    label: \.displayName
+                )
             } header: {
-                Text(L10n.settingsAudioStorage)
-            }
-
-            Section {
-                DisclosureGroup(L10n.advanced) {
-                    DahliaMenuPicker(
-                        title: L10n.batchTranscriptionStallTimeout,
-                        description: L10n.batchTranscriptionStallTimeoutDescription,
-                        selection: $settings.batchTranscriptionStallTimeout,
-                        options: BatchTranscriptionStallTimeout.allCases,
-                        label: \.displayName
-                    )
-                    Toggle(isOn: $settings.forceEchoCancellationForExternalMicrophone) {
-                        Text(L10n.externalMicrophoneEchoCancellation)
-                        Text(L10n.externalMicrophoneEchoCancellationDescription)
-                    }
-                    .toggleStyle(.switch)
-                    Text(L10n.builtInMicrophoneEchoCancellationDescription).foregroundStyle(.secondary)
-                }
+                Text(L10n.transcriptionRecoverySettings)
             }
         }
         .formStyle(.grouped)
@@ -86,6 +74,10 @@ struct TranscriptionSettingsView: View {
         } message: {
             Text(L10n.shortenBatchAudioRetentionPeriodMessage)
         }
+        .task {
+            supportedLocales = await SpeechSupportedLocales.load().sortedByLocalizedName()
+            isLoadingLocales = false
+        }
     }
 
     // MARK: - Private
@@ -94,6 +86,25 @@ struct TranscriptionSettingsView: View {
         Binding(
             get: { settings.batchAudioRetentionPeriod },
             set: { applyAudioRetentionPeriodChange($0) }
+        )
+    }
+
+    private var transcriptionLanguageSelection: Binding<String> {
+        Binding(
+            get: {
+                SettingsLanguageOptions.transcriptionSelection(
+                    localeIdentifier: settings.transcriptionLocale,
+                    detectsAutomatically: settings.automaticTranscriptionLanguageDetectionEnabled
+                )
+            },
+            set: { selection in
+                let resolved = SettingsLanguageOptions.resolvedTranscriptionSelection(
+                    selection,
+                    currentLocaleIdentifier: settings.transcriptionLocale
+                )
+                settings.transcriptionLocale = resolved.localeIdentifier
+                settings.automaticTranscriptionLanguageDetectionEnabled = resolved.detectsAutomatically
+            }
         )
     }
 

@@ -29,11 +29,10 @@ struct SummaryGenerationOptions: Codable, Equatable {
         if !usesServer {
             if let model = overrides?.model { settings.local.model = model }
             if let effort = overrides?.reasoningEffort { settings.local.reasoningEffort = effort }
+        } else if source == .transcript {
+            if let model = overrides?.model { settings.processing.remote.transcriptSummaryModel = model.nilIfBlank }
+            if let effort = overrides?.reasoningEffort { settings.processing.remote.transcriptSummaryReasoningEffort = effort.nilIfBlank }
         } else {
-            if source == .transcript, settings.processing.location == .remote {
-                settings.processing.remote.summaryModel = nil
-                settings.processing.remote.reasoningEffort = nil
-            }
             if let model = overrides?.model { settings.processing.remote.summaryModel = model.nilIfBlank }
             if let effort = overrides?.reasoningEffort { settings.processing.remote.reasoningEffort = effort.nilIfBlank }
         }

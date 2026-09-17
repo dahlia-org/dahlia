@@ -89,6 +89,19 @@ async function run() {
   first.unmount();
 
   remoteCapability = true;
+  settings.processing.location = "local";
+  settings.processing.remote.summaryModel = "gpt-5.4";
+  settings.processing.remote.reasoningEffort = "high";
+  const legacy = createRoot(document.getElementById("root")!);
+  legacy.render(<ServerSummarySettings workspaceId={workspaceId} onSave={save} />);
+  await ready();
+  await choose("Summary model", "");
+  await until(() => settings.processing.remote.summaryModel === undefined);
+  await ready();
+  await choose("Summary reasoning effort", "");
+  await until(() => settings.processing.remote.reasoningEffort === undefined);
+  legacy.unmount();
+
   settings.processing.location = "remote";
   settings.processing.remote.workflow = "transcribeThenSummarize";
   settings.processing.remote.summaryModel = "catalog.ai.unavailable";

@@ -20,6 +20,7 @@ enum LocalWorkspaceImport {
         dbQueue: DatabaseQueue,
         backup: BackupService,
         api: SyncAPIClient = SyncAPIClient(session: .shared),
+        replaceServerImageAnalysis: Bool = false,
         screenshots: ScreenshotContentProvider = .shared
     ) async throws -> WorkspaceRecord {
         guard sourceId != destination.workspaceId else { throw LocalWorkspaceImportError.collision }
@@ -60,6 +61,7 @@ enum LocalWorkspaceImport {
                     snapshot: snapshot,
                     files: files,
                     backupPath: generation.fileURL.path,
+                    replaceServerImageAnalysis: replaceServerImageAnalysis,
                     in: db
                 )
                 try fence.release(in: db)
@@ -100,6 +102,7 @@ enum LocalWorkspaceImport {
         snapshot: SyncResetSnapshot,
         files: [FileTransfer],
         backupPath: String,
+        replaceServerImageAnalysis: Bool = false,
         in db: Database
     ) throws -> WorkspaceRecord {
         try validate(sourceId: sourceId, destination: destination, in: db)
@@ -146,7 +149,12 @@ enum LocalWorkspaceImport {
                 arguments: [target.id, item.id]
             )
         }
-        try SyncInitialSnapshotBuilder.enqueueContents(moves.map(\.0), workspaceId: target.id, in: db)
+        try SyncInitialSnapshotBuilder.enqueueContents(
+            moves.map(\.0),
+            workspaceId: target.id,
+            replaceServerImageAnalysis: replaceServerImageAnalysis,
+            in: db
+        )
         try db.execute(sql: """
         INSERT INTO local_workspace_import_operations(operationId, importId)
         SELECT o.id, ? FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId WHERE t.workspace_id = ?

@@ -179,9 +179,13 @@ actor MeetingContentProvider {
                 guard let expected, try await dbQueue.read({ try TextContentStore.source(entity: entity, id: id, in: $0) }) == expected else {
                     throw TextContentError.changed
                 }
-                let worker = SyncWorker(dbQueue: dbQueue, session: client.session, apiClient: client)
+                let worker = SyncWorker(dbQueue: dbQueue, session: client.session, apiClient: client, meetingContent: self)
                 // Unrelated protected changes may remain; fetch revalidates the body before publishing.
-                _ = try await worker.pullRemoteChanges(workspaceId: expected.workspaceId, connectionId: expected.connectionId)
+                _ = try await worker.pullRemoteChanges(
+                    workspaceId: expected.workspaceId,
+                    connectionId: expected.connectionId,
+                    schedulesMaintenance: false
+                )
                 try await fetch(entity: entity, id: id, dbQueue: dbQueue, prefetchBudget: prefetchBudget)
             }
         } catch {

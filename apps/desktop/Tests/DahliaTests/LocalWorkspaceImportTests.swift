@@ -349,7 +349,7 @@
             let unrelatedWriteCompleted = Mutex(false)
             ImageURLProtocol.register(origin: fixture.connection.origin) { request in
                 switch request.url!.lastPathComponent {
-                case "capabilities": return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                case "capabilities": return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
                 case "workspaces": return (200, [:], listing)
                 case "snapshot":
                     do {
@@ -387,6 +387,7 @@
                 dbQueue: queue,
                 backup: BackupService(dbQueue: queue, applicationSupportURL: fixture.directory),
                 api: api,
+                replaceServerImageAnalysis: true,
                 screenshots: screenshots
             )
             #expect(unrelatedWriteCompleted.withLock { $0 })
@@ -394,6 +395,15 @@
             #expect(FileManager.default.fileExists(atPath: record.backupPath))
             #expect(try await screenshots.fileContent(id: fixture.file.id, dbQueue: queue).data == bytes)
             #expect(try await queue.read { try MeetingRecord.fetchOne($0, key: fixture.meeting.id)?.workspaceId } == fixture.target.id)
+            let filePayload = try await queue.read { db in
+                let value = try String.fetchOne(
+                    db,
+                    sql: "SELECT payloadJSON FROM sync_operations WHERE entity = 'file' LIMIT 1"
+                )
+                let json = try #require(value)
+                return try SyncJSON.decoder.decode(FileOperationPayload.self, from: Data(json.utf8))
+            }
+            #expect(filePayload.imageAnalysis == "replace")
         }
 
         @Test(arguments: [false, true])

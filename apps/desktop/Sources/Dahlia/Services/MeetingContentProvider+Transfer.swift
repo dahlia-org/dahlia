@@ -15,13 +15,24 @@ extension MeetingContentProvider {
         }
     }
 
-    func prepareAccountTransfer(workspaceIds: [UUID], connectionId: UUID, dbQueue: DatabaseQueue) async throws -> [UUID: TransferSource] {
+    func prepareAccountTransfer(
+        workspaceIds: [UUID],
+        connectionId: UUID,
+        dbQueue: DatabaseQueue,
+        screenshotContent: ScreenshotContentProvider = .shared
+    ) async throws -> [UUID: TransferSource] {
         for workspaceId in workspaceIds {
             retainWorkspace(workspaceId, dbQueue: dbQueue)
         }
         do {
             var sources: [UUID: TransferSource] = [:]
-            let worker = SyncWorker(dbQueue: dbQueue, session: client.session, apiClient: client)
+            let worker = SyncWorker(
+                dbQueue: dbQueue,
+                session: client.session,
+                apiClient: client,
+                screenshotContent: screenshotContent,
+                meetingContent: self
+            )
             for workspaceId in workspaceIds {
                 try await worker.synchronizeForTransfer(workspaceId: workspaceId, connectionId: connectionId)
                 guard let source = try await dbQueue.read({ try TransferSource.read(workspaceId: workspaceId, in: $0) }),
@@ -60,7 +71,7 @@ extension MeetingContentProvider {
     }
 
     func validateAccountTransfer(_ sources: [UUID: TransferSource], dbQueue: DatabaseQueue) async throws {
-        let worker = SyncWorker(dbQueue: dbQueue, session: client.session, apiClient: client)
+        let worker = SyncWorker(dbQueue: dbQueue, session: client.session, apiClient: client, meetingContent: self)
         for (workspaceId, source) in sources {
             try await worker.validateTransferCursor(workspaceId: workspaceId, connectionId: source.source.connectionId, cursor: source.cursor)
         }

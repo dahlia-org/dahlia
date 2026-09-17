@@ -64,6 +64,35 @@
         }
 
         @Test
+        func convertsPublicChangePageIDs() async throws {
+            let workspaceID = "019f0d36-0520-7000-8000-000000000001"
+            let fileID = "019f0d36-0520-7000-8000-000000000002"
+            let transactionID = "019f0d36-0520-7000-8000-000000000003"
+            let publicWorkspaceID = TypeID.encode(try #require(UUID(uuidString: workspaceID)), as: .workspace)
+            let publicFileID = TypeID.encode(try #require(UUID(uuidString: fileID)), as: .file)
+            let publicTransactionID = TypeID.encode(try #require(UUID(uuidString: transactionID)), as: .transaction)
+            let publicData = Data("""
+            {"items":[{"sequence":23,"workspaceId":"\(publicWorkspaceID)","entity":"file","entityId":"\(publicFileID)",
+            "action":"upsert","revision":1,"transactionId":"\(publicTransactionID)","record":{"id":"\(publicFileID)",
+            "workspaceId":"\(publicWorkspaceID)","metadata":{"source":"screenshot","ocr_text":"Detected"}}}],
+            "cursor":"v1.MTIy","highWaterCursor":"v1.MTQ5Mg","hasMore":true}
+            """.utf8)
+            let capture = SyncJSONResponse()
+            let middleware = SyncAPIMiddleware(token: "test", maximumBytes: nil, preservingJSONBody: nil, capture: capture)
+            _ = try await middleware.intercept(
+                HTTPRequest(method: .get, scheme: "https", authority: "example.com", path: "/api/v1/workspaces/\(workspaceID)/changes"),
+                body: nil, baseURL: #require(URL(string: "https://example.com")), operationID: "getChanges"
+            ) { request, _, _ in
+                #expect(request.path?.contains("/ws_") == true)
+                return (HTTPResponse(status: .ok), HTTPBody(publicData))
+            }
+            let page = try SyncJSON.decoder.decode(SyncChangePage.self, from: #require(capture.value.withLock { $0 }))
+            #expect(page.items.first?.entityId.uuidString.lowercased() == fileID)
+            #expect(page.items.first?.record?.metadata?.ocrText == "Detected")
+            #expect(page.cursor == "v1.MTIy")
+        }
+
+        @Test
         func preservesPlainTextAuthorizationErrors() async throws {
             let middleware = SyncAPIMiddleware(token: "test", maximumBytes: nil, preservingJSONBody: nil, capture: nil)
             let bytes = Data("forbidden".utf8)

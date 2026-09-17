@@ -257,6 +257,7 @@ CREATE TABLE `jobs_image_analysis` (
 	`workspace_id` text NOT NULL,
 	`owner_user_id` text NOT NULL,
 	`model` text NOT NULL,
+	`mode` text DEFAULT 'fill_missing' NOT NULL,
 	`output_language` text,
 	`status` text DEFAULT 'pending' NOT NULL,
 	`attempts` integer DEFAULT 0 NOT NULL,
@@ -267,7 +268,8 @@ CREATE TABLE `jobs_image_analysis` (
 	CONSTRAINT `fk_jobs_image_analysis_file_id_files_file_id_fk` FOREIGN KEY (`file_id`) REFERENCES `files`(`file_id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_jobs_image_analysis_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_jobs_image_analysis_owner_user_id_user_id_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
-	CONSTRAINT "image_analysis_job_status_check" CHECK("status" IN ('pending', 'processing', 'failed'))
+	CONSTRAINT "image_analysis_job_status_check" CHECK("status" IN ('pending', 'processing', 'failed')),
+	CONSTRAINT "image_analysis_job_mode_check" CHECK("mode" IN ('fill_missing', 'replace'))
 );
 --> statement-breakpoint
 CREATE TABLE `meeting_attachments` (

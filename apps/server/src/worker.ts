@@ -171,14 +171,14 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     if (config.searchEmbedding && !env.DAHLIA_SEARCH_QUEUE) throw new Error("Embedding jobs require DAHLIA_SEARCH_QUEUE");
     const searchTokenizer = createIntlSearchTokenizer();
     const searchEmbedder = createSearchEmbedder(config);
+    const captioner = createImageCaptioner(config);
     const screenshotTransformer = env.IMAGES ? createWorkerScreenshotTransformer(env.IMAGES) : undefined;
     const syncService = new MeetingSyncService(applicationStore.sync, objectStorage, searchTokenizer, searchEmbedder,
-      screenshotTransformer, undefined, false);
+      screenshotTransformer, undefined, false, captioner?.model);
     const summaryMethods = applicationStore.jobs && env.DAHLIA_SUMMARY_QUEUE ? [
       createTranscriptSummaryMethod(config, applicationStore.sync, syncService),
       createAudioSummaryMethod(config, applicationStore.sync, syncService),
     ].filter((method) => method !== undefined) : [];
-    const captioner = createImageCaptioner(config);
     const jobs = applicationStore.jobs ? createQueueJobs(env, applicationStore.jobs, applicationStore.sync,
       syncService, summaryMethods, captioner, searchEmbedder) : undefined;
     const app = createApp({

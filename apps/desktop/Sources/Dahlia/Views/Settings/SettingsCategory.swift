@@ -14,6 +14,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case backups
     case search
     case transcription
+    case recordingStopDetection
     case liveSubtitles
     case screenshots
     case calendar
@@ -41,7 +42,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .permissions: L10n.permissions
         case .backups: L10n.backups
         case .search: L10n.search
-        case .transcription: L10n.recordingSettings
+        case .transcription: L10n.transcription
+        case .recordingStopDetection: L10n.recordingStopDetection
         case .liveSubtitles: L10n.liveSubtitles
         case .screenshots: L10n.screenshots
         case .calendar: L10n.calendar
@@ -65,11 +67,12 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .dahliaAccounts: "person.crop.circle"
         case .language: "globe"
         case .appearance: "sun.max"
-        case .workspace: "externaldrive"
+        case .workspace: ProjectIcon.workspace.systemImageName
         case .permissions: "hand.raised"
         case .backups: "externaldrive.badge.timemachine"
         case .search: "magnifyingglass"
         case .transcription: "waveform"
+        case .recordingStopDetection: "stop.circle"
         case .liveSubtitles: "captions.bubble"
         case .screenshots: "photo.on.rectangle.angled"
         case .calendar: "calendar"
@@ -104,6 +107,10 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.meetingNotifications,
                 L10n.notificationConditions,
                 L10n.sidebarDisplayStyle,
+                L10n.audioInput,
+                L10n.externalMicrophoneEchoCancellation,
+                L10n.automaticRecordingStop,
+                L10n.automaticMeetingEndRecordingStop,
             ]
         case .accountPreferences:
             [
@@ -112,9 +119,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.summaryStyle,
                 L10n.summaryOutputLanguage,
                 L10n.processingLocation,
-                L10n.transcriptionLanguage,
                 L10n.automaticRecordingProcessing,
-                L10n.automaticDetectionLanguagesTitle,
                 L10n.summaryModel,
                 L10n.transcriptionModel,
                 "AI",
@@ -124,11 +129,10 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .transcription:
             [
                 L10n.transcription,
-                L10n.automaticRecordingStop,
+                L10n.transcriptionLanguage,
+                L10n.automaticDetectionLanguagesTitle,
                 L10n.batchAudioRetentionPeriod,
                 L10n.batchTranscriptionStallTimeout,
-                L10n.audioInput,
-                L10n.externalMicrophoneEchoCancellation,
                 L10n.export,
             ]
         case .liveSubtitles:

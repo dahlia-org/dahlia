@@ -156,8 +156,9 @@ struct SummaryGenerationConfirmationView: View {
     private var defaultModel: String {
         guard let settings = sourceAvailability?.generationSettings else { return "" }
         if !usesRemote { return settings.local.model }
-        guard settings.processing.location == .local || selectedSource == .audio else { return "" }
-        return settings.processing.remote.summaryModel ?? ""
+        if selectedSource == .audio { return settings.processing.remote.summaryModel ?? "" }
+        return settings.processing.remote.transcriptSummaryModel
+            ?? (settings.processing.location == .local ? settings.processing.remote.summaryModel : nil) ?? ""
     }
 
     private var serverState: ServerAccountSettingsModel.State? {

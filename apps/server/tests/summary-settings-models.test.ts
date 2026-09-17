@@ -197,7 +197,7 @@ it.each([
       ? { meetingSummaryGeneration: { version: 2, sources: ["transcript"], completeRecordings: true } }
       : typeof url === "object" && url.key.startsWith('["getWorkspace"')
         ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: {
-          location: "remote", remote: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing.remote, summaryModel: "system.ai.gpt-5-6-terra" },
+          location: "remote", remote: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing.remote, transcriptSummaryModel: "system.ai.gpt-5-6-terra" },
         } } }
         : typeof url === "object" && url.key.startsWith('["summaryTranscriptAvailability"') ? transcript(true)
         : { job: null },
@@ -362,20 +362,22 @@ it("shows only settings that affect each remote workflow", () => {
   expect(combined).toContain("Generate directly from audio");
   expect(combined).toContain("For automatic processing after recording");
   expect(combined).toContain("produces a transcript in the same process");
-  expect(combined).toContain("Summary model");
-  expect(combined.indexOf("Summary method")).toBeLessThan(combined.indexOf("Summary model"));
+  expect(combined).toContain("Audio processing model");
+  expect(combined.indexOf("Summary method")).toBeLessThan(combined.indexOf("Audio processing model"));
   expect(combined).not.toContain("Advanced server settings");
   expect(combined).not.toContain("Transcription language");
   expect(combined).not.toContain("Automatic language detection");
-  expect(combined).not.toContain("Transcription model");
+  expect(combined).not.toContain("Summary model");
 
   const twoStage = render("transcribeThenSummarize");
   expect(twoStage).toContain("Generate from transcript");
   expect(twoStage).toContain("For automatic processing after recording");
   expect(twoStage).toContain("transcribes the audio first");
-  expect(twoStage).not.toContain("Summary model");
-  expect(twoStage).not.toContain("Reasoning effort");
-  expect(twoStage).not.toContain("Transcription model");
+  expect(twoStage).toContain("Audio processing model");
+  expect(twoStage).toContain("Audio processing reasoning effort");
+  expect(twoStage).toContain("Summary model");
+  expect(twoStage).toContain("Summary reasoning effort");
+  expect(twoStage.indexOf("Audio processing model")).toBeLessThan(twoStage.indexOf("Summary model"));
 });
 
 

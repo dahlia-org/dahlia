@@ -5,10 +5,14 @@ import GRDB
 
 enum SyncInitialSnapshotBuilder {
     private static let projectBatchSize = 100
+    private static let serverImageAnalysisContentTypes: Set = [
+        "image/png", "image/jpeg", "image/webp", "image/gif", "image/tiff",
+    ]
 
     static func enqueuePending(
         dbQueue: DatabaseQueue,
         screenshotContent: ScreenshotContentProvider = .shared,
+        replaceServerImageAnalysisWorkspaceId: UUID? = nil,
         onFailure: @Sendable (any Error) throws -> Void = { throw $0 }
     ) async throws {
         let interruptedWorkspaceId = try await dbQueue.read { db in
@@ -65,6 +69,7 @@ enum SyncInitialSnapshotBuilder {
                 ) AS restoring
                 FROM workspaces v
                 WHERE v.accountConnectionId IS NOT NULL
+                  AND (? IS NULL OR v.id = ?)
                   AND v.syncConfirmedConnectionId IS NULL
                   AND v.syncRole = 'admin'
                   AND (
@@ -79,13 +84,15 @@ enum SyncInitialSnapshotBuilder {
                     )
                   )
                 ORDER BY v.createdAt, v.id
-                """
+                """,
+                arguments: [replaceServerImageAnalysisWorkspaceId, replaceServerImageAnalysisWorkspaceId]
             ).map { ($0["id"], $0["accountConnectionId"], $0["restoring"]) }
         }
         for (workspaceId, connectionId, restoring) in pending {
             do {
                 if try await enqueue(
                     workspaceId: workspaceId, connectionId: connectionId, restoring: restoring,
+                    replaceServerImageAnalysis: workspaceId == replaceServerImageAnalysisWorkspaceId,
                     dbQueue: dbQueue, screenshotContent: screenshotContent
                 ) { return }
             } catch is CancellationError {
@@ -102,6 +109,7 @@ enum SyncInitialSnapshotBuilder {
         workspaceId: UUID,
         connectionId: UUID,
         restoring: Bool,
+        replaceServerImageAnalysis: Bool,
         dbQueue: DatabaseQueue,
         screenshotContent: ScreenshotContentProvider
     ) async throws -> Bool {
@@ -146,7 +154,10 @@ enum SyncInitialSnapshotBuilder {
             restoring: restoring,
             dbQueue: dbQueue
         )
-        try await enqueueFiles(workspaceId: workspaceId, connectionId: connectionId, markerId: markerId, restoring: restoring, dbQueue: dbQueue)
+        try await enqueueFiles(
+            workspaceId: workspaceId, connectionId: connectionId, markerId: markerId, restoring: restoring,
+            replaceServerImageAnalysis: replaceServerImageAnalysis, dbQueue: dbQueue
+        )
         try await enqueueScreenshots(
             workspaceId: workspaceId, connectionId: connectionId, markerId: markerId, restoring: restoring, dbQueue: dbQueue
         )
@@ -466,7 +477,11 @@ enum SyncInitialSnapshotBuilder {
         )
     }
 
-    static func fileOperation(_ file: FileRecord, in db: Database) throws -> SyncOperationDraft {
+    static func fileOperation(
+        _ file: FileRecord,
+        replaceServerImageAnalysis: Bool = false,
+        in db: Database
+    ) throws -> SyncOperationDraft {
         guard let text = try TextContentAccess.fileText(fileId: file.id, in: db) else { throw TextContentError.incomplete }
         return try SyncOperationDraft(
             entity: .file,
@@ -481,7 +496,11 @@ enum SyncInitialSnapshotBuilder {
                     height: file.metadata.height,
                     ocrText: text.ocrText,
                     caption: text.caption
-                )
+                ),
+                imageAnalysis: replaceServerImageAnalysis
+                    && file.metadata.source == .screenshot
+                    && Self.serverImageAnalysisContentTypes.contains(file.contentType)
+                    ? "replace" : nil
             ))
         )
     }
@@ -504,7 +523,14 @@ enum SyncInitialSnapshotBuilder {
         ])
     }
 
-    private static func enqueueFiles(workspaceId: UUID, connectionId: UUID, markerId: UUID, restoring: Bool, dbQueue: DatabaseQueue) async throws {
+    private static func enqueueFiles(
+        workspaceId: UUID,
+        connectionId: UUID,
+        markerId: UUID,
+        restoring: Bool,
+        replaceServerImageAnalysis: Bool,
+        dbQueue: DatabaseQueue
+    ) async throws {
         var lastId: UUID?
         while true {
             let cursor = lastId
@@ -517,7 +543,7 @@ enum SyncInitialSnapshotBuilder {
                 )
                 guard let file, let reference = file.localReference else { return nil }
                 let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
-                let operation = try fileOperation(file, in: db)
+                let operation = try fileOperation(file, replaceServerImageAnalysis: replaceServerImageAnalysis, in: db)
                 try SyncTransactionRecorder.record(
                     workspaceId: workspaceId,
                     operations: [operation],
@@ -585,7 +611,12 @@ enum SyncInitialSnapshotBuilder {
     private static func json(_ value: Date?) -> Any { value?.ISO8601Format() ?? NSNull() }
     private static func json(_ value: String?) -> Any { value ?? NSNull() }
     private static func json(_ value: Double?) -> Any { value ?? NSNull() }
-    static func enqueueContents(_ items: [WorkspaceRelocation.Item], workspaceId: UUID, in db: Database) throws {
+    static func enqueueContents(
+        _ items: [WorkspaceRelocation.Item],
+        workspaceId: UUID,
+        replaceServerImageAnalysis: Bool = false,
+        in db: Database
+    ) throws {
         let projects = try items.filter { $0.entity == .project }.map { item in
             guard let project = try ProjectRecord.fetchOne(db, key: item.id) else { throw LocalWorkspaceImportError.changed }
             return project
@@ -617,7 +648,11 @@ enum SyncInitialSnapshotBuilder {
                 throw ScreenshotContentError.unavailable
             }
             let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
-            let operation = try Self.fileOperation(file, in: db)
+            let operation = try Self.fileOperation(
+                file,
+                replaceServerImageAnalysis: replaceServerImageAnalysis,
+                in: db
+            )
             try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [operation], screenshotAttachments: [
                 operation.id: .init(mimeType: file.contentType, source: source),
             ], in: db)

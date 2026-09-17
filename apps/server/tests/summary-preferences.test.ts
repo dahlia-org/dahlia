@@ -43,10 +43,10 @@ it("keeps inactive overrides and rejects unavailable explicit models and effort"
   expect(resolve).toThrow("summary_invalid_reasoning_effort");
 });
 
-it("resolves retranscription to Gemini without language or summary settings", () => {
+it("uses the shared audio model and effort for retranscription", () => {
   const preferences = structuredClone(DEFAULT_WORKSPACE_GENERATION_SETTINGS);
   preferences.processing = { location: "remote", remote: {
-    workflow: "combined", summaryModel: "unavailable", reasoningEffort: "max",
+    workflow: "combined", summaryModel: "system.ai.gemini-3-8-flash", reasoningEffort: "medium",
   } };
   const result = resolveSummaryPreferences(preferences, {
     type: "recording", recordings: [], transcriptionOnly: true,
@@ -62,11 +62,34 @@ it("defaults new workspaces to direct audio summary generation", () => {
   expect(DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing.remote.workflow).toBe("combined");
 });
 
-it("honors an explicit model when manually summarizing a transcript", () => {
+it("keeps legacy local transcript-summary preferences until a current client replaces them", () => {
   const preferences = structuredClone(DEFAULT_WORKSPACE_GENERATION_SETTINGS);
-  preferences.processing = { location: "remote", remote: {
-    workflow: "transcribeThenSummarize", summaryModel: "gpt-4.1", reasoningEffort: "none",
+  preferences.processing = { location: "local", remote: {
+    workflow: "combined", summaryModel: "gpt-4.1", reasoningEffort: "none",
   } };
   expect(resolveSummaryPreferences(preferences, { type: "transcript", version: "1" }, cloudflareModels(), (id) => id))
     .toMatchObject({ settings: { model: "gpt-4.1", reasoningEffort: "none" } });
+});
+
+it("keeps legacy remote transcript-summary preferences for accepted retries", () => {
+  const preferences = structuredClone(DEFAULT_WORKSPACE_GENERATION_SETTINGS);
+  preferences.processing = { location: "remote", remote: {
+    workflow: "combined", summaryModel: "gpt-4.1", reasoningEffort: "none",
+  } };
+  expect(resolveSummaryPreferences(preferences, { type: "transcript", version: "1" }, cloudflareModels(), (id) => id))
+    .toMatchObject({ settings: { model: "gpt-4.1", reasoningEffort: "none" } });
+});
+
+it("uses separate audio and transcript-summary settings for two-stage generation", () => {
+  const preferences = structuredClone(DEFAULT_WORKSPACE_GENERATION_SETTINGS);
+  preferences.processing = { location: "remote", remote: {
+    workflow: "transcribeThenSummarize",
+    summaryModel: "gemini-3-flash", reasoningEffort: "medium",
+    transcriptSummaryModel: "gpt-4.1", transcriptSummaryReasoningEffort: "none",
+  } };
+  expect(resolveSummaryPreferences(preferences, { type: "recording", recordings: [] }, cloudflareModels(), (id) => id))
+    .toMatchObject({
+      settings: { model: "gpt-4.1", reasoningEffort: "none", transcriptionReasoningEffort: "medium" },
+      input: { transcriptionModel: "gemini-3-flash" },
+    });
 });

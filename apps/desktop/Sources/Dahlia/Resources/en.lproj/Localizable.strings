@@ -8,14 +8,15 @@
 "settings.organization.settingsAccountSelectionDescription" = "Choosing an account here does not switch your open workspace.";
 "settings.organization.settingsLoading" = "Loading settings…";
 "settings.organization.settingsApplyNextGeneration" = "Changes save automatically and apply to the next generation.";
-"settings.organization.settingsSummaryOutput" = "Results";
+"settings.organization.settingsSummaryOutput" = "Summary";
 "settings.organization.settingsOutputLanguageDescription" = "Output language is shared by summaries and image descriptions. It does not change speech recognition languages.";
-"settings.organization.settingsServerProcessingDescription" = "New recordings are sent to the server and use the selected automatic processing. Manual generation uses the source selected on the meeting screen.";
+"settings.organization.generatedContentLanguage" = "Generated content language";
 "settings.organization.settingsLocalAnalysisLanguages" = "Image analysis uses the languages selected in General settings on this Mac.";
 "settings.organization.settingsAnalysisLanguagesDescription" = "Choose which languages to recognize in images. This does not change recording or subtitle languages.";
 "settings.organization.settingsDuringRecording" = "During recording";
 "settings.organization.settingsAfterRecording" = "After recording";
 "settings.organization.settingsAudioStorage" = "Audio retention";
+"settings.organization.transcriptionRecoverySettings" = "Data protection and recovery";
 "settings.organization.settingsAutomaticExport" = "Automatic export";
 "settings.organization.settingsChooseSummaryPreferences" = "Summary preferences…";
 "settings.organization.summaryStyleConciseDescription" = "Decisions, issues, and next actions, with minimal detail.";
@@ -24,27 +25,30 @@
 "settings.organization.summaryStyleEventDescription" = "Key claims, demonstrations, and takeaways from a talk or session.";
 "settings.organization.summaryStyleTimelineDescription" = "Follow an event in order, including demonstrations and Q&A.";
 "settings.preferences.macInferencePreferences" = "Model providers";
-"settings.preferences.usesMacInferencePreferences" = "Transcribes on this Mac, then sends transcripts and images to its configured AI provider. Generation models follow this workspace’s settings.";
 "settings.preferences.accountPreferences" = "Workspace generation settings";
 "settings.preferences.accountPreferencesScope" = "These defaults are shared by everyone in the displayed workspace.";
 "settings.preferences.accountSummaryPreferencesDescription" = "Style and output language apply regardless of processing location. Changes affect new processing only. Summaries on Mac also send transcripts and images to the connected AI.";
 "settings.preferences.summaryStyle" = "Summary style";
 "settings.preferences.recordingSettings" = "Recording & storage";
-"settings.preferences.localModelPreferences" = "Local summary model";
+"settings.preferences.recordingStopDetection" = "Stop detection";
+"settings.preferences.macTranscriptionPreferences" = "Transcription settings on this Mac";
 "settings.preferences.localModelPreferencesDescription" = "AI provider and credentials are specific to this Mac. Generation models are configured per workspace.";
-"settings.preferences.serverProcessingAdvanced" = "Advanced server settings";
-"settings.preferences.processingWorkflow" = "New recording automatic processing";
-"settings.preferences.transcribeThenSummarize" = "Summarize the transcript";
-"settings.preferences.combinedTranscriptionSummary" = "Summarize directly from audio";
-"settings.preferences.transcribeThenSummarizeDescription" = "Gemini transcribes the audio first, then creates the summary from that transcript.";
-"settings.preferences.combinedTranscriptionSummaryDescription" = "Gemini creates the summary directly from the audio and produces a transcript in the same process.";
+"settings.preferences.summaryProcessingLocation" = "Summary processing";
+"settings.preferences.serverSummaryProcessingDescription" = "The original transcript is synchronized and summarized on the server, including transcripts created in Dahlia for Mac.";
+"settings.preferences.processingWorkflow" = "Summary method";
+"settings.preferences.transcribeThenSummarize" = "Generate from transcript";
+"settings.preferences.combinedTranscriptionSummary" = "Generate directly from audio";
+"settings.preferences.transcribeThenSummarizeDescription" = "For automatic processing after recording, Gemini transcribes the audio first, then creates the summary from that transcript.";
+"settings.preferences.combinedTranscriptionSummaryDescription" = "For automatic processing after recording, Gemini creates the summary directly from the audio and produces a transcript in the same process.";
 "settings.preferences.serverTranscriptionLanguageDescription" = "Gemini detects the spoken language while transcribing. No language setting is required.";
-"settings.preferences.localTranscriptionSettingsDescription" = "Configure language and live transcription for this Mac in Recording settings and the recording panel.";
+"settings.preferences.appleSpeechSettingsScopeDescription" = "Apple Speech language settings apply to every workspace transcribed locally on this Mac.";
 "settings.preferences.summaryModel" = "Summary model";
+"settings.preferences.audioProcessingModel" = "Audio processing model";
+"settings.preferences.audioProcessingReasoningEffort" = "Audio processing reasoning effort";
+"settings.preferences.summaryReasoningEffort" = "Summary reasoning effort";
 "settings.preferences.automaticModelPreference" = "Automatic";
 "settings.preferences.unavailableModelPreference" = "Unavailable for this workflow";
 "settings.preferences.checkModelPreference" = "Check model compatibility";
-"settings.preferences.automaticModelPreferenceDescription" = "These choices apply automatically after new recordings. Manual generation uses the selected source. Unavailable explicit models fail without substitution.";
 /* Common */
 "Delete" = "Delete";
 "Remove from Project" = "Remove from Project";
@@ -1717,11 +1721,10 @@
 
 "setup.preparingWorkspace" = "Preparing your workspace…";
 "setup.workspaceUnavailable" = "Your workspace is not ready yet. Check your connection and retry.";
-"Generation defaults are shared by everyone in this workspace. Only admins can change them." = "Generation defaults are shared by everyone in this workspace. Only admins can change them.";
 "For this generation only" = "For this generation only";
 "Workspace default" = "Workspace default";
 
 "summary.source.useSaved" = "Use the saved transcript";
 "summary.source.useSaved.description" = "Generate from the copy saved on this Mac without fetching the latest server version. It may be outdated. Select this when working offline.";
 
-"settings.serverConnections" = "Server connections";
+"settings.serverConnections" = "Account management";

@@ -11,6 +11,7 @@ CREATE TABLE "jobs"."image_analysis" (
 	"workspace_id" uuid NOT NULL,
 	"owner_user_id" uuid NOT NULL,
 	"model" text NOT NULL,
+	"mode" text DEFAULT 'fill_missing' NOT NULL,
 	"output_language" text,
 	"status" text DEFAULT 'pending' NOT NULL,
 	"attempts" integer DEFAULT 0 NOT NULL,
@@ -18,7 +19,8 @@ CREATE TABLE "jobs"."image_analysis" (
 	"claimed_at" timestamp,
 	"lease_expires_at" timestamp,
 	"last_error_code" text,
-	CONSTRAINT "image_analysis_job_status_check" CHECK ("status" IN ('pending', 'processing', 'failed'))
+	CONSTRAINT "image_analysis_job_status_check" CHECK ("status" IN ('pending', 'processing', 'failed')),
+	CONSTRAINT "image_analysis_job_mode_check" CHECK ("mode" IN ('fill_missing', 'replace'))
 );
 --> statement-breakpoint
 CREATE TABLE "app"."meeting_attachments" (

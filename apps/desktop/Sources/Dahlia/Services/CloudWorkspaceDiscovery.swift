@@ -43,6 +43,22 @@ enum CloudWorkspaceDiscovery {
         }
     }
 
+    static func supportsImageAnalysisReplacement(
+        connection: DahliaAccountConnectionRecord,
+        api: SyncAPIClient
+    ) async throws -> Bool {
+        guard let origin = URL(string: connection.origin) else { return false }
+        do {
+            let data = try await api.data(origin: origin, connectionId: connection.id, maximumBytes: 8192) {
+                try await $0.getCapabilities().ok.body.json
+            }
+            return try SyncJSON.decoder.decode(ServerCapabilities.self, from: data).imageAnalysis?.version == 2
+        } catch {
+            try Task.checkCancellation()
+            return false
+        }
+    }
+
     static func createWorkspace(
         _ workspace: WorkspaceRecord,
         organizationId: UUID,
