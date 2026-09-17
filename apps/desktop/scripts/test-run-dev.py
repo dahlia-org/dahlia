@@ -62,7 +62,7 @@ case "${1:-}" in
 esac
 ''')
     tools = root / "tools"
-    write(tools / "swift", '#!/bin/bash\n[[ "$*" != *--show-bin-path* ]] || echo "$PWD/.build/debug"\n', True)
+    write(tools / "swift", '#!/bin/bash\necho "swift $*" >> "$DEV_TEST_LOG"\n[[ "$*" != *--show-bin-path* ]] || echo "$PWD/.build/debug"\n', True)
     write(tools / "lipo", '#!/bin/bash\necho "${DEV_TEST_ARCH:-arm64}"\n', True)
     write(tools / "codesign", '''#!/bin/bash
 echo "codesign $*" >> "$DEV_TEST_LOG"
@@ -132,7 +132,9 @@ exec /usr/bin/sqlite3 "$@"
         assert not (root / ".build/run-dev/lock").exists(), "build lock leaked"
         return log.read_text()
 
-    assert "sips" in run("Assembling"), "first build must assemble assets"
+    calls = run("Assembling")
+    assert "sips" in calls, "first build must assemble assets"
+    assert calls.count("--build-system native") == 2, "run-dev must avoid Swift Build's XCFramework header collision"
     calls = run("Reusing signed")
     assert "--force" not in calls and "sips" not in calls and "helper-build" not in calls
     assert "--verify --deep --strict" in calls, "cache hits must still verify the signed app"
