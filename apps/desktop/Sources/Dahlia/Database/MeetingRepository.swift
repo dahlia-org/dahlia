@@ -284,18 +284,28 @@ final class MeetingRepository {
         }
     }
 
-    nonisolated func acceptServerSyncVersion(workspaceId: UUID, expectedLastTransactionId: UUID? = nil) async throws {
+    nonisolated func acceptServerSyncVersion(
+        workspaceId: UUID,
+        expectedLastTransactionId: UUID? = nil,
+        expectedHasConfirmedWorkspace: Bool? = nil
+    ) async throws {
         try await SyncTransactionQueue.acceptServerVersion(
             workspaceId: workspaceId,
             expectedLastTransactionId: expectedLastTransactionId,
+            expectedHasConfirmedWorkspace: expectedHasConfirmedWorkspace,
             dbQueue: dbQueue
         )
     }
 
-    nonisolated func discardInvalidSyncTransaction(workspaceId: UUID, expectedLastTransactionId: UUID? = nil) async throws {
+    nonisolated func discardInvalidSyncTransaction(
+        workspaceId: UUID,
+        expectedLastTransactionId: UUID? = nil,
+        expectedHasConfirmedWorkspace: Bool? = nil
+    ) async throws {
         try await SyncTransactionQueue.discardInvalidTransaction(
             workspaceId: workspaceId,
             expectedLastTransactionId: expectedLastTransactionId,
+            expectedHasConfirmedWorkspace: expectedHasConfirmedWorkspace,
             dbQueue: dbQueue
         )
     }

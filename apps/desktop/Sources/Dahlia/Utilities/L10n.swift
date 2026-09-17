@@ -213,6 +213,8 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(format: String(localized: "sync.recordingArchiveFailure", bundle: bundle), meetingName)
     }
 
+    static var syncRecordingArchiveAskEditor: String { String(localized: "sync.recordingArchiveAskEditor", bundle: bundle) }
+
     static func syncUseServerConfirmation(_ workspaceName: String) -> String {
         String(format: String(localized: "sync.useServerConfirmation", bundle: bundle), workspaceName)
     }

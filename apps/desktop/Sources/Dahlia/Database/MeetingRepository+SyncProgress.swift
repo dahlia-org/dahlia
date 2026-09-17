@@ -36,6 +36,7 @@ struct SyncDiscardImpact: Equatable, Sendable {
     let localBodies: Int
     let meetings: Int
     let lastTransactionId: UUID
+    let hasConfirmedWorkspace: Bool
 }
 
 struct SyncRecordingArchiveFailure: FetchableRecord, Decodable, Identifiable, Equatable, Sendable {
@@ -93,12 +94,12 @@ struct AccountSyncProgress: Equatable, Sendable {
         if allIssues.contains(where: { $0.status == 401 || $0.status == 403 }) {
             return .blocked(.authorization)
         }
-        let state = workspaces.map(\.state).max { $0.accountPriority < $1.accountPriority } ?? .synced
+        let state = workspaces.map(\.state).max { $0.accountPriority < $1.accountPriority } ?? .pending
         return state == .synced && hasAttention ? .pending : state
     }
 
     var hasAttention: Bool {
-        !allIssues.isEmpty || workspaces.contains { !$0.recordingArchiveFailures.isEmpty }
+        !allIssues.isEmpty || workspaces.contains { !$0.recordingArchiveFailures.isEmpty && $0.allowsRecordingArchiveRetry }
     }
 
     var remaining: Int { workspaces.reduce(0) { $0 + $1.remaining } }
@@ -218,7 +219,12 @@ extension MeetingRepository {
             }
             let impact: SyncDiscardImpact? = if blockedReason == .conflict || blockedReason == .validation {
                 try head.map { row in
-                    try discardImpact(workspaceId: workspace.id, fromSequence: row["sequence"], in: db)
+                    try discardImpact(
+                        workspaceId: workspace.id,
+                        fromSequence: row["sequence"],
+                        reason: blockedReason,
+                        in: db
+                    )
                 }
             } else {
                 nil
@@ -248,6 +254,7 @@ extension MeetingRepository {
     private nonisolated static func discardImpact(
         workspaceId: UUID,
         fromSequence sequence: Int64,
+        reason: SyncBlockedReason,
         in db: Database
     ) throws -> SyncDiscardImpact {
         let queue = try Row.fetchOne(db, sql: """
@@ -264,7 +271,8 @@ extension MeetingRepository {
             sql: "SELECT EXISTS(SELECT 1 FROM sync_entity_state WHERE workspace_id = ? AND entity = 'workspace' AND entityId = ?)",
             arguments: [workspaceId, workspaceId]
         ) ?? false
-        let released: Row? = if hasConfirmedWorkspace {
+        let rebuildInitialSnapshot = reason == .validation && !hasConfirmedWorkspace
+        let released: Row? = if !rebuildInitialSnapshot {
             try Row.fetchOne(db, sql: """
             WITH abandoned AS (
                 SELECT DISTINCT c.entity, c.entityId FROM sync_content_state c
@@ -293,7 +301,8 @@ extension MeetingRepository {
             records: records,
             localBodies: localBodies,
             meetings: meetings,
-            lastTransactionId: lastTransactionId
+            lastTransactionId: lastTransactionId,
+            hasConfirmedWorkspace: hasConfirmedWorkspace
         )
     }
 

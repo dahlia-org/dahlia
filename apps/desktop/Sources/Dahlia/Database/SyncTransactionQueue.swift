@@ -1052,12 +1052,14 @@ enum SyncTransactionQueue {
     static func acceptServerVersion(
         workspaceId: UUID,
         expectedLastTransactionId: UUID? = nil,
+        expectedHasConfirmedWorkspace: Bool? = nil,
         dbQueue: DatabaseQueue
     ) async throws {
         _ = try await discardBlocked(
             workspaceId: workspaceId,
             reason: .conflict,
             expectedLastTransactionId: expectedLastTransactionId,
+            expectedHasConfirmedWorkspace: expectedHasConfirmedWorkspace,
             dbQueue: dbQueue
         )
     }
@@ -1065,12 +1067,14 @@ enum SyncTransactionQueue {
     static func discardInvalidTransaction(
         workspaceId: UUID,
         expectedLastTransactionId: UUID? = nil,
+        expectedHasConfirmedWorkspace: Bool? = nil,
         dbQueue: DatabaseQueue
     ) async throws {
         if try await discardBlocked(
             workspaceId: workspaceId,
             reason: .validation,
             expectedLastTransactionId: expectedLastTransactionId,
+            expectedHasConfirmedWorkspace: expectedHasConfirmedWorkspace,
             dbQueue: dbQueue
         ) {
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: dbQueue)
@@ -1107,6 +1111,7 @@ enum SyncTransactionQueue {
         workspaceId: UUID,
         reason: SyncBlockedReason,
         expectedLastTransactionId: UUID?,
+        expectedHasConfirmedWorkspace: Bool?,
         dbQueue: DatabaseQueue
     ) async throws -> Bool {
         try await dbQueue.write { db in
@@ -1131,6 +1136,9 @@ enum SyncTransactionQueue {
                 sql: "SELECT EXISTS(SELECT 1 FROM sync_entity_state WHERE workspace_id = ? AND entity = 'workspace' AND entityId = ?)",
                 arguments: [workspaceId, workspaceId]
             ) ?? false
+            if let expectedHasConfirmedWorkspace {
+                guard hasConfirmedWorkspace == expectedHasConfirmedWorkspace else { throw TextContentError.changed }
+            }
             let rebuildInitialSnapshot = reason == .validation && !hasConfirmedWorkspace
             let sequence: Int64 = blocked["sequence"]
             if !rebuildInitialSnapshot {

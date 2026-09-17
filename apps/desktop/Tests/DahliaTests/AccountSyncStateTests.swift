@@ -7,6 +7,19 @@
     @MainActor
     struct AccountSyncStateTests {
         @Test
+        func connectionWithoutDiscoveredWorkspacesRemainsPending() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://empty.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            try database.dbQueue.write { try connection.insert($0) }
+
+            let progress = try #require(database.dbQueue.read { try MeetingRepository.fetchSyncProgress(in: $0)[connection.id] })
+            #expect(progress.workspaces.isEmpty)
+            #expect(progress.state == .pending)
+        }
+
+        @Test
         func accountSyncStateAggregatesWorkspacesAndRecoversWithoutCrossingAccounts() async throws {
             let (database, workspace) = try await syncedDatabase()
             try await database.dbQueue.write { db in
@@ -136,6 +149,17 @@
             #expect(progress.state == .pending)
             #expect(progress.hasAttention)
             #expect(progress.summary == L10n.syncAttention)
+
+            try await database.dbQueue.write {
+                try $0.execute(sql: "UPDATE workspaces SET syncRole = 'viewer' WHERE id = ?", arguments: [workspace.id])
+            }
+            let viewerProgress = try #require(try await database.dbQueue.read {
+                try MeetingRepository.fetchSyncProgress(in: $0)[connection]
+            })
+            #expect(viewerProgress.state == .synced)
+            #expect(!viewerProgress.hasAttention)
+            let viewerWorkspace = try #require(viewerProgress.workspaces.first)
+            #expect(!viewerWorkspace.allowsRecordingArchiveRetry)
         }
 
         @Test
@@ -159,7 +183,7 @@
                 #expect(try progress().retryErrorCode == nil)
                 try db.execute(sql: "UPDATE sync_transactions SET serverResponseJSON = '{\"code\":\"http_503\"}'")
                 #expect(try progress().retryErrorCode == "http_503")
-                try db.execute(sql: "UPDATE sync_transactions SET blockedReason = 'authorization'")
+                try db.execute(sql: "UPDATE sync_transactions SET blockedReason = 'authorization', serverResponseJSON = NULL")
                 #expect(try progress().phase == .attention)
                 #expect(try progress().state == .blocked(.authorization))
                 #expect(try progress().errorCode == "authorization")
@@ -311,7 +335,8 @@
                 records: 4,
                 localBodies: 3,
                 meetings: 1,
-                lastTransactionId: lastTransactionId
+                lastTransactionId: lastTransactionId,
+                hasConfirmedWorkspace: true
             ))
             #expect(progress.allowsCanonicalEdits)
 
@@ -322,6 +347,19 @@
                 try MeetingRepository.fetchSyncProgress(in: $0)[connection]?.workspaces.first
             })
             #expect(!progress.allowsCanonicalEdits)
+
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "DELETE FROM sync_entity_state WHERE workspace_id = ? AND entity = 'workspace'",
+                    arguments: [workspace.id]
+                )
+                try db.execute(sql: "UPDATE sync_transactions SET blockedReason = 'conflict'")
+            }
+            progress = try #require(try await database.dbQueue.read {
+                try MeetingRepository.fetchSyncProgress(in: $0)[connection]?.workspaces.first
+            })
+            #expect(progress.discardImpact?.localBodies == 3)
+            #expect(progress.discardImpact?.hasConfirmedWorkspace == false)
         }
 
         @Test(.timeLimit(.minutes(1)))

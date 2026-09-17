@@ -82,7 +82,8 @@
                         records: 1,
                         localBodies: 0,
                         meetings: 0,
-                        lastTransactionId: .v7()
+                        lastTransactionId: .v7(),
+                        hasConfirmedWorkspace: true
                     ),
                     recordingArchiveFailures: [],
                     meetings: 2,

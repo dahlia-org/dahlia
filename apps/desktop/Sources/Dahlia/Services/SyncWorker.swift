@@ -238,6 +238,7 @@ actor SyncWorker {
     private var discoverySuspensionWaiters: [UUID: [CheckedContinuation<Void, Never>]] = [:]
     private var suspendedDiscoveryConnections: Set<UUID> = []
     private var transferConnections: Set<UUID> = []
+    private var updateRequiredWorkspaces: Set<UUID> = []
     private struct PullKey: Hashable { let database: ObjectIdentifier
         let workspaceId: UUID
     }
@@ -368,6 +369,7 @@ actor SyncWorker {
                         continue
                     }
                     if error.status == 426 {
+                        updateRequiredWorkspaces.insert(transaction.workspaceId)
                         let response = String(decoding: SyncTransactionQueue.problemData(
                             code: error.code ?? "sync_upgrade_required",
                             status: error.status
@@ -1015,6 +1017,7 @@ actor SyncWorker {
                 origin: target.origin,
                 clearPullIncidentOnSuccess: true
             ) { return false }
+            if target.cursor == nil { return true }
         }
         if target.cursor == nil {
             return try await recoverSnapshot(target)
@@ -1112,6 +1115,9 @@ actor SyncWorker {
     }
 
     private func setRecoveryState(_ state: String, target: SyncTarget, resetCursor: Bool = false) async throws {
+        if state == "updateRequired" {
+            updateRequiredWorkspaces.insert(target.workspaceId)
+        }
         try await dbQueue.write { db in
             guard try SyncTransactionQueue.matchesExpectedConnection(
                 workspaceId: target.workspaceId, connectionId: target.connectionId, in: db
@@ -1562,19 +1568,21 @@ actor SyncWorker {
     }
 
     private func pullTargets() async throws -> [SyncTarget] {
+        let updateRequiredWorkspaces = updateRequiredWorkspaces
         try await dbQueue.read { db in
             try Row.fetchAll(
                 db,
                 sql: """
                 SELECT workspaces.id, workspaces.syncConfirmedConnectionId, workspaces.syncPullCursor, workspaces.syncMutationGeneration,
+                    workspaces.syncRecoveryState,
                     dahlia_account_connections.origin
                 FROM workspaces
                 JOIN dahlia_account_connections
                   ON dahlia_account_connections.id = workspaces.syncConfirmedConnectionId
                 WHERE workspaces.accountConnectionId = workspaces.syncConfirmedConnectionId
-                  AND (workspaces.syncRecoveryState IS NULL OR workspaces.syncRecoveryState != 'updateRequired')
                   AND (
                     (workspaces.syncPullCursor IS NOT NULL AND workspaces.syncRecoveryState IS NULL)
+                    OR workspaces.syncRecoveryState = 'updateRequired'
                     OR workspaces.syncRecoveryState = 'transferBlocked'
                     OR NOT EXISTS (SELECT 1 FROM sync_transactions WHERE workspace_id = workspaces.id)
                     OR EXISTS (
@@ -1585,9 +1593,12 @@ actor SyncWorker {
                   )
                 """
             ).compactMap { row in
+                let workspaceId: UUID = row["id"]
+                if row["syncRecoveryState"] as String? == "updateRequired",
+                   updateRequiredWorkspaces.contains(workspaceId) { return nil }
                 guard let origin = URL(string: row["origin"] as String) else { return nil }
                 return SyncTarget(
-                    workspaceId: row["id"],
+                    workspaceId: workspaceId,
                     connectionId: row["syncConfirmedConnectionId"],
                     origin: origin,
                     cursor: row["syncPullCursor"],

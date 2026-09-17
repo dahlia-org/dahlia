@@ -1684,6 +1684,7 @@
 "sync.pullFailed" = "Could Not Fetch Server Changes";
 "sync.localValidationFailed" = "Local changes are inconsistent";
 "sync.recordingArchiveFailure" = "Could not save the recording archive for “%@”";
+"sync.recordingArchiveAskEditor" = "Ask a Workspace admin or editor to retry.";
 "sync.useServerConfirmation" = "Use the Server version of “%@”?";
 "sync.discardConfirmation" = "Discard this and later changes in “%@”?";
 "sync.discardImpact" = "This discards %1$ld transactions, %2$ld operations, and %3$ld records. It releases %4$ld local bodies across %5$ld meetings.";

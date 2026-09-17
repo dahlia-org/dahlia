@@ -23,7 +23,7 @@
             #expect(ScreenshotOCRState.processing.limitingRemoteWait(to: .seconds(300)) == .processing)
         }
 
-        @Test(.timeLimit(.minutes(1)), arguments: ["retry"])
+        @Test(.timeLimit(.minutes(1)), arguments: ["retry", "checksum"])
         func rawFileUploadPreservesTheQueuedTransactionAcrossRetries(firstFailure: String) async throws {
             let fixture = try ScreenshotContentFixture()
             let fileStore = try await ScreenshotContentProvider.shared.fileStore(for: fixture.dbQueue)
@@ -132,30 +132,50 @@
                 session: session,
                 apiClient: SyncAPIClient(session: session, tokenProvider: { _, _ in "test-token" })
             )
-            let retries = ValueObservation.tracking { db in
-                try String.fetchOne(db, sql: "SELECT serverResponseJSON FROM sync_transactions WHERE id = ?", arguments: [transactionId])
+            let states = ValueObservation.tracking { db -> (String?, String?) in
+                guard let row = try Row.fetchOne(
+                    db,
+                    sql: "SELECT blockedReason, serverResponseJSON FROM sync_transactions WHERE id = ?",
+                    arguments: [transactionId]
+                ) else { return (nil, nil) }
+                return (row["blockedReason"], row["serverResponseJSON"])
             }.values(in: fixture.dbQueue)
             await worker.drain()
-            for try await retry in retries where retry == #"{"code":"http_503"}"# {
-                break
-            }
-            await worker.stop()
-            try await fixture.dbQueue.write { db in
-                #expect(try Data.fetchOne(db, sql: "SELECT payloadJSON FROM sync_operations WHERE id = ?", arguments: [operation.id]) == operation
-                    .payloadJSON)
-                try db.execute(sql: "UPDATE sync_transactions SET availableAt = ? WHERE id = ?", arguments: [Date.distantPast, transactionId])
-            }
-            let counts = ValueObservation.tracking { db in
-                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE id = ?", arguments: [transactionId]) ?? 0
-            }.values(in: fixture.dbQueue)
-            await worker.drain()
-            for try await count in counts where count == 0 {
-                break
+            if firstFailure == "retry" {
+                for try await state in states where state.1 == #"{"code":"http_503"}"# {
+                    break
+                }
+                await worker.stop()
+                try await fixture.dbQueue.write { db in
+                    #expect(try Data.fetchOne(
+                        db,
+                        sql: "SELECT payloadJSON FROM sync_operations WHERE id = ?",
+                        arguments: [operation.id]
+                    ) == operation.payloadJSON)
+                    try db.execute(
+                        sql: "UPDATE sync_transactions SET availableAt = ? WHERE id = ?",
+                        arguments: [Date.distantPast, transactionId]
+                    )
+                }
+                let counts = ValueObservation.tracking { db in
+                    try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE id = ?", arguments: [transactionId]) ?? 0
+                }.values(in: fixture.dbQueue)
+                await worker.drain()
+                for try await count in counts where count == 0 {
+                    break
+                }
+            } else {
+                for try await state in states where state.0 == SyncBlockedReason.validation.rawValue {
+                    let response = try #require(state.1)
+                    let problem = try #require(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+                    #expect(problem["code"] as? String == "invalid_sync_receipt")
+                    break
+                }
             }
             await worker.stop()
             let all = requests.withLock { $0 }
             let uploads = all.filter { $0.url?.path == "/api/v1/file-uploads/\(fixture.screenshotId.uuidString.lowercased())/content" }
-            #expect(uploads.count == 2)
+            #expect(uploads.count == (firstFailure == "retry" ? 2 : 1))
             for upload in uploads {
                 #expect(upload.httpMethod == "PUT")
                 #expect(upload.httpBody == fixture.bytes)
@@ -164,7 +184,7 @@
                 #expect(upload.url?.query == nil)
             }
             let reservations = all.filter { $0.url?.path == "/api/v1/file-uploads" }
-            #expect(reservations.count == 2)
+            #expect(reservations.count == (firstFailure == "retry" ? 2 : 1))
             for reservation in reservations {
                 let data = try #require(reservation.httpBody)
                 let body = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -183,16 +203,21 @@
                 let object = try JSONSerialization.jsonObject(with: body) as? [String: Any]
                 return (object?["id"] as? String).flatMap(UUID.init(uuidString:)) == transactionId
             }
-            #expect(resolves.count == 1)
-            let resolvedBody = try #require(resolves.first?.httpBody)
-            #expect(resolves.last?.httpBody == resolvedBody)
+            #expect(resolves.count == (firstFailure == "retry" ? 1 : 0))
             let commits = all.filter { $0.url?.path == "/api/v1/transactions" }
-            #expect(commits.count == (firstFailure == "retry" ? 2 : 1))
-            #expect(commits.allSatisfy { $0.httpBody == resolvedBody })
+            #expect(commits.count == (firstFailure == "retry" ? 2 : 0))
+            if let resolvedBody = resolves.first?.httpBody {
+                #expect(resolves.last?.httpBody == resolvedBody)
+                #expect(commits.allSatisfy { $0.httpBody == resolvedBody })
+            }
 
-            // Exercise the next drain iteration even when stop wins the race with the worker.
-            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: fixture.dbQueue)
-            #expect(try await fixture.dbQueue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_transactions") } == 0)
+            if firstFailure == "retry" {
+                // Exercise the next drain iteration even when stop wins the race with the worker.
+                try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: fixture.dbQueue)
+            }
+            #expect(try await fixture.dbQueue.read {
+                try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_transactions")
+            } == (firstFailure == "retry" ? 0 : 1))
         }
 
         @Test

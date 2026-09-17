@@ -429,6 +429,48 @@
         }
 
         @Test
+        func discardRefusesChangedWorkspaceConfirmationState() async throws {
+            let (database, workspace) = try await syncedDatabase()
+            let connectionId = try #require(workspace.accountConnectionId)
+            _ = try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.record(
+                    workspaceId: workspace.id,
+                    operations: [.init(entity: .workspace, action: .update, entityId: workspace.id)],
+                    in: db
+                )
+            }
+            let blocked = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.block(
+                blocked,
+                reason: .validation,
+                response: SyncTransactionQueue.problemData(code: "invalid_sync_payload"),
+                dbQueue: database.dbQueue
+            )
+            let impact = try #require(try await database.dbQueue.read {
+                try MeetingRepository.fetchSyncProgress(in: $0)[connectionId]?.workspaces.first?.discardImpact
+            })
+            #expect(!impact.hasConfirmedWorkspace)
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state VALUES (?, 'workspace', ?, 1)",
+                    arguments: [workspace.id, workspace.id]
+                )
+            }
+
+            await #expect(throws: TextContentError.self) {
+                try await SyncTransactionQueue.discardInvalidTransaction(
+                    workspaceId: workspace.id,
+                    expectedLastTransactionId: impact.lastTransactionId,
+                    expectedHasConfirmedWorkspace: impact.hasConfirmedWorkspace,
+                    dbQueue: database.dbQueue
+                )
+            }
+            #expect(try await database.dbQueue.read {
+                try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_transactions WHERE workspace_id = ?", arguments: [workspace.id])
+            } == 1)
+        }
+
+        @Test
         func nonConflictBlocksCannotDiscardDurableTransactions() async throws {
             let (database, workspace) = try await syncedDatabase()
             _ = try await database.dbQueue.write { db in

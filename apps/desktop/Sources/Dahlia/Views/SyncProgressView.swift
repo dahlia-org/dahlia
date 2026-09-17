@@ -7,10 +7,10 @@ enum SyncRecoveryAction: Hashable {
     case retryPull(workspaceId: UUID, connectionId: UUID)
     case reauthenticate(UUID)
     case retryAuthorization(UUID)
-    case acceptServer(workspaceId: UUID, lastTransactionId: UUID)
+    case acceptServer(workspaceId: UUID, lastTransactionId: UUID, hasConfirmedWorkspace: Bool)
     case reapplyLocal(UUID)
     case retryValidation(UUID)
-    case discardValidation(workspaceId: UUID, lastTransactionId: UUID)
+    case discardValidation(workspaceId: UUID, lastTransactionId: UUID, hasConfirmedWorkspace: Bool)
     case retryRecording(UUID)
     case openServer(URL)
 }
@@ -75,7 +75,7 @@ struct SyncProgressView: View {
                     recoveryButtons(for: issue, connection: connection, workspace: nil)
                 }
                 if progress.workspaces.isEmpty, progress.discoveryIssue == nil {
-                    Label(L10n.syncSynced, systemImage: "checkmark.circle")
+                    Label(L10n.syncFetching, systemImage: "arrow.triangle.2.circlepath")
                 }
                 ForEach(progress.workspaces) { workspace in
                     WorkspaceSyncProgressView(
@@ -162,19 +162,21 @@ struct SyncProgressView: View {
                     await task.value
                 case let .retryAuthorization(connectionId):
                     try await controller.retryAuthorizationSync(connectionID: connectionId)
-                case let .acceptServer(workspaceId, lastTransactionId):
+                case let .acceptServer(workspaceId, lastTransactionId, hasConfirmedWorkspace):
                     try await controller.acceptServerSyncVersion(
                         workspaceID: workspaceId,
-                        expectedLastTransactionID: lastTransactionId
+                        expectedLastTransactionID: lastTransactionId,
+                        expectedHasConfirmedWorkspace: hasConfirmedWorkspace
                     )
                 case let .reapplyLocal(workspaceId):
                     try await controller.reapplyLocalSyncVersion(workspaceID: workspaceId)
                 case let .retryValidation(workspaceId):
                     try await controller.retryInvalidSyncTransaction(workspaceID: workspaceId)
-                case let .discardValidation(workspaceId, lastTransactionId):
+                case let .discardValidation(workspaceId, lastTransactionId, hasConfirmedWorkspace):
                     try await controller.discardInvalidSyncTransaction(
                         workspaceID: workspaceId,
-                        expectedLastTransactionID: lastTransactionId
+                        expectedLastTransactionID: lastTransactionId,
+                        expectedHasConfirmedWorkspace: hasConfirmedWorkspace
                     )
                 case let .retryRecording(meetingId):
                     try await controller.retryRecordingArchive(meetingID: meetingId)
@@ -257,13 +259,17 @@ struct WorkspaceSyncProgressView: View {
                         if let code = failure.code {
                             LabeledContent(L10n.syncErrorCode, value: code).textSelection(.enabled)
                         }
-                        Button(L10n.retry, systemImage: "arrow.clockwise") {
-                            onAction(.retryRecording(failure.meetingId))
+                        if progress.allowsRecordingArchiveRetry {
+                            Button(L10n.retry, systemImage: "arrow.clockwise") {
+                                onAction(.retryRecording(failure.meetingId))
+                            }
+                            .buttonStyle(.dahlia())
+                            .controlSize(.small)
+                            .disabled(isWorking)
+                            .accessibilityLabel("\(L10n.retry): \(failure.meetingName)")
+                        } else if !progress.allowsCanonicalEdits {
+                            Text(L10n.syncRecordingArchiveAskEditor).foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.dahlia())
-                        .controlSize(.small)
-                        .disabled(isWorking || !progress.allowsRecordingArchiveRetry)
-                        .accessibilityLabel("\(L10n.retry): \(failure.meetingName)")
                     }
                 }
             }
@@ -342,7 +348,11 @@ private struct SyncRecoveryButtons: View {
                         destructiveButton(
                             L10n.useServerVersion,
                             "icloud.and.arrow.down",
-                            .acceptServer(workspaceId: workspace.id, lastTransactionId: impact.lastTransactionId),
+                            .acceptServer(
+                                workspaceId: workspace.id,
+                                lastTransactionId: impact.lastTransactionId,
+                                hasConfirmedWorkspace: impact.hasConfirmedWorkspace
+                            ),
                             workspace,
                             impact
                         )
@@ -357,7 +367,11 @@ private struct SyncRecoveryButtons: View {
                             destructiveButton(
                                 L10n.syncDiscardFollowing,
                                 "trash",
-                                .discardValidation(workspaceId: workspace.id, lastTransactionId: impact.lastTransactionId),
+                                .discardValidation(
+                                    workspaceId: workspace.id,
+                                    lastTransactionId: impact.lastTransactionId,
+                                    hasConfirmedWorkspace: impact.hasConfirmedWorkspace
+                                ),
                                 workspace,
                                 impact
                             )

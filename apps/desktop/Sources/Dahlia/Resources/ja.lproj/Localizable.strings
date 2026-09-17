@@ -1684,6 +1684,7 @@
 "sync.pullFailed" = "Server の変更取得に失敗";
 "sync.localValidationFailed" = "ローカル変更に不整合があります";
 "sync.recordingArchiveFailure" = "「%@」の録音アーカイブ保存に失敗しました";
+"sync.recordingArchiveAskEditor" = "Workspace の管理者または編集者に再試行を依頼してください。";
 "sync.useServerConfirmation" = "「%@」で Server 版を採用しますか？";
 "sync.discardConfirmation" = "「%@」の変更をこの時点以降破棄しますか？";
 "sync.discardImpact" = "破棄対象: transaction %1$ld件、operation %2$ld件、レコード %3$ld件。ローカル本文 %4$ld件（会議 %5$ld件）を解放します。";

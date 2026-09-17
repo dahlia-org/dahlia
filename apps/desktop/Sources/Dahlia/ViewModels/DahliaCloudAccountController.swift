@@ -171,11 +171,16 @@ final class DahliaCloudAccountController {
         await syncWorker.drain()
     }
 
-    func acceptServerSyncVersion(workspaceID: UUID, expectedLastTransactionID: UUID) async throws {
+    func acceptServerSyncVersion(
+        workspaceID: UUID,
+        expectedLastTransactionID: UUID,
+        expectedHasConfirmedWorkspace: Bool
+    ) async throws {
         guard let repository else { throw DahliaCloudError.notConfigured }
         try await repository.acceptServerSyncVersion(
             workspaceId: workspaceID,
-            expectedLastTransactionId: expectedLastTransactionID
+            expectedLastTransactionId: expectedLastTransactionID,
+            expectedHasConfirmedWorkspace: expectedHasConfirmedWorkspace
         )
         await syncWorker?.drain()
     }
@@ -192,11 +197,16 @@ final class DahliaCloudAccountController {
         await syncWorker?.drain()
     }
 
-    func discardInvalidSyncTransaction(workspaceID: UUID, expectedLastTransactionID: UUID) async throws {
+    func discardInvalidSyncTransaction(
+        workspaceID: UUID,
+        expectedLastTransactionID: UUID,
+        expectedHasConfirmedWorkspace: Bool
+    ) async throws {
         guard let repository else { throw DahliaCloudError.notConfigured }
         try await repository.discardInvalidSyncTransaction(
             workspaceId: workspaceID,
-            expectedLastTransactionId: expectedLastTransactionID
+            expectedLastTransactionId: expectedLastTransactionID,
+            expectedHasConfirmedWorkspace: expectedHasConfirmedWorkspace
         )
         await syncWorker?.drain()
     }

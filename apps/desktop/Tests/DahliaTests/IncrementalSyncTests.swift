@@ -1361,8 +1361,13 @@
                 "workspaces": [[
                     "workspaceId": destination.uuidString,
                     "organizationId": destination.uuidString,
+                    "organizationName": "Organization",
+                    "meetingDeletionGraceDays": 7,
                     "name": "Moved",
+                    "generationSettings": JSONSerialization.jsonObject(with: JSONEncoder().encode(WorkspaceGenerationSettings())),
                     "createdAt": "2026-09-09T00:00:00Z",
+                    "updatedAt": "2026-09-09T00:00:00Z",
+                    "revision": 1,
                     "role": "admin",
                 ]],
                 "items": [[
@@ -1398,20 +1403,26 @@
         }
 
         @Test
-        func updateRequiredPullFailurePersistsStatusAndState() async throws {
+        func updateRequiredPullFailurePersistsAndAutomaticallyRecoversAfterUpdate() async throws {
             let fixture = try Fixture()
+            let serverReady = Mutex(false)
+            let changes = Data(#"{"items":[],"cursor":"after","highWaterCursor":"after","hasMore":false}"#.utf8)
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") {
+                let path = request.url!.path
+                if path.hasSuffix("capabilities") {
                     return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
                 }
-                return (426, [:], Data(#"{"code":"sync_update_required"}"#.utf8))
+                if path == "/api/v1/workspaces" { return (200, [:], Data(#"{"items":[]}"#.utf8)) }
+                return serverReady.withLock { $0 } ? (200, [:], changes) :
+                    (426, [:], Data(#"{"code":"sync_update_required"}"#.utf8))
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
-            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            let outdatedWorker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
 
             await #expect(throws: SyncHTTPError.self) {
-                try await worker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+                try await outdatedWorker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
             }
+            await outdatedWorker.stop()
 
             try await fixture.queue.read { db throws in
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
@@ -1419,6 +1430,18 @@
                 #expect(workspace.syncRecoveryState == "updateRequired")
                 #expect(incident.status == 426 && incident.code == "sync_update_required")
             }
+
+            serverReady.withLock { $0 = true }
+            let recovery = ValueObservation.tracking { db -> (String?, String?) in
+                guard let workspace = try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId) else { return (nil, nil) }
+                return (workspace.syncRecoveryState, workspace.syncPullErrorJSON)
+            }.values(in: fixture.queue)
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            await worker.drain()
+            for try await state in recovery where state.0 == nil && state.1 == nil {
+                break
+            }
+            await worker.stop()
         }
 
         @Test(.timeLimit(.minutes(1)))
@@ -1489,15 +1512,15 @@
             }
 
             serverReady.withLock { $0 = true }
-            try await worker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
             let pendingCounts = ValueObservation.tracking { db in
                 try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE id = ?", arguments: [transactionId]) ?? 0
             }.values(in: fixture.queue)
-            await worker.drain()
+            let updatedWorker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            await updatedWorker.drain()
             for try await count in pendingCounts where count == 0 {
                 break
             }
-            await worker.stop()
+            await updatedWorker.stop()
             #expect(try await fixture.queue.read {
                 try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.syncRecoveryState
             } == nil)
