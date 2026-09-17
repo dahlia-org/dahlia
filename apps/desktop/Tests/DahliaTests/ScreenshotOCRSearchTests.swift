@@ -99,8 +99,7 @@ import GRDB
                 id: screenshotID, meetingId: meeting.id, sessionId: nil, capturedAt: .now,
                 imageData: imageData, mimeType: "image/png", remoteReference: remoteReference
             )
-            var localWorkspace = makeWorkspace()
-            localWorkspace.path += "-local"
+            let localWorkspace = makeWorkspace(path: "/tmp/screenshot-ocr-search-workspace-local")
             let localMeeting = makeMeeting(workspaceID: localWorkspace.id)
             let localScreenshot = MeetingScreenshotRecord(
                 id: .v7(), meetingId: localMeeting.id, sessionId: nil, capturedAt: .now,
@@ -993,10 +992,10 @@ import GRDB
             )
         }
 
-        private func makeWorkspace() -> WorkspaceRecord {
+        private func makeWorkspace(path: String = "/tmp/screenshot-ocr-search-workspace") -> WorkspaceRecord {
             WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/screenshot-ocr-search-workspace",
+                path: path,
                 name: "Search",
                 createdAt: .now,
                 lastOpenedAt: .now
