@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -76,7 +77,7 @@ import GRDB
         }
 
         @Test
-        func serverWorkspaceDisconnectDoesNotDiscardUnavailableAnalysisJob() async throws {
+        func serverWorkspaceDisconnectOnlyRetriesItsOwnAnalysisJob() async throws {
             let analyzer = StubScreenshotAnalyzer(text: "device OCR")
             let database = try makeDatabase(screenshotAnalyzer: analyzer)
             let connection = DahliaAccountConnectionRecord(
@@ -98,11 +99,21 @@ import GRDB
                 id: screenshotID, meetingId: meeting.id, sessionId: nil, capturedAt: .now,
                 imageData: imageData, mimeType: "image/png", remoteReference: remoteReference
             )
+            var localWorkspace = makeWorkspace()
+            localWorkspace.path += "-local"
+            let localMeeting = makeMeeting(workspaceID: localWorkspace.id)
+            let localScreenshot = MeetingScreenshotRecord(
+                id: .v7(), meetingId: localMeeting.id, sessionId: nil, capturedAt: .now,
+                imageData: Data([2]), mimeType: "image/png"
+            )
             try await database.dbQueue.write { [workspace] db in
                 try connection.insert(db)
                 try workspace.insert(db)
                 try meeting.insert(db)
                 try screenshot.insertLegacyForTesting(db)
+                try localWorkspace.insert(db)
+                try localMeeting.insert(db)
+                try localScreenshot.insertLegacyForTesting(db)
             }
             let dbQueue = database.dbQueue
             let workspaceID = workspace.id
@@ -125,14 +136,23 @@ import GRDB
             await indexer.drain()
 
             #expect(await analyzer.runtimeProviders[screenshot.id] == nil)
+            #expect(await analyzer.runtimeProviders[localScreenshot.id] == .chatGPTSubscription)
             try await database.dbQueue.read { db throws in
                 #expect(try WorkspaceRecord.fetchOne(db, key: workspaceID)?.accountConnectionId == nil)
                 #expect(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText == nil)
+                #expect(try MeetingScreenshotRecord.fetchOne(db, key: localScreenshot.id)?.ocrText == "device OCR")
+                let serverJob = try Row.fetchOne(
+                    db,
+                    sql: "SELECT status, attempts FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                    arguments: [screenshot.id]
+                )
+                #expect(serverJob?["status"] as String? == "pending")
+                #expect(serverJob?["attempts"] as Int? == 1)
                 #expect(try Int.fetchOne(
                     db,
                     sql: "SELECT count(*) FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
-                    arguments: [screenshot.id]
-                ) == 1)
+                    arguments: [localScreenshot.id]
+                ) == 0)
             }
         }
 

@@ -623,7 +623,13 @@ private extension SearchIndexer {
             case let .failure(job, error):
                 try await fail(job, error: error)
             case let .missing(job):
-                try await complete([job], expectedConnectionId: serverConnectionIDs[job.targetID])
+                do {
+                    try await complete([job], expectedConnectionId: serverConnectionIDs[job.targetID])
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    try await fail(job, error: error)
+                }
             case .cancelled:
                 throw CancellationError()
             }
