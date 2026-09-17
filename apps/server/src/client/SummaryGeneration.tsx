@@ -189,6 +189,20 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
           {summaryStyles.map((style) => <option key={style} value={style}>{detailLabel(summaryStyleDetail(style))}</option>)}
         </Select></label>
         <p>{styleDescription(summary.style)}</p>
+        {processing.location === "remote" && <>
+          <label>{uiText("Summary method", "要約方法")}<Select value={remote.workflow} disabled={!remoteSupported}
+            onValueChange={(value) => void saveRemote({ workflow: value as typeof remote.workflow })}>
+            <option value="transcribeThenSummarize">{uiText("Generate from transcript", "文字起こしから生成")}</option>
+            <option value="combined">{uiText("Generate directly from audio", "音声から直接生成")}</option>
+          </Select></label>
+          <p>{remote.workflow === "combined" ? uiText(
+            "For automatic processing after recording, Gemini creates the summary directly from the audio and produces a transcript in the same process.",
+            "録音後の自動処理では、Geminiが音声から直接要約し、同じ処理内で文字起こしも作成します。",
+          ) : uiText(
+            "For automatic processing after recording, Gemini transcribes the audio first, then creates the summary from that transcript.",
+            "録音後の自動処理では、Geminiが先に音声を文字起こしし、その文字起こしから要約を作成します。",
+          )}</p>
+        </>}
         {customizableSummary && <>
           {isModelCatalogLoaded && remote.summaryModel && !selectedSummaryModel && <p role="status">{uiText(
             "A selected model is unavailable. Change it or choose Automatic.",
@@ -222,29 +236,6 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
         </label>
       </fieldset>
     </section>
-    {processing.location === "remote" && <section className="section-block settings-section">
-      <fieldset className="account-settings" disabled={editingDisabled || !remoteSupported}>
-        <details className="settings-advanced">
-          <summary>{uiText("Advanced server settings", "サーバー処理の詳細設定")}</summary>
-          <p>{uiText(
-            "These choices apply automatically after new recordings. Manual generation uses the source selected on the meeting screen.",
-            "ここでの選択は、新しい録音後の自動処理に適用されます。手動生成では、ミーティング画面で選んだソースが優先されます。",
-          )}</p>
-          <label>{uiText("New recording automatic processing", "新しい録音の自動処理")}<Select value={remote.workflow}
-            onValueChange={(value) => void saveRemote({ workflow: value as typeof remote.workflow })}>
-            <option value="transcribeThenSummarize">{uiText("Summarize the transcript", "文字起こし後に要約")}</option>
-            <option value="combined">{uiText("Summarize directly from audio", "音声から直接要約")}</option>
-          </Select></label>
-          <p>{remote.workflow === "combined" ? uiText(
-            "Gemini creates the summary directly from the audio and produces a transcript in the same process.",
-            "Geminiが音声から直接要約し、同じ処理内で文字起こしも作成します。",
-          ) : uiText(
-            "Gemini transcribes the audio first, then creates the summary from that transcript.",
-            "Geminiが先に音声を文字起こしし、その文字起こしから要約を作成します。",
-          )}</p>
-        </details>
-      </fieldset>
-    </section>}
   </>;
 }
 

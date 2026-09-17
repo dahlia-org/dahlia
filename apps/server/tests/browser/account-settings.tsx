@@ -90,11 +90,14 @@ async function run() {
 
   remoteCapability = true;
   settings.processing.location = "remote";
+  settings.processing.remote.workflow = "transcribeThenSummarize";
   settings.processing.remote.summaryModel = "catalog.ai.unavailable";
   createRoot(document.getElementById("root")!).render(<ServerSummarySettings workspaceId={workspaceId} onSave={save} />);
   await ready();
-  await until(() => document.querySelectorAll('[role="combobox"]').length >= 5 && modelReads === 1);
-  document.querySelector("details")!.open = true;
+  await until(() => document.body.textContent?.includes("Summary method") && modelReads === 1);
+  await choose("Summary method", "combined");
+  await until(() => settings.processing.remote.workflow === "combined");
+  await ready();
   assert(!document.body.textContent?.includes("Transcription language"), "Remote language settings remained visible");
   assert(select("Summary model").value === "catalog.ai.unavailable", "Unavailable explicit choice was silently replaced");
   await choose("Summary model", "system.ai.gemini-3-8-flash");
@@ -134,6 +137,6 @@ async function run() {
   await ready();
   assert(!document.querySelector('[role="alert"]'), "Retry did not clear the save error");
   assert(modelReads === 1, "Retry reloaded models");
-  document.getElementById("result")!.textContent = "PASS: local fallback, unavailable summary model, remote detail, stale GET, settings notification, failed save/retry, stable model catalog";
+  document.getElementById("result")!.textContent = "PASS: local fallback, unavailable summary model, remote summary method, stale GET, settings notification, failed save/retry, stable model catalog";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; console.error(error); });
