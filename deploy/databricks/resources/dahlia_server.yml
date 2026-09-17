@@ -40,7 +40,7 @@ resources:
           - name: DAHLIA_AUTH_PROVIDER_ID
             value: databricks
           - name: DAHLIA_SIGNOUT_URL
-            value: /.auth/logout
+            value: /.auth/sign_out
           - name: DAHLIA_AUTH_SECRET
             value: test-only-better-auth-secret-value
           - name: DAHLIA_AI_BACKEND

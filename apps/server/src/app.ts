@@ -280,7 +280,8 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   app.get("/api/auth/mode", (context) => context.json({
     provider: config.authProvider,
     mcp: {
-      url: mcpResource({ baseUrl: databricksProxyUrl ?? config.baseUrl }),
+      url: mcpResource(config),
+      ...(databricksProxyUrl ? { proxyUrl: mcpResource({ baseUrl: databricksProxyUrl }) } : {}),
       databricksProxy,
       available: mcpAvailable,
     },
