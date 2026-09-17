@@ -727,8 +727,7 @@ actor SyncWorker {
 
     func synchronizeForTransfer(workspaceId: UUID, connectionId: UUID) async throws {
         guard let target = try await pullTarget(workspaceId: workspaceId, connectionId: connectionId),
-              try await pullRemoteChanges(for: target) else { throw TextContentError.changed }
-        try await clearPullIncident(target: target)
+              try await performPull(target, maintainSharedContent: false) else { throw TextContentError.changed }
         guard try await dbQueue.read({ db in
             try SyncTransactionQueue.matchesExpectedConnection(workspaceId: workspaceId, connectionId: connectionId, in: db)
                 && !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db)
@@ -845,15 +844,19 @@ actor SyncWorker {
         _ = try await pullRemoteChanges(workspaceId: workspaceId, connectionId: connectionId)
     }
 
-    private func performPull(_ target: SyncTarget) async throws -> Bool {
+    private func performPull(_ target: SyncTarget, maintainSharedContent: Bool = true) async throws -> Bool {
         let key = PullKey(database: ObjectIdentifier(dbQueue), workspaceId: target.workspaceId)
         guard Self.pullingWorkspaces.withLock({ $0.insert(key).inserted }) else { throw TextContentError.changed }
         defer { _ = Self.pullingWorkspaces.withLock { $0.remove(key) } }
         do {
-            try await ScreenshotContentProvider.shared.migrateLegacyImages(workspaceId: target.workspaceId, dbQueue: dbQueue)
+            if maintainSharedContent {
+                try await ScreenshotContentProvider.shared.migrateLegacyImages(workspaceId: target.workspaceId, dbQueue: dbQueue)
+            }
             guard try await pullRemoteChanges(for: target) else { return false }
             try await clearPullIncident(target: target)
-            await MeetingContentProvider.shared.scheduleMaintenance(dbQueue: dbQueue)
+            if maintainSharedContent {
+                await MeetingContentProvider.shared.scheduleMaintenance(dbQueue: dbQueue)
+            }
             return true
         } catch is CancellationError {
             throw CancellationError()
