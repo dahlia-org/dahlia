@@ -1,4 +1,6 @@
 #if canImport(Testing)
+    // Incremental pull and recovery lifecycle coverage is intentionally colocated.
+    // swiftlint:disable file_length
     import CryptoKit
     import DahliaMeetingAccess
     import DahliaRuntimeSupport
