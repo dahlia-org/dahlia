@@ -74,7 +74,10 @@ async function run() {
   createRoot(document.getElementById("root")!).render(<ServerSummaryGeneration workspaceId="workspace" meetingId="meeting" />);
   await until(() => document.querySelector<HTMLButtonElement>(".summary-generation-trigger"));
   document.querySelector<HTMLButtonElement>(".summary-generation-trigger")!.click();
-  await until(() => document.querySelector<HTMLDialogElement>("dialog")?.open);
+  const dialog = document.querySelector<HTMLDialogElement>("dialog")!;
+  await until(() => dialog.open);
+  dialog.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 2, clientX: 0, clientY: 0 }));
+  assert(dialog.open, "A trigger double-click must not close the dialog through its backdrop");
   await until(() => document.querySelector<HTMLInputElement>('input[value="transcript"]')?.checked);
   const audioInput = document.querySelector<HTMLInputElement>('input[value="audio"]');
   assert(audioInput?.disabled, "Uploading audio must be disabled");

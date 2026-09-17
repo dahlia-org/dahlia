@@ -407,6 +407,7 @@ export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId:
       onClick={() => dialog.current?.showModal()}><MenuIcon name="sparkles" /></button>
     <dialog ref={dialog} className="action-dialog action-dialog-wide summary-generation-dialog" aria-labelledby={`summary-generation-title-${meetingId}`}
       onClick={(event) => {
+        if (event.detail !== 1) return;
         const rect = event.currentTarget.getBoundingClientRect();
         if (event.target === event.currentTarget && (event.clientX < rect.left || event.clientX > rect.right
           || event.clientY < rect.top || event.clientY > rect.bottom)) event.currentTarget.close();
