@@ -160,21 +160,24 @@ describe("server summary jobs", () => {
 </context>` }]);
   });
 
-  it("formats transcript input like Desktop summary XML", async () => {
+  it("formats transcript input like Desktop summary XML across paused recording sessions", async () => {
     const recordedAt = new Date("2026-04-16T00:00:00.000Z");
     const { content } = await summaryImageContent({
       meeting: { name: "Meeting", description: "", createdAt: recordedAt, recordingStartedAt: recordedAt,
         icalUid: null, recurrenceId: null, calendarEvent: null },
       project: null, images: [], transcript: [
-        { segmentId: uuidV7(), startedAt: new Date("2026-04-16T00:12:34.999Z"), endedAt: null,
-          text: "First <topic> & follow-up", createdAt: null, audioSource: "mic", speakerLabel: "Speaker" },
-        { segmentId: uuidV7(), startedAt: new Date("2026-04-16T01:05:47.000Z"), endedAt: null,
+        { segmentId: uuidV7(), startedAt: new Date("2026-04-16T00:00:05.000Z"), endedAt: null,
+          text: "First <topic> & follow-up", createdAt: null, audioSource: "mic", speakerLabel: "Speaker & Guest" },
+        { segmentId: uuidV7(), startedAt: new Date("2026-04-16T02:00:03.000Z"), endedAt: null,
           text: "Second", createdAt: null, audioSource: null, speakerLabel: null },
       ],
-    }, {} as MeetingSyncService, owner, new AbortController().signal);
+    }, {} as MeetingSyncService, owner, new AbortController().signal, [
+      { startedAt: recordedAt, endedAt: new Date("2026-04-16T00:00:10.000Z"), offsetSeconds: 0 },
+      { startedAt: new Date("2026-04-16T02:00:00.000Z"), endedAt: new Date("2026-04-16T02:00:10.000Z"), offsetSeconds: 10 },
+    ]);
     expect(content[1]!.text).toBe(`<transcript>
-<time>00:12:34</time> First &lt;topic&gt; &amp; follow-up
-<time>01:05:47</time> Second
+<time>00:00:05</time> <speaker>Speaker &amp; Guest</speaker> First &lt;topic&gt; &amp; follow-up
+<time>00:00:13</time> Second
 </transcript>`);
   });
 
@@ -646,6 +649,7 @@ describe("server summary jobs", () => {
         expect(content[1]!.text).toMatch(/^<transcript>[\s\S]*<\/transcript>$/);
         expect(content[1]!.text).toContain("Ship next week &lt; &amp; &gt; &quot; &apos;");
         expect(content[1]!.text).toMatch(/<time>\d{2}:\d{2}:\d{2}<\/time>/);
+        expect(content[1]!.text).toContain("<speaker>A&amp;B</speaker>");
         expect(content[1]!.text).not.toContain("<segment>");
         if (withImages) {
           const selected = screenshots.filter((_, index) => index % 2 === 0);

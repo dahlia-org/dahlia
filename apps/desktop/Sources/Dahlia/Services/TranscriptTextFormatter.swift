@@ -30,7 +30,17 @@ enum TranscriptTextFormatter {
                 sessions: recordingSessions,
                 fallbackTimeBase: timeBase
             )
-            return "<time>\(time)</time> \(segment.displayText)"
+            let speaker = segment.speakerLabel.map { " <speaker>\(xmlEscaped($0))</speaker>" } ?? ""
+            return "<time>\(time)</time>\(speaker) \(xmlEscaped(segment.displayText))"
         }.joined(separator: "\n")
+    }
+
+    private static func xmlEscaped(_ value: String) -> String {
+        value
+            .replacing("&", with: "&amp;")
+            .replacing("<", with: "&lt;")
+            .replacing(">", with: "&gt;")
+            .replacing("\"", with: "&quot;")
+            .replacing("'", with: "&apos;")
     }
 }

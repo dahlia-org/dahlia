@@ -21,6 +21,22 @@ export async function assertSummaryAccess(store: IdentitySyncStore, workspaceId:
   if (!canWriteWorkspace((await store.getWorkspace(workspaceId))?.role)) throw new SummaryError("summary_meeting_unavailable");
 }
 
+interface SummaryRecordingSession { startedAt: Date; endedAt: Date; offsetSeconds: number }
+
+async function collectSummaryRecordingSessions(store: IdentitySyncStore, meetingId: string) {
+  const sessions: SummaryRecordingSession[] = [];
+  let after = 0; let offsetSeconds = 0;
+  while (true) {
+    const page = await store.listRecordings(meetingId, after, 200);
+    for (const recording of page) {
+      sessions.push({ startedAt: recording.startedAt, endedAt: recording.endedAt, offsetSeconds });
+      offsetSeconds += Math.max(0, (recording.endedAt.getTime() - recording.startedAt.getTime()) / 1000);
+    }
+    if (page.length < 200) return sessions;
+    after = page.at(-1)!.number;
+  }
+}
+
 export async function collectSummaryInput(store: IdentitySyncStore, workspaceId: string, meetingId: string, includeTranscript = true, reference?: SummaryInput | null) {
   await assertSummaryAccess(store, workspaceId);
   const meeting = await store.getMeeting(workspaceId, meetingId);
@@ -96,10 +112,13 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
       const identity = { userId: job.ownerUserId, source: "accounts" as const };
       const reference: SummaryInput | null | undefined = job.transcriptResult
         ? { type: "transcript", ...job.transcriptResult } : job.input;
-      const input = await store.withIdentity(identity, (scoped) => collectSummaryInput(scoped, job.workspaceId, job.meetingId, true, reference));
+      const { input, recordingSessions } = await store.withIdentity(identity, async (scoped) => ({
+        input: await collectSummaryInput(scoped, job.workspaceId, job.meetingId, true, reference),
+        recordingSessions: await collectSummaryRecordingSessions(scoped, job.meetingId),
+      }));
       if (!job.transcriptResult && await fingerprint(input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
       if (!input.transcript?.some((segment) => segment.text.trim())) throw new SummaryError("summary_transcript_empty");
-      const { content, images, imageIds } = await summaryImageContent(input, sync, identity, signal);
+      const { content, images, imageIds } = await summaryImageContent(input, sync, identity, signal, recordingSessions);
       const model = execution.resolveModel(job.settings.model);
       if (provider.backend === "cloudflare" && (model !== "openai/gpt-4.1" || job.settings.reasoningEffort !== "none")) {
         throw new SummaryError("summary_invalid_model");
@@ -160,7 +179,7 @@ For xhigh detail, organize by speaker/topic and preserve explanations and lesson
 For max detail, create an event play-by-play in chronological order: preserve the substance of statements, how explanations develop,
 demonstration steps and results, and questions and answers in finer detail than xhigh. Use timestamps, speakers, and screen references
 only when supported by the input. Never invent content or audience reactions or simply reproduce the full transcript.
-Use image blocks only with supplied <image_id> values. Always set transcript_ref to null: canonical transcripts do not include the session timeline needed for accurate references.
+Use image blocks only with supplied <image_id> values. Set transcript_ref to a supplied HH:MM:SS <time> when supported; otherwise null.
 Unused block fields must be empty arrays/strings, level 3. Never generate identifiers.`;
 }
 
@@ -169,14 +188,18 @@ export function summaryXMLText(value: string | null): string {
     .replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 }
 
-function summaryElapsedTime(startedAt: Date, timeBase: Date): string {
-  const elapsed = Math.max(0, Math.floor((startedAt.getTime() - timeBase.getTime()) / 1000));
+function summaryElapsedTime(startedAt: Date, timeBase: Date, sessions: readonly SummaryRecordingSession[]): string {
+  const session = sessions.find(({ startedAt: start, endedAt: end }) => startedAt >= start && startedAt <= end);
+  const elapsedSeconds = session
+    ? session.offsetSeconds + (startedAt.getTime() - session.startedAt.getTime()) / 1000
+    : (startedAt.getTime() - timeBase.getTime()) / 1000;
+  const elapsed = Math.max(0, Math.floor(elapsedSeconds));
   return [Math.floor(elapsed / 3600), Math.floor(elapsed / 60) % 60, elapsed % 60]
     .map((part) => String(part).padStart(2, "0")).join(":");
 }
 
 export async function summaryImageContent(input: Awaited<ReturnType<typeof collectSummaryInput>>, sync: MeetingSyncService,
-  identity: import("../auth/identity").Identity, signal: AbortSignal) {
+  identity: import("../auth/identity").Identity, signal: AbortSignal, recordingSessions: readonly SummaryRecordingSession[] = []) {
   // ponytail: sample at most 24 images; add content-aware selection when representative coverage is insufficient.
   const imageInterval = Math.max(1, Math.ceil(input.images.length / 24));
   const images = input.images.filter((_, index) => index % imageInterval === 0).slice(0, 24);
@@ -203,8 +226,10 @@ export async function summaryImageContent(input: Awaited<ReturnType<typeof colle
 </context>` }];
   if (input.transcript) {
     const timeBase = meeting.recordingStartedAt ?? meeting.createdAt;
-    const transcript = input.transcript.map((segment) =>
-      `<time>${summaryElapsedTime(segment.startedAt, timeBase)}</time> ${summaryXMLText(segment.text)}`).join("\n");
+    const transcript = input.transcript.map((segment) => {
+      const speaker = segment.speakerLabel === null ? "" : ` <speaker>${summaryXMLText(segment.speakerLabel)}</speaker>`;
+      return `<time>${summaryElapsedTime(segment.startedAt, timeBase, recordingSessions)}</time>${speaker} ${summaryXMLText(segment.text)}`;
+    }).join("\n");
     content.push({ type: "input_text", text: `<transcript>
 ${transcript}
 </transcript>` });

@@ -25,9 +25,10 @@ import Foundation
             store.loadSegments([
                 TranscriptSegment(
                     startTime: start.addingTimeInterval(754),
-                    text: "First",
+                    text: "First <topic> & follow-up",
                     isConfirmed: true,
-                    audioSource: "mic"
+                    audioSource: "mic",
+                    speakerLabel: "Speaker & Guest"
                 ),
                 TranscriptSegment(
                     startTime: start.addingTimeInterval(3947),
@@ -40,12 +41,12 @@ import Foundation
                 segments: store.segments,
                 recordingSessions: store.recordingSessions,
                 timeBase: store.timeBase
-            ) == "[00:12:34] First\n[01:05:47] Second")
+            ) == "[00:12:34] [Speaker & Guest] First <topic> & follow-up\n[01:05:47] Second")
             #expect(TranscriptTextFormatter.summaryText(
                 segments: store.segments,
                 recordingSessions: store.recordingSessions,
                 timeBase: store.timeBase
-            ) == "<time>00:12:34</time> First\n<time>01:05:47</time> Second")
+            ) == "<time>00:12:34</time> <speaker>Speaker &amp; Guest</speaker> First &lt;topic&gt; &amp; follow-up\n<time>01:05:47</time> Second")
         }
 
         @Test
