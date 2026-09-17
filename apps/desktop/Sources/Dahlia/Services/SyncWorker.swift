@@ -726,7 +726,9 @@ actor SyncWorker {
     }
 
     func synchronizeForTransfer(workspaceId: UUID, connectionId: UUID) async throws {
-        guard try await pullRemoteChanges(workspaceId: workspaceId, connectionId: connectionId) else { throw TextContentError.changed }
+        guard let target = try await pullTarget(workspaceId: workspaceId, connectionId: connectionId),
+              try await pullRemoteChanges(for: target) else { throw TextContentError.changed }
+        try await clearPullIncident(target: target)
         guard try await dbQueue.read({ db in
             try SyncTransactionQueue.matchesExpectedConnection(workspaceId: workspaceId, connectionId: connectionId, in: db)
                 && !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db)
