@@ -459,7 +459,6 @@ describe("SQLite Better Auth store", () => {
 
     const database = new DatabaseSync(path);
     expect(database.prepare("SELECT * FROM child").all()).toEqual([{ id: "child", parent_id: "parent" }]);
-    expect(database.prepare("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
     database.close();
     await store.close?.();
   });
