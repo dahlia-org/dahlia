@@ -4305,6 +4305,7 @@ final class CaptionViewModel: ObservableObject {
             )
         }
         let captured = session.processingJSON.flatMap { try? JSONDecoder().decode(RecordingProcessing.self, from: Data($0.utf8)) }
+        let legacyTranscription = captured?.workspaceSettings?.legacyTranscription
         let preservesStoredSelection = session.isBatchRetranscriptionPending
             || (session.batchLastError?.nilIfBlank != nil && session.batchAttemptCount > 0)
         let localeIdentifier = preservesStoredSelection
@@ -4318,7 +4319,8 @@ final class CaptionViewModel: ObservableObject {
             } else {
                 .manual(localeIdentifier: localeIdentifier)
             }
-        } else if confirmationSessionIds == nil, captured?.automaticLanguageDetection == true {
+        } else if confirmationSessionIds == nil,
+                  (captured?.automaticLanguageDetection ?? legacyTranscription?.automaticLanguageDetection) == true {
             .automatic
         } else if stored.2 > 1 {
             .recorded
@@ -4335,6 +4337,13 @@ final class CaptionViewModel: ObservableObject {
         ).snapshot
         let automaticLanguageCandidateSnapshot = storedCandidates
             ?? (confirmationSessionIds == nil ? captured?.automaticLanguageCandidates : nil)
+            ?? (confirmationSessionIds == nil ? legacyTranscription.map { settings in
+                BatchLanguageDetectionCandidateResolver.candidates(
+                    scope: settings.languageScope,
+                    enabledLocaleIdentifiers: Set(settings.languageIdentifiers),
+                    supportedLocales: supportedLocales
+                ).snapshot
+            } : nil)
             ?? currentCandidates
         return (localeIdentifier, languageSelection, automaticLanguageCandidateSnapshot)
     }

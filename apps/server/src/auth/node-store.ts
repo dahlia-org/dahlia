@@ -138,16 +138,24 @@ export function createNodeApplicationStore(
       throw new Error("SQLite migration directory files do not match the manifest");
     }
     for (const { id, path } of directories) {
-      database.exec("BEGIN IMMEDIATE");
+      database.exec("PRAGMA foreign_keys = OFF");
+      let transactionStarted = false;
       try {
+        database.exec("BEGIN IMMEDIATE");
+        transactionStarted = true;
         await migrateSqlite(transactionalSqlite, applyMigrationQueries, {
           migrationsFolder: path,
           ...(id === "server" ? {} : { migrationsTable: `__dahlia_${id}_migrations` }),
         });
+        const violations = database.prepare("PRAGMA foreign_key_check").all();
+        if (violations.length > 0) throw new Error(`SQLite migration ${id} violated foreign keys`);
         database.exec("COMMIT");
+        transactionStarted = false;
       } catch (error) {
-        database.exec("ROLLBACK");
+        if (transactionStarted) database.exec("ROLLBACK");
         throw error;
+      } finally {
+        database.exec("PRAGMA foreign_keys = ON");
       }
     }
   };

@@ -188,7 +188,9 @@ export class SummaryService {
 export function summaryJobResponse(job: SummaryJob | null) {
   if (!job) return null;
   const { id, method, input, stage, transcriptResult, settings, outputLanguage, status, attempts, createdAt, lastErrorCode } = job;
-  return { id, method, ...(input ? { input } : {}), stage, transcriptResult, settings, outputLanguage, status, attempts, createdAt, error: lastErrorCode };
+  const publicSettings = { ...settings };
+  delete publicSettings.transcription;
+  return { id, method, ...(input ? { input } : {}), stage, transcriptResult, settings: publicSettings, outputLanguage, status, attempts, createdAt, error: lastErrorCode };
 }
 
 // Old accepted requests keep their identity when the detail vocabulary changes.

@@ -7,6 +7,50 @@ import GRDB
 
     @MainActor
     struct BatchTranscriptionLocaleConfirmationTests {
+        @Test
+        func confirmationRestoresAutomaticSelectionFromLegacyWorkspaceSettings() async throws {
+            let batch = try BatchAudioTestFixture(name: "legacy-language-selection", endedAt: .now, duration: 1)
+            defer { batch.removeFiles() }
+            try await batch.recordMicrophoneAudio(localeIdentifier: "ja_JP")
+            let workspace = try await batch.database.dbQueue.read { db in
+                try #require(try WorkspaceRecord.fetchOne(db, key: batch.meeting.workspaceId))
+            }
+            let viewModel = CaptionViewModel()
+            viewModel.supportedLocales = [Locale(identifier: "en_US"), Locale(identifier: "fr_FR"), Locale(identifier: "ja_JP")]
+            let processing = viewModel.processingSnapshot(
+                workspace: workspace,
+                plan: .init(finalMode: .batch, liveSubtitlesEnabled: false, liveTranscriptDraftEnabled: false),
+                locale: Locale(identifier: "ja_JP")
+            )
+            var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(processing)) as? [String: Any])
+            var workspaceSettings = try #require(json["workspaceSettings"] as? [String: Any])
+            workspaceSettings["transcription"] = [
+                "localeIdentifier": "fr_FR",
+                "automaticLanguageDetection": true,
+                "languageScope": "selected",
+                "languageIdentifiers": ["en", "fr"],
+                "liveTranscriptDraft": true,
+            ]
+            json["workspaceSettings"] = workspaceSettings
+            json.removeValue(forKey: "automaticLanguageDetection")
+            json.removeValue(forKey: "automaticLanguageCandidates")
+            let processingJSON = String(decoding: try JSONSerialization.data(withJSONObject: json), as: UTF8.self)
+            try await batch.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE recording_sessions SET processingJSON = ? WHERE id = ?",
+                    arguments: [processingJSON, batch.session.id]
+                )
+            }
+
+            await viewModel.presentBatchTranscriptionConfirmation(
+                sessionId: batch.session.id, meetingId: batch.meeting.id, dbQueue: batch.database.dbQueue
+            )
+
+            let confirmation = try #require(viewModel.pendingBatchTranscriptionConfirmation)
+            #expect(confirmation.initialLanguageSelection == .automatic)
+            #expect(confirmation.automaticLanguageCandidateSnapshot?.identifierSet == ["en", "fr"])
+        }
+
         @Test(arguments: [false, true])
         func confirmationPreservesStoredLocale(retry: Bool) async throws {
             let settings = AppSettings.shared

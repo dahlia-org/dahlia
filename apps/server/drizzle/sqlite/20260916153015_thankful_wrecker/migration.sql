@@ -1,4 +1,3 @@
-PRAGMA foreign_keys=OFF;--> statement-breakpoint
 CREATE TABLE `__new_workspaces` (
 	`encryption` text DEFAULT 'none' NOT NULL,
 	`encrypted_payload` text,
@@ -24,5 +23,4 @@ ALTER TABLE `__new_workspaces` RENAME TO `workspaces`;--> statement-breakpoint
 UPDATE `workspaces`
 SET `generation_settings` = json_remove(`generation_settings`, '$.processing.remote.transcriptionModel', '$.transcription')
 WHERE json_type(`generation_settings`, '$.processing.remote.transcriptionModel') IS NOT NULL
-   OR json_type(`generation_settings`, '$.transcription') IS NOT NULL;--> statement-breakpoint
-PRAGMA foreign_keys=ON;
+   OR json_type(`generation_settings`, '$.transcription') IS NOT NULL;

@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { MeetingSyncService } from "../src/sync/service";
-import { SummaryService } from "../src/summary/service";
+import { SummaryService, summaryJobResponse } from "../src/summary/service";
 import { SummaryWorker } from "../src/summary/node-worker";
 import { SummaryError, summaryDocument, type SummaryMethod } from "../src/summary/model";
 import { collectSummaryInput, createTranscriptSummaryMethod, fingerprint, summaryImageContent } from "../src/summary/transcript";
@@ -740,6 +740,27 @@ function audioMethod(value: Awaited<ReturnType<typeof setup>>, result?: (body: R
 }
 
 describe("audio summary jobs", () => {
+  it("preserves legacy language settings for an already accepted job", async () => {
+    const value = await setup();
+    const raw = new DatabaseSync(value.path);
+    try {
+      await addRecording(value, ["mic"]);
+      const { method, calls } = audioMethod(value);
+      const service = new SummaryService(value.store.sync, [method]);
+      const job = await service.start(owner, value.workspaceId, value.meetingId, await audioRequest(value));
+      const transcription = { localeIdentifier: "ja-JP", automaticLanguageDetection: false,
+        languageScope: "all", languageIdentifiers: [], liveTranscriptDraft: false };
+      raw.prepare("UPDATE jobs_summary SET settings = ? WHERE id = ?")
+        .run(JSON.stringify({ ...job.settings, transcription }), job.id);
+
+      await new SummaryWorker(value.store.summaryJobs, [method], value.sync).processOne();
+
+      expect(JSON.stringify(calls[0])).toContain("The selected spoken language is ja-JP");
+      expect(summaryJobResponse(await service.status(owner, value.workspaceId, value.meetingId, job.id))?.settings)
+        .not.toHaveProperty("transcription");
+    } finally { raw.close(); await value.store.close?.(); }
+  });
+
   it("freezes resolved preferences and recovers accepted requests without model discovery", async () => {
     const value = await setup();
     const { store, workspaceId, meetingId } = value;

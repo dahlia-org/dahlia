@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { z } from "zod";
 import { summaryDocument, summaryResponseSchema } from "../src/summary/model";
+import { storedTranscriptSettingsSchema } from "../src/summary/model";
 import { summaryStartSchema } from "../src/summary/service";
 import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../src/workspace-generation-settings";
 import { uuidV7 } from "../src/id";
@@ -22,6 +23,15 @@ it("excludes transcription overrides structurally from preference inputs while p
   const schema = z.toJSONSchema(summaryStartSchema, { io: "input", unrepresentable: "any" });
   expect(JSON.stringify(schema.anyOf![2]!.properties!.input)).not.toContain('"transcriptionModel"');
   expect(JSON.stringify(schema.anyOf![0]!.properties!.input)).toContain('"transcriptionModel"');
+});
+
+it("retains legacy transcription settings only in stored jobs", () => {
+  const transcription = { localeIdentifier: "ja-JP", automaticLanguageDetection: false,
+    languageScope: "all", languageIdentifiers: [], liveTranscriptDraft: false };
+  expect(storedTranscriptSettingsSchema.parse({
+    model: "gemini", reasoningEffort: "medium", detail: "high", transcription,
+  })).toMatchObject({ transcription });
+  expect(JSON.stringify(z.toJSONSchema(summaryStartSchema, { io: "input", unrepresentable: "any" }))).not.toContain('"transcription"');
 });
 
 it("omits maxItems and accepts arrays beyond every former limit", () => {

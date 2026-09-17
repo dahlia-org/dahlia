@@ -189,8 +189,14 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
           ? { type: "text", text: item.text } : { type: "image_url", image_url: { url: item.image_url } });
         const parameters = { model, stream: false, reasoning_effort: reasoningEffort,
           response_format: { type: "json_schema", json_schema: { name: "meeting_summary", strict: true, schema: z.toJSONSchema(transcriptionOnly ? cloudTranscriptionSchema : job.input ? combinedSummaryResponseSchema : summaryResponseSchema) } } };
+        const transcription = job.settings.transcription;
+        const languageInstruction = !transcription ? "" : transcription.automaticLanguageDetection
+          ? "\nDetect the spoken language for each recording. " + (transcription.languageScope === "selected"
+            ? `Expected languages: ${transcription.languageIdentifiers.join(", ")}. Preserve the original language.` : "Preserve all original languages.")
+          : `\nThe selected spoken language is ${transcription.localeIdentifier}. Preserve the original speech; do not translate the transcript.`;
         const instructions = (transcriptionOnly ? transcriptionInstructions : summaryInstructions(job.outputLanguage, job.settings.detail)
           + (job.input ? "\nReturn both summary and transcription in a single response. " + transcriptionInstructions : ""))
+          + languageInstruction
           + (transcriptionOnly ? "" : "\nSummarize the supplied audio directly. Use recording start times and manifest ranges to align mic/system tracks and screenshots; do not treat parallel tracks as consecutive conversations. Do not invent missing speech. Tags must contain only lowercase ASCII letters, digits and underscores, with at least one letter.");
         if (cloudflare && input.audio.reduce((bytes, audio) => bytes + 4 * Math.ceil(audio.size / 3), 0) > 20_000_000) {
           throw new SummaryError("summary_audio_request_too_large");

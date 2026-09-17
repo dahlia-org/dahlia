@@ -9,16 +9,19 @@ import { normalizeSummaryDetail, summaryDetailSchema, summaryModelSettingsSchema
 export { summaryDetailSchema } from "../workspace-generation-settings";
 export const transcriptSettingsSchema = summaryModelSettingsSchema.extend({ detail: summaryDetailSchema, transcriptionReasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional() });
 // Accepted jobs retain their captured settings across API contract changes.
+const legacyTranscriptionSettingsSchema = z.object({
+  localeIdentifier: z.string(), automaticLanguageDetection: z.boolean(), languageScope: z.string(),
+  languageIdentifiers: z.array(z.string()), liveTranscriptDraft: z.boolean(),
+});
 export const storedTranscriptSettingsSchema = transcriptSettingsSchema.extend({
   detail: z.string().transform(normalizeSummaryDetail).pipe(summaryDetailSchema),
-  transcription: z.object({
-    localeIdentifier: z.string(), automaticLanguageDetection: z.boolean(), languageScope: z.string(),
-    languageIdentifiers: z.array(z.string()), liveTranscriptDraft: z.boolean(),
-  }).optional(),
-}).transform(({ model, reasoningEffort, detail, transcriptionReasoningEffort }) => ({
-  model, reasoningEffort, detail, transcriptionReasoningEffort,
+  transcription: legacyTranscriptionSettingsSchema.optional(),
+}).transform(({ model, reasoningEffort, detail, transcriptionReasoningEffort, transcription }) => ({
+  model, reasoningEffort, detail, transcriptionReasoningEffort, transcription,
 }));
-export type TranscriptSettings = z.infer<typeof transcriptSettingsSchema>;
+export type TranscriptSettings = z.infer<typeof transcriptSettingsSchema> & {
+  transcription?: z.infer<typeof legacyTranscriptionSettingsSchema>;
+};
 const contentVersion = z.string().min(1).max(200);
 export const summaryInputSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("transcript"), version: contentVersion }).strict(),

@@ -11,6 +11,22 @@
             #expect(WorkspaceGenerationSettings().processing.remote.workflow == .combined)
         }
 
+        @Test
+        func legacyTranscriptionSettingsAreDecodedButNotReencoded() throws {
+            let settings = try JSONDecoder().decode(
+                WorkspaceGenerationSettings.self,
+                from: Data("""
+                {"transcription":{"localeIdentifier":"fr_FR","automaticLanguageDetection":true,"languageScope":"selected","languageIdentifiers":["en","fr"],"liveTranscriptDraft":true}}
+                """.utf8)
+            )
+
+            #expect(settings.legacyTranscription?.localeIdentifier == "fr_FR")
+            #expect(settings.legacyTranscription?.automaticLanguageDetection == true)
+            #expect(settings.legacyTranscription?.languageIdentifiers == ["en", "fr"])
+            let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
+            #expect(encoded["transcription"] == nil)
+        }
+
         @Test(arguments: ["local", "admin", "editor", "viewer"])
         func sharedSettingsRequireAdministrationAndQueueAtomically(role: String) async throws {
             let database = try AppDatabaseManager(path: ":memory:")
