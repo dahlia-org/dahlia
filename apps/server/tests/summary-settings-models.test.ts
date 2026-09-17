@@ -335,15 +335,20 @@ it("shows only settings that affect each remote workflow", () => {
     return renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
   };
   const combined = render("combined");
-  expect(combined).toContain("Summarize directly from audio");
+  expect(combined).toContain("Summary method");
+  expect(combined).toContain("Generate directly from audio");
+  expect(combined).toContain("For automatic processing after recording");
   expect(combined).toContain("produces a transcript in the same process");
   expect(combined).toContain("Summary model");
+  expect(combined.indexOf("Summary method")).toBeLessThan(combined.indexOf("Summary model"));
+  expect(combined).not.toContain("Advanced server settings");
   expect(combined).not.toContain("Transcription language");
   expect(combined).not.toContain("Automatic language detection");
   expect(combined).not.toContain("Transcription model");
 
   const twoStage = render("transcribeThenSummarize");
-  expect(twoStage).toContain("Summarize the transcript");
+  expect(twoStage).toContain("Generate from transcript");
+  expect(twoStage).toContain("For automatic processing after recording");
   expect(twoStage).toContain("transcribes the audio first");
   expect(twoStage).not.toContain("Summary model");
   expect(twoStage).not.toContain("Reasoning effort");
