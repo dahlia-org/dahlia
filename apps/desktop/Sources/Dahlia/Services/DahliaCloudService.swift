@@ -1,5 +1,6 @@
 import AppKit
 import CryptoKit
+import DahliaRuntimeSupport
 import DahliaServerAPI
 import Foundation
 import Network
@@ -89,8 +90,11 @@ struct DahliaCloudCredentialStorage: Sendable {
     let save: @Sendable (DahliaCloudCredential) throws -> Void
     let delete: @Sendable () throws -> Void
 
-    static func keychain(connectionID: UUID) -> Self {
-        let key = "dahliaCloudOAuthCredential.\(connectionID.uuidString.lowercased())"
+    static func keychain(
+        connectionID: UUID,
+        profile: DahliaRuntimeProfile = DahliaApplicationSupport.profile()
+    ) -> Self {
+        let key = keychainKey(connectionID: connectionID, profile: profile)
         return Self(
             load: {
                 guard let value = KeychainService.load(key: key),
@@ -109,6 +113,14 @@ struct DahliaCloudCredentialStorage: Sendable {
                 try KeychainService.deleteOrThrow(key: key)
             }
         )
+    }
+
+    static func keychainKey(connectionID: UUID, profile: DahliaRuntimeProfile) -> String {
+        var prefix = "dahliaCloudOAuthCredential"
+        if profile == .development {
+            prefix += ".development"
+        }
+        return "\(prefix).\(connectionID.uuidString.lowercased())"
     }
 
     static func deleteLegacyCredential() async {

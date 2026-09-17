@@ -72,6 +72,12 @@ swift build && swift run Dahlia
 # 前回選んだ設定カテゴリを開く（開発版のみ）
 ./scripts/run-dev.sh --settings
 
+# 開発プロファイルのDBを新規作成して起動
+./scripts/run-dev.sh --reset
+
+# 本番SQLiteを開発プロファイルへコピーして起動
+./scripts/run-dev.sh --copy-production
+
 # 署名付きアプリの更新だけを行い、起動しない
 ./scripts/run-dev.sh --build-only
 
@@ -96,6 +102,8 @@ swift test
 > **注意:** `swift run Dahlia` には同梱 Codex ヘルパーがなく、Data Protection Keychain も使用できません。フル機能には `run-dev.sh` を使用してください。`run-dev.sh` は共有開発プロファイル `~/Library/Application Support/Dahlia-Development` を使用し、DB、録音復旧ファイル、Codex 状態、プロセスロックを正アプリから分離します。`run-dev.sh` で起動する開発版同士はこのプロファイルを共有します。アプリバンドル用スクリプトの初回実行時は、固定した Codex の公式 GitHub Release を `aarch64-apple-darwin` 向けに取得し、SHA-256 を検証して `.build` 配下へキャッシュします。
 
 `run-dev.sh` は内容ベースのキャッシュを `.build/run-dev` に保存します。変更がなければ署名済みアプリを再利用し、Swift 実行ファイルだけが変わった場合は同梱資材を保ってアプリだけを再署名します。資材・署名設定の変更、バンドルの欠損・改変時は完全に組み立て直し、どの経路でも起動前に署名を検証します。更新対象の開発版が動作中なら停止するため、録音を終了してアプリを閉じてから再実行してください。`--settings` は初回セットアップ完了後に保存済みの設定カテゴリを開きます。会議選択や編集中の内容を復元するオプションではありません。
+
+`--reset` は開発プロファイルの `dahlia.sqlite`、`-wal`、`-shm` だけを削除します。`--copy-production`（または `--copy`）は本番DBをWAL対応のSQLiteバックアップで複製・検査し、同じ開発用3ファイルを置換してから、通常のアプリ起動でマイグレーションを実行します。本番の録音、ファイル、認証、設定はコピーしません。開発プロファイルは別のKeychain namespaceを使うため、コピーされたアカウント接続はサインアウト状態で起動します。これらのオプションは `--build-only` と併用できません。
 
 `build-app.sh`、`notarize.sh`、または `run-dev.sh` の実行前に `SENTRY_DSN` を設定すると、生成されるアプリの `Info.plist` に DSN を埋め込み、Sentry を有効化できます。Debug イベントには `debug` environment を付与します。明示的に DSN を設定していない `swift run Dahlia` と `run-dev.sh` は Sentry イベントを送信しません。
 

@@ -105,7 +105,7 @@ swift test
 
 `run-dev.sh` stores a content-based cache in `.build/run-dev`. With no changes it reuses the signed app; when only the Swift executable changes it retains support assets and re-signs only the app. Changes to support assets or signing configuration, or a missing/modified bundle, trigger a full assembly. Every path verifies the signature before launch. Updating a running development app is refused: finish recording and quit that app before retrying. After initial setup, `--settings` opens the saved settings category; it does not restore meeting selection or unfinished edits.
 
-`--reset` removes only the development profile's `dahlia.sqlite`, `-wal`, and `-shm` files. `--copy-production` (or `--copy`) makes a WAL-safe SQLite backup of the production database, validates it, replaces those same development files, and lets normal app startup run migrations. Production recordings, files, authentication, and settings are not copied. These options cannot be combined with `--build-only`.
+`--reset` removes only the development profile's `dahlia.sqlite`, `-wal`, and `-shm` files. `--copy-production` (or `--copy`) makes a WAL-safe SQLite backup of the production database, validates it, replaces those same development files, and lets normal app startup run migrations. Production recordings, files, authentication, and settings are not copied; the development profile uses a separate Keychain namespace and starts copied account connections signed out. These options cannot be combined with `--build-only`.
 
 The lint script and pre-commit hook use the exact SwiftFormat version managed by the independent `apps/desktop/BuildTools` Swift package. SwiftPM resolves and caches the tool separately from the app's dependencies.
 
