@@ -235,7 +235,7 @@ describe("deployment routing", () => {
     const resource = readText("../../../deploy/databricks/resources/dahlia_server.yml");
     const hindsight = readText("../../../deploy/databricks/resources/hindsight.app.yml");
     expect(resource).toMatch(/name: DAHLIA_AUTH_PROVIDER_ID\s+value: databricks/);
-    expect(resource).toMatch(/name: DAHLIA_SIGNOUT_URL\s+value: \/\.auth\/logout/);
+    expect(resource).toMatch(/name: DAHLIA_SIGNOUT_URL\s+value: \/\.auth\/sign_out/);
     const serverPackage = JSON.parse(readText("../package.json")) as {
       exports: Record<string, unknown>;
       name: string;
