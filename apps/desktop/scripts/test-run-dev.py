@@ -2,9 +2,11 @@
 """Exercise development packaging with tiny payloads and fake signing/build tools."""
 
 import importlib.util
+import hashlib
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -80,6 +82,17 @@ esac
     write(tools / "sips", '#!/bin/bash\necho sips >> "$DEV_TEST_LOG"\necho icon > "${@: -1}"\n', True)
     write(tools / "iconutil", '#!/bin/bash\necho icon > "${@: -1}"\n', True)
     write(tools / "xattr", '#!/bin/bash\nexit 0\n', True)
+    write(tools / "sqlite3", '''#!/bin/bash
+if [[ "${DEV_TEST_REQUIRE_LOCK:-0}" = 1 && ! -d "$PWD/.build/run-dev/lock" ]]; then
+    echo "run-dev lock missing during SQLite preparation" >&2
+    exit 1
+fi
+if [[ "${DEV_TEST_QUICK_CHECK_FAIL:-0}" = 1 && "$*" = *"PRAGMA quick_check"* ]]; then
+    echo corrupt
+    exit 0
+fi
+exec /usr/bin/sqlite3 "$@"
+''', True)
 
     executable = root / ".build/debug/Dahlia"
     write(executable, "#!/bin/bash\nexit 0\n", True)
@@ -110,9 +123,9 @@ esac
     log = root / "calls.log"
     environment = dict(os.environ, PATH=f"{tools}:{os.environ['PATH']}", CODESIGN_IDENTITY="-", DEV_TEST_LOG=str(log))
 
-    def run(expected, success=True, **overrides):
+    def run(expected, success=True, arguments=("--build-only",), **overrides):
         log.write_text("")
-        result = subprocess.run(["bash", str(scripts / "run-dev.sh"), "--build-only"],
+        result = subprocess.run(["bash", str(scripts / "run-dev.sh"), *arguments],
                                 env=environment | overrides, text=True, capture_output=True)
         assert (result.returncode == 0) == success, result.stdout + result.stderr
         assert expected in result.stdout + result.stderr, result.stdout + result.stderr
@@ -163,10 +176,69 @@ esac
     run("Updating Dahlia executable")
     run("must contain only arm64", success=False, DEV_TEST_ARCH="x86_64")
 
+    application_support = root / "Application Support"
+    production_db = application_support / "Dahlia/dahlia.sqlite"
+    qa_dir = application_support / "Dahlia-Development"
+    qa_db = qa_dir / "dahlia.sqlite"
+    qa_database_files = (qa_db, Path(f"{qa_db}-wal"), Path(f"{qa_db}-shm"))
+    qa_dir.mkdir(parents=True)
+    production_db.parent.mkdir(parents=True)
+    production = sqlite3.connect(production_db)
+    production.execute("PRAGMA journal_mode = WAL")
+    production.execute("PRAGMA wal_autocheckpoint = 0")
+    production.execute("CREATE TABLE copied(value TEXT NOT NULL)")
+    production.execute("INSERT INTO copied VALUES ('from production WAL')")
+    production.commit()
+    assert Path(f"{production_db}-wal").exists(), "production fixture must exercise WAL backup"
+    snapshot_dir = root / "snapshots"
+    snapshot_dir.mkdir()
+    qa_environment = {
+        "DAHLIA_APPLICATION_SUPPORT_DIR": str(application_support),
+        "TMPDIR": str(snapshot_dir),
+    }
+
+    for database_file in qa_database_files:
+        write(database_file, "old QA")
+    write(qa_dir / "BatchAudio/recording.caf", "audio")
+    write(qa_dir / "FileStore/file", "file")
+    write(qa_dir / "settings", "settings")
+    run("Running Dahlia", arguments=("--reset", "--settings"), **qa_environment)
+    for database_file in qa_database_files:
+        assert not database_file.exists(), f"reset left {database_file.name}"
+    for relative in ("BatchAudio/recording.caf", "FileStore/file", "settings"):
+        assert (qa_dir / relative).exists(), f"reset removed {relative}"
+
+    run("Running Dahlia", arguments=("--copy-production",),
+        DEV_TEST_REQUIRE_LOCK="1", **qa_environment)
+    qa_connection = sqlite3.connect(qa_db)
+    assert qa_connection.execute("SELECT value FROM copied").fetchone() == ("from production WAL",)
+    qa_connection.close()
+    production_hash = hashlib.sha256(qa_db.read_bytes()).digest()
+    run("Running Dahlia", arguments=("--copy",), **qa_environment)
+    assert hashlib.sha256(qa_db.read_bytes()).digest() == production_hash, "copy aliases differ"
+
+    for database_file in qa_database_files:
+        write(database_file, "preserve QA")
+    before_failure = {path: path.read_bytes() for path in qa_database_files}
+    run("failed quick_check", success=False, arguments=("--copy",),
+        DEV_TEST_QUICK_CHECK_FAIL="1", **qa_environment)
+    for path, contents in before_failure.items():
+        assert path.read_bytes() == contents, "failed inspection changed QA"
+
+    with qa_db.open():
+        run("development database is in use", success=False, arguments=("--reset",), **qa_environment)
+        run("development database is in use", success=False, arguments=("--copy",), **qa_environment)
+    leaked_snapshots = list(snapshot_dir.glob("dahlia-production.*"))
+    assert not leaked_snapshots, f"failed copy leaked a production snapshot: {leaked_snapshots}"
+
+    for arguments in (("--build-only", "--reset"), ("--build-only", "--copy"), ("--reset", "--copy")):
+        run("cannot be combined", success=False, arguments=arguments, **qa_environment)
+    production.close()
+
 
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory(prefix="dahlia-dev-tests-") as directory:
         root = Path(directory)
         check_fingerprints(root)
         check_packaging(root / "repo with spaces")
-    print("Development build tests passed (fingerprints, reuse, UI edits, invalidation, signing failures, running app)")
+    print("Development build tests passed (packaging, QA reset, production copy, validation, conflicts)")
