@@ -127,9 +127,11 @@ else
     fingerprint "${HELPER_INPUTS[@]}" > "${CACHE_DIR}/helper.inputs"
 fi
 CODEX_VERSION="$(bash "${SCRIPT_DIR}/build-codex.sh" --print-version)"
-swift build --arch arm64
+# The current Swift Build engine flattens static XCFramework headers into one directory,
+# so DahliaAEC3 and DahliaLindera both try to produce include/module.modulemap.
+swift build --build-system native --arch arm64
 
-BUILD_DIR="$(swift build --arch arm64 --show-bin-path)"
+BUILD_DIR="$(swift build --build-system native --arch arm64 --show-bin-path)"
 APP_BUNDLE="${APP_NAME}.app"
 CONTENTS="${APP_BUNDLE}/Contents"
 MACOS="${CONTENTS}/MacOS"
