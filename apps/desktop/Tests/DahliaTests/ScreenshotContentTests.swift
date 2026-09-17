@@ -23,8 +23,8 @@
             #expect(ScreenshotOCRState.processing.limitingRemoteWait(to: .seconds(300)) == .processing)
         }
 
-        // swiftlint:disable:next function_body_length
         @Test(.timeLimit(.minutes(1)), arguments: ["retry", "checksum"])
+        // swiftlint:disable:next function_body_length
         func rawFileUploadPreservesTheQueuedTransactionAcrossRetries(firstFailure: String) async throws {
             let fixture = try ScreenshotContentFixture()
             let fileStore = try await ScreenshotContentProvider.shared.fileStore(for: fixture.dbQueue)
