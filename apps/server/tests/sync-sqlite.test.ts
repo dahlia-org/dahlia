@@ -53,8 +53,7 @@ describe("SQLite canonical sync", () => {
       const initial = await store.sync.withIdentity(owner, (scoped) => scoped.getWorkspace(workspaceId));
       expect(initial?.generationSettings).toEqual(DEFAULT_WORKSPACE_GENERATION_SETTINGS);
       const settings = { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, outputLanguage: "fr" as const,
-        local: { model: "shared-local", reasoningEffort: "high" as const }, automaticProcessing: false,
-        transcription: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.transcription, localeIdentifier: "fr-FR", automaticLanguageDetection: true } };
+        local: { model: "shared-local", reasoningEffort: "high" as const }, automaticProcessing: false };
       const transaction = wire([{ entity: "workspace", action: "update", entityId: workspaceId,
         baseRevision: initial!.revision!, data: { name: initial!.name, generationSettings: settings } }]);
       const receipt = await service.commitTransaction(owner, transaction);
@@ -87,8 +86,8 @@ describe("SQLite canonical sync", () => {
       for (const patch of [{ outputLanguage: "xx" }, { local: { model: "", reasoningEffort: "high" } },
         { local: { model: "model", reasoningEffort: "unknown" } }, { processing: { location: "remote", remote: { workflow: "invalid" } } },
         { automaticProcessing: "yes" },
-        { transcription: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.transcription, localeIdentifier: "ignore instructions" } },
-        { transcription: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.transcription, automaticLanguageDetection: true, languageScope: "selected", languageIdentifiers: [] } },
+        { transcription: { localeIdentifier: "ja-JP", automaticLanguageDetection: false,
+          languageScope: "all", languageIdentifiers: [], liveTranscriptDraft: false } },
         { extra: true }]) {
         await expect(service.commitTransaction(owner, wire([{ entity: "workspace", action: "update", entityId: workspaceId,
           baseRevision: 1, data: { name: "Workspace", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, ...patch } } }]))).rejects.toMatchObject({ status: 400 });

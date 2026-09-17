@@ -26,27 +26,17 @@ const modelPreference = z.string().trim().min(1).max(200);
 export const remoteProcessingSchema = z.object({
   workflow: z.enum(["transcribeThenSummarize", "combined"]),
   summaryModel: modelPreference.optional(),
-  transcriptionModel: modelPreference.optional(),
   reasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional(),
 }).strict();
 export const processingSchema = z.object({ location: summaryModeSchema, remote: remoteProcessingSchema }).strict();
 const summarySchema = z.object({ style: summaryStyleSchema }).strict();
-export const transcriptionSettingsSchema = z.object({
-    localeIdentifier: z.string().max(100).regex(/^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$/),
-    automaticLanguageDetection: z.boolean(),
-    languageScope: z.enum(["all", "selected"]),
-    languageIdentifiers: z.array(z.string().regex(/^[a-z]{2,3}(?:-[A-Z][a-z]{3})?$/)).max(200),
-    liveTranscriptDraft: z.boolean(),
-}).strict().refine((value) => !value.automaticLanguageDetection || value.languageScope === "all" || value.languageIdentifiers.length > 0,
-  { message: "Select at least one language for automatic detection", path: ["languageIdentifiers"] });
-export const generationPreferencesSchema = z.object({ outputLanguage: outputLanguageSchema, processing: processingSchema, summary: summarySchema, transcription: transcriptionSettingsSchema }).strict();
+export const generationPreferencesSchema = z.object({ outputLanguage: outputLanguageSchema, processing: processingSchema, summary: summarySchema }).strict();
 
 export type GenerationPreferences = z.infer<typeof generationPreferencesSchema>;
 export const DEFAULT_GENERATION_PREFERENCES: GenerationPreferences = {
   outputLanguage: "ja",
-  processing: { location: "local", remote: { workflow: "transcribeThenSummarize" } },
+  processing: { location: "local", remote: { workflow: "combined" } },
   summary: { style: "detailed" },
-  transcription: { localeIdentifier: "ja-JP", automaticLanguageDetection: false, languageScope: "all", languageIdentifiers: [], liveTranscriptDraft: false },
 };
 export const workspaceGenerationSettingsSchema = generationPreferencesSchema.extend({
   local: summaryModelSettingsSchema,

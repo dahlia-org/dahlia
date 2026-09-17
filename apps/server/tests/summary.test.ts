@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { MeetingSyncService } from "../src/sync/service";
-import { SummaryService } from "../src/summary/service";
+import { SummaryService, summaryJobResponse } from "../src/summary/service";
 import { SummaryWorker } from "../src/summary/node-worker";
 import { SummaryError, summaryDocument, type SummaryMethod } from "../src/summary/model";
 import { collectSummaryInput, createTranscriptSummaryMethod, fingerprint, summaryImageContent } from "../src/summary/transcript";
@@ -740,6 +740,27 @@ function audioMethod(value: Awaited<ReturnType<typeof setup>>, result?: (body: R
 }
 
 describe("audio summary jobs", () => {
+  it("preserves legacy language settings for an already accepted job", async () => {
+    const value = await setup();
+    const raw = new DatabaseSync(value.path);
+    try {
+      await addRecording(value, ["mic"]);
+      const { method, calls } = audioMethod(value);
+      const service = new SummaryService(value.store.sync, [method]);
+      const job = await service.start(owner, value.workspaceId, value.meetingId, await audioRequest(value));
+      const transcription = { localeIdentifier: "ja-JP", automaticLanguageDetection: false,
+        languageScope: "all", languageIdentifiers: [], liveTranscriptDraft: false };
+      raw.prepare("UPDATE jobs_summary SET settings = ? WHERE id = ?")
+        .run(JSON.stringify({ ...job.settings, transcription }), job.id);
+
+      await new SummaryWorker(value.store.summaryJobs, [method], value.sync).processOne();
+
+      expect(JSON.stringify(calls[0])).toContain("The selected spoken language is ja-JP");
+      expect(summaryJobResponse(await service.status(owner, value.workspaceId, value.meetingId, job.id))?.settings)
+        .not.toHaveProperty("transcription");
+    } finally { raw.close(); await value.store.close?.(); }
+  });
+
   it("freezes resolved preferences and recovers accepted requests without model discovery", async () => {
     const value = await setup();
     const { store, workspaceId, meetingId } = value;
@@ -853,7 +874,7 @@ describe("audio summary jobs", () => {
       }));
       vi.spyOn(sync, "readFileContent").mockResolvedValue({ file: {} as never, upstream: new Response(new Uint8Array([1])), contentType: "image/webp" });
       await updateGenerationSettings(store, owner, workspaceId, { summary: { style: "standard" }, processing: { location: "remote", remote: {
-        summaryModel: "system.ai.gemini-3-8-flash", transcriptionModel: null,
+        summaryModel: "system.ai.gemini-3-8-flash",
       } } });
       const { method, calls } = audioMethod(value);
       const service = new SummaryService(store.sync, [method]);
@@ -982,7 +1003,7 @@ describe("audio summary jobs", () => {
     try {
       await addRecording(value, ["mic"]);
       const read = vi.spyOn(sync, "recordingContent");
-      await updateGenerationSettings(store, owner, workspaceId, { processing: { location: "remote", remote: { summaryModel: model, transcriptionModel: null } } });
+      await updateGenerationSettings(store, owner, workspaceId, { processing: { location: "remote", remote: { summaryModel: model } } });
       const { method, calls } = audioMethod(value, undefined, ["system.ai.gemini-3-8-flash", "system.ai.gpt-5-6-terra", "codex-auto-review"]);
       const service = new SummaryService(store.sync, [method]);
       await expect(service.start(owner, workspaceId, meetingId, await audioRequest(value)))
@@ -999,7 +1020,7 @@ describe("audio summary jobs", () => {
         id: uuidV7(), entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 0,
         data: { title: "Manual", document: JSON.stringify({ ...doc(), title: "Manual" }), createdAt: new Date().toISOString() },
       }] });
-      await updateGenerationSettings(store, owner, workspaceId, { processing: { location: "remote", remote: { transcriptionModel: null } } });
+      await updateGenerationSettings(store, owner, workspaceId, { processing: { location: "remote" } });
       const { method } = audioMethod(value, () => {
         if (scenario === "size") return new Response(null, { status: 413 });
         if (scenario === "invalid") return Response.json({ choices: [{ finish_reason: "stop", message: { content: "not-json" } }] });
@@ -1087,9 +1108,11 @@ describe("staged summary generation", () => {
       const settings = await generationSettings(store, owner, workspaceId) ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS;
       const preferencesWithoutLanguage = { processing: settings.processing, summary: settings.summary,
         outputLanguage: settings.outputLanguage };
-      await expect(service.start(owner, workspaceId, meetingId, {
+      const withoutLanguage = await service.start(owner, workspaceId, meetingId, {
         id: uuidV7(), input: await recordingInput(value), preferences: preferencesWithoutLanguage,
-      })).rejects.toMatchObject({ code: "invalid_summary_request" });
+      });
+      expect(withoutLanguage.settings).not.toHaveProperty("transcription");
+      await service.cancel(owner, workspaceId, meetingId, withoutLanguage.id);
       const job = await service.start(owner, workspaceId, meetingId, {
         id: uuidV7(), input: { ...await recordingInput(value), transcriptionOnly: true },
         preferences: preferencesWithoutLanguage,

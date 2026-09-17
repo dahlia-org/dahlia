@@ -1272,7 +1272,6 @@ final class CaptionViewModel: ObservableObject {
             sessionId: sessionId,
             suggestedLocaleIdentifier: transcriptionLocale,
             dbQueue: dbQueue,
-            workspaceSettings: details.workspace?.generationSettings,
             confirmationSessionIds: sessionIds
         )
         pendingBatchTranscriptionConfirmation = BatchTranscriptionConfirmation(
@@ -1306,10 +1305,10 @@ final class CaptionViewModel: ObservableObject {
                 supportedLocales: supportedLocales
             )
         }
-        let settings = WorkspaceAISettingsModel.shared.generationSettings.transcription
+        let settings = AppSettings.shared
         return BatchLanguageDetectionCandidateResolver.candidates(
-            scope: settings.languageScope,
-            enabledLocaleIdentifiers: Set(settings.languageIdentifiers),
+            scope: settings.appLanguageScope,
+            enabledLocaleIdentifiers: settings.enabledLanguageIdentifiers,
             supportedLocales: supportedLocales
         )
     }
@@ -3679,9 +3678,17 @@ final class CaptionViewModel: ObservableObject {
         let generationSettings = SummaryGenerationSettings.current(detailLevel: options.detailLevel, workspace: workspace)
         let method: RecordingProcessingMethod = workspace.accountConnectionId != nil && preferences.processing.location == .remote
             ? (preferences.processing.remote.workflow == .combined ? .audio : .cloudTranscription) : .transcript
+        let localSettings = AppSettings.shared
+        let languageCandidates = BatchLanguageDetectionCandidateResolver.candidates(
+            scope: localSettings.appLanguageScope,
+            enabledLocaleIdentifiers: localSettings.enabledLanguageIdentifiers,
+            supportedLocales: supportedLocales
+        ).snapshot
         return RecordingProcessing(
             id: .v7(), automatic: preferences.automaticProcessing,
             liveDraft: plan.liveTranscriptDraftEnabled, localeIdentifier: locale.identifier,
+            automaticLanguageDetection: localSettings.automaticTranscriptionLanguageDetectionEnabled,
+            automaticLanguageCandidates: languageCandidates,
             method: method, options: options, generationSettings: generationSettings,
             workspaceSettings: preferences, summaryMode: workspace.accountConnectionId == nil ? .local : .remote
         )
@@ -3757,14 +3764,13 @@ final class CaptionViewModel: ObservableObject {
             guard let workspace = try await dbQueue.read({ db in try WorkspaceRecord.fetchOne(db, key: workspaceId) }) else {
                 throw SummaryGenerationPreparationError.meetingUnavailable
             }
-            let transcription = workspace.generationSettings.transcription
             var transcriptionPlan = TranscriptionSessionPlan(
                 finalMode: transcriptionMode,
                 liveSubtitlesEnabled: AppSettings.shared.liveSubtitleOverlayEnabled,
-                liveTranscriptDraftEnabled: transcription.liveTranscriptDraft
+                liveTranscriptDraftEnabled: AppSettings.shared.liveTranscriptDraftEnabled
             )
             let finalTranscriptionLocale = Locale(identifier: Self.resolvedSupportedLocaleIdentifier(
-                preferredIdentifier: transcription.localeIdentifier, supportedLocales: supportedLocales
+                preferredIdentifier: AppSettings.shared.transcriptionLocale, supportedLocales: supportedLocales
             ))
             let liveRecognitionLocale = resolvedLiveRecognitionLocale(mode: transcriptionMode)
             prepareActiveTranscriptionPlan(transcriptionPlan, sessionID: recordingSessionId)
@@ -4205,8 +4211,7 @@ final class CaptionViewModel: ObservableObject {
         let preferences = batchConfirmationPreferences(
             sessionId: sessionId,
             suggestedLocaleIdentifier: suggestedLocaleIdentifier,
-            dbQueue: dbQueue,
-            workspaceSettings: details.workspace?.generationSettings
+            dbQueue: dbQueue
         )
         pendingBatchTranscriptionConfirmation = BatchTranscriptionConfirmation(
             sessionId: sessionId,
@@ -4227,7 +4232,6 @@ final class CaptionViewModel: ObservableObject {
         sessionId: UUID,
         suggestedLocaleIdentifier: String,
         dbQueue: DatabaseQueue?,
-        workspaceSettings: WorkspaceGenerationSettings?,
         confirmationSessionIds: [UUID]? = nil
     ) -> (
         localeIdentifier: String,
@@ -4301,14 +4305,12 @@ final class CaptionViewModel: ObservableObject {
             )
         }
         let captured = session.processingJSON.flatMap { try? JSONDecoder().decode(RecordingProcessing.self, from: Data($0.utf8)) }
+        let legacyTranscription = captured?.workspaceSettings?.legacyTranscription
         let preservesStoredSelection = session.isBatchRetranscriptionPending
             || (session.batchLastError?.nilIfBlank != nil && session.batchAttemptCount > 0)
-        let transcription = confirmationSessionIds != nil && !preservesStoredSelection
-            ? workspaceSettings?.transcription
-            : captured?.workspaceSettings?.transcription
         let localeIdentifier = preservesStoredSelection
             ? session.batchSelectedLocaleIdentifier ?? stored.1 ?? suggestedLocaleIdentifier
-            : transcription?.localeIdentifier ?? stored.1 ?? suggestedLocaleIdentifier
+            : captured?.localeIdentifier ?? stored.1 ?? suggestedLocaleIdentifier
         let languageSelection: BatchTranscriptionLanguageSelection = if preservesStoredSelection {
             if session.batchLanguageDetectionMode == .automatic {
                 .automatic
@@ -4317,7 +4319,8 @@ final class CaptionViewModel: ObservableObject {
             } else {
                 .manual(localeIdentifier: localeIdentifier)
             }
-        } else if transcription?.automaticLanguageDetection == true {
+        } else if confirmationSessionIds == nil,
+                  (captured?.automaticLanguageDetection ?? legacyTranscription?.automaticLanguageDetection) == true {
             .automatic
         } else if stored.2 > 1 {
             .recorded
@@ -4326,13 +4329,22 @@ final class CaptionViewModel: ObservableObject {
         }
         let storedCandidates = preservesStoredSelection ? session.batchAutomaticLanguageCandidatesJSON
             .flatMap { try? BatchLanguageDetectionCandidateSnapshot.decode($0) } : nil
-        let automaticLanguageCandidateSnapshot = storedCandidates ?? (transcription ?? workspaceSettings?.transcription).map { settings in
-            BatchLanguageDetectionCandidateResolver.candidates(
-                scope: settings.languageScope,
-                enabledLocaleIdentifiers: Set(settings.languageIdentifiers),
-                supportedLocales: supportedLocales
-            ).snapshot
-        }
+        let localSettings = AppSettings.shared
+        let currentCandidates = BatchLanguageDetectionCandidateResolver.candidates(
+            scope: localSettings.appLanguageScope,
+            enabledLocaleIdentifiers: localSettings.enabledLanguageIdentifiers,
+            supportedLocales: supportedLocales
+        ).snapshot
+        let automaticLanguageCandidateSnapshot = storedCandidates
+            ?? (confirmationSessionIds == nil ? captured?.automaticLanguageCandidates : nil)
+            ?? (confirmationSessionIds == nil ? legacyTranscription.map { settings in
+                BatchLanguageDetectionCandidateResolver.candidates(
+                    scope: settings.languageScope,
+                    enabledLocaleIdentifiers: Set(settings.languageIdentifiers),
+                    supportedLocales: supportedLocales
+                ).snapshot
+            } : nil)
+            ?? currentCandidates
         return (localeIdentifier, languageSelection, automaticLanguageCandidateSnapshot)
     }
 

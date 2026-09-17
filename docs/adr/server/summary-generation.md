@@ -52,7 +52,7 @@ Server transcript には Desktop の session ID / 累積 offset がないため�
 
 モデル候補は Desktop/Web とも `/api/v1/models` の同じ一覧を使う。Databricks の要約SP呼び出しは `system.ai.*` の完全修飾モデル名を設定と Gateway から受け取り、そのまま上流へ渡す。失敗はworkerで内容・認証情報を含めず記録し、`summary_input_changed` は画面で入力更新による失敗として示す。
 
-機能検出は `GET /api/v1/capabilities` の `meetingSummaryGeneration: { version, sources }` に統合する。生成capabilityはversion 2とし、登録済み方式から sources を導出する。未対応はキーを省略し、capabilities 自体が空の場合も未対応とする。PATCHは指定した葉だけ更新し、remoteのsummaryModel・transcriptionModel・reasoningEffortはnullで自動へ戻す。開始済みジョブの設定スナップショットは変更しない。`outputLanguage` はアカウント設定直下に維持する。
+機能検出は `GET /api/v1/capabilities` の `meetingSummaryGeneration: { version, sources }` に統合する。生成capabilityはversion 2とし、登録済み方式から sources を導出する。未対応はキーを省略し、capabilities 自体が空の場合も未対応とする。PATCHは指定した葉だけ更新し、remoteのsummaryModel・reasoningEffortはnullで自動へ戻す。Server文字起こしモデルは保存せずGeminiを自動選択し、二段階処理の要約モデルは文字起こし要約への対応を独立に検証して自動選択する。開始済みジョブの設定スナップショットは変更しない。`outputLanguage` はアカウント設定直下に維持する。
 
 Desktop の設定キャッシュが未取得のときは詳細度 override を送らず、Server のアカウント既定値を使う。確認画面で明示選択した詳細度は維持する。canonical 要約の新しい版を受け取ったら古いエクスポート参照を無効化するが、同じ版の再取得・キャッシュ解放では保持する。出力先のファイル自体は削除しない。
 

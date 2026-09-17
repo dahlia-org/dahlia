@@ -570,7 +570,7 @@ CREATE TABLE `workspaces` (
 	`workspace_id` text PRIMARY KEY,
 	`organization_id` text NOT NULL,
 	`created_by` text NOT NULL,
-	`generation_settings` text DEFAULT '{"outputLanguage":"ja","processing":{"location":"local","remote":{"workflow":"transcribeThenSummarize"}},"summary":{"style":"detailed"},"transcription":{"localeIdentifier":"ja-JP","automaticLanguageDetection":false,"languageScope":"all","languageIdentifiers":[],"liveTranscriptDraft":false},"local":{"model":"gpt-5.6-luna","reasoningEffort":"high"},"automaticProcessing":true}' NOT NULL,
+	`generation_settings` text DEFAULT '{"outputLanguage":"ja","processing":{"location":"local","remote":{"workflow":"combined"}},"summary":{"style":"detailed"},"local":{"model":"gpt-5.6-luna","reasoningEffort":"high"},"automaticProcessing":true}' NOT NULL,
 	`name` text NOT NULL,
 	`icon` text,
 	`color` text,

@@ -11,7 +11,7 @@ const preferencesInputSchema = z.discriminatedUnion("type", [
   summaryInputSchema.options[0],
   summaryInputSchema.options[1].omit({ transcriptionModel: true }),
 ]);
-const requestPreferencesSchema = generationPreferencesSchema.partial({ transcription: true });
+const requestPreferencesSchema = generationPreferencesSchema;
 export const summaryStartSchema = z.union([
   z.object({ id: z.uuidv7().meta({ format: "uuidv7" }), input: summaryInputSchema, model: z.string().trim().min(1).max(200),
     detail: summaryDetailSchema, outputLanguage: outputLanguageSchema,
@@ -103,11 +103,6 @@ export class SummaryService {
     if (input?.type === "recording" && input.transcriptionOnly === true && !("preferences" in request)) {
       throw new RequestError(400, "invalid_summary_request");
     }
-    if ("preferences" in request
-      && !(input?.type === "recording" && input.transcriptionOnly === true)
-      && request.preferences.transcription === undefined) {
-      throw new RequestError(400, "invalid_summary_request");
-    }
     const requestHash = "preferences" in request ? JSON.stringify({ workspaceId, meetingId, input, preferences: request.preferences }) : JSON.stringify({ workspaceId, meetingId,
       ...("input" in request ? { input: request.input, model: request.model, detail: request.detail,
         reasoningEffort: request.reasoningEffort ?? null } : { detail: request.detail ?? null }),
@@ -137,7 +132,7 @@ export class SummaryService {
             summaryModel: request.model,
             ...(request.reasoningEffort === undefined ? {} : { reasoningEffort: request.reasoningEffort }),
             ...(input?.type === "recording" && input.transcriptionModel
-              ? { workflow: "transcribeThenSummarize" as const, transcriptionModel: input.transcriptionModel }
+              ? { workflow: "transcribeThenSummarize" as const }
               : { workflow: "combined" as const }),
           } },
         } : settings;
@@ -193,7 +188,9 @@ export class SummaryService {
 export function summaryJobResponse(job: SummaryJob | null) {
   if (!job) return null;
   const { id, method, input, stage, transcriptResult, settings, outputLanguage, status, attempts, createdAt, lastErrorCode } = job;
-  return { id, method, ...(input ? { input } : {}), stage, transcriptResult, settings, outputLanguage, status, attempts, createdAt, error: lastErrorCode };
+  const publicSettings = { ...settings };
+  delete publicSettings.transcription;
+  return { id, method, ...(input ? { input } : {}), stage, transcriptResult, settings: publicSettings, outputLanguage, status, attempts, createdAt, error: lastErrorCode };
 }
 
 // Old accepted requests keep their identity when the detail vocabulary changes.

@@ -1201,7 +1201,6 @@ export interface components {
                         /** @enum {string} */
                         workflow: "transcribeThenSummarize" | "combined";
                         summaryModel?: string;
-                        transcriptionModel?: string;
                         /** @enum {string} */
                         reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                     };
@@ -1209,14 +1208,6 @@ export interface components {
                 summary: {
                     /** @enum {string} */
                     style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
-                };
-                transcription: {
-                    localeIdentifier: string;
-                    automaticLanguageDetection: boolean;
-                    /** @enum {string} */
-                    languageScope: "all" | "selected";
-                    languageIdentifiers: string[];
-                    liveTranscriptDraft: boolean;
                 };
                 local: {
                     model: string;
@@ -1568,7 +1559,6 @@ export interface components {
                         /** @enum {string} */
                         workflow: "transcribeThenSummarize" | "combined";
                         summaryModel?: string;
-                        transcriptionModel?: string;
                         /** @enum {string} */
                         reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                     };
@@ -1576,14 +1566,6 @@ export interface components {
                 summary: {
                     /** @enum {string} */
                     style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
-                };
-                transcription: {
-                    localeIdentifier: string;
-                    automaticLanguageDetection: boolean;
-                    /** @enum {string} */
-                    languageScope: "all" | "selected";
-                    languageIdentifiers: string[];
-                    liveTranscriptDraft: boolean;
                 };
                 local: {
                     model: string;
@@ -1983,14 +1965,6 @@ export interface components {
                 reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                 /** @enum {string} */
                 detail: "low" | "medium" | "high" | "xhigh" | "max";
-                transcription?: {
-                    localeIdentifier: string;
-                    automaticLanguageDetection: boolean;
-                    /** @enum {string} */
-                    languageScope: "all" | "selected";
-                    languageIdentifiers: string[];
-                    liveTranscriptDraft: boolean;
-                };
                 /** @enum {string} */
                 transcriptionReasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
             };
@@ -2128,7 +2102,6 @@ export interface components {
                                 /** @enum {string} */
                                 workflow: "transcribeThenSummarize" | "combined";
                                 summaryModel?: string;
-                                transcriptionModel?: string;
                                 /** @enum {string} */
                                 reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                             };
@@ -2136,14 +2109,6 @@ export interface components {
                         summary: {
                             /** @enum {string} */
                             style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
-                        };
-                        transcription: {
-                            localeIdentifier: string;
-                            automaticLanguageDetection: boolean;
-                            /** @enum {string} */
-                            languageScope: "all" | "selected";
-                            languageIdentifiers: string[];
-                            liveTranscriptDraft: boolean;
                         };
                         local: {
                             model: string;
@@ -2183,7 +2148,6 @@ export interface components {
                                 /** @enum {string} */
                                 workflow: "transcribeThenSummarize" | "combined";
                                 summaryModel?: string;
-                                transcriptionModel?: string;
                                 /** @enum {string} */
                                 reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                             };
@@ -2191,14 +2155,6 @@ export interface components {
                         summary: {
                             /** @enum {string} */
                             style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
-                        };
-                        transcription: {
-                            localeIdentifier: string;
-                            automaticLanguageDetection: boolean;
-                            /** @enum {string} */
-                            languageScope: "all" | "selected";
-                            languageIdentifiers: string[];
-                            liveTranscriptDraft: boolean;
                         };
                         local: {
                             model: string;
@@ -3641,7 +3597,6 @@ export interface operations {
                                 /** @enum {string} */
                                 workflow: "transcribeThenSummarize" | "combined";
                                 summaryModel?: string;
-                                transcriptionModel?: string;
                                 /** @enum {string} */
                                 reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                             };
@@ -3649,14 +3604,6 @@ export interface operations {
                         summary: {
                             /** @enum {string} */
                             style: "concise" | "standard" | "detailed" | "eventSummary" | "eventTimeline";
-                        };
-                        transcription?: {
-                            localeIdentifier: string;
-                            automaticLanguageDetection: boolean;
-                            /** @enum {string} */
-                            languageScope: "all" | "selected";
-                            languageIdentifiers: string[];
-                            liveTranscriptDraft: boolean;
                         };
                     };
                 };
@@ -3728,14 +3675,6 @@ export interface operations {
                                 reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                                 /** @enum {string} */
                                 detail: "low" | "medium" | "high" | "xhigh" | "max";
-                                transcription?: {
-                                    localeIdentifier: string;
-                                    automaticLanguageDetection: boolean;
-                                    /** @enum {string} */
-                                    languageScope: "all" | "selected";
-                                    languageIdentifiers: string[];
-                                    liveTranscriptDraft: boolean;
-                                };
                                 /** @enum {string} */
                                 transcriptionReasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                             };

@@ -118,7 +118,7 @@
         }
 
         @Test
-        func migrationCopiesMacProcessingDefaultsAndPreservesEachWorkspaceModel() throws {
+        func migrationKeepsTranscriptionLocalAndPreservesEachWorkspaceModel() throws {
             let suite = "WorkspaceProcessingMigration-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
@@ -144,11 +144,14 @@
                     #expect(settings.local.model == row["name"] as String)
                     #expect(settings.local.reasoningEffort == "low")
                     #expect(settings.outputLanguage == .en && settings.summary.style == .concise)
-                    #expect(settings.transcription.localeIdentifier == "fr-FR")
-                    #expect(settings.transcription.languageScope == .selected)
-                    #expect(settings.transcription.languageIdentifiers == ["en", "fr"])
-                    #expect(settings.transcription.liveTranscriptDraft && !settings.automaticProcessing)
+                    #expect(!settings.automaticProcessing)
+                    let json = try #require(JSONSerialization.jsonObject(
+                        with: Data((row["generationSettings"] as String).utf8)
+                    ) as? [String: Any])
+                    #expect(json["transcription"] == nil)
                 }
+                #expect(defaults.string(forKey: "transcriptionLocale") == "fr-FR")
+                #expect(defaults.bool(forKey: "liveTranscriptDraftEnabled"))
                 #expect(try !db.columns(in: "vaults").contains { $0.name == "summaryModelID" })
             }
         }

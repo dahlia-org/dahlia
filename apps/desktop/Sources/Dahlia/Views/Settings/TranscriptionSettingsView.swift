@@ -18,6 +18,16 @@ struct TranscriptionSettingsView: View {
                 Text(L10n.settingsDuringRecording)
             }
 
+            Section(L10n.transcription) {
+                Toggle(isOn: $settings.automaticTranscriptionLanguageDetectionEnabled) {
+                    Text(L10n.automaticDetectionMultilingualTitle)
+                    Text(L10n.automaticDetectionMultilingualDescription)
+                }
+                .toggleStyle(.switch)
+                Toggle(L10n.liveTranscriptDraft, isOn: $settings.liveTranscriptDraftEnabled)
+                    .toggleStyle(.switch)
+            }
+
             Section {
                 DisclosureGroup(L10n.settingsAutomaticExport) {
                     Toggle(isOn: $settings.exportBatchSummaryToWorkspace) {

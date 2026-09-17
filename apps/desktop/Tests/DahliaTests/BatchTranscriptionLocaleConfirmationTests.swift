@@ -7,18 +7,64 @@ import GRDB
 
     @MainActor
     struct BatchTranscriptionLocaleConfirmationTests {
-        @Test(arguments: [false, true], [false, true])
-        func confirmationPreservesStoredLocale(automaticDetection: Bool, retry: Bool) async throws {
+        @Test
+        func confirmationRestoresAutomaticSelectionFromLegacyWorkspaceSettings() async throws {
+            let batch = try BatchAudioTestFixture(name: "legacy-language-selection", endedAt: .now, duration: 1)
+            defer { batch.removeFiles() }
+            try await batch.recordMicrophoneAudio(localeIdentifier: "ja_JP")
+            let workspace = try await batch.database.dbQueue.read { db in
+                try #require(try WorkspaceRecord.fetchOne(db, key: batch.meeting.workspaceId))
+            }
+            let viewModel = CaptionViewModel()
+            viewModel.supportedLocales = [Locale(identifier: "en_US"), Locale(identifier: "fr_FR"), Locale(identifier: "ja_JP")]
+            let processing = viewModel.processingSnapshot(
+                workspace: workspace,
+                plan: .init(finalMode: .batch, liveSubtitlesEnabled: false, liveTranscriptDraftEnabled: false),
+                locale: Locale(identifier: "ja_JP")
+            )
+            var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(processing)) as? [String: Any])
+            var workspaceSettings = try #require(json["workspaceSettings"] as? [String: Any])
+            workspaceSettings["transcription"] = [
+                "localeIdentifier": "fr_FR",
+                "automaticLanguageDetection": true,
+                "languageScope": "selected",
+                "languageIdentifiers": ["en", "fr"],
+                "liveTranscriptDraft": true,
+            ]
+            json["workspaceSettings"] = workspaceSettings
+            json.removeValue(forKey: "automaticLanguageDetection")
+            json.removeValue(forKey: "automaticLanguageCandidates")
+            let processingJSON = String(decoding: try JSONSerialization.data(withJSONObject: json), as: UTF8.self)
+            try await batch.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE recording_sessions SET processingJSON = ? WHERE id = ?",
+                    arguments: [processingJSON, batch.session.id]
+                )
+            }
+
+            await viewModel.presentBatchTranscriptionConfirmation(
+                sessionId: batch.session.id, meetingId: batch.meeting.id, dbQueue: batch.database.dbQueue
+            )
+
+            let confirmation = try #require(viewModel.pendingBatchTranscriptionConfirmation)
+            #expect(confirmation.initialLanguageSelection == .automatic)
+            #expect(confirmation.automaticLanguageCandidateSnapshot?.identifierSet == ["en", "fr"])
+        }
+
+        @Test(arguments: [false, true])
+        func confirmationPreservesStoredLocale(retry: Bool) async throws {
+            let settings = AppSettings.shared
+            let previous = (settings.appLanguageScope, settings.enabledLanguageIdentifiers)
+            defer {
+                settings.appLanguageScope = previous.0
+                settings.enabledLanguageIdentifiers = previous.1
+            }
+            settings.appLanguageScope = .selected
+            settings.enabledLanguageIdentifiers = ["en", "ja"]
             let batch = try BatchAudioTestFixture(name: "stored-recording-locale", endedAt: .now, duration: 1)
             defer { batch.removeFiles() }
             try await batch.recordMicrophoneAudio(localeIdentifier: "en_US")
             try await batch.database.dbQueue.write { db in
-                var workspace = try #require(try WorkspaceRecord.fetchOne(db, key: batch.meeting.workspaceId))
-                workspace.generationSettings.transcription.localeIdentifier = "ja-JP"
-                workspace.generationSettings.transcription.automaticLanguageDetection = automaticDetection
-                workspace.generationSettings.transcription.languageScope = .selected
-                workspace.generationSettings.transcription.languageIdentifiers = ["en", "ja"]
-                try workspace.update(db)
                 if retry {
                     var session = batch.session
                     session.batchSelectedLocaleIdentifier = "en_US"
@@ -47,8 +93,8 @@ import GRDB
             #expect(locales == ["en_US"])
         }
 
-        @Test(arguments: [false, true], [false, true])
-        func confirmationPreservesLocalesChangedWhileRecording(automaticDetection: Bool, capturesProcessing: Bool) async throws {
+        @Test(arguments: [false, true])
+        func confirmationPreservesLocalesChangedWhileRecording(capturesProcessing: Bool) async throws {
             let batch = try BatchAudioTestFixture(
                 name: "recording-locale-ranges",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
@@ -70,11 +116,6 @@ import GRDB
                 }
             }
             try await batch.recordMicrophoneAudio()
-            try await batch.database.dbQueue.write { db in
-                var workspace = try #require(try WorkspaceRecord.fetchOne(db, key: batch.meeting.workspaceId))
-                workspace.generationSettings.transcription.automaticLanguageDetection = automaticDetection
-                try workspace.update(db)
-            }
             try await batch.database.dbQueue.write { db in
                 let fetchedRange = try RecordingAudioSegmentRangeRecord.fetchOne(db)
                 let firstRange = try #require(fetchedRange)

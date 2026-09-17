@@ -15,6 +15,7 @@ import { organizationDomainsSchema, isSharedEmailDomain, type OrganizationDomain
 import { createOrganizationSchema } from "./organization-slug";
 import { headerEmail } from "./header";
 import { authorizationConflict, lockAuthorization, readAuthorization, validateAuthorization } from "./authorization";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../workspace-generation-settings";
 
 export type JoinRequest = typeof postgres.organizationJoinRequest.$inferSelect & { organizationName: string; userName: string; userEmail: string };
 
@@ -196,7 +197,7 @@ export function createOrganizationStore(connection: NodePgDatabase | SQLiteDatab
         };
         await tx.insert(schema.organization).values({ id: userId, name: "Personal", slug: await availableSlug(user.email.split("@")[0]!), kind: "personal", createdAt: user.createdAt });
         await tx.insert(schema.member).values({ id: userId, userId, organizationId: userId, role: "owner", createdAt: user.createdAt });
-        await tx.insert(schema.syncedWorkspace).values({ workspaceId: userId, organizationId: userId, createdBy: { id: user.id, name: user.name, email: user.email }, name: "Personal", createdAt: user.createdAt, updatedAt: user.createdAt });
+        await tx.insert(schema.syncedWorkspace).values({ workspaceId: userId, organizationId: userId, createdBy: { id: user.id, name: user.name, email: user.email }, name: "Personal", generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS, createdAt: user.createdAt, updatedAt: user.createdAt });
         await tx.insert(schema.syncedWorkspacePermission).values({ workspaceId: userId, principalType: "user", principalId: userId, role: "admin", grantedByUserId: userId });
         if (user.emailVerified && user.registrationState === "domain") {
           const email = headerEmail(user.email);

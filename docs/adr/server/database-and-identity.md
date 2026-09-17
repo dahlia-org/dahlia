@@ -30,6 +30,8 @@ PostgreSQL は既存の生成 Auth baseline → application initial → runtime_
 
 2026-09-13: ユーザー承認により、Vault → Workspace の変更も現行 Drizzle schema から初期 migration を再生成して統合した。旧 Server DB、暗号化ドメイン、保存済み receipt の互換変換は提供しない。リリース済み Desktop v41 のデータ移行は維持する。
 
+2026-09-17: ユーザー承認により、Workspace の生成設定変更を PostgreSQL / SQLite の initial に統合し、未公開の `20260916153014_gifted_random` / `20260916153015_thankful_wrecker` を撤回した。既存開発 DB の設定変換は提供せず、新しい baseline を使うには DB を再作成する。
+
 以下の forward migration の説明は統合前の経緯であり、旧開発 DB からの移行保証ではない。リリース後は従来どおり forward-only とする。
 
 ## Header identity
@@ -64,7 +66,7 @@ forward migration は既存 receipt 本文を保持したまま結果 ID / revis
 
 ## ワークスペース処理設定への統合（2026-09-15）
 
-以下の個人単位の生成・解析言語設定の決定は置き換えられた。現在は Workspace の `generationSettings` と既存 revision/管理者更新経路を使用する。未公開 Server の初期スキーマから `account_settings` と GET/PATCH を削除し、文字起こし言語もワークスペースに統合した。画像説明の出力言語は要約と共通、OCR は原文の言語を保持する。画像解析 job の認可境界は維持する。
+以下の個人単位の生成・解析言語設定の決定は置き換えられた。要約と画像説明の生成設定は Workspace の `generationSettings` と既存 revision/管理者更新経路を使用し、文字起こし言語とライブ文字起こしは Mac の端末設定に置く。未公開 Server の初期スキーマから `account_settings` と GET/PATCH を削除した。画像説明の出力言語は要約と共通、OCR は原文の言語を保持する。画像解析 job の認可境界は維持する。
 
 ## アカウント設定と画像解析 job（2026-09-07、設定部分は上記で置換）
 
@@ -87,9 +89,9 @@ PATCH は指定された末端項目だけを DB の現在行に適用し、同�
 FORCE RLS は backfill transaction 内だけ解除し commit 前に復元する。旧 API 形式は維持せず Desktop / Web / Server を同時更新する。
 既存 summary job と履歴の設定は移行しない。
 
-2026-09-10の[文字起こし・要約の処理場所](../shared/transcription-summary-processing.md)により、要約JSONの現行形式は
-`{ mode, remote: { detail, model, reasoningEffort, transcriptionModel? } }`へ置き換えた。追加のforward migrationは旧`transcript`を
-`local`、旧`cloudTranscription` / `audio`を対応する`remote`設定へ変換する。PATCHの末端更新、内部revision、既存job保持の原則は維持する。
+2026-09-10の[文字起こし・要約の処理場所](../shared/transcription-summary-processing.md)により、現行設定はWorkspaceの
+`processing: { location, remote: { workflow, summaryModel?, reasoningEffort? } }`と`summary.style`へ置き換えた。Server文字起こしモデルは
+保存せず自動選択する。追加のforward migrationは旧`transcript`を`local`、旧`cloudTranscription` / `audio`を対応する`remote`設定へ変換する。PATCHの末端更新、内部revision、既存job保持の原則は維持する。
 
 ## 運用テーブルと番号の整理（2026-09-09）
 

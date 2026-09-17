@@ -14,7 +14,7 @@
 
 `local` はApple Speechで確定文字起こしを作り、内蔵Codexで要約する。Server VaultでもServer要約APIを呼ばず、Macの推論プロバイダーを使う。スタイルと言語は対象アカウントの設定を使う。チャットのVault/Gateway contextとMac推論contextを分離し、推論先からデータの所属アカウントを推定しない。
 
-`remote` は保存・同期済み録音をServerで処理する。新しい録音後の自動処理は通常 `transcribeThenSummarize`（文字起こし後に要約）、詳細設定で `combined`（音声対応・構造化出力対応Geminiによる一括生成）を選べる。モデルの有無で処理方式を推定しない。失敗時に処理場所を自動変更しない。
+`remote` は保存・同期済み録音をServerで処理する。新しい録音後の自動処理は既定で `combined`（Geminiが音声から直接要約し、同じ処理で文字起こしも生成）とし、`transcribeThenSummarize`（Geminiで文字起こし後、その文字起こしから要約）も選べる。Server文字起こしでは保存済みの言語設定を送らずGeminiが処理中に判定する。`combined` だけ要約モデルと推論強度を上書きでき、二段階処理は文字起こし用Geminiと文字起こし要約に対応するモデルをそれぞれ自動選択する。モデルの有無で処理方式を推定せず、失敗時に処理場所を自動変更しない。
 
 録音開始時に処理場所と設定を `recording_sessions.processingJSON` へ固定する。Server設定が未取得でも録音開始を妨げず、ローカル処理を選ぶ。開始済み処理の再起動・再試行は保存済み要求と段階を使う。
 
@@ -49,7 +49,7 @@ Desktop は `meetingSummaryGeneration.retranscription: { version: 1, provider: "
     location: "local" | "remote",
     remote: {
       workflow: "transcribeThenSummarize" | "combined",
-      summaryModel?, transcriptionModel?, reasoningEffort?
+      summaryModel?, reasoningEffort?
     }
   }
 }
@@ -57,9 +57,9 @@ Desktop は `meetingSummaryGeneration.retranscription: { version: 1, provider: "
 
 スタイルはユーザーの意図であり、モデルAPIのreasoning effortや内部jobのdetail値とは別物。実行境界で既存の `low/medium/high/xhigh/max` に変換する。モデル・推論強度の省略は「自動」。Serverは利用可能な既知の推奨モデルとcatalogのdefault effortから実行値を確定する。catalog順で未知のモデルを選ばず、明示した値が利用不可ならエラーとする。ただし手動生成で保存モデルが選択ソースに非対応の場合は、保存値を変更せず、その要求だけ要約モデルと推論強度を「自動」に戻す。
 
-PATCHの省略は維持。三つのモデル・推論overrideは `null` で自動へ戻せるが、workflowとstyleはnull不可。場所・方式の切替は非アクティブなoverrideを削除しない。生成要求には入力とpreferencesのsnapshotを送り、Serverは受付時に実行値を固定する。既存job要求・保存済み処理の読み取り互換は維持し、retryで現在の設定へ置換しない。
+PATCHの省略は維持。要約モデル・推論強度overrideは `null` で自動へ戻せるが、workflowとstyleはnull不可。場所・方式の切替は非アクティブなoverrideを削除しない。生成要求には入力とpreferencesのsnapshotを送り、Serverは受付時に実行値を固定する。既存job要求・保存済み処理の読み取り互換は維持し、retryで現在の設定へ置換しない。
 
-Forward migrationで従来の `summary.mode/remote` を新しいprocessing列とsummary.styleへ分ける。従来のtranscriptionModelの有無は移行時だけworkflow判定に使う。言語、明示モデル、推論強度、要約の意味を保持する。公開アカウント設定APIに旧形式の互換アダプターは置かず、Server/Web/Desktopを合わせて更新する。
+初回リリース前の Server は従来の `summary.mode/remote`、transcriptionModel、Workspace の言語設定を変換する forward migration を配布せず、現行形式を initial baseline に統合する。既存開発 DB の自動変換は提供しない。公開アカウント設定APIに旧形式の互換アダプターは置かず、Server/Web/Desktopを合わせて更新する。
 
 Mac設定は既存UserDefaultsを正本とし、初回だけ最後に開いたLocal Account Vaultの要約モデル・推論強度を引き継ぐ。保存キー・既存Vault列・内部の旧処理値は移行および開始済み処理のdecodeのため残す。
 

@@ -1,25 +1,37 @@
 import { expect, it } from "vitest";
 import { z } from "zod";
 import { summaryDocument, summaryResponseSchema } from "../src/summary/model";
+import { storedTranscriptSettingsSchema } from "../src/summary/model";
 import { summaryStartSchema } from "../src/summary/service";
 import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../src/workspace-generation-settings";
 import { uuidV7 } from "../src/id";
 
-it("excludes transcription overrides structurally from preference inputs while preserving legacy requests", () => {
+it("excludes transcription overrides structurally from preference inputs while preserving legacy model requests", () => {
   const input = { type: "recording", recordings: [{ micFileId: uuidV7(), systemFileId: null }] };
   const request = { id: uuidV7(), input, preferences: {
     processing: DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing,
     summary: DEFAULT_WORKSPACE_GENERATION_SETTINGS.summary,
     outputLanguage: DEFAULT_WORKSPACE_GENERATION_SETTINGS.outputLanguage,
-    transcription: DEFAULT_WORKSPACE_GENERATION_SETTINGS.transcription,
   } };
   expect(summaryStartSchema.safeParse(request).success).toBe(true);
+  expect(summaryStartSchema.safeParse({ ...request, preferences: { ...request.preferences,
+    transcription: { localeIdentifier: "ja-JP", automaticLanguageDetection: false,
+      languageScope: "all", languageIdentifiers: [], liveTranscriptDraft: false } } }).success).toBe(false);
   const overridden = { ...input, transcriptionModel: "gemini-3-8-flash" };
   expect(summaryStartSchema.safeParse({ ...request, input: overridden }).success).toBe(false);
   expect(summaryStartSchema.safeParse({ id: request.id, input: overridden, model: "gpt-5.4", detail: "high", outputLanguage: "ja" }).success).toBe(true);
   const schema = z.toJSONSchema(summaryStartSchema, { io: "input", unrepresentable: "any" });
   expect(JSON.stringify(schema.anyOf![2]!.properties!.input)).not.toContain('"transcriptionModel"');
   expect(JSON.stringify(schema.anyOf![0]!.properties!.input)).toContain('"transcriptionModel"');
+});
+
+it("retains legacy transcription settings only in stored jobs", () => {
+  const transcription = { localeIdentifier: "ja-JP", automaticLanguageDetection: false,
+    languageScope: "all", languageIdentifiers: [], liveTranscriptDraft: false };
+  expect(storedTranscriptSettingsSchema.parse({
+    model: "gemini", reasoningEffort: "medium", detail: "high", transcription,
+  })).toMatchObject({ transcription });
+  expect(JSON.stringify(z.toJSONSchema(summaryStartSchema, { io: "input", unrepresentable: "any" }))).not.toContain('"transcription"');
 });
 
 it("omits maxItems and accepts arrays beyond every former limit", () => {

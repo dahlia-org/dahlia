@@ -4,10 +4,7 @@ import type { GatewayModelList } from "../ai-gateway/backend";
 import { isAudioSummaryModel, isSummaryModel } from "./audio-model";
 import { SummaryError, type SummaryInput, type TranscriptSettings } from "./model";
 
-type StoredGenerationPreferences = z.infer<typeof generationPreferencesSchema>;
-export type GenerationPreferences = Omit<StoredGenerationPreferences, "transcription"> & {
-  transcription?: StoredGenerationPreferences["transcription"];
-};
+export type GenerationPreferences = z.infer<typeof generationPreferencesSchema>;
 
 // Deliberate product defaults, not catalog order. Unknown deployments require an explicit selection.
 const preferredSummaryModels = ["system.ai.gemini-3-8-flash", "gemini-3-8-flash", "gpt-5.4", "gpt-4.1", "gemini-3-flash"];
@@ -26,15 +23,14 @@ export function resolveSummaryPreferences(
     if (!selected || !supported(selected)) throw new SummaryError(error);
     return selected;
   };
-  const model = transcriptionOnly
-    ? choose(remote.transcriptionModel, preferredTranscriptionModels,
-      (id) => isAudioSummaryModel(id, catalog), "summary_invalid_audio_model")
-    : choose(remote.summaryModel, preferredSummaryModels,
-      (id) => id !== "codex-auto-review" && isSummaryModel(id, catalog, method), "summary_invalid_structured_model");
+  const transcriptionModel = twoStage
+    ? choose(undefined, preferredTranscriptionModels, (id) => isAudioSummaryModel(id, catalog), "summary_invalid_audio_model")
+    : undefined;
+  const customizableSummary = preferences.processing.location === "local" || input.type === "transcript" || method === "audio";
+  const model = transcriptionOnly ? transcriptionModel! : choose(customizableSummary ? remote.summaryModel : undefined, preferredSummaryModels,
+    (id) => id !== "codex-auto-review" && isSummaryModel(id, catalog, method), "summary_invalid_structured_model");
   const modelInfo = catalog.models.find(({ slug }) => slug === model)!;
-  // Retranscription does not run the saved summary configuration. Its audio
-  // model owns the reasoning level used by the transcription request.
-  const reasoningEffort = transcriptionOnly
+  const reasoningEffort = transcriptionOnly || !customizableSummary
     ? modelInfo.default_reasoning_level
     : remote.reasoningEffort ?? modelInfo.default_reasoning_level;
   if (!modelInfo.supported_reasoning_levels.some(({ effort }) => effort === reasoningEffort)) {
@@ -43,7 +39,6 @@ export function resolveSummaryPreferences(
   const settings: TranscriptSettings = {
     model, reasoningEffort: reasoningEffort as TranscriptSettings["reasoningEffort"],
     detail: summaryStyleDetail(preferences.summary.style),
-    ...(transcriptionOnly ? {} : { transcription: preferences.transcription }),
   };
   if (input.type === "transcript") return { settings, input };
   const resolvedInput: SummaryInput = {
@@ -51,12 +46,7 @@ export function resolveSummaryPreferences(
     ...(transcriptionOnly ? { transcriptionOnly: true as const } : {}),
   };
   if (twoStage) {
-    const transcriptionModel = choose(remote.transcriptionModel, preferredTranscriptionModels,
-      (id) => isAudioSummaryModel(id, catalog), "summary_invalid_audio_model");
     const metadata = catalog.models.find(({ slug }) => slug === transcriptionModel)!;
-    if (!metadata.supported_reasoning_levels.some(({ effort }) => effort === metadata.default_reasoning_level)) {
-      throw new SummaryError("summary_invalid_reasoning_effort");
-    }
     settings.transcriptionReasoningEffort = metadata.default_reasoning_level as TranscriptSettings["reasoningEffort"];
     resolvedInput.transcriptionModel = transcriptionModel;
   }

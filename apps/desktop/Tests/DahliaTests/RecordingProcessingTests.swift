@@ -10,17 +10,29 @@
     struct RecordingProcessingTests {
         @Test(arguments: [false, true], RecordingProcessingMethod.allCases)
         func recordingCapturesWorkspaceDefaultsAndRoutesSummaryByOwnership(server: Bool, method: RecordingProcessingMethod) throws {
+            let appSettings = AppSettings.shared
+            let previous = (
+                appSettings.automaticTranscriptionLanguageDetectionEnabled,
+                appSettings.appLanguageScope,
+                appSettings.enabledLanguageIdentifiers
+            )
+            defer {
+                appSettings.automaticTranscriptionLanguageDetectionEnabled = previous.0
+                appSettings.appLanguageScope = previous.1
+                appSettings.enabledLanguageIdentifiers = previous.2
+            }
+            appSettings.automaticTranscriptionLanguageDetectionEnabled = true
+            appSettings.appLanguageScope = .selected
+            appSettings.enabledLanguageIdentifiers = ["en", "fr"]
             var workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Capture", createdAt: .now, lastOpenedAt: .now)
             workspace.accountConnectionId = server ? .v7() : nil
             workspace.generationSettings.processing.location = method == .transcript ? .local : .remote
             workspace.generationSettings.processing.remote.workflow = method == .audio ? .combined : .transcribeThenSummarize
-            workspace.generationSettings.transcription.localeIdentifier = "fr-FR"
-            workspace.generationSettings.transcription.automaticLanguageDetection = true
-            workspace.generationSettings.transcription.liveTranscriptDraft = true
             workspace.generationSettings.outputLanguage = .en
             workspace.generationSettings.automaticProcessing = false
             let expected = workspace.generationSettings
             let viewModel = CaptionViewModel()
+            viewModel.supportedLocales = [Locale(identifier: "en-US"), Locale(identifier: "fr-FR")]
             let processing = viewModel.processingSnapshot(
                 workspace: workspace,
                 plan: .init(finalMode: .batch, liveSubtitlesEnabled: false, liveTranscriptDraftEnabled: true),
@@ -36,6 +48,8 @@
             #expect(restored.generationSettings.workspacePreferences == expected)
             #expect(!restored.automatic && restored.liveDraft)
             #expect(restored.localeIdentifier == "fr-FR")
+            #expect(restored.automaticLanguageDetection == true)
+            #expect(restored.automaticLanguageCandidates?.identifierSet == ["en", "fr"])
         }
 
         @Test

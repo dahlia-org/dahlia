@@ -2889,7 +2889,7 @@
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
-      "default": "'{\"outputLanguage\":\"ja\",\"processing\":{\"location\":\"local\",\"remote\":{\"workflow\":\"transcribeThenSummarize\"}},\"summary\":{\"style\":\"detailed\"},\"transcription\":{\"localeIdentifier\":\"ja-JP\",\"automaticLanguageDetection\":false,\"languageScope\":\"all\",\"languageIdentifiers\":[],\"liveTranscriptDraft\":false},\"local\":{\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\"},\"automaticProcessing\":true}'",
+      "default": "'{\"outputLanguage\":\"ja\",\"processing\":{\"location\":\"local\",\"remote\":{\"workflow\":\"combined\"}},\"summary\":{\"style\":\"detailed\"},\"local\":{\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\"},\"automaticProcessing\":true}'",
       "generated": null,
       "identity": null,
       "name": "generation_settings",

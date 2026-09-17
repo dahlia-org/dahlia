@@ -5,14 +5,23 @@ import { z } from "zod";
 import { uuidV7 } from "../id";
 import type { IdentitySyncStore } from "../sync/types";
 
-import { normalizeSummaryDetail, summaryDetailSchema, summaryModelSettingsSchema, transcriptionSettingsSchema } from "../workspace-generation-settings";
+import { normalizeSummaryDetail, summaryDetailSchema, summaryModelSettingsSchema } from "../workspace-generation-settings";
 export { summaryDetailSchema } from "../workspace-generation-settings";
-export const transcriptSettingsSchema = summaryModelSettingsSchema.extend({ detail: summaryDetailSchema, transcription: transcriptionSettingsSchema.optional(), transcriptionReasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional() });
+export const transcriptSettingsSchema = summaryModelSettingsSchema.extend({ detail: summaryDetailSchema, transcriptionReasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional() });
 // Accepted jobs retain their captured settings across API contract changes.
+const legacyTranscriptionSettingsSchema = z.object({
+  localeIdentifier: z.string(), automaticLanguageDetection: z.boolean(), languageScope: z.string(),
+  languageIdentifiers: z.array(z.string()), liveTranscriptDraft: z.boolean(),
+});
 export const storedTranscriptSettingsSchema = transcriptSettingsSchema.extend({
   detail: z.string().transform(normalizeSummaryDetail).pipe(summaryDetailSchema),
-});
-export type TranscriptSettings = z.infer<typeof transcriptSettingsSchema>;
+  transcription: legacyTranscriptionSettingsSchema.optional(),
+}).transform(({ model, reasoningEffort, detail, transcriptionReasoningEffort, transcription }) => ({
+  model, reasoningEffort, detail, transcriptionReasoningEffort, transcription,
+}));
+export type TranscriptSettings = z.infer<typeof transcriptSettingsSchema> & {
+  transcription?: z.infer<typeof legacyTranscriptionSettingsSchema>;
+};
 const contentVersion = z.string().min(1).max(200);
 export const summaryInputSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("transcript"), version: contentVersion }).strict(),

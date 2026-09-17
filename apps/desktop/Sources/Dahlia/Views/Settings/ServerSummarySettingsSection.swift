@@ -9,27 +9,21 @@ struct ServerSummarySettingsSection: View {
     private var state: ServerAccountSettingsModel.State { model.state(for: connectionID) }
     private var remote: WorkspaceGenerationSettings.RemoteProcessing { workspaceSettings.generationSettings.processing.remote }
     private var usesLocalTranscription: Bool { workspaceSettings.generationSettings.processing.location == .local }
-    private var transcribesFirst: Bool { usesLocalTranscription || remote.workflow == .transcribeThenSummarize }
+    private var customizableSummary: Bool { usesLocalTranscription || remote.workflow == .combined }
+    private var summaryAvailable: Bool { !state.summaryMethods.isEmpty }
     private var models: [ServerSummaryService.Model] {
-        state.summaryModels.filter { $0.supportsSummary(method: transcribesFirst ? "transcript" : "audio") }
+        state.summaryModels.filter { $0.supportsSummary(method: usesLocalTranscription ? "transcript" : "audio") }
     }
 
-    private var audioModels: [ServerSummaryService.Model] { state.summaryModels.filter(\.supportsAudioSummary) }
     private var selectedModel: ServerSummaryService.Model? {
         models.first { $0.id == remote.summaryModel || remote.summaryModel?.hasSuffix("." + $0.id) == true }
-    }
-
-    private var selectedTranscriptionModel: ServerSummaryService.Model? {
-        audioModels.first { $0.id == remote.transcriptionModel || remote.transcriptionModel?.hasSuffix("." + $0.id) == true }
     }
 
     private var efforts: [String] { selectedModel?.supportedReasoningLevels.map(\.effort) ?? [] }
 
     var body: some View {
         Section {
-            if state.isModelCatalogLoaded,
-               (remote.summaryModel != nil && selectedModel == nil)
-               || (!usesLocalTranscription && transcribesFirst && remote.transcriptionModel != nil && selectedTranscriptionModel == nil) {
+            if state.isModelCatalogLoaded, customizableSummary, remote.summaryModel != nil, selectedModel == nil {
                 SettingsStatusMessage(text: L10n.settingsCheckAdvancedModels, systemImage: "exclamationmark.triangle", tint: .orange)
             }
             Button {
@@ -59,37 +53,38 @@ struct ServerSummarySettingsSection: View {
                         Text(L10n.transcribeThenSummarize).tag(WorkspaceGenerationSettings.Workflow.transcribeThenSummarize)
                         Text(L10n.combinedTranscriptionSummary).tag(WorkspaceGenerationSettings.Workflow.combined)
                     }
+                    .disabled(!summaryAvailable)
+                    Text(remote.workflow == .combined
+                        ? L10n.combinedTranscriptionSummaryDescription
+                        : L10n.transcribeThenSummarizeDescription)
+                        .foregroundStyle(.secondary)
                 }
-                Picker(L10n.summaryModel, selection: summaryModelSelection) {
-                    Text(L10n.automaticModelPreference).tag("")
-                    if let saved = remote.summaryModel, selectedModel == nil {
-                        Text(state.isModelCatalogLoaded ? "\(saved) — \(L10n.unavailableModelPreference)" : saved).tag(saved)
-                    }
-                    ForEach(models) { Text($0.displayName).tag($0.id) }
-                }
-                Picker(L10n.reasoningEffort, selection: effortSelection) {
-                    Text(L10n.automaticModelPreference).tag("")
-                    if let saved = remote.reasoningEffort, !efforts.contains(saved) {
-                        Text(state.isModelCatalogLoaded ? "\(saved) — \(L10n.checkModelPreference)" : saved).tag(saved)
-                    }
-                    ForEach(efforts, id: \.self) { Text($0).tag($0) }
-                }
-                if !usesLocalTranscription, transcribesFirst {
-                    Picker(L10n.transcriptionModel, selection: transcriptionModelSelection) {
+                if customizableSummary {
+                    Picker(L10n.summaryModel, selection: summaryModelSelection) {
                         Text(L10n.automaticModelPreference).tag("")
-                        if let saved = remote.transcriptionModel, selectedTranscriptionModel == nil {
+                        if let saved = remote.summaryModel, selectedModel == nil {
                             Text(state.isModelCatalogLoaded ? "\(saved) — \(L10n.unavailableModelPreference)" : saved).tag(saved)
                         }
-                        ForEach(audioModels) { Text($0.displayName).tag($0.id) }
+                        ForEach(models) { Text($0.displayName).tag($0.id) }
                     }
+                    .disabled(!summaryAvailable || !state.isModelCatalogLoaded)
+                    Picker(L10n.reasoningEffort, selection: effortSelection) {
+                        Text(L10n.automaticModelPreference).tag("")
+                        if let saved = remote.reasoningEffort, !efforts.contains(saved) {
+                            Text(state.isModelCatalogLoaded ? "\(saved) — \(L10n.checkModelPreference)" : saved).tag(saved)
+                        }
+                        ForEach(efforts, id: \.self) { Text($0).tag($0) }
+                    }
+                    .disabled(!summaryAvailable || !state.isModelCatalogLoaded)
+                    if let error = state.modelErrorMessage {
+                        SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle.fill", tint: .red)
+                    } else if state.isModelCatalogLoaded, models.isEmpty {
+                        Text(L10n.serverSummaryNoModels).foregroundStyle(.secondary)
+                    }
+                    Button(L10n.serverSummaryReloadModels) { model.refresh(connectionID: connectionID, reloadModels: true) }
+                        .disabled(!summaryAvailable)
+                    Text(L10n.automaticModelPreferenceDescription).foregroundStyle(.secondary)
                 }
-                if let error = state.modelErrorMessage {
-                    SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle.fill", tint: .red)
-                } else if state.isModelCatalogLoaded, models.isEmpty {
-                    Text(L10n.serverSummaryNoModels).foregroundStyle(.secondary)
-                }
-                Button(L10n.serverSummaryReloadModels) { model.refresh(connectionID: connectionID, reloadModels: true) }
-                Text(L10n.automaticModelPreferenceDescription).foregroundStyle(.secondary)
             }
         }
         .disabled(AppSettings.shared.currentWorkspace?.allowsWorkspaceManagement != true)
@@ -110,13 +105,6 @@ struct ServerSummarySettingsSection: View {
         Binding(
             get: { remote.reasoningEffort ?? "" },
             set: { workspaceSettings.generationSettings.processing.remote.reasoningEffort = $0.nilIfBlank }
-        )
-    }
-
-    private var transcriptionModelSelection: Binding<String> {
-        Binding(
-            get: { selectedTranscriptionModel?.id ?? remote.transcriptionModel ?? "" },
-            set: { workspaceSettings.generationSettings.processing.remote.transcriptionModel = $0.nilIfBlank }
         )
     }
 

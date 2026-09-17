@@ -9,9 +9,9 @@ import { refreshData, useLiveJSON } from "./live-data";
 import { encodeId } from "../typeid";
 import { uuidV7 } from "../id";
 import type { GatewayModelList } from "../ai-gateway/backend";
-import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, summaryStyles, summaryStyleDetail, transcriptionSettingsSchema, type WorkspaceGenerationSettings } from "../workspace-generation-settings";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, summaryStyles, summaryStyleDetail, type WorkspaceGenerationSettings } from "../workspace-generation-settings";
 type SummaryRequest = operations["startSummaryJob"]["requestBody"]["content"]["application/json"];
-import { isAudioSummaryModel, isSummaryModel } from "../summary/audio-model";
+import { isSummaryModel } from "../summary/audio-model";
 import { CODEX_AUTO_REVIEW_ALIAS } from "../ai-gateway/model-alias";
 
 type SummarySource = "transcript" | "audio";
@@ -126,17 +126,12 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
     finally { setSaving(false); }
   };
   const summary = settings?.summary ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS.summary;
-  const transcription = settings?.transcription ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS.transcription;
-  const saveTranscription = (patch: Partial<typeof transcription>) => save({ transcription: { ...transcription, ...patch } });
   const processing = settings?.processing ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing;
   const remote = processing.remote;
-  const transcribesFirst = processing.location === "local" || remote.workflow === "transcribeThenSummarize";
+  const customizableSummary = processing.location === "local" || remote.workflow === "combined";
   const saveRemote = (value: Partial<typeof remote>) => save({ processing: { ...processing, remote: { ...remote, ...value } } });
   const models = catalog.data?.data.filter((model) => model.id !== CODEX_AUTO_REVIEW_ALIAS
-    && isSummaryModel(model.id, catalog.data!, transcribesFirst ? "transcript" : "audio")) ?? [];
-  const audioModels = catalog.data?.data.filter((model) => isAudioSummaryModel(model.id, catalog.data!)) ?? [];
-  const selectedTranscriptionModel = audioModels.find((model) => model.id === remote.transcriptionModel
-    || remote.transcriptionModel?.endsWith(`.${model.id}`));
+    && isSummaryModel(model.id, catalog.data!, processing.location === "remote" ? "audio" : "transcript")) ?? [];
   const selectedSummaryModel = models.find((model) => model.id === remote.summaryModel || remote.summaryModel?.endsWith(`.${model.id}`));
   const metadata = catalog.data?.models.find((model) => model.slug === selectedSummaryModel?.id);
   const efforts = metadata?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
@@ -146,25 +141,18 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
       : <p role="status">{uiText("Loading settings…", "設定を読み込み中…")}</p>}
   </section>;
   return <>
-    <p>{uiText("Shared with everyone in this workspace. Only admins can change these defaults.", "このワークスペースの全員で共有します。既定値を変更できるのは管理者のみです。")}</p>
-    <p className="settings-save-status" role="status" data-saved={saved && !saving}>{saving ? uiText("Saving changes…", "変更を保存中…") : saved ? uiText("Changes saved", "変更を保存しました") : uiText("Changes save automatically.", "変更は自動で保存されます。")}</p>
+    {(saving || saved) && <p className="settings-save-status" role="status" data-saved={saved && !saving}>
+      {saving ? uiText("Saving changes…", "変更を保存中…") : uiText("Changes saved", "変更を保存しました")}
+    </p>}
     {(error || query.error) && <p role="alert" className="error">{error ?? query.error?.message} {query.error && <button className="secondary" onClick={query.reload}>{uiText("Retry", "再試行")}</button>}</p>}
     <section className="section-block settings-section">
-      <h2 className="section-label">{uiText("Summary and image descriptions", "要約と画像の説明")}</h2>
+      <h2 className="section-label">{uiText("Generated content language", "生成コンテンツの言語")}</h2>
       <fieldset className="account-settings" disabled={editingDisabled}>
-        <p>{uiText("Summary processing: Server", "要約の処理場所：サーバー")}</p>
-        <p>{uiText("The original transcript is synchronized and summarized on the server, including transcripts created in Dahlia for Mac.", "Dahlia for Macで作成した文字起こしも、原文を同期してからサーバーで要約します。")}</p>
-        {!remoteSupported && !capabilities.loading && !capabilities.error && <p>{uiText("Summary generation is unavailable on this server.", "このサーバーでは要約生成を利用できません。")}</p>}
-        <label>{uiText("Summary style", "まとめ方")}<Select value={summary.style}
-          onValueChange={(value) => void save({ summary: { style: value as WorkspaceGenerationSettings["summary"]["style"] } })}>
-          {summaryStyles.map((style) => <option key={style} value={style}>{detailLabel(summaryStyleDetail(style))}</option>)}
-        </Select></label>
-        <p>{styleDescription(summary.style)}</p>
         <label>{uiText("Output language", "出力言語")}<Select value={settings?.outputLanguage ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS.outputLanguage}
           onValueChange={(value) => void save({ outputLanguage: value as WorkspaceGenerationSettings["outputLanguage"] })}>
           {Object.entries({ ja: "日本語", en: "English", zh: "中文", ko: "한국어", fr: "Français", de: "Deutsch", es: "Español" }).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </Select></label>
-        <p>{uiText("Shared by summaries and image analysis. Speech recognition languages are unchanged.", "出力言語は要約と画像の説明に共通です。音声認識の言語は変更しません。")}</p>
+        <p>{uiText("Shared by summaries and image descriptions. Speech recognition languages are unchanged.", "出力言語は要約と画像の説明に共通です。音声認識の言語は変更しません。")}</p>
       </fieldset>
     </section>
     <section className="section-block settings-section">
@@ -176,37 +164,14 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
           {(remoteTranscriptionSupported || processing.location === "remote") && <option value="remote" disabled={!remoteTranscriptionSupported}>
             {uiText("Server", "サーバー")}</option>}
         </Select></label>
-        {processing.location === "local" && <p>{uiText("Use Dahlia for Mac for local transcription.", "ローカル文字起こしはDahlia for Macで実行してください。")}</p>}
-        <label>{uiText("Transcription language", "文字起こし言語")}<input key={transcription.localeIdentifier}
-          defaultValue={transcription.localeIdentifier} list="transcription-locales" placeholder="ja-JP"
-          onBlur={(event) => {
-            const localeIdentifier = event.target.value.trim();
-            const parsed = transcriptionSettingsSchema.safeParse({ ...transcription, localeIdentifier });
-            if (!parsed.success) { setError(uiText("Enter a language tag such as ja-JP or en-US.", "ja-JP、en-USなどの言語タグを入力してください。")); return; }
-            if (localeIdentifier !== transcription.localeIdentifier) void saveTranscription({ localeIdentifier });
-          }} /></label>
-        <datalist id="transcription-locales">
-          {["ja-JP", "en-US", "zh-CN", "ko-KR", "fr-FR", "de-DE", "es-ES"].map((id) => <option key={id} value={id} />)}
-        </datalist>
-        <label>{uiText("Detection languages", "検出する言語")}<Select value={transcription.languageScope}
-          onValueChange={(value) => void saveTranscription({ languageScope: value as "all" | "selected",
-            languageIdentifiers: value === "selected" && !transcription.languageIdentifiers.length
-              ? [transcription.localeIdentifier.split(/[-_]/)[0]!.toLowerCase()] : transcription.languageIdentifiers })}>
-          <option value="all">{uiText("All supported languages", "対応するすべての言語")}</option>
-          <option value="selected">{uiText("Selected languages", "選択した言語")}</option>
-        </Select></label>
-        {transcription.languageScope === "selected" && <label>{uiText("Language codes, separated by commas", "言語コード（カンマ区切り）")}<input
-          key={transcription.languageIdentifiers.join(",")} defaultValue={transcription.languageIdentifiers.join(", ")} placeholder="ja, en"
-          onBlur={(event) => {
-            const languageIdentifiers = [...new Set(event.target.value.split(",").map((value) => value.trim()).filter(Boolean))];
-            const parsed = transcriptionSettingsSchema.safeParse({ ...transcription, languageIdentifiers });
-            if (!parsed.success) { setError(uiText("Enter language codes such as ja, en, zh-Hans.", "ja, en, zh-Hansなどの言語コードを入力してください。")); return; }
-            if (languageIdentifiers.join(",") !== transcription.languageIdentifiers.join(",")) void saveTranscription({ languageIdentifiers });
-          }} /></label>}
-        <label>{uiText("Automatic language detection", "自動言語検出")}<input type="checkbox" checked={transcription.automaticLanguageDetection}
-          onChange={(event) => void saveTranscription({ automaticLanguageDetection: event.target.checked })} /></label>
-        <label>{uiText("Live transcript draft", "録音中に文字起こしの下書きを作成")}<input type="checkbox" checked={transcription.liveTranscriptDraft}
-          onChange={(event) => void saveTranscription({ liveTranscriptDraft: event.target.checked })} /></label>
+        {processing.location === "local" && <p>{uiText(
+          "Language and live transcription settings are configured on each device in Dahlia for Mac.",
+          "言語とライブ文字起こしは、各端末のDahlia for Macで設定します。",
+        )}</p>}
+        {processing.location === "remote" ? <p>{uiText(
+          "Gemini detects the spoken language while transcribing. No language setting is required.",
+          "Geminiが文字起こしの処理中に発話言語を判定するため、言語設定は不要です。",
+        )}</p> : null}
         {capabilities.loading && <p role="status">{uiText("Checking server capabilities…", "サーバー機能を確認中…")}</p>}
         {!remoteTranscriptionSupported && !capabilities.loading && !capabilities.error && <p>{uiText("Server transcription is unavailable on this server.", "このサーバーでは文字起こしを実行できません。")}</p>}
         {capabilities.error && <p role="alert" className="error">{capabilities.error.message} <button className="secondary"
@@ -214,51 +179,69 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
       </fieldset>
     </section>
     <section className="section-block settings-section">
-      <h2 className="section-label">{uiText("After recording", "録音後の自動処理")}</h2>
+      <h2 className="section-label">{uiText("Summary", "要約")}</h2>
       <fieldset className="account-settings" disabled={editingDisabled}>
-        <label>{uiText("Automatically transcribe and summarize after recording", "録音終了後に文字起こし・要約を自動実行")}<input type="checkbox" checked={settings?.automaticProcessing ?? true}
-          onChange={(event) => void save({ automaticProcessing: event.target.checked })} /></label>
+        <p>{uiText("Summary processing: Server", "要約の処理場所：サーバー")}</p>
+        <p>{uiText("The original transcript is synchronized and summarized on the server, including transcripts created in Dahlia for Mac.", "Dahlia for Macで作成した文字起こしも、原文を同期してからサーバーで要約します。")}</p>
+        {!remoteSupported && !capabilities.loading && !capabilities.error && <p>{uiText("Summary generation is unavailable on this server.", "このサーバーでは要約生成を利用できません。")}</p>}
+        <label>{uiText("Summary style", "まとめ方")}<Select value={summary.style}
+          onValueChange={(value) => void save({ summary: { style: value as WorkspaceGenerationSettings["summary"]["style"] } })}>
+          {summaryStyles.map((style) => <option key={style} value={style}>{detailLabel(summaryStyleDetail(style))}</option>)}
+        </Select></label>
+        <p>{styleDescription(summary.style)}</p>
+        {customizableSummary && <>
+          {isModelCatalogLoaded && remote.summaryModel && !selectedSummaryModel && <p role="status">{uiText(
+            "A selected model is unavailable. Change it or choose Automatic.",
+            "利用できないモデルが指定されています。変更するか「自動」に戻してください。",
+          )}</p>}
+          <label>{uiText("Summary model", "要約モデル")}<Select value={selectedSummaryModel?.id ?? remote.summaryModel ?? ""}
+            disabled={catalog.loading || !remoteSupported} onValueChange={(value) => void saveRemote({ summaryModel: value || undefined })}>
+            <option value="">{uiText("Automatic", "自動")}</option>
+            {remote.summaryModel && !selectedSummaryModel && <option value={remote.summaryModel} disabled>{remote.summaryModel}{isModelCatalogLoaded && ` — ${uiText("Unavailable for this workflow", "この方式では利用不可")}`}</option>}
+            {models.map((model) => <option key={model.id} value={model.id}>{model.display_name}</option>)}
+          </Select></label>
+          <label>{uiText("Reasoning effort", "推論強度")}<Select value={remote.reasoningEffort ?? ""} disabled={!remoteSupported}
+            onValueChange={(value) => void saveRemote({ reasoningEffort: value ? value as typeof remote.reasoningEffort : undefined })}>
+            <option value="">{uiText("Automatic", "自動")}</option>
+            {remote.reasoningEffort && !efforts.includes(remote.reasoningEffort) && <option value={remote.reasoningEffort} disabled>{remote.reasoningEffort} — {uiText("Check model compatibility", "モデルとの対応を確認")}</option>}
+            {efforts.map((effort) => <option key={effort}>{effort}</option>)}
+          </Select></label>
+          {catalog.error && <p role="alert" className="error">{catalog.error.message}</p>}
+          {isModelCatalogLoaded && !models.length && <p>{uiText("No models available", "利用可能なモデルがありません")}</p>}
+          <button className="secondary" onClick={catalog.reload} disabled={catalog.loading || !remoteSupported}>{uiText("Reload models", "モデル一覧を再取得")}</button>
+        </>}
       </fieldset>
     </section>
-    {remoteSupported && <section className="section-block settings-section">
+    <section className="section-block settings-section">
+      <h2 className="section-label">{uiText("After recording", "録音後の自動処理")}</h2>
       <fieldset className="account-settings" disabled={editingDisabled}>
-        {isModelCatalogLoaded && ((remote.summaryModel && !selectedSummaryModel)
-          || (processing.location === "remote" && transcribesFirst && remote.transcriptionModel && !selectedTranscriptionModel)) && <p role="status">{uiText(
-          "A selected model is unavailable. Open advanced settings to change it or choose Automatic.",
-          "利用できないモデルが指定されています。詳細設定で変更するか「自動」に戻してください。",
-        )}</p>}
+        <label className="switch-field"><span>{uiText("Automatically transcribe and summarize after recording", "録音終了後に文字起こし・要約を自動実行")}</span>
+          <input type="checkbox" role="switch" checked={settings?.automaticProcessing ?? true}
+            onChange={(event) => void save({ automaticProcessing: event.target.checked })} />
+          <span className="switch-control" aria-hidden="true" />
+        </label>
+      </fieldset>
+    </section>
+    {processing.location === "remote" && <section className="section-block settings-section">
+      <fieldset className="account-settings" disabled={editingDisabled || !remoteSupported}>
         <details className="settings-advanced">
           <summary>{uiText("Advanced server settings", "サーバー処理の詳細設定")}</summary>
           <p>{uiText(
             "These choices apply automatically after new recordings. Manual generation uses the source selected on the meeting screen.",
             "ここでの選択は、新しい録音後の自動処理に適用されます。手動生成では、ミーティング画面で選んだソースが優先されます。",
           )}</p>
-          {processing.location === "remote" && <label>{uiText("New recording automatic processing", "新しい録音の自動処理")}<Select value={remote.workflow}
+          <label>{uiText("New recording automatic processing", "新しい録音の自動処理")}<Select value={remote.workflow}
             onValueChange={(value) => void saveRemote({ workflow: value as typeof remote.workflow })}>
-            <option value="transcribeThenSummarize">{uiText("Transcribe, then summarize", "文字起こししてから要約")}</option>
-            <option value="combined">{uiText("Generate together", "文字起こしと要約を一括生成")}</option>
-          </Select></label>}
-          <label>{uiText("Summary model", "要約モデル")}<Select value={selectedSummaryModel?.id ?? remote.summaryModel ?? ""} disabled={catalog.loading}
-            onValueChange={(value) => void saveRemote({ summaryModel: value || undefined })}>
-            <option value="">{uiText("Automatic", "自動")}</option>
-            {remote.summaryModel && !selectedSummaryModel && <option value={remote.summaryModel} disabled>{remote.summaryModel}{isModelCatalogLoaded && ` — ${uiText("Unavailable for this workflow", "この方式では利用不可")}`}</option>}
-            {models.map((model) => <option key={model.id} value={model.id}>{model.display_name}</option>)}
+            <option value="transcribeThenSummarize">{uiText("Summarize the transcript", "文字起こし後に要約")}</option>
+            <option value="combined">{uiText("Summarize directly from audio", "音声から直接要約")}</option>
           </Select></label>
-          <label>{uiText("Reasoning effort", "推論強度")}<Select value={remote.reasoningEffort ?? ""}
-            onValueChange={(value) => void saveRemote({ reasoningEffort: value ? value as typeof remote.reasoningEffort : undefined })}>
-            <option value="">{uiText("Automatic", "自動")}</option>
-            {remote.reasoningEffort && !efforts.includes(remote.reasoningEffort) && <option value={remote.reasoningEffort} disabled>{remote.reasoningEffort} — {uiText("Check model compatibility", "モデルとの対応を確認")}</option>}
-            {efforts.map((effort) => <option key={effort}>{effort}</option>)}
-          </Select></label>
-          {processing.location === "remote" && transcribesFirst && <label>{uiText("Transcription model", "文字起こしモデル")}<Select
-            value={selectedTranscriptionModel?.id ?? remote.transcriptionModel ?? ""} onValueChange={(value) => void saveRemote({ transcriptionModel: value || undefined })}>
-            <option value="">{uiText("Automatic", "自動")}</option>
-            {remote.transcriptionModel && !selectedTranscriptionModel && <option value={remote.transcriptionModel} disabled>{remote.transcriptionModel}{isModelCatalogLoaded && ` — ${uiText("Unavailable", "利用不可")}`}</option>}
-            {audioModels.map((entry) => <option key={entry.id} value={entry.id}>{entry.display_name}</option>)}
-          </Select></label>}
-          {catalog.error && <p role="alert" className="error">{catalog.error.message}</p>}
-          {isModelCatalogLoaded && !models.length && <p>{uiText("No models available", "利用可能なモデルがありません")}</p>}
-          <button className="secondary" onClick={catalog.reload} disabled={catalog.loading}>{uiText("Reload models", "モデル一覧を再取得")}</button>
+          <p>{remote.workflow === "combined" ? uiText(
+            "Gemini creates the summary directly from the audio and produces a transcript in the same process.",
+            "Geminiが音声から直接要約し、同じ処理内で文字起こしも作成します。",
+          ) : uiText(
+            "Gemini transcribes the audio first, then creates the summary from that transcript.",
+            "Geminiが先に音声を文字起こしし、その文字起こしから要約を作成します。",
+          )}</p>
         </details>
       </fieldset>
     </section>}
@@ -321,11 +304,15 @@ export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId:
   const selectedSourceAvailable = selectedSource ? sourceAvailable(selectedSource) : false;
   const models = catalog.data?.data.filter((entry) => entry.id !== CODEX_AUTO_REVIEW_ALIAS
     && isSummaryModel(entry.id, catalog.data!, selectedSource ?? "transcript")) ?? [];
-  const selectedModelID = model ?? workspaceQuery.data?.generationSettings.processing.remote.summaryModel ?? "";
+  const workspaceSettings = workspaceQuery.data?.generationSettings;
+  const savedModelID = workspaceSettings?.processing.remote.summaryModel;
+  const usesSavedSummaryDefaults = workspaceSettings?.processing.location === "local" || selectedSource === "audio"
+    || !catalog.data || catalog.loading || !!catalog.error;
+  const selectedModelID = model ?? (usesSavedSummaryDefaults ? savedModelID : undefined) ?? "";
   const selectedModel = models.find((entry) => entry.id === selectedModelID || selectedModelID.endsWith(`.${entry.id}`));
   const isModelUnavailable = !!selectedSource && !!catalog.data && !catalog.loading && !catalog.error && !!selectedModelID && !selectedModel;
   const efforts = catalog.data?.models.find((entry) => entry.slug === selectedModel?.id)?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
-  const selectedEffort = effort ?? workspaceQuery.data?.generationSettings.processing.remote.reasoningEffort ?? "";
+  const selectedEffort = effort ?? (usesSavedSummaryDefaults ? workspaceSettings?.processing.remote.reasoningEffort : undefined) ?? "";
 
   const sourceReason = (candidate: SummarySource) => {
     if (!methods.includes(candidate)) return uiText("This server does not support this source.", "このサーバーはこのソースに対応していません。");
@@ -365,10 +352,14 @@ export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId:
         }
         const remote = { ...settings.processing.remote,
           workflow: selectedSource === "audio" ? "combined" as const : "transcribeThenSummarize" as const };
+        if (selectedSource === "transcript" && settings.processing.location === "remote") {
+          remote.summaryModel = undefined;
+          remote.reasoningEffort = undefined;
+        }
         if (model !== undefined) remote.summaryModel = model || undefined;
         if (effort !== undefined) remote.reasoningEffort = effort ? effort as typeof remote.reasoningEffort : undefined;
         requestBody.current = { id: requestID.current, input,
-          preferences: { transcription: settings.transcription, processing: { location: "remote", remote }, outputLanguage: (language || settings.outputLanguage) as WorkspaceGenerationSettings["outputLanguage"],
+          preferences: { processing: { location: "remote", remote }, outputLanguage: (language || settings.outputLanguage) as WorkspaceGenerationSettings["outputLanguage"],
             summary: { style: detail ? summaryStyles[details.indexOf(detail as typeof details[number])]! : settings.summary.style } } };
       }
       await api.startSummaryJob({ params: { path: { meetingId } }, body: requestBody.current });

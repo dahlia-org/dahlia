@@ -67,6 +67,26 @@
         }
 
         @Test
+        func manualTranscriptIgnoresCombinedDefaultsButKeepsOneOffOverrides() {
+            var shared = WorkspaceGenerationSettings()
+            shared.processing.location = .remote
+            shared.processing.remote.summaryModel = "audio-default"
+            shared.processing.remote.reasoningEffort = "high"
+            let automatic = SummaryGenerationOptions(exportOptions: .manual, source: .transcript)
+                .applying(to: shared, usesServer: true)
+            #expect(automatic.processing.remote.summaryModel == nil)
+            #expect(automatic.processing.remote.reasoningEffort == nil)
+
+            let explicit = SummaryGenerationOptions(
+                exportOptions: .manual,
+                source: .transcript,
+                overrides: .init(model: "transcript-model", reasoningEffort: "low")
+            ).applying(to: shared, usesServer: true)
+            #expect(explicit.processing.remote.summaryModel == "transcript-model")
+            #expect(explicit.processing.remote.reasoningEffort == "low")
+        }
+
+        @Test
         func mergingCombinesExports() {
             let merged = SummaryGenerationOptions.merging([
                 SummaryGenerationOptions(
