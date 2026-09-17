@@ -5347,7 +5347,7 @@
       "roles": [
         "public"
       ],
-      "using": "(current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"meeting_attachments\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR \"app\".\"current_identity_can_read_workspace\"(\"app\".\"meeting_attachments\".\"workspace_id\") OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.workspace_id = \"app\".\"meeting_attachments\".\"workspace_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
+      "using": "(current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"meeting_attachments\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR \"app\".\"current_identity_can_read_workspace\"(\"app\".\"meeting_attachments\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"app\".\"meeting_attachments\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.workspace_id = \"app\".\"meeting_attachments\".\"workspace_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
       "withCheck": null,
       "name": "meeting_attachment_select",
       "entityType": "policies",

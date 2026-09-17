@@ -71,6 +71,15 @@ it("keeps legacy local transcript-summary preferences until a current client rep
     .toMatchObject({ settings: { model: "gpt-4.1", reasoningEffort: "none" } });
 });
 
+it("keeps legacy remote transcript-summary preferences for accepted retries", () => {
+  const preferences = structuredClone(DEFAULT_WORKSPACE_GENERATION_SETTINGS);
+  preferences.processing = { location: "remote", remote: {
+    workflow: "combined", summaryModel: "gpt-4.1", reasoningEffort: "none",
+  } };
+  expect(resolveSummaryPreferences(preferences, { type: "transcript", version: "1" }, cloudflareModels(), (id) => id))
+    .toMatchObject({ settings: { model: "gpt-4.1", reasoningEffort: "none" } });
+});
+
 it("uses separate audio and transcript-summary settings for two-stage generation", () => {
   const preferences = structuredClone(DEFAULT_WORKSPACE_GENERATION_SETTINGS);
   preferences.processing = { location: "remote", remote: {

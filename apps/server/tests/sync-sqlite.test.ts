@@ -1055,8 +1055,9 @@ describe("SQLite canonical sync", () => {
     await attach();
     let database = new DatabaseSync(databasePath);
     expect(database.prepare("SELECT mode FROM jobs_image_analysis").get()).toEqual({ mode: "replace" });
-    expect(database.prepare("SELECT ocr_text, caption_text, embedding FROM search_documents WHERE kind = 'screenshot'").get())
-      .toEqual({ ocr_text: "imported ocr", caption_text: "imported caption", embedding: null });
+    const imported = database.prepare("SELECT ocr_text, caption_text, embedding, embedding_content_hash FROM search_documents WHERE kind = 'screenshot'").get();
+    expect(imported).toMatchObject({ ocr_text: "imported ocr", caption_text: "imported caption", embedding: null });
+    expect(imported).toHaveProperty("embedding_content_hash", expect.any(String));
     expect(database.prepare("SELECT count(*) AS n FROM jobs_search_index").get()).toEqual({ n: 0 });
     database.close();
 
@@ -1068,6 +1069,30 @@ describe("SQLite canonical sync", () => {
     expect(database.prepare("SELECT ocr_text, caption_text FROM search_documents WHERE kind = 'screenshot'").get())
       .toEqual({ ocr_text: "server ocr", caption_text: "server caption" });
     expect(database.prepare("SELECT count(*) AS n FROM jobs_image_analysis").get()).toEqual({ n: 0 });
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_search_index").get()).toEqual({ n: 1 });
+    database.close();
+    await store.close?.();
+  });
+
+  it("enqueues the imported image embedding after terminal replacement failure", async () => {
+    const { store, service, attach, file, databasePath } = await fileSetup("model");
+    await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: null,
+      data: { checksum: file.checksum, metadata: { ocrText: "Imported OCR", caption: "Imported caption" }, imageAnalysis: "replace" } }]));
+    await attach();
+    await store.searchIndex!.reconcile("embedding", 32);
+    let database = new DatabaseSync(databasePath);
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_search_index").get()).toEqual({ n: 0 });
+    database.close();
+
+    const captioner: ImageCaptioner = { model: "model", analyze: async () => {
+      throw new ImageAnalysisError("captioning_invalid_response", false);
+    } };
+    expect(await new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service).processOne()).toBe(true);
+    await store.searchIndex!.reconcile("embedding", 32);
+
+    database = new DatabaseSync(databasePath);
+    expect(database.prepare("SELECT status, last_error_code FROM jobs_image_analysis").get())
+      .toEqual({ status: "failed", last_error_code: "captioning_invalid_response" });
     expect(database.prepare("SELECT count(*) AS n FROM jobs_search_index").get()).toEqual({ n: 1 });
     database.close();
     await store.close?.();

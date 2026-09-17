@@ -33,9 +33,9 @@ export function resolveSummaryPreferences(
     throw new SummaryError("summary_invalid_reasoning_effort");
   }
   const transcriptSummaryModel = remote.transcriptSummaryModel
-    ?? (preferences.processing.location === "local" ? remote.summaryModel : undefined);
+    ?? (input.type === "transcript" || preferences.processing.location === "local" ? remote.summaryModel : undefined);
   const transcriptSummaryReasoningEffort = remote.transcriptSummaryReasoningEffort
-    ?? (preferences.processing.location === "local" ? remote.reasoningEffort : undefined);
+    ?? (input.type === "transcript" || preferences.processing.location === "local" ? remote.reasoningEffort : undefined);
   const model = transcriptionOnly ? transcriptionModel! : choose(method === "transcript" ? transcriptSummaryModel : remote.summaryModel, preferredSummaryModels,
     (id) => id !== "codex-auto-review" && isSummaryModel(id, catalog, method), "summary_invalid_structured_model");
   const modelInfo = catalog.models.find(({ slug }) => slug === model)!;

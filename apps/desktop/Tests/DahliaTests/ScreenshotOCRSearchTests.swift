@@ -220,6 +220,70 @@ import Synchronization
         }
 
         @Test
+        func serverFallbackKeepsItsJobWhenDetachedDuringAnalysis() async throws {
+            let analyzer = ConcurrentScreenshotAnalyzer()
+            let database = try makeDatabase(screenshotAnalyzer: analyzer)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://fallback-\(UUID().uuidString.lowercased()).invalid", clientID: "test", createdAt: .now
+            )
+            var workspace = makeWorkspace()
+            workspace.accountConnectionId = connection.id
+            workspace.syncConfirmedConnectionId = connection.id
+            workspace.syncRole = "admin"
+            workspace.organizationId = .v7()
+            let meeting = makeMeeting(workspaceID: workspace.id)
+            let screenshot = MeetingScreenshotRecord(
+                id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now,
+                imageData: Data([1]), mimeType: "image/png"
+            )
+            try await database.dbQueue.write { [workspace] db in
+                try connection.insert(db)
+                try workspace.insert(db)
+                try meeting.insert(db)
+                try screenshot.insertLegacyForTesting(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'file', ?, 1)",
+                    arguments: [workspace.id, screenshot.originalFileId]
+                )
+                try TextContentStore.registerLocal(entity: .file, id: screenshot.originalFileId, workspaceId: workspace.id, in: db)
+            }
+            ImageURLProtocol.register(origin: connection.origin) { _ in (200, [:], Data("{}".utf8)) }
+            defer { ImageURLProtocol.remove(origin: connection.origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let indexer = SearchIndexer(
+                dbQueue: database.dbQueue,
+                screenshotAnalyzer: analyzer,
+                apiClient: SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" }),
+                runtimeProviderResolver: { .dahlia(connectionID: connection.id) }
+            )
+
+            let drain = Task { await indexer.drain() }
+            #expect(await pollUntil { await analyzer.callSizes.count == 1 })
+            try await database.dbQueue.write { [workspaceID = workspace.id] db in
+                try db.execute(
+                    sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?",
+                    arguments: [workspaceID]
+                )
+            }
+            await analyzer.releaseFirstWave()
+            await drain.value
+
+            try await database.dbQueue.read { db throws in
+                #expect(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText == nil)
+                let row = try #require(try Row.fetchOne(
+                    db,
+                    sql: "SELECT status, attempts FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                    arguments: [screenshot.id]
+                ))
+                let status: String = row["status"]
+                let attempts: Int = row["attempts"]
+                #expect(status == "pending")
+                #expect(attempts == 1)
+            }
+        }
+
+        @Test
         func discardsInFlightAnalysisAfterWorkspaceMovesToServer() async throws {
             let analyzer = ConcurrentScreenshotAnalyzer()
             let database = try makeDatabase(screenshotAnalyzer: analyzer)

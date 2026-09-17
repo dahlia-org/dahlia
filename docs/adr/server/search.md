@@ -59,6 +59,8 @@ Node は解析 worker を構築した場合だけ capabilities API の `imageAna
 
 2026-09-18: 上記の Desktop fallback 契約を廃止する。Server Workspace の画像解析は Server が常に所有し、Desktop は `imageAnalysis` capability の有無・version・取得成否や Server のモデル設定にかかわらず端末解析を実行しない。Server で解析されない場合も端末へ切り替えず、OCR / caption は未生成のままにする。Desktop は Server の結果を通常の差分同期で受け取り、接続変更時は該当 job だけを再試行する。端末解析は Local Account の画像に限定する。
 
+2026-09-18（再改定）: 直前の fallback 廃止を撤回する。Desktop は capability v2 の Server Workspace だけ画像解析を Server へ委譲し、capability が未対応・未設定・旧 version の場合は従来どおり端末解析する。capability 取得失敗時は job を保持して再試行する。`replace` 待機中は imported OCR / caption の embedding を enqueue せず、解析成功時は生成結果の embedding を一度だけ enqueue する。解析が終端失敗した場合は imported OCR / caption の embedding を共通 search job として復旧する。
+
 ## Server Vault 暗号化との境界
 
 暗号化 Vault でも検索データ全体（検索用テキスト、vector、索引）は暗号化対象外とする。PostgreSQL / Lakebase は DB 側の全文検索・vector 検索と既存 RRF、SQLite は既存の exact cosine を使い、暗号化用の復号 scan は行わない。正本の暗号化は維持する。保護範囲は [Vault 暗号化](vault-encryption.md) を参照。

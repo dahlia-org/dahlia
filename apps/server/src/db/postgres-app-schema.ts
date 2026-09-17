@@ -424,7 +424,7 @@ export const meetingAttachment = appSchema.table("meeting_attachments", {
   unique("meeting_attachments_meeting_attachment_unique").on(table.meetingId, table.fileId),
   index("meeting_attachments_file_idx").on(table.fileId),
   index("meeting_attachments_workspace_meeting_id_idx").on(table.workspaceId, table.meetingId, table.id),
-  pgPolicy("meeting_attachment_select", { for: "select", using: sql`(${meetingRetentionWorkspace(table.workspaceId)}) OR "app"."current_identity_can_read_workspace"(${table.workspaceId}) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.workspace_id = ${table.workspaceId} AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)` }),
+  pgPolicy("meeting_attachment_select", { for: "select", using: sql`(${meetingRetentionWorkspace(table.workspaceId)}) OR "app"."current_identity_can_read_workspace"(${table.workspaceId}) OR (current_setting('app.maintenance', true) = 'search' AND ${table.workspaceId} = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.workspace_id = ${table.workspaceId} AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)` }),
   pgPolicy("meeting_attachment_write", { for: "all", using: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId})`, withCheck: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId})` })
 ]).enableRLS();
 

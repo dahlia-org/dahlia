@@ -783,6 +783,7 @@ function createIdentityStore(
     searchFields: SearchDocumentFields;
     embeddingContentHash: string | null;
     currentEmbeddingContentHash: string | null;
+    deferEmbedding?: boolean;
   };
 
   async function updateSearchDocuments(inputs: SearchDocumentInput[]): Promise<void> {
@@ -830,7 +831,7 @@ function createIdentityStore(
     }
 
     if (!embeddingConfig) return;
-    const changed = inputs.filter((input) => input.embeddingContentHash
+    const changed = inputs.filter((input) => !input.deferEmbedding && input.embeddingContentHash
       && input.currentEmbeddingContentHash !== input.embeddingContentHash);
     const availableAt = new Date(Date.now() + 5_000);
     for (let offset = 0; offset < changed.length; offset += batchSize) {
@@ -2101,14 +2102,15 @@ function createIdentityStore(
         for (const image of images) {
           const [current] = await db.select({ hash: schema.searchDocument.embeddingContentHash }).from(schema.searchDocument)
             .where(and(eq(schema.searchDocument.workspaceId, transaction.workspaceId), eq(schema.searchDocument.documentId, image.screenshotId))).limit(1);
-          const [analysis] = await db.select({ mode: schema.imageAnalysisJob.mode }).from(schema.imageAnalysisJob)
+          const [analysis] = await db.select({ mode: schema.imageAnalysisJob.mode, status: schema.imageAnalysisJob.status }).from(schema.imageAnalysisJob)
             .where(eq(schema.imageAnalysisJob.fileId, image.fileId)).limit(1);
           await updateSearchDocuments([{
             documentId: image.screenshotId, workspaceId: transaction.workspaceId, meetingId: image.meetingId, kind: "screenshot",
             searchText: typeof data.searchText === "string" ? data.searchText : "",
             searchFields: data.searchFields as SearchDocumentFields,
-            embeddingContentHash: analysis?.mode === "replace" ? null : data.embeddingContentHash as string | null ?? null,
+            embeddingContentHash: data.embeddingContentHash as string | null ?? null,
             currentEmbeddingContentHash: current?.hash ?? null,
+            deferEmbedding: analysis?.mode === "replace" && analysis.status !== "failed",
           }]);
         }
       }

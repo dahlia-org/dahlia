@@ -619,7 +619,7 @@ private extension SearchIndexer {
                     try await storeScreenshotAnalyses(
                         results, generation: generation, expectedConnectionId: expectedConnectionId
                     )
-                    try await complete([job])
+                    try await complete([job], expectedConnectionId: expectedConnectionId)
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
@@ -677,11 +677,15 @@ private extension SearchIndexer {
             for result in results {
                 guard let existing = try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID),
                       let meeting = try MeetingRecord.fetchOne(db, key: existing.meetingId),
-                      let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId),
-                      workspace.accountConnectionId == expectedConnectionId,
-                      existing.remoteReference == nil || existing.localReference != nil,
-                      (try? TextContentAccess.requireComplete(entity: .file, id: existing.originalFileId, in: db)) != nil,
-                      try TextContentAccess.availability(entity: .file, id: existing.originalFileId, in: db).state != .stale else { continue }
+                      let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId) else { continue }
+                guard workspace.accountConnectionId == expectedConnectionId else { throw TextContentError.changed }
+                guard existing.remoteReference == nil || existing.localReference != nil,
+                      (try? TextContentAccess.requireComplete(
+                          entity: .file, id: existing.originalFileId, in: db
+                      )) != nil,
+                      try TextContentAccess.availability(
+                          entity: .file, id: existing.originalFileId, in: db
+                      ).state != .stale else { continue }
                 try db.execute(
                     sql: """
                     INSERT INTO file_text_bodies(ocrText, caption, fileId)
