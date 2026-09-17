@@ -23,13 +23,80 @@ SIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Kazuki Matsuda (XC
 
 BUILD_ONLY=false
 OPEN_SETTINGS=0
+RESET_QA=false
+COPY_PRODUCTION=false
 for argument in "$@"; do
     case "$argument" in
         --build-only) BUILD_ONLY=true ;;
         --settings) OPEN_SETTINGS=1 ;;
-        *) echo "usage: $0 [--build-only] [--settings]" >&2; exit 1 ;;
+        --reset) RESET_QA=true ;;
+        --copy-production|--copy) COPY_PRODUCTION=true ;;
+        *) echo "usage: $0 [--build-only] [--settings] [--reset|--copy-production|--copy]" >&2; exit 1 ;;
     esac
 done
+
+if "$BUILD_ONLY" && { "$RESET_QA" || "$COPY_PRODUCTION"; }; then
+    echo "error: --build-only cannot be combined with --reset or --copy-production" >&2
+    exit 1
+fi
+if "$RESET_QA" && "$COPY_PRODUCTION"; then
+    echo "error: --reset cannot be combined with --copy-production" >&2
+    exit 1
+fi
+
+APPLICATION_SUPPORT_DIR="${DAHLIA_APPLICATION_SUPPORT_DIR:-${HOME}/Library/Application Support}"
+PRODUCTION_DB="${APPLICATION_SUPPORT_DIR}/Dahlia/dahlia.sqlite"
+QA_DIR="${APPLICATION_SUPPORT_DIR}/Dahlia-Development"
+QA_DB="${QA_DIR}/dahlia.sqlite"
+
+ensure_qa_is_not_running() {
+    local database_file
+    for database_file in "$QA_DB" "${QA_DB}-wal" "${QA_DB}-shm"; do
+        if [ -e "$database_file" ] && /usr/sbin/lsof -t -- "$database_file" >/dev/null 2>&1; then
+            echo "error: the development database is in use; quit Dahlia before resetting it" >&2
+            return 1
+        fi
+    done
+}
+
+reset_qa_database() {
+    ensure_qa_is_not_running || return 1
+    rm -f "$QA_DB" "${QA_DB}-wal" "${QA_DB}-shm"
+}
+
+prepare_qa_database() {
+    local check_result snapshot_path
+
+    if "$RESET_QA"; then
+        reset_qa_database
+        return
+    fi
+    if ! "$COPY_PRODUCTION"; then
+        return
+    fi
+    if [ ! -f "$PRODUCTION_DB" ]; then
+        echo "error: production database not found at ${PRODUCTION_DB}" >&2
+        exit 1
+    fi
+    snapshot_path="$(mktemp "${TMPDIR:-/tmp}/dahlia-production.XXXXXX")"
+    if ! sqlite3 "$PRODUCTION_DB" ".backup '${snapshot_path}'"; then
+        rm -f "$snapshot_path"
+        echo "error: failed to copy the production database" >&2
+        exit 1
+    fi
+    if ! check_result="$(sqlite3 "file:${snapshot_path}?immutable=1" 'PRAGMA quick_check;')" \
+        || [ "$check_result" != "ok" ]; then
+        rm -f "$snapshot_path"
+        echo "error: copied production database failed quick_check" >&2
+        exit 1
+    fi
+    if ! reset_qa_database; then
+        rm -f "$snapshot_path"
+        exit 1
+    fi
+    mkdir -p "$QA_DIR"
+    mv "$snapshot_path" "$QA_DB"
+}
 
 CACHE_DIR="${PROJECT_DIR}/.build/run-dev"
 mkdir -p "$CACHE_DIR"
@@ -112,6 +179,9 @@ finish_build() {
     printf '%s\n' "$APP_INPUT_FINGERPRINT" > "${CACHE_DIR}/app.inputs"
     fingerprint "$APP_BUNDLE" > "${CACHE_DIR}/app.output"
     echo "=== ${APP_NAME} ready (${SECONDS}s) ==="
+    if ! "$BUILD_ONLY"; then
+        prepare_qa_database
+    fi
     rmdir "${CACHE_DIR}/lock"
     trap - EXIT
     if "$BUILD_ONLY"; then

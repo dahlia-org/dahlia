@@ -73,6 +73,12 @@ swift build && swift run Dahlia
 # Open the last selected settings category (development profile only)
 ./scripts/run-dev.sh --settings
 
+# Start with a new development-profile database
+./scripts/run-dev.sh --reset
+
+# Copy the production SQLite database into the development profile before launch
+./scripts/run-dev.sh --copy-production
+
 # Update the signed app without launching it
 ./scripts/run-dev.sh --build-only
 
@@ -98,6 +104,8 @@ swift test
 > If the login Keychain is locked, `run-dev.sh` asks for the macOS login password before building so the signing certificate's private key is available. The password is read directly by macOS and is not stored by the script. Set `CODESIGN_KEYCHAIN` only when the signing identity is stored in a non-default Keychain.
 
 `run-dev.sh` stores a content-based cache in `.build/run-dev`. With no changes it reuses the signed app; when only the Swift executable changes it retains support assets and re-signs only the app. Changes to support assets or signing configuration, or a missing/modified bundle, trigger a full assembly. Every path verifies the signature before launch. Updating a running development app is refused: finish recording and quit that app before retrying. After initial setup, `--settings` opens the saved settings category; it does not restore meeting selection or unfinished edits.
+
+`--reset` removes only the development profile's `dahlia.sqlite`, `-wal`, and `-shm` files. `--copy-production` (or `--copy`) makes a WAL-safe SQLite backup of the production database, validates it, replaces those same development files, and lets normal app startup run migrations. Production recordings, files, authentication, and settings are not copied; the development profile uses a separate Keychain namespace and starts copied account connections signed out. These options cannot be combined with `--build-only`.
 
 The lint script and pre-commit hook use the exact SwiftFormat version managed by the independent `apps/desktop/BuildTools` Swift package. SwiftPM resolves and caches the tool separately from the app's dependencies.
 

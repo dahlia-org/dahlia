@@ -54,6 +54,20 @@
         }
 
         @Test
+        func credentialStorageSeparatesDevelopmentFromProduction() throws {
+            let connectionID = try #require(UUID(uuidString: "019cfd25-9940-7b4b-a9cd-86d97f46f02e"))
+
+            #expect(DahliaCloudCredentialStorage.keychainKey(
+                connectionID: connectionID,
+                profile: .production
+            ) == "dahliaCloudOAuthCredential.019cfd25-9940-7b4b-a9cd-86d97f46f02e")
+            #expect(DahliaCloudCredentialStorage.keychainKey(
+                connectionID: connectionID,
+                profile: .development
+            ) == "dahliaCloudOAuthCredential.development.019cfd25-9940-7b4b-a9cd-86d97f46f02e")
+        }
+
+        @Test
         func authorizationRequestUsesFixedCallbackPKCEStateAndResource() throws {
             let configuration = try #require(DahliaCloudConfiguration.make(
                 urlString: "https://cloud.example.com",
