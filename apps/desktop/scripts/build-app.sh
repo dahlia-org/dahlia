@@ -26,8 +26,10 @@ mkdir -p "$CLANG_MODULE_CACHE_PATH"
 echo "=== Building ${APP_NAME} ==="
 bash "${SCRIPT_DIR}/build-codex.sh"
 CODEX_VERSION="$(bash "${SCRIPT_DIR}/build-codex.sh" --print-version)"
-swift build -c release --arch arm64
-BUILD_DIR="$(swift build -c release --arch arm64 --show-bin-path)"
+# The current Swift Build engine flattens static XCFramework headers into one directory,
+# so DahliaAEC3 and DahliaLindera both try to produce include/module.modulemap.
+swift build --build-system native -c release --arch arm64
+BUILD_DIR="$(swift build --build-system native -c release --arch arm64 --show-bin-path)"
 dsymutil "${BUILD_DIR}/${APP_NAME}" -o "${BUILD_DIR}/${APP_NAME}.dSYM"
 
 # .app バンドル作成
