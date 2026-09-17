@@ -160,6 +160,24 @@ describe("server summary jobs", () => {
 </context>` }]);
   });
 
+  it("formats transcript input like Desktop summary XML", async () => {
+    const recordedAt = new Date("2026-04-16T00:00:00.000Z");
+    const { content } = await summaryImageContent({
+      meeting: { name: "Meeting", description: "", createdAt: recordedAt, recordingStartedAt: recordedAt,
+        icalUid: null, recurrenceId: null, calendarEvent: null },
+      project: null, images: [], transcript: [
+        { segmentId: uuidV7(), startedAt: new Date("2026-04-16T00:12:34.999Z"), endedAt: null,
+          text: "First <topic> & follow-up", createdAt: null, audioSource: "mic", speakerLabel: "Speaker" },
+        { segmentId: uuidV7(), startedAt: new Date("2026-04-16T01:05:47.000Z"), endedAt: null,
+          text: "Second", createdAt: null, audioSource: null, speakerLabel: null },
+      ],
+    }, {} as MeetingSyncService, owner, new AbortController().signal);
+    expect(content[1]!.text).toBe(`<transcript>
+<time>00:12:34</time> First &lt;topic&gt; &amp; follow-up
+<time>01:05:47</time> Second
+</transcript>`);
+  });
+
   it.each([true, false])("includes calendar context and fingerprints its changes (transcript: %s)", async (includeTranscript) => {
     const { store, sync, workspaceId, meetingId } = await setup();
     try {
@@ -627,7 +645,8 @@ describe("server summary jobs", () => {
         expect(content[0]!.text).toMatch(/^<context>[\s\S]*<\/context>$/);
         expect(content[1]!.text).toMatch(/^<transcript>[\s\S]*<\/transcript>$/);
         expect(content[1]!.text).toContain("Ship next week &lt; &amp; &gt; &quot; &apos;");
-        expect(content[1]!.text).toContain("<speaker>A&amp;B</speaker>");
+        expect(content[1]!.text).toMatch(/<time>\d{2}:\d{2}:\d{2}<\/time>/);
+        expect(content[1]!.text).not.toContain("<segment>");
         if (withImages) {
           const selected = screenshots.filter((_, index) => index % 2 === 0);
           expect(content.filter((part) => part.type === "input_image")).toHaveLength(selected.length);

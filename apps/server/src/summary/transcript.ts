@@ -169,6 +169,12 @@ export function summaryXMLText(value: string | null): string {
     .replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 }
 
+function summaryElapsedTime(startedAt: Date, timeBase: Date): string {
+  const elapsed = Math.max(0, Math.floor((startedAt.getTime() - timeBase.getTime()) / 1000));
+  return [Math.floor(elapsed / 3600), Math.floor(elapsed / 60) % 60, elapsed % 60]
+    .map((part) => String(part).padStart(2, "0")).join(":");
+}
+
 export async function summaryImageContent(input: Awaited<ReturnType<typeof collectSummaryInput>>, sync: MeetingSyncService,
   identity: import("../auth/identity").Identity, signal: AbortSignal) {
   // ponytail: sample at most 24 images; add content-aware selection when representative coverage is insufficient.
@@ -195,15 +201,14 @@ export async function summaryImageContent(input: Awaited<ReturnType<typeof colle
     <path>${summaryXMLText(project.path)}</path>
   </project>` : ""}
 </context>` }];
-  if (input.transcript) content.push({ type: "input_text", text: `<transcript>
-${input.transcript.map((segment) => `  <segment>
-    <start>${segment.startedAt.toISOString()}</start>
-    <end>${segment.endedAt?.toISOString() ?? ""}</end>
-    <audio_source>${summaryXMLText(segment.audioSource)}</audio_source>
-    <speaker>${summaryXMLText(segment.speakerLabel)}</speaker>
-    <text>${summaryXMLText(segment.text)}</text>
-  </segment>`).join("\n")}
+  if (input.transcript) {
+    const timeBase = meeting.recordingStartedAt ?? meeting.createdAt;
+    const transcript = input.transcript.map((segment) =>
+      `<time>${summaryElapsedTime(segment.startedAt, timeBase)}</time> ${summaryXMLText(segment.text)}`).join("\n");
+    content.push({ type: "input_text", text: `<transcript>
+${transcript}
 </transcript>` });
+  }
   let imageBytes = 0;
   for (const image of images) {
     const { upstream } = await sync.readFileContent(identity, image.fileId, "thumb_1280", "GET",
