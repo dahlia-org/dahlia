@@ -1,6 +1,6 @@
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
-import Synchronization
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -47,12 +47,12 @@ import Synchronization
             } == "French caption")
         }
 
-        @Test(arguments: ["enabled", "disabled", "future", "legacy", "missing", "unavailable", "detached"])
-        func serverAnalysisCapabilityControlsDeviceFallback(capability: String) async throws {
+        @Test
+        func serverWorkspaceNeverUsesDeviceAnalysis() async throws {
             let analyzer = StubScreenshotAnalyzer(text: "device OCR")
             let database = try makeDatabase(screenshotAnalyzer: analyzer)
             let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://capability-\(UUID().uuidString.lowercased()).invalid", clientID: "test", createdAt: .now
+                id: .v7(), origin: "https://server.example.test", clientID: "test", createdAt: .now
             )
             var workspace = makeWorkspace()
             workspace.accountConnectionId = connection.id
@@ -67,53 +67,92 @@ import Synchronization
                 try meeting.insert(db)
                 try screenshot.insertLegacyForTesting(db)
             }
-            let unavailable = Mutex(capability == "unavailable")
-            ImageURLProtocol.register(origin: connection.origin) { [queue = database.dbQueue, workspaceID = workspace.id] request in
-                #expect(request.url?.path == "/api/v1/capabilities")
-                if capability == "detached" {
+            await database.searchIndexer.drain()
+            #expect(await analyzer.runtimeProviders[screenshot.id] == nil)
+            try await database.dbQueue.read { db throws in
+                #expect(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText == nil)
+                let jobs = try Int.fetchOne(db, sql: "SELECT count(*) FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis'")
+                #expect(jobs == 0)
+            }
+        }
+
+        @Test
+        func serverWorkspaceDisconnectOnlyRetriesItsOwnAnalysisJob() async throws {
+            let analyzer = StubScreenshotAnalyzer(text: "device OCR")
+            let database = try makeDatabase(screenshotAnalyzer: analyzer)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.test", clientID: "test", createdAt: .now
+            )
+            var workspace = makeWorkspace()
+            workspace.accountConnectionId = connection.id
+            workspace.organizationId = .v7()
+            let meeting = makeMeeting(workspaceID: workspace.id)
+            let screenshotID = UUID.v7()
+            let imageData = Data([1])
+            let remoteReference = try ScreenshotRemoteReference(
+                origin: connection.origin,
+                accountConnectionId: connection.id,
+                fileId: screenshotID,
+                contentHash: ScreenshotRemoteReference.digest(imageData)
+            ).jsonString()
+            let screenshot = MeetingScreenshotRecord(
+                id: screenshotID, meetingId: meeting.id, sessionId: nil, capturedAt: .now,
+                imageData: imageData, mimeType: "image/png", remoteReference: remoteReference
+            )
+            let localWorkspace = makeWorkspace(path: "/tmp/screenshot-ocr-search-workspace-local")
+            let localMeeting = makeMeeting(workspaceID: localWorkspace.id)
+            let localScreenshot = MeetingScreenshotRecord(
+                id: .v7(), meetingId: localMeeting.id, sessionId: nil, capturedAt: .now,
+                imageData: Data([2]), mimeType: "image/png"
+            )
+            try await database.dbQueue.write { [workspace] db in
+                try connection.insert(db)
+                try workspace.insert(db)
+                try meeting.insert(db)
+                try screenshot.insertLegacyForTesting(db)
+                try localWorkspace.insert(db)
+                try localMeeting.insert(db)
+                try localScreenshot.insertLegacyForTesting(db)
+            }
+            let dbQueue = database.dbQueue
+            let workspaceID = workspace.id
+            let indexer = SearchIndexer(
+                dbQueue: dbQueue,
+                screenshotAnalyzer: analyzer,
+                runtimeProviderResolver: {
                     do {
-                        try queue.write { db in
+                        try dbQueue.write { db in
                             try db.execute(
                                 sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?",
                                 arguments: [workspaceID]
                             )
                         }
                     } catch { Issue.record(error) }
-                }
-                let status = capability == "missing" ? 404 : unavailable.withLock { $0 } ? 503 : 200
-                let body = switch capability {
-                case "enabled", "detached": #"{"imageAnalysis":{"version":1}}"#
-                case "future": #"{"imageAnalysis":{"version":2}}"#
-                default: "{}"
-                }
-                return (status, [:], Data(body.utf8))
-            }
-            defer { ImageURLProtocol.remove(origin: connection.origin) }
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.protocolClasses = [ImageURLProtocol.self]
-            let indexer = SearchIndexer(
-                dbQueue: database.dbQueue, screenshotAnalyzer: analyzer,
-                apiClient: SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" }),
-                runtimeProviderResolver: { .dahlia(connectionID: connection.id) }
+                    return .chatGPTSubscription
+                },
+                localAccountSettingsResolver: { .init(provider: .chatGPTSubscription, databricksProfile: "") }
             )
+
             await indexer.drain()
-            let fallsBack = capability != "enabled" && capability != "unavailable" && capability != "detached"
-            #expect(await analyzer.runtimeProviders[screenshot.id] == (fallsBack ? .dahlia(connectionID: connection.id) : nil))
+
+            #expect(await analyzer.runtimeProviders[screenshot.id] == nil)
+            #expect(await analyzer.runtimeProviders[localScreenshot.id] == .chatGPTSubscription)
             try await database.dbQueue.read { db throws in
-                #expect(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText == (fallsBack ? "device OCR" : nil))
-                let jobs = try Int.fetchOne(db, sql: "SELECT count(*) FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis'")
-                #expect(jobs == (capability == "unavailable" || capability == "detached" ? 1 : 0))
-            }
-            if capability == "unavailable" {
-                unavailable.withLock { $0 = false }
-                try await database.dbQueue.write { db in
-                    try db.execute(sql: "UPDATE jobs_search_index SET availableAt = ?", arguments: [Date.distantPast])
-                }
-                await indexer.drain()
-                #expect(await analyzer.runtimeProviders[screenshot.id] == .dahlia(connectionID: connection.id))
-                #expect(try await database.dbQueue.read { db in
-                    try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText
-                } == "device OCR")
+                #expect(try WorkspaceRecord.fetchOne(db, key: workspaceID)?.accountConnectionId == nil)
+                #expect(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText == nil)
+                #expect(try MeetingScreenshotRecord.fetchOne(db, key: localScreenshot.id)?.ocrText == "device OCR")
+                let serverJob = try Row.fetchOne(
+                    db,
+                    sql: "SELECT status, attempts FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                    arguments: [screenshot.id]
+                )
+                #expect(serverJob?["status"] as String? == "pending")
+                #expect(serverJob?["attempts"] as Int? == 1)
+                #expect(try Int.fetchOne(
+                    db,
+                    sql: "SELECT count(*) FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                    arguments: [localScreenshot.id]
+                ) == 0)
             }
         }
 
@@ -954,10 +993,10 @@ import Synchronization
             )
         }
 
-        private func makeWorkspace() -> WorkspaceRecord {
+        private func makeWorkspace(path: String = "/tmp/screenshot-ocr-search-workspace") -> WorkspaceRecord {
             WorkspaceRecord(
                 id: .v7(),
-                path: "/tmp/screenshot-ocr-search-workspace",
+                path: path,
                 name: "Search",
                 createdAt: .now,
                 lastOpenedAt: .now
