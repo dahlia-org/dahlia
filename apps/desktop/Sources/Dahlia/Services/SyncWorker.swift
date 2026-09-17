@@ -379,7 +379,7 @@ actor SyncWorker {
                                 workspaceId: transaction.workspaceId, connectionId: transaction.connectionId, in: db
                             ) else { return }
                             try db.execute(
-                                sql: "UPDATE workspaces SET syncRecoveryState = 'updateRequired' WHERE id = ?",
+                                sql: "UPDATE workspaces SET syncRecoveryState = 'updateRequired', syncPullErrorJSON = NULL WHERE id = ?",
                                 arguments: [transaction.workspaceId]
                             )
                             try db.execute(
