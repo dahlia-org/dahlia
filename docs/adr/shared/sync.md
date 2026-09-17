@@ -163,6 +163,8 @@ manifest hash は各 nullable UTF-8 field の `byteLength:bytes`、NULL は `-:`
 
 Local Account と未同期画像は端末解析 job の待機・処理・失敗表示を維持する。Server Account は capabilities API で `imageAnalysis: { version: 1 }` を確認した場合だけ端末解析を省略する。未対応・未設定の Server では端末解析を使い、同期済み画像の OCR / caption は端末 job の有無によらず共通 provider で取得する。
 
+2026-09-18: 上記の Server Account 向け端末 fallback 契約を廃止する。端末解析 job は Local Account の画像だけを処理し、Server Workspace の画像は未同期を含めて `imageAnalysis` capability の有無・version・取得成否や Server のモデル設定にかかわらず処理しない。Server 側で解析されない場合も端末へ切り替えず、OCR / caption は未生成のままにする。Server の解析結果は従来どおり共通 provider で取得する。
+
 全 Server Account 合計128 MiBを超えると、再取得可能な検証済み本文を LRU で80%まで解放する。直近20会議は空き枠内だけ先読みする。閲覧済み本文を先読みのために追い出さず、解放した項目を次の先読みで取り直さない。Local Account、使用中、未送信・競合・復旧中の Workspace、録音中は対象外。容量は本文だけを数え、metadata・翻訳・session・音声特徴量・ユーザーの Markdown・backup を含めない。解放は本文行だけを削除し、transcript metadata・summary header・file metadata と export 参照、端末固有属性を保持する。対応する FTS・旧 vector を除去し metadata 索引を再構築する。既存の起動時 VACUUM と録音外 incremental vacuum で空きページを回収する。
 
 反映・解放 transaction は接続 ID / origin、Workspace、mutation generation、対象の存在、revision、queue、復旧・録音状態を再検査する。権限・所属の変更は generation で進行中取得を失効させる。状態は missing / loading / failed / ready / stale / empty / deleted を区別し、失敗で完全な旧本文を消さない。
