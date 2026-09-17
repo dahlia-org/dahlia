@@ -199,9 +199,24 @@ private struct SyncTarget: Sendable {
     var context: RemoteChangePolicy.Context {
         .init(workspaceId: workspaceId, connectionId: connectionId, generation: mutationGeneration)
     }
+
+    func matchesMutation(in db: Database) throws -> Bool {
+        try SyncTransactionQueue.matchesExpectedConnection(workspaceId: workspaceId, connectionId: connectionId, in: db)
+            && Int64.fetchOne(
+                db,
+                sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?",
+                arguments: [workspaceId]
+            ) == mutationGeneration
+    }
 }
 
 actor SyncWorker {
+    enum LocalQueueFailureDisposition: Equatable {
+        case ignore
+        case retry
+        case block(String)
+    }
+
     private static let transcriptChunkSize = 500
     private static let transcriptChunkMaximumBytes = 6 * 1024 * 1024
     private static let transcriptPatchItemLimit = 50000
@@ -219,8 +234,11 @@ actor SyncWorker {
     private var eventTasks: [UUID: Task<Void, Never>] = [:]
     private var isPulling = false
     private var discoveryTask: Task<Void, Error>?
+    private var discoveringConnections: Set<UUID> = []
+    private var discoverySuspensionWaiters: [UUID: [CheckedContinuation<Void, Never>]] = [:]
     private var suspendedDiscoveryConnections: Set<UUID> = []
     private var transferConnections: Set<UUID> = []
+    private var updateRequiredWorkspaces: Set<UUID> = []
     private struct PullKey: Hashable { let database: ObjectIdentifier
         let workspaceId: UUID
     }
@@ -334,6 +352,7 @@ actor SyncWorker {
                         try await SyncTransactionQueue.complete(transaction, response: response, dbQueue: dbQueue)
                     }
                 } catch is CancellationError {
+                    try await SyncTransactionQueue.releaseClaim(transaction, dbQueue: dbQueue)
                     if Task.isCancelled { throw CancellationError() }
                     // A discarded operation or changed connection invalidates only this attempt.
                     continue
@@ -350,6 +369,11 @@ actor SyncWorker {
                         continue
                     }
                     if error.status == 426 {
+                        updateRequiredWorkspaces.insert(transaction.workspaceId)
+                        let response = String(decoding: SyncTransactionQueue.problemData(
+                            code: error.code ?? "sync_upgrade_required",
+                            status: error.status
+                        ), as: UTF8.self)
                         try await dbQueue.write { db in
                             guard try SyncTransactionQueue.matchesExpectedConnection(
                                 workspaceId: transaction.workspaceId, connectionId: transaction.connectionId, in: db
@@ -358,28 +382,53 @@ actor SyncWorker {
                                 sql: "UPDATE workspaces SET syncRecoveryState = 'updateRequired' WHERE id = ?",
                                 arguments: [transaction.workspaceId]
                             )
+                            try db.execute(
+                                sql: "UPDATE sync_transactions SET leaseExpiresAt = NULL, serverResponseJSON = ? WHERE id = ?",
+                                arguments: [response, transaction.id]
+                            )
                         }
+                        continue
                     }
                     if let reason = error.blockedReason {
                         try await SyncTransactionQueue.block(
                             transaction,
                             reason: reason,
                             response: error.body,
+                            status: error.status,
+                            code: error.code ?? "http_\(error.status)",
                             dbQueue: dbQueue
                         )
-                    } else {
+                    } else if error.isRetryable {
                         try await SyncTransactionQueue.retry(
                             transaction,
                             code: "http_\(error.status)",
                             dbQueue: dbQueue
                         )
+                    } else {
+                        try await SyncTransactionQueue.block(
+                            transaction,
+                            reason: .validation,
+                            response: error.body,
+                            status: error.status,
+                            code: error.code ?? "http_\(error.status)",
+                            dbQueue: dbQueue
+                        )
                     }
                 } catch {
-                    try await SyncTransactionQueue.retry(
-                        transaction,
-                        code: error is URLError ? "network" : "sync_failed",
-                        dbQueue: dbQueue
-                    )
+                    switch Self.localQueueFailureDisposition(error) {
+                    case .ignore:
+                        try await SyncTransactionQueue.releaseClaim(transaction, dbQueue: dbQueue)
+                        continue
+                    case .retry:
+                        try await SyncTransactionQueue.retry(transaction, code: "network", dbQueue: dbQueue)
+                    case let .block(code):
+                        try await SyncTransactionQueue.block(
+                            transaction,
+                            reason: .validation,
+                            response: SyncTransactionQueue.problemData(code: code),
+                            dbQueue: dbQueue
+                        )
+                    }
                 }
             } catch is CancellationError {
                 return
@@ -670,10 +719,10 @@ actor SyncWorker {
     }
 
     func pullRemoteChanges(workspaceId: UUID, connectionId: UUID) async throws -> Bool {
-        guard let target = try await pullTargets().first(where: { $0.workspaceId == workspaceId && $0.connectionId == connectionId }) else {
+        guard let target = try await pullTarget(workspaceId: workspaceId, connectionId: connectionId) else {
             throw TextContentError.changed
         }
-        return try await pullRemoteChanges(for: target)
+        return try await performPull(target)
     }
 
     func synchronizeForTransfer(workspaceId: UUID, connectionId: UUID) async throws {
@@ -699,8 +748,10 @@ actor SyncWorker {
 
     func suspendCloudWorkspaceDiscovery(connectionID: UUID) async {
         suspendedDiscoveryConnections.insert(connectionID)
-        // Drain the write before sign-out disposes its working copies.
-        _ = try? await discoveryTask?.value
+        guard discoveringConnections.contains(connectionID) else { return }
+        await withCheckedContinuation { continuation in
+            discoverySuspensionWaiters[connectionID, default: []].append(continuation)
+        }
     }
 
     func resumeCloudWorkspaceDiscovery(connectionID: UUID) {
@@ -719,19 +770,57 @@ actor SyncWorker {
         let connections = try await dbQueue.read { try DahliaAccountConnectionRecord.fetchAll($0) }
         for connection in connections where !suspendedDiscoveryConnections.contains(connection.id) {
             do {
-                try Task.checkCancellation()
-                let workspaces = try await CloudWorkspaceDiscovery.fetch(connection: connection, apiClient: apiClient)
-                guard !suspendedDiscoveryConnections.contains(connection.id) else { continue }
-                if try await MeetingRepository.registerDiscoveredCloudWorkspaces(workspaces, connection: connection, dbQueue: dbQueue) {
-                    await workspacesDidChange()
-                }
+                try await performCloudWorkspaceDiscovery(connection)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                // A failed listing is not evidence of deletion or lost access.
                 continue
             }
         }
+    }
+
+    func retryDiscovery(connectionId: UUID) async throws {
+        _ = try? await discoveryTask?.value
+        guard let connection = try await dbQueue.read({ try DahliaAccountConnectionRecord.fetchOne($0, key: connectionId) }),
+              !suspendedDiscoveryConnections.contains(connectionId) else { throw TextContentError.changed }
+        try await performCloudWorkspaceDiscovery(connection)
+    }
+
+    private func performCloudWorkspaceDiscovery(_ connection: DahliaAccountConnectionRecord) async throws {
+        guard !suspendedDiscoveryConnections.contains(connection.id),
+              discoveringConnections.insert(connection.id).inserted else { throw TextContentError.changed }
+        defer { finishDiscoveryAttempt(connectionId: connection.id) }
+        do {
+            try Task.checkCancellation()
+            let workspaces = try await CloudWorkspaceDiscovery.fetch(connection: connection, apiClient: apiClient)
+            guard !suspendedDiscoveryConnections.contains(connection.id) else { return }
+            let changed = try await dbQueue.write { db in
+                try MeetingRepository.registerDiscoveredCloudWorkspaces(
+                    workspaces,
+                    connection: connection,
+                    clearingDiscoveryIncident: true,
+                    in: db
+                )
+            }
+            if changed {
+                await workspacesDidChange()
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
+        } catch {
+            // A failed listing is not evidence of deletion or lost access.
+            if !suspendedDiscoveryConnections.contains(connection.id) {
+                try? await recordDiscoveryIncident(error, connectionId: connection.id)
+            }
+            throw error
+        }
+    }
+
+    private func finishDiscoveryAttempt(connectionId: UUID) {
+        discoveringConnections.remove(connectionId)
+        discoverySuspensionWaiters.removeValue(forKey: connectionId)?.forEach { $0.resume() }
     }
 
     private func pullRemoteChanges() async throws {
@@ -741,55 +830,109 @@ actor SyncWorker {
         try await discoverCloudWorkspaces()
         for target in try await pullTargets() {
             do {
-                try await ScreenshotContentProvider.shared.migrateLegacyImages(workspaceId: target.workspaceId, dbQueue: dbQueue)
-                _ = try await pullRemoteChanges(for: target)
-                await MeetingContentProvider.shared.scheduleMaintenance(dbQueue: dbQueue)
+                _ = try await performPull(target)
             } catch is CancellationError {
                 throw CancellationError()
-            } catch let error as SyncHTTPError where error.status == 426 {
-                try? await setRecoveryState("updateRequired", target: target)
-            } catch let error as SyncHTTPError where error.status == 410 && error.code == "sync_cursor_expired" {
-                try? await recoverSnapshot(target)
-            } catch let error as SyncHTTPError where error.status == 404 && error.code == "workspace_not_found" {
-                do {
-                    if try await reconcileRelocations(workspaceId: target.workspaceId, connectionId: target.connectionId, origin: target.origin) {
-                        continue
-                    }
-                    if transferConnections.contains(target.connectionId) {
-                        try? await setRecoveryState("transferBlocked", target: target)
-                        continue
-                    }
-                    let isTransferBlocked = try await dbQueue.read { db in
-                        try String.fetchOne(
-                            db,
-                            sql: """
-                            SELECT syncRecoveryState FROM workspaces
-                            WHERE id = ? AND accountConnectionId = ? AND syncConfirmedConnectionId = ?
-                            """,
-                            arguments: [target.workspaceId, target.connectionId, target.connectionId]
-                        ) == "transferBlocked"
-                    }
-                    if isTransferBlocked { continue }
-                    if try await RemoteChangeApplier.reconcileMissingWorkspace(
-                        workspaceId: target.workspaceId,
-                        expectedConnectionId: target.connectionId,
-                        dbQueue: dbQueue,
-                        expectedMutationGeneration: target.mutationGeneration
-                    ) {
-                        await workspacesDidChange()
-                    }
-                } catch is CancellationError {
-                    throw CancellationError()
-                } catch {
-                    continue
-                }
             } catch {
                 continue
             }
         }
     }
 
-    private func reconcileRelocations(workspaceId: UUID, connectionId: UUID, origin: URL) async throws -> Bool {
+    func retryPull(workspaceId: UUID, connectionId: UUID) async throws {
+        _ = try await pullRemoteChanges(workspaceId: workspaceId, connectionId: connectionId)
+    }
+
+    private func performPull(_ target: SyncTarget) async throws -> Bool {
+        let key = PullKey(database: ObjectIdentifier(dbQueue), workspaceId: target.workspaceId)
+        guard Self.pullingWorkspaces.withLock({ $0.insert(key).inserted }) else { throw TextContentError.changed }
+        defer { _ = Self.pullingWorkspaces.withLock { $0.remove(key) } }
+        do {
+            try await ScreenshotContentProvider.shared.migrateLegacyImages(workspaceId: target.workspaceId, dbQueue: dbQueue)
+            guard try await pullRemoteChanges(for: target) else { return false }
+            try await clearPullIncident(target: target)
+            await MeetingContentProvider.shared.scheduleMaintenance(dbQueue: dbQueue)
+            return true
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
+        } catch TextContentError.changed {
+            throw TextContentError.changed
+        } catch let error as SyncHTTPError where error.status == 426 {
+            try? await setRecoveryState("updateRequired", target: target)
+            try? await recordPullIncident(error, target: target)
+            throw error
+        } catch let error as SyncHTTPError where error.status == 410 && error.code == "sync_cursor_expired" {
+            do {
+                let recovered = try await recoverSnapshot(target)
+                if recovered {
+                    try await clearPullIncident(target: target)
+                } else if try await dbQueue.read({ try target.matchesMutation(in: $0) }) {
+                    try await recordPullIncident(error, target: target)
+                }
+                return recovered
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try? await recordPullIncident(error, target: target)
+                throw error
+            }
+        } catch let error as SyncHTTPError where error.status == 404 && error.code == "workspace_not_found" {
+            do {
+                if try await reconcileRelocations(
+                    workspaceId: target.workspaceId,
+                    connectionId: target.connectionId,
+                    origin: target.origin,
+                    clearPullIncidentOnSuccess: true
+                ) {
+                    return false
+                }
+                if transferConnections.contains(target.connectionId) {
+                    try? await setRecoveryState("transferBlocked", target: target)
+                    try? await recordPullIncident(error, target: target)
+                    return false
+                }
+                let isTransferBlocked = try await dbQueue.read { db in
+                    try String.fetchOne(
+                        db,
+                        sql: """
+                        SELECT syncRecoveryState FROM workspaces
+                        WHERE id = ? AND accountConnectionId = ? AND syncConfirmedConnectionId = ?
+                        """,
+                        arguments: [target.workspaceId, target.connectionId, target.connectionId]
+                    ) == "transferBlocked"
+                }
+                if isTransferBlocked {
+                    try? await recordPullIncident(error, target: target)
+                    return false
+                }
+                guard try await RemoteChangeApplier.reconcileMissingWorkspace(
+                    workspaceId: target.workspaceId,
+                    expectedConnectionId: target.connectionId,
+                    dbQueue: dbQueue,
+                    expectedMutationGeneration: target.mutationGeneration
+                ) else { throw error }
+                await workspacesDidChange()
+                return false
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try? await recordPullIncident(error, target: target)
+                throw error
+            }
+        } catch {
+            try? await recordPullIncident(error, target: target)
+            throw error
+        }
+    }
+
+    private func reconcileRelocations(
+        workspaceId: UUID,
+        connectionId: UUID,
+        origin: URL,
+        clearPullIncidentOnSuccess: Bool = false
+    ) async throws -> Bool {
         guard transferConnections.contains(connectionId) else { return false }
         do {
             let data = try await sendData(origin: origin, connectionId: connectionId) {
@@ -802,6 +945,12 @@ actor SyncWorker {
                     sql: "UPDATE workspaces SET syncRecoveryState = NULL WHERE id = ? AND accountConnectionId = ? AND syncRecoveryState = 'transferBlocked'",
                     arguments: [workspaceId, connectionId]
                 )
+                if changed, clearPullIncidentOnSuccess {
+                    try db.execute(
+                        sql: "UPDATE workspaces SET syncPullErrorJSON = NULL WHERE id = ? AND accountConnectionId = ? AND syncConfirmedConnectionId = ?",
+                        arguments: [workspaceId, connectionId, connectionId]
+                    )
+                }
                 return changed
             }
             if changed { await workspacesDidChange() }
@@ -827,9 +976,6 @@ actor SyncWorker {
     }
 
     private func pullRemoteChanges(for target: SyncTarget) async throws -> Bool {
-        let key = PullKey(database: ObjectIdentifier(dbQueue), workspaceId: target.workspaceId)
-        guard Self.pullingWorkspaces.withLock({ $0.insert(key).inserted }) else { throw TextContentError.changed }
-        defer { _ = Self.pullingWorkspaces.withLock { $0.remove(key) } }
         do {
             let data = try await sendData(origin: target.origin, connectionId: target.connectionId, upgradeOnMissing: true) {
                 try await $0.getCapabilities().ok.body.json
@@ -868,12 +1014,13 @@ actor SyncWorker {
             if try await reconcileRelocations(
                 workspaceId: target.workspaceId,
                 connectionId: target.connectionId,
-                origin: target.origin
+                origin: target.origin,
+                clearPullIncidentOnSuccess: true
             ) { return false }
+            if target.cursor == nil { return true }
         }
         if target.cursor == nil {
-            try await recoverSnapshot(target)
-            return true
+            return try await recoverSnapshot(target)
         }
 
         var cursor = target.cursor
@@ -886,7 +1033,12 @@ actor SyncWorker {
                 cursor: cursor,
                 highWaterCursor: highWaterCursor
             )
-            if try await reconcileRelocations(workspaceId: target.workspaceId, connectionId: target.connectionId, origin: target.origin) {
+            if try await reconcileRelocations(
+                workspaceId: target.workspaceId,
+                connectionId: target.connectionId,
+                origin: target.origin,
+                clearPullIncidentOnSuccess: true
+            ) {
                 return false
             }
             highWaterCursor = page.highWaterCursor
@@ -901,7 +1053,12 @@ actor SyncWorker {
                     )
                     snapshotItems.append(contentsOf: snapshotPage.items)
                 }
-                if try await reconcileRelocations(workspaceId: target.workspaceId, connectionId: target.connectionId, origin: target.origin) {
+                if try await reconcileRelocations(
+                    workspaceId: target.workspaceId,
+                    connectionId: target.connectionId,
+                    origin: target.origin,
+                    clearPullIncidentOnSuccess: true
+                ) {
                     return false
                 }
                 let snapshot = Self.initialSnapshotChanges(snapshotItems)
@@ -928,7 +1085,7 @@ actor SyncWorker {
         return !deferred
     }
 
-    private func recoverSnapshot(_ target: SyncTarget) async throws {
+    private func recoverSnapshot(_ target: SyncTarget) async throws -> Bool {
         try await setRecoveryState("pending", target: target, resetCursor: true)
         let generation = try await RemoteChangeApplier.recoveryGeneration(
             workspaceId: target.workspaceId, expectedConnectionId: target.connectionId, dbQueue: dbQueue
@@ -940,20 +1097,27 @@ actor SyncWorker {
                 arguments: [target.workspaceId]
             ) ?? false
         }
-        guard generation != nil || needsRevisions else { return }
+        guard generation != nil || needsRevisions else { return false }
         try await setRecoveryState("recovering", target: target)
         do {
             let completed = try await fetchAndApplySnapshot(target, generation: generation)
-            if !completed { try await setRecoveryState("pending", target: target) }
+            guard completed else {
+                try await setRecoveryState("pending", target: target)
+                return false
+            }
         } catch {
             let state = (error as? SyncHTTPError)?.status == 426 ? "updateRequired" : "pending"
             try? await setRecoveryState(state, target: target)
             throw error
         }
         await workspacesDidChange()
+        return true
     }
 
     private func setRecoveryState(_ state: String, target: SyncTarget, resetCursor: Bool = false) async throws {
+        if state == "updateRequired" {
+            updateRequiredWorkspaces.insert(target.workspaceId)
+        }
         try await dbQueue.write { db in
             guard try SyncTransactionQueue.matchesExpectedConnection(
                 workspaceId: target.workspaceId, connectionId: target.connectionId, in: db
@@ -1022,7 +1186,12 @@ actor SyncWorker {
     private func fetchAndApplySnapshot(_ target: SyncTarget, generation: Int64?) async throws -> Bool {
         let (staged, cursor, deletedWorkspace) = try await fetchStagedSnapshot(target)
 
-        if try await reconcileRelocations(workspaceId: target.workspaceId, connectionId: target.connectionId, origin: target.origin) {
+        if try await reconcileRelocations(
+            workspaceId: target.workspaceId,
+            connectionId: target.connectionId,
+            origin: target.origin,
+            clearPullIncidentOnSuccess: true
+        ) {
             return false
         }
 
@@ -1265,7 +1434,7 @@ actor SyncWorker {
             case .retry:
                 if try await dbQueue.read({ try target.context.isCurrent(in: $0) }) {
                     // A fresh canonical revision lower than our copy requires the existing fenced snapshot recovery.
-                    try await recoverSnapshot(target)
+                    _ = try await recoverSnapshot(target)
                 }
                 return .retry
             case .deferred:
@@ -1373,12 +1542,39 @@ actor SyncWorker {
             + sorted(.transcript) + sorted(.file) + sorted(.meetingAttachment) + deletes
     }
 
-    private func pullTargets() async throws -> [SyncTarget] {
+    private func pullTarget(workspaceId: UUID, connectionId: UUID) async throws -> SyncTarget? {
         try await dbQueue.read { db in
+            guard let row = try Row.fetchOne(
+                db,
+                sql: """
+                SELECT workspaces.id, workspaces.syncConfirmedConnectionId, workspaces.syncPullCursor,
+                    workspaces.syncMutationGeneration, dahlia_account_connections.origin
+                FROM workspaces
+                JOIN dahlia_account_connections
+                  ON dahlia_account_connections.id = workspaces.syncConfirmedConnectionId
+                WHERE workspaces.id = ? AND workspaces.accountConnectionId = ?
+                  AND workspaces.syncConfirmedConnectionId = ?
+                """,
+                arguments: [workspaceId, connectionId, connectionId]
+            ), let origin = URL(string: row["origin"] as String) else { return nil }
+            return SyncTarget(
+                workspaceId: row["id"],
+                connectionId: row["syncConfirmedConnectionId"],
+                origin: origin,
+                cursor: row["syncPullCursor"],
+                mutationGeneration: row["syncMutationGeneration"]
+            )
+        }
+    }
+
+    private func pullTargets() async throws -> [SyncTarget] {
+        let updateRequiredWorkspaces = updateRequiredWorkspaces
+        return try await dbQueue.read { db in
             try Row.fetchAll(
                 db,
                 sql: """
                 SELECT workspaces.id, workspaces.syncConfirmedConnectionId, workspaces.syncPullCursor, workspaces.syncMutationGeneration,
+                    workspaces.syncRecoveryState,
                     dahlia_account_connections.origin
                 FROM workspaces
                 JOIN dahlia_account_connections
@@ -1386,6 +1582,7 @@ actor SyncWorker {
                 WHERE workspaces.accountConnectionId = workspaces.syncConfirmedConnectionId
                   AND (
                     (workspaces.syncPullCursor IS NOT NULL AND workspaces.syncRecoveryState IS NULL)
+                    OR workspaces.syncRecoveryState = 'updateRequired'
                     OR workspaces.syncRecoveryState = 'transferBlocked'
                     OR NOT EXISTS (SELECT 1 FROM sync_transactions WHERE workspace_id = workspaces.id)
                     OR EXISTS (
@@ -1395,10 +1592,13 @@ actor SyncWorker {
                     )
                   )
                 """
-            ).compactMap { row in
+            ).compactMap { row -> SyncTarget? in
+                let workspaceId: UUID = row["id"]
+                if row["syncRecoveryState"] as String? == "updateRequired",
+                   updateRequiredWorkspaces.contains(workspaceId) { return nil }
                 guard let origin = URL(string: row["origin"] as String) else { return nil }
                 return SyncTarget(
-                    workspaceId: row["id"],
+                    workspaceId: workspaceId,
                     connectionId: row["syncConfirmedConnectionId"],
                     origin: origin,
                     cursor: row["syncPullCursor"],
@@ -1451,6 +1651,37 @@ actor SyncWorker {
     private func connection(id: UUID) async throws -> URL? {
         try await dbQueue.read { db in
             try DahliaAccountConnectionRecord.fetchOne(db, key: id).flatMap { URL(string: $0.origin) }
+        }
+    }
+
+    private func recordDiscoveryIncident(_ error: any Error, connectionId: UUID) async throws {
+        guard let json = SyncIncident(stage: .discovery, error: error).jsonString else { return }
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE dahlia_account_connections SET syncDiscoveryErrorJSON = ? WHERE id = ?",
+                arguments: [json, connectionId]
+            )
+        }
+    }
+
+    private func recordPullIncident(_ error: any Error, target: SyncTarget) async throws {
+        guard let json = SyncIncident(stage: .pull, error: error).jsonString else { return }
+        try await dbQueue.write { db in
+            guard try target.matchesMutation(in: db) else { return }
+            try db.execute(
+                sql: "UPDATE workspaces SET syncPullErrorJSON = ? WHERE id = ?",
+                arguments: [json, target.workspaceId]
+            )
+        }
+    }
+
+    private func clearPullIncident(target: SyncTarget) async throws {
+        try await dbQueue.write { db in
+            guard try target.matchesMutation(in: db) else { return }
+            try db.execute(
+                sql: "UPDATE workspaces SET syncPullErrorJSON = NULL WHERE id = ?",
+                arguments: [target.workspaceId]
+            )
         }
     }
 

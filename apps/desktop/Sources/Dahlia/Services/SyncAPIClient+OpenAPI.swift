@@ -18,7 +18,7 @@ extension SyncAPIClient {
         operation: @Sendable (DahliaServerAPI.Client) async throws -> Value
     ) async throws -> Value {
         for attempt in 0 ... 1 {
-            let token = try await tokenProvider(connectionId, attempt == 1)
+            let token = try await accessToken(connectionId: connectionId, forceRefresh: attempt == 1)
             let client = DahliaServerAPI.Client(
                 serverURL: origin, configuration: .init(dateTranscoder: SyncAPIDateTranscoder()),
                 transport: URLSessionTransport(configuration: .init(session: session)),

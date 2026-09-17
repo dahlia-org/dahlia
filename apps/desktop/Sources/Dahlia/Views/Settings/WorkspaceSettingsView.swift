@@ -177,26 +177,6 @@ struct WorkspaceSettingsView: View {
                 }
             }
 
-            if model.conflictedSyncWorkspaceIDs.contains(workspace.id) {
-                Button(L10n.useServerVersion, systemImage: "icloud.and.arrow.down") {
-                    Task { await model.acceptServerSyncVersion(for: workspace) }
-                }
-                if workspace.allowsCanonicalEdits {
-                    Button(L10n.reapplyLocalVersion, systemImage: "arrow.up.circle") {
-                        Task { await model.reapplyLocalSyncVersion(for: workspace) }
-                    }
-                }
-            }
-
-            if model.validationBlockedSyncWorkspaceIDs.contains(workspace.id) {
-                Button(L10n.retrySync, systemImage: "arrow.clockwise") {
-                    Task { await model.retryInvalidSyncTransaction(for: workspace) }
-                }
-                Button(L10n.useServerVersion, systemImage: "icloud.and.arrow.down", role: .destructive) {
-                    Task { await model.discardInvalidSyncTransaction(for: workspace) }
-                }
-            }
-
             if workspace.id != currentWorkspace?.id, workspace.accountConnectionId == nil {
                 Button(L10n.removeWorkspace, systemImage: "minus", role: .destructive) {
                     pendingRemoval = workspace

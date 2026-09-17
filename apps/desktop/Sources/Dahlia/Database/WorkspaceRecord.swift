@@ -50,6 +50,7 @@ struct WorkspaceRecord: Codable, FetchableRecord, PersistableRecord, Identifiabl
     var syncPullCursor: String?
     var syncLastCommittedCursor: String?
     var syncRecoveryState: String?
+    var syncPullErrorJSON: String?
 
     var localProvider: AIAccountProvider {
         get { AIAccountProvider(rawValue: localAIProvider) ?? .chatGPTSubscription }
@@ -70,6 +71,7 @@ extension WorkspaceRecord {
         syncConfirmedConnectionId = nil
         syncPullCursor = nil
         syncLastCommittedCursor = nil
+        syncPullErrorJSON = nil
         generationSettings.processing.location = .local
     }
 

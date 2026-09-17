@@ -8,4 +8,5 @@ struct DahliaAccountConnectionRecord: Codable, FetchableRecord, PersistableRecor
     var origin: String
     var clientID: String
     var createdAt: Date
+    var syncDiscoveryErrorJSON: String?
 }

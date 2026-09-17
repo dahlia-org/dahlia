@@ -776,7 +776,7 @@ enum RemoteChangeApplier {
         try db.execute(
             sql: """
             UPDATE workspaces SET syncConfirmedConnectionId = NULL,
-                syncPullCursor = NULL, syncLastCommittedCursor = NULL
+                syncPullCursor = NULL, syncLastCommittedCursor = NULL, syncPullErrorJSON = NULL
             WHERE id = ?
             """,
             arguments: [workspaceId]

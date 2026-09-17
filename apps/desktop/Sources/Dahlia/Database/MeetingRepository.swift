@@ -130,39 +130,54 @@ final class MeetingRepository {
         dbQueue: DatabaseQueue
     ) async throws -> Bool {
         try await dbQueue.write { db in
-            try Task.checkCancellation()
-            guard let current = try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id),
-                  current.origin == connection.origin, current.clientID == connection.clientID else { return false }
-            var changed = false
-            for cloud in cloudWorkspaces where cloud.connectionId == connection.id {
-                if var existing = try WorkspaceRecord.fetchOne(db, key: cloud.workspaceId) {
-                    guard existing.accountConnectionId == connection.id,
-                          existing.syncConfirmedConnectionId == connection.id else { continue }
-                    guard existing.organizationId == cloud.organizationId else { throw SyncTransactionQueueError.invalidReceipt }
-                    guard existing.syncRole != cloud.role else { continue }
-                    existing.syncRole = cloud.role
-                    try existing.update(db)
-                    changed = true
-                    continue
-                }
-                var workspace = WorkspaceRecord(
-                    id: cloud.workspaceId, path: nil, icon: cloud.icon, color: cloud.color,
-                    name: cloud.name, createdAt: cloud.createdAt, lastOpenedAt: .distantPast
-                )
-                workspace.accountConnectionId = connection.id
-                workspace.syncConfirmedConnectionId = connection.id
-                workspace.syncRole = cloud.role
-                workspace.organizationId = cloud.organizationId
-                workspace.generationSettings = cloud.generationSettings
-                try workspace.insert(db)
-                try db.execute(
-                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, ?)",
-                    arguments: [workspace.id, workspace.id, cloud.revision]
-                )
-                changed = true
-            }
-            return changed
+            try registerDiscoveredCloudWorkspaces(cloudWorkspaces, connection: connection, in: db)
         }
+    }
+
+    nonisolated static func registerDiscoveredCloudWorkspaces(
+        _ cloudWorkspaces: [CloudWorkspaceRecord],
+        connection: DahliaAccountConnectionRecord,
+        clearingDiscoveryIncident: Bool = false,
+        in db: Database
+    ) throws -> Bool {
+        try Task.checkCancellation()
+        guard let current = try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id),
+              current.origin == connection.origin, current.clientID == connection.clientID else { return false }
+        if clearingDiscoveryIncident {
+            try db.execute(
+                sql: "UPDATE dahlia_account_connections SET syncDiscoveryErrorJSON = NULL WHERE id = ?",
+                arguments: [connection.id]
+            )
+        }
+        var changed = false
+        for cloud in cloudWorkspaces where cloud.connectionId == connection.id {
+            if var existing = try WorkspaceRecord.fetchOne(db, key: cloud.workspaceId) {
+                guard existing.accountConnectionId == connection.id,
+                      existing.syncConfirmedConnectionId == connection.id else { continue }
+                guard existing.organizationId == cloud.organizationId else { throw SyncTransactionQueueError.invalidReceipt }
+                guard existing.syncRole != cloud.role else { continue }
+                existing.syncRole = cloud.role
+                try existing.update(db)
+                changed = true
+                continue
+            }
+            var workspace = WorkspaceRecord(
+                id: cloud.workspaceId, path: nil, icon: cloud.icon, color: cloud.color,
+                name: cloud.name, createdAt: cloud.createdAt, lastOpenedAt: .distantPast
+            )
+            workspace.accountConnectionId = connection.id
+            workspace.syncConfirmedConnectionId = connection.id
+            workspace.syncRole = cloud.role
+            workspace.organizationId = cloud.organizationId
+            workspace.generationSettings = cloud.generationSettings
+            try workspace.insert(db)
+            try db.execute(
+                sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, ?)",
+                arguments: [workspace.id, workspace.id, cloud.revision]
+            )
+            changed = true
+        }
+        return changed
     }
 
     /// ワークスペースの表示名を更新する。
@@ -269,12 +284,30 @@ final class MeetingRepository {
         }
     }
 
-    nonisolated func acceptServerSyncVersion(workspaceId: UUID) async throws {
-        try await SyncTransactionQueue.acceptServerVersion(workspaceId: workspaceId, dbQueue: dbQueue)
+    nonisolated func acceptServerSyncVersion(
+        workspaceId: UUID,
+        expectedLastTransactionId: UUID? = nil,
+        expectedHasConfirmedWorkspace: Bool? = nil
+    ) async throws {
+        try await SyncTransactionQueue.acceptServerVersion(
+            workspaceId: workspaceId,
+            expectedLastTransactionId: expectedLastTransactionId,
+            expectedHasConfirmedWorkspace: expectedHasConfirmedWorkspace,
+            dbQueue: dbQueue
+        )
     }
 
-    nonisolated func discardInvalidSyncTransaction(workspaceId: UUID) async throws {
-        try await SyncTransactionQueue.discardInvalidTransaction(workspaceId: workspaceId, dbQueue: dbQueue)
+    nonisolated func discardInvalidSyncTransaction(
+        workspaceId: UUID,
+        expectedLastTransactionId: UUID? = nil,
+        expectedHasConfirmedWorkspace: Bool? = nil
+    ) async throws {
+        try await SyncTransactionQueue.discardInvalidTransaction(
+            workspaceId: workspaceId,
+            expectedLastTransactionId: expectedLastTransactionId,
+            expectedHasConfirmedWorkspace: expectedHasConfirmedWorkspace,
+            dbQueue: dbQueue
+        )
     }
 
     nonisolated func retryInvalidSyncTransaction(workspaceId: UUID) async throws {
@@ -292,18 +325,6 @@ final class MeetingRepository {
     nonisolated func blockedSyncWorkspaceIDs() async throws -> Set<UUID> {
         try await dbQueue.read { db in
             try UUID.fetchSet(db, sql: "SELECT DISTINCT workspace_id FROM sync_transactions WHERE blockedReason IS NOT NULL")
-        }
-    }
-
-    nonisolated func conflictedSyncWorkspaceIDs() async throws -> Set<UUID> {
-        try await dbQueue.read { db in
-            try UUID.fetchSet(db, sql: "SELECT DISTINCT workspace_id FROM sync_transactions WHERE blockedReason = 'conflict'")
-        }
-    }
-
-    nonisolated func validationBlockedSyncWorkspaceIDs() async throws -> Set<UUID> {
-        try await dbQueue.read { db in
-            try UUID.fetchSet(db, sql: "SELECT DISTINCT workspace_id FROM sync_transactions WHERE blockedReason = 'validation'")
         }
     }
 

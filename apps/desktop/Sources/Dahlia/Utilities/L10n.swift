@@ -203,6 +203,58 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var syncOtherChanges: String { String(localized: "sync.otherChanges", bundle: bundle) }
     static var syncRemainingFormat: String { String(localized: "sync.remainingFormat", bundle: bundle) }
     static var syncProgressUnavailable: String { String(localized: "sync.unavailable", bundle: bundle) }
+    static var syncRecoveryBusy: String { String(localized: "sync.recoveryBusy", bundle: bundle) }
+    static var syncNextRetry: String { String(localized: "sync.nextRetry", bundle: bundle) }
+    static var syncRetryBackoffDescription: String { String(localized: "sync.retryBackoffDescription", bundle: bundle) }
+    static var syncErrorCode: String { String(localized: "sync.errorCode", bundle: bundle) }
+    static var syncHTTPStatus: String { String(localized: "sync.httpStatus", bundle: bundle) }
+    static var syncTargetRecord: String { String(localized: "sync.targetRecord", bundle: bundle) }
+    static var syncPermissionRequired: String { String(localized: "sync.permissionRequired", bundle: bundle) }
+    static var syncRetryAfterPermission: String { String(localized: "sync.retryAfterPermission", bundle: bundle) }
+    static var syncDiscardFollowing: String { String(localized: "sync.discardFollowing", bundle: bundle) }
+    static var syncOpenServer: String { String(localized: "sync.openServer", bundle: bundle) }
+    static var syncCheckServer: String { String(localized: "sync.checkServer", bundle: bundle) }
+    static var syncOpenServerFailed: String { String(localized: "sync.openServerFailed", bundle: bundle) }
+    static var syncDiscoveryFailed: String { String(localized: "sync.discoveryFailed", bundle: bundle) }
+    static var syncPullFailed: String { String(localized: "sync.pullFailed", bundle: bundle) }
+    static var syncLocalValidationFailed: String { String(localized: "sync.localValidationFailed", bundle: bundle) }
+    static var syncDiscardWarning: String { String(localized: "sync.discardWarning", bundle: bundle) }
+    static var syncMeeting: String { String(localized: "sync.record.meeting", bundle: bundle) }
+    static var syncFile: String { String(localized: "sync.record.file", bundle: bundle) }
+    static var syncAttachment: String { String(localized: "sync.record.attachment", bundle: bundle) }
+    static var syncRecording: String { String(localized: "sync.record.recording", bundle: bundle) }
+    static var syncEvent: String { String(localized: "sync.record.event", bundle: bundle) }
+
+    static func syncRecordingArchiveFailure(_ meetingName: String) -> String {
+        String(format: String(localized: "sync.recordingArchiveFailure", bundle: bundle), meetingName)
+    }
+
+    static var syncRecordingArchiveAskEditor: String { String(localized: "sync.recordingArchiveAskEditor", bundle: bundle) }
+
+    static func syncUseServerConfirmation(_ workspaceName: String) -> String {
+        String(format: String(localized: "sync.useServerConfirmation", bundle: bundle), workspaceName)
+    }
+
+    static func syncDiscardConfirmation(_ workspaceName: String) -> String {
+        String(format: String(localized: "sync.discardConfirmation", bundle: bundle), workspaceName)
+    }
+
+    static func syncDiscardImpact(
+        transactions: Int,
+        operations: Int,
+        records: Int,
+        localBodies: Int,
+        meetings: Int
+    ) -> String {
+        String(
+            format: String(localized: "sync.discardImpact", bundle: bundle),
+            transactions,
+            operations,
+            records,
+            localBodies,
+            meetings
+        )
+    }
 
     // MARK: - Common
 

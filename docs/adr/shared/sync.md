@@ -113,10 +113,10 @@ MCP の画像参照は同じファイルストアを read-only で利用し、�
 同じ OS ユーザーと同梱 helper executable を確認し、アプリ側でも Workspace / 会議 / 画像の所属を検証する。token broker の権限は広げない。
 未取得・破損画像をリストから黙って省かず、取得不能として返す。
 
-未リリースの v45 は screenshots table を files と meeting_attachments に移し、既存画像 ID を両方の ID に引き継ぐ。旧 BLOB は file_migration_content へ退避し、ファイル検証後に解放する。operation の独立 attachment reference を追加する。
-v44 以前の BLOB はファイルの検証と参照切り替えが成功した分だけ解放し、移行前の retry 用 BLOB 保護は維持する。
+未リリースの v42 は screenshots table を files と meeting_attachments に移し、既存画像 ID を両方の ID に引き継ぐ。旧 BLOB は file_migration_content へ退避し、ファイル検証後に解放する。operation の独立 attachment reference を追加する。
+v41 以前の BLOB はファイルの検証と参照切り替えが成功した分だけ解放し、移行前の retry 用 BLOB 保護は維持する。
 移行は起動時と同期前に再開でき、失敗時は元データを保持する。Local Account から Server への移動もファイルを準備し、
-所属変更と参照の切り替えを同じ transaction で確定する。旧 v45 と旧 cache 形式は未リリースのため互換処理を持たない。
+所属変更と参照の切り替えを同じ transaction で確定する。旧 v42 と旧 cache 形式は未リリースのため互換処理を持たない。
 次の canonical metadata 取得で既存画像の Server 参照を確定する。解放した SQLite ページは次回起動時、録音開始前に空き容量を確認して
 標準 `VACUUM` で回収し、以後は録音外で incremental vacuum を行う。失敗時は元の DB を維持して後の起動で再試行する。
 

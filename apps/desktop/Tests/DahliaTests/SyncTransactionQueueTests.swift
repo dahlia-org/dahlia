@@ -235,6 +235,92 @@
             #expect(retried.id == firstClaim.id)
             #expect(retried.operations.first?.id == operationId)
             #expect(retried.operations.first?.payloadJSON == payload)
+            #expect(retried.attempts == 1)
+        }
+
+        @Test
+        func transportRetryStoresProblemJSON() async throws {
+            let (database, workspace) = try await syncedDatabase()
+            _ = try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.record(
+                    workspaceId: workspace.id,
+                    operations: [.init(entity: .workspace, action: .update, entityId: workspace.id)],
+                    in: db
+                )
+            }
+            let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+
+            try await SyncTransactionQueue.retry(transaction, code: "network", dbQueue: database.dbQueue)
+
+            let response: String = try #require(try await database.dbQueue.read {
+                try String.fetchOne($0, sql: "SELECT serverResponseJSON FROM sync_transactions WHERE id = ?", arguments: [transaction.id])
+            })
+            #expect(try JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: String] == ["code": "network"])
+        }
+
+        @Test
+        func releasingACancelledClaimAddsShortDelayWithoutCountingTheAttempt() async throws {
+            let (database, workspace) = try await syncedDatabase()
+            _ = try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.record(
+                    workspaceId: workspace.id,
+                    operations: [.init(entity: .workspace, action: .update, entityId: workspace.id)],
+                    in: db
+                )
+            }
+            let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+
+            try await SyncTransactionQueue.releaseClaim(transaction, dbQueue: database.dbQueue)
+
+            try await database.dbQueue.read { db throws in
+                let row = try #require(try Row.fetchOne(
+                    db,
+                    sql: "SELECT attempts, availableAt, leaseExpiresAt FROM sync_transactions WHERE id = ?",
+                    arguments: [transaction.id]
+                ))
+                #expect(row["attempts"] as Int == 0)
+                #expect(row["availableAt"] as Date > Date.now)
+                #expect(row["leaseExpiresAt"] as Date? == nil)
+            }
+            #expect(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue) == nil)
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE sync_transactions SET availableAt = ? WHERE id = ?",
+                    arguments: [Date.distantPast, transaction.id]
+                )
+            }
+            let reclaimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            #expect(reclaimed.id == transaction.id)
+            #expect(reclaimed.attempts == 1)
+        }
+
+        @Test
+        func nonJSONBlockStoresHTTPProblemMetadata() async throws {
+            let (database, workspace) = try await syncedDatabase()
+            _ = try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.record(
+                    workspaceId: workspace.id,
+                    operations: [.init(entity: .workspace, action: .update, entityId: workspace.id)],
+                    in: db
+                )
+            }
+            let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+
+            try await SyncTransactionQueue.block(
+                transaction,
+                reason: .validation,
+                response: Data("unprocessable".utf8),
+                status: 422,
+                code: "http_422",
+                dbQueue: database.dbQueue
+            )
+
+            let response = try #require(try await database.dbQueue.read {
+                try String.fetchOne($0, sql: "SELECT serverResponseJSON FROM sync_transactions WHERE id = ?", arguments: [transaction.id])
+            })
+            let problem = try #require(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+            #expect(problem["status"] as? Int == 422)
+            #expect(problem["code"] as? String == "http_422")
         }
 
         @Test
@@ -320,6 +406,89 @@
         }
 
         @Test
+        func discardRefusesChangesAddedAfterConfirmation() async throws {
+            let (database, workspace) = try await syncedDatabase()
+            let connectionId = try #require(workspace.accountConnectionId)
+            _ = try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.record(
+                    workspaceId: workspace.id,
+                    operations: [.init(entity: .workspace, action: .update, entityId: workspace.id)],
+                    in: db
+                )
+            }
+            let blocked = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.block(
+                blocked,
+                reason: .validation,
+                response: SyncTransactionQueue.problemData(code: "invalid_sync_payload"),
+                dbQueue: database.dbQueue
+            )
+            let impact = try #require(try await database.dbQueue.read {
+                try MeetingRepository.fetchSyncProgress(in: $0)[connectionId]?.workspaces.first?.discardImpact
+            })
+            _ = try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.record(
+                    workspaceId: workspace.id,
+                    operations: [.init(entity: .workspace, action: .update, entityId: workspace.id)],
+                    in: db
+                )
+            }
+
+            await #expect(throws: TextContentError.self) {
+                try await SyncTransactionQueue.discardInvalidTransaction(
+                    workspaceId: workspace.id,
+                    expectedLastTransactionId: impact.lastTransactionId,
+                    dbQueue: database.dbQueue
+                )
+            }
+            #expect(try await database.dbQueue.read {
+                try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_transactions WHERE workspace_id = ?", arguments: [workspace.id])
+            } == 2)
+        }
+
+        @Test
+        func discardRefusesChangedWorkspaceConfirmationState() async throws {
+            let (database, workspace) = try await syncedDatabase()
+            let connectionId = try #require(workspace.accountConnectionId)
+            _ = try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.record(
+                    workspaceId: workspace.id,
+                    operations: [.init(entity: .workspace, action: .update, entityId: workspace.id)],
+                    in: db
+                )
+            }
+            let blocked = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.block(
+                blocked,
+                reason: .validation,
+                response: SyncTransactionQueue.problemData(code: "invalid_sync_payload"),
+                dbQueue: database.dbQueue
+            )
+            let impact = try #require(try await database.dbQueue.read {
+                try MeetingRepository.fetchSyncProgress(in: $0)[connectionId]?.workspaces.first?.discardImpact
+            })
+            #expect(!impact.hasConfirmedWorkspace)
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state VALUES (?, 'workspace', ?, 1)",
+                    arguments: [workspace.id, workspace.id]
+                )
+            }
+
+            await #expect(throws: TextContentError.self) {
+                try await SyncTransactionQueue.discardInvalidTransaction(
+                    workspaceId: workspace.id,
+                    expectedLastTransactionId: impact.lastTransactionId,
+                    expectedHasConfirmedWorkspace: impact.hasConfirmedWorkspace,
+                    dbQueue: database.dbQueue
+                )
+            }
+            #expect(try await database.dbQueue.read {
+                try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_transactions WHERE workspace_id = ?", arguments: [workspace.id])
+            } == 1)
+        }
+
+        @Test
         func nonConflictBlocksCannotDiscardDurableTransactions() async throws {
             let (database, workspace) = try await syncedDatabase()
             _ = try await database.dbQueue.write { db in
@@ -377,6 +546,7 @@
 
             let retried = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
             #expect(retried.id == firstClaim.id)
+            #expect(retried.attempts == 1)
         }
 
         @Test

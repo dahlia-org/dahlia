@@ -7,6 +7,19 @@
     @MainActor
     struct AccountSyncStateTests {
         @Test
+        func connectionWithoutDiscoveredWorkspacesRemainsPending() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://empty.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            try database.dbQueue.write { try connection.insert($0) }
+
+            let progress = try #require(database.dbQueue.read { try MeetingRepository.fetchSyncProgress(in: $0)[connection.id] })
+            #expect(progress.workspaces.isEmpty)
+            #expect(progress.state == .pending)
+        }
+
+        @Test
         func accountSyncStateAggregatesWorkspacesAndRecoversWithoutCrossingAccounts() async throws {
             let (database, workspace) = try await syncedDatabase()
             try await database.dbQueue.write { db in
@@ -95,6 +108,61 @@
         }
 
         @Test
+        func failedRecordingArchiveKeepsAccountOutOfSyncedState() async throws {
+            let (database, workspace) = try await syncedDatabase()
+            let connection = try #require(workspace.accountConnectionId)
+            let meetingID = UUID.v7()
+            let sessionID = UUID.v7()
+            try await database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE workspaces SET syncPullCursor = 'cursor' WHERE id = ?", arguments: [workspace.id])
+                try MeetingRecord(
+                    id: meetingID,
+                    workspaceId: workspace.id,
+                    projectId: nil,
+                    name: "Failed archive",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                try RecordingSessionRecord(
+                    id: sessionID,
+                    meetingId: meetingID,
+                    startedAt: .now,
+                    endedAt: .now,
+                    duration: 1,
+                    offsetSeconds: 0,
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                try RecordingArchiveRecord(
+                    sessionId: sessionID,
+                    meetingId: meetingID,
+                    workspaceId: workspace.id,
+                    connectionId: connection,
+                    state: "failed",
+                    failureCode: "local_file_unavailable"
+                ).insert(db)
+            }
+
+            let progress = try #require(try await database.dbQueue.read {
+                try MeetingRepository.fetchSyncProgress(in: $0)[connection]
+            })
+            #expect(progress.state == .pending)
+            #expect(progress.hasAttention)
+            #expect(progress.summary == L10n.syncAttention)
+
+            try await database.dbQueue.write {
+                try $0.execute(sql: "UPDATE workspaces SET syncRole = 'viewer' WHERE id = ?", arguments: [workspace.id])
+            }
+            let viewerProgress = try #require(try await database.dbQueue.read {
+                try MeetingRepository.fetchSyncProgress(in: $0)[connection]
+            })
+            #expect(viewerProgress.state == .synced)
+            #expect(!viewerProgress.hasAttention)
+            let viewerWorkspace = try #require(viewerProgress.workspaces.first)
+            #expect(!viewerWorkspace.allowsRecordingArchiveRetry)
+        }
+
+        @Test
         func progressDistinguishesPreparationRetryAttentionAndFetchWithoutPersistingNewState() async throws {
             let (database, workspace) = try await syncedDatabase()
             let connection = try #require(workspace.accountConnectionId)
@@ -112,10 +180,13 @@
                 #expect(try progress().phase == .attachments)
                 try db.execute(sql: "UPDATE sync_transactions SET attempts = 1, serverResponseJSON = 'http_503'")
                 #expect(try progress().phase == .retrying)
-                try db.execute(sql: "UPDATE sync_transactions SET blockedReason = 'authorization'")
+                #expect(try progress().retryErrorCode == nil)
+                try db.execute(sql: "UPDATE sync_transactions SET serverResponseJSON = '{\"code\":\"http_503\"}'")
+                #expect(try progress().retryErrorCode == "http_503")
+                try db.execute(sql: "UPDATE sync_transactions SET blockedReason = 'authorization', serverResponseJSON = NULL")
                 #expect(try progress().phase == .attention)
                 #expect(try progress().state == .blocked(.authorization))
-                #expect(try progress().errorCode == nil)
+                #expect(try progress().errorCode == "authorization")
                 try db.execute(
                     sql: "UPDATE sync_transactions SET blockedReason = 'validation', serverResponseJSON = ?",
                     arguments: [#"{"code":"invalid_sync_operation"}"#]
@@ -125,7 +196,7 @@
                     sql: "UPDATE sync_transactions SET serverResponseJSON = ?",
                     arguments: [#"{"code":400}"#]
                 )
-                #expect(try progress().errorCode == nil)
+                #expect(try progress().errorCode == "validation")
                 try db.execute(sql: "DELETE FROM sync_transactions")
                 try db.execute(sql: "UPDATE workspaces SET syncPullCursor = 'after'")
                 #expect(try progress().phase == .synced)
@@ -153,6 +224,142 @@
                 .read { try MeetingRepository.fetchSyncProgress(in: $0)[connection]?.workspaces.first })
             #expect(progress.meetings == 0 && progress.files == 1)
             #expect(progress.phase == .attachments && progress.state == .pending)
+        }
+
+        @Test
+        func progressResolvesOperationThenConflictThenWorkspaceAndSeparates401From403() async throws {
+            let (database, workspace) = try await syncedDatabase()
+            let connection = try #require(workspace.accountConnectionId)
+            let operationID = UUID.v7(), projectID = UUID.v7(), meetingID = UUID.v7()
+            _ = try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.record(
+                    workspaceId: workspace.id,
+                    operations: [.init(
+                        id: operationID,
+                        entity: .project,
+                        action: .update,
+                        entityId: projectID
+                    )],
+                    in: db
+                )
+            }
+            let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.block(
+                transaction,
+                reason: .conflict,
+                response: Data("""
+                {"status":409,"code":"revision_conflict","operationId":"\(operationID)",
+                "conflicts":[{"entity":"meeting","id":"\(meetingID)"}]}
+                """.utf8),
+                dbQueue: database.dbQueue
+            )
+            func issue() async throws -> SyncProgressIssue {
+                try await database.dbQueue.read { db in
+                    try #require(MeetingRepository.fetchSyncProgress(in: db)[connection]?.workspaces.first?.issues.first)
+                }
+            }
+
+            #expect(try await issue().target == .init(entity: .project, id: projectID))
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE sync_transactions SET serverResponseJSON = ? WHERE id = ?",
+                    arguments: [
+                        #"{"status":409,"code":"revision_conflict","conflicts":[{"entity":"meeting","id":"\#(meetingID)"}]}"#,
+                        transaction.id,
+                    ]
+                )
+            }
+            #expect(try await issue().target == .init(entity: .meeting, id: meetingID))
+            for status in [401, 403] {
+                try await database.dbQueue.write { db in
+                    try db.execute(
+                        sql: "UPDATE sync_transactions SET blockedReason = 'authorization', serverResponseJSON = ? WHERE id = ?",
+                        arguments: ["{\"status\":\(status),\"code\":\"authorization\"}", transaction.id]
+                    )
+                }
+                #expect(try await issue().status == status)
+                #expect(try await issue().target == .init(entity: .workspace, id: workspace.id))
+            }
+        }
+
+        @Test
+        func progressReportsSuffixDiscardAndLocalBodyImpactWithPermissions() async throws {
+            let (database, workspace) = try await syncedDatabase()
+            let connection = try #require(workspace.accountConnectionId)
+            let meetingID = UUID.v7()
+            let absentFileID = UUID.v7()
+            try await database.dbQueue.write { db in
+                for entity in [SyncEntity.workspace, .summary, .transcript] {
+                    try db.execute(
+                        sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, ?, ?, 1)",
+                        arguments: [workspace.id, entity.rawValue, entity == .workspace ? workspace.id : meetingID]
+                    )
+                }
+                try TextContentStore.registerLocal(entity: .summary, id: meetingID, workspaceId: workspace.id, in: db)
+                try TextContentStore.registerLocal(entity: .transcript, id: meetingID, workspaceId: workspace.id, in: db)
+                // Partial and Server-absent content still belongs to the exact releaseBody target set.
+                try db.execute(
+                    sql: "UPDATE sync_content_state SET complete = 0 WHERE workspace_id = ? AND entity = 'transcript' AND entityId = ?",
+                    arguments: [workspace.id, meetingID]
+                )
+                try db.execute(
+                    sql: "INSERT INTO sync_content_state(workspace_id, entity, entityId, complete, present) VALUES (?, 'file', ?, 1, 0)",
+                    arguments: [workspace.id, absentFileID]
+                )
+                try SyncTransactionRecorder.record(workspaceId: workspace.id, operations: [
+                    .init(entity: .summary, action: .update, entityId: meetingID),
+                    .init(entity: .transcript, action: .delete, entityId: meetingID),
+                    .init(entity: .file, action: .update, entityId: absentFileID),
+                ], in: db)
+                try SyncTransactionRecorder.record(workspaceId: workspace.id, operations: [
+                    .init(entity: .workspace, action: .update, entityId: workspace.id),
+                ], in: db)
+            }
+            let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.block(
+                transaction,
+                reason: .validation,
+                response: SyncTransactionQueue.problemData(code: "invalid_sync_payload", status: 422),
+                dbQueue: database.dbQueue
+            )
+
+            var progress = try #require(try await database.dbQueue.read {
+                try MeetingRepository.fetchSyncProgress(in: $0)[connection]?.workspaces.first
+            })
+            let lastTransactionId = try #require(try await database.dbQueue.read {
+                try UUID.fetchOne($0, sql: "SELECT id FROM sync_transactions ORDER BY sequence DESC LIMIT 1")
+            })
+            #expect(progress.discardImpact == .init(
+                transactions: 2,
+                operations: 4,
+                records: 4,
+                localBodies: 3,
+                meetings: 1,
+                lastTransactionId: lastTransactionId,
+                hasConfirmedWorkspace: true
+            ))
+            #expect(progress.allowsCanonicalEdits)
+
+            try await database.dbQueue.write {
+                try $0.execute(sql: "UPDATE workspaces SET syncRole = 'viewer' WHERE id = ?", arguments: [workspace.id])
+            }
+            progress = try #require(try await database.dbQueue.read {
+                try MeetingRepository.fetchSyncProgress(in: $0)[connection]?.workspaces.first
+            })
+            #expect(!progress.allowsCanonicalEdits)
+
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "DELETE FROM sync_entity_state WHERE workspace_id = ? AND entity = 'workspace'",
+                    arguments: [workspace.id]
+                )
+                try db.execute(sql: "UPDATE sync_transactions SET blockedReason = 'conflict'")
+            }
+            progress = try #require(try await database.dbQueue.read {
+                try MeetingRepository.fetchSyncProgress(in: $0)[connection]?.workspaces.first
+            })
+            #expect(progress.discardImpact?.localBodies == 3)
+            #expect(progress.discardImpact?.hasConfirmedWorkspace == false)
         }
 
         @Test(.timeLimit(.minutes(1)))
