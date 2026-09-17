@@ -61,7 +61,7 @@ const recordings = (complete: boolean) => ({
 });
 
 it.each([{}, { meetingSummaryGeneration: { version: 1, sources: ["transcript", "audio"] } }])(
-  "keeps common settings and hides generation for unsupported capabilities: %j", (capabilities) => {
+  "keeps common settings and shows disabled generation for unsupported capabilities: %j", (capabilities) => {
     vi.mocked(useLiveJSON).mockImplementation((url) => ({
       data: url === "/api/v1/models" ? modelList([]) : typeof url === "object" && url.key.startsWith('["getCapabilities"') ? capabilities
         : typeof url === "object" && url.key.startsWith('["getWorkspace"') ? { role: "admin", generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS } : undefined,
@@ -73,7 +73,9 @@ it.each([{}, { meetingSummaryGeneration: { version: 1, sources: ["transcript", "
     expect(settings).toContain("Summary model");
     expect(settings).toContain('<select disabled=""><option value="" selected="">Automatic</option>');
     const generation = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
-    expect(generation).toBe("");
+    expect(generation).toContain('class="summary-generation-trigger icon-button"');
+    expect(generation).toContain("This server does not support this source.");
+    expect(generation).toContain('<button class="primary" disabled="">Generate summary</button>');
   },
 );
 
@@ -116,6 +118,27 @@ it("explains the selected style and the data sent by Mac processing", () => {
   expect(html).not.toContain("Advanced server settings");
 });
 
+it("renders summary generation as a dialog with named workspace defaults", () => {
+  vi.mocked(useLiveJSON).mockImplementation((url) => ({
+    data: url === "/api/v1/models" ? modelList([{ id: "system.ai.gpt-5-6-luna" }])
+      : typeof url === "object" && url.key.startsWith('["getCapabilities"')
+        ? { meetingSummaryGeneration: { version: 2, sources: ["transcript"], completeRecordings: true } }
+        : typeof url === "object" && url.key.startsWith('["getWorkspace"')
+          ? { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, outputLanguage: "fr", summary: { style: "standard" },
+            processing: { location: "local", remote: { workflow: "combined", summaryModel: "system.ai.gpt-5-6-luna" } } } }
+          : typeof url === "object" && url.key.startsWith('["summaryTranscriptAvailability"') ? transcript(true)
+          : { job: null },
+    loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
+  }));
+  const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
+  expect(html).toContain('class="summary-generation-trigger icon-button"');
+  expect(html).toContain('<dialog class="action-dialog action-dialog-wide summary-generation-dialog"');
+  expect(html).toContain("Français (default)");
+  expect(html).toContain("GPT 5.6 Luna (default)");
+  expect(html).toContain("Standard (default)");
+  expect(html).not.toContain("Workspace default");
+});
+
 it.each([
   ["audio", undefined, true, false],
   ["audio", "system.ai.gemini-3-8-flash", true, false],
@@ -138,7 +161,7 @@ it.each([
   const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
   expect(html.includes('<button class="primary">Generate summary</button>')).toBe(available);
   if (!available) {
-    expect(html).toContain(`${summaryModel} — Unavailable`);
+    expect(html).toContain(`${summaryModel} (default) — Unavailable`);
     expect(html).toContain('<button class="primary" disabled="">');
   }
   expect(html).not.toContain("This workspace processes summaries in Dahlia for Mac.");
@@ -160,7 +183,7 @@ it("does not apply a combined-audio model override to manual transcript generati
   }));
   const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
   expect(html).toContain('checked="" value="transcript"');
-  expect(html).toContain('<select><option value="" selected="">Automatic</option><option value="gpt-4.1">GPT-4.1</option></select>');
+  expect(html).toContain('<select><option value="__default" selected="">Automatic (default)</option><option value="">Automatic</option><option value="gpt-4.1">GPT-4.1</option></select>');
   expect(html).toContain('<button class="primary">Generate summary</button>');
   expect(html).not.toContain('gemini-3-flash — Unavailable');
   expect(html).not.toContain('high — Check model compatibility');
@@ -184,7 +207,7 @@ it.each([
   }));
   const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
   expect(html).toContain('<button class="primary">Generate summary</button>');
-  expect(html).toContain('<option value="system.ai.gpt-5-6-terra" disabled="" selected="">system.ai.gpt-5-6-terra</option>');
+  expect(html).toContain('<option value="__default" selected="">system.ai.gpt-5-6-terra (default)</option>');
   expect(html).not.toContain("Unavailable");
   const settingsHTML = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
   expect(settingsHTML).not.toContain("Unavailable");

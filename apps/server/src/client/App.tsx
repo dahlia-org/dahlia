@@ -983,7 +983,9 @@ export function SyncedMeeting({ workspaceId, meetingId }: { workspaceId: string;
           <a href={`/workspaces/${workspaceId}`}><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} />{workspace?.name ?? uiText("Workspace", "ワークスペース")}</a>
           {project && <><span aria-hidden="true">/</span><a href={`/projects/${project.projectId}`}>{project.path}</a></>}
         </nav>
-        <h1>{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</h1>
+        <div className="meeting-title-row"><h1>{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</h1>
+          {canWriteWorkspace(workspace?.role) && <ServerSummaryGeneration key={meetingId} meetingId={meetingId} workspaceId={meeting.workspaceId} />}
+        </div>
         <div className="meeting-metadata">
           <RecordingIndicator isRecording={meeting.isRecording} />
           <span className="metadata-chip"><time dateTime={meeting.recordingStartedAt ?? meeting.createdAt}>
@@ -1007,7 +1009,6 @@ export function SyncedMeeting({ workspaceId, meetingId }: { workspaceId: string;
       <DataError error={meetingQuery.error} retry={meetingQuery.reload} />
       <DataError error={workspaceQuery.error} retry={workspaceQuery.reload} />
       <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
-      {meeting && canWriteWorkspace(workspace?.role) && <ServerSummaryGeneration key={meetingId} meetingId={meetingId} workspaceId={meeting.workspaceId} />}
       {meeting && <MeetingTabs
         actions={canWriteWorkspace(workspace?.role) && <div className="meeting-actions">
           <button className="action-trigger" aria-label={uiText("Meeting actions", "ミーティングの操作")} popoverTarget="meeting-actions"><span aria-hidden="true">⋯</span>{" "}<span className="action-label">{uiText("Actions", "操作")}</span></button>
