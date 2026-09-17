@@ -8,7 +8,6 @@ actor SearchIndexer {
     typealias RuntimeProviderResolver = @Sendable () -> CodexRuntimeProvider
     typealias LocalAccountSettingsResolver = @MainActor @Sendable () -> LocalAccountAISettings
 
-    private let apiClient: SyncAPIClient
     private let dbQueue: DatabaseQueue
     private let screenshotAnalyzer: any ScreenshotAnalyzing
     private let runtimeProviderResolver: RuntimeProviderResolver
@@ -30,13 +29,11 @@ actor SearchIndexer {
     init(
         dbQueue: DatabaseQueue,
         screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
-        apiClient: SyncAPIClient = SyncAPIClient(session: .shared),
         runtimeProviderResolver: @escaping RuntimeProviderResolver = { CodexRuntimeContextStore.shared.provider },
         localAccountSettingsResolver: @escaping LocalAccountSettingsResolver = {
             WorkspaceAISettingsModel.shared.localAccountSettings
         }
     ) {
-        self.apiClient = apiClient
         self.dbQueue = dbQueue
         self.screenshotAnalyzer = screenshotAnalyzer
         self.runtimeProviderResolver = runtimeProviderResolver
@@ -539,36 +536,38 @@ private extension SearchIndexer {
 
     func processScreenshotJobsConcurrently(_ jobs: [SearchIndexJob]) async throws -> Bool {
         let localSettings = await localAccountSettingsResolver()
-        var inputs = try await dbQueue.read { db in
-            try Dictionary(uniqueKeysWithValues: jobs.compactMap { job -> (UUID, ScreenshotAnalysisInput)? in
+        let routing = try await dbQueue.read { db in
+            var localInputs: [UUID: ScreenshotAnalysisInput] = [:]
+            var serverConnectionIDs: [UUID: UUID] = [:]
+            for job in jobs {
                 guard let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: job.targetID),
                       let meeting = try MeetingRecord.fetchOne(db, key: screenshot.meetingId),
                       let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId)
-                else { return nil }
+                else { continue }
+                if let connectionID = workspace.accountConnectionId {
+                    serverConnectionIDs[job.targetID] = connectionID
+                    continue
+                }
                 guard let outputLanguage = job.outputLanguage,
                       screenshot.remoteReference == nil || screenshot.localReference != nil,
-                      (try? TextContentAccess.requireComplete(entity: .file, id: screenshot.originalFileId, in: db)) != nil else { return nil }
-                return (job.targetID, ScreenshotAnalysisInput(
+                      (try? TextContentAccess.requireComplete(entity: .file, id: screenshot.originalFileId, in: db)) != nil else { continue }
+                localInputs[job.targetID] = ScreenshotAnalysisInput(
                     id: screenshot.id,
                     imageData: screenshot.imageData,
                     mimeType: screenshot.mimeType,
                     runtimeProvider: CodexRuntimeProvider(
-                        accountConnectionID: workspace.accountConnectionId,
+                        accountConnectionID: nil,
                         localProvider: localSettings.provider,
                         databricksProfile: localSettings.databricksProfile
                     ),
                     outputLanguage: outputLanguage
-                ))
-            })
+                )
+            }
+            return (localInputs: localInputs, serverConnectionIDs: serverConnectionIDs)
         }
+        var inputs = routing.localInputs
+        let serverConnectionIDs = routing.serverConnectionIDs
         let runtimeProvider = runtimeProviderResolver()
-        var delegatedIDs: Set<UUID> = []
-        if let connectionId = runtimeProvider.accountConnectionID,
-           inputs.values.contains(where: { $0.runtimeProvider == runtimeProvider }),
-           try await serverAnalyzesImages(connectionId: connectionId) {
-            delegatedIDs = Set(inputs.values.filter { $0.runtimeProvider == runtimeProvider }.map(\.id))
-            inputs = inputs.filter { !delegatedIDs.contains($0.key) }
-        }
         var outcomes = jobs.compactMap { job in
             inputs[job.targetID] == nil ? ScreenshotJobOutcome.missing(job) : nil
         }
@@ -614,10 +613,7 @@ private extension SearchIndexer {
             switch outcome {
             case let .success(job, results):
                 do {
-                    guard let input = inputs[job.targetID] else { continue }
-                    try await storeScreenshotAnalyses(
-                        results, generation: generation, expectedConnectionId: input.runtimeProvider.accountConnectionID
-                    )
+                    try await storeScreenshotAnalyses(results, generation: generation)
                     try await complete([job])
                 } catch is CancellationError {
                     throw CancellationError()
@@ -627,7 +623,7 @@ private extension SearchIndexer {
             case let .failure(job, error):
                 try await fail(job, error: error)
             case let .missing(job):
-                try await complete([job], expectedConnectionId: delegatedIDs.contains(job.targetID) ? runtimeProvider.accountConnectionID : nil)
+                try await complete([job], expectedConnectionId: serverConnectionIDs[job.targetID])
             case .cancelled:
                 throw CancellationError()
             }
@@ -635,27 +631,13 @@ private extension SearchIndexer {
         return false
     }
 
-    func serverAnalyzesImages(connectionId: UUID) async throws -> Bool {
-        guard let connection = try await dbQueue.read({ try DahliaAccountConnectionRecord.fetchOne($0, key: connectionId) }),
-              let origin = URL(string: connection.origin) else { throw URLError(.badURL) }
-        let data: Data
-        do {
-            data = try await apiClient.data(origin: origin, connectionId: connectionId, maximumBytes: 8192) {
-                try await $0.getCapabilities().ok.body.json
-            }
-        } catch let error as SyncHTTPError where error.status == 404 {
-            return false // Older servers use device analysis.
-        }
-        return try JSONDecoder().decode(ServerCapabilities.self, from: data).imageAnalysis?.version == 1
-    }
-
-    func storeScreenshotAnalyses(_ results: [ScreenshotAnalysis], generation: Int, expectedConnectionId: UUID?) async throws {
+    func storeScreenshotAnalyses(_ results: [ScreenshotAnalysis], generation: Int) async throws {
         try await dbQueue.write { db in
             for result in results {
                 guard let existing = try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID),
                       let meeting = try MeetingRecord.fetchOne(db, key: existing.meetingId),
                       let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId),
-                      workspace.accountConnectionId == expectedConnectionId,
+                      workspace.accountConnectionId == nil,
                       existing.remoteReference == nil || existing.localReference != nil,
                       (try? TextContentAccess.requireComplete(entity: .file, id: existing.originalFileId, in: db)) != nil,
                       try TextContentAccess.availability(entity: .file, id: existing.originalFileId, in: db).state != .stale else { continue }
