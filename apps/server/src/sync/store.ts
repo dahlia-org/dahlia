@@ -2009,10 +2009,25 @@ function createIdentityStore(
         }
         const metadata = { ...file.metadata, ...data.metadata as Partial<FileMetadata> };
         if (metadata.source !== file.metadata.source) throw new SyncTransactionError(409, "file_source_immutable", [], operation.id);
+        if (data.imageAnalysis === "replace" && (file.active || operation.baseRevision !== null
+          || metadata.source !== "screenshot" || !imageContentTypes.has(file.contentType))) {
+          throw new SyncTransactionError(422, "invalid_image_analysis_request", [], operation.id);
+        }
         await db.update(schema.syncedFile).set(await content.write(schema.syncedFile, { active: true, metadata,
           name: typeof data.name === "string" ? data.name : file.name,
           revision: file.revision + 1, updatedAt: now,
         }, { fileId: file.fileId, workspaceId: transaction.workspaceId })).where(eq(schema.syncedFile.fileId, file.fileId));
+        if (data.imageAnalysis === "replace") {
+          await db.insert(schema.imageAnalysisJob).values({
+            fileId: file.fileId, workspaceId: transaction.workspaceId, ownerUserId: userPrincipalId,
+            model: String(data.imageAnalysisModel), mode: "replace",
+          }).onConflictDoUpdate({
+            target: schema.imageAnalysisJob.fileId,
+            set: { ownerUserId: userPrincipalId, model: String(data.imageAnalysisModel), mode: "replace",
+              outputLanguage: null, status: "pending", attempts: 0, availableAt: now,
+              claimedAt: null, leaseExpiresAt: null, lastErrorCode: null },
+          });
+        }
       } else if (operation.entity === "meeting_attachment") {
         const previous = await canonicalRecord("meeting_attachment", transaction.workspaceId, operation.entityId);
         if (previous.record !== null || operation.baseRevision !== null || operation.action === "delete") {
@@ -2086,11 +2101,14 @@ function createIdentityStore(
         for (const image of images) {
           const [current] = await db.select({ hash: schema.searchDocument.embeddingContentHash }).from(schema.searchDocument)
             .where(and(eq(schema.searchDocument.workspaceId, transaction.workspaceId), eq(schema.searchDocument.documentId, image.screenshotId))).limit(1);
+          const [analysis] = await db.select({ mode: schema.imageAnalysisJob.mode }).from(schema.imageAnalysisJob)
+            .where(eq(schema.imageAnalysisJob.fileId, image.fileId)).limit(1);
           await updateSearchDocuments([{
             documentId: image.screenshotId, workspaceId: transaction.workspaceId, meetingId: image.meetingId, kind: "screenshot",
             searchText: typeof data.searchText === "string" ? data.searchText : "",
             searchFields: data.searchFields as SearchDocumentFields,
-            embeddingContentHash: data.embeddingContentHash as string | null ?? null, currentEmbeddingContentHash: current?.hash ?? null,
+            embeddingContentHash: analysis?.mode === "replace" ? null : data.embeddingContentHash as string | null ?? null,
+            currentEmbeddingContentHash: current?.hash ?? null,
           }]);
         }
       }
@@ -2140,7 +2158,7 @@ function createIdentityStore(
           )).where(and(eq(schema.meetingAttachment.fileId, claim.fileId), isNull(schema.syncedMeeting.deletingAt), isNull(schema.syncedMeeting.deletedAt)))),
       )).limit(1);
     if (file) file.file = (await content.read(schema.syncedFile, [file.file]))[0]!;
-    return file && imageContentTypes.has(file.file.contentType) && needsImageAnalysis(file.file.metadata)
+    return file && imageContentTypes.has(file.file.contentType) && needsImageAnalysis(file.file.metadata, claim.mode)
       ? { ...claim, file: file.file } : null;
   }
 
@@ -2152,8 +2170,8 @@ function createIdentityStore(
     if (!claim) return false;
     const current = await loadImageAnalysis(input);
     if (!current || current.file.checksum !== input.file.checksum || current.file.revision !== input.file.revision) return false;
-    await commitTransaction(transaction);
     await db.delete(schema.imageAnalysisJob).where(imageClaimKey(input));
+    await commitTransaction(transaction);
     return true;
   }
 

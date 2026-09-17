@@ -10,6 +10,35 @@
     @MainActor
     struct SyncTransferTests {
         @Test
+        func replacementAnalysisIsNotRequestedForUploadedFiles() async throws {
+            let fixture = try SyncTransferFixture()
+            defer { fixture.close() }
+            let file = FileRecord(
+                id: .v7(),
+                workspaceId: fixture.workspaceId,
+                size: 1,
+                contentType: "image/png",
+                checksum: "SHA-256:" + String(repeating: "c", count: 64),
+                name: "uploaded-image.png",
+                metadata: .init(source: .upload),
+                createdAt: .now,
+                updatedAt: .now,
+                localReference: "uploaded-reference"
+            )
+            let payload = try await fixture.queue.write { db in
+                try file.insert(db)
+                try FileTextBodyRecord(fileId: file.id, ocrText: "existing OCR", caption: "existing caption").insert(db)
+                let operation = try SyncInitialSnapshotBuilder.fileOperation(
+                    file,
+                    replaceServerImageAnalysis: true,
+                    in: db
+                )
+                return try SyncJSON.decoder.decode(FileOperationPayload.self, from: #require(operation.payloadJSON))
+            }
+            #expect(payload.imageAnalysis == nil)
+        }
+
+        @Test
         func generatedLimitPrefixCountsCodePointsAndPreservesGraphemes() {
             let family = "👨‍👩‍👧‍👦"
             let combined = "e\u{301}"
@@ -587,7 +616,7 @@
         func handle(_ request: URLRequest) async throws -> (Int, Data) {
             let path = request.url!.path
             if expiredPullCursor {
-                if path.hasSuffix("/capabilities") { return (200, Data("{\"sync\":{\"version\":5}}".utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, Data("{\"sync\":{\"version\":6}}".utf8)) }
                 if path.hasSuffix("/changes") { return (410, Data("{\"code\":\"sync_cursor_expired\"}".utf8)) }
             }
             if path == "/api/v1/file-uploads" {

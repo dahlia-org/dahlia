@@ -46,8 +46,10 @@ fi
 
 APPLICATION_SUPPORT_DIR="${DAHLIA_APPLICATION_SUPPORT_DIR:-${HOME}/Library/Application Support}"
 PRODUCTION_DB="${APPLICATION_SUPPORT_DIR}/Dahlia/dahlia.sqlite"
+PRODUCTION_FILE_STORE="${APPLICATION_SUPPORT_DIR}/Dahlia/FileStore"
 QA_DIR="${APPLICATION_SUPPORT_DIR}/Dahlia-Development"
 QA_DB="${QA_DIR}/dahlia.sqlite"
+QA_FILE_STORE="${QA_DIR}/FileStore"
 
 ensure_qa_is_not_running() {
     local database_file
@@ -65,7 +67,7 @@ reset_qa_database() {
 }
 
 prepare_qa_database() {
-    local check_result snapshot_path
+    local check_result snapshot_path snapshot_store_path
 
     if "$RESET_QA"; then
         reset_qa_database
@@ -79,22 +81,54 @@ prepare_qa_database() {
         exit 1
     fi
     snapshot_path="$(mktemp "${TMPDIR:-/tmp}/dahlia-production.XXXXXX")"
+    snapshot_store_path="$(mktemp -d "${TMPDIR:-/tmp}/dahlia-production-filestore.XXXXXX")"
     if ! sqlite3 "$PRODUCTION_DB" ".backup '${snapshot_path}'"; then
         rm -f "$snapshot_path"
+        rm -rf "$snapshot_store_path"
         echo "error: failed to copy the production database" >&2
         exit 1
     fi
     if ! check_result="$(sqlite3 "file:${snapshot_path}?immutable=1" 'PRAGMA quick_check;')" \
         || [ "$check_result" != "ok" ]; then
         rm -f "$snapshot_path"
+        rm -rf "$snapshot_store_path"
         echo "error: copied production database failed quick_check" >&2
         exit 1
     fi
+    if [ -d "$PRODUCTION_FILE_STORE" ]; then
+        if ! cp -R "${PRODUCTION_FILE_STORE}/." "$snapshot_store_path"; then
+            rm -f "$snapshot_path"
+            rm -rf "$snapshot_store_path"
+            echo "error: failed to copy the production FileStore" >&2
+            exit 1
+        fi
+        if [ -f "${PRODUCTION_FILE_STORE}/index.sqlite" ]; then
+            rm -f "${snapshot_store_path}/index.sqlite" "${snapshot_store_path}/index.sqlite-wal" \
+                "${snapshot_store_path}/index.sqlite-shm"
+            if ! sqlite3 "${PRODUCTION_FILE_STORE}/index.sqlite" ".backup '${snapshot_store_path}/index.sqlite'"; then
+                rm -f "$snapshot_path"
+                rm -rf "$snapshot_store_path"
+                echo "error: failed to copy the production FileStore index" >&2
+                exit 1
+            fi
+        fi
+        if [ -f "${snapshot_store_path}/index.sqlite" ] \
+            && { ! check_result="$(sqlite3 "file:${snapshot_store_path}/index.sqlite?immutable=1" 'PRAGMA quick_check;')" \
+                || [ "$check_result" != "ok" ]; }; then
+            rm -f "$snapshot_path"
+            rm -rf "$snapshot_store_path"
+            echo "error: copied production FileStore index failed quick_check" >&2
+            exit 1
+        fi
+    fi
     if ! reset_qa_database; then
         rm -f "$snapshot_path"
+        rm -rf "$snapshot_store_path"
         exit 1
     fi
     mkdir -p "$QA_DIR"
+    rm -rf "$QA_FILE_STORE"
+    mv "$snapshot_store_path" "$QA_FILE_STORE"
     mv "$snapshot_path" "$QA_DB"
 }
 

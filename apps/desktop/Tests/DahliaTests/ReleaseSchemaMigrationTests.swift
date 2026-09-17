@@ -8,6 +8,64 @@
 
     @MainActor
     struct ReleaseSchemaMigrationTests {
+        @Test
+        func workspaceSyncPullErrorMigrationRepairsEarlyLocalFirstSchema() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v43_accountConnectionSyncDiscoveryError")
+            let existing = WorkspaceRecord(
+                id: .v7(),
+                path: nil,
+                name: "Existing workspace",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            try queue.write { db in
+                try existing.insert(db)
+                try db.execute(sql: "ALTER TABLE workspaces DROP COLUMN syncPullErrorJSON")
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            try queue.write { db in
+                #expect(try db.columns(in: "workspaces").contains { $0.name == "syncPullErrorJSON" })
+                #expect(try WorkspaceRecord.fetchOne(db, key: existing.id)?.name == existing.name)
+                try WorkspaceRecord(
+                    id: .v7(),
+                    path: nil,
+                    name: "New workspace",
+                    createdAt: .now,
+                    lastOpenedAt: .now
+                ).insert(db)
+            }
+        }
+
+        @Test
+        func liveTranscriptDraftMigrationPreservesEnabledPreferenceAndWorkspaceSettings() throws {
+            let suite = "WorkspaceLiveTranscriptDraftMigration-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.set(true, forKey: "liveTranscriptDraftEnabled")
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v44_workspaceSyncPullError")
+            var workspace = WorkspaceRecord(
+                id: .v7(),
+                path: nil,
+                name: "Existing workspace",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            workspace.generationSettings.local.model = "preserved-model"
+            try queue.write { try workspace.insert($0) }
+
+            try queue.write { try WorkspaceLiveTranscriptDraftMigration.migrate(in: $0, defaults: defaults) }
+
+            try queue.read { db in
+                let migrated = try #require(try WorkspaceRecord.fetchOne(db, key: workspace.id))
+                #expect(migrated.generationSettings.liveTranscriptDraft)
+                #expect(migrated.generationSettings.local.model == "preserved-model")
+            }
+        }
+
         @Test(arguments: [false, true])
         func releasedDataSurvivesAtomicUpgradeAndReopen(retryAfterFailure: Bool) throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
@@ -169,6 +227,8 @@
             #expect(Array(identifiers.dropFirst(releaseIndex + 1)) == [
                 "v42_localFirstSchema",
                 "v43_accountConnectionSyncDiscoveryError",
+                "v44_workspaceSyncPullError",
+                "v45_workspaceLiveTranscriptDraft",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)

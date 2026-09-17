@@ -77,6 +77,23 @@ struct GeneralSettingsView: View {
                     }
                 }
             }
+
+            Section(L10n.recordingStopDetection) {
+                Toggle(isOn: $settings.automaticMeetingEndRecordingStopEnabled) {
+                    Text(L10n.automaticMeetingEndRecordingStop)
+                    Text(L10n.automaticMeetingEndRecordingStopDescription)
+                }
+                .toggleStyle(.switch)
+            }
+
+            Section(L10n.audioInput) {
+                Toggle(isOn: $settings.forceEchoCancellationForExternalMicrophone) {
+                    Text(L10n.externalMicrophoneEchoCancellation)
+                    Text(L10n.externalMicrophoneEchoCancellationDescription)
+                }
+                .toggleStyle(.switch)
+                Text(L10n.builtInMicrophoneEchoCancellationDescription).foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .onAppear {

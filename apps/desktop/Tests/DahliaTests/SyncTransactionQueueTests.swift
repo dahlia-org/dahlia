@@ -329,7 +329,7 @@
 
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
 
-            let ownerState: (UUID?, Row?) = try database.dbQueue.read { db in
+            let ownerState = try await database.dbQueue.read { db in
                 let savedWorkspace = try WorkspaceRecord.fetchOne(db, key: workspace.id)
                 let operation = try Row.fetchOne(
                     db,
@@ -340,11 +340,15 @@
                     """,
                     arguments: [workspace.id]
                 )
-                return (savedWorkspace?.syncConfirmedConnectionId, operation)
+                return (
+                    savedWorkspace?.syncConfirmedConnectionId,
+                    operation?["entity"] as String?,
+                    operation?["action"] as String?
+                )
             }
             #expect(ownerState.0 == workspace.accountConnectionId)
-            #expect(ownerState.1?["entity"] as String? == "workspace")
-            #expect(ownerState.1?["action"] as String? == "create")
+            #expect(ownerState.1 == "workspace")
+            #expect(ownerState.2 == "create")
 
             let memberWorkspaceId = UUID.v7()
             try await database.dbQueue.write { db in

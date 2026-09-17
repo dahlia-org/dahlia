@@ -237,8 +237,8 @@ describe("server summary jobs", () => {
       };
       expect((await send(false)).status).toBe(401);
       expect(await (await send(true)).json()).toEqual({
-        sync: { version: 5 }, workspaceTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 },
-        search: { version: 1 }, imageAnalysis: { version: 1 }, conversationAnalytics: { version: 1 },
+        sync: { version: 6 }, workspaceTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 },
+        search: { version: 1 }, imageAnalysis: { version: 2 }, conversationAnalytics: { version: 1 },
         meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"], completeRecordings: true,
           retranscription: { version: 1, provider: "gemini" } },
       });

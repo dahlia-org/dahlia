@@ -102,6 +102,24 @@
                           "max",
                           "ultra"
                         ]
+                      },
+                      "transcriptSummaryModel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "transcriptSummaryReasoningEffort": {
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "minimal",
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max",
+                          "ultra"
+                        ]
                       }
                     },
                     "required": [
@@ -164,6 +182,9 @@
                 "additionalProperties": false
               },
               "automaticProcessing": {
+                "type": "boolean"
+              },
+              "liveTranscriptDraft": {
                 "type": "boolean"
               }
             },
@@ -1803,6 +1824,24 @@
                           "max",
                           "ultra"
                         ]
+                      },
+                      "transcriptSummaryModel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "transcriptSummaryReasoningEffort": {
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "minimal",
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max",
+                          "ultra"
+                        ]
                       }
                     },
                     "required": [
@@ -1865,6 +1904,9 @@
                 "additionalProperties": false
               },
               "automaticProcessing": {
+                "type": "boolean"
+              },
+              "liveTranscriptDraft": {
                 "type": "boolean"
               }
             },
@@ -4278,6 +4320,24 @@
                                         "max",
                                         "ultra"
                                       ]
+                                    },
+                                    "transcriptSummaryModel": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 200
+                                    },
+                                    "transcriptSummaryReasoningEffort": {
+                                      "type": "string",
+                                      "enum": [
+                                        "none",
+                                        "minimal",
+                                        "low",
+                                        "medium",
+                                        "high",
+                                        "xhigh",
+                                        "max",
+                                        "ultra"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -4340,6 +4400,9 @@
                               "additionalProperties": false
                             },
                             "automaticProcessing": {
+                              "type": "boolean"
+                            },
+                            "liveTranscriptDraft": {
                               "type": "boolean"
                             }
                           },
@@ -4541,6 +4604,24 @@
                                         "max",
                                         "ultra"
                                       ]
+                                    },
+                                    "transcriptSummaryModel": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 200
+                                    },
+                                    "transcriptSummaryReasoningEffort": {
+                                      "type": "string",
+                                      "enum": [
+                                        "none",
+                                        "minimal",
+                                        "low",
+                                        "medium",
+                                        "high",
+                                        "xhigh",
+                                        "max",
+                                        "ultra"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -4603,6 +4684,9 @@
                               "additionalProperties": false
                             },
                             "automaticProcessing": {
+                              "type": "boolean"
+                            },
+                            "liveTranscriptDraft": {
                               "type": "boolean"
                             }
                           },
@@ -6103,6 +6187,12 @@
                             }
                           },
                           "additionalProperties": false
+                        },
+                        "imageAnalysis": {
+                          "type": "string",
+                          "enum": [
+                            "replace"
+                          ]
                         }
                       },
                       "required": [
@@ -9475,6 +9565,24 @@
                                     "maxLength": 200
                                   },
                                   "reasoningEffort": {
+                                    "type": "string",
+                                    "enum": [
+                                      "none",
+                                      "minimal",
+                                      "low",
+                                      "medium",
+                                      "high",
+                                      "xhigh",
+                                      "max",
+                                      "ultra"
+                                    ]
+                                  },
+                                  "transcriptSummaryModel": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "transcriptSummaryReasoningEffort": {
                                     "type": "string",
                                     "enum": [
                                       "none",

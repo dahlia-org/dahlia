@@ -15,7 +15,7 @@ enum SettingsNavigation {
 
     static func visibleSelection(_ selection: SettingsCategory) -> SettingsCategory {
         switch selection {
-        case .language, .appearance:
+        case .language, .appearance, .recordingStopDetection:
             .general
         case .dahliaAccounts:
             .accountsAndWorkspaces

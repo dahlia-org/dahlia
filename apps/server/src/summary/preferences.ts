@@ -24,15 +24,23 @@ export function resolveSummaryPreferences(
     return selected;
   };
   const transcriptionModel = twoStage
-    ? choose(undefined, preferredTranscriptionModels, (id) => isAudioSummaryModel(id, catalog), "summary_invalid_audio_model")
+    ? choose(remote.summaryModel, preferredTranscriptionModels, (id) => isAudioSummaryModel(id, catalog), "summary_invalid_audio_model")
     : undefined;
-  const customizableSummary = preferences.processing.location === "local" || input.type === "transcript" || method === "audio";
-  const model = transcriptionOnly ? transcriptionModel! : choose(customizableSummary ? remote.summaryModel : undefined, preferredSummaryModels,
+  const transcriptionModelInfo = transcriptionModel === undefined ? undefined : catalog.models.find(({ slug }) => slug === transcriptionModel)!;
+  const transcriptionReasoningEffort = transcriptionModelInfo === undefined ? undefined
+    : remote.reasoningEffort ?? transcriptionModelInfo.default_reasoning_level;
+  if (transcriptionModelInfo && !transcriptionModelInfo.supported_reasoning_levels.some(({ effort }) => effort === transcriptionReasoningEffort)) {
+    throw new SummaryError("summary_invalid_reasoning_effort");
+  }
+  const transcriptSummaryModel = remote.transcriptSummaryModel
+    ?? (preferences.processing.location === "local" ? remote.summaryModel : undefined);
+  const transcriptSummaryReasoningEffort = remote.transcriptSummaryReasoningEffort
+    ?? (preferences.processing.location === "local" ? remote.reasoningEffort : undefined);
+  const model = transcriptionOnly ? transcriptionModel! : choose(method === "transcript" ? transcriptSummaryModel : remote.summaryModel, preferredSummaryModels,
     (id) => id !== "codex-auto-review" && isSummaryModel(id, catalog, method), "summary_invalid_structured_model");
   const modelInfo = catalog.models.find(({ slug }) => slug === model)!;
-  const reasoningEffort = transcriptionOnly || !customizableSummary
-    ? modelInfo.default_reasoning_level
-    : remote.reasoningEffort ?? modelInfo.default_reasoning_level;
+  const reasoningEffort = transcriptionOnly ? transcriptionReasoningEffort!
+    : (method === "transcript" ? transcriptSummaryReasoningEffort : remote.reasoningEffort) ?? modelInfo.default_reasoning_level;
   if (!modelInfo.supported_reasoning_levels.some(({ effort }) => effort === reasoningEffort)) {
     throw new SummaryError("summary_invalid_reasoning_effort");
   }
@@ -46,8 +54,7 @@ export function resolveSummaryPreferences(
     ...(transcriptionOnly ? { transcriptionOnly: true as const } : {}),
   };
   if (twoStage) {
-    const metadata = catalog.models.find(({ slug }) => slug === transcriptionModel)!;
-    settings.transcriptionReasoningEffort = metadata.default_reasoning_level as TranscriptSettings["reasoningEffort"];
+    settings.transcriptionReasoningEffort = transcriptionReasoningEffort as TranscriptSettings["reasoningEffort"];
     resolvedInput.transcriptionModel = transcriptionModel;
   }
   return { settings, input: resolvedInput };

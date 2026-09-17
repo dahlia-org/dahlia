@@ -118,4 +118,12 @@ struct FileOperationPayload: Codable, Sendable {
     var name: String
     var checksum: String
     var metadata: FileMetadata
+    var imageAnalysis: String?
+
+    init(name: String, checksum: String, metadata: FileMetadata, imageAnalysis: String? = nil) {
+        self.name = name
+        self.checksum = checksum
+        self.metadata = metadata
+        self.imageAnalysis = imageAnalysis
+    }
 }

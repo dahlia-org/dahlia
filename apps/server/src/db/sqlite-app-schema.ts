@@ -442,6 +442,7 @@ export const imageAnalysisJob = sqliteTable("jobs_image_analysis", {
   workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   model: text("model").notNull(),
+  mode: text("mode").$type<"fill_missing" | "replace">().default("fill_missing").notNull(),
   outputLanguage: text("output_language"),
   status: text("status").default("pending").notNull(),
   attempts: integer("attempts").default(0).notNull(),
@@ -451,6 +452,7 @@ export const imageAnalysisJob = sqliteTable("jobs_image_analysis", {
   lastErrorCode: text("last_error_code"),
 }, (table) => [
   check("image_analysis_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
+  check("image_analysis_job_mode_check", sql`${table.mode} IN ('fill_missing', 'replace')`),
   index("image_analysis_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
 ]);
 

@@ -595,6 +595,7 @@ export const imageAnalysisJob = jobsSchema.table("image_analysis", {
   workspaceId: uuid("workspace_id").notNull(),
   ownerUserId: uuid("owner_user_id").notNull(),
   model: text("model").notNull(),
+  mode: text("mode").$type<"fill_missing" | "replace">().default("fill_missing").notNull(),
   outputLanguage: text("output_language"),
   status: text("status").default("pending").notNull(),
   attempts: integer("attempts").default(0).notNull(),
@@ -607,6 +608,7 @@ export const imageAnalysisJob = jobsSchema.table("image_analysis", {
   foreignKey({ name: "jobs_image_analysis_workspace_id_workspaces_workspace_id_fkey", columns: [table.workspaceId], foreignColumns: [syncedWorkspace.workspaceId] }).onDelete("cascade"),
   foreignKey({ name: "jobs_image_analysis_owner_user_id_user_id_fkey", columns: [table.ownerUserId], foreignColumns: [authUser.id] }).onDelete("cascade"),
   check("image_analysis_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
+  check("image_analysis_job_mode_check", sql`${table.mode} IN ('fill_missing', 'replace')`),
   index("image_analysis_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
 ]);
 

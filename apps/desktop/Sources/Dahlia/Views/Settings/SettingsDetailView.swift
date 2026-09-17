@@ -7,6 +7,7 @@ struct SettingsDetailView: View {
     var sidebarViewModel: SidebarViewModel
     let appDatabase: AppDatabaseManager?
     var workspaceManagementModel: WorkspaceManagementModel
+    let onSelectWorkspace: (WorkspaceRecord) -> Void
     let onShowUnprocessedRecordings: (UUID) -> Void
 
     @ObservedObject private var appSettings = AppSettings.shared
@@ -30,6 +31,31 @@ struct SettingsDetailView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
+                        if selection == .accountPreferences {
+                            Menu {
+                                ForEach(workspaceManagementModel.workspaces) { workspace in
+                                    Button {
+                                        onSelectWorkspace(workspace)
+                                    } label: {
+                                        if workspace.id == appSettings.currentWorkspace?.id {
+                                            Label(workspace.name, systemImage: "checkmark")
+                                        } else {
+                                            Text(workspace.name)
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Label(
+                                    "\(L10n.workspace): \(appSettings.currentWorkspace?.name ?? L10n.noWorkspaceSelected)",
+                                    systemImage: ProjectIcon.workspace.systemImageName
+                                )
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(!captionViewModel.canSwitchWorkspace || workspaceManagementModel.workspaces.isEmpty)
+                            .help(L10n.currentWorkspaceDescription)
+                            .accessibilityLabel(L10n.currentWorkspace)
+                            .accessibilityValue(appSettings.currentWorkspace?.name ?? L10n.noWorkspaceSelected)
+                        }
                         if selection == .general {
                             Button(L10n.initialSetup, action: mainWindowNavigation.openSetupTour)
                                 .buttonStyle(.dahlia())
@@ -53,7 +79,7 @@ struct SettingsDetailView: View {
     @ViewBuilder
     private var selectedSettings: some View {
         switch selection {
-        case .general, .language, .appearance:
+        case .general, .language, .appearance, .recordingStopDetection:
             GeneralSettingsView()
         case .macInference, .modelProvider:
             MacInferenceSettingsView()
@@ -94,7 +120,10 @@ struct SettingsDetailView: View {
         case .search:
             SearchSettingsView(database: appDatabase)
         case .accountPreferences, .aiSummary, .mcp:
-            WorkspaceProcessingSettingsView(onOpenMacInference: { selection = .macInference })
+            WorkspaceProcessingSettingsView(
+                onOpenMacTranscription: { selection = .transcription },
+                onOpenMacInference: { selection = .macInference }
+            )
         case .transcription:
             TranscriptionSettingsView()
         case .liveSubtitles:

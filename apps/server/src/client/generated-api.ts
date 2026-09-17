@@ -1203,6 +1203,9 @@ export interface components {
                         summaryModel?: string;
                         /** @enum {string} */
                         reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                        transcriptSummaryModel?: string;
+                        /** @enum {string} */
+                        transcriptSummaryReasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                     };
                 };
                 summary: {
@@ -1215,6 +1218,7 @@ export interface components {
                     reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                 };
                 automaticProcessing: boolean;
+                liveTranscriptDraft?: boolean;
             };
             /** @enum {string} */
             encryption?: "none" | "server";
@@ -1561,6 +1565,9 @@ export interface components {
                         summaryModel?: string;
                         /** @enum {string} */
                         reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                        transcriptSummaryModel?: string;
+                        /** @enum {string} */
+                        transcriptSummaryReasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                     };
                 };
                 summary: {
@@ -1573,6 +1580,7 @@ export interface components {
                     reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                 };
                 automaticProcessing: boolean;
+                liveTranscriptDraft?: boolean;
             };
             /** @enum {string} */
             encryption?: "none" | "server";
@@ -2104,6 +2112,9 @@ export interface components {
                                 summaryModel?: string;
                                 /** @enum {string} */
                                 reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                                transcriptSummaryModel?: string;
+                                /** @enum {string} */
+                                transcriptSummaryReasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                             };
                         };
                         summary: {
@@ -2116,6 +2127,7 @@ export interface components {
                             reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                         };
                         automaticProcessing: boolean;
+                        liveTranscriptDraft?: boolean;
                     };
                     organizationId: string;
                     /** @enum {string} */
@@ -2150,6 +2162,9 @@ export interface components {
                                 summaryModel?: string;
                                 /** @enum {string} */
                                 reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                                transcriptSummaryModel?: string;
+                                /** @enum {string} */
+                                transcriptSummaryReasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                             };
                         };
                         summary: {
@@ -2162,6 +2177,7 @@ export interface components {
                             reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                         };
                         automaticProcessing: boolean;
+                        liveTranscriptDraft?: boolean;
                     };
                     /** @enum {string} */
                     encryption?: "none" | "server";
@@ -2446,6 +2462,8 @@ export interface components {
                         caption?: string | null;
                         ocrText?: string | null;
                     };
+                    /** @enum {string} */
+                    imageAnalysis?: "replace";
                 };
             } | {
                 id: string;
@@ -3599,6 +3617,9 @@ export interface operations {
                                 summaryModel?: string;
                                 /** @enum {string} */
                                 reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                                transcriptSummaryModel?: string;
+                                /** @enum {string} */
+                                transcriptSummaryReasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                             };
                         };
                         summary: {

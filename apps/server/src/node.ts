@@ -41,14 +41,15 @@ const objectStorage = config.storageBackend === "databricks"
       : undefined;
 if (!objectStorage) throw new Error("R2 storage requires a Worker binding");
 const searchTokenizer = createNodeSearchTokenizer();
+const captioner = createImageCaptioner(config);
 const syncService = new MeetingSyncService(applicationStore.sync, objectStorage, searchTokenizer,
   searchEmbedder, transformScreenshot,
-  config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined);
+  config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined,
+  true, captioner?.model);
 if (process.argv.includes("--seed-dev")) {
   const { installDevelopmentSeed } = await import("./dev-seed");
   installDevelopmentSeed(config, applicationStore, syncService);
 }
-const captioner = createImageCaptioner(config);
 const imageAnalysis = captioner && applicationStore.imageAnalysis
   ? new ImageAnalysisWorker(applicationStore.imageAnalysis, captioner, applicationStore.sync, syncService)
   : undefined;

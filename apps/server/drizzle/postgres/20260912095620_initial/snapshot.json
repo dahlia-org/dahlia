@@ -1,9 +1,9 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "36fefe06-5ed6-48c7-a1cf-f966c679cd9c",
+  "id": "23c32ae9-f7d5-4e19-a1de-754ce5c89b8c",
   "prevIds": [
-    "00000000-0000-0000-0000-000000000000"
+    "36fefe06-5ed6-48c7-a1cf-f966c679cd9c"
   ],
   "ddl": [
     {
@@ -220,6 +220,19 @@
       "generated": null,
       "identity": null,
       "name": "model",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "image_analysis"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'fill_missing'",
+      "generated": null,
+      "identity": null,
+      "name": "mode",
       "entityType": "columns",
       "schema": "jobs",
       "table": "image_analysis"
@@ -5121,6 +5134,13 @@
     {
       "value": "\"status\" IN ('pending', 'processing', 'failed')",
       "name": "image_analysis_job_status_check",
+      "entityType": "checks",
+      "schema": "jobs",
+      "table": "image_analysis"
+    },
+    {
+      "value": "\"mode\" IN ('fill_missing', 'replace')",
+      "name": "image_analysis_job_mode_check",
       "entityType": "checks",
       "schema": "jobs",
       "table": "image_analysis"

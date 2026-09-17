@@ -225,6 +225,8 @@ actor SyncWorker {
     let dbQueue: DatabaseQueue
     private let session: URLSession
     private let archiveService: RecordingArchiveService
+    private let screenshotContent: ScreenshotContentProvider
+    private let meetingContent: MeetingContentProvider
     let apiClient: SyncAPIClient
     private let workspacesDidChange: @MainActor @Sendable () async -> Void
     private var drainTask: Task<Void, Never>?
@@ -250,11 +252,15 @@ actor SyncWorker {
         dbQueue: DatabaseQueue,
         session: URLSession = .shared,
         apiClient: SyncAPIClient? = nil,
+        screenshotContent: ScreenshotContentProvider = .shared,
+        meetingContent: MeetingContentProvider = .shared,
         workspacesDidChange: @escaping @MainActor @Sendable () async -> Void = {}
     ) {
         self.dbQueue = dbQueue
         self.session = session
         self.apiClient = apiClient ?? SyncAPIClient(session: session)
+        self.screenshotContent = screenshotContent
+        self.meetingContent = meetingContent
         archiveService = RecordingArchiveService(dbQueue: dbQueue, api: apiClient ?? SyncAPIClient(session: session))
         self.workspacesDidChange = workspacesDidChange
     }
@@ -341,13 +347,13 @@ actor SyncWorker {
                 }
                 guard let transaction = try await SyncTransactionQueue.claim(dbQueue: dbQueue) else {
                     try await archiveService.runNext()
-                    try? await ScreenshotContentProvider.shared.trimFiles(dbQueue: dbQueue)
+                    try? await screenshotContent.trimFiles(dbQueue: dbQueue)
                     try? await ScreenshotStorageMaintenance.reclaimIncrementally(dbQueue: dbQueue)
                     try await Task.sleep(for: .seconds(5))
                     continue
                 }
                 do {
-                    try await ScreenshotContentProvider.shared.migrateLegacyImages(workspaceId: transaction.workspaceId, dbQueue: dbQueue)
+                    try await screenshotContent.migrateLegacyImages(workspaceId: transaction.workspaceId, dbQueue: dbQueue)
                     if let response = try await push(transaction) {
                         try await SyncTransactionQueue.complete(transaction, response: response, dbQueue: dbQueue)
                     }
@@ -718,16 +724,20 @@ actor SyncWorker {
         return result
     }
 
-    func pullRemoteChanges(workspaceId: UUID, connectionId: UUID) async throws -> Bool {
+    func pullRemoteChanges(workspaceId: UUID, connectionId: UUID, schedulesMaintenance: Bool = true) async throws -> Bool {
         guard let target = try await pullTarget(workspaceId: workspaceId, connectionId: connectionId) else {
             throw TextContentError.changed
         }
-        return try await performPull(target)
+        let completed = try await performPull(target)
+        if completed, schedulesMaintenance {
+            await meetingContent.scheduleMaintenance(dbQueue: dbQueue)
+        }
+        return completed
     }
 
     func synchronizeForTransfer(workspaceId: UUID, connectionId: UUID) async throws {
         guard let target = try await pullTarget(workspaceId: workspaceId, connectionId: connectionId),
-              try await performPull(target, maintainSharedContent: false) else { throw TextContentError.changed }
+              try await performPull(target) else { throw TextContentError.changed }
         guard try await dbQueue.read({ db in
             try SyncTransactionQueue.matchesExpectedConnection(workspaceId: workspaceId, connectionId: connectionId, in: db)
                 && !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db)
@@ -831,7 +841,9 @@ actor SyncWorker {
         try await discoverCloudWorkspaces()
         for target in try await pullTargets() {
             do {
-                _ = try await performPull(target)
+                if try await performPull(target) {
+                    await meetingContent.scheduleMaintenance(dbQueue: dbQueue)
+                }
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -841,23 +853,29 @@ actor SyncWorker {
     }
 
     func retryPull(workspaceId: UUID, connectionId: UUID) async throws {
-        _ = try await pullRemoteChanges(workspaceId: workspaceId, connectionId: connectionId)
+        do {
+            _ = try await pullRemoteChanges(workspaceId: workspaceId, connectionId: connectionId)
+        } catch TextContentError.changed {
+            // The automatic pull already owns this workspace, or the requested state was superseded.
+        }
     }
 
-    private func performPull(_ target: SyncTarget, maintainSharedContent: Bool = true) async throws -> Bool {
+    private func performPull(_ target: SyncTarget) async throws -> Bool {
         let key = PullKey(database: ObjectIdentifier(dbQueue), workspaceId: target.workspaceId)
         guard Self.pullingWorkspaces.withLock({ $0.insert(key).inserted }) else { throw TextContentError.changed }
         defer { _ = Self.pullingWorkspaces.withLock { $0.remove(key) } }
         do {
-            if maintainSharedContent {
-                try await ScreenshotContentProvider.shared.migrateLegacyImages(workspaceId: target.workspaceId, dbQueue: dbQueue)
+            try await screenshotContent.migrateLegacyImages(workspaceId: target.workspaceId, dbQueue: dbQueue)
+            switch try await pullRemoteChanges(for: target) {
+            case .completed:
+                try await clearPullIncident(target: target)
+                return true
+            case .deferred:
+                try await clearPullIncident(target: target)
+                return false
+            case .interrupted:
+                return false
             }
-            guard try await pullRemoteChanges(for: target) else { return false }
-            try await clearPullIncident(target: target)
-            if maintainSharedContent {
-                await MeetingContentProvider.shared.scheduleMaintenance(dbQueue: dbQueue)
-            }
-            return true
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as URLError where error.code == .cancelled {
@@ -980,14 +998,18 @@ actor SyncWorker {
         }
     }
 
-    private func pullRemoteChanges(for target: SyncTarget) async throws -> Bool {
+    private enum PullOutcome {
+        case completed, deferred, interrupted
+    }
+
+    private func pullRemoteChanges(for target: SyncTarget) async throws -> PullOutcome {
         do {
             let data = try await sendData(origin: target.origin, connectionId: target.connectionId, upgradeOnMissing: true) {
                 try await $0.getCapabilities().ok.body.json
             }
             let capabilities = try decode(ServerCapabilities.self, from: data)
             updateTransferSupport(capabilities, connectionId: target.connectionId)
-            guard capabilities.sync?.version == 5 else {
+            guard capabilities.sync?.version == 6 else {
                 throw SyncHTTPError(status: 426, body: Data())
             }
             let meetingEventsVersion = capabilities.meetingEvents?.version == 1 ? 1 : 0
@@ -1015,17 +1037,20 @@ actor SyncWorker {
             }
         }
         if recoveryState == "transferBlocked" {
-            guard transferConnections.contains(target.connectionId) else { return false }
+            guard transferConnections.contains(target.connectionId) else { return .interrupted }
             if try await reconcileRelocations(
                 workspaceId: target.workspaceId,
                 connectionId: target.connectionId,
                 origin: target.origin,
                 clearPullIncidentOnSuccess: true
-            ) { return false }
+            ) { return .interrupted }
+            if target.cursor == nil {
+                try await setRecoveryState("pending", target: target)
+                return .completed
+            }
         }
         if target.cursor == nil {
-            _ = try await recoverSnapshot(target)
-            return true
+            return try await recoverSnapshot(target) ? .completed : .interrupted
         }
 
         var cursor = target.cursor
@@ -1044,7 +1069,7 @@ actor SyncWorker {
                 origin: target.origin,
                 clearPullIncidentOnSuccess: true
             ) {
-                return false
+                return .interrupted
             }
             highWaterCursor = page.highWaterCursor
             if page.items.contains(where: { $0.entity == .workspace && $0.action == "reset" }) {
@@ -1064,13 +1089,13 @@ actor SyncWorker {
                     origin: target.origin,
                     clearPullIncidentOnSuccess: true
                 ) {
-                    return false
+                    return .interrupted
                 }
                 let snapshot = Self.initialSnapshotChanges(snapshotItems)
-                return try await applySnapshot(snapshot, cursor: snapshotPage.cursor, target: target)
+                return try await applySnapshot(snapshot, cursor: snapshotPage.cursor, target: target) ? .completed : .interrupted
             }
             switch try await applyIncrementalPage(page.items, target: target) {
-            case .retry: return false
+            case .retry: return .interrupted
             case .deferred: deferred = true
             case .applied, .alreadyApplied: break
             }
@@ -1080,14 +1105,14 @@ actor SyncWorker {
                     from: committedCursor,
                     context: target.context,
                     dbQueue: dbQueue
-                ) else { return false }
+                ) else { return .interrupted }
                 committedCursor = page.cursor
             }
             // The scan may pass a protected item, but its durable cursor never does.
             cursor = page.cursor
             if !page.hasMore { break }
         } while true
-        return !deferred
+        return deferred ? .deferred : .completed
     }
 
     private func recoverSnapshot(_ target: SyncTarget) async throws -> Bool {

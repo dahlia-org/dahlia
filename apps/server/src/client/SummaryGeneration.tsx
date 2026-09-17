@@ -131,13 +131,17 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
   const summary = settings?.summary ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS.summary;
   const processing = settings?.processing ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing;
   const remote = processing.remote;
-  const customizableSummary = processing.location === "local" || remote.workflow === "combined";
   const saveRemote = (value: Partial<typeof remote>) => save({ processing: { ...processing, remote: { ...remote, ...value } } });
-  const models = catalog.data?.data.filter((model) => model.id !== CODEX_AUTO_REVIEW_ALIAS
-    && isSummaryModel(model.id, catalog.data!, processing.location === "remote" ? "audio" : "transcript")) ?? [];
-  const selectedSummaryModel = models.find((model) => model.id === remote.summaryModel || remote.summaryModel?.endsWith(`.${model.id}`));
-  const metadata = catalog.data?.models.find((model) => model.slug === selectedSummaryModel?.id);
-  const efforts = metadata?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
+  const audioModels = catalog.data?.data.filter((model) => model.id !== CODEX_AUTO_REVIEW_ALIAS
+    && isSummaryModel(model.id, catalog.data!, "audio")) ?? [];
+  const transcriptModels = catalog.data?.data.filter((model) => model.id !== CODEX_AUTO_REVIEW_ALIAS
+    && isSummaryModel(model.id, catalog.data!, "transcript")) ?? [];
+  const selectedAudioModel = audioModels.find((model) => model.id === remote.summaryModel || remote.summaryModel?.endsWith(`.${model.id}`));
+  const transcriptSummaryModel = remote.transcriptSummaryModel ?? (processing.location === "local" ? remote.summaryModel : undefined);
+  const transcriptSummaryEffort = remote.transcriptSummaryReasoningEffort ?? (processing.location === "local" ? remote.reasoningEffort : undefined);
+  const selectedTranscriptModel = transcriptModels.find((model) => model.id === transcriptSummaryModel || transcriptSummaryModel?.endsWith(`.${model.id}`));
+  const audioEfforts = catalog.data?.models.find((model) => model.slug === selectedAudioModel?.id)?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
+  const transcriptEfforts = catalog.data?.models.find((model) => model.slug === selectedTranscriptModel?.id)?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
   if (!query.data) return <section className="section-block settings-section" aria-busy={query.loading}>
     {query.error ? <p className="error" role="alert">{uiText("Could not load workspace settings. Your saved preferences have not changed.", "ワークスペース設定を読み込めませんでした。保存済みの設定は変更されていません。")}
       <button className="secondary" onClick={query.reload}>{uiText("Retry", "再試行")}</button></p>
@@ -168,8 +172,8 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
             {uiText("Server", "サーバー")}</option>}
         </Select></label>
         {processing.location === "local" && <p>{uiText(
-          "Language and live transcription settings are configured on each device in Dahlia for Mac.",
-          "言語とライブ文字起こしは、各端末のDahlia for Macで設定します。",
+          "Language settings are configured on each device in Dahlia for Mac.",
+          "言語は、各端末のDahlia for Macで設定します。",
         )}</p>}
         {processing.location === "remote" ? <p>{uiText(
           "Gemini detects the spoken language while transcribing. No language setting is required.",
@@ -206,27 +210,53 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
             "録音後の自動処理では、Geminiが先に音声を文字起こしし、その文字起こしから要約を作成します。",
           )}</p>
         </>}
-        {customizableSummary && <>
-          {isModelCatalogLoaded && remote.summaryModel && !selectedSummaryModel && <p role="status">{uiText(
+        {processing.location === "remote" && <>
+          {isModelCatalogLoaded && remote.summaryModel && !selectedAudioModel && <p role="status">{uiText(
             "A selected model is unavailable. Change it or choose Automatic.",
             "利用できないモデルが指定されています。変更するか「自動」に戻してください。",
           )}</p>}
-          <label>{uiText("Summary model", "要約モデル")}<Select value={selectedSummaryModel?.id ?? remote.summaryModel ?? ""}
+          <label>{uiText("Audio processing model", "音声処理モデル")}<Select value={selectedAudioModel?.id ?? remote.summaryModel ?? ""}
             disabled={catalog.loading || !remoteSupported} onValueChange={(value) => void saveRemote({ summaryModel: value || undefined })}>
             <option value="">{uiText("Automatic", "自動")}</option>
-            {remote.summaryModel && !selectedSummaryModel && <option value={remote.summaryModel} disabled>{remote.summaryModel}{isModelCatalogLoaded && ` — ${uiText("Unavailable for this workflow", "この方式では利用不可")}`}</option>}
-            {models.map((model) => <option key={model.id} value={model.id}>{model.display_name}</option>)}
+            {remote.summaryModel && !selectedAudioModel && <option value={remote.summaryModel} disabled>{remote.summaryModel}{isModelCatalogLoaded && ` — ${uiText("Unavailable for this workflow", "この方式では利用不可")}`}</option>}
+            {audioModels.map((model) => <option key={model.id} value={model.id}>{model.display_name}</option>)}
           </Select></label>
-          <label>{uiText("Reasoning effort", "推論強度")}<Select value={remote.reasoningEffort ?? ""} disabled={!remoteSupported}
+          <label>{uiText("Audio processing reasoning effort", "音声処理の推論強度")}<Select value={remote.reasoningEffort ?? ""} disabled={!remoteSupported}
             onValueChange={(value) => void saveRemote({ reasoningEffort: value ? value as typeof remote.reasoningEffort : undefined })}>
             <option value="">{uiText("Automatic", "自動")}</option>
-            {remote.reasoningEffort && !efforts.includes(remote.reasoningEffort) && <option value={remote.reasoningEffort} disabled>{remote.reasoningEffort} — {uiText("Check model compatibility", "モデルとの対応を確認")}</option>}
-            {efforts.map((effort) => <option key={effort}>{effort}</option>)}
+            {remote.reasoningEffort && !audioEfforts.includes(remote.reasoningEffort) && <option value={remote.reasoningEffort} disabled>{remote.reasoningEffort} — {uiText("Check model compatibility", "モデルとの対応を確認")}</option>}
+            {audioEfforts.map((effort) => <option key={effort}>{effort}</option>)}
           </Select></label>
-          {catalog.error && <p role="alert" className="error">{catalog.error.message}</p>}
-          {isModelCatalogLoaded && !models.length && <p>{uiText("No models available", "利用可能なモデルがありません")}</p>}
-          <button className="secondary" onClick={catalog.reload} disabled={catalog.loading || !remoteSupported}>{uiText("Reload models", "モデル一覧を再取得")}</button>
         </>}
+        {(processing.location === "local" || remote.workflow === "transcribeThenSummarize") && <>
+          {isModelCatalogLoaded && transcriptSummaryModel && !selectedTranscriptModel && <p role="status">{uiText(
+            "A selected model is unavailable. Change it or choose Automatic.",
+            "利用できないモデルが指定されています。変更するか「自動」に戻してください。",
+          )}</p>}
+          <label>{uiText("Summary model", "要約モデル")}<Select value={selectedTranscriptModel?.id ?? transcriptSummaryModel ?? ""}
+            disabled={catalog.loading || !remoteSupported} onValueChange={(value) => void saveRemote({
+              transcriptSummaryModel: value || undefined,
+              ...(processing.location === "local" ? { summaryModel: undefined } : {}),
+            })}>
+            <option value="">{uiText("Automatic", "自動")}</option>
+            {transcriptSummaryModel && !selectedTranscriptModel && <option value={transcriptSummaryModel} disabled>{transcriptSummaryModel}{isModelCatalogLoaded && ` — ${uiText("Unavailable for this workflow", "この方式では利用不可")}`}</option>}
+            {transcriptModels.map((model) => <option key={model.id} value={model.id}>{model.display_name}</option>)}
+          </Select></label>
+          <label>{uiText("Summary reasoning effort", "要約の推論強度")}<Select value={transcriptSummaryEffort ?? ""} disabled={!remoteSupported}
+            onValueChange={(value) => void saveRemote({
+              transcriptSummaryReasoningEffort: value ? value as typeof remote.transcriptSummaryReasoningEffort : undefined,
+              ...(processing.location === "local" ? { reasoningEffort: undefined } : {}),
+            })}>
+            <option value="">{uiText("Automatic", "自動")}</option>
+            {transcriptSummaryEffort && !transcriptEfforts.includes(transcriptSummaryEffort) && <option value={transcriptSummaryEffort} disabled>{transcriptSummaryEffort} — {uiText("Check model compatibility", "モデルとの対応を確認")}</option>}
+            {transcriptEfforts.map((effort) => <option key={effort}>{effort}</option>)}
+          </Select></label>
+        </>}
+        {catalog.error && <p role="alert" className="error">{catalog.error.message}</p>}
+        {isModelCatalogLoaded && ((processing.location === "remote" && !audioModels.length)
+          || ((processing.location === "local" || remote.workflow === "transcribeThenSummarize") && !transcriptModels.length))
+          && <p>{uiText("No models available", "利用可能なモデルがありません")}</p>}
+        <button className="secondary" onClick={catalog.reload} disabled={catalog.loading || !remoteSupported}>{uiText("Reload models", "モデル一覧を再取得")}</button>
       </fieldset>
     </section>
     <section className="section-block settings-section">
@@ -299,17 +329,20 @@ export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId:
   const models = catalog.data?.data.filter((entry) => entry.id !== CODEX_AUTO_REVIEW_ALIAS
     && isSummaryModel(entry.id, catalog.data!, selectedSource ?? "transcript")) ?? [];
   const workspaceSettings = workspaceQuery.data?.generationSettings;
-  const savedModelID = workspaceSettings?.processing.remote.summaryModel;
-  const usesSavedSummaryDefaults = workspaceSettings?.processing.location === "local" || selectedSource === "audio"
-    || !catalog.data || catalog.loading || !!catalog.error;
-  const defaultModelID = usesSavedSummaryDefaults ? savedModelID : undefined;
+  const savedModelID = selectedSource === "audio" ? workspaceSettings?.processing.remote.summaryModel
+    : workspaceSettings?.processing.remote.transcriptSummaryModel
+      ?? (workspaceSettings?.processing.location === "local" ? workspaceSettings.processing.remote.summaryModel : undefined);
+  const savedEffort = selectedSource === "audio" ? workspaceSettings?.processing.remote.reasoningEffort
+    : workspaceSettings?.processing.remote.transcriptSummaryReasoningEffort
+      ?? (workspaceSettings?.processing.location === "local" ? workspaceSettings.processing.remote.reasoningEffort : undefined);
+  const defaultModelID = savedModelID;
   const selectedModelID = model ?? defaultModelID ?? "";
   const modelForID = (id: string | undefined) => models.find((entry) => entry.id === id || id?.endsWith(`.${entry.id}`));
   const selectedModel = modelForID(selectedModelID);
   const defaultModel = modelForID(defaultModelID);
   const isModelUnavailable = !!selectedSource && !!catalog.data && !catalog.loading && !catalog.error && !!selectedModelID && !selectedModel;
   const efforts = catalog.data?.models.find((entry) => entry.slug === selectedModel?.id)?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
-  const defaultEffort = usesSavedSummaryDefaults ? workspaceSettings?.processing.remote.reasoningEffort : undefined;
+  const defaultEffort = savedEffort;
   const selectedEffort = effort ?? defaultEffort ?? "";
   const defaultLanguage = workspaceSettings?.outputLanguage;
   const defaultDetail = workspaceSettings ? summaryStyleDetail(workspaceSettings.summary.style) : undefined;
@@ -354,12 +387,13 @@ export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId:
         }
         const remote = { ...settings.processing.remote,
           workflow: selectedSource === "audio" ? "combined" as const : "transcribeThenSummarize" as const };
-        if (selectedSource === "transcript" && settings.processing.location === "remote") {
-          remote.summaryModel = undefined;
-          remote.reasoningEffort = undefined;
+        if (selectedSource === "audio") {
+          if (model !== undefined) remote.summaryModel = model || undefined;
+          if (effort !== undefined) remote.reasoningEffort = effort ? effort as typeof remote.reasoningEffort : undefined;
+        } else {
+          if (model !== undefined) remote.transcriptSummaryModel = model || undefined;
+          if (effort !== undefined) remote.transcriptSummaryReasoningEffort = effort ? effort as typeof remote.transcriptSummaryReasoningEffort : undefined;
         }
-        if (model !== undefined) remote.summaryModel = model || undefined;
-        if (effort !== undefined) remote.reasoningEffort = effort ? effort as typeof remote.reasoningEffort : undefined;
         requestBody.current = { id: requestID.current, input,
           preferences: { processing: { location: "remote", remote }, outputLanguage: (language || settings.outputLanguage) as WorkspaceGenerationSettings["outputLanguage"],
             summary: { style: detail ? summaryStyles[details.indexOf(detail as typeof details[number])]! : settings.summary.style } } };

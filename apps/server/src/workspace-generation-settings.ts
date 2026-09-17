@@ -27,6 +27,8 @@ export const remoteProcessingSchema = z.object({
   workflow: z.enum(["transcribeThenSummarize", "combined"]),
   summaryModel: modelPreference.optional(),
   reasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional(),
+  transcriptSummaryModel: modelPreference.optional(),
+  transcriptSummaryReasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional(),
 }).strict();
 export const processingSchema = z.object({ location: summaryModeSchema, remote: remoteProcessingSchema }).strict();
 const summarySchema = z.object({ style: summaryStyleSchema }).strict();
@@ -41,6 +43,7 @@ export const DEFAULT_GENERATION_PREFERENCES: GenerationPreferences = {
 export const workspaceGenerationSettingsSchema = generationPreferencesSchema.extend({
   local: summaryModelSettingsSchema,
   automaticProcessing: z.boolean(),
+  liveTranscriptDraft: z.boolean().optional(),
 }).strict();
 export type WorkspaceGenerationSettings = z.infer<typeof workspaceGenerationSettingsSchema>;
 export const DEFAULT_WORKSPACE_GENERATION_SETTINGS: WorkspaceGenerationSettings = {

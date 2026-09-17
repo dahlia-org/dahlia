@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "c9faa713-58e2-4062-9cb3-c2bebdd29b87",
+  "id": "cd93f3e2-e8a4-44c5-8403-e6f325882dc8",
   "prevIds": [
-    "00000000-0000-0000-0000-000000000000"
+    "c9faa713-58e2-4062-9cb3-c2bebdd29b87"
   ],
   "ddl": [
     {
@@ -2031,6 +2031,16 @@
       "default": null,
       "generated": null,
       "name": "model",
+      "entityType": "columns",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'fill_missing'",
+      "generated": null,
+      "name": "mode",
       "entityType": "columns",
       "table": "jobs_image_analysis"
     },
@@ -6634,6 +6644,12 @@
     {
       "value": "\"status\" IN ('pending', 'processing', 'failed')",
       "name": "image_analysis_job_status_check",
+      "entityType": "checks",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "value": "\"mode\" IN ('fill_missing', 'replace')",
+      "name": "image_analysis_job_mode_check",
       "entityType": "checks",
       "table": "jobs_image_analysis"
     },

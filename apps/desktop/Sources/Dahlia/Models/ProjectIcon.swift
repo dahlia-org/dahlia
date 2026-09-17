@@ -49,7 +49,7 @@ enum ProjectIcon: String, CaseIterable, Codable, Sendable {
 
     var systemImageName: String {
         switch self {
-        case .workspace: "externaldrive"
+        case .workspace: "square.grid.2x2"
         case .notes: "note.text"
         case .balance: "scalemass"
         case .plant: "leaf"

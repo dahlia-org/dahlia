@@ -86,6 +86,7 @@ describe("SQLite canonical sync", () => {
       for (const patch of [{ outputLanguage: "xx" }, { local: { model: "", reasoningEffort: "high" } },
         { local: { model: "model", reasoningEffort: "unknown" } }, { processing: { location: "remote", remote: { workflow: "invalid" } } },
         { automaticProcessing: "yes" },
+        { liveTranscriptDraft: "yes" },
         { transcription: { localeIdentifier: "ja-JP", automaticLanguageDetection: false,
           languageScope: "all", languageIdentifiers: [], liveTranscriptDraft: false } },
         { extra: true }]) {
@@ -811,10 +812,10 @@ describe("SQLite canonical sync", () => {
     const detail = async () => (await send(`meetings/${meetingId}`)).json();
     const capabilities = await send("capabilities");
     expect(capabilities.status).toBe(200);
-    expect(await capabilities.json()).toEqual({ sync: { version: 5 }, workspaceTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 }, search: { version: 1 }, conversationAnalytics: { version: 1 } });
+    expect(await capabilities.json()).toEqual({ sync: { version: 6 }, workspaceTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 }, search: { version: 1 }, conversationAnalytics: { version: 1 } });
     const enabledApp = createApp({ config: testConfig(databasePath), authStore: store, imageAnalysisEnabled: true });
     expect(await (await enabledApp.request("http://localhost:5173/api/v1/capabilities", { headers: headers() })).json())
-      .toEqual({ sync: { version: 5 }, workspaceTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 }, search: { version: 1 }, conversationAnalytics: { version: 1 }, imageAnalysis: { version: 1 } });
+      .toEqual({ sync: { version: 6 }, workspaceTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 }, search: { version: 1 }, conversationAnalytics: { version: 1 }, imageAnalysis: { version: 2 } });
     expect((await send("sync-content")).status).toBe(404);
     const availability = vi.spyOn(store.sync, "isAvailable").mockResolvedValueOnce(false);
     const unsupported = await send("capabilities");
@@ -1040,6 +1041,55 @@ describe("SQLite canonical sync", () => {
     expect(await service.completeImageAnalysis(owner, input, { ocr_text: "OCR", caption: "Replacement" })).toBe(true);
     expect(await service.getFile(owner, file.id)).toMatchObject({ metadata: { caption: "Existing caption", ocrText: "OCR" } });
     await store.close?.();
+  });
+
+  it("replaces imported image analysis after attachment and embeds only the generated text", async () => {
+    const { store, service, attach, file, databasePath } = await fileSetup("model");
+    await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: null,
+      data: { checksum: file.checksum, metadata: { ocrText: "Imported OCR", caption: "Imported caption" }, imageAnalysis: "replace" } }]));
+    const captioner: ImageCaptioner = { model: "model", analyze: vi.fn(async () => ({
+      ocr_text: "Server OCR", caption: "Server caption",
+    })) };
+    const worker = new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service);
+    expect(await worker.processOne()).toBe(false);
+    await attach();
+    let database = new DatabaseSync(databasePath);
+    expect(database.prepare("SELECT mode FROM jobs_image_analysis").get()).toEqual({ mode: "replace" });
+    expect(database.prepare("SELECT ocr_text, caption_text, embedding FROM search_documents WHERE kind = 'screenshot'").get())
+      .toEqual({ ocr_text: "imported ocr", caption_text: "imported caption", embedding: null });
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_search_index").get()).toEqual({ n: 0 });
+    database.close();
+
+    expect(await worker.processOne()).toBe(true);
+    expect(await service.getFile(owner, file.id)).toMatchObject({
+      revision: 2, metadata: { ocrText: "Server OCR", caption: "Server caption" },
+    });
+    database = new DatabaseSync(databasePath);
+    expect(database.prepare("SELECT ocr_text, caption_text FROM search_documents WHERE kind = 'screenshot'").get())
+      .toEqual({ ocr_text: "server ocr", caption_text: "server caption" });
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_image_analysis").get()).toEqual({ n: 0 });
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_search_index").get()).toEqual({ n: 1 });
+    database.close();
+    await store.close?.();
+  });
+
+  it("accepts replacement only on the initial screenshot publication", async () => {
+    const { store, service, publish, file } = await fileSetup("model");
+    try {
+      await publish();
+      await expect(service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 1,
+        data: { checksum: file.checksum, metadata: {}, imageAnalysis: "replace" } }]))).rejects
+        .toMatchObject({ status: 422, code: "invalid_image_analysis_request" });
+    } finally { await store.close?.(); }
+  });
+
+  it("rejects replacement when Server image analysis is unavailable", async () => {
+    const { store, service, file } = await fileSetup();
+    try {
+      await expect(service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: null,
+        data: { checksum: file.checksum, metadata: {}, imageAnalysis: "replace" } }]))).rejects
+        .toMatchObject({ status: 422, code: "image_analysis_unavailable" });
+    } finally { await store.close?.(); }
   });
 
   it("backfills only missing metadata when a legacy sibling exceeds the API limit", async () => {
@@ -3115,7 +3165,9 @@ async function fileSetup(captioningModel?: string) {
     baseRevision: null, data: { ...meetingData(), projectId: null } }]));
   const storage = new LocalObjectStorage(join(directory, "objects"));
   const transformer = vi.fn(transformScreenshot);
-  const service = new MeetingSyncService(store.sync, storage, undefined, undefined, transformer, "/Volumes/test/app/files");
+  const service = new MeetingSyncService(
+    store.sync, storage, undefined, undefined, transformer, "/Volumes/test/app/files", true, captioningModel,
+  );
   const bytes = new Uint8Array(await sharp({ create: { width: 1800, height: 900, channels: 3, background: "white" } }).png().toBuffer());
   const hash = Buffer.from(await crypto.subtle.digest("SHA-256", bytes)).toString("hex");
   const file = { id: screenshotId, workspaceId, name: "capture.png", offset: 0, size: bytes.length,

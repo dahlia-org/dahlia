@@ -124,7 +124,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":5},"workspaceTransfers":{"version":1}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":6},"workspaceTransfers":{"version":1}}"#.utf8))
                 }
                 if path.hasSuffix("/changes") {
                     if request.url!.query?.contains("cursor=middle") == true {
@@ -276,7 +276,7 @@
                 let path = request.url!.path
                 requests.withLock { $0.append(path) }
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data("{\"sync\":{\"version\":5},\"workspaceTransfers\":{\"version\":1}}".utf8))
+                    return (200, [:], Data("{\"sync\":{\"version\":6},\"workspaceTransfers\":{\"version\":1}}".utf8))
                 }
                 if path.hasSuffix("/changes") { return (200, [:], changes) }
                 if path.hasSuffix("/relocations") { return (200, [:], relocation) }
@@ -343,7 +343,7 @@
                 let path = request.url!.path
                 paths.withLock { $0.append(path) }
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data("{\"sync\":{\"version\":5},\"workspaceTransfers\":{\"version\":1}}".utf8))
+                    return (200, [:], Data("{\"sync\":{\"version\":6},\"workspaceTransfers\":{\"version\":1}}".utf8))
                 }
                 if path.contains(fixture.workspaceId.uuidString.lowercased()) {
                     if path.hasSuffix("/relocations") { return (403, [:], Data("{\"code\":\"transfer_access_required\"}".utf8)) }
@@ -393,9 +393,9 @@
                         return count
                     }
                     if requestNumber == 1 {
-                        return (200, [:], Data(#"{"sync":{"version":5},"workspaceTransfers":{"version":1}}"#.utf8))
+                        return (200, [:], Data(#"{"sync":{"version":6},"workspaceTransfers":{"version":1}}"#.utf8))
                     }
-                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
                 }
                 if path.hasSuffix("/changes") {
                     let requestNumber = changeRequestCount.withLock { count in
@@ -447,8 +447,8 @@
                         return count
                     }
                     return requestNumber == 1
-                        ? (200, [:], Data(#"{"sync":{"version":5},"meetingEvents":{"version":1},"workspaceTransfers":{"version":1}}"#.utf8))
-                        : (200, [:], Data(#"{"sync":{"version":5},"meetingEvents":{"version":1}}"#.utf8))
+                        ? (200, [:], Data(#"{"sync":{"version":6},"meetingEvents":{"version":1},"workspaceTransfers":{"version":1}}"#.utf8))
+                        : (200, [:], Data(#"{"sync":{"version":6},"meetingEvents":{"version":1}}"#.utf8))
                 }
                 if path.hasSuffix("/changes") { return (200, [:], initialPage) }
                 if path.hasSuffix("/relocations") {
@@ -513,7 +513,7 @@
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
                     capabilityRequests.withLock { $0 += 1 }
-                    return (200, [:], Data(#"{"sync":{"version":5},"meetingEvents":{"version":1}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":6},"meetingEvents":{"version":1}}"#.utf8))
                 }
                 if path.hasSuffix("/changes") {
                     changeRequests.withLock { $0 += 1 }
@@ -580,7 +580,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":5},"meetingEvents":{"version":1},"workspaceTransfers":{"version":1}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":6},"meetingEvents":{"version":1},"workspaceTransfers":{"version":1}}"#.utf8))
                 }
                 if path.hasSuffix("/relocations") {
                     relocationRequests.withLock { $0 += 1 }
@@ -626,7 +626,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 let cursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "cursor" }!.value!
                 cursors.withLock { $0.append(cursor) }
@@ -687,7 +687,7 @@
                 (
                     200,
                     [:],
-                    request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8) : changes
+                    request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8) : changes
                 )
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
@@ -714,7 +714,7 @@
                 (
                     200,
                     [:],
-                    request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8) : changes
+                    request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8) : changes
                 )
             }
             client.tokenProvider = { _, _ in await gate.wait()
@@ -874,7 +874,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 if request.url!.path.hasSuffix("snapshot") {
                     snapshots.withLock { $0 += 1 }
@@ -923,7 +923,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 if request.url!.path.hasSuffix("projects") {
                     snapshots.withLock { $0 += 1 }
@@ -960,7 +960,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 if request.url!.path.hasSuffix("changes") { return (200, [:], changes) }
                 #expect(request.url!
@@ -1009,7 +1009,7 @@
             ])
             let calls = Mutex(0)
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8)) }
                 if request.url!.path.hasSuffix("changes") { return (200, [:], changes) }
                 calls.withLock { $0 += 1 }
                 #expect(request.url!.path == "/api/v1/files/\(fileId.uuidString.lowercased())")
@@ -1057,7 +1057,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 #expect(request.url!.path.hasSuffix("changes"))
                 return (200, [:], changes)
@@ -1111,7 +1111,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 if request.url!.query!.contains("cursor=before") { return (200, [:], first) }
                 return fail.withLock { $0 } ? (503, [:], Data()) : (200, [:], second)
@@ -1176,7 +1176,7 @@
             let fails = Mutex(true)
             let client = fixture.client { request in
                 if request.url!.path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
                 }
                 if fails.withLock({ $0 }) {
                     return (503, [:], Data(#"{"code":"unavailable"}"#.utf8))
@@ -1210,7 +1210,7 @@
             let fixture = try Fixture()
             let gate = Gate()
             var client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8)) }
                 return (503, [:], Data(#"{"code":"unavailable"}"#.utf8))
             }
             client.tokenProvider = { _, _ in
@@ -1235,7 +1235,32 @@
         }
 
         @Test
-        func incompletePullRetainsIncidentUntilPullCompletes() async throws {
+        func retryWhileAutomaticPullIsRunningJoinsTheExistingAttempt() async throws {
+            let fixture = try Fixture()
+            let gate = Gate()
+            var client = fixture.client { request in
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8)) }
+                return (200, [:], Data(#"{"items":[],"cursor":"after","highWaterCursor":"after","hasMore":false}"#.utf8))
+            }
+            client.tokenProvider = { _, _ in
+                await gate.wait()
+                return "test"
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            let automatic = Task {
+                try await worker.pullRemoteChanges(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+            }
+            await gate.waitUntilStarted()
+
+            try await worker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+
+            await gate.release()
+            #expect(try await automatic.value)
+        }
+
+        @Test
+        func successfulDeferredPullClearsPreviousIncident() async throws {
             let fixture = try Fixture()
             try await fixture.queueTranscript(recording: true)
             let incident = try #require(SyncIncident(
@@ -1254,7 +1279,7 @@
             let changes = try page(workspaceId: fixture.workspaceId, [transcript], cursor: "after")
             let client = fixture.client { request in
                 if request.url!.path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
                 }
                 return (200, [:], changes)
             }
@@ -1264,7 +1289,7 @@
             try await worker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
             try await fixture.queue.read { db throws in
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
-                #expect(workspace.syncPullErrorJSON == incident)
+                #expect(workspace.syncPullErrorJSON == nil)
                 #expect(workspace.syncPullCursor == "before")
             }
 
@@ -1302,7 +1327,7 @@
             }
             let client = fixture.client { request in
                 if request.url!.path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
                 }
                 return (410, [:], Data(#"{"code":"sync_cursor_expired"}"#.utf8))
             }
@@ -1327,7 +1352,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
                 }
                 if path.hasSuffix("changes") {
                     return (410, [:], Data(#"{"code":"sync_cursor_expired"}"#.utf8))
@@ -1381,7 +1406,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":5},"workspaceTransfers":{"version":1}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":6},"workspaceTransfers":{"version":1}}"#.utf8))
                 }
                 if path.hasSuffix("snapshot") { return (200, [:], snapshot) }
                 if path.hasSuffix("relocations") { return (200, [:], relocation) }
@@ -1412,7 +1437,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
                 }
                 if path == "/api/v1/workspaces" { return (200, [:], Data(#"{"items":[]}"#.utf8)) }
                 return serverReady.withLock { $0 } ? (200, [:], changes) :
@@ -1473,7 +1498,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
                 }
                 if path.hasSuffix("changes") { return (200, [:], emptyChanges) }
                 if path == "/api/v1/workspaces" { return (503, [:], Data()) }
@@ -1540,7 +1565,7 @@
             }
             let client = fixture.client { request in
                 if request.url!.path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
                 }
                 return (404, [:], Data(#"{"code":"workspace_not_found"}"#.utf8))
             }
@@ -1596,7 +1621,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
                 }
                 if path.hasSuffix("snapshot") {
                     snapshots.withLock { $0 += 1 }
@@ -1636,7 +1661,7 @@
             }
             let client = fixture.client { request in
                 if request.url!.path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
                 }
                 return (404, [:], Data(#"{"code":"workspace_not_found"}"#.utf8))
             }
@@ -1661,7 +1686,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":5},"workspaceTransfers":{"version":1}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":6},"workspaceTransfers":{"version":1}}"#.utf8))
                 }
                 if path.hasSuffix("relocations") {
                     return (200, [:], Data(#"{"workspaces":[],"items":[]}"#.utf8))

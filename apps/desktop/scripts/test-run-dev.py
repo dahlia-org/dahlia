@@ -180,6 +180,7 @@ exec /usr/bin/sqlite3 "$@"
 
     application_support = root / "Application Support"
     production_db = application_support / "Dahlia/dahlia.sqlite"
+    production_file_store = application_support / "Dahlia/FileStore"
     qa_dir = application_support / "Dahlia-Development"
     qa_db = qa_dir / "dahlia.sqlite"
     qa_database_files = (qa_db, Path(f"{qa_db}-wal"), Path(f"{qa_db}-shm"))
@@ -191,6 +192,12 @@ exec /usr/bin/sqlite3 "$@"
     production.execute("CREATE TABLE copied(value TEXT NOT NULL)")
     production.execute("INSERT INTO copied VALUES ('from production WAL')")
     production.commit()
+    write(production_file_store / "local/files/example/original", "production image")
+    file_store_index = sqlite3.connect(production_file_store / "index.sqlite")
+    file_store_index.execute("CREATE TABLE images(key TEXT PRIMARY KEY)")
+    file_store_index.execute("INSERT INTO images VALUES ('local/files/example/original')")
+    file_store_index.commit()
+    file_store_index.close()
     assert Path(f"{production_db}-wal").exists(), "production fixture must exercise WAL backup"
     snapshot_dir = root / "snapshots"
     snapshot_dir.mkdir()
@@ -215,6 +222,11 @@ exec /usr/bin/sqlite3 "$@"
     qa_connection = sqlite3.connect(qa_db)
     assert qa_connection.execute("SELECT value FROM copied").fetchone() == ("from production WAL",)
     qa_connection.close()
+    assert (qa_dir / "FileStore/local/files/example/original").read_text() == "production image"
+    qa_file_store_index = sqlite3.connect(qa_dir / "FileStore/index.sqlite")
+    assert qa_file_store_index.execute("SELECT key FROM images").fetchone() == ("local/files/example/original",)
+    qa_file_store_index.close()
+    assert not (qa_dir / "FileStore/file").exists(), "production copy retained stale QA files"
     production_hash = hashlib.sha256(qa_db.read_bytes()).digest()
     run("Running Dahlia", arguments=("--copy",), **qa_environment)
     assert hashlib.sha256(qa_db.read_bytes()).digest() == production_hash, "copy aliases differ"
@@ -230,7 +242,7 @@ exec /usr/bin/sqlite3 "$@"
     with qa_db.open():
         run("development database is in use", success=False, arguments=("--reset",), **qa_environment)
         run("development database is in use", success=False, arguments=("--copy",), **qa_environment)
-    leaked_snapshots = list(snapshot_dir.glob("dahlia-production.*"))
+    leaked_snapshots = list(snapshot_dir.glob("dahlia-production*"))
     assert not leaked_snapshots, f"failed copy leaked a production snapshot: {leaked_snapshots}"
 
     for arguments in (("--build-only", "--reset"), ("--build-only", "--copy"), ("--reset", "--copy")):

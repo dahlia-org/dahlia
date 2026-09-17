@@ -30,6 +30,24 @@
             }
         }
 
+        @Test
+        func imageAnalysisReplacementCapabilityFailureFallsBackToOrdinaryUpload() async throws {
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://capability-\(UUID().uuidString.lowercased()).invalid", clientID: "test", createdAt: .now
+            )
+            ImageURLProtocol.register(origin: connection.origin) { request in
+                #expect(request.url?.path == "/api/v1/capabilities")
+                return (503, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: connection.origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let api = SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" })
+
+            let supported = try await CloudWorkspaceDiscovery.supportsImageAnalysisReplacement(connection: connection, api: api)
+            #expect(!supported)
+        }
+
     }
 
     private var connection: DahliaAccountConnectionRecord {

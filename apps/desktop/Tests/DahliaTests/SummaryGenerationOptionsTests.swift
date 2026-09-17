@@ -67,23 +67,27 @@
         }
 
         @Test
-        func manualTranscriptIgnoresCombinedDefaultsButKeepsOneOffOverrides() {
+        func manualTranscriptUsesSeparateDefaultsAndKeepsAudioSettings() {
             var shared = WorkspaceGenerationSettings()
             shared.processing.location = .remote
             shared.processing.remote.summaryModel = "audio-default"
             shared.processing.remote.reasoningEffort = "high"
+            shared.processing.remote.transcriptSummaryModel = "transcript-default"
+            shared.processing.remote.transcriptSummaryReasoningEffort = "medium"
             let automatic = SummaryGenerationOptions(exportOptions: .manual, source: .transcript)
                 .applying(to: shared, usesServer: true)
-            #expect(automatic.processing.remote.summaryModel == nil)
-            #expect(automatic.processing.remote.reasoningEffort == nil)
+            #expect(automatic.processing.remote.transcriptSummaryModel == "transcript-default")
+            #expect(automatic.processing.remote.transcriptSummaryReasoningEffort == "medium")
 
             let explicit = SummaryGenerationOptions(
                 exportOptions: .manual,
                 source: .transcript,
                 overrides: .init(model: "transcript-model", reasoningEffort: "low")
             ).applying(to: shared, usesServer: true)
-            #expect(explicit.processing.remote.summaryModel == "transcript-model")
-            #expect(explicit.processing.remote.reasoningEffort == "low")
+            #expect(explicit.processing.remote.transcriptSummaryModel == "transcript-model")
+            #expect(explicit.processing.remote.transcriptSummaryReasoningEffort == "low")
+            #expect(explicit.processing.remote.summaryModel == "audio-default")
+            #expect(explicit.processing.remote.reasoningEffort == "high")
         }
 
         @Test

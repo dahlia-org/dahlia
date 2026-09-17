@@ -23,6 +23,32 @@
             #expect(selected == "saved-model")
         }
 
+        @Test
+        func automaticTranscriptionSelectionPreservesTheLastSpecificLanguage() {
+            #expect(SettingsLanguageOptions.transcriptionSelection(
+                localeIdentifier: "ja_JP",
+                detectsAutomatically: true
+            ) == SettingsLanguageOptions.automaticTranscription)
+            #expect(SettingsLanguageOptions.transcriptionSelection(
+                localeIdentifier: "ja_JP",
+                detectsAutomatically: false
+            ) == "ja_JP")
+
+            let automatic = SettingsLanguageOptions.resolvedTranscriptionSelection(
+                SettingsLanguageOptions.automaticTranscription,
+                currentLocaleIdentifier: "ja_JP"
+            )
+            let english = SettingsLanguageOptions.resolvedTranscriptionSelection(
+                "en_US",
+                currentLocaleIdentifier: automatic.localeIdentifier
+            )
+
+            #expect(automatic.localeIdentifier == "ja_JP")
+            #expect(automatic.detectsAutomatically)
+            #expect(english.localeIdentifier == "en_US")
+            #expect(!english.detectsAutomatically)
+        }
+
         private func popup(in view: NSView) -> NSPopUpButton? {
             if let popup = view as? NSPopUpButton { return popup }
             return view.subviews.lazy.compactMap { popup(in: $0) }.first

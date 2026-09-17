@@ -187,6 +187,8 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     dependencies.searchEmbedder,
     dependencies.screenshotTransformer,
     config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined,
+    true,
+    config.captioningModel,
   );
   const conversationAnalytics = new ConversationAnalyticsService(store.sync);
   const mcp = createServerMcpHandler(config, sync, async (request) => {
@@ -561,14 +563,14 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     if (!await store.sync.isAvailable()) return context.json({});
     const sources = dependencies.summaryService?.methods.map((method) => method.id) ?? [];
     return context.json({
-      sync: { version: 5 },
+      sync: { version: 6 },
       ...(config.encryption ? { workspaceEncryption: { version: 1 } } : {}),
       workspaceTransfers: { version: 1 },
       recordingArchive: { version: 1 },
       meetingEvents: { version: 1 },
       search: { version: 1 },
       conversationAnalytics: { version: 1 },
-      ...(dependencies.imageAnalysisEnabled === true ? { imageAnalysis: { version: 1 } } : {}),
+      ...(dependencies.imageAnalysisEnabled === true ? { imageAnalysis: { version: 2 } } : {}),
       ...(sources.length ? {
         meetingSummaryGeneration: {
           version: 2,

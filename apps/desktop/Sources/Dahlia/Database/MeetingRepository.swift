@@ -240,6 +240,7 @@ final class MeetingRepository {
         serverWorkspace: CloudWorkspaceRecord,
         transferFence: WorkspaceTransferFence,
         requestedName: String? = nil,
+        replaceServerImageAnalysis: Bool = false,
         screenshotContent: ScreenshotContentProvider = .shared
     ) async throws -> WorkspaceRecord? {
         guard serverWorkspace.workspaceId == id, serverWorkspace.connectionId == connectionID, serverWorkspace.role == "admin" else {
@@ -278,7 +279,12 @@ final class MeetingRepository {
                 items += try UUID.fetchAll(db, sql: "SELECT id FROM \(table) WHERE workspace_id = ?", arguments: [id])
                     .map { .init(entity: entity, id: $0, workspaceId: id) }
             }
-            try SyncInitialSnapshotBuilder.enqueueContents(items, workspaceId: id, in: db)
+            try SyncInitialSnapshotBuilder.enqueueContents(
+                items,
+                workspaceId: id,
+                replaceServerImageAnalysis: replaceServerImageAnalysis,
+                in: db
+            )
             try transferFence.release(in: db)
             return workspace
         }
@@ -422,7 +428,12 @@ final class MeetingRepository {
         if disposition == .moveToLocalAccount {
             screenshotContent.retainOriginals(workspaceIds: workspaceIds, dbQueue: dbQueue)
             defer { screenshotContent.releaseOriginals(workspaceIds: workspaceIds, dbQueue: dbQueue) }
-            let textSources = try await textContent.prepareAccountTransfer(workspaceIds: workspaceIds, connectionId: connectionID, dbQueue: dbQueue)
+            let textSources = try await textContent.prepareAccountTransfer(
+                workspaceIds: workspaceIds,
+                connectionId: connectionID,
+                dbQueue: dbQueue,
+                screenshotContent: screenshotContent
+            )
             defer { Task { await textContent.releaseAccountTransfer(workspaceIds: workspaceIds, dbQueue: dbQueue) } }
             var prepared: [UUID: [FileTransfer]] = [:]
             for workspaceId in workspaceIds {

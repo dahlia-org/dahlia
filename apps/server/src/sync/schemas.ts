@@ -161,7 +161,7 @@ export const transactionDataSchemas = {
     }
   }),
   "recording:upsert": z.object({ source: recordingSourceSchema, checksum: z.string().regex(/^SHA-256:[0-9a-f]{64}$/), manifest: recordingManifestSchema }).strict(),
-  "file:upsert": z.object({ name: z.string().min(1).max(255).optional(), checksum: z.string().regex(/^SHA-256:[0-9a-f]{64}$/), metadata: fileWireMetadataSchema.partial().transform(fileMetadataFromWire) }).strict(),
+  "file:upsert": z.object({ name: z.string().min(1).max(255).optional(), checksum: z.string().regex(/^SHA-256:[0-9a-f]{64}$/), metadata: fileWireMetadataSchema.partial().transform(fileMetadataFromWire), imageAnalysis: z.literal("replace").optional() }).strict(),
   "file:delete": z.object({}).strict(),
   "meeting_attachment:upsert": z.object({ meetingId: uuidSchema, fileId: uuidSchema, capturedAt: nullableDateSchema, sessionId: uuidSchema.nullable(), createdAt: dateSchema }).strict(),
   "meeting_attachment:delete": z.object({}).strict(),

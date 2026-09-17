@@ -19,7 +19,11 @@ extension MeetingContentProvider {
                 }
                 for (raw, id) in verify {
                     try Task.checkCancellation()
-                    if let entity = TextContentEntity(rawValue: raw) {
+                    if let entity = TextContentEntity(rawValue: raw),
+                       try await dbQueue.read({ db in
+                           guard let source = try TextContentStore.source(entity: entity, id: id, in: db) else { return false }
+                           return try TextContentStore.mayFetch(source, entity: entity, id: id, in: db)
+                       }) {
                         try? await ensure(entity: entity, id: id, dbQueue: dbQueue, refresh: true, prefetchBudget: Int.max)
                     }
                 }
@@ -42,7 +46,11 @@ extension MeetingContentProvider {
                     for (raw, id) in content {
                         let budget = try await Self.capacityBytes * 4 / 5 - (Self.usedBytes(dbQueue: dbQueue))
                         guard budget > 0 else { return }
-                        guard let entity = TextContentEntity(rawValue: raw) else { continue }
+                        guard let entity = TextContentEntity(rawValue: raw),
+                              try await dbQueue.read({ db in
+                                  guard let source = try TextContentStore.source(entity: entity, id: id, in: db) else { return false }
+                                  return try TextContentStore.mayFetch(source, entity: entity, id: id, in: db)
+                              }) else { continue }
                         try? await ensure(entity: entity, id: id, dbQueue: dbQueue, refresh: true, prefetchBudget: budget)
                     }
                 }

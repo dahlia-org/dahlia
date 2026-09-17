@@ -3767,7 +3767,7 @@ final class CaptionViewModel: ObservableObject {
             var transcriptionPlan = TranscriptionSessionPlan(
                 finalMode: transcriptionMode,
                 liveSubtitlesEnabled: AppSettings.shared.liveSubtitleOverlayEnabled,
-                liveTranscriptDraftEnabled: AppSettings.shared.liveTranscriptDraftEnabled
+                liveTranscriptDraftEnabled: workspace.generationSettings.liveTranscriptDraft
             )
             let finalTranscriptionLocale = Locale(identifier: Self.resolvedSupportedLocaleIdentifier(
                 preferredIdentifier: AppSettings.shared.transcriptionLocale, supportedLocales: supportedLocales

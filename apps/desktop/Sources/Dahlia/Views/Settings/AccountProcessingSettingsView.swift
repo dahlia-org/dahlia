@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct WorkspaceProcessingSettingsView: View {
+    let onOpenMacTranscription: () -> Void
     let onOpenMacInference: () -> Void
 
     @ObservedObject private var settings = AppSettings.shared
@@ -14,16 +15,22 @@ struct WorkspaceProcessingSettingsView: View {
 
     var body: some View {
         Form {
-            Section {
-                LabeledContent(L10n.workspace, value: workspace?.name ?? L10n.noWorkspaces)
-                Text(L10n.workspaceGenerationSettingsDescription).foregroundStyle(.secondary)
-                if let error = workspaceSettings.errorMessage {
+            if let error = workspaceSettings.errorMessage, error != L10n.databricksProfileRequired {
+                Section {
                     SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange)
                 }
             }
 
             if workspace != nil {
-                Section(L10n.initialTranscription) {
+                Section(L10n.generatedContentLanguage) {
+                    Picker(L10n.summaryOutputLanguage, selection: $workspaceSettings.generationSettings.outputLanguage) {
+                        ForEach(SummaryLanguage.allCases) { Text($0.displayName).tag($0) }
+                    }
+                    Text(L10n.settingsOutputLanguageDescription).foregroundStyle(.secondary)
+                }
+                .disabled(!canEdit)
+
+                Section(L10n.transcription) {
                     if connectionID != nil {
                         Picker(L10n.processingLocation, selection: $workspaceSettings.generationSettings.processing.location) {
                             Text(L10n.localProcessing).tag(WorkspaceGenerationSettings.SummaryMode.local)
@@ -38,57 +45,45 @@ struct WorkspaceProcessingSettingsView: View {
                     }
                     if connectionID == nil || workspaceSettings.generationSettings.processing.location == .local {
                         LabeledContent(L10n.transcriptionModel, value: "Apple Speech")
+                        Button(L10n.macTranscriptionPreferences, systemImage: "arrow.right", action: onOpenMacTranscription)
+                    } else {
+                        LabeledContent(L10n.transcriptionModel, value: "Gemini")
                     }
                     if workspaceSettings.generationSettings.processing.location == .remote {
                         Text(L10n.serverTranscriptionLanguageDescription).foregroundStyle(.secondary)
-                    } else {
-                        Text(L10n.localTranscriptionSettingsDescription).foregroundStyle(.secondary)
                     }
                 }
                 .disabled(!canEdit)
 
-                Section(L10n.retranscription) {
-                    LabeledContent(
-                        L10n.processingMethod,
-                        value: connectionID == nil ? L10n.retranscriptionAppleSpeech : L10n.retranscriptionGemini
-                    )
-                    Text(connectionID == nil
-                        ? L10n.localRetranscriptionPolicyDescription
-                        : L10n.serverRetranscriptionPolicyDescription)
-                        .foregroundStyle(.secondary)
-                    Text(L10n.retranscriptionKeepsSummary).foregroundStyle(.secondary)
+                Section {
+                    Toggle(L10n.liveTranscriptDraft, isOn: $workspaceSettings.generationSettings.liveTranscriptDraft)
+                        .toggleStyle(.switch)
                 }
+                .disabled(!canEdit)
 
                 Section {
+                    LabeledContent(L10n.summaryProcessingLocation, value: connectionID == nil ? L10n.localProcessing : L10n.remoteProcessing)
+                    if connectionID != nil {
+                        Text(L10n.serverSummaryProcessingDescription).foregroundStyle(.secondary)
+                    }
                     Picker(L10n.summaryStyle, selection: $workspaceSettings.generationSettings.summary.style) {
                         ForEach(SummaryStyle.allCases) { Text($0.displayName).tag($0) }
                     }
                     Text(workspaceSettings.generationSettings.summary.style.description).foregroundStyle(.secondary)
-                    Picker(L10n.summaryOutputLanguage, selection: $workspaceSettings.generationSettings.outputLanguage) {
-                        ForEach(SummaryLanguage.allCases) { Text($0.displayName).tag($0) }
+                    if connectionID == nil {
+                        LabeledContent(L10n.macInferencePreferences) {
+                            Button(L10n.settings, action: onOpenMacInference)
+                                .buttonStyle(.link)
+                        }
+                        LocalSummarySettingsRows(canEdit: canEdit)
+                    } else if let connectionID {
+                        ServerSummarySettingsSection(connectionID: connectionID)
                     }
                 } header: {
                     Text(L10n.settingsSummaryOutput)
-                } footer: {
-                    Text(L10n.settingsOutputLanguageDescription)
                 }
                 .disabled(!canEdit)
 
-                Section {
-                    LabeledContent(L10n.processingLocation, value: connectionID == nil ? L10n.localProcessing : L10n.remoteProcessing)
-                    if connectionID == nil {
-                        Button(L10n.macInferencePreferences, systemImage: "arrow.right", action: onOpenMacInference)
-                    }
-                } header: {
-                    Text(L10n.summaryModel)
-                } footer: {
-                    Text(connectionID == nil ? L10n.usesMacInferencePreferences : L10n.settingsServerProcessingDescription)
-                }
-                if let connectionID {
-                    ServerSummarySettingsSection(connectionID: connectionID).disabled(!canEdit)
-                } else {
-                    LocalSummarySettingsSection(canEdit: canEdit)
-                }
                 Section(L10n.settingsAfterRecording) {
                     Toggle(L10n.automaticRecordingProcessing, isOn: $workspaceSettings.generationSettings.automaticProcessing)
                 }

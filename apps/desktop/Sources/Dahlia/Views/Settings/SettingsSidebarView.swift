@@ -2,10 +2,6 @@ import SwiftUI
 
 struct SettingsSidebarView: View {
     @Binding var selection: SettingsCategory
-    let workspaces: [WorkspaceRecord]
-    let currentWorkspace: WorkspaceRecord?
-    var updateController: AppUpdateController
-    let onSelectWorkspace: (WorkspaceRecord) -> Void
     let onReturnToApp: () -> Void
     @State private var searchText = ""
     @State private var expandedGroups = Set(SettingsGroup.allCases.filter { $0 != .advanced })
@@ -58,13 +54,6 @@ struct SettingsSidebarView: View {
                     expandedGroups.insert(group)
                 }
             }
-
-            MainSidebarFooterView(
-                workspaces: workspaces,
-                currentWorkspace: currentWorkspace,
-                updateController: updateController,
-                onSelectWorkspace: onSelectWorkspace
-            )
         }
     }
 }

@@ -137,6 +137,11 @@ public enum PublicIDWire {
         for (key, field) in fields {
             if let value = object[key] { result[key] = try transform(value, shape: field, direction: direction, parent: object) }
         }
+        if shape == "file", case .decode = direction, var metadata = object["metadata"] as? [String: Any] {
+            if metadata["ocrText"] == nil { metadata["ocrText"] = metadata["ocr_text"] }
+            metadata.removeValue(forKey: "ocr_text")
+            result["metadata"] = metadata
+        }
         if shape == "event", object["kind"] as? String == "segment_rotated", let value = object["relatedId"] {
             result["relatedId"] = try id(value, kind: .segment, direction: direction)
         }

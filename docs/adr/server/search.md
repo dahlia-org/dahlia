@@ -55,7 +55,7 @@ Node は `DAHLIA_IMAGE_ANALYSIS_MODEL` がある場合だけ、アップロー�
 
 job は5分 lease、失敗分類と指数 backoff、起動時と60秒ごとの不足分探索で復旧する。推論は正本保存と同期を待たせない。既存値は保持し、空 OCR も完了とする。結果確定時は現在の所有権、参照、画像 checksum と revision、lease を再確認し、正本・delta・FTS・embedding job と解析 job の削除を同じ transaction で確定する。共有参照の数だけ推論しない。設定変更による再解析は行わない。
 
-Node は解析 worker を構築した場合だけ capabilities API の `imageAnalysis: { version: 1 }` を返す。Desktop は解析前にこの値を確認して端末解析を省略し、未対応・未設定・旧 Server では端末解析を維持する。端末解析は取得できた Server 言語設定を使い、設定 API が利用できなければ従来の端末値を使う。capability 取得失敗時は job を保持して再試行し、実行中にアカウント接続が変わった結果は保存しない。Server の結果は通常の差分同期で受け取る。Local Account の画像解析と Desktop の会議要約生成は維持する。Workers のジョブ基盤は対象外。
+Node は解析 worker を構築した場合だけ capabilities API の `imageAnalysis: { version: 2 }` を返す。Desktop は解析前にこの値を確認して端末解析を省略し、未対応・未設定・旧 Server では端末解析を維持する。Local→Server 移管では v2 のときだけ初回 file upsert に `imageAnalysis: "replace"` を付け、Server が原本と会議 attachment を確認後に OCR・caption を再生成する。capability 取得失敗時は通常の移管を継続し、強制再生成だけを省略する。端末解析は取得できた Server 言語設定を使い、設定 API が利用できなければ従来の端末値を使う。通常解析の capability 取得失敗時は job を保持して再試行し、実行中にアカウント接続が変わった結果は保存しない。Server の結果は通常の差分同期で受け取る。Local Account の画像解析と Desktop の会議要約生成は維持する。Workers のジョブ基盤は対象外。
 
 2026-09-18: 上記の Desktop fallback 契約を廃止する。Server Workspace の画像解析は Server が常に所有し、Desktop は `imageAnalysis` capability の有無・version・取得成否や Server のモデル設定にかかわらず端末解析を実行しない。Server で解析されない場合も端末へ切り替えず、OCR / caption は未生成のままにする。Desktop は Server の結果を通常の差分同期で受け取り、接続変更時は該当 job だけを再試行する。端末解析は Local Account の画像に限定する。
 

@@ -1195,7 +1195,7 @@ enum SyncTransactionQueue {
         screenshotContent.retainOriginals(workspaceIds: [workspaceId], dbQueue: dbQueue)
         defer { screenshotContent.releaseOriginals(workspaceIds: [workspaceId], dbQueue: dbQueue) }
         try await screenshotContent.prepareOriginals(workspaceId: workspaceId, dbQueue: dbQueue, screenshotIds: screenshotIds)
-        let rebuildWorkspace = try await dbQueue.write { db -> Bool in
+        let rebuild = try await dbQueue.write { db -> (workspace: Bool, replaceImages: Bool) in
             guard let first = try Row.fetchOne(
                 db,
                 sql: """
@@ -1203,23 +1203,13 @@ enum SyncTransactionQueue {
                 WHERE workspace_id = ? AND blockedReason = 'conflict' ORDER BY sequence LIMIT 1
                 """,
                 arguments: [workspaceId]
-            ) else { return false }
+            ) else { return (false, false) }
             let sequence: Int64 = first["sequence"]
             let response: String? = first["serverResponseJSON"]
             let directMissingEntities = missingConflictEntities(response)
             let existingEntities = existingConflictEntities(response)
             if directMissingEntities.contains(.init(entity: .workspace, id: workspaceId)) {
-                try discard(workspaceId: workspaceId, in: db)
-                try db.execute(sql: "DELETE FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspaceId])
-                try db.execute(
-                    sql: """
-                    UPDATE workspaces SET syncConfirmedConnectionId = NULL,
-                        syncPullCursor = NULL, syncLastCommittedCursor = NULL
-                    WHERE id = ?
-                    """,
-                    arguments: [workspaceId]
-                )
-                return true
+                return try (true, prepareMissingWorkspaceRebuild(workspaceId: workspaceId, fromSequence: sequence, in: db))
             }
             let missingProjects = Set(directMissingEntities.filter { $0.entity == .project })
             let missingMeetings = Set(directMissingEntities.compactMap { conflict in
@@ -1299,7 +1289,12 @@ enum SyncTransactionQueue {
                     if missing, entity == .file, action != .delete {
                         guard let file = try FileRecord.fetchOne(db, key: entityId), let reference = file.localReference else { continue }
                         let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
-                        payload = try SyncInitialSnapshotBuilder.fileOperation(file, in: db).payloadJSON
+                        let replaceServerImageAnalysis = try payload.map {
+                            try SyncJSON.decoder.decode(FileOperationPayload.self, from: $0).imageAnalysis == "replace"
+                        } ?? false
+                        payload = try SyncInitialSnapshotBuilder.fileOperation(
+                            file, replaceServerImageAnalysis: replaceServerImageAnalysis, in: db
+                        ).payloadJSON
                         replacementAttachment = SyncScreenshotAttachmentReference(mimeType: file.contentType, source: source)
                     }
                     let operation = try SyncOperationDraft(
@@ -1344,11 +1339,48 @@ enum SyncTransactionQueue {
                 )
             }
             try TranscriptRecord.reapplySnapshots(meetingIds: transcriptMeetings, in: db)
-            return false
+            return (false, false)
         }
-        if rebuildWorkspace {
-            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: dbQueue, screenshotContent: screenshotContent)
+        if rebuild.workspace {
+            try await SyncInitialSnapshotBuilder.enqueuePending(
+                dbQueue: dbQueue,
+                screenshotContent: screenshotContent,
+                replaceServerImageAnalysisWorkspaceId: rebuild.replaceImages ? workspaceId : nil
+            )
         }
+    }
+
+    private static func prepareMissingWorkspaceRebuild(
+        workspaceId: UUID,
+        fromSequence sequence: Int64,
+        in db: Database
+    ) throws -> Bool {
+        let replaceImages = try requestsImageAnalysisReplacement(workspaceId: workspaceId, fromSequence: sequence, in: db)
+        try discard(workspaceId: workspaceId, in: db)
+        try db.execute(sql: "DELETE FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspaceId])
+        try db.execute(
+            sql: """
+            UPDATE workspaces SET syncConfirmedConnectionId = NULL,
+                syncPullCursor = NULL, syncLastCommittedCursor = NULL
+            WHERE id = ?
+            """,
+            arguments: [workspaceId]
+        )
+        return replaceImages
+    }
+
+    private static func requestsImageAnalysisReplacement(
+        workspaceId: UUID,
+        fromSequence sequence: Int64,
+        in db: Database
+    ) throws -> Bool {
+        try Bool.fetchOne(db, sql: """
+        SELECT EXISTS (
+          SELECT 1 FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
+          WHERE t.workspace_id = ? AND t.sequence >= ? AND o.entity = 'file'
+            AND json_extract(o.payloadJSON, '$.imageAnalysis') = 'replace'
+        )
+        """, arguments: [workspaceId, sequence]) ?? false
     }
 
     /// A missing Workspace requires a complete snapshot; otherwise only recreated screenshots need originals.

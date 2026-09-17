@@ -92,7 +92,7 @@
                     return (
                         200,
                         [:],
-                        Data((meetingDeleted ? "{\"sync\":{\"version\":5},\"meetingEvents\":{\"version\":1}}" : "{\"sync\":{\"version\":5}}").utf8)
+                        Data((meetingDeleted ? "{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}" : "{\"sync\":{\"version\":6}}").utf8)
                     )
                 }
                 if path == "/api/v1/transactions/resolve" {
