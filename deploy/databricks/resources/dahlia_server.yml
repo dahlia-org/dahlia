@@ -22,6 +22,10 @@ resources:
       project_id: ${var.database_project_id}
       display_name: Dahlia DB ${bundle.target}
       pg_version: 18
+      default_endpoint_settings:
+        autoscaling_limit_min_cu: 0.5
+        autoscaling_limit_max_cu: 8
+        suspend_timeout_duration: 300s
 
   apps:
     dahlia_server:
