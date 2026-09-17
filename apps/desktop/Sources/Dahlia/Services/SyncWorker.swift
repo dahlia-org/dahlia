@@ -1592,7 +1592,7 @@ actor SyncWorker {
                     )
                   )
                 """
-            ).compactMap { row in
+            ).compactMap { row -> SyncTarget? in
                 let workspaceId: UUID = row["id"]
                 if row["syncRecoveryState"] as String? == "updateRequired",
                    updateRequiredWorkspaces.contains(workspaceId) { return nil }
