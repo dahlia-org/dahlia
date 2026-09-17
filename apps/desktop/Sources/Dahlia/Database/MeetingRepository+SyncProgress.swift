@@ -217,7 +217,8 @@ extension MeetingRepository {
                     phase = .fetching
                 }
             }
-            let impact: SyncDiscardImpact? = if blockedReason == .conflict || blockedReason == .validation {
+            let impact: SyncDiscardImpact? = if let blockedReason,
+                                                blockedReason == .conflict || blockedReason == .validation {
                 try head.map { row in
                     try discardImpact(
                         workspaceId: workspace.id,
