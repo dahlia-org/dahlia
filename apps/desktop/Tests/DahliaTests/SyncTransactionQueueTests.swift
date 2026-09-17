@@ -259,6 +259,24 @@
         }
 
         @Test
+        func releasingACancelledClaimMakesItImmediatelyAvailable() async throws {
+            let (database, workspace) = try await syncedDatabase()
+            _ = try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.record(
+                    workspaceId: workspace.id,
+                    operations: [.init(entity: .workspace, action: .update, entityId: workspace.id)],
+                    in: db
+                )
+            }
+            let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+
+            try await SyncTransactionQueue.releaseClaim(transaction, dbQueue: database.dbQueue)
+
+            let reclaimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            #expect(reclaimed.id == transaction.id)
+        }
+
+        @Test
         func nonJSONBlockStoresHTTPProblemMetadata() async throws {
             let (database, workspace) = try await syncedDatabase()
             _ = try await database.dbQueue.write { db in

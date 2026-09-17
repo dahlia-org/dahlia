@@ -576,6 +576,15 @@ enum SyncTransactionQueue {
         }
     }
 
+    static func releaseClaim(_ transaction: SyncQueuedTransaction, dbQueue: DatabaseQueue) async throws {
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE sync_transactions SET leaseExpiresAt = NULL WHERE id = ?",
+                arguments: [transaction.id]
+            )
+        }
+    }
+
     static func retry(_ transaction: SyncQueuedTransaction, code: String, dbQueue: DatabaseQueue) async throws {
         let delay = min(pow(2, Double(min(transaction.attempts, 8))), 300)
         let response = problemData(code: code)

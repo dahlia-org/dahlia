@@ -351,6 +351,7 @@ actor SyncWorker {
                         try await SyncTransactionQueue.complete(transaction, response: response, dbQueue: dbQueue)
                     }
                 } catch is CancellationError {
+                    try await SyncTransactionQueue.releaseClaim(transaction, dbQueue: dbQueue)
                     if Task.isCancelled { throw CancellationError() }
                     // A discarded operation or changed connection invalidates only this attempt.
                     continue
@@ -414,6 +415,7 @@ actor SyncWorker {
                 } catch {
                     switch Self.localQueueFailureDisposition(error) {
                     case .ignore:
+                        try await SyncTransactionQueue.releaseClaim(transaction, dbQueue: dbQueue)
                         continue
                     case .retry:
                         try await SyncTransactionQueue.retry(transaction, code: "network", dbQueue: dbQueue)

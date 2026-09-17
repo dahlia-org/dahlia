@@ -1424,7 +1424,7 @@
         @Test(.timeLimit(.minutes(1)))
         func pushUpgradeRequirementPreservesTheQueueAndCanResumeAfterUpdate() async throws {
             let fixture = try Fixture()
-            let transactionId = try #require(try await fixture.queue.write { db in
+            let recordedTransactionId = try await fixture.queue.write { db in
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
                 try db.execute(
                     sql: "INSERT INTO sync_entity_state VALUES (?, 'workspace', ?, 1)",
@@ -1435,7 +1435,8 @@
                     operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
                     in: db
                 )
-            })
+            }
+            let transactionId = try #require(recordedTransactionId)
             let serverReady = Mutex(false)
             let emptyChanges = Data(#"{"items":[],"cursor":"before","highWaterCursor":"before","hasMore":false}"#.utf8)
             let receipt = try JSONSerialization.data(withJSONObject: [
