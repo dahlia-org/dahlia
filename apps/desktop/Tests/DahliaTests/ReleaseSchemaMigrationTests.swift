@@ -83,7 +83,9 @@
                 #expect(workspace.path == "/tmp/released-workspace" && workspace.summaryModelID == "saved-model")
                 #expect(workspace.accountConnectionId == nil && workspace.organizationId == nil && workspace.syncRole == nil && workspace
                     .syncConfirmedConnectionId == nil)
-                #expect(try DahliaAccountConnectionRecord.fetchOne(db, key: connectionID) != nil)
+                let connection = try #require(try DahliaAccountConnectionRecord.fetchOne(db, key: connectionID))
+                #expect(connection.syncDiscoveryErrorJSON == nil)
+                #expect(workspace.syncPullErrorJSON == nil)
                 #expect(try Int.fetchOne(db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspaceID]) == 0)
                 #expect(try Int.fetchOne(db, sql: "SELECT syncMeetingEventsVersion FROM workspaces WHERE id = ?", arguments: [workspaceID]) == 0)
                 let segment = try #require(try fetchTranscriptContent(id: segmentID, in: db))
@@ -160,59 +162,16 @@
         }
 
         @Test
-        func freshDatabaseRegistersConsolidatedAndForwardMigrations() throws {
+        func freshDatabaseRegistersConsolidatedMigration() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let identifiers = AppDatabaseManager.migrationIdentifiers
             let releaseIndex = try #require(identifiers.firstIndex(of: "v41_vaultAISettingsBackfill"))
-            #expect(Array(identifiers.dropFirst(releaseIndex + 1)) == [
-                "v42_localFirstSchema",
-                "v43_syncRecoveryErrors",
-            ])
+            #expect(Array(identifiers.dropFirst(releaseIndex + 1)) == ["v42_localFirstSchema"])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
                 #expect(try !db.columns(in: "workspaces").contains { $0.name == "appearance" })
                 #expect(try !db.columns(in: "projects").contains { $0.name == "appearance" })
                 #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
-            }
-        }
-
-        @Test
-        func syncRecoveryMigrationAddsNullableIncidentColumnsWithoutChangingRows() throws {
-            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v42_localFirstSchema")
-            let connectionID = UUID.v7()
-            let workspaceID = UUID.v7()
-            let date = Date(timeIntervalSince1970: 1_790_000_000)
-            try queue.write { db in
-                try db.execute(
-                    sql: "INSERT INTO dahlia_account_connections(id, origin, clientID, createdAt) VALUES (?, ?, ?, ?)",
-                    arguments: [connectionID, "https://example.com", "desktop", date]
-                )
-                try db.execute(
-                    sql: "INSERT INTO workspaces(id, path, name, createdAt, lastOpenedAt) VALUES (?, ?, ?, ?, ?)",
-                    arguments: [workspaceID, "/tmp/v43", "Preserved", date, date]
-                )
-            }
-
-            try AppDatabaseManager.migrator.migrate(queue)
-
-            try queue.read { db throws in
-                #expect(try String.fetchOne(
-                    db,
-                    sql: "SELECT origin FROM dahlia_account_connections WHERE id = ?",
-                    arguments: [connectionID]
-                ) == "https://example.com")
-                #expect(try String.fetchOne(db, sql: "SELECT name FROM workspaces WHERE id = ?", arguments: [workspaceID]) == "Preserved")
-                #expect(try String.fetchOne(
-                    db,
-                    sql: "SELECT syncDiscoveryErrorJSON FROM dahlia_account_connections WHERE id = ?",
-                    arguments: [connectionID]
-                ) == nil)
-                #expect(try String.fetchOne(
-                    db,
-                    sql: "SELECT syncPullErrorJSON FROM workspaces WHERE id = ?",
-                    arguments: [workspaceID]
-                ) == nil)
             }
         }
 

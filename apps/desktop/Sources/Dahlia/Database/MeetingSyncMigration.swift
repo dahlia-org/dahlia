@@ -52,6 +52,7 @@ enum MeetingSyncMigration {
             syncPullCursor TEXT,
             syncLastCommittedCursor TEXT,
             syncRecoveryState TEXT,
+            syncPullErrorJSON TEXT,
             syncMutationGeneration INTEGER NOT NULL DEFAULT 0,
             syncMeetingEventsVersion INTEGER NOT NULL DEFAULT 0,
             icon TEXT,
