@@ -317,6 +317,10 @@ final class AppDatabaseManager: Sendable {
             try addColumnIfNeeded(in: db, table: "dahlia_account_connections", column: "syncDiscoveryErrorJSON", type: .text)
         }
 
+        migrator.registerMigration("v43_accountConnectionSyncDiscoveryError") { db in
+            try addColumnIfNeeded(in: db, table: "dahlia_account_connections", column: "syncDiscoveryErrorJSON", type: .text)
+        }
+
         return migrator
     }()
 
