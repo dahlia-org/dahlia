@@ -3,6 +3,7 @@ import type { components, operations } from "./generated-api";
 import { apiQuery } from "./live-data";
 import { Select } from "./Select";
 import { MenuIcon } from "./Sidebar";
+import { Tooltip } from "./Tooltip";
 import { useEffect, useRef, useState } from "react";
 import { RequestError, uiText } from "./api";
 import { refreshData, useLiveJSON } from "./live-data";
@@ -74,6 +75,8 @@ const summaryErrors: Record<string, string> = {
 };
 type Job = components["schemas"]["SummaryJob"] | null;
 const details = ["low", "medium", "high", "xhigh", "max"] as const;
+const outputLanguages = { ja: "日本語", en: "English", zh: "中文", ko: "한국어", fr: "Français", de: "Deutsch", es: "Español" } as const;
+const defaultLabel = (value: string) => `${value}${uiText(" (default)", "（既定）")}`;
 const detailLabel = (detail: typeof details[number]) => ({ low: uiText("Concise", "簡潔"), medium: uiText("Standard", "標準"),
   high: uiText("Detailed", "詳細"), xhigh: uiText("Event session", "イベントセッション"), max: uiText("Event Play-by-Play", "イベント実況中継") })[detail];
 const styleDescription = (style: WorkspaceGenerationSettings["summary"]["style"]) => ({
@@ -150,7 +153,7 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
       <fieldset className="account-settings" disabled={editingDisabled}>
         <label>{uiText("Output language", "出力言語")}<Select value={settings?.outputLanguage ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS.outputLanguage}
           onValueChange={(value) => void save({ outputLanguage: value as WorkspaceGenerationSettings["outputLanguage"] })}>
-          {Object.entries({ ja: "日本語", en: "English", zh: "中文", ko: "한국어", fr: "Français", de: "Deutsch", es: "Español" }).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          {Object.entries(outputLanguages).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </Select></label>
         <p>{uiText("Shared by summaries and image descriptions. Speech recognition languages are unchanged.", "出力言語は要約と画像の説明に共通です。音声認識の言語は変更しません。")}</p>
       </fieldset>
@@ -240,6 +243,7 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
 }
 
 export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId: string; workspaceId: string }) {
+  const dialog = useRef<HTMLDialogElement>(null);
   const methods = useSummaryMethods().manualMethods;
   const enabled = methods.length > 0;
   const catalog = useLiveJSON<GatewayModelList>(enabled ? "/api/v1/models" : undefined, "manual");
@@ -279,7 +283,6 @@ export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId:
       completed.current = job.id; refreshData();
     }
   }, [job?.id, job?.status]);
-  if (!enabled) return null;
   const active = job?.status === "pending" || job?.status === "processing";
   const transcriptAvailable = methods.includes("transcript") && !transcriptQuery.loading && !transcriptQuery.error
     && transcriptQuery.data?.available === true;
@@ -299,11 +302,19 @@ export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId:
   const savedModelID = workspaceSettings?.processing.remote.summaryModel;
   const usesSavedSummaryDefaults = workspaceSettings?.processing.location === "local" || selectedSource === "audio"
     || !catalog.data || catalog.loading || !!catalog.error;
-  const selectedModelID = model ?? (usesSavedSummaryDefaults ? savedModelID : undefined) ?? "";
-  const selectedModel = models.find((entry) => entry.id === selectedModelID || selectedModelID.endsWith(`.${entry.id}`));
+  const defaultModelID = usesSavedSummaryDefaults ? savedModelID : undefined;
+  const selectedModelID = model ?? defaultModelID ?? "";
+  const modelForID = (id: string | undefined) => models.find((entry) => entry.id === id || id?.endsWith(`.${entry.id}`));
+  const selectedModel = modelForID(selectedModelID);
+  const defaultModel = modelForID(defaultModelID);
   const isModelUnavailable = !!selectedSource && !!catalog.data && !catalog.loading && !catalog.error && !!selectedModelID && !selectedModel;
   const efforts = catalog.data?.models.find((entry) => entry.slug === selectedModel?.id)?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
-  const selectedEffort = effort ?? (usesSavedSummaryDefaults ? workspaceSettings?.processing.remote.reasoningEffort : undefined) ?? "";
+  const defaultEffort = usesSavedSummaryDefaults ? workspaceSettings?.processing.remote.reasoningEffort : undefined;
+  const selectedEffort = effort ?? defaultEffort ?? "";
+  const defaultLanguage = workspaceSettings?.outputLanguage;
+  const defaultDetail = workspaceSettings ? summaryStyleDetail(workspaceSettings.summary.style) : undefined;
+  const defaultModelLabel = defaultLabel(defaultModel?.display_name ?? defaultModelID ?? uiText("Automatic", "自動"))
+    + (isModelUnavailable && model === undefined ? ` — ${uiText("Unavailable", "利用不可")}` : "");
 
   const sourceReason = (candidate: SummarySource) => {
     if (!methods.includes(candidate)) return uiText("This server does not support this source.", "このサーバーはこのソースに対応していません。");
@@ -390,55 +401,81 @@ export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId:
     }
   }
 
-  return <div className="summary-generation">
-    <div className="generation-copy"><strong><MenuIcon name="sparkles" />{uiText("AI summary", "AI 要約")}</strong><span>{uiText("Turn this conversation into clear next steps.", "会話のポイントと、次のアクションを整理します。")}</span></div>
+  const title = uiText("Generate AI summary", "AI 要約を生成");
+  return <>
+    <button type="button" className="summary-generation-trigger icon-button" title={title} aria-label={title}
+      onClick={() => dialog.current?.showModal()}><MenuIcon name="sparkles" /></button>
+    <dialog ref={dialog} className="action-dialog action-dialog-wide summary-generation-dialog" aria-labelledby={`summary-generation-title-${meetingId}`}
+      onClick={(event) => {
+        if (event.detail !== 1) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (event.target === event.currentTarget && (event.clientX < rect.left || event.clientX > rect.right
+          || event.clientY < rect.top || event.clientY > rect.bottom)) event.currentTarget.close();
+      }}>
+      <header className="dialog-header"><div><span className="dialog-symbol" aria-hidden="true"><MenuIcon name="sparkles" /></span>
+        <h2 id={`summary-generation-title-${meetingId}`}>{uiText("AI summary", "AI 要約")}</h2></div>
+        <button type="button" className="icon-button" aria-label={uiText("Close", "閉じる")} onClick={() => dialog.current?.close()}>×</button>
+      </header>
+      <div className="dialog-body"><p className="dialog-description">{uiText("Turn this conversation into clear next steps.", "会話のポイントと、次のアクションを整理します。")}</p>
+      <div className="summary-generation">
     <fieldset className="summary-source-options" disabled={active || starting} aria-busy={transcriptQuery.loading || recordingsQuery.loading}>
       <legend>{uiText("Source for this generation", "今回の生成ソース")}</legend>
       <div>
         {(["transcript", "audio"] as const).map((candidate) => {
+          const isTranscript = candidate === "transcript";
           const available = sourceAvailable(candidate);
           const reason = sourceReason(candidate);
-          return <label key={candidate} data-disabled={!available}>
+          const option = <label data-disabled={!available} tabIndex={reason ? 0 : undefined}>
             <input type="radio" name={`summary-source-${meetingId}`} value={candidate} checked={selectedSource === candidate}
-              disabled={!available} onChange={() => { setSource(candidate); clearPendingRequest(); }} />
-            <span><strong>{candidate === "transcript" ? uiText("Transcript", "文字起こし") : uiText("Recording audio", "録音音声")}</strong>
-              <small>{candidate === "transcript"
+              disabled={!available} onChange={() => { setSource(candidate); setModel(undefined); setEffort(undefined); clearPendingRequest(); }} />
+            <span><strong>{isTranscript ? uiText("Transcript (text)", "文字起こし（テキスト）") : uiText("Recording files (audio)", "録音ファイル（音声）")}</strong>
+              <small>{isTranscript
                 ? uiText("Regenerate only the summary from the latest transcript.", "最新の文字起こしから要約だけを再生成します。")
                 : uiText("Regenerate both the transcript and summary from all recordings.", "すべての録音から文字起こしと要約を再生成します。")}</small>
-              {reason && <small>{reason}</small>}
             </span>
           </label>;
+          return reason
+            ? <Tooltip key={candidate} className="summary-source-tooltip" label={reason}>{option}</Tooltip>
+            : <span key={candidate} className="summary-source-option">{option}</span>;
         })}
       </div>
     </fieldset>
-    <fieldset disabled={active || starting || workspaceQuery.loading} className="account-settings">
-      <legend>{uiText("For this generation only", "今回の生成のみ")}</legend>
-      <p>{uiText("Summary processing: Server", "要約の処理場所：サーバー")}</p>
-      <label>{uiText("Output language", "出力言語")}<Select value={language} onValueChange={(value) => { setLanguage(value); clearPendingRequest(); }}>
-        <option value="">{uiText("Workspace default", "ワークスペース設定")}</option>
-        {Object.entries({ ja: "日本語", en: "English", zh: "中文", ko: "한국어", fr: "Français", de: "Deutsch", es: "Español" }).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+    <fieldset disabled={!enabled || active || starting || workspaceQuery.loading} className="account-settings summary-generation-options">
+      <legend>{uiText("Summary options", "要約生成オプション")}</legend>
+      <div className="summary-generation-settings">
+      <label>{uiText("Summary language", "要約の言語")}<Select value={language} onValueChange={(value) => { setLanguage(value); clearPendingRequest(); }}>
+        <option value="">{defaultLabel(defaultLanguage ? outputLanguages[defaultLanguage] : uiText("Loading…", "読み込み中…"))}</option>
+        {Object.entries(outputLanguages).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
       </Select></label>
-      <label>{uiText("Summary model", "要約モデル")}<Select value={selectedModel?.id ?? selectedModelID} disabled={catalog.loading}
-        onValueChange={(value) => { setModel(value); setEffort(""); clearPendingRequest(); }}>
+      <label>{uiText("Summary detail", "要約の詳細度")}<Select value={detail}
+        onValueChange={(value) => { setDetail(value); clearPendingRequest(); }}>
+        <option value="">{defaultLabel(defaultDetail ? detailLabel(defaultDetail) : uiText("Loading…", "読み込み中…"))}</option>
+        {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
+      </Select></label>
+      <label>{uiText("Summary model", "要約モデル")}<Select value={model === undefined ? "__default" : model} disabled={catalog.loading}
+        onValueChange={(value) => {
+          const useDefaults = value === "__default";
+          setModel(useDefaults ? undefined : value);
+          setEffort(useDefaults ? undefined : "");
+          clearPendingRequest();
+        }}>
+        <option value="__default">{defaultModelLabel}</option>
         <option value="">{uiText("Automatic", "自動")}</option>
-        {selectedModelID && !selectedModel && <option value={selectedModelID} disabled>{selectedModelID}{isModelUnavailable && ` — ${uiText("Unavailable", "利用不可")}`}</option>}
+        {model && !selectedModel && <option value={selectedModelID} disabled>{selectedModelID}{isModelUnavailable && ` — ${uiText("Unavailable", "利用不可")}`}</option>}
         {models.map((entry) => <option key={entry.id} value={entry.id}>{entry.display_name}</option>)}
       </Select></label>
-      <label>{uiText("Reasoning effort", "推論強度")}<Select value={selectedEffort}
-        onValueChange={(value) => { setEffort(value); clearPendingRequest(); }}>
+      <label>{uiText("Reasoning effort", "推論強度")}<Select value={effort === undefined ? "__default" : effort}
+        onValueChange={(value) => { setEffort(value === "__default" ? undefined : value); clearPendingRequest(); }}>
+        <option value="__default" disabled={model !== undefined}>{defaultLabel(defaultEffort ?? uiText("Automatic", "自動"))}</option>
         <option value="">{uiText("Automatic", "自動")}</option>
-        {selectedEffort && !efforts.includes(selectedEffort) && <option value={selectedEffort} disabled>{selectedEffort} — {uiText("Check model compatibility", "モデルとの対応を確認")}</option>}
+        {effort && selectedEffort && !efforts.includes(selectedEffort) && <option value={selectedEffort} disabled>{selectedEffort} — {uiText("Check model compatibility", "モデルとの対応を確認")}</option>}
         {efforts.map((effort) => <option key={effort}>{effort}</option>)}
       </Select></label>
+      </div>
       {catalog.error && <p role="alert">{catalog.error.message}</p>}
-      <button className="secondary" disabled={catalog.loading} onClick={catalog.reload}>{uiText("Reload models", "モデル一覧を再取得")}</button>
+      <button className="secondary" disabled={!enabled || catalog.loading} onClick={catalog.reload}>{uiText("Reload models", "モデル一覧を再取得")}</button>
     </fieldset>
     <div className="generation-controls">
-    <Select aria-label={uiText("Summary detail", "要約の詳細度")} value={detail} disabled={active || starting}
-      onValueChange={(value) => { setDetail(value); clearPendingRequest(); }}>
-      <option value="">{uiText("Workspace default", "ワークスペース設定")}</option>
-      {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
-    </Select>
     <button className="primary" disabled={starting || active || query.loading || workspaceQuery.loading || !selectedSourceAvailable || isModelUnavailable} onClick={() => void start()}>
       {starting ? uiText("Starting…", "開始中…") : buttonLabel}
     </button>
@@ -451,7 +488,9 @@ export function ServerSummaryGeneration({ meetingId, workspaceId }: { meetingId:
     {job?.status === "failed" && <span role="alert">{stageLabel(job.stage)}: {failureMessage}
       {job.error && <> ({job.error})</>}</span>}
     {(error || query.error) && <span role="alert">{error ?? query.error?.message}</span>}
-  </div>;
+      </div></div>
+    </dialog>
+  </>;
 }
 
 function stageLabel(stage: NonNullable<Job>["stage"]) {

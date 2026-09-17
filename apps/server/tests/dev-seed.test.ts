@@ -11,7 +11,7 @@ import { uuidV7 } from "../src/id";
 import { LocalObjectStorage } from "../src/storage/local";
 import { MeetingSyncService } from "../src/sync/service";
 
-it("seeds authenticated empty SQLite users atomically with UUIDv7 content and preserves edits on restart", async () => {
+it("seeds authenticated empty SQLite users with UUIDv7 content and preserves edits on restart", async () => {
   const dir = mkdtempSync(join(tmpdir(), "dahlia-dev-seed-"));
   const path = join(dir, "db.sqlite");
   const config: AppConfig = { authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite",
@@ -34,13 +34,21 @@ it("seeds authenticated empty SQLite users atomically with UUIDv7 content and pr
     expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
     const db = new DatabaseSync(path);
     try {
-      const tables = [["workspaces", "workspace_id", 1], ["projects", "project_id", 1], ["meetings", "meeting_id", 3], ["summaries", "id", 3]] as const;
+      const tables = [["workspaces", "workspace_id", 1], ["projects", "project_id", 1], ["meetings", "meeting_id", 3], ["summaries", "id", 3],
+        ["transcripts", "id", 3], ["transcript_segments", "segment_id", 9]] as const;
       for (const [table, column, count] of tables) {
         const rows = db.prepare(`SELECT ${column} AS id FROM ${table}`).all();
         expect(rows).toHaveLength(count);
         for (const row of rows) expect(row.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
       }
       expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+      expect(db.prepare("SELECT count(*) AS count FROM transcript_segments WHERE text LIKE '%今週%'").get()).toEqual({ count: 1 });
+      db.exec("DELETE FROM transcript_segments; DELETE FROM transcripts; UPDATE meetings SET transcript_revision = 0");
+      store.ensureIdentityUser = originalProjector;
+      installDevelopmentSeed(config, store, sync);
+      expect((await app.request("/api/v1/session", { headers })).status).toBe(200);
+      expect(db.prepare("SELECT count(*) AS count FROM transcripts").get()).toEqual({ count: 3 });
+      expect(db.prepare("SELECT count(*) AS count FROM transcript_segments").get()).toEqual({ count: 9 });
       db.prepare("UPDATE meetings SET name = ?").run("編集済み");
       store.ensureIdentityUser = originalProjector;
       installDevelopmentSeed(config, store, sync);
