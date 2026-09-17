@@ -543,6 +543,11 @@ test_codex_code_mode_host_packaging() {
     done
 }
 
+test_release_build_uses_native_build_system() {
+    [ "$(grep -Fc -- '--build-system native' "${DESKTOP_SCRIPTS_DIR}/build-app.sh")" -eq 2 ] \
+        || fail "build-app must avoid Swift Build's XCFramework header collision"
+}
+
 test_telemetrydeck_adapter_allowlist() {
     local adapter_path="${TEST_DIR}/TelemetryDeckClient.swift"
 
@@ -633,6 +638,7 @@ test_lindera_license_embedding_validation
 test_webp_license_embedding_validation
 test_telemetrydeck_configuration_and_embedding
 test_codex_code_mode_host_packaging
+test_release_build_uses_native_build_system
 test_telemetrydeck_adapter_allowlist
 test_codesigning_keychain_unlock
 test_pre_commit_compatibility_entrypoint
