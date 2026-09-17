@@ -1017,7 +1017,6 @@ actor SyncWorker {
                 origin: target.origin,
                 clearPullIncidentOnSuccess: true
             ) { return false }
-            if target.cursor == nil { return true }
         }
         if target.cursor == nil {
             return try await recoverSnapshot(target)

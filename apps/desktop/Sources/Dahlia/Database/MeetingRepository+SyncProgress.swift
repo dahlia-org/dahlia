@@ -94,7 +94,9 @@ struct AccountSyncProgress: Equatable, Sendable {
         if allIssues.contains(where: { $0.status == 401 || $0.status == 403 }) {
             return .blocked(.authorization)
         }
-        let state = workspaces.map(\.state).max { $0.accountPriority < $1.accountPriority } ?? .pending
+        guard let state = workspaces.map(\.state).max(by: { $0.accountPriority < $1.accountPriority }) else {
+            return discoveryIssue == nil ? .synced : .pending
+        }
         return state == .synced && hasAttention ? .pending : state
     }
 
