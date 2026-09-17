@@ -166,12 +166,36 @@
             let database = try AppDatabaseManager(path: ":memory:")
             let identifiers = AppDatabaseManager.migrationIdentifiers
             let releaseIndex = try #require(identifiers.firstIndex(of: "v41_vaultAISettingsBackfill"))
-            #expect(Array(identifiers.dropFirst(releaseIndex + 1)) == ["v42_localFirstSchema"])
+            #expect(Array(identifiers.dropFirst(releaseIndex + 1)) == [
+                "v42_localFirstSchema",
+                "v43_accountConnectionSyncDiscoveryError",
+            ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
                 #expect(try !db.columns(in: "workspaces").contains { $0.name == "appearance" })
                 #expect(try !db.columns(in: "projects").contains { $0.name == "appearance" })
                 #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+            }
+        }
+
+        @Test
+        func previouslyAppliedV42GetsAccountConnectionSyncDiscoveryErrorColumn() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v42_localFirstSchema")
+            let connectionID = UUID.v7()
+            try queue.write { db in
+                try db.execute(sql: "ALTER TABLE dahlia_account_connections DROP COLUMN syncDiscoveryErrorJSON")
+                try db.execute(
+                    sql: "INSERT INTO dahlia_account_connections(id, origin, clientID, createdAt) VALUES (?, ?, ?, ?)",
+                    arguments: [connectionID, "https://example.com", "desktop", Date.now]
+                )
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            try queue.read { db throws in
+                #expect(try db.columns(in: "dahlia_account_connections").contains { $0.name == "syncDiscoveryErrorJSON" })
+                #expect(try DahliaAccountConnectionRecord.fetchOne(db, key: connectionID)?.origin == "https://example.com")
             }
         }
 
