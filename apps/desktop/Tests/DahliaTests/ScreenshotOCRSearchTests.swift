@@ -129,7 +129,8 @@ import GRDB
                         }
                     } catch { Issue.record(error) }
                     return .chatGPTSubscription
-                }
+                },
+                localAccountSettingsResolver: { .init(provider: .chatGPTSubscription, databricksProfile: "") }
             )
 
             await indexer.drain()
