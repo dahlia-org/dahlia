@@ -25,8 +25,6 @@ final class WorkspaceManagementModel {
 
     private(set) var workspaces: [WorkspaceRecord] = []
     private(set) var blockedSyncWorkspaceIDs: Set<UUID> = []
-    private(set) var conflictedSyncWorkspaceIDs: Set<UUID> = []
-    private(set) var validationBlockedSyncWorkspaceIDs: Set<UUID> = []
     private(set) var pendingServerAdoption: PendingWorkspaceServerAdoption?
     private(set) var errorMessage = ""
     private(set) var isLoading = false
@@ -64,17 +62,13 @@ final class WorkspaceManagementModel {
             syncObservation = ValueObservation.tracking { db in
                 try (
                     WorkspaceRecord.order(Column("lastOpenedAt").desc).fetchAll(db),
-                    UUID.fetchSet(db, sql: "SELECT DISTINCT workspace_id FROM sync_transactions WHERE blockedReason IS NOT NULL"),
-                    UUID.fetchSet(db, sql: "SELECT DISTINCT workspace_id FROM sync_transactions WHERE blockedReason = 'conflict'"),
-                    UUID.fetchSet(db, sql: "SELECT DISTINCT workspace_id FROM sync_transactions WHERE blockedReason = 'validation'")
+                    UUID.fetchSet(db, sql: "SELECT DISTINCT workspace_id FROM sync_transactions WHERE blockedReason IS NOT NULL")
                 )
             }.start(in: dbQueue, onError: { _ in }, onChange: { [weak self] values in
                 Task { @MainActor in
                     guard let self, self.appDatabase?.dbQueue === dbQueue else { return }
                     self.workspaces = values.0
                     self.blockedSyncWorkspaceIDs = values.1
-                    self.conflictedSyncWorkspaceIDs = values.2
-                    self.validationBlockedSyncWorkspaceIDs = values.3
                 }
             })
         }
@@ -85,8 +79,6 @@ final class WorkspaceManagementModel {
         guard let repository else {
             workspaces = []
             blockedSyncWorkspaceIDs = []
-            conflictedSyncWorkspaceIDs = []
-            validationBlockedSyncWorkspaceIDs = []
             hasLoadedWorkspaces = false
             return
         }
@@ -96,8 +88,6 @@ final class WorkspaceManagementModel {
         do {
             workspaces = try await repository.fetchAllWorkspacesAsync()
             blockedSyncWorkspaceIDs = try await repository.blockedSyncWorkspaceIDs()
-            conflictedSyncWorkspaceIDs = try await repository.conflictedSyncWorkspaceIDs()
-            validationBlockedSyncWorkspaceIDs = try await repository.validationBlockedSyncWorkspaceIDs()
             hasLoadedWorkspaces = true
         } catch {
             hasLoadedWorkspaces = false
@@ -460,50 +450,6 @@ final class WorkspaceManagementModel {
 
     func cancelServerAdoption() {
         pendingServerAdoption = nil
-    }
-
-    func acceptServerSyncVersion(for workspace: WorkspaceRecord) async {
-        guard let repository else { return }
-        do {
-            try await repository.acceptServerSyncVersion(workspaceId: workspace.id)
-            blockedSyncWorkspaceIDs.remove(workspace.id)
-            conflictedSyncWorkspaceIDs.remove(workspace.id)
-        } catch {
-            presentError(L10n.workspaceOperationFailed, error: error, source: "acceptServerSyncVersion")
-        }
-    }
-
-    func reapplyLocalSyncVersion(for workspace: WorkspaceRecord) async {
-        guard let repository else { return }
-        do {
-            try await repository.reapplyLocalSyncVersion(workspaceId: workspace.id)
-            blockedSyncWorkspaceIDs.remove(workspace.id)
-            conflictedSyncWorkspaceIDs.remove(workspace.id)
-        } catch {
-            presentError(L10n.workspaceOperationFailed, error: error, source: "reapplyLocalSyncVersion")
-        }
-    }
-
-    func discardInvalidSyncTransaction(for workspace: WorkspaceRecord) async {
-        guard let repository else { return }
-        do {
-            try await repository.discardInvalidSyncTransaction(workspaceId: workspace.id)
-            blockedSyncWorkspaceIDs.remove(workspace.id)
-            validationBlockedSyncWorkspaceIDs.remove(workspace.id)
-        } catch {
-            presentError(L10n.workspaceOperationFailed, error: error, source: "discardInvalidSyncTransaction")
-        }
-    }
-
-    func retryInvalidSyncTransaction(for workspace: WorkspaceRecord) async {
-        guard let repository else { return }
-        do {
-            try await repository.retryInvalidSyncTransaction(workspaceId: workspace.id)
-            blockedSyncWorkspaceIDs.remove(workspace.id)
-            validationBlockedSyncWorkspaceIDs.remove(workspace.id)
-        } catch {
-            presentError(L10n.workspaceOperationFailed, error: error, source: "retryInvalidSyncTransaction")
-        }
     }
 
     func presentFolderSelectionError(_ error: any Error) {

@@ -128,8 +128,15 @@ final class DahliaCloudAccountController {
                 let (changes, continuation) = AsyncThrowingStream<Void, Error>.makeStream(bufferingPolicy: .bufferingNewest(1))
                 // Registration and reads stay off MainActor; writes only yield a coalesced invalidation.
                 let observation = try await queue.write { _ in
-                    DatabaseRegionObservation(tracking: WorkspaceRecord.all(), Table<Row>("sync_transactions"), Table<Row>("sync_operations"))
-                        .start(in: queue, onError: { continuation.finish(throwing: $0) }, onChange: { _ in continuation.yield(()) })
+                    DatabaseRegionObservation(
+                        tracking: WorkspaceRecord.all(),
+                        DahliaAccountConnectionRecord.all(),
+                        Table<Row>("sync_transactions"),
+                        Table<Row>("sync_operations"),
+                        Table<Row>("sync_content_state"),
+                        Table<Row>("recording_archives")
+                    )
+                    .start(in: queue, onError: { continuation.finish(throwing: $0) }, onChange: { _ in continuation.yield(()) })
                 }
                 defer { observation.cancel()
                     continuation.finish()
@@ -150,6 +157,60 @@ final class DahliaCloudAccountController {
                 syncProgress = [:]
             }
         }
+    }
+
+    func retryDiscovery(connectionID: UUID) async throws {
+        guard let syncWorker else { throw DahliaCloudError.notConfigured }
+        try await syncWorker.retryDiscovery(connectionId: connectionID)
+        await syncWorker.drain()
+    }
+
+    func retryPull(workspaceID: UUID, connectionID: UUID) async throws {
+        guard let syncWorker else { throw DahliaCloudError.notConfigured }
+        try await syncWorker.retryPull(workspaceId: workspaceID, connectionId: connectionID)
+        await syncWorker.drain()
+    }
+
+    func acceptServerSyncVersion(workspaceID: UUID, expectedLastTransactionID: UUID) async throws {
+        guard let repository else { throw DahliaCloudError.notConfigured }
+        try await repository.acceptServerSyncVersion(
+            workspaceId: workspaceID,
+            expectedLastTransactionId: expectedLastTransactionID
+        )
+        await syncWorker?.drain()
+    }
+
+    func reapplyLocalSyncVersion(workspaceID: UUID) async throws {
+        guard let repository else { throw DahliaCloudError.notConfigured }
+        try await repository.reapplyLocalSyncVersion(workspaceId: workspaceID)
+        await syncWorker?.drain()
+    }
+
+    func retryInvalidSyncTransaction(workspaceID: UUID) async throws {
+        guard let repository else { throw DahliaCloudError.notConfigured }
+        try await repository.retryInvalidSyncTransaction(workspaceId: workspaceID)
+        await syncWorker?.drain()
+    }
+
+    func discardInvalidSyncTransaction(workspaceID: UUID, expectedLastTransactionID: UUID) async throws {
+        guard let repository else { throw DahliaCloudError.notConfigured }
+        try await repository.discardInvalidSyncTransaction(
+            workspaceId: workspaceID,
+            expectedLastTransactionId: expectedLastTransactionID
+        )
+        await syncWorker?.drain()
+    }
+
+    func retryAuthorizationSync(connectionID: UUID) async throws {
+        guard let repository else { throw DahliaCloudError.notConfigured }
+        try await repository.retryAuthorizationSync(connectionId: connectionID)
+        await syncWorker?.drain()
+    }
+
+    func retryRecordingArchive(meetingID: UUID) async throws {
+        guard let repository else { throw DahliaCloudError.notConfigured }
+        try await repository.retryRecordingArchives(meetingId: meetingID)
+        await syncWorker?.drain()
     }
 
     func reload() async {
@@ -397,6 +458,7 @@ final class DahliaCloudAccountController {
             }
             guard isCurrentOperation(generation) else { return }
             try await repository?.retryAuthorizationSync(connectionId: connectionID)
+            await syncWorker?.drain()
             try await reloadCodexAuthenticationIfActive(connectionID)
             await reload()
             guard !Task.isCancelled, isCurrentOperation(generation) else { return }

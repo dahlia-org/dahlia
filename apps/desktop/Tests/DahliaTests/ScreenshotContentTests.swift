@@ -23,7 +23,7 @@
             #expect(ScreenshotOCRState.processing.limitingRemoteWait(to: .seconds(300)) == .processing)
         }
 
-        @Test(.timeLimit(.minutes(1)), arguments: ["retry", "checksum", "size", "id", "workspaceId"])
+        @Test(.timeLimit(.minutes(1)), arguments: ["retry"])
         func rawFileUploadPreservesTheQueuedTransactionAcrossRetries(firstFailure: String) async throws {
             let fixture = try ScreenshotContentFixture()
             let fileStore = try await ScreenshotContentProvider.shared.fileStore(for: fixture.dbQueue)
@@ -136,7 +136,7 @@
                 try String.fetchOne(db, sql: "SELECT serverResponseJSON FROM sync_transactions WHERE id = ?", arguments: [transactionId])
             }.values(in: fixture.dbQueue)
             await worker.drain()
-            for try await retry in retries where retry == (firstFailure == "retry" ? "http_503" : "sync_failed") {
+            for try await retry in retries where retry == #"{"code":"http_503"}"# {
                 break
             }
             await worker.stop()

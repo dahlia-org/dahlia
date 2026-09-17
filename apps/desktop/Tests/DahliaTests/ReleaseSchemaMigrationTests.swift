@@ -18,7 +18,10 @@
             let date = Date(timeIntervalSince1970: 1_780_000_000)
             let bytes = Data([1, 2, 3, 4])
             try queue.write { db in
-                try DahliaAccountConnectionRecord(id: connectionID, origin: "https://example.com", clientID: "desktop", createdAt: date).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO dahlia_account_connections(id, origin, clientID, createdAt) VALUES (?, ?, ?, ?)",
+                    arguments: [connectionID, "https://example.com", "desktop", date]
+                )
                 try db.execute(sql: """
                 INSERT INTO vaults(id, path, name, createdAt, lastOpenedAt, summaryModelID, aiSettingsBackfilled, accountConnectionId)
                 VALUES (?, '/tmp/released-workspace', 'Released workspace', ?, ?, 'saved-model', 1, ?)
@@ -160,12 +163,53 @@
             let releaseIndex = try #require(identifiers.firstIndex(of: "v41_vaultAISettingsBackfill"))
             #expect(Array(identifiers.dropFirst(releaseIndex + 1)) == [
                 "v42_localFirstSchema",
+                "v43_syncRecoveryErrors",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
                 #expect(try !db.columns(in: "workspaces").contains { $0.name == "appearance" })
                 #expect(try !db.columns(in: "projects").contains { $0.name == "appearance" })
                 #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+            }
+        }
+
+        @Test
+        func syncRecoveryMigrationAddsNullableIncidentColumnsWithoutChangingRows() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v42_localFirstSchema")
+            let connectionID = UUID.v7()
+            let workspaceID = UUID.v7()
+            let date = Date(timeIntervalSince1970: 1_790_000_000)
+            try queue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO dahlia_account_connections(id, origin, clientID, createdAt) VALUES (?, ?, ?, ?)",
+                    arguments: [connectionID, "https://example.com", "desktop", date]
+                )
+                try db.execute(
+                    sql: "INSERT INTO workspaces(id, path, name, createdAt, lastOpenedAt) VALUES (?, ?, ?, ?, ?)",
+                    arguments: [workspaceID, "/tmp/v43", "Preserved", date, date]
+                )
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            try queue.read { db throws in
+                #expect(try String.fetchOne(
+                    db,
+                    sql: "SELECT origin FROM dahlia_account_connections WHERE id = ?",
+                    arguments: [connectionID]
+                ) == "https://example.com")
+                #expect(try String.fetchOne(db, sql: "SELECT name FROM workspaces WHERE id = ?", arguments: [workspaceID]) == "Preserved")
+                #expect(try String.fetchOne(
+                    db,
+                    sql: "SELECT syncDiscoveryErrorJSON FROM dahlia_account_connections WHERE id = ?",
+                    arguments: [connectionID]
+                ) == nil)
+                #expect(try String.fetchOne(
+                    db,
+                    sql: "SELECT syncPullErrorJSON FROM workspaces WHERE id = ?",
+                    arguments: [workspaceID]
+                ) == nil)
             }
         }
 

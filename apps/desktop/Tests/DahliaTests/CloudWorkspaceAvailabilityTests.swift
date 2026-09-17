@@ -123,6 +123,138 @@
         }
 
         @Test
+        func discoveryIncidentIsVisibleWithoutWorkspacesAndClearsAfterSuccess() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let connection = makeConnection()
+            try await database.dbQueue.write { try connection.insert($0) }
+            let fails = Mutex(true)
+            let emptyPage = Data(#"{"items":[],"nextCursor":null}"#.utf8)
+            let worker = SyncWorker(dbQueue: database.dbQueue, apiClient: client(connection: connection) { _ in
+                fails.withLock { $0 } ? (503, [:], Data(#"{"code":"unavailable"}"#.utf8)) : (200, [:], emptyPage)
+            })
+            defer { ImageURLProtocol.remove(origin: connection.origin) }
+
+            try await worker.discoverCloudWorkspaces()
+
+            try await database.dbQueue.read { db throws in
+                let saved = try #require(try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id))
+                let incident = try #require(SyncIncident(jsonString: saved.syncDiscoveryErrorJSON))
+                #expect(incident.stage == .discovery && incident.status == 503 && incident.code == "unavailable")
+                let account = try #require(MeetingRepository.fetchSyncProgress(in: db)[connection.id])
+                #expect(account.workspaces.isEmpty)
+                #expect(account.discoveryIssue?.status == 503)
+            }
+
+            fails.withLock { $0 = false }
+            try await worker.discoverCloudWorkspaces()
+
+            try await database.dbQueue.read { db in
+                #expect(try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id)?.syncDiscoveryErrorJSON == nil)
+                let account = try MeetingRepository.fetchSyncProgress(in: db)[connection.id]
+                #expect(account?.discoveryIssue == nil)
+                #expect(account?.state == .synced)
+            }
+        }
+
+        @Test
+        func targetedDiscoveryRetryReportsTheTargetFailure() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let connection = makeConnection()
+            try await database.dbQueue.write { try connection.insert($0) }
+            let worker = SyncWorker(dbQueue: database.dbQueue, apiClient: client(connection: connection) { _ in
+                (503, [:], Data(#"{"code":"unavailable"}"#.utf8))
+            })
+            defer { ImageURLProtocol.remove(origin: connection.origin) }
+
+            await #expect(throws: SyncHTTPError.self) {
+                try await worker.retryDiscovery(connectionId: connection.id)
+            }
+            let incident = try #require(try await database.dbQueue.read { db in
+                try SyncIncident(jsonString: DahliaAccountConnectionRecord.fetchOne(db, key: connection.id)?.syncDiscoveryErrorJSON)
+            })
+            #expect(incident.status == 503 && incident.code == "unavailable")
+        }
+
+        @Test
+        func staleDiscoveryFailureCannotReplaceANewerSuccess() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let connection = makeConnection()
+            try await database.dbQueue.write { try connection.insert($0) }
+            let gate = DiscoveryGate()
+            let tokenRequests = Mutex(0)
+            var api = client(connection: connection) { _ in
+                (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8))
+            }
+            api.tokenProvider = { _, _ in
+                let request = tokenRequests.withLock { count in
+                    count += 1
+                    return count
+                }
+                if request == 1 {
+                    await gate.enter()
+                    throw SyncHTTPError(status: 503, body: Data(#"{"code":"stale"}"#.utf8))
+                }
+                return "test"
+            }
+            let worker = SyncWorker(dbQueue: database.dbQueue, apiClient: api)
+            defer { ImageURLProtocol.remove(origin: connection.origin) }
+
+            let staleDiscovery = Task { try await worker.discoverCloudWorkspaces() }
+            await gate.waitForEntry()
+            let retry = Task { try await worker.retryDiscovery(connectionId: connection.id) }
+            await gate.release()
+            try await staleDiscovery.value
+            try await retry.value
+
+            #expect(try await database.dbQueue.read {
+                try DahliaAccountConnectionRecord.fetchOne($0, key: connection.id)?.syncDiscoveryErrorJSON
+            } == nil)
+        }
+
+        @Test
+        func staleDiscoverySuccessCannotReplaceANewerFailure() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let connection = makeConnection()
+            let remote = makeWorkspace(connection: connection)
+            try await database.dbQueue.write { try connection.insert($0) }
+            let gate = DiscoveryGate()
+            let tokenRequests = Mutex(0)
+            let listing = try page([remote])
+            var api = client(connection: connection) { _ in
+                (200, [:], listing)
+            }
+            api.tokenProvider = { _, _ in
+                let request = tokenRequests.withLock { count in
+                    count += 1
+                    return count
+                }
+                if request == 1 {
+                    await gate.enter()
+                    return "test"
+                }
+                throw SyncHTTPError(status: 503, body: Data(#"{"code":"newer"}"#.utf8))
+            }
+            let worker = SyncWorker(dbQueue: database.dbQueue, apiClient: api)
+            defer { ImageURLProtocol.remove(origin: connection.origin) }
+
+            let staleDiscovery = Task { try await worker.discoverCloudWorkspaces() }
+            await gate.waitForEntry()
+            let retry = Task { try await worker.retryDiscovery(connectionId: connection.id) }
+            await gate.release()
+            try await staleDiscovery.value
+            await #expect(throws: SyncHTTPError.self) {
+                try await retry.value
+            }
+
+            try await database.dbQueue.read { db throws in
+                #expect(try WorkspaceRecord.fetchOne(db, key: remote.workspaceId) != nil)
+                let saved = try #require(try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id))
+                let incident = try #require(SyncIncident(jsonString: saved.syncDiscoveryErrorJSON))
+                #expect(incident.status == 503 && incident.code == "newer")
+            }
+        }
+
+        @Test
         func registrationPreservesLocalAndOtherAccountWorkspacesAndPendingChanges() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let connection = makeConnection()
@@ -198,7 +330,7 @@
             }
             let worker = SyncWorker(dbQueue: database.dbQueue, apiClient: gatedAPI)
             defer { ImageURLProtocol.remove(origin: connection.origin) }
-            let discovery = Task { try await worker.discoverCloudWorkspaces() }
+            let discovery = Task { try await worker.retryDiscovery(connectionId: connection.id) }
             await gate.waitForEntry()
             // Suspension waits for the old request; release it after suspension has begun.
             let suspension = Task { await worker.suspendCloudWorkspaceDiscovery(connectionID: connection.id) }

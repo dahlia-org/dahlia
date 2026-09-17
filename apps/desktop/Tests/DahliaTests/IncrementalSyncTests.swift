@@ -55,7 +55,15 @@
             let fixture = try Fixture()
             let destination = UUID.v7()
             let sessionId = UUID.v7()
+            let incident = try #require(SyncIncident(
+                stage: .pull,
+                error: SyncHTTPError(status: 503, body: Data(#"{"code":"unavailable"}"#.utf8))
+            ).jsonString)
             try await fixture.queue.write { db in
+                try db.execute(
+                    sql: "UPDATE workspaces SET syncPullErrorJSON = ? WHERE id = ?",
+                    arguments: [incident, fixture.workspaceId]
+                )
                 try RecordingSessionRecord(
                     id: sessionId,
                     meetingId: fixture.meetingId,
@@ -139,6 +147,7 @@
                 #expect(try MeetingRecord.fetchOne(db, key: fixture.meetingId)?.workspaceId == destination)
                 #expect(try RecordingSessionRecord.fetchOne(db, key: sessionId)?.meetingId == fixture.meetingId)
                 #expect(try FileRecord.fetchOne(db, key: fixture.fileId)?.workspaceId == destination)
+                #expect(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId)?.syncPullErrorJSON == nil)
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
             }
         }
@@ -740,8 +749,10 @@
             } catch {}
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
             try await fixture.queue.read { db throws in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
                 #expect(try FileRecord.fetchOne(db, key: fixture.fileId) != nil)
-                #expect(try String.fetchOne(db, sql: "SELECT syncPullCursor FROM workspaces") == "before")
+                #expect(workspace.syncPullCursor == "before")
+                #expect(workspace.syncPullErrorJSON == nil)
                 #expect(try Int
                     .fetchOne(db, sql: "SELECT confirmedRevision FROM sync_entity_state WHERE entity = 'file'") == (boundary == "ack" ? 3 : 1))
             }
@@ -1155,6 +1166,495 @@
                 "items": changes.map { try wireChange($0, workspaceId: workspaceId) },
                 "cursor": cursor, "highWaterCursor": "after", "hasMore": more,
             ])
+        }
+
+        @Test
+        func directPullPersistsIncidentPerWorkspaceAndClearsAfterSuccess() async throws {
+            let fixture = try Fixture()
+            let fails = Mutex(true)
+            let client = fixture.client { request in
+                if request.url!.path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                }
+                if fails.withLock({ $0 }) {
+                    return (503, [:], Data(#"{"code":"unavailable"}"#.utf8))
+                }
+                return (200, [:], Data(#"{"items":[],"cursor":"after","highWaterCursor":"after","hasMore":false}"#.utf8))
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+
+            await #expect(throws: SyncHTTPError.self) {
+                try await worker.pullRemoteChanges(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+            }
+            try await fixture.queue.read { db throws in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                let incident = try #require(SyncIncident(jsonString: workspace.syncPullErrorJSON))
+                #expect(incident.stage == .pull && incident.status == 503 && incident.code == "unavailable")
+            }
+
+            fails.withLock { $0 = false }
+            #expect(try await worker.pullRemoteChanges(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId))
+
+            try await fixture.queue.read { db in
+                let workspace = try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId)
+                #expect(workspace?.syncPullCursor == "after")
+                #expect(workspace?.syncPullErrorJSON == nil)
+            }
+        }
+
+        @Test
+        func stalePullFailureDoesNotPublishAfterMutationGenerationChanges() async throws {
+            let fixture = try Fixture()
+            let gate = Gate()
+            var client = fixture.client { request in
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8)) }
+                return (503, [:], Data(#"{"code":"unavailable"}"#.utf8))
+            }
+            client.tokenProvider = { _, _ in
+                await gate.wait()
+                return "test"
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            let pull = Task {
+                try await worker.pullRemoteChanges(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+            }
+            await gate.waitUntilStarted()
+            try await fixture.queue.write { db in
+                try db.execute(
+                    sql: "UPDATE workspaces SET syncMutationGeneration = syncMutationGeneration + 1 WHERE id = ?",
+                    arguments: [fixture.workspaceId]
+                )
+            }
+            await gate.release()
+            await #expect(throws: SyncHTTPError.self) { try await pull.value }
+            #expect(try await fixture.queue.read { try String.fetchOne($0, sql: "SELECT syncPullErrorJSON FROM workspaces") } == nil)
+        }
+
+        @Test
+        func incompletePullRetainsIncidentUntilPullCompletes() async throws {
+            let fixture = try Fixture()
+            try await fixture.queueTranscript(recording: true)
+            let incident = try #require(SyncIncident(
+                stage: .pull,
+                error: SyncHTTPError(status: 503, body: Data(#"{"code":"unavailable"}"#.utf8))
+            ).jsonString)
+            try await fixture.queue.write { db in
+                try db.execute(
+                    sql: "UPDATE workspaces SET syncPullErrorJSON = ? WHERE id = ?",
+                    arguments: [incident, fixture.workspaceId]
+                )
+            }
+            let transcript = try fixture.change(.transcript, id: fixture.meetingId, revision: 2, fields: [
+                "contentOmitted": true, "contentPresent": true, "contentCount": 1,
+            ])
+            let changes = try page(workspaceId: fixture.workspaceId, [transcript], cursor: "after")
+            let client = fixture.client { request in
+                if request.url!.path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                }
+                return (200, [:], changes)
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+
+            try await worker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+            try await fixture.queue.read { db throws in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                #expect(workspace.syncPullErrorJSON == incident)
+                #expect(workspace.syncPullCursor == "before")
+            }
+
+            let sent = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue))
+            try await fixture.queue.write { db in
+                try db.execute(sql: "UPDATE recording_sessions SET endedAt = ?", arguments: [Date()])
+            }
+            try await SyncTransactionQueue.complete(sent, response: .init(
+                id: sent.id,
+                status: "committed",
+                cursor: "ack",
+                records: sent.operations.map { .init(entity: $0.entity, id: $0.entityId, revision: 2, record: nil) }
+            ), dbQueue: fixture.queue)
+            try await worker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+            try await fixture.queue.read { db throws in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                #expect(workspace.syncPullCursor == "after")
+                #expect(workspace.syncPullErrorJSON == nil)
+            }
+        }
+
+        @Test
+        func deferredCursorRecoveryKeepsAnActionableIncident() async throws {
+            let fixture = try Fixture()
+            _ = try await fixture.queue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state VALUES (?, 'workspace', ?, 1)",
+                    arguments: [fixture.workspaceId, fixture.workspaceId]
+                )
+                return try SyncTransactionRecorder.record(
+                    workspaceId: fixture.workspaceId,
+                    operations: [.init(entity: .workspace, action: .update, entityId: fixture.workspaceId)],
+                    in: db
+                )
+            }
+            let client = fixture.client { request in
+                if request.url!.path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                }
+                return (410, [:], Data(#"{"code":"sync_cursor_expired"}"#.utf8))
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+
+            try await worker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+
+            try await fixture.queue.read { db throws in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                let incident = try #require(SyncIncident(jsonString: workspace.syncPullErrorJSON))
+                #expect(workspace.syncPullCursor == nil)
+                #expect(workspace.syncRecoveryState == "pending")
+                #expect(incident.status == 410 && incident.code == "sync_cursor_expired")
+                #expect(try SyncTransactionQueue.hasPending(workspaceId: fixture.workspaceId, in: db))
+            }
+        }
+
+        @Test
+        func snapshotRecoveryFailureReplacesCursorErrorIncident() async throws {
+            let fixture = try Fixture()
+            let client = fixture.client { request in
+                let path = request.url!.path
+                if path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                }
+                if path.hasSuffix("changes") {
+                    return (410, [:], Data(#"{"code":"sync_cursor_expired"}"#.utf8))
+                }
+                if path.hasSuffix("snapshot") {
+                    return (503, [:], Data(#"{"code":"snapshot_unavailable"}"#.utf8))
+                }
+                return (404, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+
+            await #expect(throws: SyncHTTPError.self) {
+                try await worker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+            }
+
+            try await fixture.queue.read { db throws in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                let incident = try #require(SyncIncident(jsonString: workspace.syncPullErrorJSON))
+                #expect(workspace.syncPullCursor == nil)
+                #expect(workspace.syncRecoveryState == "pending")
+                #expect(incident.status == 503 && incident.code == "snapshot_unavailable")
+            }
+        }
+
+        @Test
+        func snapshotRelocationDoesNotRestoreTheExpiredCursorIncident() async throws {
+            let fixture = try Fixture()
+            let destination = UUID.v7()
+            let snapshot = Data(#"{"items":[],"startCursor":"start","nextCursor":null}"#.utf8)
+            let changes = try page(workspaceId: fixture.workspaceId, [], cursor: "after")
+            let relocation = try JSONSerialization.data(withJSONObject: [
+                "workspaces": [[
+                    "workspaceId": destination.uuidString,
+                    "organizationId": destination.uuidString,
+                    "name": "Moved",
+                    "createdAt": "2026-09-09T00:00:00Z",
+                    "role": "admin",
+                ]],
+                "items": [[
+                    "entity": "file",
+                    "id": fixture.fileId.uuidString,
+                    "workspaceId": destination.uuidString,
+                ]],
+            ])
+            let client = fixture.client { request in
+                let path = request.url!.path
+                if path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"sync":{"version":5},"workspaceTransfers":{"version":1}}"#.utf8))
+                }
+                if path.hasSuffix("snapshot") { return (200, [:], snapshot) }
+                if path.hasSuffix("relocations") { return (200, [:], relocation) }
+                if path.hasSuffix("changes"), request.url?.query?.contains("cursor=before") == true {
+                    return (410, [:], Data(#"{"code":"sync_cursor_expired"}"#.utf8))
+                }
+                if path.hasSuffix("changes") { return (200, [:], changes) }
+                return (404, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+
+            try await SyncWorker(dbQueue: fixture.queue, apiClient: client).retryPull(
+                workspaceId: fixture.workspaceId,
+                connectionId: fixture.connectionId
+            )
+
+            try await fixture.queue.read { db throws in
+                #expect(try FileRecord.fetchOne(db, key: fixture.fileId)?.workspaceId == destination)
+                #expect(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId)?.syncPullErrorJSON == nil)
+            }
+        }
+
+        @Test
+        func updateRequiredPullFailurePersistsStatusAndState() async throws {
+            let fixture = try Fixture()
+            let client = fixture.client { request in
+                if request.url!.path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                }
+                return (426, [:], Data(#"{"code":"sync_update_required"}"#.utf8))
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+
+            await #expect(throws: SyncHTTPError.self) {
+                try await worker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+            }
+
+            try await fixture.queue.read { db throws in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                let incident = try #require(SyncIncident(jsonString: workspace.syncPullErrorJSON))
+                #expect(workspace.syncRecoveryState == "updateRequired")
+                #expect(incident.status == 426 && incident.code == "sync_update_required")
+            }
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func pushUpgradeRequirementPreservesTheQueueAndCanResumeAfterUpdate() async throws {
+            let fixture = try Fixture()
+            let transactionId = try #require(try await fixture.queue.write { db in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state VALUES (?, 'workspace', ?, 1)",
+                    arguments: [fixture.workspaceId, fixture.workspaceId]
+                )
+                return try SyncTransactionRecorder.record(
+                    workspaceId: fixture.workspaceId,
+                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
+                    in: db
+                )
+            })
+            let serverReady = Mutex(false)
+            let emptyChanges = Data(#"{"items":[],"cursor":"before","highWaterCursor":"before","hasMore":false}"#.utf8)
+            let receipt = try JSONSerialization.data(withJSONObject: [
+                "id": transactionId.uuidString,
+                "status": "committed",
+                "cursor": "after",
+                "records": [["entity": "workspace", "id": fixture.workspaceId.uuidString, "revision": 2, "record": NSNull()]],
+            ])
+            let client = fixture.client { request in
+                let path = request.url!.path
+                if path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                }
+                if path.hasSuffix("changes") { return (200, [:], emptyChanges) }
+                if path == "/api/v1/workspaces" { return (503, [:], Data()) }
+                if path.hasSuffix("/resolve") { return (200, [:], receipt) }
+                if path == "/api/v1/transactions" {
+                    return serverReady.withLock { $0 } ? (200, [:], receipt) :
+                        (426, [:], Data(#"{"code":"sync_upgrade_required"}"#.utf8))
+                }
+                return (404, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            let recoveryStates = ValueObservation.tracking { db in
+                try String.fetchOne(db, sql: "SELECT syncRecoveryState FROM workspaces WHERE id = ?", arguments: [fixture.workspaceId])
+            }.values(in: fixture.queue)
+
+            await worker.drain()
+            for try await state in recoveryStates where state == "updateRequired" {
+                break
+            }
+            await worker.stop()
+
+            try await fixture.queue.read { db throws in
+                let transaction = try #require(try Row.fetchOne(
+                    db,
+                    sql: "SELECT blockedReason, leaseExpiresAt, serverResponseJSON FROM sync_transactions WHERE id = ?",
+                    arguments: [transactionId]
+                ))
+                #expect(transaction["blockedReason"] as String? == nil)
+                #expect(transaction["leaseExpiresAt"] as Date? == nil)
+                let response: String = transaction["serverResponseJSON"]
+                let problem = try #require(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+                #expect(problem["status"] as? Int == 426 && problem["code"] as? String == "sync_upgrade_required")
+                let progress = try #require(MeetingRepository.fetchSyncProgress(in: db)[fixture.connectionId]?.workspaces.first)
+                #expect(progress.state == .updateRequired)
+                #expect(progress.issues.first?.status == 426)
+                #expect(progress.discardImpact == nil)
+            }
+
+            serverReady.withLock { $0 = true }
+            try await worker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+            let pendingCounts = ValueObservation.tracking { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE id = ?", arguments: [transactionId]) ?? 0
+            }.values(in: fixture.queue)
+            await worker.drain()
+            for try await count in pendingCounts where count == 0 {
+                break
+            }
+            await worker.stop()
+            #expect(try await fixture.queue.read {
+                try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.syncRecoveryState
+            } == nil)
+        }
+
+        @Test
+        func unresolvedMissingWorkspaceRecordsPullIncident() async throws {
+            let fixture = try Fixture()
+            _ = try await fixture.queue.write { db in
+                try SyncTransactionRecorder.record(
+                    workspaceId: fixture.workspaceId,
+                    operations: [.init(entity: .meeting, action: .update, entityId: fixture.meetingId)],
+                    in: db
+                )
+            }
+            let client = fixture.client { request in
+                if request.url!.path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                }
+                return (404, [:], Data(#"{"code":"workspace_not_found"}"#.utf8))
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+
+            await #expect(throws: SyncHTTPError.self) {
+                try await worker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+            }
+
+            try await fixture.queue.read { db throws in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                let incident = try #require(SyncIncident(jsonString: workspace.syncPullErrorJSON))
+                #expect(incident.status == 404 && incident.code == "workspace_not_found")
+                #expect(try SyncTransactionQueue.hasPending(workspaceId: fixture.workspaceId, in: db))
+            }
+        }
+
+        @Test
+        func cursorlessPendingRecoveryCanRetryWithQueuedTransaction() async throws {
+            let fixture = try Fixture()
+            let existingIncident = try #require(SyncIncident(
+                stage: .pull,
+                error: SyncHTTPError(status: 503, body: Data(#"{"code":"snapshot_unavailable"}"#.utf8))
+            ).jsonString)
+            try await fixture.queue.write { db in
+                try db.execute(
+                    sql: "UPDATE workspaces SET syncPullCursor = NULL, syncRecoveryState = 'pending', syncPullErrorJSON = ? WHERE id = ?",
+                    arguments: [existingIncident, fixture.workspaceId]
+                )
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state VALUES (?, 'workspace', ?, NULL)",
+                    arguments: [fixture.workspaceId, fixture.workspaceId]
+                )
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                try SyncTransactionRecorder.record(
+                    workspaceId: fixture.workspaceId,
+                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
+                    in: db
+                )
+            }
+            let canonical = try fixture.change(.workspace, id: fixture.workspaceId, revision: 7, fields: [
+                "name": "Server", "createdAt": "2026-09-07T00:00:00Z",
+                "generationSettings": JSONSerialization.jsonObject(with: JSONEncoder().encode(WorkspaceGenerationSettings())),
+            ])
+            var snapshotRow = try wireChange(canonical, workspaceId: fixture.workspaceId)
+            snapshotRow["id"] = snapshotRow.removeValue(forKey: "entityId")
+            let snapshot = try JSONSerialization.data(withJSONObject: [
+                "items": [snapshotRow], "startCursor": "after", "nextCursor": NSNull(),
+            ])
+            let emptyChanges = try page(workspaceId: fixture.workspaceId, [], cursor: "after")
+            let snapshots = Mutex(0)
+            let client = fixture.client { request in
+                let path = request.url!.path
+                if path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                }
+                if path.hasSuffix("snapshot") {
+                    snapshots.withLock { $0 += 1 }
+                    return (200, [:], snapshot)
+                }
+                if path.hasSuffix("changes") { return (200, [:], emptyChanges) }
+                return (404, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+
+            try await SyncWorker(dbQueue: fixture.queue, apiClient: client).retryPull(
+                workspaceId: fixture.workspaceId,
+                connectionId: fixture.connectionId
+            )
+
+            #expect(snapshots.withLock { $0 } == 1)
+            try await fixture.queue.read { db throws in
+                #expect(try Int.fetchOne(db, sql: "SELECT baseRevision FROM sync_operations") == 7)
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                #expect(workspace.syncRecoveryState == "pending")
+                #expect(workspace.syncPullErrorJSON == existingIncident)
+            }
+        }
+
+        @Test
+        func resolvedMissingWorkspaceClearsThePullIncidentWithTheAssociation() async throws {
+            let fixture = try Fixture()
+            let incident = try #require(SyncIncident(
+                stage: .pull,
+                error: SyncHTTPError(status: 404, body: Data(#"{"code":"workspace_not_found"}"#.utf8))
+            ).jsonString)
+            try await fixture.queue.write { db in
+                try db.execute(
+                    sql: "UPDATE workspaces SET syncPullErrorJSON = ? WHERE id = ?",
+                    arguments: [incident, fixture.workspaceId]
+                )
+            }
+            let client = fixture.client { request in
+                if request.url!.path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"sync":{"version":5}}"#.utf8))
+                }
+                return (404, [:], Data(#"{"code":"workspace_not_found"}"#.utf8))
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+
+            try await SyncWorker(dbQueue: fixture.queue, apiClient: client).retryPull(
+                workspaceId: fixture.workspaceId,
+                connectionId: fixture.connectionId
+            )
+
+            try await fixture.queue.read { db throws in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                #expect(workspace.syncConfirmedConnectionId == nil)
+                #expect(workspace.syncPullErrorJSON == nil)
+                #expect(try MeetingRecord.fetchOne(db, key: fixture.meetingId) != nil)
+            }
+        }
+
+        @Test
+        func unresolvedRelocationKeepsTheMissingWorkspaceIncident() async throws {
+            let fixture = try Fixture()
+            let client = fixture.client { request in
+                let path = request.url!.path
+                if path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"sync":{"version":5},"workspaceTransfers":{"version":1}}"#.utf8))
+                }
+                if path.hasSuffix("relocations") {
+                    return (200, [:], Data(#"{"workspaces":[],"items":[]}"#.utf8))
+                }
+                return (404, [:], Data(#"{"code":"workspace_not_found"}"#.utf8))
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+
+            try await SyncWorker(dbQueue: fixture.queue, apiClient: client).retryPull(
+                workspaceId: fixture.workspaceId,
+                connectionId: fixture.connectionId
+            )
+
+            try await fixture.queue.read { db throws in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                let incident = try #require(SyncIncident(jsonString: workspace.syncPullErrorJSON))
+                #expect(workspace.syncRecoveryState == "transferBlocked")
+                #expect(incident.status == 404 && incident.code == "workspace_not_found")
+            }
         }
 
         private actor Gate {

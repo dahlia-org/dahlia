@@ -578,13 +578,14 @@ enum SyncTransactionQueue {
 
     static func retry(_ transaction: SyncQueuedTransaction, code: String, dbQueue: DatabaseQueue) async throws {
         let delay = min(pow(2, Double(min(transaction.attempts, 8))), 300)
+        let response = problemData(code: code)
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
                 UPDATE sync_transactions SET availableAt = ?, leaseExpiresAt = NULL,
                     blockedReason = NULL, serverResponseJSON = ? WHERE id = ?
                 """,
-                arguments: [Date().addingTimeInterval(delay), code, transaction.id]
+                arguments: [Date.now.addingTimeInterval(delay), String(decoding: response, as: UTF8.self), transaction.id]
             )
         }
     }
@@ -593,8 +594,11 @@ enum SyncTransactionQueue {
         _ transaction: SyncQueuedTransaction,
         reason: SyncBlockedReason,
         response: Data,
+        status: Int? = nil,
+        code: String? = nil,
         dbQueue: DatabaseQueue
     ) async throws {
+        let response = normalizedProblemData(response, status: status, code: code)
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
@@ -604,6 +608,17 @@ enum SyncTransactionQueue {
                 arguments: [reason, String(decoding: response, as: UTF8.self), transaction.id]
             )
         }
+    }
+
+    static func problemData(code: String, status: Int? = nil) -> Data {
+        normalizedProblemData(Data(), status: status, code: code)
+    }
+
+    private static func normalizedProblemData(_ data: Data, status: Int?, code: String?) -> Data {
+        var object = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        if object["status"] == nil, let status { object["status"] = status }
+        if object["code"] == nil, let code { object["code"] = code }
+        return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? data
     }
 
     static func complete(
@@ -1025,12 +1040,30 @@ enum SyncTransactionQueue {
         }
     }
 
-    static func acceptServerVersion(workspaceId: UUID, dbQueue: DatabaseQueue) async throws {
-        _ = try await discardBlocked(workspaceId: workspaceId, reason: .conflict, dbQueue: dbQueue)
+    static func acceptServerVersion(
+        workspaceId: UUID,
+        expectedLastTransactionId: UUID? = nil,
+        dbQueue: DatabaseQueue
+    ) async throws {
+        _ = try await discardBlocked(
+            workspaceId: workspaceId,
+            reason: .conflict,
+            expectedLastTransactionId: expectedLastTransactionId,
+            dbQueue: dbQueue
+        )
     }
 
-    static func discardInvalidTransaction(workspaceId: UUID, dbQueue: DatabaseQueue) async throws {
-        if try await discardBlocked(workspaceId: workspaceId, reason: .validation, dbQueue: dbQueue) {
+    static func discardInvalidTransaction(
+        workspaceId: UUID,
+        expectedLastTransactionId: UUID? = nil,
+        dbQueue: DatabaseQueue
+    ) async throws {
+        if try await discardBlocked(
+            workspaceId: workspaceId,
+            reason: .validation,
+            expectedLastTransactionId: expectedLastTransactionId,
+            dbQueue: dbQueue
+        ) {
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: dbQueue)
         }
     }
@@ -1039,7 +1072,7 @@ enum SyncTransactionQueue {
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
-                UPDATE sync_transactions SET blockedReason = NULL, serverResponseJSON = NULL,
+                UPDATE sync_transactions SET blockedReason = NULL, serverResponseJSON = NULL, attempts = 0,
                     availableAt = ?, leaseExpiresAt = NULL
                 WHERE workspace_id = ? AND blockedReason = 'validation'
                 """,
@@ -1052,7 +1085,7 @@ enum SyncTransactionQueue {
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
-                UPDATE sync_transactions SET blockedReason = NULL, serverResponseJSON = NULL,
+                UPDATE sync_transactions SET blockedReason = NULL, serverResponseJSON = NULL, attempts = 0,
                     availableAt = ?, leaseExpiresAt = NULL
                 WHERE connectionId = ? AND blockedReason = 'authorization'
                 """,
@@ -1064,6 +1097,7 @@ enum SyncTransactionQueue {
     private static func discardBlocked(
         workspaceId: UUID,
         reason: SyncBlockedReason,
+        expectedLastTransactionId: UUID?,
         dbQueue: DatabaseQueue
     ) async throws -> Bool {
         try await dbQueue.write { db in
@@ -1075,6 +1109,14 @@ enum SyncTransactionQueue {
                 """,
                 arguments: [workspaceId, reason]
             ) else { return false }
+            if let expectedLastTransactionId {
+                let lastTransactionId = try UUID.fetchOne(
+                    db,
+                    sql: "SELECT id FROM sync_transactions WHERE workspace_id = ? ORDER BY sequence DESC LIMIT 1",
+                    arguments: [workspaceId]
+                )
+                guard lastTransactionId == expectedLastTransactionId else { throw TextContentError.changed }
+            }
             let hasConfirmedWorkspace = try Bool.fetchOne(
                 db,
                 sql: "SELECT EXISTS(SELECT 1 FROM sync_entity_state WHERE workspace_id = ? AND entity = 'workspace' AND entityId = ?)",

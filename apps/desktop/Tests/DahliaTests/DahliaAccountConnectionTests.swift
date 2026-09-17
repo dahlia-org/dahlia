@@ -31,7 +31,10 @@
             let workspace = makeWorkspace(name: "Existing")
             let connection = makeConnection(origin: "https://server.example.com")
             try await queue.write { db in
-                try connection.insert(db)
+                try db.execute(
+                    sql: "INSERT INTO dahlia_account_connections(id, origin, clientID, createdAt) VALUES (?, ?, ?, ?)",
+                    arguments: [connection.id, connection.origin, connection.clientID, connection.createdAt]
+                )
                 try db.execute(
                     sql: """
                     INSERT INTO vaults (id, path, name, createdAt, lastOpenedAt)
