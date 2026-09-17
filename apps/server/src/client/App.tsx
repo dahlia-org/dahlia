@@ -362,6 +362,8 @@ function Shell({
   path,
   navigate,
   routeWorkspaceId,
+  routeMeeting,
+  routeMeetingOwned,
 }: {
   brand: DashboardBrand;
   children: ReactNode;
@@ -370,6 +372,8 @@ function Shell({
   path: string;
   navigate: (path: string) => void;
   routeWorkspaceId?: string;
+  routeMeeting?: SyncedMeetingInfo;
+  routeMeetingOwned?: boolean;
 }) {
   const main = useRef<HTMLElement>(null);
   const navigation = useRef<HTMLDialogElement>(null);
@@ -422,7 +426,7 @@ function Shell({
         <dialog ref={attachNavigation} id="primary-navigation" className="sidebar-container" aria-label={compact ? uiText("Navigation", "ナビゲーション") : undefined} role={compact ? "dialog" : "presentation"}
           onClick={(event) => { if (event.target === event.currentTarget && compact) event.currentTarget.close(); }}>
         <button className="icon-button navigation-close" aria-label={uiText("Close navigation", "ナビゲーションを閉じる")} onClick={() => navigation.current?.close()}>×</button>
-        <Sidebar brand={<Brand brand={brand} />} session={session} routeWorkspaceId={routeWorkspaceId}
+        <Sidebar brand={<Brand brand={brand} />} session={session} routeWorkspaceId={routeWorkspaceId} routeMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned}
           serverLinks={extensions.flatMap((extension) => extension.navigation ?? []).filter(isServerNavigation).map((item) =>
             (!item.capability || session.capabilities[item.capability]) && <a key={item.path} href={item.path}><MenuIcon name="settings" />{item.label}</a>)}>
           <nav aria-label={uiText("Account navigation", "アカウント")}>
@@ -819,13 +823,13 @@ export function WorkspaceMeetings({ session, workspaceId }: { session: SessionIn
   </article>;
 }
 
-function SyncedProject({ workspaceId, projectId }: { workspaceId: string; projectId: string }) {
+function SyncedProject({ workspaceId, projectId, resolvedProject }: { workspaceId: string; projectId: string; resolvedProject?: SyncedProjectInfo }) {
   const { dialog, openDialog } = useActionDialog();
   const workspaceQuery = useLiveJSON<SyncedWorkspaceInfo>(apiQuery("getWorkspace", { params: { path: { workspaceId: workspaceId } } }));
   const workspace = workspaceQuery.data;
   const [recovering, setRecovering] = useState(false);
-  const projectQuery = useLiveJSON<SyncedProjectInfo>(apiQuery("getProject", { params: { path: { projectId: projectId } } }));
-  const project = workspace ? projectQuery.data : undefined;
+  const projectQuery = useLiveJSON<SyncedProjectInfo>(resolvedProject ? undefined : apiQuery("getProject", { params: { path: { projectId: projectId } } }));
+  const project = workspace ? resolvedProject ?? projectQuery.data : undefined;
   const parentQuery = useLiveJSON<SyncedProjectInfo>(project?.parentProjectId ? apiQuery("getProject", { params: { path: { projectId: project.parentProjectId } } }) : undefined);
   const meetingFilters = { projectId };
   const meetingsQuery = useLivePage<SyncedMeetingInfo>(apiQuery("listMeetings", { params: { path: { workspaceId }, query: meetingFilters } }));
@@ -900,53 +904,14 @@ function SyncedProject({ workspaceId, projectId }: { workspaceId: string; projec
   </article>;
 }
 
-export function SyncedMeeting({ workspaceId, meetingId }: { workspaceId: string; meetingId: string }) {
-  const { dialog, openDialog } = useActionDialog();
-  const meetingQuery = useLiveJSON(apiQuery("getMeeting", { params: { path: { meetingId } } }));
-  const workspaceQuery = useLiveJSON<SyncedWorkspaceInfo>(apiQuery("getWorkspace", { params: { path: { workspaceId: workspaceId } } }));
-  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { workspaceId: workspaceId } } }));
+function MeetingScreenshots({ meetingId }: { meetingId: string }) {
   const screenshotsQuery = useLivePage<SyncedScreenshotInfo>(apiQuery("listMeetingFiles", { params: { path: { meetingId } } }));
-  const meeting = workspaceQuery.data ? meetingQuery.data : undefined;
-  const workspace = workspaceQuery.data;
   const screenshots = screenshotsQuery.data?.items;
   const screenshotCursor = screenshotsQuery.data?.nextCursor;
   const loadingScreenshots = screenshotsQuery.loadingMore;
-  const [recovering, setRecovering] = useState(false);
-  const latestSummary = useLiveJSON<LatestSummary>(apiQuery("getLatestSummary", { params: { path: { meetingId } } }));
-  const [selectedSummary, setSelectedSummary] = useState<number | null>(null);
   const [screenshotPreview, setScreenshotPreview] = useState<{ fileId: string; capturedAt?: string | null }>();
   const [loadAfterFileId, setLoadAfterFileId] = useState<string>();
   const screenshotReturnFocus = useRef<{ fileId: string; element: HTMLAnchorElement } | undefined>(undefined);
-  useEffect(() => { setSelectedSummary(null); setScreenshotPreview(undefined); setLoadAfterFileId(undefined); screenshotReturnFocus.current = undefined; }, [meetingId]);
-  const currentSummary = latestSummary.data?.record;
-  const document = useMemo(() => parseSummary(currentSummary?.document ?? undefined), [currentSummary?.document]);
-  const project = projectsQuery.data?.items.find((item) => item.projectId === meeting?.projectId);
-  const editMeeting = () => {
-    if (!meeting) return;
-    openDialog({
-      title: uiText("Edit Meeting", "ミーティングを編集"), confirmLabel: uiText("Save changes", "変更を保存"),
-      fields: [
-        { name: "name", label: uiText("Meeting name", "ミーティング名"), value: meeting.name, required: true },
-        { name: "description", label: uiText("Description", "説明"), value: meeting.description, multiline: true },
-      ],
-      onSubmit: async ({ name, description }) => {
-        await commitSyncTransaction(workspaceId, [{ entity: "meeting", action: "update", entityId: meetingId, baseRevision: meeting.revision,
-          data: { projectId: meeting.projectId ?? null, name: name!.trim(), description: description ?? "", status: meeting.status,
-            duration: meeting.duration ?? null, recordingStartedAt: meeting.recordingStartedAt ?? null, updatedAt: new Date().toISOString() } }], setRecovering);
-      },
-    });
-  };
-  const deleteMeeting = () => {
-    if (!meeting || !workspace) return;
-    openDialog({ title: uiText("Move meeting to trash?", "ミーティングをごみ箱に移動しますか？"),
-      description: uiText(`“${meeting.name}” will be eligible for permanent deletion after ${workspace.meetingDeletionGraceDays} days. Restore it from this Workspace's trash before cleanup.`, `「${meeting.name}」は${workspace.meetingDeletionGraceDays}日後に完全削除の対象となります。削除処理前であれば、ワークスペースのごみ箱から復旧できます。`),
-      confirmLabel: uiText("Move to trash", "ごみ箱に移動"), destructive: true,
-      onSubmit: async () => {
-        await commitSyncTransaction(workspaceId, [{ entity: "meeting", action: "delete", entityId: meetingId, baseRevision: meeting.revision, data: {} }], setRecovering);
-        navigateDashboard(`/workspaces/${workspaceId}`);
-      },
-    });
-  };
   const visibleScreenshots = useMemo(() => screenshots?.filter((screenshot) => screenshot.file.metadata.source === "screenshot"), [screenshots]);
   const previewIndex = screenshotPreview ? visibleScreenshots?.findIndex((screenshot) => screenshot.file.id === screenshotPreview.fileId) ?? -1 : -1;
   const previousScreenshot = previewIndex > 0 ? visibleScreenshots?.[previewIndex - 1] : undefined;
@@ -976,6 +941,66 @@ export function SyncedMeeting({ workspaceId, meetingId }: { workspaceId: string;
     setLoadAfterFileId(undefined);
     returnFocus?.focus({ preventScroll: true });
   };
+  return <>
+    {screenshotPreview && <FileDialog fileId={screenshotPreview.fileId} capturedAt={screenshotPreview.capturedAt}
+      onClose={closeScreenshot}
+      onPrevious={previousScreenshot ? () => openScreenshot(previousScreenshot) : undefined}
+      onNext={nextScreenshot ? () => openScreenshot(nextScreenshot) : screenshotCursor && !loadingScreenshots && !loadAfterFileId ? () => {
+        setLoadAfterFileId(screenshotPreview.fileId);
+      } : undefined} />}
+    <DataError error={screenshotsQuery.error} retry={screenshotsQuery.reload} />
+    {visibleScreenshots?.length === 0 && <p className="content-empty">{uiText("No screenshots", "スクリーンショットはありません")}</p>}
+    <div className="screenshot-grid">
+      {visibleScreenshots?.map((screenshot) => (
+        <ScreenshotFigure key={screenshot.id} file={screenshot.file} capturedAt={screenshot.capturedAt} onOpen={(link) => openScreenshot(screenshot, link)} />
+      ))}
+    </div>
+    {screenshotCursor && <button className="secondary load-more" disabled={loadingScreenshots} onClick={screenshotsQuery.loadMore}>
+      {loadingScreenshots ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}
+    </button>}
+  </>;
+}
+
+export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { workspaceId: string; meetingId: string; resolvedMeeting?: SyncedMeetingInfo }) {
+  const { dialog, openDialog } = useActionDialog();
+  const meetingQuery = useLiveJSON<SyncedMeetingInfo>(resolvedMeeting ? undefined : apiQuery("getMeeting", { params: { path: { meetingId } } }));
+  const workspaceQuery = useLiveJSON<SyncedWorkspaceInfo>(apiQuery("getWorkspace", { params: { path: { workspaceId: workspaceId } } }));
+  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { workspaceId: workspaceId } } }));
+  const meeting = workspaceQuery.data ? resolvedMeeting ?? meetingQuery.data : undefined;
+  const workspace = workspaceQuery.data;
+  const [recovering, setRecovering] = useState(false);
+  const latestSummary = useLiveJSON<LatestSummary>(apiQuery("getLatestSummary", { params: { path: { meetingId } } }));
+  const [selectedSummary, setSelectedSummary] = useState<number | null>(null);
+  useEffect(() => { setSelectedSummary(null); }, [meetingId]);
+  const currentSummary = latestSummary.data?.record;
+  const document = useMemo(() => parseSummary(currentSummary?.document ?? undefined), [currentSummary?.document]);
+  const project = projectsQuery.data?.items.find((item) => item.projectId === meeting?.projectId);
+  const editMeeting = () => {
+    if (!meeting) return;
+    openDialog({
+      title: uiText("Edit Meeting", "ミーティングを編集"), confirmLabel: uiText("Save changes", "変更を保存"),
+      fields: [
+        { name: "name", label: uiText("Meeting name", "ミーティング名"), value: meeting.name, required: true },
+        { name: "description", label: uiText("Description", "説明"), value: meeting.description, multiline: true },
+      ],
+      onSubmit: async ({ name, description }) => {
+        await commitSyncTransaction(workspaceId, [{ entity: "meeting", action: "update", entityId: meetingId, baseRevision: meeting.revision,
+          data: { projectId: meeting.projectId ?? null, name: name!.trim(), description: description ?? "", status: meeting.status,
+            duration: meeting.duration ?? null, recordingStartedAt: meeting.recordingStartedAt ?? null, updatedAt: new Date().toISOString() } }], setRecovering);
+      },
+    });
+  };
+  const deleteMeeting = () => {
+    if (!meeting || !workspace) return;
+    openDialog({ title: uiText("Move meeting to trash?", "ミーティングをごみ箱に移動しますか？"),
+      description: uiText(`“${meeting.name}” will be eligible for permanent deletion after ${workspace.meetingDeletionGraceDays} days. Restore it from this Workspace's trash before cleanup.`, `「${meeting.name}」は${workspace.meetingDeletionGraceDays}日後に完全削除の対象となります。削除処理前であれば、ワークスペースのごみ箱から復旧できます。`),
+      confirmLabel: uiText("Move to trash", "ごみ箱に移動"), destructive: true,
+      onSubmit: async () => {
+        await commitSyncTransaction(workspaceId, [{ entity: "meeting", action: "delete", entityId: meetingId, baseRevision: meeting.revision, data: {} }], setRecovering);
+        navigateDashboard(`/workspaces/${workspaceId}`);
+      },
+    });
+  };
   return (
     <article className="meeting-detail" aria-busy={!meeting && (meetingQuery.loading || workspaceQuery.loading)}>
       {meeting && <header className="meeting-header">
@@ -999,12 +1024,6 @@ export function SyncedMeeting({ workspaceId, meetingId }: { workspaceId: string;
         {meeting.description?.trim() && <details className="meeting-description"><summary>{uiText("Description", "説明")}</summary><p>{meeting.description}</p></details>}
       </header>}
       {dialog}
-      {screenshotPreview && <FileDialog fileId={screenshotPreview.fileId} capturedAt={screenshotPreview.capturedAt}
-        onClose={closeScreenshot}
-        onPrevious={previousScreenshot ? () => openScreenshot(previousScreenshot) : undefined}
-        onNext={nextScreenshot ? () => openScreenshot(nextScreenshot) : screenshotCursor && !loadingScreenshots && !loadAfterFileId ? () => {
-          setLoadAfterFileId(screenshotPreview.fileId);
-        } : undefined} />}
       {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
       <DataError error={meetingQuery.error} retry={meetingQuery.reload} />
       <DataError error={workspaceQuery.error} retry={workspaceQuery.reload} />
@@ -1021,18 +1040,7 @@ export function SyncedMeeting({ workspaceId, meetingId }: { workspaceId: string;
           <DataError error={latestSummary.error} retry={latestSummary.reload} />
           <SummaryHistory key={meetingId} meetingId={meetingId} latest={latestSummary.data} selected={selectedSummary} onSelect={setSelectedSummary} />
         </>}
-        screenshots={<>
-          <DataError error={screenshotsQuery.error} retry={screenshotsQuery.reload} />
-          {visibleScreenshots?.length === 0 && <p className="content-empty">{uiText("No screenshots", "スクリーンショットはありません")}</p>}
-          <div className="screenshot-grid">
-            {visibleScreenshots?.map((screenshot) => (
-              <ScreenshotFigure key={screenshot.id} file={screenshot.file} capturedAt={screenshot.capturedAt} onOpen={(link) => openScreenshot(screenshot, link)} />
-            ))}
-          </div>
-          {screenshotCursor && <button className="secondary load-more" disabled={loadingScreenshots} onClick={screenshotsQuery.loadMore}>
-            {loadingScreenshots ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}
-          </button>}
-        </>}
+        screenshots={<MeetingScreenshots key={meetingId} meetingId={meetingId} />}
         transcript={<TranscriptHistory key={meetingId} meetingId={meetingId} timeBase={meeting.recordingStartedAt ?? meeting.createdAt} />}
       />}
     </article>
@@ -2014,6 +2022,8 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
       : detailPath[1] === "projects" ? apiQuery("getProject", { params: { path: { projectId: decodeURIComponent(detailPath[2]!) } } })
         : apiQuery("getFile", { params: { path: { fileId: decodeURIComponent(detailPath[2]!) } } }));
   const detailWorkspaceId = detailQuery.data?.workspaceId;
+  const detailMeeting = detailPath?.[1] === "meetings" ? detailQuery.data as SyncedMeetingInfo | undefined : undefined;
+  const detailProject = detailPath?.[1] === "projects" ? detailQuery.data as SyncedProjectInfo | undefined : undefined;
 
   if (path === "/sign-in") return <AccountsOnly brand={brand}><SignIn brand={brand} /></AccountsOnly>;
   if (path === "/oauth/consent") return <AccountsOnly brand={brand}><Consent brand={brand} /></AccountsOnly>;
@@ -2043,15 +2053,16 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   else if (route.page === "admin-settings") page = <AdminSearchSettings />;
   else if (route.page === "workspaces") page = <Workspaces />;
   else if (route.page === "workspace") page = <WorkspaceMeetings session={session} workspaceId={route.workspaceId!} />;
-  else if (route.page === "meeting") page = detailWorkspaceId ? <SyncedMeeting workspaceId={detailWorkspaceId} meetingId={route.meetingId!} /> : null;
-  else if (route.page === "project") page = detailWorkspaceId ? <SyncedProject workspaceId={detailWorkspaceId} projectId={route.projectId!} /> : null;
+  else if (route.page === "meeting") page = detailWorkspaceId ? <SyncedMeeting workspaceId={detailWorkspaceId} meetingId={route.meetingId!} resolvedMeeting={detailMeeting} /> : null;
+  else if (route.page === "project") page = detailWorkspaceId ? <SyncedProject workspaceId={detailWorkspaceId} projectId={route.projectId!} resolvedProject={detailProject} /> : null;
   else if (route.page === "file") page = <FileViewer fileId={route.fileId!} />;
   else if (route.page === "organizations") page = <Organizations />;
   else if (route.page === "organization") page = <Organization session={session} organizationId={route.organizationId!} />;
   else if (route.page === "invitation") page = <Invitation invitationId={route.invitationId!} />;
   else if (route.page === "settings") page = <Settings session={session} extensions={extensions} />;
   else page = <Overview session={session} />;
-  return <Shell brand={brand} extensions={extensions} session={session} path={path} navigate={navigateDashboard} routeWorkspaceId={detailWorkspaceId ?? route.workspaceId}>
+  return <Shell brand={brand} extensions={extensions} session={session} path={path} navigate={navigateDashboard} routeWorkspaceId={detailWorkspaceId ?? route.workspaceId}
+    routeMeeting={detailMeeting} routeMeetingOwned={detailPath?.[1] === "meetings"}>
     <DataError error={sessionError ? new Error(sessionError) : undefined} retry={() => setSessionAttempt((attempt) => attempt + 1)} />
     {detailPath && !detailWorkspaceId && route.page !== "file" && <>
       <DataError error={detailQuery.error} retry={detailQuery.reload} />

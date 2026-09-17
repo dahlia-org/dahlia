@@ -1868,6 +1868,7 @@ export interface components {
             entity: "transcript";
             syncRevision: number;
             transcript: components["schemas"]["NullableTranscript"];
+            hasText?: boolean;
             items?: components["schemas"]["TranscriptSegment"][];
         };
         TranscriptSegment: {

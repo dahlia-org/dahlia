@@ -1,9 +1,9 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "23c32ae9-f7d5-4e19-a1de-754ce5c89b8c",
+  "id": "abd40555-f895-493e-a33f-d6576f5e3f8e",
   "prevIds": [
-    "36fefe06-5ed6-48c7-a1cf-f966c679cd9c"
+    "00000000-0000-0000-0000-000000000000"
   ],
   "ddl": [
     {
@@ -3963,6 +3963,69 @@
       "method": "btree",
       "concurrently": false,
       "name": "meetings_workspace_deleted_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "meetings"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "workspace_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "project_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "active",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "deleted_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "deleting_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "created_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "meeting_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "meetings_workspace_project_live_created_idx",
       "entityType": "indexes",
       "schema": "app",
       "table": "meetings"

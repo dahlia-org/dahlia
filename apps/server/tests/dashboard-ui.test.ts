@@ -99,11 +99,48 @@ describe("desktop-style meeting layout", () => {
         expect(html.includes("Planning")).toBe(ready === "both");
         expect(html).not.toContain("<h1>ミーティング</h1>");
         expect(html).not.toContain("ミーティングを読み込み中");
+        expect(page.mock.calls.some(([input]) => typeof input === "object" && input.key.includes("listMeetingFiles"))).toBe(false);
       }
       query.mockReturnValue({ ...empty, loading: false, error: new Error("meeting_not_found") });
       const html = render();
       expect(html).toContain('role="alert"');
       expect(html).not.toContain("<h1>");
+    } finally { query.mockRestore(); page.mockRestore(); }
+  });
+
+  it("reuses a resolved meeting without issuing another detail query", () => {
+    const query = vi.spyOn(liveData, "useLiveJSON").mockImplementation((input) => ({
+      data: typeof input === "object" && input.key.startsWith('["getWorkspace"') ? { role: "member" } : undefined,
+      error: undefined, loading: false, reload: vi.fn(), replace: vi.fn(),
+    }));
+    const page = vi.spyOn(liveData, "useLivePage").mockReturnValue({ data: undefined, error: undefined, loading: false,
+      reload: vi.fn(), replace: vi.fn(), loadingMore: false, loadMore: vi.fn() });
+    try {
+      renderToStaticMarkup(createElement(SyncedMeeting, { workspaceId: "v1", meetingId: "m1",
+        resolvedMeeting: { meetingId: "m1", workspaceId: "v1", name: "Planning", description: "", status: "READY",
+          projectId: null, duration: null, createdAt: "2026-09-07T00:00:00Z", updatedAt: "2026-09-07T00:00:00Z" } as SyncedMeetingInfo }));
+      expect(query.mock.calls.some(([input]) => typeof input === "object" && input.key.includes('"getMeeting"'))).toBe(false);
+    } finally { query.mockRestore(); page.mockRestore(); }
+  });
+
+  it("leaves a pending route meeting query owned by App", () => {
+    vi.stubGlobal("window", { location: { pathname: "/meetings/m1" } });
+    vi.stubGlobal("sessionStorage", { getItem: vi.fn(), setItem: vi.fn() });
+    const workspace = { workspaceId: "v1", name: "Workspace" } as SyncedWorkspaceInfo;
+    const query = vi.spyOn(liveData, "useLiveJSON").mockImplementation((input) => ({
+      data: typeof input === "object" && input.key.startsWith('["listWorkspaces"') ? { items: [workspace] }
+        : typeof input === "object" && input.key.startsWith('["listProjects"') ? { items: [] }
+          : undefined,
+      error: undefined, loading: false, reload: vi.fn(), replace: vi.fn(),
+    }));
+    const page = vi.spyOn(liveData, "useLivePage").mockReturnValue({ data: undefined, error: undefined, loading: false,
+      reload: vi.fn(), replace: vi.fn(), loadingMore: false, loadMore: vi.fn() });
+    const session = { user: { id: "user" }, capabilities: { sync: true, sharing: false, sessions: false, admin: false } };
+    try {
+      renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
+        session, brand: "Dahlia", children: null, routeMeetingOwned: true,
+      }) }));
+      expect(query.mock.calls.some(([input]) => typeof input === "object" && input.key.includes('"getMeeting"'))).toBe(false);
     } finally { query.mockRestore(); page.mockRestore(); }
   });
 

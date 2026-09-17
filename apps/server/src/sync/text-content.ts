@@ -30,12 +30,18 @@ export function fileTextMetadata(record: Record<string, unknown>): Record<string
   return { ...record, metadata, contentOmitted: true, contentPresent: true };
 }
 
-export function meetingMetadata(record: Record<string, unknown>): Record<string, unknown> {
+type MeetingMetadata<T extends object> = Omit<T, "summaryTitle" | "summaryDocument" | "summaryCreatedAt"> & {
+  contentOmitted: true;
+  hasSummary: boolean;
+};
+
+export function meetingMetadata<T extends object>(record: T): MeetingMetadata<T> {
+  const fields = record as Record<string, unknown>;
   // Only meeting metadata crosses the sync feed.
   const keys = ["meetingId", "workspaceId", "projectId", "name", "description", "status", "duration",
     "icalUid", "recurrenceId", "calendarEvent", "recordingStartedAt", "isRecording", "createdAt", "updatedAt", "revision", "summaryRevision", "transcriptRevision", "active", "deletingAt"];
-  const hasSummary = record.hasSummary ?? (record.summaryDocument !== null && record.summaryDocument !== undefined);
-  return { ...Object.fromEntries(keys.filter((key) => key in record).map((key) => [key, record[key]])), contentOmitted: true, hasSummary };
+  const hasSummary = fields.hasSummary ?? (fields.summaryDocument !== null && fields.summaryDocument !== undefined);
+  return { ...Object.fromEntries(keys.filter((key) => key in fields).map((key) => [key, fields[key]])), contentOmitted: true, hasSummary } as MeetingMetadata<T>;
 }
 
 export async function metadataRecord(value: SyncCanonicalRecord, store: IdentitySyncStore, workspaceId: string): Promise<SyncCanonicalRecord> {
@@ -62,6 +68,7 @@ export async function readTextContent(
 ) {
   const digest = new TextContentDigest();
   let count = 0;
+  let hasText = false;
   let present: boolean;
   let record: Record<string, unknown> | undefined;
   let items: Awaited<ReturnType<IdentitySyncStore["listTranscript"]>> | undefined;
@@ -94,6 +101,7 @@ export async function readTextContent(
       for (const segment of page) {
         digest.add(segment.segmentId.toLowerCase(), false);
         digest.add(segment.text);
+        hasText ||= segment.text.trim().length > 0;
         count += 1;
       }
       const last = page.at(-1);
@@ -106,6 +114,7 @@ export async function readTextContent(
     ? { formatVersion: TEXT_CONTENT_VERSION, version: transcript?.version ?? 0, syncRevision: transcript?.syncRevision ?? revision, transcript }
     : { formatVersion: TEXT_CONTENT_VERSION, version: summary?.version ?? 0, revision }), entity, entityId, present, count,
     byteCount: digest.byteCount, sha256: digest.digestHex(),
+    ...(entity === "transcript" && manifestOnly ? { hasText } : {}),
     ...(!manifestOnly ? { record, items, nextCursor } : {}) };
 }
 

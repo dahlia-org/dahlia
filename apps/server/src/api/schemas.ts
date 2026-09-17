@@ -103,7 +103,7 @@ export const latestSummary = z.object({ ...envelope, entity: z.literal("summary"
   record: summary.partial().extend({ title: z.string().nullable(), document: z.string().nullable(), createdAt: date.nullable() }).optional(),
 }).openapi("SummaryContent");
 export const transcriptContent = z.object({ ...envelope, entity: z.literal("transcript"), syncRevision: integer,
-  transcript: nullableTranscript, items: z.array(segment).optional(),
+  transcript: nullableTranscript, hasText: z.boolean().optional(), items: z.array(segment).optional(),
 }).openapi("TranscriptContent");
 export const summaryJob = z.object({ id, method: z.enum(["transcript", "audio"]), input: summaryInputSchema.optional(),
   stage: z.enum(["transcribing", "summarizing", "generating", "saving"]).nullable().optional(),

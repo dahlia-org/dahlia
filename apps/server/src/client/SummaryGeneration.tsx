@@ -17,7 +17,6 @@ import { CODEX_AUTO_REVIEW_ALIAS } from "../ai-gateway/model-alias";
 
 type SummarySource = "transcript" | "audio";
 type Recording = components["schemas"]["Recording"];
-type TranscriptContent = components["schemas"]["TranscriptContent"];
 type TranscriptSnapshot = { version: number; available: boolean };
 type RecordingSnapshot = {
   items: Recording[];
@@ -48,21 +47,8 @@ async function loadRecordings(meetingId: string, signal?: AbortSignal): Promise<
 }
 
 export async function loadTranscript(meetingId: string, signal?: AbortSignal): Promise<TranscriptSnapshot> {
-  let cursor: string | null = null;
-  let version: number | undefined;
-  while (true) {
-    let page: TranscriptContent;
-    if (version === undefined) {
-      page = await api.getLatestTranscript({ signal, params: { path: { meetingId }, query: {} } });
-    } else {
-      page = await api.getTranscript({ signal, params: { path: { meetingId, version: String(version) }, query: { cursor: cursor ?? undefined } } });
-    }
-    version ??= page.version;
-    if (page.version !== version) throw new Error("Transcript version changed while loading");
-    if (page.items?.some(({ text }) => text.trim() !== "")) return { version, available: true };
-    if (!page.nextCursor) return { version, available: false };
-    cursor = page.nextCursor;
-  }
+  const page = await api.getLatestTranscript({ signal, params: { path: { meetingId }, query: { manifest: "1" } } });
+  return { version: page.version, available: page.hasText === true };
 }
 
 const summaryErrors: Record<string, string> = {

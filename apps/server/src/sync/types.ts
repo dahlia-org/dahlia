@@ -162,6 +162,7 @@ export interface SyncMeetingRecord {
   recurrenceId?: string | null;
   calendarEvent?: CalendarEventSnapshot | null;
   isRecording?: boolean;
+  hasSummary?: boolean;
   createdAt: Date;
   updatedAt: Date;
   summaryTitle: string | null;
@@ -328,8 +329,9 @@ export interface IdentitySyncStore {
     cursor?: SyncMeetingCursor,
     projectScope?: "direct" | "unassigned",
     filters?: SyncSearchFilters,
+    includeSummaryContent?: boolean,
   ): Promise<SyncMeetingRecord[]>;
-  getMeeting(workspaceId: string, meetingId: string, includeDeleted?: boolean): Promise<SyncMeetingRecord | null>;
+  getMeeting(workspaceId: string, meetingId: string, includeDeleted?: boolean, includeSummaryContent?: boolean): Promise<SyncMeetingRecord | null>;
   listTranscript(
     workspaceId: string,
     meetingId: string,

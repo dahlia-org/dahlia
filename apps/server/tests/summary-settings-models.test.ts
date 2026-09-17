@@ -26,23 +26,19 @@ it.each([false, undefined])("does not require the legacy schema flag for a liste
   expect(isSummaryModel(model.slug, catalog, "audio")).toBe(true);
 });
 
-it("pins transcript pagination to the version returned by the first latest page", async () => {
+it.each([[true, true], [false, false]] as const)("checks semantic transcript availability from one manifest request (%s)", async (hasText, available) => {
   const first = vi.spyOn(api, "getLatestTranscript").mockResolvedValue({
     formatVersion: 1, version: 7, entityId: "meeting", present: true, count: 1, byteCount: 4,
-    sha256: "test", entity: "transcript", syncRevision: 7, transcript: null, items: [], nextCursor: "cursor",
+    sha256: "test", entity: "transcript", syncRevision: 7, transcript: null, hasText, items: undefined, nextCursor: null,
   });
-  const version = vi.spyOn(api, "getTranscript").mockResolvedValue({
-    formatVersion: 1, version: 7, entityId: "meeting", present: true, count: 1, byteCount: 4,
-    sha256: "test", entity: "transcript", syncRevision: 7, transcript: null,
-    items: [{ segmentId: "segment", startedAt: "2026-09-09T00:00:00Z", endedAt: null, text: "Text",
-      createdAt: null, audioSource: null, speakerLabel: null }], nextCursor: null,
-  });
+  const version = vi.spyOn(api, "getTranscript");
   try {
-    await expect(loadTranscript("meeting")).resolves.toEqual({ version: 7, available: true });
+    await expect(loadTranscript("meeting")).resolves.toEqual({ version: 7, available });
     expect(first).toHaveBeenCalledOnce();
-    expect(version).toHaveBeenCalledWith(expect.objectContaining({
-      params: { path: { meetingId: "meeting", version: "7" }, query: { cursor: "cursor" } },
+    expect(first).toHaveBeenCalledWith(expect.objectContaining({
+      params: { path: { meetingId: "meeting" }, query: { manifest: "1" } },
     }));
+    expect(version).not.toHaveBeenCalled();
   } finally {
     first.mockRestore(); version.mockRestore();
   }

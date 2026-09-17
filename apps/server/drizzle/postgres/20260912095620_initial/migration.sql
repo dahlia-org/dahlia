@@ -412,6 +412,7 @@ CREATE INDEX "sync_change_workspace_sequence_idx" ON "app"."sync_changes" ("work
 CREATE INDEX "transaction_receipt_owner_created_idx" ON "app"."transaction_receipts" ("owner_user_id","created_at");--> statement-breakpoint
 CREATE INDEX "files_workspace_file_idx" ON "app"."files" ("workspace_id","file_id");--> statement-breakpoint
 CREATE INDEX "meetings_workspace_deleted_idx" ON "app"."meetings" ("workspace_id","deleted_at","meeting_id");--> statement-breakpoint
+CREATE INDEX "meetings_workspace_project_live_created_idx" ON "app"."meetings" ("workspace_id","project_id","active","deleted_at","deleting_at","created_at","meeting_id");--> statement-breakpoint
 CREATE INDEX "meetings_calendar_event_idx" ON "app"."meetings" ("ical_uid","recurrence_id");--> statement-breakpoint
 CREATE INDEX "synced_meeting_workspace_created_id_idx" ON "app"."meetings" ("workspace_id","created_at","meeting_id");--> statement-breakpoint
 CREATE INDEX "project_workspace_parent_name_idx" ON "app"."projects" ("workspace_id","parent_project_id","name");--> statement-breakpoint

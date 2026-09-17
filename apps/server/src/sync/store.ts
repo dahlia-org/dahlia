@@ -1051,8 +1051,9 @@ function createIdentityStore(
     ))));
   }
 
-  async function readMeetings<T extends { workspaceId: string; meetingId: string; name: string; description: string; summaryTitle: string | null; summaryDocument: string | null }>(rows: T[], includeDeleted = false): Promise<T[]> {
+  async function readMeetings<T extends { workspaceId: string; meetingId: string; name: string; description: string; summaryTitle: string | null; summaryDocument: string | null }>(rows: T[], includeDeleted = false, includeSummaryContent = true): Promise<T[]> {
     const plain = await content.read(schema.syncedMeeting, rows);
+    if (!includeSummaryContent) return plain;
     for (const row of plain) {
       if (!await content.cipher(row.workspaceId)) continue;
       const summary = await getSummaryVersion(row.workspaceId, row.meetingId, undefined, includeDeleted);
@@ -2708,12 +2709,22 @@ function createIdentityStore(
       )).orderBy(desc(meeting.deletedAt), desc(meeting.meetingId)).limit(limit));
       return rows.map((row) => ({ ...row, deletedAt: row.deletedAt! }));
     },
-    async listMeetings(workspaceId, query, limit, projectId, cursor, projectScope, filters) {
+    async listMeetings(workspaceId, query, limit, projectId, cursor, projectScope, filters, includeSummaryContent = true) {
       if (query && query.tokens.length === 0) return [];
-      const projectIds = projectId
-        ? (await projectViews(workspaceId)).filter((project) =>
-            project.projectId === projectId || (projectScope !== "direct" && project.parentProjectId === projectId)).map((project) => project.projectId)
-        : undefined;
+      let projectIds: string[] | undefined;
+      if (projectId && projectScope === "direct") {
+        projectIds = [projectId];
+      } else if (projectId) {
+        const projects = await db.select({
+          projectId: schema.syncedProject.projectId,
+          parentProjectId: schema.syncedProject.parentProjectId,
+        }).from(schema.syncedProject).where(and(
+          readable(schema.syncedProject.workspaceId),
+          eq(schema.syncedProject.workspaceId, workspaceId),
+        ));
+        projectIds = projects.filter((project) => project.projectId === projectId || project.parentProjectId === projectId)
+          .map((project) => project.projectId);
+      }
       if (projectId && projectIds?.length === 0) return [];
       filters = { ...filters, ...(projectIds ? { projectIds } : {}), ...(projectScope === "unassigned" ? { unassigned: true } : {}) };
       const filter = and(
@@ -2731,24 +2742,24 @@ function createIdentityStore(
         isNull(schema.syncedMeeting.deletingAt),
       );
       if (!query) {
-        return await readMeetings(await db.select(meetingSelection(schema)).from(schema.syncedMeeting)
+        return await readMeetings(await db.select(meetingSelection(schema, includeSummaryContent)).from(schema.syncedMeeting)
           .where(filter).orderBy(desc(schema.syncedMeeting.createdAt), desc(schema.syncedMeeting.meetingId))
-          .limit(limit));
+          .limit(limit), false, includeSummaryContent);
       }
       const ids = await rankedDocumentIds(workspaceId, undefined, "meeting", { ...query, filters });
       if (ids.length === 0) return [];
-      const rows = await readMeetings(await db.select(meetingSelection(schema)).from(schema.syncedMeeting)
+      const rows = await readMeetings(await db.select(meetingSelection(schema, includeSummaryContent)).from(schema.syncedMeeting)
         .where(and(filter, inArray(schema.syncedMeeting.meetingId, ids)))
-        .orderBy(desc(schema.syncedMeeting.createdAt), desc(schema.syncedMeeting.meetingId)));
+        .orderBy(desc(schema.syncedMeeting.createdAt), desc(schema.syncedMeeting.meetingId)), false, includeSummaryContent);
       const rank = new Map(ids.map((id, index) => [id, index]));
       return rows.sort((left, right) => rank.get(left.meetingId)! - rank.get(right.meetingId)!).slice(0, limit);
     },
-    async getMeeting(workspaceId, meetingId, includeDeleted = false) {
-      const [row] = await readMeetings(await db.select(meetingSelection(schema)).from(schema.syncedMeeting).where(and(
+    async getMeeting(workspaceId, meetingId, includeDeleted = false, includeSummaryContent = true) {
+      const [row] = await readMeetings(await db.select(meetingSelection(schema, includeSummaryContent)).from(schema.syncedMeeting).where(and(
         readableMeeting(workspaceId, meetingId, includeDeleted),
         eq(schema.syncedMeeting.active, true),
         isNull(schema.syncedMeeting.deletingAt),
-      )).limit(1), includeDeleted);
+      )).limit(1), includeDeleted, includeSummaryContent);
       return row ?? null;
     },
     getTranscript,
@@ -3030,7 +3041,7 @@ function base64UrlDecode(value: string): string {
   return atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="));
 }
 
-function meetingSelection(schema: SyncSchema) {
+function meetingSelection(schema: SyncSchema, includeSummaryContent = true) {
   return {
     encryptedPayload: schema.syncedMeeting.encryptedPayload,
     meetingId: schema.syncedMeeting.meetingId,
@@ -3061,12 +3072,22 @@ function meetingSelection(schema: SyncSchema) {
             and ended.session_id = started.session_id and ended.kind = 'recording_ended'
         )
     )`.mapWith(Boolean),
+    hasSummary: sql<boolean>`exists (
+      select 1 from ${schema.summary}
+      where ${schema.summary.meetingId} = "meetings"."meeting_id"
+    )`.mapWith(Boolean),
     createdAt: schema.syncedMeeting.createdAt,
     updatedAt: schema.syncedMeeting.updatedAt,
     // Keep the outer reference explicit: Drizzle unqualifies column objects in single-table selections.
-    summaryTitle: sql<string | null>`(select ${schema.summary.title} from ${schema.summary} where ${schema.summary.meetingId} = "meetings"."meeting_id" order by ${schema.summary.version} desc limit 1)`,
-    summaryDocument: sql<string | null>`(select ${schema.summary.document} from ${schema.summary} where ${schema.summary.meetingId} = "meetings"."meeting_id" order by ${schema.summary.version} desc limit 1)`,
-    summaryCreatedAt: sql<Date | null>`(select ${schema.summary.createdAt} from ${schema.summary} where ${schema.summary.meetingId} = "meetings"."meeting_id" order by ${schema.summary.version} desc limit 1)`.mapWith(schema.summary.createdAt),
+    summaryTitle: includeSummaryContent
+      ? sql<string | null>`(select ${schema.summary.title} from ${schema.summary} where ${schema.summary.meetingId} = "meetings"."meeting_id" order by ${schema.summary.version} desc limit 1)`
+      : sql<string | null>`null`,
+    summaryDocument: includeSummaryContent
+      ? sql<string | null>`(select ${schema.summary.document} from ${schema.summary} where ${schema.summary.meetingId} = "meetings"."meeting_id" order by ${schema.summary.version} desc limit 1)`
+      : sql<string | null>`null`,
+    summaryCreatedAt: includeSummaryContent
+      ? sql<Date | null>`(select ${schema.summary.createdAt} from ${schema.summary} where ${schema.summary.meetingId} = "meetings"."meeting_id" order by ${schema.summary.version} desc limit 1)`.mapWith(schema.summary.createdAt)
+      : sql<Date | null>`null`,
     revision: schema.syncedMeeting.revision,
     summaryRevision: schema.syncedMeeting.summaryRevision,
     transcriptRevision: schema.syncedMeeting.transcriptRevision,

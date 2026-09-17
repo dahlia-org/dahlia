@@ -690,6 +690,7 @@ CREATE INDEX `sync_change_workspace_sequence_idx` ON `sync_changes` (`workspace_
 CREATE INDEX `transaction_receipt_owner_created_idx` ON `transaction_receipts` (`owner_user_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `files_workspace_file_idx` ON `files` (`workspace_id`,`file_id`);--> statement-breakpoint
 CREATE INDEX `meetings_workspace_deleted_idx` ON `meetings` (`workspace_id`,`deleted_at`,`meeting_id`);--> statement-breakpoint
+CREATE INDEX `meetings_workspace_project_live_created_idx` ON `meetings` (`workspace_id`,`project_id`,`active`,`deleted_at`,`deleting_at`,`created_at`,`meeting_id`);--> statement-breakpoint
 CREATE INDEX `meetings_calendar_event_idx` ON `meetings` (`ical_uid`,`recurrence_id`);--> statement-breakpoint
 CREATE INDEX `synced_meeting_workspace_created_id_idx` ON `meetings` (`workspace_id`,`created_at`,`meeting_id`);--> statement-breakpoint
 CREATE INDEX `project_workspace_parent_name_idx` ON `projects` (`workspace_id`,`parent_project_id`,`name`);--> statement-breakpoint

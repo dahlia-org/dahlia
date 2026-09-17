@@ -6,6 +6,7 @@ import { processSearchIndexBatch } from "../src/search/node-indexer";
 import { reciprocalRankFusion } from "../src/search/ranking";
 import type { SearchIndexDocumentRecord, SearchIndexStore } from "../src/search/index-store";
 import { MeetingSyncService } from "../src/sync/service";
+import { meetingMetadata } from "../src/sync/text-content";
 import type { IdentitySyncStore, MeetingSyncStore, SyncMeetingRecord, SyncSearchQuery } from "../src/sync/types";
 
 const config: AppConfig = {
@@ -151,7 +152,7 @@ describe("search embeddings", () => {
       },
     );
     await expect(service.listMeetings({ userId: "owner",  source: "header" },
-      meeting.workspaceId, "roadmap")).resolves.toEqual({ items: [meeting] });
+      meeting.workspaceId, "roadmap")).resolves.toEqual({ items: [meetingMetadata(meeting)] });
     expect(listMeetings).toHaveBeenCalledTimes(2);
     warn.mockRestore();
   });

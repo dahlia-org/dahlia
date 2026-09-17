@@ -34,6 +34,8 @@ PostgreSQL は既存の生成 Auth baseline → application initial → runtime_
 
 2026-09-18: ユーザー承認により、Local→Server 移管画像の再構築に必要な schema と `meeting_attachment_select` の search maintenance 条件も未リリース baseline に統合した。QA を含め、旧 `runtime_support` を適用済みのすべての Server DB は再作成を必要とし、環境別の forward migration は提供しない。
 
+2026-09-18: ユーザー承認により、Project 配下の live meeting page 用 `meetings_workspace_project_live_created_idx` を PostgreSQL / SQLite の initial と snapshot に統合し、未公開の `20260917142558_sour_energizer` / `20260917142559_lively_slayback` を撤回した。既存開発 DB への index 追加 migration は提供せず、新しい baseline を使うには DB を再作成する。
+
 以下の forward migration の説明は統合前の経緯であり、旧開発 DB からの移行保証ではない。リリース後は従来どおり forward-only とする。
 
 ## Header identity
