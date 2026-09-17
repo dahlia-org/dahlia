@@ -1569,7 +1569,7 @@ actor SyncWorker {
 
     private func pullTargets() async throws -> [SyncTarget] {
         let updateRequiredWorkspaces = updateRequiredWorkspaces
-        try await dbQueue.read { db in
+        return try await dbQueue.read { db in
             try Row.fetchAll(
                 db,
                 sql: """
