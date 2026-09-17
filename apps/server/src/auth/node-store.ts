@@ -148,7 +148,7 @@ export function createNodeApplicationStore(
           ...(id === "server" ? {} : { migrationsTable: `__dahlia_${id}_migrations` }),
         });
         const violations = database.prepare("PRAGMA foreign_key_check").all();
-        if (violations.length > 0) throw new Error(`SQLite migration ${id} violated foreign keys`);
+        if (violations.length > 0) throw new Error(`SQLite migration ${id} violated foreign keys: ${JSON.stringify(violations)}`);
         database.exec("COMMIT");
         transactionStarted = false;
       } catch (error) {

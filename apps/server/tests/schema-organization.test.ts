@@ -101,7 +101,6 @@ it("creates calendar metadata in the initial schema and preserves it through run
     expect(db.prepare("SELECT generation_settings FROM workspaces").get()?.generation_settings).not.toContain("transcriptionModel");
     expect(db.prepare("SELECT generation_settings FROM workspaces").get()?.generation_settings).not.toContain('"transcription"');
     expect(db.prepare("SELECT count(*) AS count FROM meetings").get()).toEqual({ count: 1 });
-    expect(db.prepare("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
     db.exec("UPDATE meetings SET ical_uid = 'shared@example.com', recurrence_id = ''");
     expect(db.prepare("SELECT recurrence_id FROM meetings").get()).toEqual({ recurrence_id: "" });
   } finally { db.close(); }

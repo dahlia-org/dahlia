@@ -14,7 +14,7 @@ import { createWorkerHandler } from "../src/worker";
 import { createApp } from "../src/app";
 import { LocalObjectStorage } from "../src/storage/local";
 import { initializeDahliaAuth } from "../src/auth/better-auth";
-import { createNodeAuthStore } from "../src/auth/node-store";
+import { createNodeApplicationStore, createNodeAuthStore } from "../src/auth/node-store";
 import type { AppConfig } from "../src/config";
 import type { MigrationManifest } from "../src/migrations";
 
@@ -425,6 +425,41 @@ describe("SQLite Better Auth store", () => {
       .toEqual({ name: "20260830010000_init" });
     expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '%Extension' ORDER BY name").all())
       .toEqual([{ name: "firstExtension" }, { name: "secondExtension" }]);
+    database.close();
+    await store.close?.();
+  });
+
+  it("keeps child rows when the application migration runner rebuilds a parent table", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "dahlia-app-migration-"));
+    directories.push(directory);
+    const migrationsPath = join(directory, "migrations");
+    mkdirSync(join(migrationsPath, "20260830010000_initial"), { recursive: true });
+    mkdirSync(join(migrationsPath, "20260830020000_rebuild"), { recursive: true });
+    writeFileSync(join(migrationsPath, "20260830010000_initial", "migration.sql"), `
+      CREATE TABLE parent (id TEXT PRIMARY KEY);
+      CREATE TABLE child (id TEXT PRIMARY KEY, parent_id TEXT NOT NULL REFERENCES parent(id) ON DELETE CASCADE);
+      INSERT INTO parent VALUES ('parent');
+      INSERT INTO child VALUES ('child', 'parent');
+    `);
+    writeFileSync(join(migrationsPath, "20260830020000_rebuild", "migration.sql"), `
+      CREATE TABLE new_parent (id TEXT PRIMARY KEY);--> statement-breakpoint
+      INSERT INTO new_parent SELECT * FROM parent;--> statement-breakpoint
+      DROP TABLE parent;--> statement-breakpoint
+      ALTER TABLE new_parent RENAME TO parent;
+    `);
+    const files = ["20260830010000_initial/migration.sql", "20260830020000_rebuild/migration.sql"];
+    const migrations: MigrationManifest = {
+      postgres: { directories: [], files: [] },
+      sqlite: { directories: [{ id: "server", path: migrationsPath, files }], files },
+    };
+    const path = join(directory, "application.sqlite");
+    const store = createNodeApplicationStore(testConfig(path), migrations);
+
+    await store.migrate();
+
+    const database = new DatabaseSync(path);
+    expect(database.prepare("SELECT * FROM child").all()).toEqual([{ id: "child", parent_id: "parent" }]);
+    expect(database.prepare("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
     database.close();
     await store.close?.();
   });
