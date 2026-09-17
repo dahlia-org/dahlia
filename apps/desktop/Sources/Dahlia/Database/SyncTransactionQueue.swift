@@ -579,8 +579,12 @@ enum SyncTransactionQueue {
     static func releaseClaim(_ transaction: SyncQueuedTransaction, dbQueue: DatabaseQueue) async throws {
         try await dbQueue.write { db in
             try db.execute(
-                sql: "UPDATE sync_transactions SET leaseExpiresAt = NULL WHERE id = ?",
-                arguments: [transaction.id]
+                sql: """
+                UPDATE sync_transactions SET leaseExpiresAt = NULL,
+                    availableAt = max(availableAt, ?), attempts = max(attempts - 1, 0)
+                WHERE id = ?
+                """,
+                arguments: [Date.now.addingTimeInterval(1), transaction.id]
             )
         }
     }

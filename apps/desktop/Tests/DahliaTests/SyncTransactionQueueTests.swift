@@ -259,7 +259,7 @@
         }
 
         @Test
-        func releasingACancelledClaimMakesItImmediatelyAvailable() async throws {
+        func releasingACancelledClaimAddsShortDelayWithoutCountingTheAttempt() async throws {
             let (database, workspace) = try await syncedDatabase()
             _ = try await database.dbQueue.write { db in
                 try SyncTransactionRecorder.record(
@@ -272,8 +272,26 @@
 
             try await SyncTransactionQueue.releaseClaim(transaction, dbQueue: database.dbQueue)
 
+            try await database.dbQueue.read { db throws in
+                let row = try #require(try Row.fetchOne(
+                    db,
+                    sql: "SELECT attempts, availableAt, leaseExpiresAt FROM sync_transactions WHERE id = ?",
+                    arguments: [transaction.id]
+                ))
+                #expect(row["attempts"] as Int == 0)
+                #expect(row["availableAt"] as Date > Date.now)
+                #expect(row["leaseExpiresAt"] as Date? == nil)
+            }
+            #expect(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue) == nil)
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE sync_transactions SET availableAt = ? WHERE id = ?",
+                    arguments: [Date.distantPast, transaction.id]
+                )
+            }
             let reclaimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
             #expect(reclaimed.id == transaction.id)
+            #expect(reclaimed.attempts == 1)
         }
 
         @Test
