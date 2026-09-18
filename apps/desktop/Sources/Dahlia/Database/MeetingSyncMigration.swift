@@ -32,8 +32,58 @@ enum MeetingSyncMigration {
         let inheritedSettings = try String(decoding: encoder.encode(settings), as: UTF8.self)
         // Published connections selected an AI account, not canonical Server ownership.
         // Keep account credentials and AI settings; Server association requires explicit Organization selection.
+        try createWorkspaceTable(in: db, named: "vaults_v42", generationDefaults: generationDefaults)
         try db.execute(sql: """
-        CREATE TABLE vaults_v42 (
+        INSERT INTO vaults_v42 (
+            id, path, name, createdAt, lastOpenedAt, accountConnectionId,
+            localAIProvider, databricksProfile, generationSettings,
+            chatModelID, chatReasoningEffort, aiSettingsBackfilled
+        )
+        SELECT
+            id, path, name, createdAt, lastOpenedAt, NULL,
+            localAIProvider, databricksProfile,
+            json_set(?, '$.local.model', summaryModelID, '$.local.reasoningEffort', summaryReasoningEffort),
+            chatModelID, chatReasoningEffort, aiSettingsBackfilled
+        FROM vaults;
+        DROP TABLE vaults;
+        ALTER TABLE vaults_v42 RENAME TO vaults;
+        CREATE INDEX vaults_on_accountConnectionId ON vaults(accountConnectionId);
+        """, arguments: [inheritedSettings])
+        try SearchDocumentsMigration.createVaultCleanupTrigger(in: db)
+    }
+
+    static func repairEarlyWorkspaceSchema(in db: Database) throws {
+        guard try db.tableExists("workspaces") else { return }
+        let oldColumns = try db.columns(in: "workspaces").map(\.name)
+        guard Set(oldColumns) == workspaceColumnsWithoutPullError else { return }
+
+        let objects = try Row.fetchAll(
+            db,
+            sql: "SELECT sql FROM sqlite_master WHERE tbl_name = 'workspaces' AND type IN ('index', 'trigger') AND sql IS NOT NULL"
+        ).map { $0["sql"] as String }
+        let legacyAlter = try Bool.fetchOne(db, sql: "PRAGMA legacy_alter_table") ?? false
+        try db.execute(sql: "PRAGMA legacy_alter_table = ON")
+        defer { try? db.execute(sql: "PRAGMA legacy_alter_table = \(legacyAlter ? "ON" : "OFF")") }
+
+        try db.execute(sql: "ALTER TABLE workspaces RENAME TO workspaces_v44_early")
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let generationDefaults = try String(decoding: encoder.encode(WorkspaceGenerationSettings()), as: UTF8.self)
+        try createWorkspaceTable(in: db, named: "workspaces", generationDefaults: generationDefaults)
+        let columns = oldColumns.map(\.quotedDatabaseIdentifier).joined(separator: ", ")
+        try db.execute(sql: "INSERT INTO workspaces (\(columns)) SELECT \(columns) FROM workspaces_v44_early")
+        try db.execute(sql: "DROP TABLE workspaces_v44_early")
+        for sql in objects {
+            try db.execute(sql: sql)
+        }
+        guard try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty else {
+            throw DatabaseError(message: "Workspace schema repair left invalid references")
+        }
+    }
+
+    private static func createWorkspaceTable(in db: Database, named tableName: String, generationDefaults: String) throws {
+        try db.execute(sql: """
+        CREATE TABLE \(tableName.quotedDatabaseIdentifier) (
             id BLOB PRIMARY KEY,
             path TEXT UNIQUE,
             name TEXT NOT NULL,
@@ -59,24 +109,16 @@ enum MeetingSyncMigration {
             color TEXT,
             CHECK ((accountConnectionId IS NULL AND organizationId IS NULL)
                 OR (accountConnectionId IS NOT NULL AND organizationId IS NOT NULL))
-        );
-        INSERT INTO vaults_v42 (
-            id, path, name, createdAt, lastOpenedAt, accountConnectionId,
-            localAIProvider, databricksProfile, generationSettings,
-            chatModelID, chatReasoningEffort, aiSettingsBackfilled
         )
-        SELECT
-            id, path, name, createdAt, lastOpenedAt, NULL,
-            localAIProvider, databricksProfile,
-            json_set(?, '$.local.model', summaryModelID, '$.local.reasoningEffort', summaryReasoningEffort),
-            chatModelID, chatReasoningEffort, aiSettingsBackfilled
-        FROM vaults;
-        DROP TABLE vaults;
-        ALTER TABLE vaults_v42 RENAME TO vaults;
-        CREATE INDEX vaults_on_accountConnectionId ON vaults(accountConnectionId);
-        """, arguments: [inheritedSettings])
-        try SearchDocumentsMigration.createVaultCleanupTrigger(in: db)
+        """)
     }
+
+    private static let workspaceColumnsWithoutPullError: Set = [
+        "id", "path", "name", "createdAt", "lastOpenedAt", "accountConnectionId", "localAIProvider",
+        "databricksProfile", "generationSettings", "chatModelID", "chatReasoningEffort", "aiSettingsBackfilled",
+        "organizationId", "syncRole", "syncConfirmedConnectionId", "syncPullCursor", "syncLastCommittedCursor",
+        "syncRecoveryState", "syncMutationGeneration", "syncMeetingEventsVersion", "icon", "color",
+    ]
 
     private static let schemaSQL = """
     CREATE TABLE local_vault_imports (
