@@ -87,6 +87,9 @@ async function run() {
   assert(location.pathname === "/meetings/m1", "Arrow/Enter rank navigation failed");
   assert(document.activeElement === opener, "Focus not restored");
   key("k", window, { ctrlKey: true }); await until(() => document.querySelectorAll('[role="option"]').length === 9);
+  key("k", window, { ctrlKey: true }); await until(() => !document.querySelector('[data-slot="dialog-content"]'));
+  assert(document.activeElement === opener, "Shortcut close did not restore focus");
+  key("k", window, { ctrlKey: true }); await until(() => document.querySelectorAll('[role="option"]').length === 9);
   key("7", input(), { metaKey: true });
   await until(() => document.querySelector<HTMLImageElement>('section[aria-label="File preview"] img')?.getAttribute("alt") === "Image preview f1");
   key("ArrowRight", window);

@@ -82,8 +82,9 @@ async function run() {
   await until(() => Boolean(release));
   assert(submissions === 1, "Double click submitted twice");
   assert(modal().querySelector<HTMLButtonElement>("[data-cancel]")!.disabled, "Cancel remained enabled during save");
-  modal().querySelector<HTMLButtonElement>("[data-cancel]")!.click();
-  assert(modal(), "Cancel dismissed an in-flight operation");
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await new Promise(requestAnimationFrame);
+  assert(modal(), "Escape dismissed an in-flight operation");
   release!();
   await until(() => modal().querySelector('[role="alert"]'));
   assert(modal().querySelector<HTMLInputElement>("input")!.value === "Changed title", "Failure discarded the name");
@@ -115,7 +116,8 @@ async function run() {
   confirm().click(); await until(() => !modal());
   assert(submissions === before, "Discard saved a draft");
   const menuTrigger = document.getElementById("menu-trigger")!;
-  menuTrigger.focus(); menuTrigger.click();
+  menuTrigger.focus();
+  menuTrigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   await until(() => document.getElementById("menu-edit"));
   document.getElementById("menu-edit")!.click();
   await until(() => modal());

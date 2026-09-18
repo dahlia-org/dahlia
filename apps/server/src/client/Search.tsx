@@ -3,7 +3,7 @@ import { apiOperations as api } from "./generated-operations";
 import { apiQuery } from "./live-data";
 import { Select } from "./Select";
 import { Tooltip } from "./Tooltip";
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import type { SearchHit, SearchResults } from "../search/model";
 import { uiText, type SyncedProjectInfo } from "./api";
 import { useLiveJSON, useLiveQuery } from "./live-data";
@@ -24,17 +24,18 @@ export function searchDate(value: string, end = false): string | undefined {
 export function Search({ workspaceId }: { workspaceId: string }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
-  const close = () => { setOpen(false); requestAnimationFrame(() => trigger.current?.focus()); };
+  const close = useCallback(() => { setOpen(false); requestAnimationFrame(() => trigger.current?.focus()); }, []);
   useEffect(() => {
     const key = (event: globalThis.KeyboardEvent) => {
       if (!open && document.querySelector('[data-slot="dialog-content"]')) return;
       if (!event.isComposing && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault(); setOpen((value) => !value);
+        event.preventDefault();
+        if (open) close(); else setOpen(true);
       }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [open]);
+  }, [close, open]);
   return <>
     <Tooltip className="navigation-search ml-auto shrink-0" label={uiText("Search", "検索")} shortcut={/Mac|iPhone|iPad/.test(navigator.platform) ? "⌘ K" : "Ctrl K"}>
     <Button ref={trigger} variant="ghost" size="icon" aria-label={uiText("Search", "検索")}
