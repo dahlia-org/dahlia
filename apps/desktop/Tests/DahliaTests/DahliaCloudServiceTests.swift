@@ -65,6 +65,8 @@
                 connectionID: connectionID,
                 profile: .development
             ) == "dahliaCloudOAuthCredential.development.019cfd25-9940-7b4b-a9cd-86d97f46f02e")
+            #expect(DahliaCloudCredentialStorage.deletesLegacyCredential(profile: .production))
+            #expect(!DahliaCloudCredentialStorage.deletesLegacyCredential(profile: .development))
         }
 
         @Test

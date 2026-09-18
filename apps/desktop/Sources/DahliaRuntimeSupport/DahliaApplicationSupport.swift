@@ -9,16 +9,27 @@ public enum DahliaApplicationSupport {
     public static let profileEnvironmentKey = "DAHLIA_RUNTIME_PROFILE"
 
     public static func profile(
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        embeddedProfile: String? = Bundle.main.object(forInfoDictionaryKey: profileEnvironmentKey) as? String
     ) -> DahliaRuntimeProfile {
-        #if DEBUG
-            guard environment[profileEnvironmentKey] == DahliaRuntimeProfile.development.rawValue else {
-                return .production
-            }
+        profile(
+            environment: environment,
+            embeddedProfile: embeddedProfile,
+            isDebugBuild: _isDebugAssertConfiguration()
+        )
+    }
+
+    public static func profile(
+        environment: [String: String],
+        embeddedProfile: String?,
+        isDebugBuild: Bool
+    ) -> DahliaRuntimeProfile {
+        if isDebugBuild
+            || embeddedProfile == DahliaRuntimeProfile.development.rawValue
+            || environment[profileEnvironmentKey] == DahliaRuntimeProfile.development.rawValue {
             return .development
-        #else
-            return .production
-        #endif
+        }
+        return .production
     }
 
     public static func directoryURL(

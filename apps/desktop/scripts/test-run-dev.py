@@ -5,6 +5,7 @@ import importlib.util
 import hashlib
 import os
 from pathlib import Path
+import plistlib
 import shutil
 import sqlite3
 import subprocess
@@ -162,6 +163,8 @@ exec /usr/bin/sqlite3 "$@"
     run("Reusing signed", GOOGLE_CLIENT_ID="changed-client")
     run("Assembling", GOOGLE_CLIENT_ID="")
     assert "GOOGLE_CLIENT_ID" not in (root / "Dahlia.app/Contents/Info.plist").read_text()
+    with (root / "Dahlia.app/Contents/Info.plist").open("rb") as plist_file:
+        assert plistlib.load(plist_file)["DAHLIA_RUNTIME_PROFILE"] == "development"
 
     auth_helper = root / "Dahlia.app/Contents/Helpers/auth-helper"
     assert auth_helper.exists(), "auth-helper must be bundled"

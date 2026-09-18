@@ -49,7 +49,7 @@ require_commands xcrun codesign ditto hdiutil spctl
 check_notary_profile
 
 echo "=== Building signed app ==="
-"${PROJECT_DIR}/scripts/build-app.sh"
+"${PROJECT_DIR}/scripts/build-app.sh" --production
 
 echo "=== Verifying signature ==="
 codesign -dvvv --entitlements - --xml "$APP_BUNDLE"

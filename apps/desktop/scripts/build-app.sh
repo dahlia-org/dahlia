@@ -6,6 +6,19 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 ENTITLEMENTS_PATH="${PROJECT_DIR}/Dahlia.entitlements"
 CODEX_ENTITLEMENTS_PATH="${PROJECT_DIR}/CodexHelper.entitlements"
+RUNTIME_PROFILE="development"
+
+if [ "$#" -gt 1 ]; then
+    echo "usage: $0 [--production]" >&2
+    exit 1
+fi
+if [ "$#" -eq 1 ]; then
+    if [ "$1" != "--production" ]; then
+        echo "usage: $0 [--production]" >&2
+        exit 1
+    fi
+    RUNTIME_PROFILE="production"
+fi
 
 source "${SCRIPT_DIR}/common.sh"
 
@@ -72,6 +85,7 @@ if [ "$("${HELPERS}/codex" --version)" != "codex-cli ${CODEX_VERSION}" ]; then
     exit 1
 fi
 cp "Resources/Info.plist" "${CONTENTS}/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :DAHLIA_RUNTIME_PROFILE string ${RUNTIME_PROFILE}" "${CONTENTS}/Info.plist"
 cp -R "Resources/en.lproj" "Resources/ja.lproj" "${CONTENTS}/Resources/"
 configure_google_calendar_plist "${CONTENTS}/Info.plist"
 configure_dahlia_cloud_plist "${CONTENTS}/Info.plist"

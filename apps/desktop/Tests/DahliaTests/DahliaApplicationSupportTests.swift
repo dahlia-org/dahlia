@@ -12,11 +12,57 @@ import Foundation
         @Test
         func productionUsesTheExistingApplicationSupportDirectory() {
             let directoryURL = DahliaApplicationSupport.directoryURL(
-                applicationSupportDirectory: baseURL,
-                environment: [:]
+                profile: .production,
+                applicationSupportDirectory: baseURL
             )
 
             #expect(directoryURL == baseURL.appending(path: "Dahlia", directoryHint: .isDirectory))
+        }
+
+        @Test
+        func embeddedDevelopmentProfileAppliesToReleaseBuilds() {
+            #expect(
+                DahliaApplicationSupport.profile(
+                    environment: [:],
+                    embeddedProfile: DahliaRuntimeProfile.development.rawValue,
+                    isDebugBuild: false
+                ) == .development
+            )
+        }
+
+        @Test
+        func developmentEnvironmentAppliesToReleaseHelpers() {
+            #expect(
+                DahliaApplicationSupport.profile(
+                    environment: [
+                        DahliaApplicationSupport.profileEnvironmentKey: DahliaRuntimeProfile.development.rawValue,
+                    ],
+                    embeddedProfile: nil,
+                    isDebugBuild: false
+                ) == .development
+            )
+        }
+
+        @Test
+        func debugBuildUsesDevelopmentWithoutLaunchConfiguration() {
+            #expect(
+                DahliaApplicationSupport.profile(
+                    environment: [:],
+                    embeddedProfile: nil,
+                    isDebugBuild: true
+                ) == .development
+            )
+        }
+
+        @Test(arguments: [nil, "production", "preview"])
+        func missingProductionAndUnrecognizedEmbeddedProfilesUseProduction(_ embeddedProfile: String?) {
+            #expect(
+                DahliaApplicationSupport.profile(
+                    environment: [:],
+                    embeddedProfile: embeddedProfile,
+                    isDebugBuild: false
+                ) == .production
+            )
         }
 
         @Test
@@ -39,10 +85,12 @@ import Foundation
 
         @Test
         func unrecognizedProfileDoesNotRedirectTheProductionApp() {
-            let directoryURL = DahliaApplicationSupport.directoryURL(
-                applicationSupportDirectory: baseURL,
-                environment: [DahliaApplicationSupport.profileEnvironmentKey: "preview"]
+            let profile = DahliaApplicationSupport.profile(
+                environment: [DahliaApplicationSupport.profileEnvironmentKey: "preview"],
+                embeddedProfile: "preview",
+                isDebugBuild: false
             )
+            let directoryURL = DahliaApplicationSupport.directoryURL(profile: profile, applicationSupportDirectory: baseURL)
 
             #expect(directoryURL == baseURL.appending(path: "Dahlia", directoryHint: .isDirectory))
         }

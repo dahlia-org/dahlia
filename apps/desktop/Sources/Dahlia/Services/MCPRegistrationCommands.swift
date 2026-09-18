@@ -4,15 +4,18 @@ import Foundation
 struct MCPRegistrationCommands: Equatable {
     private let helper: String
     private let helperPath: String
+    private let runtimeProfile: DahliaRuntimeProfile
     private let workspace: String?
     private let workspaceID: String?
 
     init(
         helperURL: URL,
-        workspaceID: UUID?
+        workspaceID: UUID?,
+        runtimeProfile: DahliaRuntimeProfile = DahliaApplicationSupport.profile()
     ) {
         helperPath = helperURL.path
         helper = Self.shellQuote(helperURL.path)
+        self.runtimeProfile = runtimeProfile
         self.workspaceID = workspaceID.map { TypeID.encode($0, as: .workspace) }
         workspace = workspaceID.map { Self.shellQuote(TypeID.encode($0, as: .workspace)) }
     }
@@ -20,7 +23,10 @@ struct MCPRegistrationCommands: Equatable {
     func registrationCommand(for client: MCPClient, writeEnabled: Bool) -> String? {
         guard let prefix = client.registrationCommandPrefix else { return nil }
         let writeArgument = writeEnabled ? " --write" : ""
-        return "\(prefix) \(helper)\(workspace.map { " --workspace-id \($0)" } ?? "")\(writeArgument)"
+        let command = runtimeProfile == .development
+            ? "/usr/bin/env \(DahliaApplicationSupport.profileEnvironmentKey)=development \(helper)"
+            : helper
+        return "\(prefix) \(command)\(workspace.map { " --workspace-id \($0)" } ?? "")\(writeArgument)"
     }
 
     func removalCommand(for client: MCPClient) -> String? {
@@ -33,7 +39,15 @@ struct MCPRegistrationCommands: Equatable {
             args.append("--write")
         }
 
-        guard let command = Self.jsonString(helperPath) else { return nil }
+        let commandPath: String
+        if runtimeProfile == .development {
+            commandPath = "/usr/bin/env"
+            args.insert(contentsOf: ["\(DahliaApplicationSupport.profileEnvironmentKey)=development", helperPath], at: 0)
+        } else {
+            commandPath = helperPath
+        }
+
+        guard let command = Self.jsonString(commandPath) else { return nil }
         let arguments = args.compactMap(Self.jsonString)
         guard arguments.count == args.count else { return nil }
         let formattedArguments = arguments.map { "        \($0)" }.joined(separator: ",\n")

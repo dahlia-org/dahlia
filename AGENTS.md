@@ -77,13 +77,15 @@ Update versions only during desktop release preparation. Follow [Desktop Release
 
 ```bash
 swift build                            # Debug build
-swift run Dahlia                       # Unsigned debug run
+swift run Dahlia                       # Unsigned debug run; development profile
 ./scripts/run-dev.sh                   # Debug + codesign; preferred for full-feature testing
-./scripts/build-app.sh                 # Release .app bundle
+./scripts/build-app.sh                 # Release configuration, development profile; do not launch production builds locally
 swift test --experimental-maximum-parallelization-width 4 # Full test suite; matches CI
 swift test --filter SummaryServiceTests # Example targeted suite
 CI=true ./scripts/lint.sh              # Check SwiftFormat and SwiftLint without modifying files
 ```
+
+Use `run-dev.sh` for local app launches. Never invoke `build-app.sh --production` directly or launch its production-profile app; the production flag is reserved for the notarization workflow.
 
 `swift run Dahlia` is unsigned and cannot use the Data Protection Keychain. Use `./scripts/run-dev.sh` to verify Keychain or Touch ID behavior.
 

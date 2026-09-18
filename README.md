@@ -82,8 +82,8 @@ swift build && swift run Dahlia
 # Update the signed app without launching it
 ./scripts/run-dev.sh --build-only
 
-# Build release .app bundle
-./scripts/build-app.sh && open Dahlia.app
+# Build a release-configuration .app using the development profile
+./scripts/build-app.sh
 
 # Run tests
 swift test
@@ -104,6 +104,8 @@ swift test
 > If the login Keychain is locked, `run-dev.sh` asks for the macOS login password before building so the signing certificate's private key is available. The password is read directly by macOS and is not stored by the script. Set `CODESIGN_KEYCHAIN` only when the signing identity is stored in a non-default Keychain.
 
 `run-dev.sh` stores a content-based cache in `.build/run-dev`. With no changes it reuses the signed app; when only the Swift executable changes it retains support assets and re-signs only the app. Changes to support assets or signing configuration, or a missing/modified bundle, trigger a full assembly. Every path verifies the signature before launch. Updating a running development app is refused: finish recording and quit that app before retrying. After initial setup, `--settings` opens the saved settings category; it does not restore meeting selection or unfinished edits.
+
+Use `run-dev.sh` for development builds and launches. `build-app.sh` also embeds the development profile by default, so accidentally launching its release-configuration bundle cannot open the production database. The `--production` option is reserved for the notarization workflow.
 
 `--reset` removes only the development profile's `dahlia.sqlite`, `-wal`, and `-shm` files. `--copy-production` (or `--copy`) makes a WAL-safe SQLite backup of the production database, validates it, replaces those same development files, and lets normal app startup run migrations. Production recordings, files, authentication, and settings are not copied; the development profile uses a separate Keychain namespace and starts copied account connections signed out. These options cannot be combined with `--build-only`.
 

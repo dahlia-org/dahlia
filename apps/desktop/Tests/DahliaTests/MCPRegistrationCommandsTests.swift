@@ -7,7 +7,11 @@ import Foundation
     struct MCPRegistrationCommandsTests {
         @Test
         func unscopedRegistrationIsReadOnlyAndHasNoWorkspaceArgument() throws {
-            let commands = MCPRegistrationCommands(helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"), workspaceID: nil)
+            let commands = MCPRegistrationCommands(
+                helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
+                workspaceID: nil,
+                runtimeProfile: .production
+            )
             #expect(commands.registrationCommand(for: .codex, writeEnabled: false)?.contains("--workspace") == false)
             #expect(commands.registrationCommand(for: .codex, writeEnabled: true)?.hasSuffix(" --write") == true)
             #expect(commands.mcpJSONSample(writeEnabled: true)?.contains("--write") == true)
@@ -20,7 +24,8 @@ import Foundation
             let workspaceID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia's App.app/Contents/Helpers/dahlia-mcp"),
-                workspaceID: workspaceID
+                workspaceID: workspaceID,
+                runtimeProfile: .production
             )
 
             let quotedHelper = "'/Applications/Dahlia'\\''s App.app/Contents/Helpers/dahlia-mcp'"
@@ -41,7 +46,8 @@ import Foundation
             let workspaceID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
-                workspaceID: workspaceID
+                workspaceID: workspaceID,
+                runtimeProfile: .production
             )
 
             #expect(commands.removalCommand(for: .codex) == "codex mcp remove dahlia")
@@ -54,7 +60,8 @@ import Foundation
             let workspaceID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
-                workspaceID: workspaceID
+                workspaceID: workspaceID,
+                runtimeProfile: .production
             )
 
             let json = try #require(commands.mcpJSONSample(writeEnabled: true))
@@ -73,11 +80,12 @@ import Foundation
         }
 
         @Test
-        func developmentCommandsInvokeTheHelperDirectly() throws {
+        func developmentCommandsPropagateTheRuntimeProfile() throws {
             let workspaceID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia Dev.app/Contents/Helpers/dahlia-mcp"),
-                workspaceID: workspaceID
+                workspaceID: workspaceID,
+                runtimeProfile: .development
             )
 
             let helper = "'/Applications/Dahlia Dev.app/Contents/Helpers/dahlia-mcp'"
@@ -85,15 +93,24 @@ import Foundation
             let claude = try #require(commands.registrationCommand(for: .claude, writeEnabled: false))
             let codexWrite = try #require(commands.registrationCommand(for: .codex, writeEnabled: true))
             let claudeWrite = try #require(commands.registrationCommand(for: .claude, writeEnabled: true))
-            #expect(codex.contains("-- \(helper) --workspace-id"))
-            #expect(claude.contains("-- \(helper) --workspace-id"))
+            let invocation = "-- /usr/bin/env DAHLIA_RUNTIME_PROFILE=development \(helper) --workspace-id"
+            #expect(codex.contains(invocation))
+            #expect(claude.contains(invocation))
             #expect(codexWrite.hasSuffix("--write"))
             #expect(claudeWrite.hasSuffix("--write"))
-            #expect(!codex.contains("DAHLIA_RUNTIME_PROFILE"))
-            #expect(!claude.contains("DAHLIA_RUNTIME_PROFILE"))
+            #expect(codex.contains("DAHLIA_RUNTIME_PROFILE=development"))
+            #expect(claude.contains("DAHLIA_RUNTIME_PROFILE=development"))
 
             let json = try #require(commands.mcpJSONSample(writeEnabled: false))
-            #expect(!json.contains("\"env\""))
+            let sample = try JSONDecoder().decode(MCPJSONSample.self, from: Data(json.utf8))
+            let server = try #require(sample.mcpServers["dahlia"])
+            #expect(server.command == "/usr/bin/env")
+            #expect(server.args == [
+                "DAHLIA_RUNTIME_PROFILE=development",
+                "/Applications/Dahlia Dev.app/Contents/Helpers/dahlia-mcp",
+                "--workspace-id",
+                "ws_01kxk53k5yfks87c3ez5atkza1",
+            ])
         }
 
         private struct MCPJSONSample: Decodable {
