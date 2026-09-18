@@ -55,7 +55,7 @@ enum MeetingSyncMigration {
     static func repairEarlyWorkspaceSchema(in db: Database) throws {
         guard try db.tableExists("workspaces") else { return }
         let oldColumns = try db.columns(in: "workspaces").map(\.name)
-        guard !oldColumns.contains("syncPullErrorJSON"), Set(oldColumns).isSuperset(of: workspaceColumnsWithoutPullError) else { return }
+        guard Set(oldColumns) == workspaceColumnsWithoutPullError else { return }
 
         let objects = try Row.fetchAll(
             db,

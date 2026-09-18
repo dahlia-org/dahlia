@@ -50,6 +50,64 @@
         }
 
         @Test
+        func renamedWorkspaceMigrationMergesPreviouslyAppliedIdentifier() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v43_accountConnectionSyncDiscoveryError")
+            try queue.write { db in
+                try db.execute(sql: """
+                INSERT INTO grdb_migrations (identifier)
+                VALUES ('v44_workspaceSyncPullError'), ('v45_workspaceLiveTranscriptDraft')
+                """)
+                #expect(try AppDatabaseManager.migrator.hasBeenSuperseded(db))
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            try queue.read { db in
+                let identifiers = try Set(String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations"))
+                #expect(!identifiers.contains("v44_workspaceSyncPullError"))
+                #expect(identifiers.contains("v44_workspaceAndTranscriptSchema"))
+                #expect(try !AppDatabaseManager.migrator.hasBeenSuperseded(db))
+                #expect(try db.indexes(on: "transcript_segments").contains { $0.name == "transcript_segments_on_sessionId" })
+            }
+        }
+
+        @Test
+        func workspaceSchemaRepairSkipsUnknownExtraColumn() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v43_accountConnectionSyncDiscoveryError")
+            let workspace = WorkspaceRecord(
+                id: .v7(),
+                path: nil,
+                name: "Unknown schema workspace",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            try queue.write { db in
+                try workspace.insert(db)
+                try db.execute(sql: "ALTER TABLE workspaces DROP COLUMN syncPullErrorJSON")
+                try db.execute(sql: "ALTER TABLE workspaces ADD COLUMN unknownColumn TEXT")
+                try db.execute(
+                    sql: "UPDATE workspaces SET unknownColumn = 'preserved' WHERE id = ?",
+                    arguments: [workspace.id]
+                )
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v44_workspaceAndTranscriptSchema")
+
+            try queue.read { db in
+                let columns = try Set(db.columns(in: "workspaces").map(\.name))
+                #expect(columns.contains("syncPullErrorJSON"))
+                #expect(columns.contains("unknownColumn"))
+                #expect(try String.fetchOne(
+                    db,
+                    sql: "SELECT unknownColumn FROM workspaces WHERE id = ?",
+                    arguments: [workspace.id]
+                ) == "preserved")
+            }
+        }
+
+        @Test
         func liveTranscriptDraftMigrationPreservesEnabledPreferenceAndWorkspaceSettings() throws {
             let suite = "WorkspaceLiveTranscriptDraftMigration-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
