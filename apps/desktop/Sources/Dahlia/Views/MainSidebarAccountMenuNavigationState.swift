@@ -4,35 +4,55 @@ import Observation
 @MainActor
 @Observable
 final class MainSidebarAccountMenuNavigationState {
-    enum ActiveMenu {
+    enum ActiveMenu: Equatable {
         case root
         case languages
-        case syncProgress
+        case accountDetails
     }
 
     var activeMenu = ActiveMenu.root
     var rootSelection: Int?
     var submenuSelection: Int?
+    private(set) var accountDetailError: String?
+    private(set) var accountDetailPresentationID: UUID?
 
     func reset() {
         activeMenu = .root
         rootSelection = nil
         submenuSelection = nil
+        accountDetailError = nil
+        accountDetailPresentationID = nil
     }
 
     func selectRoot(_ index: Int) {
         activeMenu = .root
         rootSelection = index
         submenuSelection = nil
+        accountDetailError = nil
+        accountDetailPresentationID = nil
     }
 
     func showSubmenu(_ menu: ActiveMenu) {
         activeMenu = menu
         submenuSelection = nil
+        accountDetailError = nil
+        accountDetailPresentationID = menu == .accountDetails ? UUID() : nil
+    }
+
+    func returnToRoot() {
+        activeMenu = .root
+        submenuSelection = nil
+        accountDetailError = nil
+        accountDetailPresentationID = nil
     }
 
     func selectSubmenu(_ index: Int) {
         submenuSelection = index
+    }
+
+    func publishAccountDetailError(_ error: String?, for presentationID: UUID?) {
+        guard accountDetailPresentationID == presentationID else { return }
+        accountDetailError = error
     }
 
     static func nextEnabledIndex(

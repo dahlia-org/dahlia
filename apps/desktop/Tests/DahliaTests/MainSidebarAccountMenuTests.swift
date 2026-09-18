@@ -17,7 +17,7 @@
         }
 
         @Test
-        func syncProgressFitsTheMenuAndAppearsInTheFooter() throws {
+        func accountDetailsFitTheMenuAndSyncProgressAppearsInTheFooter() throws {
             let pending = WorkspaceSyncProgress(
                 id: UUID(),
                 name: "Work Workspace",
@@ -38,8 +38,9 @@
             let footer = MainSidebarAccountMenuButton.footerTitle(accountName: "Account", workspaceName: pending.name, syncSummary: progress.summary)
             #expect(footer.string.contains(progress.summary))
             #expect(footer.string.contains(pending.name))
+            let connection = makeConnection(origin: "https://server.example.com", isCloud: false)
             let menu = NSHostingView(rootView: MainSidebarAccountMenuPanel(width: 320) {
-                SyncProgressView(connections: [])
+                SyncProgressView(connection: connection, navigation: MainSidebarAccountMenuNavigationState())
             }.fixedSize())
             #expect(menu.fittingSize.width == 320)
             #expect(menu.fittingSize.height > 40 && menu.fittingSize.height <= 432)
@@ -136,6 +137,24 @@
         }
 
         @Test
+        func accountSyncIconsAnimateOnlyWhileSyncing() {
+            let activePhases: [WorkspaceSyncProgress.Phase] = [.preparing, .text, .attachments, .fetching]
+            let staticPhases: [WorkspaceSyncProgress.Phase] = [.retrying, .attention, .synced]
+
+            #expect(activePhases.allSatisfy { makeSyncProgress(phase: $0).isSyncing })
+            #expect(staticPhases.allSatisfy { !makeSyncProgress(phase: $0).isSyncing })
+            #expect(!AccountSyncProgress(workspaces: []).isSyncing)
+        }
+
+        @Test
+        func footerAnimatedIconIsDecorative() throws {
+            let button = MainSidebarAccountButton(frame: .zero)
+            let icon = try #require(button.subviews.compactMap { $0 as? NSImageView }.first)
+
+            #expect(!icon.isAccessibilityElement())
+        }
+
+        @Test
         func accountWorkspacesUseCreationOrderAndExcludeOtherAccounts() {
             let connectionID = UUID.v7()
             let first = makeWorkspace(name: "First", accountConnectionID: connectionID, createdAt: .distantPast)
@@ -187,31 +206,6 @@
             )
 
             #expect(origin == CGPoint(x: 286, y: 182))
-        }
-
-        @Test
-        func accountHelpCentersAboveTheRowAndStaysOnScreen() {
-            let origin = MainSidebarAccountMenuLayout.helpOrigin(
-                panelSize: CGSize(width: 240, height: 36),
-                rowFrame: CGRect(x: 6, y: 36, width: 268, height: 30),
-                mainPanelFrame: CGRect(x: 700, y: 200, width: 280, height: 180),
-                screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 800)
-            )
-
-            #expect(origin == CGPoint(x: 720, y: 350))
-        }
-
-        @Test
-        func accountHelpFallsBelowTheRowWhenSpaceAboveIsInsufficient() {
-            let origin = MainSidebarAccountMenuLayout.helpOrigin(
-                panelSize: CGSize(width: 240, height: 36),
-                rowFrame: CGRect(x: 6, y: 36, width: 268, height: 30),
-                mainPanelFrame: CGRect(x: 700, y: 614, width: 280, height: 180),
-                screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 800)
-            )
-
-            #expect(origin == CGPoint(x: 720, y: 686))
-            #expect(origin.y + 36 < 794 - 66)
         }
 
         @Test
@@ -277,15 +271,31 @@
             #expect(navigation.rootSelection == 2)
             #expect(navigation.submenuSelection == nil)
 
-            navigation.showSubmenu(.languages)
+            navigation.showSubmenu(.accountDetails)
+            navigation.publishAccountDetailError("Failed", for: navigation.accountDetailPresentationID)
             navigation.selectSubmenu(1)
-            #expect(navigation.activeMenu == .languages)
+            #expect(navigation.activeMenu == .accountDetails)
             #expect(navigation.submenuSelection == 1)
 
             navigation.reset()
             #expect(navigation.activeMenu == .root)
             #expect(navigation.rootSelection == nil)
             #expect(navigation.submenuSelection == nil)
+            #expect(navigation.accountDetailError == nil)
+        }
+
+        @Test
+        func staleAccountDetailErrorsAreDiscarded() throws {
+            let navigation = MainSidebarAccountMenuNavigationState()
+            navigation.showSubmenu(.accountDetails)
+            let stalePresentationID = try #require(navigation.accountDetailPresentationID)
+
+            navigation.showSubmenu(.accountDetails)
+            navigation.publishAccountDetailError("Stale", for: stalePresentationID)
+            #expect(navigation.accountDetailError == nil)
+
+            navigation.publishAccountDetailError("Current", for: navigation.accountDetailPresentationID)
+            #expect(navigation.accountDetailError == "Current")
         }
 
         @Test
@@ -295,47 +305,43 @@
             #expect(MainSidebarAccountMenuCoordinator.shouldPassThroughKeyEvent(modifierFlags: [.control]))
         }
 
-        @Test(.timeLimit(.minutes(1)), arguments: [UInt16(125), 121, 49, 119])
-        func syncProgressConsumesKeysAndScrollsItsOwnPanel(keyCode: UInt16) async throws {
+        @Test
+        func keyboardOpensTheSelectedAccountDetails() throws {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             let button = NSButton(frame: NSRect(x: 0, y: 0, width: 100, height: 30))
             window.contentView?.addSubview(button)
-            let connections = (0 ..< 20).map { makeConnection(origin: "https://server-\($0).example.com", isCloud: false) }
+            let connections = [makeConnection(origin: "https://server.example.com", isCloud: false)]
             let coordinator = MainSidebarAccountMenuCoordinator(
                 workspaces: [], currentWorkspace: nil, connections: connections,
                 accountSelection: .init(connectionID: nil, isLocal: true, isLocalAvailable: true),
                 onSelectWorkspace: { _ in }, onOpenSettings: { _ in }, onSelectAccount: { _ in }, onAccountAction: {}
             )
             coordinator.button = button
+            var openedURLs: [URL] = []
+            coordinator.openURL = {
+                openedURLs.append($0)
+                return true
+            }
             defer { coordinator.dismissMenu()
                 window.close()
             }
             coordinator.toggleMenu()
-            for _ in 0 ... coordinator.syncProgressIndex {
-                coordinator.moveSelection(1)
-            }
+            coordinator.moveSelection(1)
             coordinator.openSelectedSubmenu()
             let panel = try #require(window.childWindows?.last)
-            let content = try #require(panel.contentView)
-            content.layoutSubtreeIfNeeded()
-            func findScrollView(_ view: NSView) -> NSScrollView? {
-                (view as? NSScrollView) ?? view.subviews.lazy.compactMap { findScrollView($0) }.first
-            }
-            let scroll = try #require(findScrollView(content))
             #expect(!panel.canBecomeKey)
-            #expect(try #require(scroll.documentView).frame.height > scroll.contentView.bounds.height)
-            let initial = scroll.contentView.bounds.origin.y
-            let down = try #require(NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
-                context: nil, characters: "\u{F701}", charactersIgnoringModifiers: "\u{F701}", isARepeat: false, keyCode: keyCode
-            ))
-            #expect(coordinator.handleKeyDown(down) == nil)
-            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-            while scroll.contentView.bounds.origin.y == initial, ContinuousClock.now < deadline {
-                try await Task.sleep(for: .milliseconds(10))
+            #expect(panel.frame.width == 320)
+
+            for keyCode: UInt16 in [36, 49, 76] {
+                let characters = keyCode == 49 ? " " : "\r"
+                let event = try #require(NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                    context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
+                ))
+                #expect(coordinator.handleKeyDown(event) == nil)
             }
-            #expect(scroll.contentView.bounds.origin.y > initial)
+            #expect(openedURLs.map(\.absoluteString) == Array(repeating: connections[0].origin, count: 3))
         }
 
         @Test
@@ -363,13 +369,10 @@
                 onAccountAction: { didManageAccounts = true }
             )
 
-            var openedURLs: [URL] = []
-            coordinator.openURL = { openedURLs.append($0) }
             coordinator.moveSelection(1)
             coordinator.moveSelection(1)
             coordinator.activateSelection()
             #expect(selectedConnectionID == server.id)
-            #expect(openedURLs.isEmpty)
 
             coordinator.moveSelection(1)
             coordinator.moveSelection(1)
@@ -377,11 +380,9 @@
             coordinator.activateSelection()
             #expect(didSelectAccount)
             #expect(selectedConnectionID == nil)
-            #expect(openedURLs.isEmpty)
 
             coordinator.moveSelection(1)
             coordinator.activateSelection()
-            #expect(openedURLs.map(\.absoluteString) == [cloud.origin])
             #expect(selectedConnectionID == nil)
 
             coordinator.moveSelection(-1)
@@ -409,7 +410,6 @@
                 onAccountAction: {}
             )
 
-            coordinator.openURL = { _ in }
             coordinator.moveSelection(1)
             coordinator.activateSelection()
 
@@ -468,6 +468,25 @@
                 isCloud: isCloud,
                 workspaceCount: workspaceCount
             )
+        }
+
+        private func makeSyncProgress(phase: WorkspaceSyncProgress.Phase) -> AccountSyncProgress {
+            AccountSyncProgress(workspaces: [WorkspaceSyncProgress(
+                id: .v7(),
+                name: "Workspace",
+                state: phase == .synced ? .synced : .pending,
+                phase: phase,
+                issues: [],
+                allowsCanonicalEdits: true,
+                retryAt: nil,
+                retryErrorCode: nil,
+                discardImpact: nil,
+                recordingArchiveFailures: [],
+                meetings: 0,
+                files: 0,
+                attachments: 0,
+                other: 0
+            )])
         }
 
         private func makeWorkspace(

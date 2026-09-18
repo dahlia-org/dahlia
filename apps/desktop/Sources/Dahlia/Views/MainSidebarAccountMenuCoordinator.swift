@@ -21,12 +21,10 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private var onOpenSettings: (SettingsCategory?) -> Void
     private var onSelectAccount: (DahliaAccountConnection?) -> Void
     private var onAccountAction: () -> Void
-    var openURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
+    var openURL: (URL) -> Bool = { NSWorkspace.shared.open($0) }
     private let navigation = MainSidebarAccountMenuNavigationState()
     private var mainPanel: NSPanel?
     private var submenuPanel: NSPanel?
-    private var accountHelpPanel: NSPanel?
-    private var accountHelpTask: Task<Void, Never>?
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
     private var typeAheadResetTask: Task<Void, Never>?
@@ -91,7 +89,6 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
 
     func dismissMenu() {
         stopMonitoring()
-        dismissAccountHelp()
         closeSubmenu()
         closePanel(&mainPanel)
         navigation.reset()
@@ -111,10 +108,10 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 workspaces: workspaces,
                 currentWorkspace: currentWorkspace,
                 onShowLanguages: { [weak self] in self?.presentLanguageMenu(anchorMinY: $0) },
-                onShowSyncProgress: { [weak self] in self?.presentSyncProgress(anchorMinY: $0) },
+                onShowAccountDetails: { [weak self] connection, minY in
+                    self?.presentAccountDetails(connection, anchorMinY: minY)
+                },
                 onDismissSubmenu: { [weak self] in self?.closeSubmenu() },
-                onShowAccountHelp: { [weak self] label, frame in self?.scheduleAccountHelp(label: label, rowFrame: frame) },
-                onDismissAccountHelp: { [weak self] in self?.dismissAccountHelp() },
                 onOpenSettings: { [weak self] in self?.openSettings(category: $0) },
                 onSelectAccount: { [weak self] in self?.selectAccount($0) },
                 onSelectWorkspace: { [weak self] in self?.selectWorkspace($0) },
@@ -129,11 +126,11 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         startMonitoring()
     }
 
-    private func presentSyncProgress(anchorMinY: CGFloat? = nil) {
+    private func presentAccountDetails(_ connection: DahliaAccountConnection, anchorMinY: CGFloat? = nil) {
         let content = MainSidebarAccountMenuPanel(width: 320) {
-            SyncProgressView(connections: connections)
+            SyncProgressView(connection: connection, navigation: navigation, openURL: openURL)
         }
-        presentSubmenu(content, menu: .syncProgress, anchorMinY: anchorMinY)
+        presentSubmenu(content, menu: .accountDetails, anchorMinY: anchorMinY)
     }
 
     private func presentLanguageMenu(anchorMinY: CGFloat? = nil) {
@@ -152,7 +149,6 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         anchorMinY: CGFloat?
     ) {
         guard let mainPanel else { return }
-        dismissAccountHelp()
         resetTypeAhead()
         closePanel(&submenuPanel)
         navigation.showSubmenu(menu)
@@ -161,7 +157,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         positionSubmenu(panel, relativeTo: mainPanel, anchorMinY: anchorMinY)
         attach(panel, to: button?.window)
         submenuPanel = panel
-        announce(menu == .syncProgress ? L10n.syncProgress : L10n.language)
+        announce(menu == .accountDetails ? L10n.syncProgress : L10n.language)
     }
 
     private func makePanel(content: some View) -> NSPanel {
@@ -232,37 +228,6 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         panel.orderFront(nil)
     }
 
-    private func scheduleAccountHelp(label: String, rowFrame: CGRect) {
-        dismissAccountHelp()
-        accountHelpTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(700))
-            guard !Task.isCancelled else { return }
-            self?.presentAccountHelp(label: label, rowFrame: rowFrame)
-        }
-    }
-
-    private func presentAccountHelp(label: String, rowFrame: CGRect) {
-        guard let mainPanel else { return }
-        accountHelpTask = nil
-        let panel = makePanel(content: DahliaWindowHeaderHelp(label: label, shortcut: nil))
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = true
-        panel.setFrameOrigin(MainSidebarAccountMenuLayout.helpOrigin(
-            panelSize: panel.frame.size,
-            rowFrame: rowFrame,
-            mainPanelFrame: mainPanel.frame,
-            screenFrame: visibleScreenFrame(containing: mainPanel.frame)
-        ))
-        attach(panel, to: button?.window)
-        accountHelpPanel = panel
-    }
-
-    private func dismissAccountHelp() {
-        accountHelpTask?.cancel()
-        accountHelpTask = nil
-        closePanel(&accountHelpPanel)
-    }
-
     private func selectWorkspace(_ workspace: WorkspaceRecord) {
         dismissMenu()
         guard workspace.id != currentWorkspace?.id else { return }
@@ -285,21 +250,14 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
 
     private func selectAccount(_ connection: DahliaAccountConnection?) {
         dismissMenu()
-        guard let connection, connection.id == currentConnectionID else {
-            onSelectAccount(connection)
-            return
-        }
-        if let url = URL(string: connection.origin),
-           ["https", "http"].contains(url.scheme?.lowercased()), url.host != nil {
-            openURL(url)
-        }
+        guard connection?.id != currentConnectionID else { return }
+        onSelectAccount(connection)
     }
 
     private func closeSubmenu() {
         resetTypeAhead()
         closePanel(&submenuPanel)
-        navigation.activeMenu = .root
-        navigation.submenuSelection = nil
+        navigation.returnToRoot()
     }
 
     private func closePanel(_ panel: inout NSPanel?) {
@@ -378,8 +336,17 @@ extension MainSidebarAccountMenuCoordinator {
             return event
         }
 
-        if navigation.activeMenu == .syncProgress, ![53, 123].contains(event.keyCode) {
-            scrollSyncProgress(event)
+        if navigation.activeMenu == .accountDetails {
+            switch event.keyCode {
+            case 53:
+                dismissMenu()
+            case 123:
+                closeSubmenu()
+            case 36, 49, 76:
+                openSelectedAccountOnServer()
+            default:
+                scrollAccountDetails(event)
+            }
             return nil
         }
         switch event.keyCode {
@@ -406,7 +373,7 @@ extension MainSidebarAccountMenuCoordinator {
     }
 
     /// These non-key panels must route scrolling explicitly instead of returning keys to the parent window.
-    private func scrollSyncProgress(_ event: NSEvent) {
+    private func scrollAccountDetails(_ event: NSEvent) {
         func findScrollView(in view: NSView) -> NSScrollView? {
             (view as? NSScrollView) ?? view.subviews.lazy.compactMap { findScrollView(in: $0) }.first
         }
@@ -430,6 +397,19 @@ extension MainSidebarAccountMenuCoordinator {
         scroll.reflectScrolledClipView(clip)
     }
 
+    private func openSelectedAccountOnServer() {
+        guard let selection = navigation.rootSelection,
+              connections.indices.contains(selection),
+              let url = SyncServerLink.url(origin: connections[selection].origin) else { return }
+        let presentationID = navigation.accountDetailPresentationID
+        guard openURL(url) else {
+            navigation.publishAccountDetailError(L10n.syncOpenServerFailed, for: presentationID)
+            announce(L10n.syncOpenServerFailed)
+            return
+        }
+        navigation.publishAccountDetailError(nil, for: presentationID)
+    }
+
     func handleTypeAhead(_ event: NSEvent) {
         guard navigation.activeMenu != .root,
               let input = event.charactersIgnoringModifiers,
@@ -451,7 +431,7 @@ extension MainSidebarAccountMenuCoordinator {
         let titles: [String]
         let isEnabled: (Int) -> Bool
         switch navigation.activeMenu {
-        case .root, .syncProgress:
+        case .root, .accountDetails:
             return false
         case .languages:
             let languages = AppLanguage.allCases
@@ -493,7 +473,7 @@ extension MainSidebarAccountMenuCoordinator {
                 count: menuOffset + 3,
                 isEnabled: isRootIndexEnabled
             )
-        case .syncProgress:
+        case .accountDetails:
             return
         case .languages:
             let languages = AppLanguage.allCases
@@ -510,7 +490,7 @@ extension MainSidebarAccountMenuCoordinator {
 
     func openSelectedSubmenu() {
         guard navigation.activeMenu == .root, let selection = navigation.rootSelection else { return }
-        if !connections.isEmpty, selection == syncProgressIndex { presentSyncProgress() }
+        if connections.indices.contains(selection) { presentAccountDetails(connections[selection]) }
         if selection == menuOffset { presentLanguageMenu() }
     }
 
@@ -518,7 +498,7 @@ extension MainSidebarAccountMenuCoordinator {
         switch navigation.activeMenu {
         case .root: activateRootSelection()
         case .languages: activateLanguageSelection()
-        case .syncProgress: break
+        case .accountDetails: break
         }
     }
 
@@ -541,10 +521,6 @@ extension MainSidebarAccountMenuCoordinator {
         }
         if selection == manageWorkspacesIndex {
             manageWorkspaces()
-            return
-        }
-        if !connections.isEmpty, selection == syncProgressIndex {
-            presentSyncProgress()
             return
         }
         switch selection - menuOffset {
@@ -570,10 +546,10 @@ extension MainSidebarAccountMenuCoordinator {
         case .root:
             let titles = connections.map(\.displayName) + [L10n.localAccount]
                 + workspaces.map(\.name)
-                + [L10n.manageWorkspaces] + (connections.isEmpty ? [] : [L10n.syncProgress])
+                + [L10n.manageWorkspaces]
                 + [L10n.language, L10n.settings, hasCurrentConnection ? L10n.signOut : L10n.dahliaSignIn]
             title = navigation.rootSelection.flatMap { titles.indices.contains($0) ? titles[$0] : nil }
-        case .syncProgress:
+        case .accountDetails:
             title = L10n.syncProgress
         case .languages:
             title = navigation.submenuSelection.flatMap {
@@ -602,8 +578,7 @@ extension MainSidebarAccountMenuCoordinator {
 
     var workspaceOffset: Int { connections.count + 1 }
     var manageWorkspacesIndex: Int { workspaceOffset + workspaces.count }
-    var syncProgressIndex: Int { manageWorkspacesIndex + 1 }
-    var menuOffset: Int { syncProgressIndex + (connections.isEmpty ? 0 : 1) }
+    var menuOffset: Int { manageWorkspacesIndex + 1 }
 
     private func isRootIndexEnabled(_ index: Int) -> Bool {
         if connections.indices.contains(index) { return connections[index].workspaceCount > 0 }
