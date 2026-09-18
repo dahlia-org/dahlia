@@ -1,7 +1,7 @@
 import type { Appearance } from "../appearance-model";
 export type { Appearance } from "../appearance-model";
 import { useId, type CSSProperties } from "react";
-import { MenuIcon } from "./Sidebar";
+import { Blocks, Folder } from "lucide-react";
 import { uiText } from "./api";
 
 export const appearanceColors = {
@@ -70,21 +70,24 @@ export function AppearanceIcon({ appearance, size = 18 }: { appearance: Appearan
   const aliases = { film: "popcorn", "cross.case": "stethoscope", puzzlepiece: "asterisk", leaf: "pottedplant" } as const;
   const icon = appearance.icon in aliases ? aliases[appearance.icon as keyof typeof aliases] : appearance.icon as keyof typeof appearanceIcons;
   const { color } = appearance;
-  return <span className="appearance-icon" style={{ color: color === "neutral" ? "currentColor" : appearanceColors[color][0], width: size, height: size }}>
-    {icon === "folder" || icon === "workspace" ? <MenuIcon name={icon} /> : <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={appearanceIcons[icon][2]} /></svg>}
+  const CollectionIcon = icon === "workspace" ? Blocks : Folder;
+  return <span className="inline-flex shrink-0 items-center justify-center" style={{ color: color === "neutral" ? "currentColor" : appearanceColors[color][0], width: size, height: size }}>
+    {icon === "folder" || icon === "workspace" ? <CollectionIcon size={size} strokeWidth={1.5} aria-hidden="true" /> : <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={appearanceIcons[icon][2]} /></svg>}
   </span>;
 }
 
 export function AppearancePicker({ value, onChange, disabled = false }: { value: Appearance; onChange: (value: Appearance) => void; disabled?: boolean }) {
   const id = useId();
-  return <div className="appearance-picker">
-    <fieldset disabled={disabled}><legend>{uiText("Color", "色")}</legend><div className="appearance-colors">
+  return <div className="grid w-64 gap-4">
+    <fieldset disabled={disabled}><legend className="mb-2 text-xs font-medium text-muted-foreground">{uiText("Color", "色")}</legend><div className="grid grid-cols-8 gap-1.5">
       {Object.entries(appearanceColors).map(([color, [hex, en, ja]]) => <button type="button" key={color} aria-label={uiText(en, ja)} aria-pressed={value.color === color}
-        style={{ "--appearance-color": hex } as CSSProperties} onClick={() => onChange({ ...value, color: color as Appearance["color"] })}><span /></button>)}
+        className="grid size-7 place-items-center rounded-md outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-accent disabled:opacity-50"
+        style={{ "--appearance-color": hex } as CSSProperties} onClick={() => onChange({ ...value, color: color as Appearance["color"] })}><span className="size-4 rounded-full bg-[var(--appearance-color)]" /></button>)}
     </div></fieldset>
-    <fieldset disabled={disabled}><legend id={id}>{uiText("Icon", "アイコン")}</legend><div className="appearance-icons" aria-labelledby={id}>
+    <fieldset disabled={disabled}><legend id={id} className="mb-2 text-xs font-medium text-muted-foreground">{uiText("Icon", "アイコン")}</legend><div className="grid max-h-44 grid-cols-8 gap-1 overflow-y-auto pr-1" aria-labelledby={id}>
       {Object.entries(appearanceIcons).map(([icon, [en, ja]]) => <button type="button" key={icon} aria-label={uiText(en, ja)} title={uiText(en, ja)} aria-pressed={value.icon === icon}
-        onClick={() => onChange({ ...value, icon: icon as Appearance["icon"] })}><AppearanceIcon appearance={{ ...value, icon: icon as Appearance["icon"] }} size={22} /></button>)}
+        className="grid size-7 place-items-center rounded-md outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-accent disabled:opacity-50"
+        onClick={() => onChange({ ...value, icon: icon as Appearance["icon"] })}><AppearanceIcon appearance={{ ...value, icon: icon as Appearance["icon"] }} size={18} /></button>)}
     </div></fieldset>
   </div>;
 }

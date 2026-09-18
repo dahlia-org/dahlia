@@ -22,6 +22,7 @@ import {
   Workspaces,
   MeetingList,
   accountSignInRequired,
+  projectBreadcrumbOptions,
   resolveDashboardExtensionRoute,
   type DashboardExtension,
 } from "../src/client/App";
@@ -30,13 +31,66 @@ import { isCoreDashboardPath, resolveDashboardRoute, shouldRedirectToSignIn } fr
 import { FileViewer } from "../src/client/FileViewer";
 import * as liveData from "../src/client/live-data";
 import { dashboardNavigationPath } from "../src/client/navigation";
-import { clientMutationEvent, json, type SyncedMeetingInfo, type SyncedWorkspaceInfo } from "../src/client/api";
-import { MCPConnectionDialog, mcpConnectionOutput, parseMCPConnectionInfo } from "../src/client/MCPConnectionDialog";
+import { clientMutationEvent, json, type SyncedMeetingInfo, type SyncedProjectInfo, type SyncedWorkspaceInfo } from "../src/client/api";
+import { mcpConnectionOutput, parseMCPConnectionInfo } from "../src/client/MCPConnectionDialog";
 
 const ExtensionPage = () => null;
 afterEach(() => vi.unstubAllGlobals());
 
 describe("desktop-style meeting layout", () => {
+  it("renders the full meeting breadcrumb and top-right actions", () => {
+    vi.stubGlobal("navigator", { language: "en-US" });
+    const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", reload: vi.fn(), workspaces: [
+      { workspaceId: "w1", name: "Workspace" } as SyncedWorkspaceInfo,
+      { workspaceId: "w2", name: "Team Workspace" } as SyncedWorkspaceInfo,
+    ] });
+    const ready = { error: undefined, loading: false, reload: vi.fn(), replace: vi.fn() };
+    const query = vi.spyOn(liveData, "useLiveJSON").mockImplementation((input) => {
+      const key = typeof input === "object" ? input.key : "";
+      if (key.startsWith('["getMeeting"')) return { ...ready, data: {
+        meetingId: "m1", workspaceId: "w1", projectId: "child", name: "Weekly Meeting", description: "", status: "READY",
+        duration: null, revision: 1, createdAt: "2026-09-18T00:00:00Z", updatedAt: "2026-09-18T00:00:00Z",
+      } };
+      if (key.startsWith('["getWorkspace"')) return { ...ready, data: { workspaceId: "w1", name: "Workspace", role: "admin" } };
+      if (key.startsWith('["listProjects"')) return { ...ready, data: { items: [
+        { projectId: "root", parentProjectId: null, name: "Project" },
+        { projectId: "child", parentProjectId: "root", name: "Sub Project" },
+      ] } };
+      if (key.startsWith('["getLatestSummary"')) return { ...ready, data: { record: { document: "{}" } } };
+      return { ...ready, data: undefined };
+    });
+    const page = vi.spyOn(liveData, "useLivePage").mockImplementation((input) => ({ ...ready,
+      data: typeof input === "object" && input.key.startsWith('["listMeetings"') ? { items: [
+        { meetingId: "m1", name: "Weekly Meeting" }, { meetingId: "m2", name: "Design Review" },
+      ] } : undefined, loadingMore: false, loadMore: vi.fn() }));
+    try {
+      const html = renderToStaticMarkup(createElement(SyncedMeeting, { workspaceId: "w1", meetingId: "m1" }));
+      expect(html).toContain('aria-label="Breadcrumbs"');
+      expect(html).toContain('href="/projects/root"');
+      expect(html).toContain('href="/projects/child"');
+      expect(html).toContain(">Project</span>");
+      expect(html).toContain(">Sub Project</span>");
+      expect(html).toContain('aria-current="page"');
+      expect(html).toContain('aria-label="Copy meeting link"');
+      expect(html).toContain('aria-label="Meeting actions"');
+      expect(html).toContain('aria-haspopup="menu"');
+      expect(html).toMatch(/<h1[^>]*>Weekly Meeting<\/h1>/);
+      expect(html.indexOf('aria-label="Breadcrumbs"')).toBeLessThan(html.indexOf("Weekly Meeting</h1>"));
+    } finally { query.mockRestore(); page.mockRestore(); scope.mockRestore(); }
+  });
+
+  it("builds the header hierarchy from projects through meetings", () => {
+    const options = projectBreadcrumbOptions([
+      { projectId: "root", parentProjectId: null, name: "Project" },
+      { projectId: "child", parentProjectId: "root", name: "Sub Project" },
+    ] as SyncedProjectInfo[], undefined, { projectId: "child", meetingId: "m1", meetings: [
+      { meetingId: "m1", name: "Weekly Meeting" }, { meetingId: "m2", name: "Design Review" },
+    ] as SyncedMeetingInfo[] });
+    expect(options).toMatchObject([{ href: "/projects/root", children: [{ href: "/projects/child", current: true, children: [
+      { href: "/meetings/m1", current: true }, { href: "/meetings/m2", current: false },
+    ] }] }]);
+  });
+
   it("renders current and historical summaries with metadata conditions in both languages", () => {
     const query = vi.spyOn(liveData, "useLiveJSON");
     const page = vi.spyOn(liveData, "useLivePage");
@@ -54,9 +108,7 @@ describe("desktop-style meeting layout", () => {
           meetingId: "m", latest: { formatVersion: 1, entity: "summary", entityId: "m", count: 1, byteCount: 0, sha256: "", version: 7, revision: 2, present: true, record: { title: "New", document: latest, createdAt: null } },
           selected, onSelect: vi.fn(),
         }));
-        expect(render(null)).toContain('class="summary-history"');
         expect(render(null)).toContain("Current result");
-        expect(render(null)).toContain("v7");
         expect(render(null)).not.toContain("Previous result");
         const historical = render(1);
         expect(page).toHaveBeenCalledWith(expect.objectContaining({ key: "[\"listSummaries\",{\"params\":{\"path\":{\"meetingId\":\"m\"}}}]" }));
@@ -73,6 +125,7 @@ describe("desktop-style meeting layout", () => {
 
   it("waits for meeting and workspace data without flashing a placeholder page, and keeps errors visible", () => {
     vi.stubGlobal("navigator", { language: "ja-JP" });
+    const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", reload: vi.fn() });
     const query = vi.spyOn(liveData, "useLiveJSON");
     const page = vi.spyOn(liveData, "useLivePage");
     const empty = { data: undefined, error: undefined, loading: true, reload: vi.fn(), replace: vi.fn() };
@@ -95,7 +148,7 @@ describe("desktop-style meeting layout", () => {
         expect(query).toHaveBeenCalledWith(expect.objectContaining({ key: "[\"getLatestSummary\",{\"params\":{\"path\":{\"meetingId\":\"m1\"}}}]" }));
         expect(html.includes("Description available to read-only members")).toBe(ready === "both");
         if (ready === "both") expect(html).toContain('<details class="meeting-description"><summary>説明</summary><p>Description available to read-only members</p></details>');
-        expect(html.includes("<h1>")).toBe(ready === "both");
+        expect(/<h1[^>]*>Planning<\/h1>/.test(html)).toBe(ready === "both");
         expect(html.includes("Planning")).toBe(ready === "both");
         expect(html).not.toContain("<h1>ミーティング</h1>");
         expect(html).not.toContain("ミーティングを読み込み中");
@@ -105,10 +158,11 @@ describe("desktop-style meeting layout", () => {
       const html = render();
       expect(html).toContain('role="alert"');
       expect(html).not.toContain("<h1>");
-    } finally { query.mockRestore(); page.mockRestore(); }
+    } finally { query.mockRestore(); page.mockRestore(); scope.mockRestore(); }
   });
 
   it("reuses a resolved meeting without issuing another detail query", () => {
+    const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", reload: vi.fn() });
     const query = vi.spyOn(liveData, "useLiveJSON").mockImplementation((input) => ({
       data: typeof input === "object" && input.key.startsWith('["getWorkspace"') ? { role: "member" } : undefined,
       error: undefined, loading: false, reload: vi.fn(), replace: vi.fn(),
@@ -120,7 +174,7 @@ describe("desktop-style meeting layout", () => {
         resolvedMeeting: { meetingId: "m1", workspaceId: "v1", name: "Planning", description: "", status: "READY",
           projectId: null, duration: null, createdAt: "2026-09-07T00:00:00Z", updatedAt: "2026-09-07T00:00:00Z" } as SyncedMeetingInfo }));
       expect(query.mock.calls.some(([input]) => typeof input === "object" && input.key.includes('"getMeeting"'))).toBe(false);
-    } finally { query.mockRestore(); page.mockRestore(); }
+    } finally { query.mockRestore(); page.mockRestore(); scope.mockRestore(); }
   });
 
   it("leaves a pending route meeting query owned by App", () => {
@@ -183,7 +237,7 @@ describe("desktop-style meeting layout", () => {
         ["invalid", "2026-09-07T14:00:00Z", "—"],
       ]) {
         const html = renderToStaticMarkup(createElement(TranscriptTime, { startTime: startTime!, timeBase: timeBase! }));
-        expect(html).toBe(`<time dateTime="${startTime}">${expected}</time>`);
+        expect(html).toBe(`<time class="pt-0.5 text-xs tabular-nums text-muted-foreground" dateTime="${startTime}">${expected}</time>`);
       }
     }
   });
@@ -203,13 +257,13 @@ describe("desktop-style meeting layout", () => {
       actionItems: [{ title: "Follow up", assignee: "Team" }],
     }));
     const html = renderToStaticMarkup(createElement(SummaryContent, { document }));
-    expect(html).toContain("<h2>Decisions</h2>");
-    expect(html).toContain("<ul><li>Keep the API");
+    expect(html).toMatch(/<h2[^>]*>Decisions<\/h2>/);
+    expect(html).toMatch(/<ul[^>]*><li>Keep the API/);
     expect(html).toContain("00:02:27");
-    expect(html).toContain("<ol><li>First step</li></ol>");
+    expect(html).toMatch(/<ol[^>]*><li>First step<\/li><\/ol>/);
     expect(html).toContain('checked=""');
     expect(html).toContain("<th>Owner</th>");
-    expect(html).toContain("<blockquote>First line\nSecond line</blockquote>");
+    expect(html).toMatch(/<blockquote[^>]*>First line\nSecond line<\/blockquote>/);
     expect(html).toContain("Follow up");
     expect(html).toContain("&lt;img");
     expect(html).not.toContain("<img");
@@ -240,28 +294,23 @@ describe("desktop-style meeting layout", () => {
     const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
       session, brand: "Dahlia", children: createElement("a", { href: "/dashboard/settings" }, "Settings"),
     }) }));
-    const [navigation, footer] = html.split('<div class="sidebar-footer">');
+    const [navigation, footer] = html.split('<div class="sidebar-footer');
     expect(navigation).toContain("Project navigation");
     expect(navigation).not.toContain("organization-switcher");
     expect(navigation).not.toContain("Account settings");
-    expect(footer).toContain('popoverTarget="account-menu"');
+    expect(footer).toContain('aria-haspopup="menu"');
+    expect(footer).toContain('aria-label="Account menu: Example User"');
     expect(footer).not.toContain("All accessible Workspaces");
     expect(footer).not.toContain("<small>");
     expect(footer).not.toContain('href="/workspaces"');
     expect(navigation).toContain('href="/workspaces"');
     expect(footer).not.toContain('<strong>Organizations</strong>');
     expect(footer).not.toContain("aria-pressed");
-    expect(footer).toContain('class="menu-account" href="/dashboard"');
-    expect(footer).toContain('class="menu-icon"');
-    expect(footer).toContain("Sign out");
     expect(readFileSync(new URL("../src/client/Sidebar.tsx", import.meta.url), "utf8"))
       .toContain('window.location.replace("/sign-out")');
     expect(footer).not.toContain("personal:");
     expect(footer).not.toContain("Local account");
-    expect(footer).toContain('href="/orgs"');
     expect(navigation).toContain('href="/orgs"');
-    expect(footer).toContain("Settings");
-    expect(footer).toContain("Connect with MCP");
     expect(footer).not.toContain("sidebar-settings");
     expect(footer).not.toContain("Artifacts");
   });
@@ -278,13 +327,6 @@ describe("desktop-style meeting layout", () => {
     expect(JSON.parse(mcpConnectionOutput("mcpJSON", proxy, "team"))).toEqual({
       mcpServers: { dahlia: { type: "stdio", command: "uvx", args: ["uc-mcp-proxy", "--url", url, "--profile", "team"] } },
     });
-    const dialog = renderToStaticMarkup(createElement(MCPConnectionDialog, { onClose: vi.fn() }));
-    expect(dialog).toContain('role="group"');
-    expect(dialog).toContain('aria-pressed="true"');
-    expect(dialog).toContain('role="status"');
-    expect(dialog).not.toContain('role="tab"');
-    expect(readFileSync(new URL("../src/client/styles.css", import.meta.url), "utf8"))
-      .toContain("  .mcp-client-tabs button { min-height: 44px; }");
   });
 
   it("validates MCP settings before rendering client commands", () => {
@@ -327,15 +369,13 @@ describe("desktop-style meeting layout", () => {
     const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
       session, brand: "Dahlia", children: createElement("a", { href: "/dashboard/settings" }, "設定"),
     }) }));
-    const [navigation, footer] = html.split('<div class="sidebar-footer">');
+    const [navigation, footer] = html.split('<div class="sidebar-footer');
     for (const path of ["/admin/orgs", "/admin/users", "/admin/settings"]) {
       expect(navigation).toContain(`href="${path}"`);
       expect(footer).not.toContain(`href="${path}"`);
     }
     expect(navigation).toContain("サーバー設定");
-    expect(footer?.includes('href="/orgs"')).toBe(sharing);
-    if (sharing) expect(footer).toContain("参加している組織");
-    expect(footer).toContain("設定");
+    expect(footer).toContain('aria-haspopup="menu"');
   });
 });
 

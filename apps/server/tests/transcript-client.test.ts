@@ -20,7 +20,7 @@ it.each([
   vi.spyOn(liveData, "useLivePage").mockReturnValue({ ...query, loadingMore: false, loadMore: vi.fn() });
   const html = renderToStaticMarkup(createElement(TranscriptHistory, { meetingId: "meeting", timeBase: "2026-09-09T00:00:00Z" }));
   expect(html).not.toContain(label);
-  expect(html).toContain('<span class="transcript-speaker">Participant A</span>Preview transcript');
+  expect(html).toMatch(/<span[^>]*>Participant A<\/span>Preview transcript/);
 });
 
 it("retains the visible page depth and rejects mixed versions during refresh", async () => {

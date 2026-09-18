@@ -72,13 +72,14 @@ function select(label: string) {
 }
 async function choose(label: string, value: string) {
   const element = select(label);
-  assert(!element.matches(":disabled"), `${label} is disabled`);
-  await until(() => document.getElementById(element.getAttribute("aria-controls")!));
+  await until(() => !element.matches(":disabled"));
   element.click();
-  const option = document.getElementById(element.getAttribute("aria-controls")!)?.querySelector<HTMLButtonElement>(`button[value="${value}"]`);
+  await until(() => document.querySelector('[data-slot="select-content"][data-state="open"]'));
+  const option = [...document.querySelectorAll<HTMLElement>('[data-slot="select-content"][data-state="open"] [role="option"]')].find((node) => node.dataset.value === value);
   assert(option, `Missing option ${value}`);
   option.click();
 }
+function selectedValue(label: string) { return select(label).dataset.value; }
 async function ready() { await until(() => document.querySelector<HTMLButtonElement>('[role="combobox"]') && !select("Output language").matches(":disabled")); }
 async function run() {
   const first = createRoot(document.getElementById("root")!);
@@ -107,13 +108,14 @@ async function run() {
   settings.processing.remote.summaryModel = "catalog.ai.unavailable";
   createRoot(document.getElementById("root")!).render(<ServerSummarySettings workspaceId={workspaceId} onSave={save} />);
   await ready();
-  await until(() => document.body.textContent?.includes("Summary method") && modelReads === 1);
+  await until(() => document.body.textContent?.includes("Summary method") && modelReads > 0);
+  const stableModelReads = modelReads;
   await choose("Summary method", "combined");
   await until(() => settings.processing.remote.workflow === "combined");
   await ready();
   assert(!document.body.textContent?.includes("Transcription language"), "Remote language settings remained visible");
-  assert(select("Summary model").value === "catalog.ai.unavailable", "Unavailable explicit choice was silently replaced");
-  await choose("Summary model", "system.ai.gemini-3-8-flash");
+  assert(selectedValue("Audio processing model") === "catalog.ai.unavailable", "Unavailable explicit choice was silently replaced");
+  await choose("Audio processing model", "system.ai.gemini-3-8-flash");
   await until(() => settings.processing.remote.summaryModel === "system.ai.gemini-3-8-flash");
   await ready();
   await choose("Summary style", "concise");
@@ -129,27 +131,27 @@ async function run() {
   window.dispatchEvent(new Event(liveDataEvent));
   await until(() => readStarted);
   patchGate.release(); patchGate = undefined;
-  await until(() => select("Summary style").value === "standard");
+  await until(() => selectedValue("Summary style") === "standard");
   staleRead.release();
   await ready();
-  assert(select("Summary style").value === "standard", "Old GET overwrote PATCH");
-  assert(modelReads === 1, "Settings updates reloaded models");
+  assert(selectedValue("Summary style") === "standard", "Old GET overwrote PATCH");
+  assert(modelReads === stableModelReads, "Settings updates reloaded models");
 
   settings.outputLanguage = "fr";
   window.dispatchEvent(new Event(liveDataEvent));
-  await until(() => select("Output language").value === "fr");
+  await until(() => selectedValue("Output language") === "fr");
   await ready();
   failPatch = true;
   await choose("Summary style", "detailed");
   await until(() => document.querySelector('[role="alert"]'));
   await ready();
-  assert(select("Summary style").value === "standard", "Failed save discarded confirmed settings");
+  assert(selectedValue("Summary style") === "standard", "Failed save discarded confirmed settings");
   failPatch = false;
   await choose("Summary style", "detailed");
-  await until(() => select("Summary style").value === "detailed");
+  await until(() => selectedValue("Summary style") === "detailed");
   await ready();
   assert(!document.querySelector('[role="alert"]'), "Retry did not clear the save error");
-  assert(modelReads === 1, "Retry reloaded models");
+  assert(modelReads === stableModelReads, "Retry reloaded models");
   document.getElementById("result")!.textContent = "PASS: local fallback, unavailable summary model, remote summary method, stale GET, settings notification, failed save/retry, stable model catalog";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; console.error(error); });

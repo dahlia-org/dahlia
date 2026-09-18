@@ -1,13 +1,25 @@
 import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
-import { loadTranscript, ServerSummaryGeneration, ServerSummarySettings } from "../src/client/SummaryGeneration";
+import { loadTranscript, SummaryGenerationSurface, ServerSummarySettings } from "../src/client/SummaryGeneration";
 import { useLiveJSON } from "../src/client/live-data";
 import { apiOperations as api } from "../src/client/generated-operations";
 import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../src/workspace-generation-settings";
 import { modelList } from "../src/ai-gateway/models";
 import { cloudflareModels } from "../src/ai-gateway/cloudflare";
 import { isAudioSummaryModel, isStructuredSummaryModel, isSummaryModel } from "../src/summary/audio-model";
+
+function generationButton(html: string): string {
+  return html.match(/<button[^>]*>Generate summary<\/button>/)?.[0] ?? "";
+}
+
+function generationDisabled(html: string): boolean {
+  return /\sdisabled(?:=""|(?=>))/.test(generationButton(html));
+}
+
+function sourceInput(html: string, source: "audio" | "transcript"): string {
+  return html.match(new RegExp(`<input[^>]*name="summary-source-test"[^>]*value="${source}"[^>]*>`))?.[0] ?? "";
+}
 
 it("treats listed models as structured-output capable and rejects unregistered models", () => {
   const supported = ["system.ai.gemini-3-8-flash", "system.ai.gpt-6-astra", "system.ai.gpt-5-6-sol", "system.ai.gpt-5-6-terra", "system.ai.gpt-5-6-luna", "system.ai.gpt-5-5"];
@@ -68,10 +80,9 @@ it.each([{}, { meetingSummaryGeneration: { version: 1, sources: ["transcript", "
     expect(settings).not.toContain("Summary source");
     expect(settings).toContain("Summary model");
     expect(settings).toContain('<select disabled=""><option value="" selected="">Automatic</option>');
-    const generation = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
-    expect(generation).toContain('class="summary-generation-trigger icon-button"');
+    const generation = renderToStaticMarkup(createElement(SummaryGenerationSurface, { meetingId: "test", workspaceId: "test" }));
     expect(generation).toContain("This server does not support this source.");
-    expect(generation).toContain('<button class="primary" disabled="">Generate summary</button>');
+    expect(generationDisabled(generation)).toBe(true);
   },
 );
 
@@ -95,20 +106,20 @@ it("explains the selected style and the data sent by Mac processing", () => {
   const html = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
   expect(html).toContain("Topics, background, reasoning, open questions, and next steps.");
   expect(html).toContain("The original transcript is synchronized and summarized on the server, including transcripts created in Dahlia for Mac.");
-  const transcriptionSection = html.split('<h2 class="section-label">Transcription</h2>')[1]?.split("</section>")[0];
+  const transcriptionSection = html.split(">Transcription</h2>")[1]?.split("</section>")[0];
   expect(transcriptionSection).toContain("Transcription location");
   expect(transcriptionSection).not.toContain("Transcription language");
   expect(transcriptionSection).not.toContain("Automatic language detection");
   expect(transcriptionSection).not.toContain("Live transcript draft");
   expect(transcriptionSection).not.toContain("Summary processing: Server");
   expect(transcriptionSection).not.toContain("Automatically transcribe and summarize after recording");
-  expect(html).toContain('<h2 class="section-label">Summary</h2>');
-  expect(html).toContain('<h2 class="section-label">Generated content language</h2>');
-  expect(html.indexOf("Generated content language")).toBeLessThan(html.indexOf("Transcription</h2>"));
+  expect(html).toContain(">Summary</h2>");
+  expect(html).toContain(">Generated content language</h2>");
+  expect(html.indexOf("Generated content language</h2>")).toBeLessThan(html.indexOf("Transcription</h2>"));
   expect(html.indexOf("Transcription</h2>")).toBeLessThan(html.indexOf("Summary</h2>"));
-  expect(html).toContain('<h2 class="section-label">After recording</h2>');
-  expect(html).toContain('type="checkbox" role="switch"');
-  const summarySection = html.split('<h2 class="section-label">Summary</h2>')[1]?.split("</section>")[0];
+  expect(html).toContain(">After recording</h2>");
+  expect(html).toContain('role="switch"');
+  const summarySection = html.split(">Summary</h2>")[1]?.split("</section>")[0];
   expect(summarySection).toContain("Summary model");
   expect(summarySection).not.toContain("Output language");
   expect(html).not.toContain("Advanced server settings");
@@ -126,9 +137,7 @@ it("renders summary generation as a dialog with named workspace defaults", () =>
           : { job: null },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
-  const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
-  expect(html).toContain('class="summary-generation-trigger icon-button"');
-  expect(html).toContain('<dialog class="action-dialog action-dialog-wide summary-generation-dialog"');
+  const html = renderToStaticMarkup(createElement(SummaryGenerationSurface, { meetingId: "test", workspaceId: "test" }));
   expect(html).toContain("Français (default)");
   expect(html).toContain("GPT 5.6 Luna (default)");
   expect(html).toContain("Standard (default)");
@@ -154,11 +163,11 @@ it.each([
         : { job: null },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
-  const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
-  expect(html.includes('<button class="primary">Generate summary</button>')).toBe(available);
+  const html = renderToStaticMarkup(createElement(SummaryGenerationSurface, { meetingId: "test", workspaceId: "test" }));
+  expect(generationDisabled(html)).toBe(!available);
   if (!available) {
     expect(html).toContain(`${summaryModel} (default) — Unavailable`);
-    expect(html).toContain('<button class="primary" disabled="">');
+    expect(generationDisabled(html)).toBe(true);
   }
   expect(html).not.toContain("This workspace processes summaries in Dahlia for Mac.");
 });
@@ -177,10 +186,10 @@ it("does not apply a combined-audio model override to manual transcript generati
           : { job: null },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
-  const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
+  const html = renderToStaticMarkup(createElement(SummaryGenerationSurface, { meetingId: "test", workspaceId: "test" }));
   expect(html).toContain('checked="" value="transcript"');
   expect(html).toContain('<select><option value="__default" selected="">Automatic (default)</option><option value="">Automatic</option><option value="gpt-4.1">GPT-4.1</option></select>');
-  expect(html).toContain('<button class="primary">Generate summary</button>');
+  expect(generationDisabled(html)).toBe(false);
   expect(html).not.toContain('gemini-3-flash — Unavailable');
   expect(html).not.toContain('high — Check model compatibility');
 });
@@ -201,8 +210,8 @@ it.each([
     error: state === "error" && url === "/api/v1/models" ? new Error("offline") : undefined,
     reload: vi.fn(), replace: vi.fn(),
   }));
-  const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
-  expect(html).toContain('<button class="primary">Generate summary</button>');
+  const html = renderToStaticMarkup(createElement(SummaryGenerationSurface, { meetingId: "test", workspaceId: "test" }));
+  expect(generationDisabled(html)).toBe(false);
   expect(html).toContain('<option value="__default" selected="">system.ai.gpt-5-6-terra (default)</option>');
   expect(html).not.toContain("Unavailable");
   const settingsHTML = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
@@ -224,9 +233,9 @@ it.each(["loading", "error"] as const)("does not use stale complete recordings w
       ? new Error("offline") : undefined,
     reload: vi.fn(), replace: vi.fn(),
   }));
-  const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
-  expect(html).toContain('<input type="radio" disabled="" name="summary-source-test" value="audio"/>');
-  expect(html).toContain('button class="primary" disabled=""');
+  const html = renderToStaticMarkup(createElement(SummaryGenerationSurface, { meetingId: "test", workspaceId: "test" }));
+  expect(sourceInput(html, "audio")).toContain("disabled");
+  expect(generationDisabled(html)).toBe(true);
 });
 
 it("keeps automatic recording processing unavailable but allows manual transcript generation", () => {
@@ -242,9 +251,9 @@ it("keeps automatic recording processing unavailable but allows manual transcrip
   const settings = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
   expect(settings).toContain('value="remote" disabled="" selected=""');
   expect(settings).toContain("Summary processing: Server");
-  const generation = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
+  const generation = renderToStaticMarkup(createElement(SummaryGenerationSurface, { meetingId: "test", workspaceId: "test" }));
   expect(generation).toContain('checked="" value="transcript"');
-  expect(generation).toContain('<button class="primary">Generate summary</button>');
+  expect(generationDisabled(generation)).toBe(false);
 });
 
 it("keeps audio disabled for servers that do not guarantee complete recordings", () => {
@@ -258,9 +267,9 @@ it("keeps audio disabled for servers that do not guarantee complete recordings",
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
 
-  const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
+  const html = renderToStaticMarkup(createElement(SummaryGenerationSurface, { meetingId: "test", workspaceId: "test" }));
   expect(html).toContain('checked="" value="transcript"');
-  expect(html).toContain('<input type="radio" disabled="" name="summary-source-test" value="audio"/>');
+  expect(sourceInput(html, "audio")).toContain("disabled");
 });
 
 it.each([
@@ -278,7 +287,7 @@ it.each([
         : { job: null },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
-  const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
+  const html = renderToStaticMarkup(createElement(SummaryGenerationSurface, { meetingId: "test", workspaceId: "test" }));
   expect(html).toContain(`checked="" value="${preferred}"`);
   if (!hasAudio) expect(html).toContain("No committed recording audio is available.");
 });
@@ -294,8 +303,8 @@ it("disables generation when neither source is available", () => {
         : { job: null },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
-  const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
-  expect(html).toContain('button class="primary" disabled=""');
+  const html = renderToStaticMarkup(createElement(SummaryGenerationSurface, { meetingId: "test", workspaceId: "test" }));
+  expect(generationDisabled(html)).toBe(true);
   expect(html).toContain("The latest transcript is empty or has not been saved.");
   expect(html).toContain("No committed recording audio is available.");
 });
@@ -388,7 +397,7 @@ it.each([
       : { job: { id: "test", status: "failed", error } },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
-  const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test", workspaceId: "test" }));
+  const html = renderToStaticMarkup(createElement(SummaryGenerationSurface, { meetingId: "test", workspaceId: "test" }));
   expect(html).toContain(message);
   expect(html).toContain(`(${error})`);
 });
