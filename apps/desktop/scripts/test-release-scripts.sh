@@ -548,6 +548,20 @@ test_release_build_uses_native_build_system() {
         || fail "build-app must avoid Swift Build's XCFramework header collision"
 }
 
+test_release_build_profile_is_safe_by_default() {
+    grep -Fq 'RUNTIME_PROFILE="development"' "${DESKTOP_SCRIPTS_DIR}/build-app.sh" \
+        || fail "build-app must default to the development profile"
+    grep -Fq 'if [ "$1" != "--production" ]' "${DESKTOP_SCRIPTS_DIR}/build-app.sh" \
+        || fail "build-app must require --production for the production profile"
+    grep -Fq 'RUNTIME_PROFILE="production"' "${DESKTOP_SCRIPTS_DIR}/build-app.sh" \
+        || fail "build-app must support an explicit production profile"
+    grep -Fq 'Add :DAHLIA_RUNTIME_PROFILE string ${RUNTIME_PROFILE}' "${DESKTOP_SCRIPTS_DIR}/build-app.sh" \
+        || fail "build-app must embed its runtime profile"
+    grep -Fq 'scripts/build-app.sh" --production' \
+        "${REPOSITORY_DIR}/.agents/skills/release-dahlia-app/scripts/notarize.sh" \
+        || fail "notarize must build the production profile explicitly"
+}
+
 test_telemetrydeck_adapter_allowlist() {
     local adapter_path="${TEST_DIR}/TelemetryDeckClient.swift"
 
@@ -639,6 +653,7 @@ test_webp_license_embedding_validation
 test_telemetrydeck_configuration_and_embedding
 test_codex_code_mode_host_packaging
 test_release_build_uses_native_build_system
+test_release_build_profile_is_safe_by_default
 test_telemetrydeck_adapter_allowlist
 test_codesigning_keychain_unlock
 test_pre_commit_compatibility_entrypoint

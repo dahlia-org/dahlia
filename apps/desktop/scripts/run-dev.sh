@@ -290,6 +290,7 @@ if [ "$("${HELPERS}/codex" --version)" != "codex-cli ${CODEX_VERSION}" ]; then
     exit 1
 fi
 cp "Resources/Info.plist" "${CONTENTS}/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :DAHLIA_RUNTIME_PROFILE string development" "${CONTENTS}/Info.plist"
 cp -R "Resources/en.lproj" "Resources/ja.lproj" "${CONTENTS}/Resources/"
 configure_google_calendar_plist "${CONTENTS}/Info.plist"
 configure_dahlia_cloud_plist "${CONTENTS}/Info.plist"

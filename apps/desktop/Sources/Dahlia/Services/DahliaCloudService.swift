@@ -123,10 +123,15 @@ struct DahliaCloudCredentialStorage: Sendable {
         return "\(prefix).\(connectionID.uuidString.lowercased())"
     }
 
-    static func deleteLegacyCredential() async {
+    static func deleteLegacyCredential(profile: DahliaRuntimeProfile = DahliaApplicationSupport.profile()) async {
+        guard deletesLegacyCredential(profile: profile) else { return }
         _ = await Task.detached {
             KeychainService.delete(key: "dahliaCloudOAuthCredential")
         }.value
+    }
+
+    static func deletesLegacyCredential(profile: DahliaRuntimeProfile) -> Bool {
+        profile == .production
     }
 }
 
