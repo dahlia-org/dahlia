@@ -26,6 +26,8 @@ v41 以前の登録名・順序・処理は維持し、公開版からの更新�
 
 2026-09-17: 未配布の `v43_syncRecoveryErrors` も `v42_localFirstSchema` に統合した。Workspace は再構築時から同期障害列を持ち、既存のアカウント接続には同じトランザクションで nullable 列を追加する。
 
+既に早期の v42 を適用した内部プロファイルは、`v43_accountConnectionSyncDiscoveryError` と `v44_workspaceAndTranscriptSchema` で不足列を補う。v44 は早期の Workspace schema だけをデータを保持して最終定義へ再構築し、通常の v41 更新では再構築しない。重複する発話時刻 index も削除し、録音セッション単位の文字起こし検索 index を追加する。`v45_workspaceLiveTranscriptDraft` は従来の端末設定を Workspace 設定へ移す。
+
 統合前の未配布 migration を適用した開発・QA DB は配布対象外で、自動互換移行は設けない。
 空の QA 環境ではアプリを終了して、対象の開発プロファイルの SQLite ファイルと WAL/SHM を退避してから再起動する。
 `grdb_migrations` だけを書き換えて再適用しない。通常利用中の `Application Support/Dahlia` の DB はこの作業の対象外。

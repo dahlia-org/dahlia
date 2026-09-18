@@ -321,8 +321,14 @@ final class AppDatabaseManager: Sendable {
             try addColumnIfNeeded(in: db, table: "dahlia_account_connections", column: "syncDiscoveryErrorJSON", type: .text)
         }
 
-        migrator.registerMigration("v44_workspaceSyncPullError") { db in
+        migrator.registerMigration("v44_workspaceAndTranscriptSchema", foreignKeyChecks: .deferred) { db in
+            try MeetingSyncMigration.repairEarlyWorkspaceSchema(in: db)
             try addColumnIfNeeded(in: db, table: "workspaces", column: "syncPullErrorJSON", type: .text)
+            guard try db.tableExists("transcript_segments") else { return }
+            try db.execute(sql: """
+            DROP INDEX IF EXISTS transcript_segments_on_meetingId_startTime;
+            CREATE INDEX IF NOT EXISTS transcript_segments_on_sessionId ON transcript_segments(sessionId);
+            """)
         }
 
         migrator.registerMigration("v45_workspaceLiveTranscriptDraft") { db in
