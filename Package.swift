@@ -33,6 +33,7 @@ let package = Package(
                 .product(name: "OpenAPIURLSession", package: "swift-openapi-urlsession"),
             ],
             path: "apps/desktop/Sources/DahliaServerAPI",
+            swiftSettings: [.unsafeFlags(["-suppress-warnings"])],
             plugins: [.plugin(name: "OpenAPIGenerator", package: "swift-openapi-generator")]
         ),
         .binaryTarget(
