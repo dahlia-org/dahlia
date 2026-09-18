@@ -43,10 +43,10 @@ import Foundation
                     + 2
             )
 
-            #expect((0 ..< outline.numberOfRows).allSatisfy { row in
-                guard let item = outline.item(atRow: row) else { return true }
-                return !outline.isExpandable(item)
-            })
+            for row in 0 ..< outline.numberOfRows {
+                let item = try #require(outline.item(atRow: row))
+                #expect(!outline.isExpandable(item))
+            }
         }
 
         @Test
