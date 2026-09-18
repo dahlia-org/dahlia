@@ -39,6 +39,8 @@ File upload is `POST /api/v1/file-uploads` with `{ id, workspaceId, name, conten
 
 Meeting and Project detail reads are unscoped (`/meetings/{meetingId}`, `/projects/{projectId}`); Workspace paths are for collections. Summary/transcript history is `/meetings/{meetingId}/summaries` or `/transcripts`, with `/latest` and `/{version}` reads. Transcript chunks stage at `/meetings/{meetingId}/transcript-uploads/{patchId}/chunks/{chunkIndex}`. Start summaries at `POST /meetings/{meetingId}/summary-jobs`; `202 Location` points at the individual job. `GET /summary-jobs/latest` is separate; cancel/retry are POST actions on an individual job. Requests use `detail` and `outputLanguage`; queued jobs retain their captured settings.
 
+The Server SPA uses Tailwind CSS v4 and repository-owned shadcn/ui New York components. Vite processes Tailwind for Node and Cloudflare builds; the npm client export contains compiled `dist/client-library/styles.css`, so package consumers do not run Tailwind or shadcn at runtime. The UI is light-theme only. Its desktop shell uses a compact sidebar, mobile navigation uses a focus-trapped Sheet, and meeting documents retain a full-width action header with a 720px content column.
+
 
 | Path | `accounts` | `header` |
 | --- | --- | --- |

@@ -1,6 +1,6 @@
 import { apiQuery } from "./live-data";
 import { collectionAppearance, AppearanceIcon, projectAppearance, type Appearance } from "./AppearancePicker";
-import { MeetingHoverCard, HoverPreview } from "./MeetingHoverCard";
+import { MeetingHoverCard, HoverPreview, HoverPreviewProvider } from "./MeetingHoverCard";
 import { Tooltip } from "./Tooltip";
 import { Search } from "./Search";
 import { RecordingIndicator } from "./RecordingIndicator";
@@ -10,6 +10,8 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import type { SessionInfo } from "./App";
 import type { OrganizationInfo, SyncedMeetingInfo, SyncedProjectInfo, SyncedWorkspaceInfo } from "./api";
 import { json, uiText } from "./api";
+import { ArrowRight, Blocks, Building2, Check, ChevronRight, FileText, Folder, Home, Link, LogOut, Menu, Pencil, Plus, Search as SearchIcon, Settings2, Sparkles, Trash2, User, Users, type LucideIcon } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 
 
 export function projectAncestors(projects: SyncedProjectInfo[], projectId?: string): Set<string> {
@@ -64,39 +66,20 @@ export function SidebarProvider({ session, children }: { session: SessionInfo; c
 }
 
 function Chevron({ expanded }: { expanded: boolean }) {
-  return <svg className="sidebar-chevron" data-expanded={expanded} width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-    <path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>;
+  return <ChevronRight className={`size-4 transition-transform motion-reduce:transition-none${expanded ? " rotate-90" : ""}`} strokeWidth={1.75} aria-hidden="true" />;
 }
 
 function Failure({ message, retry }: { message: string; retry: () => void }) {
-  return <div className="sidebar-status" role="alert">{message} <button className="sidebar-action" onClick={retry}>{uiText("Retry", "再試行")}</button></div>;
+  return <div className="px-2 py-1 text-xs text-muted-foreground" role="alert">{message} <button className="text-primary hover:underline" onClick={retry}>{uiText("Retry", "再試行")}</button></div>;
 }
 
-const menuIconPaths = {
-  folder: "M3 5h7l2 3h9v12H3V5Z",
-  account: "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2Z",
-  workspace: "M5 5h14l3 10v4H2v-4L5 5ZM2 15h20M10 17h4",
-  organization: "M4 21V3h12v18M16 9h4v12M2 21h20M8 7h4M8 11h4M8 15h4M9 21v-3h2v3",
-  settings: "m10 2 4 0 1 3 3 1 3-1 2 4-2 2v3l2 2-2 4-3-1-3 1-1 3h-4l-1-3-3-1-3 1-2-4 2-2v-3L1 9l2-4 3 1 3-1 1-3ZM16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
-  document: "M5 3h9l5 5v13H5V3ZM14 3v6h5M8 13h8M8 17h6",
-  members: "M14 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM3 20v-3a5 5 0 0 1 5-5h6a5 5 0 0 1 5 5v3ZM18 4a3 3 0 0 1 0 6M20 13a4 4 0 0 1 3 4v3",
-  signOut: "M9 4H3v16h6M8 12h14m-5-5 5 5-5 5",
-  check: "m5 12 4 4L19 6",
-  home: "m3 10 9-7 9 7v11h-6v-7H9v7H3V10Z",
-  search: "M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Zm-2 5 6 6",
-  edit: "m15 4 5 5M4 20l4-1L21 6l-5-5L3 14l-1 8 6-3",
-  trash: "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7",
-  plus: "M12 5v14M5 12h14",
-  arrow: "M5 12h14m-5-5 5 5-5 5",
-  menu: "M4 6h16M4 12h16M4 18h16",
-  sparkles: "m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z",
-};
+const menuIcons = { folder: Folder, account: User, workspace: Blocks, organization: Building2, settings: Settings2,
+  document: FileText, members: Users, signOut: LogOut, check: Check, home: Home, search: SearchIcon, edit: Pencil,
+  trash: Trash2, plus: Plus, arrow: ArrowRight, menu: Menu, sparkles: Sparkles, link: Link } satisfies Record<string, LucideIcon>;
 
-export function MenuIcon({ name }: { name: keyof typeof menuIconPaths }) {
-  return <svg className={`menu-icon${name === "check" ? " menu-check" : ""}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d={menuIconPaths[name]} />
-  </svg>;
+export function MenuIcon({ name }: { name: keyof typeof menuIcons }) {
+  const Icon = menuIcons[name];
+  return <Icon className={name === "check" ? "ml-auto size-4 text-primary" : "size-4 shrink-0"} strokeWidth={1.6} aria-hidden="true" />;
 }
 
 function SignOutButton() {
@@ -114,9 +97,9 @@ function SignOutButton() {
     }
   }
   return <>
-    <span className="nav-divider" />
-    <button disabled={pending} onClick={() => void signOut()}><MenuIcon name="signOut" />{pending ? uiText("Signing out…", "サインアウト中…") : uiText("Sign out", "サインアウト")}</button>
-    {error && <p className="sidebar-status" role="alert">{error}</p>}
+    <DropdownMenuSeparator />
+    <DropdownMenuItem disabled={pending} onSelect={() => void signOut()}><MenuIcon name="signOut" />{pending ? uiText("Signing out…", "サインアウト中…") : uiText("Sign out", "サインアウト")}</DropdownMenuItem>
+    {error && <p className="px-2 py-1 text-xs text-destructive" role="alert">{error}</p>}
   </>;
 }
 
@@ -132,71 +115,83 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
   const selectedWorkspaceId = selectedWorkspace?.workspaceId;
   const selectableWorkspaces = selectedWorkspace && !state.workspaces?.some((workspace) => workspace.workspaceId === selectedWorkspaceId)
     ? [selectedWorkspace, ...(state.workspaces ?? [])] : state.workspaces ?? [];
+  const currentPath = typeof window === "undefined" ? "" : window.location.pathname;
+  const homeActive = currentPath === "/dashboard";
+  const workspacesActive = currentPath === "/workspaces";
   useEffect(() => {
     if (selectedWorkspaceId) save(selectionKey, selectedWorkspaceId);
   }, [selectionKey, selectedWorkspaceId]);
-  return <aside className="sidebar">
-    <div className="sidebar-brand">{brand}</div>
-    <nav className="primary-navigation" aria-label={uiText("Library navigation", "ライブラリ")}>
-      <Tooltip label={uiText("Home", "ホーム")}><a href="/dashboard" aria-label={uiText("Home", "ホーム")} aria-current={typeof window !== "undefined" && window.location.pathname === "/dashboard" ? "page" : undefined}><MenuIcon name="home" /><span className="navigation-label">{uiText("Home", "ホーム")}</span></a></Tooltip>
-      {session.capabilities.sync && <Tooltip label={uiText("Workspaces", "ワークスペース")}><a href="/workspaces" aria-label={uiText("Workspaces", "ワークスペース")} aria-current={typeof window !== "undefined" && window.location.pathname === "/workspaces" ? "page" : undefined}><MenuIcon name="workspace" /><span className="navigation-label">{uiText("Workspaces", "ワークスペース")}</span></a></Tooltip>}
+  return <aside className="sidebar flex h-dvh min-w-0 flex-col gap-2 border-r bg-secondary p-3">
+    <div className="sidebar-brand flex h-9 items-center px-2">{brand}</div>
+    <nav className="primary-navigation flex items-center gap-1 px-1" aria-label={uiText("Library navigation", "ライブラリ")}>
+      <Tooltip label={uiText("Home", "ホーム")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${homeActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/dashboard" aria-label={uiText("Home", "ホーム")} aria-current={homeActive ? "page" : undefined}><MenuIcon name="home" /><span className={homeActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Home", "ホーム")}</span></a></Tooltip>
+      {session.capabilities.sync && <Tooltip label={uiText("Workspaces", "ワークスペース")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${workspacesActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/workspaces" aria-label={uiText("Workspaces", "ワークスペース")} aria-current={workspacesActive ? "page" : undefined}><MenuIcon name="workspace" /><span className={workspacesActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Workspaces", "ワークスペース")}</span></a></Tooltip>}
       {session.capabilities.sync && selectedWorkspaceId && <Search key={`${selectionKey}:${selectedWorkspaceId}`} workspaceId={selectedWorkspaceId} />}
     </nav>
-    {session.capabilities.sync && selectedWorkspace && <div className="workspace-switcher">
-      <span>{uiText("Current Workspace", "現在のワークスペース")}</span>
-      <button className="dropdown-trigger workspace-switcher-trigger" popoverTarget="workspace-menu" aria-label={uiText(`Current Workspace: ${selectedWorkspace.name}`, `現在のワークスペース: ${selectedWorkspace.name}`)}>
-        <AppearanceIcon appearance={collectionAppearance(selectedWorkspace, "workspace")} /><span>{selectedWorkspace.name}</span><Chevron expanded />
-      </button>
-      <nav id="workspace-menu" popover="auto" className="dropdown-menu workspace-picker" aria-label={uiText("Choose a Workspace", "ワークスペースを選択")}>
-        <strong>{uiText("Workspaces", "ワークスペース")}</strong>
-        {selectableWorkspaces.map((workspace) => <a className="dropdown-option" key={workspace.workspaceId} href={`/workspaces/${workspace.workspaceId}`} aria-current={selectedWorkspaceId === workspace.workspaceId ? "true" : undefined}>
-          <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><span>{workspace.name}</span>{selectedWorkspaceId === workspace.workspaceId && <MenuIcon name="check" />}
-        </a>)}
-      </nav>
+    {session.capabilities.sync && selectedWorkspace && <div className="workspace-switcher grid gap-1.5 px-1">
+      <span className="px-1 text-[11px] font-medium text-muted-foreground">{uiText("Current Workspace", "現在のワークスペース")}</span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild><button className="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-2.5 text-sm font-medium shadow-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring" aria-label={uiText(`Current Workspace: ${selectedWorkspace.name}`, `現在のワークスペース: ${selectedWorkspace.name}`)}>
+          <AppearanceIcon appearance={collectionAppearance(selectedWorkspace, "workspace")} /><span className="min-w-0 flex-1 truncate text-left">{selectedWorkspace.name}</span><Chevron expanded={false} />
+        </button></DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-58">
+          <DropdownMenuLabel>{uiText("Workspaces", "ワークスペース")}</DropdownMenuLabel>
+          {selectableWorkspaces.map((workspace) => <DropdownMenuItem asChild key={workspace.workspaceId}>
+            <a href={`/workspaces/${workspace.workspaceId}`} aria-current={selectedWorkspaceId === workspace.workspaceId ? "true" : undefined}>
+              <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><span className="min-w-0 flex-1 truncate">{workspace.name}</span>{selectedWorkspaceId === workspace.workspaceId && <MenuIcon name="check" />}
+            </a>
+          </DropdownMenuItem>)}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>}
-    <div className="sidebar-scroll">
-      {session.capabilities.sync && <nav className="workspace-navigation" aria-label={uiText("Project navigation", "プロジェクト")}>
-        <h2 className="workspace-heading">{uiText("Projects", "プロジェクト")}</h2>
+    <div className="sidebar-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
+      {session.capabilities.sync && <nav className="workspace-navigation mt-2" aria-label={uiText("Project navigation", "プロジェクト")}>
+        <h2 className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{uiText("Projects", "プロジェクト")}</h2>
         {state.error && <Failure message={state.error} retry={state.reload} />}
-        {!state.workspaces && !state.error && <p className="sidebar-status">Loading Workspaces…</p>}
-        {state.workspaces?.length === 0 && <p className="sidebar-status">{uiText("No Workspaces", "ワークスペースがありません")}</p>}
-        {selectedWorkspace && <WorkspaceChildren key={selectedWorkspace.workspaceId} workspaceId={selectedWorkspace.workspaceId}
-          resolvedMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned} />}
-        {Boolean(state.workspaces?.length) && !selectedWorkspace && <p className="sidebar-status">{uiText("Choose a Workspace from Workspaces", "ワークスペースから表示するワークスペースを選択してください")}</p>}
+        {!state.workspaces && !state.error && <p className="px-2 py-1 text-xs text-muted-foreground">Loading Workspaces…</p>}
+        {state.workspaces?.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">{uiText("No Workspaces", "ワークスペースがありません")}</p>}
+        {selectedWorkspace && <HoverPreviewProvider><WorkspaceChildren key={selectedWorkspace.workspaceId} workspaceId={selectedWorkspace.workspaceId}
+          resolvedMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned} /></HoverPreviewProvider>}
+        {Boolean(state.workspaces?.length) && !selectedWorkspace && <p className="px-2 py-1 text-xs text-muted-foreground">{uiText("Choose a Workspace from Workspaces", "ワークスペースから表示するワークスペースを選択してください")}</p>}
       </nav>}
-      {session.capabilities.admin ? <nav className="server-navigation" aria-label={uiText("Server settings", "サーバー設定")}>
-        <h2 className="section-label">{uiText("Server settings", "サーバー設定")}</h2>
+      {session.capabilities.admin ? <nav className="server-navigation mt-auto grid gap-0.5 pt-6" aria-label={uiText("Server settings", "サーバー設定")}>
+        <h2 className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{uiText("Server settings", "サーバー設定")}</h2>
         {([["/admin/orgs", "organization", uiText("Organizations", "組織管理")],
           ["/admin/users", "members", uiText("Users", "ユーザー管理")],
           ["/admin/settings", "settings", uiText("General settings", "全体設定")]] as const).map(([href, icon, label]) =>
-          <a key={href} href={href} aria-current={typeof window !== "undefined" && window.location.pathname === href ? "page" : undefined}><MenuIcon name={icon} /><span>{label}</span></a>)}
+          <a className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground aria-[current=page]:bg-accent aria-[current=page]:text-foreground" key={href} href={href} aria-current={typeof window !== "undefined" && window.location.pathname === href ? "page" : undefined}><MenuIcon name={icon} /><span>{label}</span></a>)}
         {serverLinks}
-      </nav> : session.capabilities.sharing && <nav className="server-navigation" aria-label={uiText("Organization settings", "組織設定")}>
-        <a href="/orgs" aria-current={typeof window !== "undefined" && (window.location.pathname === "/orgs" || window.location.pathname.startsWith("/orgs/")) ? "page" : undefined}><MenuIcon name="organization" /><span>{uiText("Organization settings", "組織設定")}</span></a>
+      </nav> : session.capabilities.sharing && <nav className="server-navigation mt-auto grid gap-0.5 pt-6" aria-label={uiText("Organization settings", "組織設定")}>
+        <a className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground aria-[current=page]:bg-accent" href="/orgs" aria-current={typeof window !== "undefined" && (window.location.pathname === "/orgs" || window.location.pathname.startsWith("/orgs/")) ? "page" : undefined}><MenuIcon name="organization" /><span>{uiText("Organization settings", "組織設定")}</span></a>
       </nav>}
     </div>
-    <div className="sidebar-footer">
-      <button ref={accountMenuTrigger} className="organization-switcher" popoverTarget="account-menu" aria-label={uiText(`Account menu: ${identity}`, `アカウントメニュー: ${identity}`)}>
+    <div className="sidebar-footer mt-auto border-t pt-2">
+      <DropdownMenu>
+      <DropdownMenuTrigger asChild><button ref={accountMenuTrigger} className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring" aria-label={uiText(`Account menu: ${identity}`, `アカウントメニュー: ${identity}`)}>
         <MenuIcon name="account" />
-        <span className="identity-copy"><strong>{identity}</strong></span>
+        <span className="min-w-0 flex-1 truncate text-left font-medium">{identity}</span>
         <svg className="account-menu-chevron" width="16" height="20" viewBox="0 0 16 20" aria-hidden="true">
           <path d="m5 6 3-3 3 3M5 14l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-      </button>
-      <div id="account-menu" popover="auto" className="organization-picker">
-        <a className="menu-account" href="/dashboard"><MenuIcon name="account" /><span>{identity}</span></a>
+      </button></DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" className="w-60">
+        <DropdownMenuItem asChild><a href="/dashboard"><MenuIcon name="account" /><span>{identity}</span></a></DropdownMenuItem>
         {session.capabilities.sharing && <>
-          <span className="nav-divider" />
-          <a href="/orgs" aria-current={typeof window !== "undefined" && (window.location.pathname === "/orgs" || window.location.pathname.startsWith("/orgs/")) ? "page" : undefined}><MenuIcon name="organization" /><span>{uiText("Organizations you belong to", "参加している組織")}</span></a>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild><a href="/orgs" aria-current={typeof window !== "undefined" && (window.location.pathname === "/orgs" || window.location.pathname.startsWith("/orgs/")) ? "page" : undefined}><MenuIcon name="organization" /><span>{uiText("Organizations you belong to", "参加している組織")}</span></a></DropdownMenuItem>
         </>}
-        <span className="nav-divider" />
+        <DropdownMenuSeparator />
         {children}
-        <button onClick={(event) => { event.currentTarget.closest<HTMLElement>("[popover]")?.hidePopover(); accountMenuTrigger.current?.focus(); setMcpDialogOpen(true); }}>
+        <DropdownMenuItem onSelect={() => { accountMenuTrigger.current?.focus(); setMcpDialogOpen(true); }}>
           <MenuIcon name="document" />{uiText("Connect with MCP", "MCP による接続")}
-        </button>
+        </DropdownMenuItem>
         {session.capabilities.sessions && <SignOutButton />}
-      </div>
-      {mcpDialogOpen && <MCPConnectionDialog onClose={() => setMcpDialogOpen(false)} />}
+      </DropdownMenuContent>
+      </DropdownMenu>
+      {mcpDialogOpen && <MCPConnectionDialog onClose={() => {
+        setMcpDialogOpen(false);
+        requestAnimationFrame(() => accountMenuTrigger.current?.focus());
+      }} />}
     </div>
   </aside>;
 }
@@ -214,17 +209,17 @@ function TreeNode({ id, name, href, initialOpen, children, appearance, project }
     setOpen(!open);
     save(key, String(!open));
   };
-  const row = (describedBy?: string) => <div className={`tree-row${active ? " active" : ""}`}>
-      <button className="tree-toggle" aria-label={`${open ? uiText("Collapse", "閉じる") : uiText("Expand", "展開")} ${name}`} aria-expanded={open} onClick={toggle}><Chevron expanded={open} /></button>
+  const row = (describedBy?: string) => <div className={`flex min-w-0 items-center rounded-md hover:bg-accent/70${active ? " bg-accent text-accent-foreground" : ""}`}>
+      <button className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${open ? uiText("Collapse", "閉じる") : uiText("Expand", "展開")} ${name}`} aria-expanded={open} onClick={toggle}><Chevron expanded={open} /></button>
       <AppearanceIcon appearance={appearance ?? { icon: "folder", color: "neutral" }} />
-      {href ? <a href={href} aria-describedby={describedBy} aria-current={active ? "page" : undefined}>{name}</a>
-        : <button className="tree-group" aria-expanded={open} onClick={toggle}>{name}</button>}
+      {href ? <a className="min-w-0 flex-1 truncate px-2 py-1.5 text-xs" href={href} aria-describedby={describedBy} aria-current={active ? "page" : undefined}>{name}</a>
+        : <button className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-xs" aria-expanded={open} onClick={toggle}>{name}</button>}
     </div>;
   return <li>
     {project ? <HoverPreview details={<>
-      <div className="meeting-preview-project"><AppearanceIcon appearance={appearance ?? { icon: "folder", color: "neutral" }} /><strong>{project.name}</strong></div>
-      <p>{uiText(`${project.subtreeMeetingCount ?? project.directMeetingCount ?? 0} meetings`, `${project.subtreeMeetingCount ?? project.directMeetingCount ?? 0}件のミーティング`)}</p>
-      {project.description && <p>{project.description}</p>}
+      <div className="flex items-center gap-2"><AppearanceIcon appearance={appearance ?? { icon: "folder", color: "neutral" }} /><strong>{project.name}</strong></div>
+      <p className="mt-2 text-sm text-muted-foreground">{uiText(`${project.subtreeMeetingCount ?? project.directMeetingCount ?? 0} meetings`, `${project.subtreeMeetingCount ?? project.directMeetingCount ?? 0}件のミーティング`)}</p>
+      {project.description && <p className="mt-2 text-sm text-muted-foreground">{project.description}</p>}
     </>}>{row}</HoverPreview> : row()}
     {open && children}
   </li>;
@@ -240,7 +235,7 @@ function WorkspaceChildren({ workspaceId, resolvedMeeting, routeMeetingOwned }: 
   const selectedMeeting = resolvedMeeting ?? meetingQuery.data;
   if (!projects) return projectsQuery.error
     ? <Failure message={projectsQuery.error.message} retry={projectsQuery.reload} />
-    : <p className="sidebar-status">{uiText("Loading Projects…", "プロジェクトを読み込み中…")}</p>;
+    : <p className="px-2 py-1 text-xs text-muted-foreground">{uiText("Loading Projects…", "プロジェクトを読み込み中…")}</p>;
   const ancestors = projectAncestors(projects, projectId ?? selectedMeeting?.projectId ?? undefined);
   const childrenByParent = new Map<string | undefined, SyncedProjectInfo[]>();
   for (const project of projects) {
@@ -252,7 +247,7 @@ function WorkspaceChildren({ workspaceId, resolvedMeeting, routeMeetingOwned }: 
   const projectsUnder = (parentId?: string): ReactNode => (childrenByParent.get(parentId) ?? []).map((project) => {
     const appearance = projectAppearance(project, projects.find((parent) => parent.projectId === project.parentProjectId));
     return <TreeNode project={project} key={project.projectId} id={`${workspaceId}:${project.projectId}`} name={project.name} appearance={appearance} href={`/projects/${project.projectId}`} initialOpen={ancestors.has(project.projectId)}>
-      <ul className="sidebar-tree">
+      <ul className="ml-3 grid list-none gap-0.5 p-0">
         {projectsUnder(project.projectId)}
         <Meetings workspaceId={workspaceId} projectId={project.projectId} projectName={project.name} appearance={appearance} selectedMeeting={selectedMeeting} />
       </ul>
@@ -261,12 +256,12 @@ function WorkspaceChildren({ workspaceId, resolvedMeeting, routeMeetingOwned }: 
   return <>
     {projectsQuery.error && <Failure message={projectsQuery.error.message} retry={projectsQuery.reload} />}
     {meetingQuery.error && <Failure message={meetingQuery.error.message} retry={meetingQuery.reload} />}
-    <ul className="sidebar-tree">
+    <ul className="grid list-none gap-0.5 p-0">
       {projectsUnder()}
     </ul>
-    <section className="unassigned-meetings" aria-labelledby="unassigned-heading">
-      <h2 id="unassigned-heading" className="workspace-heading">{uiText("Unassigned", "未分類")}</h2>
-      <ul className="sidebar-tree"><Meetings workspaceId={workspaceId} selectedMeeting={selectedMeeting} /></ul>
+    <section className="mt-3" aria-labelledby="unassigned-heading">
+      <h2 id="unassigned-heading" className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{uiText("Unassigned", "未分類")}</h2>
+      <ul className="grid list-none gap-0.5 p-0"><Meetings workspaceId={workspaceId} selectedMeeting={selectedMeeting} /></ul>
     </section>
   </>;
 }
@@ -290,14 +285,14 @@ function Meetings({ workspaceId, projectId, projectName, appearance, selectedMee
       const active = window.location.pathname === href;
       const meetingDate = meeting.recordingStartedAt ?? meeting.createdAt;
       return <MeetingHoverCard key={meeting.meetingId} meeting={meeting} projectName={projectName} appearance={appearance} active={active}>
-          <span>{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</span>
+          <span className="block truncate text-xs">{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</span>
           <RecordingIndicator isRecording={meeting.isRecording} />
-          <time dateTime={meetingDate}>{new Date(meetingDate).toLocaleString(undefined, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</time>
+          <time className="mt-1 block text-[10px] text-muted-foreground" dateTime={meetingDate}>{new Date(meetingDate).toLocaleString(undefined, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</time>
       </MeetingHoverCard>;
     })}
-    {loading && !query.data && <li className="sidebar-status">{uiText("Loading meetings…", "ミーティングを読み込み中…")}</li>}
+    {loading && !query.data && <li className="px-2 py-1 text-xs text-muted-foreground">{uiText("Loading meetings…", "ミーティングを読み込み中…")}</li>}
     {error && <li><Failure message={error} retry={query.reload} /></li>}
-    {query.data && !error && visibleMeetings.length === 0 && <li className="sidebar-status">{uiText("No meetings", "ミーティングがありません")}</li>}
-    {nextCursor && <li><button className="sidebar-action" disabled={query.loadingMore} onClick={query.loadMore}>{uiText("Show more", "さらに表示")}</button></li>}
+    {query.data && !error && visibleMeetings.length === 0 && <li className="px-2 py-1 text-xs text-muted-foreground">{uiText("No meetings", "ミーティングがありません")}</li>}
+    {nextCursor && <li><button className="px-2 py-1 text-xs text-primary hover:underline" disabled={query.loadingMore} onClick={query.loadMore}>{uiText("Show more", "さらに表示")}</button></li>}
   </>;
 }

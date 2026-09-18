@@ -1,18 +1,17 @@
-import { cloneElement, useId, useState, type ReactElement } from "react";
+import { type ReactElement } from "react";
+import { cn } from "./lib/utils";
+import { Tooltip as Root, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
 
 export function Tooltip({ label, shortcut, children, className = "" }: {
   label: string;
   shortcut?: string;
-  children: ReactElement<{ "aria-describedby"?: string }>;
+  children: ReactElement;
   className?: string;
 }) {
-  const id = useId();
-  const [dismissed, setDismissed] = useState(false);
-  return <span className={`tooltip ${className}`} data-dismissed={dismissed}
-    onPointerEnter={() => setDismissed(false)} onFocus={() => setDismissed(false)}
-    onKeyDown={(event) => { if (event.key === "Escape") setDismissed(true); }}
-    onClick={() => setDismissed(true)}>
-    {cloneElement(children, { "aria-describedby": [children.props["aria-describedby"], id].filter(Boolean).join(" ") })}
-    <span id={id} role="tooltip" className="tooltip-help">{label}{shortcut && <kbd>{shortcut}</kbd>}</span>
-  </span>;
+  return <TooltipProvider delayDuration={300} skipDelayDuration={100}>
+    <Root>
+      <TooltipTrigger asChild className={cn("inline-flex min-w-0", className)}>{children}</TooltipTrigger>
+      <TooltipContent side="bottom">{label}{shortcut && <kbd className="ml-2 text-background/70">{shortcut}</kbd>}</TooltipContent>
+    </Root>
+  </TooltipProvider>;
 }

@@ -31,7 +31,7 @@ window.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   if (path === "/api/v1/models") return Response.json(cloudflareModels(["gpt-4.1", "gemini-3-flash"]));
   if (path.endsWith("/transcripts/latest")) return Response.json({
     formatVersion: 1, version: transcriptVersion, entityId: "meeting", present: true, count: 1, byteCount: 10,
-    sha256: "test", entity: "transcript", syncRevision: transcriptVersion, transcript: {}, nextCursor: null,
+    sha256: "test", entity: "transcript", syncRevision: transcriptVersion, transcript: {}, hasText: true, nextCursor: null,
     items: [{ segmentId: "segment", startedAt: "2026-09-09T00:00:00Z", endedAt: null, text: "Transcript", createdAt: null,
       audioSource: null, speakerLabel: null }],
   });
@@ -61,46 +61,48 @@ async function select(label: string, value: string) {
   const trigger = field?.querySelector<HTMLButtonElement>('[role="combobox"]');
   assert(trigger, `Missing ${label} picker`);
   trigger.click();
-  await until(() => document.querySelector<HTMLButtonElement>(`[role="option"][value="${value}"]`));
-  document.querySelector<HTMLButtonElement>(`[role="option"][value="${value}"]`)!.click();
+  await until(() => document.querySelector('[data-slot="select-content"][data-state="open"]'));
+  [...document.querySelectorAll<HTMLElement>('[data-slot="select-content"][data-state="open"] [role="option"]')]
+    .find((option) => option.dataset.value === value)!.click();
 }
 async function start(count: number) {
   phase = `starting request ${count}`;
   await until(() => button() && !button()!.disabled);
   button()!.click();
-  await until(() => bodies.length === count && !button()!.disabled);
+  await until(() => bodies.length === count && button() && !button()!.disabled);
 }
 async function run() {
   createRoot(document.getElementById("root")!).render(<ServerSummaryGeneration workspaceId="workspace" meetingId="meeting" />);
-  await until(() => document.querySelector<HTMLButtonElement>(".summary-generation-trigger"));
-  document.querySelector<HTMLButtonElement>(".summary-generation-trigger")!.click();
-  const dialog = document.querySelector<HTMLDialogElement>("dialog")!;
-  await until(() => dialog.open);
+  await until(() => document.querySelector<HTMLButtonElement>('button[aria-label="Generate AI summary"]'));
+  document.querySelector<HTMLButtonElement>('button[aria-label="Generate AI summary"]')!.click();
+  await until(() => document.querySelector('[data-slot="dialog-content"]'));
+  const dialog = document.querySelector<HTMLElement>('[data-slot="dialog-content"]')!;
   dialog.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 2, clientX: 0, clientY: 0 }));
-  assert(dialog.open, "A trigger double-click must not close the dialog through its backdrop");
+  assert(dialog.isConnected, "A trigger double-click must not close the dialog through its backdrop");
   await until(() => document.querySelector<HTMLInputElement>('input[value="transcript"]')?.checked);
   const audioInput = document.querySelector<HTMLInputElement>('input[value="audio"]');
   assert(audioInput?.disabled, "Uploading audio must be disabled");
   assert(audioInput.closest("label")?.querySelectorAll("small").length === 1, "Unavailable reason must not change the card height");
-  assert(audioInput.closest(".tooltip")?.querySelector('[role="tooltip"]')?.textContent === "Some recording audio is still uploading.",
+  assert(audioInput.closest("label")?.getAttribute("aria-label") === "Some recording audio is still uploading.",
     "Unavailable reason must be shown as help");
   await select("Summary model", "gpt-4.1");
   const effort = [...document.querySelectorAll("label")].find((node) => node.childNodes[0]?.textContent === "Reasoning effort")
     ?.querySelector<HTMLButtonElement>('[role="combobox"]');
-  assert(effort?.value === "", "Changing models must reset reasoning effort to Automatic");
+  assert(effort?.dataset.value === "__dahlia_empty__", "Changing models must reset reasoning effort to Automatic");
   effort.click();
-  const effortMenu = document.getElementById(effort.getAttribute("aria-controls")!);
-  const effortDefault = effortMenu?.querySelector<HTMLButtonElement>('[role="option"][value="__default"]');
-  assert(effortDefault?.disabled,
+  await until(() => document.querySelector('[data-slot="select-content"][data-state="open"]'));
+  const effortMenu = document.querySelector('[data-slot="select-content"][data-state="open"]');
+  const effortDefault = effortMenu?.querySelector<HTMLElement>('[role="option"][data-value="__default"]');
+  assert(effortDefault?.getAttribute("aria-disabled") === "true",
     "A reasoning-effort default must stay paired with its Workspace model");
-  effortMenu?.querySelector<HTMLButtonElement>('[role="option"][value=""]')?.click();
+  effortMenu?.querySelector<HTMLElement>('[role="option"][data-value=""]')?.click();
   await start(1);
   const first = bodies[0];
   assert(first, "First request was not captured");
   assert("input" in first && first.input.type === "transcript" && first.input.version === "1",
     "Latest transcript was not preferred");
-  assert("preferences" in first && first.preferences.processing.remote.summaryModel === "gpt-4.1"
-    && first.preferences.processing.remote.reasoningEffort === undefined,
+  assert("preferences" in first && first.preferences.processing.remote.transcriptSummaryModel === "gpt-4.1"
+    && first.preferences.processing.remote.transcriptSummaryReasoningEffort === undefined,
   "Changing models must not send the Workspace reasoning effort");
   transcriptVersion = 2; reject = false;
   await start(2);
@@ -129,11 +131,11 @@ async function run() {
   await select("Reasoning effort", "high");
   document.querySelector<HTMLInputElement>('input[value="transcript"]')!.click();
   assert([...document.querySelectorAll("label")].find((node) => node.childNodes[0]?.textContent === "Reasoning effort")
-    ?.querySelector<HTMLButtonElement>('[role="combobox"]')?.value === "__default", "Changing sources must reset the model-effort pair");
+    ?.querySelector<HTMLButtonElement>('[role="combobox"]')?.dataset.value === "__default", "Changing sources must reset the model-effort pair");
   await start(5);
   const switchedRequest = bodies[4]!;
-  assert("preferences" in switchedRequest && switchedRequest.preferences.processing.remote.summaryModel === undefined
-    && switchedRequest.preferences.processing.remote.reasoningEffort === undefined,
+  assert("preferences" in switchedRequest && switchedRequest.preferences.processing.remote.transcriptSummaryModel === undefined
+    && switchedRequest.preferences.processing.remote.transcriptSummaryReasoningEffort === undefined,
   "An audio effort must not leak into transcript generation");
   document.getElementById("result")!.textContent = "PASS: source selection, paired defaults, rejected refresh, and uncertain replay";
 }

@@ -44,11 +44,13 @@ async function until(predicate: () => unknown) {
   const deadline = performance.now() + 5000;
   while (!predicate()) { if (performance.now() > deadline) throw new Error("Timed out"); await new Promise(requestAnimationFrame); }
 }
-const pickers = () => [...document.querySelectorAll<HTMLButtonElement>('.sharing-results [role="combobox"]')];
+const pickers = () => [...document.querySelectorAll<HTMLButtonElement>('[data-slot="dialog-content"] [role="combobox"]')];
+const pickerValue = (picker: HTMLButtonElement) => picker.dataset.value === "__dahlia_empty__" ? "" : picker.dataset.value;
 const choose = async (picker: HTMLButtonElement, role: string) => {
-  await until(() => document.getElementById(picker.getAttribute("aria-controls")!));
   picker.click();
-  document.getElementById(picker.getAttribute("aria-controls")!)!.querySelector<HTMLButtonElement>(`button[value="${role}"]`)!.click();
+  await until(() => document.querySelector('[data-slot="select-content"][data-state="open"]'));
+  [...document.querySelectorAll<HTMLElement>('[data-slot="select-content"][data-state="open"] [role="option"]')]
+    .find((option) => option.dataset.value === role)!.click();
 };
 async function run() {
   const workspace: SyncedWorkspaceInfo = { meetingDeletionGraceDays: 7, generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS, workspaceId: "workspace", organizationId: "org", organizationName: "Example Org", name: "Shared", role: "admin", revision: 1,
@@ -57,15 +59,13 @@ async function run() {
     capabilities: { admin: false, sessions: false, sharing: true, sync: true } }}><WorkspaceSharing workspace={workspace} /></SidebarProvider>;
   const root = createRoot(document.getElementById("root")!);
   root.render(fixture);
-  await until(() => document.querySelector(".collection-heading button"));
-  const opener = document.querySelector<HTMLButtonElement>(".collection-heading button")!;
+  await until(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "共有先を追加"));
+  const opener = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "共有先を追加")!;
   opener.focus(); opener.click();
-  await until(() => document.querySelector("dialog")?.open);
-  assert(document.querySelector("dialog")?.open, "Button opens native modal");
-  assert(!document.querySelector(".sharing-dialog form"), "Direct ID sharing is still visible");
+  await until(() => document.querySelector('[data-slot="dialog-content"]'));
   const search = document.querySelector<HTMLInputElement>('input[type="search"]')!;
   assert(pickers().length === 0 && targetReads === 0, "Targets load before a search is entered");
-  assert(document.querySelector(".sharing-results > .muted")?.textContent, "Empty search guidance is missing");
+  assert(document.querySelector('[data-slot="dialog-content"]')?.textContent?.includes("名前またはメールアドレスを入力"), "Empty search guidance is missing");
   assert(document.activeElement === search, "Search receives focus");
   assert(search.getAttribute("aria-label"), "Search has an accessible name");
   const searchFor = (value: string) => {
@@ -74,36 +74,36 @@ async function run() {
   };
   searchFor("example");
   await until(() => pickers().length === 52);
-  const iconPaths = [...document.querySelectorAll(".sharing-results .share-row > svg path")].map((path) => path.getAttribute("d"));
+  const iconPaths = pickers().map((picker) => picker.parentElement?.querySelector(":scope > svg path")?.getAttribute("d"));
   assert(new Set(iconPaths).size === 3, "Organizations, teams, and users have distinct icons");
   searchFor("nothing matches");
-  await until(() => document.querySelector('.sharing-results > .muted[role="status"]'));
+  await until(() => document.querySelector('[data-slot="dialog-content"] [role="status"]'));
   assert(pickers().length === 0, "No-result search kept stale targets");
   searchFor("Repeated team");
   await new Promise(requestAnimationFrame);
   assert(pickers().length === 0, "Results from the previous search remain actionable during debounce");
   await until(() => pickers().length === 50 && !pickers()[0]!.disabled);
-  document.querySelector<HTMLButtonElement>(".sharing-results > button")!.click();
+  [...document.querySelectorAll<HTMLButtonElement>('[data-slot="dialog-content"] button')].find((button) => button.textContent === "さらに表示")!.click();
   await until(() => pickers().length === 51 && !pickers().at(-1)!.disabled);
-  assert(pickers().at(-1)!.value === "viewer", "Existing grant beyond first page is visible");
+  assert(pickerValue(pickers().at(-1)!) === "viewer", "Existing grant beyond first page is visible");
   await choose(pickers().at(-1)!, "");
-  await until(() => pickers().at(-1)!.value === "" && !pickers().at(-1)!.disabled);
+  await until(() => pickerValue(pickers().at(-1)!) === "" && !pickers().at(-1)!.disabled);
   assert(!grants.has("team50"), "Grant beyond first page can be revoked");
   searchFor("yuki@");
   await until(() => pickers().length === 1 && !pickers()[0]!.disabled);
   for (const role of ["viewer", "editor", "admin"]) {
     await choose(pickers()[0]!, role);
     await until(() => grants.get("user") === role && !pickers()[0]!.disabled);
-    assert(pickers()[0]!.value === role, "Selected role is persisted");
+    assert(pickerValue(pickers()[0]!) === role, "Selected role is persisted");
   }
   fail = true; await choose(pickers()[0]!, "");
   await until(() => document.querySelector('[role="alert"]') && !pickers()[0]!.disabled);
-  assert(pickers()[0]!.value === "admin" && grants.has("user"), "Failed revoke preserves existing access");
+  assert(pickerValue(pickers()[0]!) === "admin" && grants.has("user"), "Failed revoke preserves existing access");
   fail = false; await choose(pickers()[0]!, "");
-  await until(() => pickers()[0]!.value === "" && !pickers()[0]!.disabled);
+  await until(() => pickerValue(pickers()[0]!) === "" && !pickers()[0]!.disabled);
   assert(!grants.has("user"), "Retry revokes direct user grant");
-  document.querySelector<HTMLButtonElement>(".dialog-footer button")!.click();
-  await until(() => !document.querySelector("dialog")?.open);
+  [...document.querySelectorAll<HTMLButtonElement>('[data-slot="dialog-content"] button')].find((button) => button.textContent === "完了")!.click();
+  await until(() => !document.querySelector('[data-slot="dialog-content"]'));
   assert(document.activeElement === opener, "Closing restores focus");
   document.getElementById("result")!.textContent = "PASS: initial Personal, saved all-Workspace scope, modal, focus, org/team/user search, 51 identical targets, all three roles, revoke beyond first page, failed revoke/retry";
 }

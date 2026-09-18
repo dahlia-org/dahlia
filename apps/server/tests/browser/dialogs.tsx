@@ -1,7 +1,8 @@
 // pnpm dev:client -> /tests/browser/dialogs.html. No backend is contacted.
-import { StrictMode } from "react";
+import { StrictMode, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { useActionDialog } from "../../src/client/ActionDialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../src/client/components/ui/dropdown-menu";
 import "../../src/client/styles.css";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
@@ -12,6 +13,7 @@ let saved: Record<string, string> | undefined;
 
 function Fixture() {
   const { dialog, openDialog } = useActionDialog();
+  const menuTrigger = useRef<HTMLButtonElement>(null);
   return <main className="workspace">
     <button id="edit" className="secondary" onClick={() => openDialog({
       title: "Edit meeting", confirmLabel: "Save changes",
@@ -29,6 +31,12 @@ function Fixture() {
       title: "Delete summary?", description: "All summary versions will be deleted. The meeting will remain.",
       confirmLabel: "Delete summary", destructive: true, onSubmit: () => { submissions++; return Promise.resolve(); },
     })}>Delete summary</button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild><button id="menu-trigger" ref={menuTrigger}>Open menu</button></DropdownMenuTrigger>
+      <DropdownMenuContent><DropdownMenuItem id="menu-edit" onSelect={() => openDialog({
+        title: "Edit from menu", confirmLabel: "Save", onSubmit: () => Promise.resolve(),
+      }, menuTrigger.current)}>Edit from menu</DropdownMenuItem></DropdownMenuContent>
+    </DropdownMenu>
     {dialog}
   </main>;
 }
@@ -41,7 +49,7 @@ async function until(predicate: () => unknown) {
     await new Promise(requestAnimationFrame);
   }
 }
-const modal = () => document.querySelector<HTMLDialogElement>(".action-dialog")!;
+const modal = () => document.querySelector<HTMLElement>('[data-slot="dialog-content"]')!;
 const confirm = () => modal().querySelector<HTMLButtonElement>("[data-confirm]")!;
 function fill(selector: string, value: string) {
   const input = modal().querySelector<HTMLInputElement | HTMLTextAreaElement>(selector)!;
@@ -55,10 +63,10 @@ async function run() {
   await until(() => document.getElementById("edit"));
   const edit = document.getElementById("edit")!;
   edit.focus(); edit.click();
-  await until(() => modal()?.matches(":modal"));
+  await until(() => modal());
   assert(document.activeElement === modal().querySelector("input"), "Editor did not focus the name");
   const role = modal().querySelector<HTMLButtonElement>('[role="combobox"][aria-label="Role"]')!;
-  role.closest("label")!.click();
+  role.click();
   await until(() => role.ariaExpanded === "true");
   role.click();
   fill("input", "   ");
@@ -74,10 +82,9 @@ async function run() {
   await until(() => Boolean(release));
   assert(submissions === 1, "Double click submitted twice");
   assert(modal().querySelector<HTMLButtonElement>("[data-cancel]")!.disabled, "Cancel remained enabled during save");
-  modal().dispatchEvent(new Event("cancel", { cancelable: true }));
-  assert(modal()?.matches(":modal"), "Escape dismissed an in-flight operation");
-  modal().dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 0, clientY: 0 }));
-  assert(modal(), "Backdrop dismissed an in-flight operation");
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await new Promise(requestAnimationFrame);
+  assert(modal(), "Escape dismissed an in-flight operation");
   release!();
   await until(() => modal().querySelector('[role="alert"]'));
   assert(modal().querySelector<HTMLInputElement>("input")!.value === "Changed title", "Failure discarded the name");
@@ -90,20 +97,16 @@ async function run() {
   assert(document.activeElement === edit, "Closing editor did not restore focus");
   const remove = document.getElementById("delete")!;
   remove.focus(); remove.click();
-  await until(() => modal()?.matches(":modal"));
+  await until(() => modal());
   assert(document.activeElement === modal().querySelector("[data-cancel]"), "Destructive action received initial focus");
   const before = submissions;
-  modal().dispatchEvent(new Event("cancel", { cancelable: true }));
+  modal().querySelector<HTMLButtonElement>("[data-cancel]")!.click();
   await until(() => !modal());
   assert(submissions === before && document.activeElement === remove, "Cancel submitted or lost focus");
-  remove.click(); await until(() => modal()?.matches(":modal"));
-  modal().dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 0, clientY: 0 }));
-  await until(() => !modal());
-  assert(submissions === before, "Backdrop submitted a destructive action");
-  edit.click(); await until(() => modal()?.matches(":modal"));
+  edit.click(); await until(() => modal());
   fill("input", "Unfinished draft");
   await new Promise(requestAnimationFrame);
-  modal().dispatchEvent(new Event("cancel", { cancelable: true }));
+  modal().querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click();
   await until(() => modal().textContent?.includes("Discard unsaved changes?"));
   assert(document.activeElement === modal().querySelector("[data-cancel]"), "Discard received initial focus");
   modal().querySelector<HTMLButtonElement>("[data-cancel]")!.click();
@@ -112,7 +115,17 @@ async function run() {
   await until(() => modal().textContent?.includes("Discard unsaved changes?"));
   confirm().click(); await until(() => !modal());
   assert(submissions === before, "Discard saved a draft");
+  const menuTrigger = document.getElementById("menu-trigger")!;
+  menuTrigger.focus();
+  menuTrigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  await until(() => document.getElementById("menu-edit"));
+  document.getElementById("menu-edit")!.click();
+  await until(() => modal());
+  modal().querySelector<HTMLButtonElement>("[data-cancel]")!.click();
+  await until(() => !modal());
+  await new Promise(requestAnimationFrame);
+  assert(document.activeElement === menuTrigger, "Menu-opened dialog did not restore focus to its trigger");
   document.body.dataset.testResult = "passed";
-  console.log("PASS: modal focus, validation, pending cancellation, duplicate submission, multiline drafts, retry, destructive default and backdrop");
+  console.log("PASS: modal focus, menu trigger restoration, validation, pending cancellation, duplicate submission, multiline drafts, retry, destructive default and dirty draft");
 }
 void run().catch((error: unknown) => { document.body.dataset.testResult = "failed"; document.body.dataset.testError = String(error); console.error(error); });

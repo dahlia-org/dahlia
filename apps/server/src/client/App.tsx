@@ -19,7 +19,7 @@ import { ServerSummaryGeneration, ServerSummarySettings } from "./SummaryGenerat
 import { RecordingIndicator } from "./RecordingIndicator";
 import { liveDataEvent, refreshData, subscribeLiveUpdates, useLiveJSON, useLivePage } from "./live-data";
 import { createAuthClient } from "better-auth/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 
 import {
   isCoreDashboardPath,
@@ -27,11 +27,20 @@ import {
   shouldRedirectToSignIn,
   type DashboardCapabilities,
 } from "./routes";
-import { dashboardNavigationEvent, dashboardNavigationPath, navigateDashboard } from "./navigation";
+import { navigateDashboard } from "./navigation";
 import { canWriteWorkspace, workspaceRoleLabel, clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedWorkspaceInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedProjectInfo } from "./api";
 import { DetailTabs, MeetingTabs, parseSummary, SummaryTags } from "./MeetingContent";
 import { FileDialog, FileLink, FileViewer } from "./FileViewer";
-import { MenuIcon, Sidebar, SidebarProvider, useSidebar } from "./Sidebar";
+import { MenuIcon, useSidebar } from "./Sidebar";
+import { Tooltip } from "./Tooltip";
+import { Button } from "./components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "./components/ui/hover-card";
+import { ChevronRight, MoreHorizontal } from "lucide-react";
+import { Input } from "./components/ui/input";
+import { AppShell, PageHeader } from "./layout/AppShell";
+import { Checkbox } from "./components/ui/checkbox";
 
 export interface SessionInfo {
   capabilities: DashboardCapabilities;
@@ -354,98 +363,6 @@ function Consent({ brand }: { brand: DashboardBrand }) {
   );
 }
 
-function Shell({
-  brand,
-  children,
-  extensions,
-  session,
-  path,
-  navigate,
-  routeWorkspaceId,
-  routeMeeting,
-  routeMeetingOwned,
-}: {
-  brand: DashboardBrand;
-  children: ReactNode;
-  extensions: readonly DashboardExtension[];
-  session: SessionInfo;
-  path: string;
-  navigate: (path: string) => void;
-  routeWorkspaceId?: string;
-  routeMeeting?: SyncedMeetingInfo;
-  routeMeetingOwned?: boolean;
-}) {
-  const main = useRef<HTMLElement>(null);
-  const navigation = useRef<HTMLDialogElement>(null);
-  const attachNavigation = useCallback((element: HTMLDialogElement | null) => {
-    navigation.current = element;
-    if (element && !window.matchMedia("(max-width: 820px)").matches) element.show();
-  }, []);
-  const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 820px)").matches);
-  useEffect(() => {
-    const media = window.matchMedia("(max-width: 820px)");
-    const update = () => {
-      navigation.current?.close();
-      setCompact(media.matches);
-      if (!media.matches) navigation.current?.show();
-    };
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
-  useEffect(() => {
-    if (navigation.current?.matches(":modal")) navigation.current.close();
-    main.current?.focus({ preventScroll: true });
-    window.scrollTo(0, 0);
-  }, [path]);
-  useEffect(() => {
-    const closeNavigation = () => {
-      if (navigation.current?.matches(":modal")) navigation.current.close();
-    };
-    window.addEventListener(dashboardNavigationEvent, closeNavigation);
-    return () => window.removeEventListener(dashboardNavigationEvent, closeNavigation);
-  }, []);
-  const followLink = (event: MouseEvent<HTMLDivElement>) => {
-    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    const link = event.target instanceof Element ? event.target.closest("a") : null;
-    if (!link || !link.hasAttribute("href") || link.hasAttribute("download") || (link.target && link.target !== "_self")) return;
-    const next = dashboardNavigationPath(link.href, window.location.href, extensions.flatMap((extension) => extension.routes?.map((route) => route.path) ?? []));
-    if (!next) return;
-    event.preventDefault();
-    link.closest<HTMLElement>("[popover]")?.hidePopover();
-    navigate(next);
-  };
-  return (
-    <SidebarProvider key={session.user.id} session={session}>
-      <div className="app-shell" onClick={followLink}>
-        <a className="skip-link" href="#main-content">{uiText("Skip to content", "本文へ移動")}</a>
-        <header className="mobile-header">
-          <button className="icon-button" aria-label={uiText("Open navigation", "ナビゲーションを開く")} aria-controls="primary-navigation" onClick={() => navigation.current?.showModal()}><MenuIcon name="menu" /></button>
-          <Brand brand={brand} />
-        </header>
-        <dialog ref={attachNavigation} id="primary-navigation" className="sidebar-container" aria-label={compact ? uiText("Navigation", "ナビゲーション") : undefined} role={compact ? "dialog" : "presentation"}
-          onClick={(event) => { if (event.target === event.currentTarget && compact) event.currentTarget.close(); }}>
-        <button className="icon-button navigation-close" aria-label={uiText("Close navigation", "ナビゲーションを閉じる")} onClick={() => navigation.current?.close()}>×</button>
-        <Sidebar brand={<Brand brand={brand} />} session={session} routeWorkspaceId={routeWorkspaceId} routeMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned}
-          serverLinks={extensions.flatMap((extension) => extension.navigation ?? []).filter(isServerNavigation).map((item) =>
-            (!item.capability || session.capabilities[item.capability]) && <a key={item.path} href={item.path}><MenuIcon name="settings" />{item.label}</a>)}>
-          <nav aria-label={uiText("Account navigation", "アカウント")}>
-            <a className={path === "/dashboard/settings" ? "active" : ""} href="/dashboard/settings">
-              <MenuIcon name="settings" />{uiText("Account settings", "アカウント設定")}
-            </a>
-          </nav>
-        </Sidebar>
-        </dialog>
-        <main id="main-content" className="workspace" key={path} ref={main} tabIndex={-1}>{children}</main>
-      </div>
-    </SidebarProvider>
-  );
-}
-
-function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
-  return <header className="page-header"><div><h1>{title}</h1>{description && <p>{description}</p>}</div>{actions}</header>;
-}
-
 function Overview({ session }: { session: SessionInfo }) {
   if (session.capabilities.sync) return <Workspaces home />;
   return (
@@ -491,15 +408,15 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
     <>
       {dialog}
       <PageHeader title={uiText("Account settings", "アカウント設定")} description={uiText("Applies to every workspace in this account and syncs across your devices.", "このアカウントのすべてのワークスペースに適用され、ほかの端末にも同期されます。")} />
-      <section className="section-block settings-section">
-        <h2 className="section-label">{uiText("Account", "アカウント")}</h2>
+      <section className="section-block">
+        <h2 className="section-label text-[15px] font-semibold text-foreground">{uiText("Account", "アカウント")}</h2>
         <div className="panel account-card"><dl className="account-details">
           <div><dt>{uiText("Name", "名前")}</dt><dd>{session.user.name || "—"}</dd></div>
           <div><dt>{uiText("Email address", "メールアドレス")}</dt><dd>{session.user.email || "—"}</dd></div>
         </dl></div>
       </section>
       {extensions.flatMap((extension) => extension.navigation ?? []).filter((item) => !isServerNavigation(item)).map((item) =>
-        (!item.capability || session.capabilities[item.capability]) && <a className="text-link" key={item.path} href={item.path}><MenuIcon name="document" />{item.label}</a>)}
+        (!item.capability || session.capabilities[item.capability]) && <a className="inline-flex items-center gap-2 py-3 text-[13px] font-medium text-primary hover:underline" key={item.path} href={item.path}><MenuIcon name="document" />{item.label}</a>)}
       {sessionsEnabled && <section className="section-block">
         <h2 className="section-label">{uiText("Active sessions", "接続中のセッション")}</h2>
         <div className="panel sessions-panel">
@@ -515,7 +432,7 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
                 <span>{uiText("Connected", "接続日時")} {new Date(session.createdAt).toLocaleString()}</span>
               </div>
               <div className="row-actions">
-                {session.current && <span className="status good">{uiText("Current", "現在")}</span>}
+                {session.current && <span className="inline-block rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700">{uiText("Current", "現在")}</span>}
                 <button className="secondary danger-button" onClick={() => revoke(session)}>{uiText("Revoke", "解除")}</button>
               </div>
             </div>
@@ -570,7 +487,7 @@ export function Workspaces({ home = false }: { home?: boolean }) {
         <p>{uiText("Create a Workspace, then connect it in Dahlia for macOS to bring your meeting notes, transcripts and screenshots here.", "ワークスペースを作成して macOS 版 Dahlia で接続すると、ミーティングの要約・文字起こし・スクリーンショットをここで閲覧できます。")}</p>
       </div>}
       <div className="workspace-grid">{workspaces?.map((workspace) => <a className="workspace-card" href={`/workspaces/${workspace.workspaceId}`} key={workspace.workspaceId}>
-          <div className="workspace-card-top"><span className="workspace-symbol"><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} size={22} /></span><span className={`status${workspace.role === "admin" ? "" : " shared"}`}>{workspaceRoleLabel(workspace.role)}</span></div>
+          <div className="workspace-card-top"><span className="workspace-symbol"><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} size={22} /></span><span className={`inline-block rounded-full px-2 py-1 text-[11px] font-bold capitalize ${workspace.role === "admin" ? "bg-muted text-muted-foreground" : "bg-accent text-primary"}`}>{workspaceRoleLabel(workspace.role)}</span></div>
           <h3>{workspace.name}</h3>
           <span className="workspace-organization-badge" role="img" aria-label={uiText(`Organization: ${workspace.organizationName}`, `組織: ${workspace.organizationName}`)} title={workspace.organizationName}><MenuIcon name="organization" /><span>{workspace.organizationName}</span></span>
           <div className="workspace-card-bottom"><span>{uiText("Updated", "更新日")} {new Date(workspace.updatedAt ?? workspace.createdAt).toLocaleDateString()}</span><MenuIcon name="arrow" /></div>
@@ -584,7 +501,7 @@ export function Workspaces({ home = false }: { home?: boolean }) {
       </div>
       <DataError error={recent.error} retry={recent.reload} />
       <MeetingList meetings={recent.data?.items.slice(0, 10)} loading={recent.loading} />
-      <a className="text-link" href={`/workspaces/${recentWorkspace.workspaceId}`}>{uiText("View all meetings", "すべてのミーティングを見る")} <MenuIcon name="arrow" /></a>
+      <a className="inline-flex items-center gap-2 py-3 text-[13px] font-medium text-primary hover:underline" href={`/workspaces/${recentWorkspace.workspaceId}`}>{uiText("View all meetings", "すべてのミーティングを見る")} <MenuIcon name="arrow" /></a>
     </section>}
   </>;
 }
@@ -647,7 +564,7 @@ function meetingCount(count: number) { return uiText(`${count} meeting${count ==
 export function MeetingList({ meetings, loading, filtered = false, onClear }: { meetings?: SyncedMeetingInfo[]; loading: boolean; filtered?: boolean; onClear?: () => void }) {
   return <div className="collection-list" aria-busy={loading}>
     {!meetings && loading && <p className="content-empty" role="status">{uiText("Loading meetings…", "ミーティングを読み込み中…")}</p>}
-    {meetings?.length === 0 && <div className="welcome-empty compact-empty">
+    {meetings?.length === 0 && <div className="welcome-empty border-0 bg-transparent px-5 py-10">
       <span className="empty-symbol"><MenuIcon name={filtered ? "search" : "document"} /></span>
       <h2>{filtered ? uiText("No matching meetings", "条件に一致するミーティングがありません") : uiText("No meetings yet", "ミーティングはまだありません")}</h2>
       <p>{filtered ? uiText("Try a different title or clear your filters.", "別のタイトルで検索するか、絞り込みを解除してください。") : uiText("Meetings synced from Dahlia for macOS will appear here.", "macOS 版 Dahlia から同期されたミーティングがここに表示されます。")}</p>
@@ -709,13 +626,14 @@ export function WorkspaceTrash({ workspace }: { workspace: SyncedWorkspaceInfo }
 
 export function WorkspaceMeetings({ session, workspaceId }: { session: SessionInfo; workspaceId: string }) {
   const { dialog, openDialog } = useActionDialog();
+  const { organizations, workspaces } = useSidebar();
   const workspaceQuery = useLiveJSON<SyncedWorkspaceInfo>(apiQuery("getWorkspace", { params: { path: { workspaceId: workspaceId } } }));
   const workspace = workspaceQuery.data;
-  const { organizations } = useSidebar();
   const personal = organizations?.some((organization) => organization.id === workspace?.organizationId && organization.kind === "personal");
   const [recovering, setRecovering] = useState(false);
   const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { workspaceId: workspaceId } } }));
   const projects = workspace ? projectsQuery.data?.items ?? [] : [];
+  const workspaceOptions = workspaceBreadcrumbOptions(workspaces, workspaceId, projectBreadcrumbOptions(projects));
   const [query, setQuery] = useState("");
   const [projectId, setProjectId] = useState("");
   useEffect(() => {
@@ -775,7 +693,9 @@ export function WorkspaceMeetings({ session, workspaceId }: { session: SessionIn
   });
   return <article className="meeting-detail collection-detail" aria-busy={!workspace && workspaceQuery.loading}>
     {workspace && <header className="meeting-header">
-      <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}><a href="/workspaces">{uiText("All Workspaces", "ワークスペース一覧")}</a></nav>
+      <BreadcrumbHeader segments={[{ current: true, label: workspace.name,
+        icon: <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} />,
+        menuLabel: uiText("Workspaces", "ワークスペース"), options: workspaceOptions }]} />
       <h1><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} size={28} />{workspace.name}</h1>
       <div className="meeting-metadata"><span className="metadata-chip">{workspaceRoleLabel(workspace.role)}</span></div>
     </header>}
@@ -825,15 +745,20 @@ export function WorkspaceMeetings({ session, workspaceId }: { session: SessionIn
 
 function SyncedProject({ workspaceId, projectId, resolvedProject }: { workspaceId: string; projectId: string; resolvedProject?: SyncedProjectInfo }) {
   const { dialog, openDialog } = useActionDialog();
+  const { workspaces } = useSidebar();
   const workspaceQuery = useLiveJSON<SyncedWorkspaceInfo>(apiQuery("getWorkspace", { params: { path: { workspaceId: workspaceId } } }));
   const workspace = workspaceQuery.data;
   const [recovering, setRecovering] = useState(false);
   const projectQuery = useLiveJSON<SyncedProjectInfo>(resolvedProject ? undefined : apiQuery("getProject", { params: { path: { projectId: projectId } } }));
   const project = workspace ? resolvedProject ?? projectQuery.data : undefined;
-  const parentQuery = useLiveJSON<SyncedProjectInfo>(project?.parentProjectId ? apiQuery("getProject", { params: { path: { projectId: project.parentProjectId } } }) : undefined);
+  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { workspaceId } } }));
+  const projects = projectsQuery.data?.items ?? [];
+  const parentProject = projects.find((item) => item.projectId === project?.parentProjectId);
   const meetingFilters = { projectId };
   const meetingsQuery = useLivePage<SyncedMeetingInfo>(apiQuery("listMeetings", { params: { path: { workspaceId }, query: meetingFilters } }));
   const meetings = project ? meetingsQuery.data?.items : undefined;
+  const projectOptions = projectBreadcrumbOptions(projects, undefined, { projectId, meetings });
+  const workspaceOptions = workspaceBreadcrumbOptions(workspaces, workspaceId, projectOptions);
   const nextCursor = meetingsQuery.data?.nextCursor;
   const loadingMore = meetingsQuery.loadingMore;
   const editProject = () => {
@@ -843,12 +768,29 @@ function SyncedProject({ workspaceId, projectId, resolvedProject }: { workspaceI
       fields: [
         { name: "name", label: uiText("Project name", "プロジェクト名"), value: project.name, required: true },
         { name: "description", label: uiText("Description", "説明"), value: project.description, multiline: true },
-        { name: "appearance", label: uiText("Appearance", "見た目"), appearance: project.parentProjectId ? "inherited" : "editable", value: JSON.stringify(projectAppearance(project, parentQuery.data)) },
+        { name: "appearance", label: uiText("Appearance", "見た目"), appearance: project.parentProjectId ? "inherited" : "editable", value: JSON.stringify(projectAppearance(project, parentProject)) },
       ],
       onSubmit: async ({ name, description, appearance }) => {
         await commitSyncTransaction(workspaceId, [{ entity: "project", action: "update", entityId: projectId, baseRevision: project.revision,
           data: { ...(!project.parentProjectId ? JSON.parse(appearance!) as Appearance : {}), parentProjectId: project.parentProjectId ?? null, name: name!.trim(), description: description ?? "",
             projectType: project.parentProjectId ? null : project.projectType ?? "undefined" } }], setRecovering);
+      },
+    });
+  };
+  const createSubproject = () => {
+    if (!project || project.parentProjectId) return;
+    openDialog({
+      title: uiText("New Subproject", "サブプロジェクトを作成"), confirmLabel: uiText("Create Subproject", "サブプロジェクトを作成"),
+      description: uiText(`Create a Subproject in “${project.name}”.`, `「${project.name}」内にサブプロジェクトを作成します。`),
+      fields: [
+        { name: "name", label: uiText("Subproject name", "サブプロジェクト名"), required: true },
+        { name: "description", label: uiText("Description", "説明"), multiline: true },
+      ],
+      onSubmit: async ({ name, description }) => {
+        const id = encodeId("project", uuidV7());
+        await commitSyncTransaction(workspaceId, [{ entity: "project", action: "create", entityId: id, baseRevision: null,
+          data: { parentProjectId: projectId, name: name!.trim(), description: description ?? "", projectType: null, createdAt: new Date().toISOString() } }], setRecovering);
+        navigateDashboard(`/projects/${id}`);
       },
     });
   };
@@ -867,11 +809,18 @@ function SyncedProject({ workspaceId, projectId, resolvedProject }: { workspaceI
   };
   return <article className="meeting-detail collection-detail">
     <header className="meeting-header">
-      <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}>
-        <a href={`/workspaces/${workspaceId}`}>{workspace?.name ?? uiText("Workspace", "ワークスペース")}</a>
-        {project?.parentProjectId && <><span aria-hidden="true">/</span><a href={`/projects/${project.parentProjectId}`}>{parentQuery.data?.name ?? uiText("Parent Project", "親プロジェクト")}</a></>}
-      </nav>
-      <h1><AppearanceIcon appearance={projectAppearance(project, parentQuery.data)} size={28} />{project?.name ?? uiText("Project", "プロジェクト")}</h1>
+      {project && <BreadcrumbHeader segments={[
+        { href: `/workspaces/${workspaceId}`, label: workspace?.name ?? uiText("Workspace", "ワークスペース"),
+          icon: <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} />,
+          menuLabel: uiText("Workspaces", "ワークスペース"), options: workspaceOptions },
+        ...(parentProject ? [{ href: `/projects/${parentProject.projectId}`, label: parentProject.name,
+          icon: <AppearanceIcon appearance={projectAppearance(parentProject)} />,
+          menuLabel: uiText("Projects", "プロジェクト"), options: projectOptions }] : []),
+        { current: true, label: project.name, icon: <AppearanceIcon appearance={projectAppearance(project, parentProject)} />,
+          menuLabel: parentProject ? uiText(`Projects in ${parentProject.name}`, `${parentProject.name} 内のプロジェクト`) : uiText("Projects", "プロジェクト"),
+          options: projectBreadcrumbOptions(projects, project.parentProjectId ?? undefined, { projectId, meetings }) },
+      ]} />}
+      <h1><AppearanceIcon appearance={projectAppearance(project, parentProject)} size={28} />{project?.name ?? uiText("Project", "プロジェクト")}</h1>
       {project?.description && <p className="project-description">{project.description}</p>}
       {project && <div className="meeting-metadata"><span className="metadata-chip">{meetingCount(project.subtreeMeetingCount ?? 0)}</span></div>}
     </header>
@@ -879,7 +828,12 @@ function SyncedProject({ workspaceId, projectId, resolvedProject }: { workspaceI
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
     <DataError error={workspaceQuery.error} retry={workspaceQuery.reload} />
     <DataError error={projectQuery.error} retry={projectQuery.reload} />
-    <DetailTabs label={uiText("Project content", "プロジェクトの内容")} tabs={[
+    <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
+    <DetailTabs label={uiText("Project content", "プロジェクトの内容")}
+      actions={project && !project.parentProjectId && canWriteWorkspace(workspace?.role)
+        ? <Button variant="outline" size="sm" onClick={createSubproject}><MenuIcon name="plus" />{uiText("New Subproject", "サブプロジェクトを作成")}</Button>
+        : undefined}
+      tabs={[
       { id: "meetings", label: uiText("Meetings", "ミーティング"), content: <>
         <DataError error={meetingsQuery.error} retry={meetingsQuery.reload} />
         <MeetingList meetings={meetings} loading={meetingsQuery.loading} />
@@ -961,8 +915,86 @@ function MeetingScreenshots({ meetingId }: { meetingId: string }) {
   </>;
 }
 
+type BreadcrumbOption = { href: string; icon?: ReactNode; label: string; current?: boolean; children?: BreadcrumbOption[]; childrenLabel?: string };
+type BreadcrumbSegment = Omit<BreadcrumbOption, "children" | "childrenLabel" | "href"> & { href?: string; menuLabel: string; options: BreadcrumbOption[] };
+
+function workspaceBreadcrumbOptions(workspaces: SyncedWorkspaceInfo[] | undefined, workspaceId: string, children: BreadcrumbOption[]): BreadcrumbOption[] {
+  return (workspaces ?? []).map((workspace) => ({
+    href: `/workspaces/${workspace.workspaceId}`,
+    icon: <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} />,
+    label: workspace.name,
+    current: workspace.workspaceId === workspaceId,
+    children: workspace.workspaceId === workspaceId ? children : undefined,
+    childrenLabel: uiText(`Projects in ${workspace.name}`, `${workspace.name} のプロジェクト`),
+  }));
+}
+
+export function projectBreadcrumbOptions(projects: SyncedProjectInfo[], parentId?: string, context: {
+  meetings?: SyncedMeetingInfo[];
+  meetingId?: string;
+  projectId?: string;
+} = {}): BreadcrumbOption[] {
+  return projects.filter((item) => (item.parentProjectId ?? undefined) === parentId).map((item) => {
+    const children = projectBreadcrumbOptions(projects, item.projectId, context);
+    if (item.projectId === context.projectId) children.push(...(context.meetings ?? []).map((meeting) => ({
+      href: `/meetings/${meeting.meetingId}`, icon: <MenuIcon name="document" />,
+      label: meeting.name || uiText("Untitled meeting", "無題のミーティング"), current: meeting.meetingId === context.meetingId,
+    })));
+    return { href: `/projects/${item.projectId}`,
+      icon: <AppearanceIcon appearance={projectAppearance(item, projects.find((parent) => parent.projectId === item.parentProjectId))} />,
+      label: item.name, current: item.projectId === context.projectId, children,
+      childrenLabel: uiText(`Contents of ${item.name}`, `${item.name} の内容`) };
+  });
+}
+
+function BreadcrumbOptions({ options, label, nested = false }: { options: BreadcrumbOption[]; label: string; nested?: boolean }) {
+  return <nav className={nested ? "breadcrumb-submenu" : "grid gap-0.5"} aria-label={label}>{options.map((option) => <div className="breadcrumb-menu-item" key={option.href}>
+    <a className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-accent aria-[current=page]:bg-accent" aria-current={option.current ? "page" : undefined} href={option.href}>
+      {option.icon}<span className="min-w-0 flex-1 truncate">{option.label}</span>{Boolean(option.children?.length) && <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
+    </a>
+    {Boolean(option.children?.length) && <BreadcrumbOptions nested options={option.children!} label={option.childrenLabel ?? option.label} />}
+  </div>)}</nav>;
+}
+
+function BreadcrumbSwitcher({ label, href, icon, menuLabel, options, current = false }: {
+  label: string;
+  href?: string;
+  icon?: ReactNode;
+  menuLabel: string;
+  options: BreadcrumbOption[];
+  current?: boolean;
+}) {
+  const triggerClass = "inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+  const trigger = href
+    ? <a className={triggerClass} href={href}>{icon}<span className="truncate">{label}</span></a>
+    : <button type="button" className={triggerClass} aria-current={current ? "page" : undefined}>{icon}<span className="truncate">{label}</span></button>;
+  if (!options.length) return trigger;
+  return <HoverCard openDelay={300} closeDelay={150}>
+    <HoverCardTrigger asChild>{trigger}</HoverCardTrigger>
+    <HoverCardContent align="start" className="w-[min(260px,calc(100vw-24px))] p-1">
+      <p className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground">{menuLabel}</p>
+      <BreadcrumbOptions options={options} label={menuLabel} />
+    </HoverCardContent>
+  </HoverCard>;
+}
+
+function BreadcrumbHeader({ segments, actions }: { segments: BreadcrumbSegment[]; actions?: ReactNode }) {
+  return <div className="relative -top-6 left-1/2 mb-6 flex h-9 w-[calc(100vw-240px)] -translate-x-1/2 items-center gap-3 px-4 max-md:w-screen">
+    <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-visible whitespace-nowrap" aria-label={uiText("Breadcrumbs", "パンくず")}>
+      {segments.map((segment, index) => <span className="contents" key={`${segment.href ?? "current"}:${segment.label}`}>
+        {index > 0 && <span className="text-xs text-muted-foreground" aria-hidden="true">/</span>}
+        <BreadcrumbSwitcher {...segment} />
+      </span>)}
+    </nav>
+    {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
+  </div>;
+}
+
 export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { workspaceId: string; meetingId: string; resolvedMeeting?: SyncedMeetingInfo }) {
   const { dialog, openDialog } = useActionDialog();
+  const optionsTrigger = useRef<HTMLButtonElement>(null);
+  const summaryRestoreFocus = useRef<HTMLElement | null>(null);
+  const { workspaces } = useSidebar();
   const meetingQuery = useLiveJSON<SyncedMeetingInfo>(resolvedMeeting ? undefined : apiQuery("getMeeting", { params: { path: { meetingId } } }));
   const workspaceQuery = useLiveJSON<SyncedWorkspaceInfo>(apiQuery("getWorkspace", { params: { path: { workspaceId: workspaceId } } }));
   const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { workspaceId: workspaceId } } }));
@@ -975,7 +1007,16 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { wor
   const currentSummary = latestSummary.data?.record;
   const document = useMemo(() => parseSummary(currentSummary?.document ?? undefined), [currentSummary?.document]);
   const project = projectsQuery.data?.items.find((item) => item.projectId === meeting?.projectId);
-  const editMeeting = () => {
+  const parentProject = projectsQuery.data?.items.find((item) => item.projectId === project?.parentProjectId);
+  const meetingFilters = meeting?.projectId ? { projectId: meeting.projectId, projectScope: "direct" as const } : { projectScope: "unassigned" as const };
+  const siblingMeetings = useLivePage<SyncedMeetingInfo>(meeting ? apiQuery("listMeetings", { params: { path: { workspaceId }, query: meetingFilters } }) : undefined);
+  const projects = projectsQuery.data?.items ?? [];
+  const meetingBreadcrumbOptions: BreadcrumbOption[] = (siblingMeetings.data?.items ?? []).map((item) => ({ href: `/meetings/${item.meetingId}`,
+    icon: <MenuIcon name="document" />, label: item.name || uiText("Untitled meeting", "無題のミーティング"), current: item.meetingId === meetingId }));
+  const projectOptions = projectBreadcrumbOptions(projects, undefined, { projectId: project?.projectId, meetingId, meetings: siblingMeetings.data?.items });
+  const workspaceOptions = workspaceBreadcrumbOptions(workspaces, workspaceId, projectOptions);
+  const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
+  const editMeeting = (restoreFocus?: HTMLElement | null) => {
     if (!meeting) return;
     openDialog({
       title: uiText("Edit Meeting", "ミーティングを編集"), confirmLabel: uiText("Save changes", "変更を保存"),
@@ -988,9 +1029,9 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { wor
           data: { projectId: meeting.projectId ?? null, name: name!.trim(), description: description ?? "", status: meeting.status,
             duration: meeting.duration ?? null, recordingStartedAt: meeting.recordingStartedAt ?? null, updatedAt: new Date().toISOString() } }], setRecovering);
       },
-    });
+    }, restoreFocus);
   };
-  const deleteMeeting = () => {
+  const deleteMeeting = (restoreFocus?: HTMLElement | null) => {
     if (!meeting || !workspace) return;
     openDialog({ title: uiText("Move meeting to trash?", "ミーティングをごみ箱に移動しますか？"),
       description: uiText(`“${meeting.name}” will be eligible for permanent deletion after ${workspace.meetingDeletionGraceDays} days. Restore it from this Workspace's trash before cleanup.`, `「${meeting.name}」は${workspace.meetingDeletionGraceDays}日後に完全削除の対象となります。削除処理前であれば、ワークスペースのごみ箱から復旧できます。`),
@@ -999,25 +1040,51 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { wor
         await commitSyncTransaction(workspaceId, [{ entity: "meeting", action: "delete", entityId: meetingId, baseRevision: meeting.revision, data: {} }], setRecovering);
         navigateDashboard(`/workspaces/${workspaceId}`);
       },
-    });
+    }, restoreFocus);
   };
   return (
-    <article className="meeting-detail" aria-busy={!meeting && (meetingQuery.loading || workspaceQuery.loading)}>
-      {meeting && <header className="meeting-header">
-        <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}>
-          <a href={`/workspaces/${workspaceId}`}><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} />{workspace?.name ?? uiText("Workspace", "ワークスペース")}</a>
-          {project && <><span aria-hidden="true">/</span><a href={`/projects/${project.projectId}`}>{project.path}</a></>}
-        </nav>
-        <div className="meeting-title-row"><h1>{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</h1>
-          {canWriteWorkspace(workspace?.role) && <ServerSummaryGeneration key={meetingId} meetingId={meetingId} workspaceId={meeting.workspaceId} />}
-        </div>
-        <div className="meeting-metadata">
+    <article className="mx-auto max-w-[720px]" aria-busy={!meeting && (meetingQuery.loading || workspaceQuery.loading)}>
+      {meeting && <header className="mb-6">
+        <BreadcrumbHeader segments={[
+            { label: workspace?.name ?? uiText("Workspace", "ワークスペース"), href: `/workspaces/${workspaceId}`,
+              icon: <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} />,
+              menuLabel: uiText("Workspaces", "ワークスペース"), options: workspaceOptions },
+            ...(parentProject ? [{ label: parentProject.name, href: `/projects/${parentProject.projectId}`,
+              icon: <AppearanceIcon appearance={projectAppearance(parentProject)} />,
+              menuLabel: uiText("Projects", "プロジェクト"), options: projectOptions }] : []),
+            ...(project ? [{ label: project.name, href: `/projects/${project.projectId}`,
+              icon: <AppearanceIcon appearance={projectAppearance(project, parentProject)} />,
+              menuLabel: parentProject ? uiText(`Projects in ${parentProject.name}`, `${parentProject.name} 内のプロジェクト`) : uiText("Projects", "プロジェクト"),
+              options: projectBreadcrumbOptions(projects, project.parentProjectId ?? undefined, { projectId: project.projectId, meetingId, meetings: siblingMeetings.data?.items }) }] : []),
+            { current: true, label: meeting.name || uiText("Untitled meeting", "無題のミーティング"),
+              menuLabel: project ? uiText(`Meetings in ${project.name}`, `${project.name} 内のミーティング`) : uiText("Unassigned meetings", "未分類のミーティング"),
+              options: meetingBreadcrumbOptions },
+          ]} actions={<>
+            <Tooltip label={uiText("Copy link", "リンクをコピーします")}>
+              <Button variant="ghost" size="icon" aria-label={uiText("Copy meeting link", "ミーティングのリンクをコピー")} onClick={() => void navigator.clipboard.writeText(window.location.href)}><MenuIcon name="link" /></Button>
+            </Tooltip>
+            {canWriteWorkspace(workspace?.role) && <DropdownMenu>
+              <Tooltip label={uiText("Meeting options", "ミーティングのオプション")}><DropdownMenuTrigger asChild>
+                <Button ref={optionsTrigger} variant="ghost" size="icon" className="data-[state=open]:bg-accent" aria-label={uiText("Meeting actions", "ミーティングの操作")}><MoreHorizontal className="size-4" /></Button>
+              </DropdownMenuTrigger></Tooltip>
+              <DropdownMenuContent align="end" sideOffset={6} className="w-[256px] max-w-[calc(100vw-16px)] rounded-xl border-border/80 p-1.5 shadow-lg">
+                <DropdownMenuItem className="min-h-8 rounded-lg px-2.5 text-[13px]" disabled={!currentSummary} onSelect={() => { summaryRestoreFocus.current = optionsTrigger.current; setSummaryDialogOpen(true); }}><MenuIcon name="sparkles" />{uiText("Regenerate summary", "要約を再生成")}</DropdownMenuItem>
+                <DropdownMenuItem className="min-h-8 rounded-lg px-2.5 text-[13px]" onSelect={() => editMeeting(optionsTrigger.current)}><MenuIcon name="edit" />{uiText("Edit Meeting", "ミーティングを編集")}</DropdownMenuItem>
+                <DropdownMenuSeparator className="-mx-0.5 my-1.5" />
+                <DropdownMenuItem className="min-h-8 rounded-lg px-2.5 text-[13px] text-destructive focus:text-destructive" onSelect={() => deleteMeeting(optionsTrigger.current)}><MenuIcon name="trash" />{uiText("Move to trash", "ごみ箱に移動")}</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>}
+          </>} />
+        {canWriteWorkspace(workspace?.role) && <ServerSummaryGeneration key={meetingId} meetingId={meetingId}
+          workspaceId={meeting.workspaceId} open={summaryDialogOpen} onOpenChange={setSummaryDialogOpen} restoreFocus={summaryRestoreFocus.current} hasSummary={Boolean(currentSummary)} showTrigger={false} />}
+        <h1 className="mb-4 break-words text-[28px] font-semibold leading-snug tracking-tight max-sm:text-2xl">{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</h1>
+        <div className="flex flex-wrap gap-1.5">
           <RecordingIndicator isRecording={meeting.isRecording} />
           <span className="metadata-chip"><time dateTime={meeting.recordingStartedAt ?? meeting.createdAt}>
             {new Date(meeting.recordingStartedAt ?? meeting.createdAt).toLocaleString(undefined, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
           </time>{meeting.duration != null && <> · {Math.floor(meeting.duration / 60)}:{String(Math.floor(meeting.duration % 60)).padStart(2, "0")}</>}</span>
           {meeting.projectId ? <a className="metadata-chip" href={`/projects/${meeting.projectId}`}>
-            <span aria-hidden="true">▱</span>{project?.path ?? uiText("Project", "プロジェクト")}
+            <AppearanceIcon appearance={projectAppearance(project, parentProject)} size={14} />{project?.path ?? uiText("Project", "プロジェクト")}
           </a> : <span className="metadata-chip">{uiText("Unassigned", "未分類")}</span>}
           <SummaryTags document={document} />
         </div>
@@ -1029,13 +1096,6 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { wor
       <DataError error={workspaceQuery.error} retry={workspaceQuery.reload} />
       <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
       {meeting && <MeetingTabs
-        actions={canWriteWorkspace(workspace?.role) && <div className="meeting-actions">
-          <button className="action-trigger" aria-label={uiText("Meeting actions", "ミーティングの操作")} popoverTarget="meeting-actions"><span aria-hidden="true">⋯</span>{" "}<span className="action-label">{uiText("Actions", "操作")}</span></button>
-          <div id="meeting-actions" popover="auto" className="action-menu">
-            <button onClick={editMeeting}>{uiText("Edit Meeting", "ミーティングを編集")}</button>
-            <button className="danger-button" onClick={deleteMeeting}>{uiText("Move to trash", "ごみ箱に移動")}</button>
-          </div>
-        </div>}
         summary={<>
           <DataError error={latestSummary.error} retry={latestSummary.reload} />
           <SummaryHistory key={meetingId} meetingId={meetingId} latest={latestSummary.data} selected={selectedSummary} onSelect={setSelectedSummary} />
@@ -1069,7 +1129,7 @@ export function ScreenshotFigure({ file, capturedAt, onOpen }: {
       />}
     </FileLink>
     {failed && <button className="secondary" onClick={() => setFailed(false)}>{uiText("Retry", "再試行")}</button>}
-    {capturedAt && <time className="screenshot-time" dateTime={capturedAt}>{new Date(capturedAt).toLocaleTimeString()}</time>}
+    {capturedAt && <time className="mt-3 block text-xs text-muted-foreground" dateTime={capturedAt}>{new Date(capturedAt).toLocaleTimeString()}</time>}
     {(file.metadata.caption || file.metadata.ocrText) && <figcaption>{file.metadata.caption || file.metadata.ocrText}</figcaption>}
     <a href={original} download>{uiText("Download original", "原本をダウンロード")}</a>
   </figure>;
@@ -1117,8 +1177,8 @@ function OrganizationWorkspaces({ organization }: { organization: OrganizationIn
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
     {query.data?.items.map((workspace) => <div className="row" key={workspace.workspaceId}>
       {workspaces?.some(({ workspaceId }) => workspaceId === workspace.workspaceId)
-        ? <a className="workspace-governance-identity" href={`/workspaces/${workspace.workspaceId}`}><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><strong>{workspace.name}</strong></a>
-        : <div className="workspace-governance-identity"><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><strong>{workspace.name}</strong></div>}
+        ? <a className="flex min-w-0 flex-1 items-center gap-2 hover:text-primary hover:underline" href={`/workspaces/${workspace.workspaceId}`}><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><strong>{workspace.name}</strong></a>
+        : <div className="flex min-w-0 flex-1 flex-row items-center gap-2"><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><strong>{workspace.name}</strong></div>}
       {organization.kind === "team" && <button className="secondary danger-button" onClick={() => void confirm(workspace.workspaceId)}>{uiText("Delete", "削除")}</button>}
     </div>)}
     {query.data?.items.length === 0 && <p>{uiText("No Workspaces", "ワークスペースがありません")}</p>}
@@ -1437,9 +1497,9 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
       <DetailTabs label={uiText("Organization content", "組織の内容")} tabs={[
         ...(canGovern ? [{ id: "workspaces", label: uiText("Workspace governance", "ワークスペース管理"), content: <OrganizationWorkspaces organization={organization} /> }] : []),
         { id: "members", label: <>{uiText("Members", "メンバー")}{members && <> <span className="org-count">{members.length}</span></>}</>, content: <>
-          <div className="org-section-header org-member-toolbar">
+          <div className="org-section-header flex-row items-center gap-3 max-sm:flex-col max-sm:items-start">
             {members && members.length > 0 && <input className="org-search" type="search" aria-label={uiText("Find members", "メンバーを検索")} placeholder={uiText("Search by name or email", "名前・メールアドレスで検索")} value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} />}
-            {canManage && <button className="primary" onClick={invite}><MenuIcon name="plus" />{uiText("Invite member", "メンバーを招待")}</button>}
+            {canManage && <button className="primary ml-auto max-sm:ml-0" onClick={invite}><MenuIcon name="plus" />{uiText("Invite member", "メンバーを招待")}</button>}
             {!personal && currentRole && <button className="secondary danger-button" onClick={leaveOrganization}>{uiText("Leave", "脱退")}</button>}
           </div>
           {visibleMembers?.length === 0 && <p className="empty-state">{uiText("No matching members.", "該当するメンバーはいません。")}</p>}
@@ -1491,11 +1551,10 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
               {canManage && members?.map((member) => (
                 <label className="share-row" key={`${team.id}-${member.userId}`}>
                   <span><strong>{member.user.name || member.user.email}</strong><small>{member.user.email}</small></span>
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     disabled={!canManage}
                     checked={teamMemberIds[team.id]?.has(member.userId) === true}
-                    onChange={(event) => void setTeamMember(team, member.userId, event.target.checked)}
+                    onCheckedChange={(checked) => void setTeamMember(team, member.userId, checked === true)}
                   />
                 </label>
               ))}
@@ -1505,8 +1564,8 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
           ))}
         </> },
         { id: "settings", label: uiText("Settings", "設定"), content: <div className="org-settings">
-          <section className="org-settings-info" aria-label={uiText("General", "基本情報")}>
-            <h3>{uiText("General", "基本情報")}</h3>
+          <section aria-label={uiText("General", "基本情報")}>
+            <h3 className="pb-3">{uiText("General", "基本情報")}</h3>
             <dl className="org-settings-fields">
               <div>
                 <dt>{uiText("Organization name", "組織名")}</dt>
@@ -1534,7 +1593,7 @@ export function Organization({ session, organizationId }: { session: SessionInfo
   const organization = query.data?.find((item) => item.id === organizationId);
   return <>
     <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}>
-      <a className="text-link" href="/orgs">{uiText("Your organizations", "所属組織")}</a>
+      <a className="inline-flex items-center gap-1.5" href="/orgs">{uiText("Your organizations", "所属組織")}</a>
     </nav>
     {organization && <PageHeader title={organization.name} />}
     <DataError error={query.error} retry={query.reload} />
@@ -1680,7 +1739,7 @@ function Invitation({ invitationId }: { invitationId: string }) {
   return (
     <>
       <PageHeader title={uiText("Organization invitation", "組織への招待")} />
-      <section className="panel invitation-card">
+      <section className="panel max-w-[620px] [&>h2]:m-0 [&>h2]:text-base [&>p]:text-[13px] [&>p]:leading-6 [&>p]:text-muted-foreground">
         {!invitation && !error && <p className="muted" role="status">{uiText("Loading invitation…", "招待を読み込み中…")}</p>}
         {invitation && (
           <>
@@ -1699,7 +1758,6 @@ function Invitation({ invitationId }: { invitationId: string }) {
 }
 
 function OrganizationCreateDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const dialog = useRef<HTMLDialogElement>(null);
   const [ownerOffset, setOwnerOffset] = useState(0);
   const [ownerSearch, setOwnerSearch] = useState("");
   const [ownerQuery, setOwnerQuery] = useState("");
@@ -1711,15 +1769,6 @@ function OrganizationCreateDialog({ onClose, onCreated }: { onClose: () => void;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
 
-  useEffect(() => {
-    const previous = document.activeElement;
-    const element = dialog.current!;
-    element.showModal();
-    return () => {
-      element.close();
-      if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true });
-    };
-  }, []);
   useEffect(() => {
     const items = owners.data?.items;
     if (items) setOwnerId((current) => items.some((owner) => owner.id === current) ? current : "");
@@ -1740,15 +1789,15 @@ function OrganizationCreateDialog({ onClose, onCreated }: { onClose: () => void;
     }
   }
 
-  return <dialog ref={dialog} className="action-dialog" aria-labelledby="organization-create-title"
-    onCancel={(event) => { event.preventDefault(); if (!pending) onClose(); }}>
-    <form onSubmit={(event) => void submit(event)} aria-busy={pending}>
-      <header className="dialog-header">
-        <div><span className="dialog-symbol" aria-hidden="true"><MenuIcon name="organization" /></span><h2 id="organization-create-title">{uiText("Create organization", "組織を新規作成")}</h2></div>
-        <button type="button" className="icon-button" aria-label={uiText("Close", "閉じる")} disabled={pending} onClick={onClose}>×</button>
-      </header>
-      <div className="dialog-body">
-        <label className="dialog-field"><span>{uiText("Initial owner", "初期オーナー")}</span>
+  return <Dialog open onOpenChange={(value) => { if (!value && !pending) onClose(); }}>
+    <DialogContent onEscapeKeyDown={(event) => { if (pending) event.preventDefault(); }} onPointerDownOutside={(event) => { if (pending) event.preventDefault(); }}>
+    <form className="grid gap-5" onSubmit={(event) => void submit(event)} aria-busy={pending}>
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2"><MenuIcon name="organization" />{uiText("Create organization", "組織を新規作成")}</DialogTitle>
+        <DialogDescription>{uiText("Create an organization and assign its initial owner.", "組織を作成し、初期オーナーを割り当てます。")}</DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-4">
+        <label className="grid gap-1.5 text-xs font-medium text-muted-foreground"><span>{uiText("Initial owner", "初期オーナー")}</span>
           <Select aria-label={uiText("Initial owner", "初期オーナー")} value={ownerId} placeholder={uiText("Choose an owner", "オーナーを選択")} disabled={pending} onValueChange={setOwnerId}
             emptyMessage={!owners.loading ? uiText("No matching users.", "該当するユーザーはいません。") : undefined}
             search={{ value: ownerSearch, placeholder: uiText("Search by name or email", "名前・メールアドレスで検索"), onValueChange: (value) => { setOwnerSearch(value); setOwnerOffset(0); } }}>
@@ -1756,41 +1805,44 @@ function OrganizationCreateDialog({ onClose, onCreated }: { onClose: () => void;
           </Select>
         </label>
         <DataError error={owners.error} retry={owners.reload} />
-        {(ownerOffset > 0 || owners.data?.hasMore) && <div className="row-actions">
-          <button type="button" className="secondary" disabled={pending || owners.loading || ownerOffset === 0} onClick={() => setOwnerOffset(ownerOffset - 100)}>{uiText("Previous", "前へ")}</button>
-          <button type="button" className="secondary" disabled={pending || owners.loading || !owners.data?.hasMore} onClick={() => setOwnerOffset(ownerOffset + 100)}>{uiText("Next", "次へ")}</button>
+        {(ownerOffset > 0 || owners.data?.hasMore) && <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" size="sm" disabled={pending || owners.loading || ownerOffset === 0} onClick={() => setOwnerOffset(ownerOffset - 100)}>{uiText("Previous", "前へ")}</Button>
+          <Button type="button" variant="outline" size="sm" disabled={pending || owners.loading || !owners.data?.hasMore} onClick={() => setOwnerOffset(ownerOffset + 100)}>{uiText("Next", "次へ")}</Button>
         </div>}
-        <label className="dialog-field"><span>{uiText("Name", "名前")}</span><input name="name" required disabled={pending} value={name} onChange={(event) => { setName(event.target.value); if (!slugEdited) setSlug(organizationSlugFromName(event.target.value)); }} /></label>
-        <label className="dialog-field"><span>slug</span><input name="slug" required pattern={organizationSlugPattern.source} disabled={pending} value={slug} onChange={(event) => { setSlug(event.target.value); setSlugEdited(true); }} /></label>
-        {error && <p className="dialog-error" role="alert">{error}</p>}
+        <label className="grid gap-1.5 text-xs font-medium text-muted-foreground"><span>{uiText("Name", "名前")}</span><Input name="name" required disabled={pending} value={name} onChange={(event) => { setName(event.target.value); if (!slugEdited) setSlug(organizationSlugFromName(event.target.value)); }} /></label>
+        <label className="grid gap-1.5 text-xs font-medium text-muted-foreground"><span>slug</span><Input name="slug" required pattern={organizationSlugPattern.source} disabled={pending} value={slug} onChange={(event) => { setSlug(event.target.value); setSlugEdited(true); }} /></label>
+        {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
       </div>
-      <footer className="dialog-footer">
-        <span className="dialog-status" role="status">{pending ? uiText("Creating organization…", "組織を作成中…") : ""}</span>
-        <button type="button" className="secondary" disabled={pending} onClick={onClose}>{uiText("Cancel", "キャンセル")}</button>
-        <button className="primary" data-confirm disabled={pending || owners.loading || !ownerId}>{pending ? uiText("Please wait…", "処理中…") : uiText("Create organization", "組織を新規作成")}</button>
-      </footer>
+      <DialogFooter>
+        <span className="mr-auto self-center text-xs text-muted-foreground" role="status">{pending ? uiText("Creating organization…", "組織を作成中…") : ""}</span>
+        <Button type="button" variant="outline" disabled={pending} onClick={onClose}>{uiText("Cancel", "キャンセル")}</Button>
+        <Button data-confirm disabled={pending || owners.loading || !ownerId}>{pending ? uiText("Please wait…", "処理中…") : uiText("Create organization", "組織を新規作成")}</Button>
+      </DialogFooter>
     </form>
-  </dialog>;
+    </DialogContent>
+  </Dialog>;
 }
 
 function AdminDirectory({ kind }: { kind: "users" | "organizations" }) {
   const [offset, setOffset] = useState(0);
   const [creating, setCreating] = useState(false);
+  const createTrigger = useRef<HTMLButtonElement>(null);
   const query = useLiveJSON<{ items: (ServerUserRecord | ServerOrganizationRecord)[]; hasMore: boolean }>(kind === "users" ? apiQuery("listServerUsers", { params: { query: { offset: String(offset) } } }) : apiQuery("listServerOrganizations", { params: { query: { offset: String(offset) } } }));
   const organizations = kind === "organizations";
+  const closeCreate = () => { setCreating(false); requestAnimationFrame(() => createTrigger.current?.focus()); };
 
   return <>
-    {organizations && creating && <OrganizationCreateDialog onClose={() => setCreating(false)} onCreated={() => { setCreating(false); query.reload(); }} />}
+    {organizations && creating && <OrganizationCreateDialog onClose={closeCreate} onCreated={() => { closeCreate(); query.reload(); }} />}
     <PageHeader title={organizations ? uiText("Organization management", "組織管理") : uiText("User management", "ユーザー管理")}
       description={organizations ? uiText("Organizations on this server, including those you have not joined.", "所属していない組織を含む、サーバー内の組織です。") : uiText("All users registered on this server.", "このサーバーに登録されているすべてのユーザーです。")}
-      actions={organizations && <button className="primary" onClick={() => setCreating(true)}><MenuIcon name="plus" />{uiText("Create organization", "組織を新規作成")}</button>} />
+      actions={organizations && <button ref={createTrigger} className="primary" onClick={() => setCreating(true)}><MenuIcon name="plus" />{uiText("Create organization", "組織を新規作成")}</button>} />
     <section className="section-block">
       <DataError error={query.error} retry={query.reload} />
       {query.loading && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
       {query.data && <><div className="admin-directory-scroll"><table className={`admin-directory${organizations ? " org-directory" : ""}`}>
         <thead><tr><th>{uiText("Name", "名前")}</th><th>{organizations ? "slug" : uiText("Email address", "メールアドレス")}</th><th>{organizations ? uiText("Members", "メンバー") : uiText("Role", "権限")}</th>{organizations && <th>{uiText("Teams", "チーム")}</th>}</tr></thead>
         <tbody>{query.data.items.map((item) => <tr key={item.id}>
-          <td>{organizations ? <a className="org-directory-identity text-link" href={`/admin/orgs/${encodeURIComponent(item.id)}`}><MenuIcon name="organization" /><strong>{item.name}</strong></a> : item.name}</td>{"email" in item ? <><td>{item.email}</td><td>{item.role?.split(",").includes("admin") ? uiText("Administrator", "管理者") : uiText("User", "ユーザー")}</td></>
+          <td>{organizations ? <a className="flex items-center gap-3 py-3 text-[13px] font-medium text-primary hover:underline [&>svg]:shrink-0 [&>svg]:text-muted-foreground [&>strong]:break-words [&>strong]:font-medium" href={`/admin/orgs/${encodeURIComponent(item.id)}`}><MenuIcon name="organization" /><strong>{item.name}</strong></a> : item.name}</td>{"email" in item ? <><td>{item.email}</td><td>{item.role?.split(",").includes("admin") ? uiText("Administrator", "管理者") : uiText("User", "ユーザー")}</td></>
             : <><td><code>{item.slug}</code></td><td>{item.memberCount}</td><td>{item.teamCount}</td></>}
         </tr>)}</tbody>
       </table></div>
@@ -1872,9 +1924,9 @@ export function AdminSearchSettings() {
   }
   return <>
     <PageHeader title={uiText("Server settings", "サーバー全体の設定")} />
-    <section className="settings-section">
-      <h2 className="section-label">{uiText("Search settings", "検索設定")}</h2>
-      <p className="muted">{uiText("Adjust each field's influence on search ranking from 1 to 10. Saved changes apply to subsequent searches across this server.", "各項目が検索順位に与える影響を1〜10で調整します。保存後の検索からサーバー全体に反映されます。")}</p>
+    <section>
+      <h2 className="section-label text-[15px] font-semibold text-foreground">{uiText("Search settings", "検索設定")}</h2>
+      <p className="muted max-w-[690px] text-[13px] leading-[1.7]">{uiText("Adjust each field's influence on search ranking from 1 to 10. Saved changes apply to subsequent searches across this server.", "各項目が検索順位に与える影響を1〜10で調整します。保存後の検索からサーバー全体に反映されます。")}</p>
       {!weights && !error && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
       {weights && <form className="panel admin-form search-settings-form" onSubmit={(event) => void save(event)}>
         {SEARCH_FIELDS.map((field) => <label key={field}>{labels[field]}<span className="search-weight-slider"><input type="range" min={1} max={10} step={1} disabled={pending}
@@ -1948,7 +2000,7 @@ function AdminMembers() {
           <button className="primary" disabled={pending}>{pending ? uiText("Adding…", "追加中…") : uiText("Add administrator", "管理者を追加")}</button>
         </form>
       </section>
-      {error && <p className="error page-error admin-error">{error}</p>}
+      {error && <p className="error -mt-3.5 mb-5">{error}</p>}
     </>
   );
 }
@@ -2061,7 +2113,10 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   else if (route.page === "invitation") page = <Invitation invitationId={route.invitationId!} />;
   else if (route.page === "settings") page = <Settings session={session} extensions={extensions} />;
   else page = <Overview session={session} />;
-  return <Shell brand={brand} extensions={extensions} session={session} path={path} navigate={navigateDashboard} routeWorkspaceId={detailWorkspaceId ?? route.workspaceId}
+  return <AppShell brand={<Brand brand={brand} />} extensionPaths={extensions.flatMap((extension) => extension.routes?.map((item) => item.path) ?? [])}
+    serverLinks={extensions.flatMap((extension) => extension.navigation ?? []).filter(isServerNavigation).map((item) =>
+      (!item.capability || session.capabilities[item.capability]) && <a className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground" key={item.path} href={item.path}><MenuIcon name="settings" />{item.label}</a>)}
+    session={session} path={path} navigate={navigateDashboard} routeWorkspaceId={detailWorkspaceId ?? route.workspaceId}
     routeMeeting={detailMeeting} routeMeetingOwned={detailPath?.[1] === "meetings"}>
     <DataError error={sessionError ? new Error(sessionError) : undefined} retry={() => setSessionAttempt((attempt) => attempt + 1)} />
     {detailPath && !detailWorkspaceId && route.page !== "file" && <>
@@ -2069,5 +2124,5 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
       {!detailQuery.error && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
     </>}
     {page}
-  </Shell>;
+  </AppShell>;
 }

@@ -91,6 +91,10 @@ try {
     const specification = JSON.parse(await readFile(new URL(import.meta.resolve("@dahlia-ai/server/openapi.json")), "utf8"));
     if (specification.openapi !== "3.1.0" || !specification.paths["/api/v1/transactions"]) throw new Error("Missing OpenAPI contract");
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
+    if (!style.trim() || !style.includes("tailwindcss v4") || !style.includes("--primary:#683e60")
+      || /@(?:import|source)\b/.test(style)) {
+      throw new Error("Client CSS was not compiled before packaging");
+    }
     const packageUrl = new URL(import.meta.resolve("@dahlia-ai/server/package.json"));
     for (const path of [...serverMigrationManifest.sqlite.files, ...serverMigrationManifest.postgres.files]) {
       await readFile(new URL(path, packageUrl), "utf8");
@@ -118,8 +122,7 @@ try {
       "utf8",
     );
     if (
-      !style.includes(".app-shell")
-      || !codexLicense.includes("Apache License")
+      !codexLicense.includes("Apache License")
       || !codexNotice.includes("OpenAI Codex\\nCopyright 2025 OpenAI")
       || !codexNotice.includes("codex-rs/models-manager/models.json")
       || migration.includes("model_alias")
