@@ -315,6 +315,17 @@ describe("desktop-style meeting layout", () => {
     expect(footer).not.toContain("Artifacts");
   });
 
+  it("labels the AI navigation as chat", () => {
+    vi.stubGlobal("navigator", { language: "ja-JP" });
+    const session = { user: { id: "user" }, capabilities: { sync: false, sharing: false, sessions: false, admin: false, ai: true } };
+    const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
+      session, brand: "Dahlia", children: null,
+    }) }));
+    expect(html).toContain('href="/ai"');
+    expect(html).toContain('aria-label="Dahlia AI とチャット"');
+    expect(html).toContain(">チャット</span>");
+  });
+
   it("generates direct and Databricks proxy MCP client settings", () => {
     const url = "https://dahlia.aws.databricksapps.com/mcp";
     const direct = { url, databricksProxy: false, available: true } as const;
@@ -529,6 +540,8 @@ describe("dashboard navigation", () => {
   it("routes the authenticated home to Overview", () => {
     expect(resolveDashboardRoute("/", { admin: false, sessions: false })).toEqual({ redirect: "/dashboard" });
     expect(resolveDashboardRoute("/dashboard", { admin: false, sessions: false })).toEqual({ page: "overview" });
+    expect(resolveDashboardRoute("/ai", { admin: false, sessions: false, ai: true })).toEqual({ page: "ai" });
+    expect(resolveDashboardRoute("/ai", { admin: false, sessions: false, ai: false })).toEqual({ redirect: "/dashboard" });
   });
 
   it("resolves canonical detail URLs and preserves capability gates", () => {

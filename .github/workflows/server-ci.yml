@@ -148,7 +148,7 @@ jobs:
           GOOGLE_CLIENT_SECRET: test-google-client-secret
           DAHLIA_OAUTH_REDIRECT_URIS: http://127.0.0.1:1455/oauth/callback,http://localhost:8020
           DAHLIA_AI_BACKEND: databricks
-          DAHLIA_CODEX_MODELS: system.ai.gpt-5-6-luna
+          DAHLIA_FOUNDATION_MODELS: system.ai.gpt-5-6-luna
           DATABRICKS_HOST: https://workspace.example.databricks.com
           DATABRICKS_CLIENT_ID: test-app-client-id
           DATABRICKS_CLIENT_SECRET: test-app-client-secret

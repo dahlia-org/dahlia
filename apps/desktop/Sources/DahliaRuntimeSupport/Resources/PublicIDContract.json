@@ -370,6 +370,9 @@
       "workspaceId": "id:workspace",
       "projectId": "id:project"
     },
+    "aiChatRequest": {
+      "workspaceId": "id:workspace"
+    },
     "search": {
       "workspaceId": "id:workspace",
       "meetings": "array:meeting",
@@ -628,6 +631,14 @@
     }
   },
   "routes": [
+    {
+      "path": "/api/v1/ai/chat",
+      "methods": [
+        "POST"
+      ],
+      "request": "aiChatRequest",
+      "limit": 131072
+    },
     {
       "path": "/api/v1/admin/members",
       "methods": [

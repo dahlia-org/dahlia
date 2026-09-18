@@ -46,7 +46,8 @@ const syncService = new MeetingSyncService(applicationStore.sync, objectStorage,
   searchEmbedder, transformScreenshot,
   config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined,
   true, captioner?.model);
-if (process.argv.includes("--seed-dev")) {
+const development = process.argv.includes("--seed-dev");
+if (development) {
   const { installDevelopmentSeed } = await import("./dev-seed");
   installDevelopmentSeed(config, applicationStore, syncService);
 }
@@ -72,8 +73,10 @@ const app = createApp({
   screenshotTransformer: transformScreenshot,
 });
 
-app.use("*", serveStatic({ root: "./dist/client" }));
-app.get("*", serveStatic({ path: "./dist/client/index.html" }));
+if (!development) {
+  app.use("*", serveStatic({ root: "./dist/client" }));
+  app.get("*", serveStatic({ path: "./dist/client/index.html" }));
+}
 
 const port = Number(process.env.DATABRICKS_APP_PORT ?? process.env.PORT ?? 3000);
 const server = serve({

@@ -9,7 +9,7 @@ interface __BaseEnv_Env {
 	DAHLIA_SEARCH_QUEUE: Queue;
 	IMAGES: ImagesBinding;
 	DAHLIA_AI_BACKEND: "cloudflare";
-	DAHLIA_CODEX_MODELS: "gpt-5.6-luna,gpt-4.1,gemini-3-flash";
+	DAHLIA_FOUNDATION_MODELS: "gpt-5.6-luna,gpt-4.1,gemini-3-flash";
 	DAHLIA_STORAGE_BACKEND: "r2";
 	DAHLIA_AUTH_TYPE: "accounts";
 	DAHLIA_DATABASE_TYPE: "hyperdrive";
@@ -28,7 +28,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "DAHLIA_AI_BACKEND" | "DAHLIA_CODEX_MODELS" | "DAHLIA_STORAGE_BACKEND" | "DAHLIA_AUTH_TYPE" | "DAHLIA_DATABASE_TYPE" | "DAHLIA_APP_URL" | "GOOGLE_CLIENT_ID" | "CLOUDFLARE_AI_GATEWAY_ID" | "DAHLIA_IMAGE_ANALYSIS_MODEL" | "DAHLIA_SEARCH_EMBEDDING_MODEL" | "DAHLIA_SEARCH_EMBEDDING_DIMENSIONS">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "DAHLIA_AI_BACKEND" | "DAHLIA_FOUNDATION_MODELS" | "DAHLIA_STORAGE_BACKEND" | "DAHLIA_AUTH_TYPE" | "DAHLIA_DATABASE_TYPE" | "DAHLIA_APP_URL" | "GOOGLE_CLIENT_ID" | "CLOUDFLARE_AI_GATEWAY_ID" | "DAHLIA_IMAGE_ANALYSIS_MODEL" | "DAHLIA_SEARCH_EMBEDDING_MODEL" | "DAHLIA_SEARCH_EMBEDDING_DIMENSIONS">> {}
 }
 
 // Begin runtime types

@@ -20,7 +20,7 @@ describe("configuration", () => {
       oauthRedirectUris: ["http://127.0.0.1:1455/oauth/callback", "http://localhost:8020"],
       storageBackend: "local",
       storageLocalPath: ".data/storage",
-      codexModels: [],
+      foundationModels: [],
       codexAutoReviewModel: undefined,
       searchEmbedding: undefined,
     });
@@ -33,11 +33,11 @@ describe("configuration", () => {
     expect(() => loadConfig({ ...accounts, DAHLIA_CODEX_AUTO_REVIEW_MODEL: "m".repeat(768) })).toThrow();
   });
 
-  it("configures an ordered backend-independent Codex model list", () => {
+  it("configures an ordered backend-independent foundation model list", () => {
     expect(loadConfig({ ...accounts,
-      DAHLIA_CODEX_MODELS: " system.ai.gpt-5-6-luna, system.ai.gpt-5-6-sol,system.ai.gpt-5-6-luna ",
-    }).codexModels).toEqual(["system.ai.gpt-5-6-luna", "system.ai.gpt-5-6-sol"]);
-    expect(() => loadConfig({ ...accounts, DAHLIA_CODEX_MODELS: "m".repeat(768) })).toThrow();
+      DAHLIA_FOUNDATION_MODELS: " system.ai.gpt-5-6-luna, system.ai.gpt-5-6-sol,system.ai.gpt-5-6-luna ",
+    }).foundationModels).toEqual(["system.ai.gpt-5-6-luna", "system.ai.gpt-5-6-sol"]);
+    expect(() => loadConfig({ ...accounts, DAHLIA_FOUNDATION_MODELS: "m".repeat(768) })).toThrow();
   });
 
   it("keeps embeddings off unless a Databricks model is configured", () => {

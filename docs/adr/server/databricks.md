@@ -15,12 +15,12 @@ managed Volume resource key は `dahlia_storage`、既定名は `storage`。Unit
 | 操作 | Credential / 意図 |
 | --- | --- |
 | Responses | 当該 request の `X-Forwarded-Access-Token` を upstream Bearer に変換。利用者の認可と監査を維持 |
-| configured model list | `DAHLIA_CODEX_MODELS`。upstream request なし |
+| configured model list | `DAHLIA_FOUNDATION_MODELS`。upstream request なし |
 | Volume access | App service principal の既存 storage 権限。利用者の forwarded token を使わない |
 
-`DAHLIA_AI_BACKEND=databricks` は `DATABRICKS_HOST` の `/ai-gateway/mlflow/v1/responses` を使う。forwarded token がなければ Responses を upstream 呼出前に拒否し、App token へ fallback しない。token は request 外に保持せず、元 header 名のまま転送、保存、log、client 返却をしない。
+`DAHLIA_AI_BACKEND=databricks` は `DATABRICKS_HOST` の `/ai-gateway/mlflow/v1/responses` を使う。forwarded token を優先し、ない場合は設定済み App service principal credential で短期 token を取得する。この選択は Server の実行環境に依存しない。forwarded token は request 外に保持せず、元 header 名のまま転送、保存、log、client 返却をしない。
 
-モデル一覧は `DAHLIA_CODEX_MODELS` から読み、`system.ai.*` の完全修飾名をそのまま公開・転送する。App service principal は background summary、embedding、image analysis、Volume access に使用し、credential と upstream body は保存・log しない。
+モデル一覧は `DAHLIA_FOUNDATION_MODELS` から読み、`system.ai.*` の完全修飾名をそのまま公開・転送する。App service principal は forwarded token がない interactive Responses、background summary、embedding、image analysis、Volume access に使用し、credential と upstream body は保存・log しない。
 
 ## 経緯と制約
 

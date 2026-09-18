@@ -49,7 +49,7 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 
 ## Model Catalog Maintenance
 
-- `DAHLIA_CODEX_MODELS` owns model eligibility and order for every backend. The JSON catalogs own runtime metadata and visibility. Keep model-family filters and inferred capability defaults out of TypeScript.
+- `DAHLIA_FOUNDATION_MODELS` owns model eligibility and order for every backend. The JSON catalogs own runtime metadata and visibility. Keep model-family filters and inferred capability defaults out of TypeScript.
 - GPT definitions copy the approved upstream Codex `models.json`, limited to GPT-6, GPT-5.6, and GPT-5.5; Databricks uses full `system.ai.*` slugs, sets `available_in_plans` to `[]`, and uses space-separated display names such as `GPT 5.6 Luna`. Obtain user confirmation before changing GPT settings; moving existing values without changing their behavior is permitted. Compare proposed changes against the pinned Codex source before presenting them for confirmation.
 - OSS model metadata is maintained by Dahlia and may be updated within an authorized task without separate confirmation. Use official model documentation for known values; otherwise copy Luna for lightweight models and Sol for large models directly into JSON. Keep OSS and Gemini on use_responses_lite: false; Gemini stays API-supported for audio summaries but hidden from Codex because its tool contract is incompatible. Do not add runtime ID normalization, alias expansion, or capability inference. The API may mechanically add hidden Codex built-in entries for picker suppression; keep these out of the model JSON and preserve visibility: hide and supported_in_api: false even when the configured list omits them.
 
@@ -60,7 +60,7 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 - Read provider and infrastructure credentials from runtime secrets. Keep them separate from application content and application configuration.
 - Enforce request byte limits before parsing or buffering. Stream Responses and file/audio bodies without buffering the complete payload.
 - Header authentication is safe only behind a proxy that strips client-supplied identity headers, writes verified values, and prevents direct Server access. Do not weaken that deployment requirement with trust-by-header fallback logic.
-- With the Databricks backend, use `X-Forwarded-Access-Token` only for the current Responses request. Do not store, log, cache, return, or forward that header by name. The configured model list performs no upstream discovery.
+- With the Databricks backend, prefer `X-Forwarded-Access-Token` for the current Responses request and fall back to a short-lived App service principal token only when the forwarded token is absent. Do not store, log, cache, return, or forward the proxy header by name. The configured model list performs no upstream discovery.
 - Identity claims identify users; Personal Organizations represent ownership. Evaluate current user/organization/team permissions with admin > editor > viewer, and require current parent-organization membership for Team access. Keep at least one effective Workspace admin.
 - Files and recording reads require current Workspace access before storage access or conditional responses. Preserve streaming, the file CSP sandbox, and non-disclosure of storage credentials. Artifact publishing is retired.
 

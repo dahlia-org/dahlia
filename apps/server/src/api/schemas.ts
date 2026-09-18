@@ -117,6 +117,7 @@ export const capabilities = z.object({
   recordingArchive: z.object({ version: integer }).optional(), meetingEvents: z.object({ version: integer }).optional(),
   search: z.object({ version: integer }).optional(), imageAnalysis: z.object({ version: integer }).optional(),
   conversationAnalytics: z.object({ version: integer }).optional(),
+  ai: z.object({ version: integer }).optional(),
   meetingSummaryGeneration: z.object({
     version: integer,
     sources: z.array(z.enum(["transcript", "audio"])),
@@ -124,6 +125,14 @@ export const capabilities = z.object({
     retranscription: z.object({ version: z.literal(1), provider: z.literal("gemini") }).optional(),
   }).optional(),
 }).openapi("Capabilities");
+export const aiModel = z.object({
+  id: z.string(), displayName: z.string(),
+  defaultReasoningEffort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]),
+  supportedReasoningEfforts: z.array(z.object({
+    effort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]),
+    description: z.string(),
+  })),
+}).openapi("AIModel");
 export const person = z.object({ id: principalId, name: z.string(), email: z.string() }).openapi("Person");
 export const organization = z.object({ id: principalId, name: z.string(), slug: z.string(), kind: z.enum(["personal", "team"]), role: z.string().optional() }).openapi("Organization");
 export const team = z.object({ id: principalId, name: z.string(), organizationId: principalId, memberCount: integer,

@@ -206,6 +206,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ai/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent-compatible models available to Private Web */
+        get: operations["getAiModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stream one page-memory Agent response; no conversation is persisted */
+        post: operations["chatWithAi"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces": {
         parameters: {
             query?: never;
@@ -1803,6 +1837,9 @@ export interface components {
             conversationAnalytics?: {
                 version: number;
             };
+            ai?: {
+                version: number;
+            };
             meetingSummaryGeneration?: {
                 version: number;
                 sources: ("transcript" | "audio")[];
@@ -1814,6 +1851,17 @@ export interface components {
                     provider: "gemini";
                 };
             };
+        };
+        AIModel: {
+            id: string;
+            displayName: string;
+            /** @enum {string} */
+            defaultReasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+            supportedReasoningEfforts: {
+                /** @enum {string} */
+                effort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                description: string;
+            }[];
         };
         WorkspaceRead: components["schemas"]["Workspace"] & {
             organizationName: string;
@@ -3156,6 +3204,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Capabilities"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getAiModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["AIModel"][];
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    chatWithAi: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    workspaceId: string;
+                    model: string;
+                    /** @enum {string} */
+                    reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                    messages: {
+                        /** @enum {string} */
+                        role: "user" | "assistant";
+                        content: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description text/event-stream with text, tool, error, and done events. Tool input and output are never included. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
                 };
             };
             default: components["responses"]["Problem"];

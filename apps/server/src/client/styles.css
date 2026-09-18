@@ -28,6 +28,7 @@
 }
 
 :root {
+  --main-content-width: 720px;
   --background: #fff;
   --foreground: #28272b;
   --card: #fff;
@@ -65,6 +66,7 @@
 }
 
 @layer components {
+  .main-column, .ai-start, .ai-transcript, .ai-bottom .ai-composer { @apply mx-auto w-full; max-width: var(--main-content-width); }
   .brand { @apply inline-flex w-fit items-center gap-2 text-lg font-semibold; font-family: Georgia, serif; }
   .brand small { @apply -ml-1 text-[9px] font-semibold uppercase tracking-[.12em] text-muted-foreground; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   .brand-mark { @apply size-6 shrink-0 text-primary; }
@@ -134,7 +136,6 @@
   .load-more { @apply mx-auto mt-4 flex; }
   .workspace-settings { @apply mt-7; }
 
-  .meeting-detail.collection-detail { @apply mx-auto max-w-5xl; }
   .meeting-header { @apply mb-6; }
   .meeting-header h1 { @apply mb-4 flex items-center gap-2 break-words text-3xl font-semibold leading-snug tracking-tight; }
   .detail-breadcrumbs { @apply mb-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground; }
@@ -228,4 +229,40 @@
   .org-domain-empty p { @apply mt-1 text-[11px] leading-5 text-muted-foreground; }
   .org-domain-footer { @apply flex justify-between gap-4 px-5 pb-4 text-[10px] text-muted-foreground max-sm:flex-col; }
   .org-domain-loading { @apply m-5 text-xs text-muted-foreground; }
+
+  .ai-chat { @apply flex min-h-[calc(100dvh-44px)] flex-col md:min-h-dvh; }
+  .ai-start { @apply flex flex-1 flex-col items-center justify-center px-5 pb-24 text-center; }
+  .ai-mark { @apply grid size-14 place-items-center rounded-full border bg-card text-xl font-semibold text-primary shadow-lg; font-family: Georgia, serif; }
+  .ai-start h1 { @apply mb-10 mt-6 text-3xl font-semibold tracking-tight sm:text-4xl; }
+  .ai-start > p { @apply mt-4 max-w-xl text-xs leading-5 text-muted-foreground; }
+  .ai-composer { @apply w-full rounded-2xl border bg-card p-2 shadow-lg focus-within:border-primary/70 focus-within:ring-2 focus-within:ring-ring/20; }
+  .ai-composer textarea { @apply resize-none overflow-y-auto border-0 px-2 py-1 leading-5 shadow-none focus-visible:ring-0; field-sizing: content; min-height: calc(2 * 1.25rem + .5rem); max-height: calc(10 * 1.25rem + .5rem); }
+  .ai-composer-controls { @apply flex items-center gap-1; }
+  .ai-composer-actions { @apply ml-auto flex min-w-0 items-center gap-1; }
+  .ai-picker-trigger { @apply !h-8 !min-w-0 max-w-56 !justify-start !rounded-full !border-0 bg-transparent !px-2.5 !py-0 !text-xs font-medium text-muted-foreground !shadow-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:bg-transparent [&>span]:truncate [&>svg]:size-3.5 [&>svg]:shrink-0 [&>svg:last-child]:hidden; }
+  .ai-picker-trigger[data-ai-picker="model"] { @apply max-w-48; }
+  .ai-picker-trigger[data-ai-picker="reasoning"] { @apply max-w-28; }
+  .ai-picker-content { width: min(360px, calc(100vw - 24px)) !important; }
+  .ai-picker-label { @apply block border-b px-3 py-2.5 text-xs font-semibold text-muted-foreground; }
+  .ai-picker-item { @apply gap-3 rounded-lg py-2.5 pl-3 pr-10; }
+  .ai-picker-item > span:last-child { @apply flex min-w-0 flex-1 items-start gap-3; }
+  .ai-picker-icon { @apply mt-0.5 size-4 shrink-0 text-muted-foreground; }
+  .ai-picker-copy { @apply flex min-w-0 flex-1 flex-col gap-0.5; }
+  .ai-picker-copy strong { @apply truncate text-sm font-semibold text-foreground; }
+  .ai-picker-copy small { @apply truncate text-[11px] font-normal text-muted-foreground; }
+  .ai-picker-empty { @apply block px-3 py-4 text-xs text-muted-foreground; }
+  .ai-send { @apply grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground disabled:bg-muted disabled:text-muted-foreground; }
+  .ai-send svg { @apply size-4; }
+  .ai-header { @apply sticky top-11 z-20 -mb-6 bg-background pt-7 md:top-0; }
+  .ai-new-chat { @apply flex min-w-0 items-center gap-1.5 rounded-sm border-0 bg-transparent p-0 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring; }
+  .ai-header svg { @apply size-3.5; }
+  .ai-transcript { @apply grid gap-6 px-5 pb-72 pt-4 sm:px-8; }
+  .ai-message { @apply max-w-[85%] whitespace-pre-wrap break-words text-sm leading-7; }
+  .ai-message.user { @apply justify-self-end rounded-full bg-muted px-4 py-2.5; }
+  .ai-message.assistant { @apply justify-self-start; }
+  .ai-status { @apply m-0 text-xs text-muted-foreground; }
+  .ai-error { @apply flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive; }
+  .ai-error .secondary { @apply min-h-8 shrink-0 text-xs; }
+  .ai-bottom { @apply fixed bottom-0 right-0 z-10 w-full bg-background/95 px-4 pb-5 pt-3 backdrop-blur md:w-[calc(100%-240px)] md:px-8; }
+  .ai-bottom .ai-composer { @apply shadow-md; }
 }

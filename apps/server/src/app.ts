@@ -22,6 +22,8 @@ import {
 import { z } from "zod";
 import { searchSettingsSchema } from "./search/settings-model";
 import { ConversationAnalyticsService } from "./conversation-analytics";
+import { AI_CHAT_MAX_REQUEST_BYTES, aiChatSchema, createAiService, type AiService } from "./agent/service";
+import { createMeetingTools } from "./agent/tools";
 
 import {
   AuthenticationError,
@@ -69,6 +71,10 @@ const accountSettingsBodyLimit = bodyLimit({
   maxSize: 8 * 1024,
   onError: (context) => context.json({ error: "request_too_large" }, 413),
 });
+const aiChatBodyLimit = bodyLimit({
+  maxSize: AI_CHAT_MAX_REQUEST_BYTES,
+  onError: (context) => context.json({ error: "request_too_large" }, 413),
+});
 
 export interface AppVariables {
   identity: Identity;
@@ -109,6 +115,7 @@ export interface AppDependencies {
   screenshotTransformer?: ScreenshotTransformer;
   imageAnalysisEnabled?: boolean;
   summaryService?: SummaryService;
+  aiService?: AiService;
   onSyncMutation?(ownerUserId: string, context: { waitUntil(task: Promise<unknown>): void }): void;
 }
 
@@ -191,10 +198,12 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     config.captioningModel,
   );
   const conversationAnalytics = new ConversationAnalyticsService(store.sync);
+  const meetingTools = createMeetingTools(sync);
+  const ai = dependencies.aiService ?? createAiService(config, gateway, meetingTools, dependencies.fetch);
   const mcp = createServerMcpHandler(config, sync, async (request) => {
     if (config.authProvider === "accounts") await identities.verifyMcpAccessToken(request);
     else await identities.fromMcpHeader(request);
-  });
+  }, meetingTools);
   const jobOwners = new WeakMap<Request, string>();
   const mcpMetadataUrl = `${config.baseUrl}/.well-known/oauth-protected-resource/mcp`;
   const mcpRequestAuth = config.authProvider === "accounts" && auth
@@ -306,11 +315,13 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   });
   registerApi(app, "getSession", async (context) => {
     const identity = context.get("identity");
+    const syncAvailable = await store.sync.isAvailable();
     const capabilities: Record<string, boolean> = {
       admin: await isAdministrator(store, identity),
       sessions: auth !== undefined,
-      sync: await store.sync.isAvailable(),
+      sync: syncAvailable,
       sharing: true,
+      ai: syncAvailable && (await ai.models(context.req.raw.signal)).length > 0,
     };
     for (const extension of extensions) {
       const additions = await extension.sessionCapabilities?.(identity) ?? {};
@@ -326,6 +337,35 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
         email: identity.email,
         name: identity.name,
       },
+    });
+  });
+  registerApi(app, "getAiModels", async (context) => {
+    await identities.fromBrowser(context.req.raw);
+    if (!await store.sync.isAvailable()) return context.json({ items: [] });
+    return context.json({ items: await ai.models(context.req.raw.signal) });
+  });
+  registerApi(app, "chatWithAi", aiChatBodyLimit, async (context) => {
+    const identity = await identities.fromBrowser(context.req.raw);
+    if (!await store.sync.isAvailable() || !(await ai.models(context.req.raw.signal)).length) {
+      return context.json({ error: "ai_unavailable" }, 404);
+    }
+    const parsed = aiChatSchema.safeParse(await context.req.json().catch(() => null));
+    if (!parsed.success) return context.json({ error: "invalid_ai_chat" }, 400);
+    const workspaceId = sync.parseId(parsed.data.workspaceId);
+    if (!await sync.getWorkspace(identity, workspaceId)) return context.json({ error: "workspace_not_found" }, 404);
+    const input = { ...parsed.data, workspaceId };
+    return streamSSE(context, async (stream) => {
+      try {
+        for await (const event of ai.stream(input, identity, context.req.raw)) {
+          if (stream.aborted) break;
+          if (event.type === "text") await stream.writeSSE({ event: "text", data: JSON.stringify({ text: event.text }) });
+          else if (event.type === "tool") await stream.writeSSE({ event: "tool", data: JSON.stringify({ name: event.name, status: event.status }) });
+          else if (event.type === "error") await stream.writeSSE({ event: "error", data: JSON.stringify({ code: event.code }) });
+        }
+      } catch (error) {
+        if (!stream.aborted) await stream.writeSSE({ event: "error", data: JSON.stringify({ code: aiErrorCode(error) }) });
+      }
+      if (!stream.aborted) await stream.writeSSE({ event: "done", data: "{}" });
     });
   });
 
@@ -570,6 +610,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       meetingEvents: { version: 1 },
       search: { version: 1 },
       conversationAnalytics: { version: 1 },
+      ...((await ai.models(context.req.raw.signal)).length ? { ai: { version: 1 } } : {}),
       ...(dependencies.imageAnalysisEnabled === true ? { imageAnalysis: { version: 2 } } : {}),
       ...(sources.length ? {
         meetingSummaryGeneration: {
@@ -1068,6 +1109,12 @@ function requestRoute(path: string): string {
   if (path.startsWith("/api/")) return "/api/*";
   if (path.startsWith("/.well-known/")) return "/.well-known/*";
   return "other";
+}
+
+function aiErrorCode(error: unknown): string {
+  if (error instanceof GatewayRequestError || error instanceof RequestError) return error.code;
+  if (error instanceof DOMException && error.name === "AbortError") return "cancelled";
+  return "ai_generation_failed";
 }
 
 async function isAdministrator(store: AuthStore, identity: Identity): Promise<boolean> {

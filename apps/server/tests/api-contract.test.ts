@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "./public-test-client";
 import { createWorkerHandler } from "../src/worker";
 import { testStore } from "./test-store";
+import type { AiService } from "../src/agent/service";
+import { encodeId } from "../src/typeid";
+import { MeetingSyncService } from "../src/sync/service";
 
 const config = {
   authProvider: "header" as const, authHeader: "X-Forwarded-Email", databaseType: "sqlite" as const,
@@ -11,8 +14,29 @@ const config = {
 const identityHeaders = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner" };
 
 describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
-  function fixture() {
-    const app = createApp({ config, authStore: testStore(), extensions: [{
+  const aiService: AiService = {
+    models: async () => ["test-model", "error-model"].map((id) => ({
+      id, displayName: id === "test-model" ? "Test model" : "Error model", defaultReasoningEffort: "medium" as const,
+      supportedReasoningEfforts: [{ effort: "low" as const, description: "Fast" }, { effort: "medium" as const, description: "Balanced" }],
+    })),
+    async *stream(input) {
+      if (input.model === "error-model") {
+        yield { type: "text", text: "Partial" };
+        throw new Error("secret tool output");
+      }
+      yield { type: "tool", name: "query_meetings", status: "running" };
+      yield { type: "tool", name: "query_meetings", status: "complete" };
+      yield { type: "text", text: "Answer" };
+    },
+  };
+  function fixture(withAi = false, selectedAiService = aiService) {
+    const store = testStore();
+    if (withAi) store.sync.isAvailable = async () => true;
+    const syncService = withAi ? {
+      parseId: (value: string) => MeetingSyncService.prototype.parseId.call(undefined, value),
+      getWorkspace: async (_identity: unknown, requestedWorkspaceId: string) => requestedWorkspaceId === "01990ab0-0000-7000-8000-000000000001" ? { workspaceId: requestedWorkspaceId } : null,
+    } as unknown as MeetingSyncService : undefined;
+    const app = createApp({ config, authStore: store, aiService: withAi ? selectedAiService : undefined, syncService, extensions: [{
       registerRoutes(app) {
         app.post("/api/v1/custom", (context) => context.json({ extension: true }));
         app.post("/api/v1/workspaces/custom", (context) => context.json({ userId: context.get("identity")?.userId }));
@@ -31,6 +55,59 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
       return runtime === "node" ? app.request(request) : fetchWorker(request, {} as Cloudflare.Env, {} as ExecutionContext);
     };
   }
+
+  it("gates AI in the session and streams sanitized Agent events", async () => {
+    const send = fixture(true);
+    const session: { capabilities: Record<string, boolean> } = await (await send("/api/v1/session")).json();
+    expect(session.capabilities.ai).toBe(true);
+    expect(await (await send("/api/v1/ai/models")).json()).toEqual({ items: [
+      { id: "test-model", displayName: "Test model", defaultReasoningEffort: "medium", supportedReasoningEfforts: [
+        { effort: "low", description: "Fast" }, { effort: "medium", description: "Balanced" },
+      ] },
+      { id: "error-model", displayName: "Error model", defaultReasoningEffort: "medium", supportedReasoningEfforts: [
+        { effort: "low", description: "Fast" }, { effort: "medium", description: "Balanced" },
+      ] },
+    ] });
+    expect((await send("/api/v1/ai/models", "GET", undefined, {})).status).toBe(401);
+    const workspaceId = encodeId("workspace", "01990ab0-0000-7000-8000-000000000001");
+    const body = JSON.stringify({ workspaceId, model: "test-model", reasoningEffort: "medium", messages: [{ role: "user", content: "Question" }] });
+    const response = await send("/api/v1/ai/chat", "POST", body, { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" });
+    expect(response.status).toBe(200);
+    const events = await response.text();
+    expect(events).toMatch(/event: tool[\s\S]+event: tool[\s\S]+event: text[\s\S]+event: done/);
+    expect(events).not.toContain("workspaceId");
+    const invalid = await send("/api/v1/ai/chat", "POST", JSON.stringify({ workspaceId, model: "test-model", reasoningEffort: "medium", messages: [
+      { role: "user", content: "one" }, { role: "user", content: "two" },
+    ] }), { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" });
+    expect(invalid.status).toBe(400);
+
+    const inaccessible = encodeId("workspace", "01990ab0-0000-7000-8000-000000000002");
+    expect((await send("/api/v1/ai/chat", "POST", JSON.stringify({ workspaceId: inaccessible, model: "test-model", reasoningEffort: "medium", messages: [
+      { role: "user", content: "Question" },
+    ] }), { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" })).status).toBe(404);
+
+    const tooLarge = await send("/api/v1/ai/chat", "POST", JSON.stringify({ workspaceId, model: "test-model", reasoningEffort: "medium", messages: [
+      { role: "user", content: "x".repeat(128 * 1024) },
+    ] }), { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" });
+    expect(tooLarge.status).toBe(413);
+
+    const failed = await send("/api/v1/ai/chat", "POST", JSON.stringify({ workspaceId, model: "error-model", reasoningEffort: "medium", messages: [
+      { role: "user", content: "Question" },
+    ] }), { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" });
+    const failedEvents = await failed.text();
+    expect(failedEvents).toMatch(/event: text[\s\S]+event: error[\s\S]+event: done/);
+    expect(failedEvents).toContain("ai_generation_failed");
+    expect(failedEvents).not.toContain("secret tool output");
+  });
+
+  it("does not publish AI capability without an Agent-compatible model", async () => {
+    const send = fixture(true, { ...aiService, models: async () => [] });
+    const session: { capabilities: Record<string, boolean> } = await (await send("/api/v1/session")).json();
+    expect(session.capabilities.ai).toBe(false);
+    expect(await (await send("/api/v1/ai/models")).json()).toEqual({ items: [] });
+    const capabilities = await (await send("/api/v1/capabilities")).json();
+    expect(capabilities).not.toHaveProperty("ai");
+  });
 
   it("distinguishes unsupported methods, missing paths, disabled features and extensions", async () => {
     const send = fixture();
