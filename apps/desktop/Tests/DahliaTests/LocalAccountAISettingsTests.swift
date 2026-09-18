@@ -144,6 +144,54 @@
         }
 
         @Test
+        func successfulDatabricksActivationClearsTheMissingConnectionError() async throws {
+            let suiteName = "LocalAccountAISettingsTests-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let model = WorkspaceAISettingsModel(setupDefaults: defaults) { snapshot in
+                if snapshot.localProvider == .databricks, snapshot.databricksProfile.isEmpty {
+                    throw CodexConfigurationError.databricksProfileRequired
+                }
+            }
+            model.activate(workspace: makeWorkspace(openedAt: .now))
+            #expect(await model.waitForRuntimeContext())
+
+            model.localProvider = .databricks
+            #expect(await !model.waitForRuntimeContext())
+            #expect(model.errorMessage != nil)
+
+            model.databricksProfile = "CONNECTED"
+            #expect(await model.waitForRuntimeContext())
+            #expect(model.errorMessage == nil)
+        }
+
+        @Test
+        func runtimeRecoveryDoesNotClearAWorkspacePersistenceError() async throws {
+            let suiteName = "LocalAccountAISettingsTests-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let database = try AppDatabaseManager(path: ":memory:")
+            let workspace = makeWorkspace(openedAt: .now)
+            try await database.dbQueue.write { db in
+                try workspace.insert(db)
+                try db.execute(sql: "CREATE TRIGGER fail_ai_settings_update BEFORE UPDATE ON workspaces BEGIN SELECT RAISE(ABORT, 'test persistence failure'); END")
+            }
+            let activations = Mutex(0)
+            let model = WorkspaceAISettingsModel(setupDefaults: defaults) { _ in
+                activations.withLock { $0 += 1 }
+            }
+            model.configure(dbQueue: database.dbQueue)
+            model.activate(workspace: workspace)
+            #expect(await model.waitForRuntimeContext())
+
+            model.summaryModelID = "not-persisted"
+
+            #expect(await pollUntil { activations.withLock { $0 == 2 } })
+            #expect(await model.waitForRuntimeContext())
+            #expect(model.errorMessage != nil)
+        }
+
+        @Test
         func failedBackfillDoesNotDisableSubsequentSettingsPersistence() async throws {
             let suiteName = "LocalAccountAISettingsTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))

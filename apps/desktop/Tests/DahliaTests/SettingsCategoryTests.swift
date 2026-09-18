@@ -2,6 +2,8 @@ import Foundation
 @testable import Dahlia
 
 #if canImport(Testing)
+    import AppKit
+    import SwiftUI
     import Testing
 
     struct SettingsCategoryTests {
@@ -22,6 +24,29 @@ import Foundation
 
             #expect(groupedCategories.count == expectedCategories.count)
             #expect(Set(groupedCategories) == Set(expectedCategories))
+        }
+
+        @Test
+        @MainActor
+        func sidebarGroupsAreNotCollapsible() throws {
+            var selection = SettingsCategory.general
+            let host = NSHostingView(rootView: SettingsSidebarView(
+                selection: Binding(get: { selection }, set: { selection = $0 }),
+                onReturnToApp: {}
+            ))
+            host.frame = NSRect(x: 0, y: 0, width: 280, height: 700)
+            host.layoutSubtreeIfNeeded()
+            let outline = try #require(outlineView(in: host))
+            #expect(
+                outline.numberOfRows == SettingsGroup.allCases.count
+                    + SettingsGroup.allCases.flatMap(\.categories).count
+                    + 2
+            )
+
+            for row in 0 ..< outline.numberOfRows {
+                let item = try #require(outline.item(atRow: row))
+                #expect(!outline.isExpandable(item))
+            }
         }
 
         @Test
@@ -116,6 +141,12 @@ import Foundation
             #expect(L10n.aiAccountSettingsDescription.contains(L10n.localAccount))
             #expect(!L10n.googleOAuthClientIDOverrideDescription.contains("GOOGLE_CLIENT_ID"))
             #expect(!L10n.googleOAuthClientSecretOverrideDescription.contains("GOOGLE_CLIENT_SECRET"))
+        }
+
+        @MainActor
+        private func outlineView(in view: NSView) -> NSOutlineView? {
+            if let outline = view as? NSOutlineView { return outline }
+            return view.subviews.lazy.compactMap { outlineView(in: $0) }.first
         }
     }
 #endif

@@ -1,6 +1,6 @@
 "settings.organization.checkAdvancedModels" = "A selected model is unavailable. Open advanced settings to change it or choose Automatic.";
 "settings.organization.settingsDataAndAccounts" = "Data management";
-"settings.organization.generationAndAnalysis" = "Transcription, summary & automation";
+"settings.organization.workspaceSettings" = "Workspace settings";
 "settings.organization.searchSettings" = "Search settings";
 "settings.organization.settingsAccountIntro" = "Choose how the current workspace creates summaries and image captions.";
 "settings.organization.settingsAccountsIntro" = "Manage connected accounts and the workspaces that belong to them.";

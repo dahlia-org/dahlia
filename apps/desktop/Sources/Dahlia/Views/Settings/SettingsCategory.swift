@@ -32,7 +32,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .accountsAndWorkspaces: L10n.serverConnections
-        case .accountPreferences: L10n.generationAndAnalysis
+        case .accountPreferences: L10n.workspaceSettings
         case .macInference: L10n.macInferencePreferences
         case .general: L10n.general
         case .dahliaAccounts: L10n.dahliaAccount

@@ -24,7 +24,7 @@ enum SettingsGroup: CaseIterable, Identifiable {
         switch self {
         case .app: [.general, .transcription, .liveSubtitles, .screenshots, .macInference, .permissions, .backups]
         case .account: [.accountsAndWorkspaces]
-        case .workspace: [.accountPreferences, .workspace]
+        case .workspace: [.workspace, .accountPreferences]
         case .integrations: [.calendar, .cloudStorage]
         case .advanced: [.search, .betaFeatures, .developer, .audioDiagnostics]
         }

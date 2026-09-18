@@ -8,7 +8,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var settingsCheckAdvancedModels: String { String(localized: "settings.organization.checkAdvancedModels", bundle: bundle) }
     static var serverConnections: String { String(localized: "settings.serverConnections", bundle: bundle) }
     static var settingsDataAndAccounts: String { String(localized: "settings.organization.settingsDataAndAccounts", bundle: bundle) }
-    static var generationAndAnalysis: String { String(localized: "settings.organization.generationAndAnalysis", bundle: bundle) }
+    static var workspaceSettings: String { String(localized: "settings.organization.workspaceSettings", bundle: bundle) }
     static var searchSettings: String { String(localized: "settings.organization.searchSettings", bundle: bundle) }
     static var settingsAccountIntro: String { String(localized: "settings.organization.settingsAccountIntro", bundle: bundle) }
     static var settingsAccountsIntro: String { String(localized: "settings.organization.settingsAccountsIntro", bundle: bundle) }

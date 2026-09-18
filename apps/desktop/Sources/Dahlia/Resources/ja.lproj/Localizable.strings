@@ -1,6 +1,6 @@
 "settings.organization.checkAdvancedModels" = "利用できないモデルが指定されています。詳細設定で変更するか「自動」に戻してください。";
 "settings.organization.settingsDataAndAccounts" = "データ管理";
-"settings.organization.generationAndAnalysis" = "文字起こし・要約・自動処理";
+"settings.organization.workspaceSettings" = "ワークスペースの設定";
 "settings.organization.searchSettings" = "設定を検索";
 "settings.organization.settingsAccountIntro" = "現在のワークスペースでの要約と画像キャプションの生成方法を設定します。";
 "settings.organization.settingsAccountsIntro" = "接続先のアカウントと、それぞれのワークスペースを管理します。";
