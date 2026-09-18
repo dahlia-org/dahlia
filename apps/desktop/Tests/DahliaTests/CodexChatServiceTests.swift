@@ -751,13 +751,15 @@ import Foundation
             #expect(config["mcp_servers"] == .object([
                 "dahlia": .object([
                     "args": .array([
+                        .string("DAHLIA_RUNTIME_PROFILE=development"),
+                        .string("/tmp/dahlia-mcp"),
                         .string("--workspace-id"),
                         .string(TypeID.encode(workspaceID, as: .workspace)),
                         .string("--write"),
                         .string("--telemetry-origin"),
                         .string("codexChat"),
                     ]),
-                    "command": .string("/tmp/dahlia-mcp"),
+                    "command": .string("/usr/bin/env"),
                     "enabled": .bool(true),
                 ]),
                 "docs": .object(["enabled": .bool(false)]),

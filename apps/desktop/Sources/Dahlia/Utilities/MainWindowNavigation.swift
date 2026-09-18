@@ -104,7 +104,8 @@ final class MainWindowNavigation {
         settingsCategory = initialSettingsCategory.map(SettingsNavigation.visibleSelection)
             ?? SettingsNavigation.savedSelection(in: settingsDefaults)
         #if DEBUG
-            isShowingSettings = DahliaApplicationSupport.profile(environment: launchEnvironment) == .development
+            isShowingSettings = launchEnvironment[DahliaApplicationSupport.profileEnvironmentKey]
+                == DahliaRuntimeProfile.development.rawValue
                 && launchEnvironment["DAHLIA_DEV_OPEN_SETTINGS"] == "1"
         #endif
         meetingSidebarDisplayMode = settingsDefaults.string(forKey: Self.meetingSidebarDisplayModeDefaultsKey)

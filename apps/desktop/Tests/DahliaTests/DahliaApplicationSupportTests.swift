@@ -44,11 +44,20 @@ import Foundation
         }
 
         @Test
-        func debugBuildUsesDevelopmentWithoutLaunchConfiguration() {
+        func debugBuildAlwaysUsesDevelopment() {
             #expect(
                 DahliaApplicationSupport.profile(
                     environment: [:],
                     embeddedProfile: nil,
+                    isDebugBuild: true
+                ) == .development
+            )
+            #expect(
+                DahliaApplicationSupport.profile(
+                    environment: [
+                        DahliaApplicationSupport.profileEnvironmentKey: DahliaRuntimeProfile.production.rawValue,
+                    ],
+                    embeddedProfile: DahliaRuntimeProfile.production.rawValue,
                     isDebugBuild: true
                 ) == .development
             )
