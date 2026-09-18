@@ -204,7 +204,7 @@ final class WorkspaceAISettingsModel {
                     try WorkspaceRecord.fetchOne(db, key: snapshot.workspaceID)
                 }) {
                     self.apply(WorkspaceAISettingsSnapshot(workspace: workspace, localAccountSettings: self.localAccountSettings))
-                    self.scheduleRuntimeActivation()
+                    self.scheduleRuntimeActivation(clearingError: false)
                 }
             }
         }
@@ -230,11 +230,12 @@ final class WorkspaceAISettingsModel {
         scheduleRuntimeActivation()
     }
 
-    private func scheduleRuntimeActivation() {
+    private func scheduleRuntimeActivation(clearingError: Bool = true) {
         guard let snapshot else { return }
         let generation = activationGeneration
         let activateRuntime = activateRuntime
         runtimeTask?.cancel()
+        if clearingError { errorMessage = nil }
         isSwitchingRuntime = true
         runtimeTask = Task { [weak self] in
             do {

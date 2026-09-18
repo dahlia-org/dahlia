@@ -6,7 +6,6 @@ struct NonAutofocusingSearchField: NSViewRepresentable {
     @Binding var isFocused: Bool
 
     let placeholder: String
-    let onSubmit: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -16,10 +15,6 @@ struct NonAutofocusingSearchField: NSViewRepresentable {
         let searchField = PickerSearchField()
         searchField.delegate = context.coordinator
         searchField.placeholderString = placeholder
-        searchField.sendsWholeSearchString = true
-        searchField.sendsSearchStringImmediately = false
-        searchField.target = context.coordinator
-        searchField.action = #selector(Coordinator.submitFromAction(_:))
         return searchField
     }
 
@@ -68,13 +63,7 @@ struct NonAutofocusingSearchField: NSViewRepresentable {
         }
 
         func control(_: NSControl, textView _: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            guard commandSelector == #selector(NSResponder.insertNewline(_:)) else { return false }
-            parent.onSubmit()
-            return true
-        }
-
-        @objc func submitFromAction(_: Any?) {
-            parent.onSubmit()
+            commandSelector == #selector(NSResponder.insertNewline(_:))
         }
     }
 }
