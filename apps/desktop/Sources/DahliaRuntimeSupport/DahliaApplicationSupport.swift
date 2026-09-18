@@ -9,12 +9,11 @@ public enum DahliaApplicationSupport {
     public static let profileEnvironmentKey = "DAHLIA_RUNTIME_PROFILE"
 
     public static func profile(
-        environment: [String: String] = ProcessInfo.processInfo.environment,
-        embeddedProfile: String? = Bundle.main.object(forInfoDictionaryKey: profileEnvironmentKey) as? String
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> DahliaRuntimeProfile {
         profile(
             environment: environment,
-            embeddedProfile: embeddedProfile,
+            embeddedProfile: Bundle.main.object(forInfoDictionaryKey: profileEnvironmentKey) as? String,
             isDebugBuild: _isDebugAssertConfiguration()
         )
     }
