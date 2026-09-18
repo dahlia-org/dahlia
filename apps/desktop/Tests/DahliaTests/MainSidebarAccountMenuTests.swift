@@ -152,6 +152,7 @@
             let icon = try #require(button.subviews.compactMap { $0 as? NSImageView }.first)
 
             #expect(!icon.isAccessibilityElement())
+            #expect(icon.hitTest(.zero) == nil)
         }
 
         @Test
@@ -342,6 +343,13 @@
                 #expect(coordinator.handleKeyDown(event) == nil)
             }
             #expect(openedURLs.map(\.absoluteString) == Array(repeating: connections[0].origin, count: 3))
+
+            let shiftSpace = try #require(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [.shift], timestamp: 0, windowNumber: window.windowNumber,
+                context: nil, characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: 49
+            ))
+            #expect(coordinator.handleKeyDown(shiftSpace) == nil)
+            #expect(openedURLs.count == 3)
         }
 
         @Test

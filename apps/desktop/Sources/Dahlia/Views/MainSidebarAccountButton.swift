@@ -1,7 +1,11 @@
 import AppKit
 
+private final class MainSidebarPassthroughImageView: NSImageView {
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+}
+
 final class MainSidebarAccountButton: NSButton {
-    private let symbolImageView = NSImageView()
+    private let symbolImageView = MainSidebarPassthroughImageView()
     private var isAnimatingIcon = false
 
     override init(frame frameRect: NSRect) {
@@ -45,9 +49,5 @@ final class MainSidebarAccountButton: NSButton {
     override func layout() {
         super.layout()
         symbolImageView.frame = cell?.imageRect(forBounds: bounds) ?? .zero
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        bounds.contains(point) ? self : nil
     }
 }

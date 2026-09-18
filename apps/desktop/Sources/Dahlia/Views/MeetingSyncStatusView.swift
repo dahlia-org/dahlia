@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct MeetingSyncStatusView: View {
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+
     let state: MeetingSyncState
     var isSyncing = false
 
@@ -14,7 +16,7 @@ struct MeetingSyncStatusView: View {
                 .symbolEffect(
                     .rotate,
                     options: .repeat(.continuous),
-                    isActive: isSyncing
+                    isActive: isSyncing && !accessibilityReduceMotion
                 )
         }
         .labelStyle(.iconOnly)

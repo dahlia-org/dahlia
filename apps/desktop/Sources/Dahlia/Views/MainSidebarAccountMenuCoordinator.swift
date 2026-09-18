@@ -342,7 +342,9 @@ extension MainSidebarAccountMenuCoordinator {
                 dismissMenu()
             case 123:
                 closeSubmenu()
-            case 36, 49, 76:
+            case 36, 76:
+                openSelectedAccountOnServer()
+            case 49 where !event.modifierFlags.contains(.shift):
                 openSelectedAccountOnServer()
             default:
                 scrollAccountDetails(event)
