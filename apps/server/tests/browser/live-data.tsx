@@ -5,20 +5,26 @@ import { createRoot } from "react-dom/client";
 import { App, SyncedMeeting } from "../../src/client/App";
 import { DetailTabs } from "../../src/client/MeetingContent";
 import { refreshData } from "../../src/client/live-data";
+import { encodeId } from "../../src/typeid";
 import "../../src/client/styles.css";
 
 const previewMode = new URLSearchParams(location.search).has("preview");
 const previewPage = new URLSearchParams(location.search).get("page") ?? "meeting";
 const navigationTest = new URLSearchParams(location.search).has("navigation-test");
+const performanceTest = new URLSearchParams(location.search).has("performance-test");
 Object.defineProperty(navigator, "language", { value: previewMode && new URLSearchParams(location.search).get("lang") === "ja" ? "ja-JP" : "en-US", configurable: true });
 const ja = navigator.language.startsWith("ja");
 sessionStorage.removeItem("dahlia:sidebar:browser-fixture:organization");
 
 const base = "/api/v1/workspaces/v1";
-const route = "/meetings/m1";
+const primaryMeetingId = performanceTest ? encodeId("meeting", "019d3f46-8b72-77f1-b232-93726eec3e9e") : "m1";
+const secondaryMeetingId = performanceTest ? encodeId("meeting", "019d3f46-8b72-77f1-b232-93726eec3e9f") : "m2";
+const route = `/meetings/${primaryMeetingId}`;
 const sources: EventTarget[] = [];
 const requests: string[] = [];
 const requestURLs: string[] = [];
+const meetingDetailSignals = new Set<AbortSignal>();
+let maxConcurrentMeetingDetailReads = 0;
 const failures = new Map<string, number>();
 let caption = "Initial caption";
 let summary = "Initial summary";
@@ -47,7 +53,7 @@ const previewSummary = {
     ] }] },
   ], actionItems: [],
 };
-const meeting = (id: string) => ({ meetingId: id, workspaceId: "v1", projectId: "p0", name: id === "m1" ? meetingName : previewMode ? (ja ? "9月のリリース計画と優先順位" : "September release planning & priorities") : "Other meeting", description: previewMode ? (ja ? "プロダクト・デザインチームの週次レビュー" : "Weekly product and design team review") : "", duration: previewMode ? 2540 : undefined, status: "recording", revision: 1, summaryRevision: 1, createdAt: workspace.createdAt, summaryDocument: JSON.stringify(previewMode ? previewSummary : { sections: [{ heading: summary, blocks: [] }] }) });
+const meeting = (id: string) => ({ meetingId: id, workspaceId: "v1", projectId: "p0", name: id === primaryMeetingId ? meetingName : previewMode ? (ja ? "9月のリリース計画と優先順位" : "September release planning & priorities") : "Other meeting", description: previewMode ? (ja ? "プロダクト・デザインチームの週次レビュー" : "Weekly product and design team review") : "", duration: previewMode ? 2540 : undefined, status: "recording", revision: 1, summaryRevision: 1, createdAt: workspace.createdAt, summaryDocument: JSON.stringify(previewMode ? previewSummary : { sections: [{ heading: summary, blocks: [] }] }) });
 const image = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#aaa"/></svg>');
 const file = (index: number) => ({ id: `f${index}`, capturedAt: workspace.createdAt, file: { id: `f${index}`, workspaceId: "v1", name: `Screenshot ${index}.png`, contentType: "image/png", variants: { thumb_480: image, thumb_1568: image }, metadata: { source: navigationTest && (index === 2 || index === 3) ? "upload" : "screenshot", caption: index === 0 ? caption : `Screenshot ${index}` } } });
 window.EventSource = class extends EventTarget {
@@ -62,7 +68,7 @@ window.fetch = async (input, init) => {
   const failure = failures.get(url.pathname);
   if (failure) return Response.json({ code: `fixture_${failure}` }, { status: failure });
   if (url.pathname === `${base}/search`) return Response.json({
-    meetings: [{ id: "m1", kind: "meeting", title: meeting("m1").name, projectPath: "", date: meeting("m1").createdAt, snippet: "" }],
+    meetings: [{ id: primaryMeetingId, kind: "meeting", title: meeting(primaryMeetingId).name, projectPath: "", date: meeting(primaryMeetingId).createdAt, snippet: "" }],
     projects: [{ id: "p0", kind: "project", title: projects[0]!.name, projectPath: projects[0]!.path, date: workspace.createdAt, snippet: "" }],
     screenshots: [], limited: { meetings: false, projects: false, screenshots: false },
   });
@@ -86,15 +92,24 @@ window.fetch = async (input, init) => {
     const project = projects.find((p) => p.projectId === url.pathname.split("/").at(-1));
     return project ? Response.json(project) : Response.json({ error: "project_not_found" }, { status: 404 });
   }
-  if (/^\/api\/v1\/meetings\/[^/]+$/.test(url.pathname)) return Response.json(meeting(url.pathname.split("/").at(-1)!));
+  if (/^\/api\/v1\/meetings\/[^/]+$/.test(url.pathname)) {
+    meetingDetailSignals.add(request.signal);
+    if (performanceTest) {
+      await new Promise(requestAnimationFrame);
+      maxConcurrentMeetingDetailReads = Math.max(maxConcurrentMeetingDetailReads,
+        [...meetingDetailSignals].filter((signal) => !signal.aborted).length);
+    }
+    meetingDetailSignals.delete(request.signal);
+    return Response.json(meeting(url.pathname.split("/").at(-1)!));
+  }
   if (url.pathname.startsWith("/api/v1/files/")) return Response.json(file(Number(url.pathname.split("/").at(-1)!.slice(1))).file);
   if (url.pathname === `${base}/projects`) return Response.json({ items: projects });
   if (url.pathname.startsWith(`${base}/projects/`)) return Response.json(projects.find((p) => p.projectId === url.pathname.split("/").at(-1)));
-  if (url.pathname === `${base}/meetings`) return Response.json({ items: (url.searchParams.get("projectId") === "p0" && projects.some((project) => project.projectId === "p0")) || (!url.searchParams.has("projectId") && !url.searchParams.has("projectScope")) ? [meeting("m1"), meeting("m2")] : [] });
+  if (url.pathname === `${base}/meetings`) return Response.json({ items: (url.searchParams.get("projectId") === "p0" && projects.some((project) => project.projectId === "p0")) || (!url.searchParams.has("projectId") && !url.searchParams.has("projectScope")) ? [meeting(primaryMeetingId), meeting(secondaryMeetingId)] : [] });
   if (url.pathname.endsWith("/transcripts/latest")) return Response.json({ version: 1, syncRevision: 1, transcript: null, items: [{ segmentId: "s1", startedAt: workspace.createdAt, text: transcript }], nextCursor: null });
   if (url.pathname.endsWith("/transcripts")) return Response.json({ items: [] });
   if (url.pathname.endsWith("/summary-jobs/latest")) return Response.json({ job: null });
-  if (url.pathname.endsWith("/summaries/latest")) return Response.json({ version: 1, revision: 1, present: true, record: { title: previewMode ? previewSummary.title : "Summary", document: meeting("m1").summaryDocument } });
+  if (url.pathname.endsWith("/summaries/latest")) return Response.json({ version: 1, revision: 1, present: true, record: { title: previewMode ? previewSummary.title : "Summary", document: meeting(primaryMeetingId).summaryDocument } });
   if (url.pathname.endsWith("/summaries")) return Response.json({ items: [] });
   if (url.pathname.endsWith("/files")) {
     const offset = Number(url.searchParams.get("cursor") ?? 0);
@@ -213,10 +228,12 @@ async function run() {
   if (!previewMode && !navigationTest) await verifyTabSelection();
   if (navigationTest) {
     history.replaceState(null, "", route);
-    createRoot(document.getElementById("root")!).render(<StrictMode><SyncedMeeting workspaceId="v1" meetingId="m1" /></StrictMode>);
+    createRoot(document.getElementById("root")!).render(<StrictMode><SyncedMeeting workspaceId="v1" meetingId={primaryMeetingId} /></StrictMode>);
     await until(() => document.querySelector('[role="tab"]'));
+    assert(!requests.some((url) => url === `/api/v1/meetings/${primaryMeetingId}/files`), "Screenshots loaded before opening the tab");
     button("Screenshots").click();
     await until(() => document.querySelectorAll(".screenshot-grid figure").length === filePageSize);
+    assert(requests.some((url) => url === `/api/v1/meetings/${primaryMeetingId}/files`), "Screenshots did not load after opening the tab");
     const { dialog, fileLink } = await verifyMeetingImageNavigation(location.pathname);
     dialog.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click();
     await until(() => !document.querySelector(".file-dialog"));
@@ -225,9 +242,18 @@ async function run() {
     console.log("PASS: meeting image navigation survives live list updates");
     return;
   }
-  history.replaceState(null, "", "/workspaces/v1/meetings/m1");
+  history.replaceState(null, "", performanceTest ? route : "/workspaces/v1/meetings/m1");
   createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
-  await until(() => document.querySelector('[role="tab"]') && document.querySelector('.meeting-row a[href="/meetings/m2"]') && ![...document.querySelectorAll(".sidebar-status")].some((node) => node.textContent?.includes("Loading")));
+  await until(() => document.querySelector('[role="tab"]') && document.querySelector(`.meeting-row a[href="/meetings/${secondaryMeetingId}"]`) && ![...document.querySelectorAll(".sidebar-status")].some((node) => node.textContent?.includes("Loading")));
+  if (performanceTest) {
+    assert(maxConcurrentMeetingDetailReads === 1, "Initial route issued duplicate active meeting detail reads");
+    assert(!requests.some((url) => url === `/api/v1/meetings/${primaryMeetingId}/files`), "Screenshots loaded before opening the tab");
+    button("Screenshots").click();
+    await until(() => requests.some((url) => url === `/api/v1/meetings/${primaryMeetingId}/files`));
+    document.body.dataset.testResult = "passed";
+    console.log("PASS: meeting detail is shared and screenshots load on demand");
+    return;
+  }
   await document.fonts.ready;
   if (previewMode) {
     const { navigateDashboard } = await import("../../src/client/navigation");

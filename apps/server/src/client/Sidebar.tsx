@@ -120,7 +120,7 @@ function SignOutButton() {
   </>;
 }
 
-export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceId: resolvedWorkspaceId }: { brand: ReactNode; session: SessionInfo; children: ReactNode; serverLinks?: ReactNode; routeWorkspaceId?: string }) {
+export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceId: resolvedWorkspaceId, routeMeeting, routeMeetingOwned }: { brand: ReactNode; session: SessionInfo; children: ReactNode; serverLinks?: ReactNode; routeWorkspaceId?: string; routeMeeting?: SyncedMeetingInfo; routeMeetingOwned?: boolean }) {
   const state = useSidebar();
   const accountMenuTrigger = useRef<HTMLButtonElement>(null);
   const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
@@ -160,7 +160,8 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
         {state.error && <Failure message={state.error} retry={state.reload} />}
         {!state.workspaces && !state.error && <p className="sidebar-status">Loading Workspaces…</p>}
         {state.workspaces?.length === 0 && <p className="sidebar-status">{uiText("No Workspaces", "ワークスペースがありません")}</p>}
-        {selectedWorkspace && <WorkspaceChildren key={selectedWorkspace.workspaceId} workspaceId={selectedWorkspace.workspaceId} />}
+        {selectedWorkspace && <WorkspaceChildren key={selectedWorkspace.workspaceId} workspaceId={selectedWorkspace.workspaceId}
+          resolvedMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned} />}
         {Boolean(state.workspaces?.length) && !selectedWorkspace && <p className="sidebar-status">{uiText("Choose a Workspace from Workspaces", "ワークスペースから表示するワークスペースを選択してください")}</p>}
       </nav>}
       {session.capabilities.admin ? <nav className="server-navigation" aria-label={uiText("Server settings", "サーバー設定")}>
@@ -229,14 +230,14 @@ function TreeNode({ id, name, href, initialOpen, children, appearance, project }
   </li>;
 }
 
-function WorkspaceChildren({ workspaceId }: { workspaceId: string }) {
+function WorkspaceChildren({ workspaceId, resolvedMeeting, routeMeetingOwned }: { workspaceId: string; resolvedMeeting?: SyncedMeetingInfo; routeMeetingOwned?: boolean }) {
   const route = window.location.pathname;
   const meetingId = route.match(/^\/meetings\/([^/]+)$/)?.[1];
   const projectId = route.match(/^\/projects\/([^/]+)$/)?.[1];
   const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { workspaceId: workspaceId } } }));
-  const meetingQuery = useLiveJSON<SyncedMeetingInfo>(meetingId ? apiQuery("getMeeting", { params: { path: { meetingId: meetingId } } }) : undefined);
+  const meetingQuery = useLiveJSON<SyncedMeetingInfo>(meetingId && !routeMeetingOwned && !resolvedMeeting ? apiQuery("getMeeting", { params: { path: { meetingId: meetingId } } }) : undefined);
   const projects = projectsQuery.data?.items;
-  const selectedMeeting = meetingQuery.data;
+  const selectedMeeting = resolvedMeeting ?? meetingQuery.data;
   if (!projects) return projectsQuery.error
     ? <Failure message={projectsQuery.error.message} retry={projectsQuery.reload} />
     : <p className="sidebar-status">{uiText("Loading Projects…", "プロジェクトを読み込み中…")}</p>;

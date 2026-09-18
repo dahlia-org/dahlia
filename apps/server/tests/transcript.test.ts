@@ -70,6 +70,18 @@ async function setup() {
 }
 
 describe("transcript versions", () => {
+  it("reports whether a transcript manifest contains non-whitespace text", async () => {
+    const { store, sync, workspaceId, meetingId, write } = await setup();
+    try {
+      await write(uuidV7(), 0, "completed", "replace", [" \n", "\t"]);
+      expect(await sync.transcriptContent(owner, workspaceId, meetingId, "latest", "1"))
+        .toMatchObject({ count: 2, byteCount: 3, hasText: false });
+      await write(uuidV7(), 1, "completed", "replace", [" ", "spoken"]);
+      expect(await sync.transcriptContent(owner, workspaceId, meetingId, "latest", "1"))
+        .toMatchObject({ count: 2, hasText: true });
+    } finally { await store.close?.(); }
+  });
+
   it("stores, updates, copies, and backfills normalized character counts without a metrics version", async () => {
     const { store, sync, workspaceId, meetingId, body, databasePath } = await setup();
     const transcriptId = uuidV7();

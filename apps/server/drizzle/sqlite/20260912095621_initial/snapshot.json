@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "cd93f3e2-e8a4-44c5-8403-e6f325882dc8",
+  "id": "287e9872-8340-44d0-83ab-e881ef02ce73",
   "prevIds": [
-    "c9faa713-58e2-4062-9cb3-c2bebdd29b87"
+    "00000000-0000-0000-0000-000000000000"
   ],
   "ddl": [
     {
@@ -6322,6 +6322,44 @@
       "where": null,
       "origin": "manual",
       "name": "meetings_workspace_deleted_idx",
+      "entityType": "indexes",
+      "table": "meetings"
+    },
+    {
+      "columns": [
+        {
+          "value": "workspace_id",
+          "isExpression": false
+        },
+        {
+          "value": "project_id",
+          "isExpression": false
+        },
+        {
+          "value": "active",
+          "isExpression": false
+        },
+        {
+          "value": "deleted_at",
+          "isExpression": false
+        },
+        {
+          "value": "deleting_at",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        },
+        {
+          "value": "meeting_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "meetings_workspace_project_live_created_idx",
       "entityType": "indexes",
       "table": "meetings"
     },

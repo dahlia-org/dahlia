@@ -338,10 +338,12 @@ describe("server summary jobs", () => {
           expect(response.status).toBe(200);
           expect(response.headers.get("cache-control")).toBe("no-store");
         }
-        for (const meetingPath of [`/api/v1/meetings/${meetingId}`, `/api/v1/meetings/${meetingId}`]) {
+        for (const meetingPath of [`/api/v1/meetings/${meetingId}`, `/api/v1/workspaces/${workspaceId}/meetings`]) {
           const response = await app.request(meetingPath, { headers });
           expect(response.status).toBe(200);
-          const meeting = await response.json();
+          const payload: unknown = await response.json();
+          if (!payload || typeof payload !== "object") throw new Error("invalid meeting response");
+          const meeting = "items" in payload ? (payload.items as Record<string, unknown>[])[0]! : payload;
           expect(meeting).toMatchObject({ meetingId, name: "Meeting", revision: 1, summaryRevision: 1,
             transcriptRevision: 0, isRecording: false, contentOmitted: true, hasSummary: true });
           for (const key of ["summaryTitle", "summaryDocument", "summaryCreatedAt"]) expect(meeting).not.toHaveProperty(key);

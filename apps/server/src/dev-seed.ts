@@ -18,10 +18,13 @@ const sampleTranscripts = new Map([
 ]);
 type SeedMeeting = { meetingId: string; name: string; createdAt: string; transcriptRevision: number; isRecording?: boolean };
 
-function isSampleMeeting(meeting: { name: string; description: string; summaryDocument: string | null }): boolean {
-  if (!sampleTranscripts.has(meeting.name) || meeting.description !== sampleDescription || !meeting.summaryDocument) return false;
+async function isSampleMeeting(identity: Identity, sync: MeetingSyncService, workspaceId: string,
+  meeting: { meetingId: string; name: string; description: string; hasSummary: boolean }): Promise<boolean> {
+  if (!sampleTranscripts.has(meeting.name) || meeting.description !== sampleDescription || !meeting.hasSummary) return false;
+  const summaryDocument = (await sync.latestSummary(identity, workspaceId, meeting.meetingId)).record?.document;
+  if (typeof summaryDocument !== "string") return false;
   try {
-    const document = JSON.parse(meeting.summaryDocument) as { title?: unknown; description?: unknown; tags?: unknown };
+    const document = JSON.parse(summaryDocument) as { title?: unknown; description?: unknown; tags?: unknown };
     return document.title === meeting.name && document.description === sampleDescription
       && Array.isArray(document.tags) && document.tags.length === 1
       && (document.tags[0] === sampleTag || document.tags[0] === "sample");
@@ -84,7 +87,8 @@ async function seedEmptyAccount(identity: Identity, sync: MeetingSyncService): P
     let cursor: string | undefined;
     do {
       const page = await sync.listMeetings(identity, workspaceId, undefined, undefined, undefined, cursor);
-      meetings.push(...page.items.filter(isSampleMeeting).map((meeting) => ({ meetingId: meeting.meetingId, name: meeting.name,
+      const samples = await Promise.all(page.items.map(async (meeting) => await isSampleMeeting(identity, sync, workspaceId, meeting) ? meeting : null));
+      meetings.push(...samples.filter((meeting) => meeting !== null).map((meeting) => ({ meetingId: meeting.meetingId, name: meeting.name,
         createdAt: meeting.createdAt.toISOString(), transcriptRevision: meeting.transcriptRevision ?? 0, isRecording: meeting.isRecording })));
       cursor = page.nextCursor;
     } while (cursor);

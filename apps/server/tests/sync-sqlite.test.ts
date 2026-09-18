@@ -45,6 +45,17 @@ afterEach(() => {
 });
 
 describe("SQLite canonical sync", () => {
+  it("uses the project meeting index for live ordered pages", async () => {
+    const { store, databasePath } = await setup();
+    const database = new DatabaseSync(databasePath);
+    try {
+      const plan = database.prepare(`EXPLAIN QUERY PLAN SELECT meeting_id FROM meetings
+        WHERE workspace_id = ? AND project_id = ? AND active = 1 AND deleted_at IS NULL AND deleting_at IS NULL
+        ORDER BY created_at DESC, meeting_id DESC LIMIT 201`).all(workspaceId, projectId);
+      expect(plan.some((row) => String(row.detail).includes("meetings_workspace_project_live_created_idx"))).toBe(true);
+    } finally { database.close(); await store.close?.(); }
+  });
+
   it("shares generation defaults through Workspace reads, receipts and deltas with admin-only writes", async () => {
     const { store } = await setup();
     const service = new MeetingSyncService(store.sync);

@@ -36,7 +36,7 @@ import type {
 import { decodeSyncCursor, encodeSyncCursor, SYNC_SNAPSHOT_ENTITIES, SyncTransactionError } from "./store";
 import { fileUploadSchema, filePatchSchema, fileResponse, fileStorageKey, fileVariantKey, imageContentTypes, type FileRecord } from "../files/model";
 import { SCREENSHOT_VARIANTS, screenshotVariantKey, type ScreenshotTransformer, type ScreenshotVariant } from "./screenshot-variants";
-import { metadataRecord, readTextContent, TEXT_CONTENT_VERSION } from "./text-content";
+import { meetingMetadata, metadataRecord, readTextContent, TEXT_CONTENT_VERSION } from "./text-content";
 
 function missingMeetingConflict(meetingId: string): SyncTransactionError {
   return new SyncTransactionError(409, "revision_conflict", [{
@@ -1030,9 +1030,9 @@ export class MeetingSyncService {
     return workspaceId;
   }
 
-  async getMeetingById(identity: Identity, meetingId: string) {
+  async getMeetingById(identity: Identity, meetingId: string, includeSummaryContent = true) {
     const workspaceId = await this.store.withIdentity(identity, (scoped) => scoped.resolveEntityWorkspace("meeting", meetingId));
-    return workspaceId ? this.getMeeting(identity, workspaceId, meetingId) : null;
+    return workspaceId ? this.getMeeting(identity, workspaceId, meetingId, includeSummaryContent) : null;
   }
 
   getProject(identity: Identity, workspaceId: string, projectId: string) {
@@ -1068,10 +1068,11 @@ export class MeetingSyncService {
     if (search?.tokens.length && this.embedder
       && !await this.store.withIdentity(identity, (scoped) => scoped.getWorkspace(workspaceId))) return { items: [] };
     if (search) {
+      const items = await this.search(identity, search, (scoped, prepared) =>
+        scoped.listMeetings(workspaceId, prepared, 100, projectId, undefined, scope, undefined, false),
+      (meeting) => meeting.meetingId, signal);
       return {
-        items: await this.search(identity, search, (scoped, prepared) =>
-          scoped.listMeetings(workspaceId, prepared, 100, projectId, undefined, scope),
-        (meeting) => meeting.meetingId, signal),
+        items: items.map(meetingMetadata),
       };
     }
     const parsedCursor = this.parseMeetingCursor(cursor);
@@ -1082,11 +1083,13 @@ export class MeetingSyncService {
       projectId,
       parsedCursor,
       scope,
+      undefined,
+      false,
     ));
-    const items = records.slice(0, SYNC_READ_PAGE_SIZE);
-    const last = items.at(-1);
+    const pageRecords = records.slice(0, SYNC_READ_PAGE_SIZE);
+    const last = pageRecords.at(-1);
     return {
-      items,
+      items: pageRecords.map(meetingMetadata),
       ...(records.length > SYNC_READ_PAGE_SIZE && last
         ? { nextCursor: `${last.createdAt.toISOString()},${last.meetingId}` }
         : {}),
@@ -1100,8 +1103,8 @@ export class MeetingSyncService {
     return { createdAt: parsed.data[0], meetingId: parsed.data[1] };
   }
 
-  getMeeting(identity: Identity, workspaceId: string, meetingId: string) {
-    return this.store.withIdentity(identity, (scoped) => scoped.getMeeting(workspaceId, meetingId));
+  getMeeting(identity: Identity, workspaceId: string, meetingId: string, includeSummaryContent = true) {
+    return this.store.withIdentity(identity, (scoped) => scoped.getMeeting(workspaceId, meetingId, false, includeSummaryContent));
   }
 
   async listTranscript(identity: Identity, workspaceId: string, meetingId: string, cursor?: string,

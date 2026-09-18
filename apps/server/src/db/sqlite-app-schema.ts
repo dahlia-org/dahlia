@@ -137,6 +137,9 @@ export const syncedMeeting = sqliteTable("meetings", {
   deletedAt: sqliteTimestamp("deleted_at"),
 }, (table) => [
   index("meetings_workspace_deleted_idx").on(table.workspaceId, table.deletedAt, table.meetingId),
+  index("meetings_workspace_project_live_created_idx").on(
+    table.workspaceId, table.projectId, table.active, table.deletedAt, table.deletingAt, table.createdAt, table.meetingId,
+  ),
   index("meetings_calendar_event_idx").on(table.icalUid, table.recurrenceId),
   unique("synced_meeting_workspace_meeting_unique").on(table.workspaceId, table.meetingId),
   foreignKey({

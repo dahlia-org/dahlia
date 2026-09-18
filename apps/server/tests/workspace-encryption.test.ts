@@ -12,6 +12,7 @@ import type { SyncTransaction } from "../src/sync/types";
 import { uuidV7 } from "../src/id";
 import { seedHeaderIdentity, testUserID } from "./public-test-client";
 import type { SummaryJob } from "../src/summary/model";
+import { MeetingSyncService } from "../src/sync/service";
 
 const owner: Identity = { userId: testUserID("encryption-owner"),  source: "header" };
 const outsider: Identity = { userId: testUserID("encryption-outsider"),  source: "header" };
@@ -112,6 +113,9 @@ it("encrypts canonical content, patches and receipts while preserving plaintext 
     name: "PRIVATE_MEETING_MARKER", summaryTitle: "PRIVATE_SUMMARY_MARKER",
     calendarEvent: { attendees: [{ email: "private-attendee@example.com", display_name: "PRIVATE_ATTENDEE_MARKER" }] },
   });
+  const listed = (await new MeetingSyncService(f.store.sync).listMeetings(owner, f.workspaceId)).items[0]!;
+  expect(listed).toMatchObject({ meetingId, hasSummary: true, contentOmitted: true });
+  for (const key of ["summaryTitle", "summaryDocument", "summaryCreatedAt"]) expect(listed).not.toHaveProperty(key);
   expect(await f.store.sync.withIdentity(outsider, (sync) => sync.getMeeting(f.workspaceId, meetingId))).toBeNull();
   f.db.exec("UPDATE jobs_search_index SET available_at = 0");
   const [job] = await f.store.searchIndex!.claim("test", 32, 1);

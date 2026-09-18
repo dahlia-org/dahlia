@@ -3145,6 +3145,9 @@
           "transcript": {
             "$ref": "#/components/schemas/NullableTranscript"
           },
+          "hasText": {
+            "type": "boolean"
+          },
           "items": {
             "type": "array",
             "items": {

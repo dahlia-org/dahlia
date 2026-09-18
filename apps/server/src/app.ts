@@ -740,8 +740,8 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   });
   registerApi(app, "getMeeting", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    const meeting = await sync.getMeetingById(identity, sync.parseId(context.req.param("meetingId")!));
-    return meeting ? context.json(meetingMetadata({ ...meeting })) : context.json({ error: "meeting_not_found" }, 404);
+    const meeting = await sync.getMeetingById(identity, sync.parseId(context.req.param("meetingId")!), false);
+    return meeting ? context.json(meetingMetadata(meeting)) : context.json({ error: "meeting_not_found" }, 404);
   });
   registerApi(app, "listProjects", async (context) => {
     const identity = await syncIdentity(context.req.raw);
