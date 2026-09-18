@@ -148,11 +148,15 @@
 
         @Test
         func footerAnimatedIconIsDecorative() throws {
-            let button = MainSidebarAccountButton(frame: .zero)
+            let button = MainSidebarAccountButton(frame: NSRect(x: 0, y: 0, width: 100, height: 30))
             let icon = try #require(button.subviews.compactMap { $0 as? NSImageView }.first)
+            button.image = try #require(NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil))
+            button.imagePosition = .imageOnly
+            button.layoutSubtreeIfNeeded()
 
             #expect(!icon.isAccessibilityElement())
-            #expect(icon.hitTest(.zero) == nil)
+            #expect(icon.frame != .zero)
+            #expect(icon.hitTest(NSPoint(x: icon.frame.midX, y: icon.frame.midY)) == nil)
         }
 
         @Test
