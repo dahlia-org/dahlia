@@ -10,7 +10,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import type { SessionInfo } from "./App";
 import type { OrganizationInfo, SyncedMeetingInfo, SyncedProjectInfo, SyncedWorkspaceInfo } from "./api";
 import { json, uiText } from "./api";
-import { ArrowRight, Blocks, Building2, Check, ChevronRight, FileText, Folder, Home, Link, LogOut, Menu, Pencil, Plus, Search as SearchIcon, Settings2, Sparkles, Trash2, User, Users, type LucideIcon } from "lucide-react";
+import { ArrowRight, Blocks, Building2, Check, ChevronRight, FileText, Folder, Home, Link, LogOut, Menu, MessageCircle, Pencil, Plus, Search as SearchIcon, Settings2, Sparkles, Trash2, User, Users, type LucideIcon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 
 
@@ -75,7 +75,7 @@ function Failure({ message, retry }: { message: string; retry: () => void }) {
 
 const menuIcons = { folder: Folder, account: User, workspace: Blocks, organization: Building2, settings: Settings2,
   document: FileText, members: Users, signOut: LogOut, check: Check, home: Home, search: SearchIcon, edit: Pencil,
-  trash: Trash2, plus: Plus, arrow: ArrowRight, menu: Menu, sparkles: Sparkles, link: Link } satisfies Record<string, LucideIcon>;
+  trash: Trash2, plus: Plus, arrow: ArrowRight, menu: Menu, chat: MessageCircle, sparkles: Sparkles, link: Link } satisfies Record<string, LucideIcon>;
 
 export function MenuIcon({ name }: { name: keyof typeof menuIcons }) {
   const Icon = menuIcons[name];
@@ -117,6 +117,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
     ? [selectedWorkspace, ...(state.workspaces ?? [])] : state.workspaces ?? [];
   const currentPath = typeof window === "undefined" ? "" : window.location.pathname;
   const homeActive = currentPath === "/dashboard";
+  const aiActive = currentPath === "/ai";
   const workspacesActive = currentPath === "/workspaces";
   useEffect(() => {
     if (selectedWorkspaceId) save(selectionKey, selectedWorkspaceId);
@@ -125,6 +126,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
     <div className="sidebar-brand flex h-9 items-center px-2">{brand}</div>
     <nav className="primary-navigation flex items-center gap-1 px-1" aria-label={uiText("Library navigation", "ライブラリ")}>
       <Tooltip label={uiText("Home", "ホーム")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${homeActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/dashboard" aria-label={uiText("Home", "ホーム")} aria-current={homeActive ? "page" : undefined}><MenuIcon name="home" /><span className={homeActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Home", "ホーム")}</span></a></Tooltip>
+      {session.capabilities.ai && <Tooltip label={uiText("Chat with Dahlia AI", "Dahlia AI とチャット")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${aiActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/ai" aria-label={uiText("Chat with Dahlia AI", "Dahlia AI とチャット")} aria-current={aiActive ? "page" : undefined}><MenuIcon name="chat" /><span className={aiActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Chat", "チャット")}</span></a></Tooltip>}
       {session.capabilities.sync && <Tooltip label={uiText("Workspaces", "ワークスペース")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${workspacesActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/workspaces" aria-label={uiText("Workspaces", "ワークスペース")} aria-current={workspacesActive ? "page" : undefined}><MenuIcon name="workspace" /><span className={workspacesActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Workspaces", "ワークスペース")}</span></a></Tooltip>}
       {session.capabilities.sync && selectedWorkspaceId && <Search key={`${selectionKey}:${selectedWorkspaceId}`} workspaceId={selectedWorkspaceId} />}
     </nav>

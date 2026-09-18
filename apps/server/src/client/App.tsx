@@ -39,8 +39,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "./components/ui/hover-card";
 import { ChevronRight, MoreHorizontal } from "lucide-react";
 import { Input } from "./components/ui/input";
-import { AppShell, PageHeader } from "./layout/AppShell";
+import { AppShell, DetailHeaderBar, PageHeader } from "./layout/AppShell";
 import { Checkbox } from "./components/ui/checkbox";
+import { AiChat } from "./AiChat";
 
 export interface SessionInfo {
   capabilities: DashboardCapabilities;
@@ -691,7 +692,7 @@ export function WorkspaceMeetings({ session, workspaceId }: { session: SessionIn
       navigateDashboard(`/projects/${id}`);
     },
   });
-  return <article className="meeting-detail collection-detail" aria-busy={!workspace && workspaceQuery.loading}>
+  return <article className="main-column meeting-detail collection-detail" aria-busy={!workspace && workspaceQuery.loading}>
     {workspace && <header className="meeting-header">
       <BreadcrumbHeader segments={[{ current: true, label: workspace.name,
         icon: <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} />,
@@ -807,7 +808,7 @@ function SyncedProject({ workspaceId, projectId, resolvedProject }: { workspaceI
       },
     });
   };
-  return <article className="meeting-detail collection-detail">
+  return <article className="main-column meeting-detail collection-detail">
     <header className="meeting-header">
       {project && <BreadcrumbHeader segments={[
         { href: `/workspaces/${workspaceId}`, label: workspace?.name ?? uiText("Workspace", "ワークスペース"),
@@ -979,15 +980,14 @@ function BreadcrumbSwitcher({ label, href, icon, menuLabel, options, current = f
 }
 
 function BreadcrumbHeader({ segments, actions }: { segments: BreadcrumbSegment[]; actions?: ReactNode }) {
-  return <div className="relative -top-6 left-1/2 mb-6 flex h-9 w-[calc(100vw-240px)] -translate-x-1/2 items-center gap-3 px-4 max-md:w-screen">
+  return <DetailHeaderBar actions={actions}>
     <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-visible whitespace-nowrap" aria-label={uiText("Breadcrumbs", "パンくず")}>
       {segments.map((segment, index) => <span className="contents" key={`${segment.href ?? "current"}:${segment.label}`}>
         {index > 0 && <span className="text-xs text-muted-foreground" aria-hidden="true">/</span>}
         <BreadcrumbSwitcher {...segment} />
       </span>)}
     </nav>
-    {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
-  </div>;
+  </DetailHeaderBar>;
 }
 
 export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { workspaceId: string; meetingId: string; resolvedMeeting?: SyncedMeetingInfo }) {
@@ -1043,7 +1043,7 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { wor
     }, restoreFocus);
   };
   return (
-    <article className="mx-auto max-w-[720px]" aria-busy={!meeting && (meetingQuery.loading || workspaceQuery.loading)}>
+    <article className="main-column" aria-busy={!meeting && (meetingQuery.loading || workspaceQuery.loading)}>
       {meeting && <header className="mb-6">
         <BreadcrumbHeader segments={[
             { label: workspace?.name ?? uiText("Workspace", "ワークスペース"), href: `/workspaces/${workspaceId}`,
@@ -2112,6 +2112,7 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   else if (route.page === "organization") page = <Organization session={session} organizationId={route.organizationId!} />;
   else if (route.page === "invitation") page = <Invitation invitationId={route.invitationId!} />;
   else if (route.page === "settings") page = <Settings session={session} extensions={extensions} />;
+  else if (route.page === "ai") page = <AiChat />;
   else page = <Overview session={session} />;
   return <AppShell brand={<Brand brand={brand} />} extensionPaths={extensions.flatMap((extension) => extension.routes?.map((item) => item.path) ?? [])}
     serverLinks={extensions.flatMap((extension) => extension.navigation ?? []).filter(isServerNavigation).map((item) =>

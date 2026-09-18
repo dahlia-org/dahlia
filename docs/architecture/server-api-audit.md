@@ -13,6 +13,8 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | getHealth | maintained | GET `/healthz` | `/healthz` | Process health | public API; no bundled caller |
 | getOpenAPI | modified | GET `/openapi.json` | `new public contract` | Public OpenAPI 3.1 contract | public API; no bundled caller |
 | getSession | modified | GET `/api/v1/session` | `/api/session` | Current browser identity | apps/server/src/client/App.tsx<br>apps/desktop/Sources/Dahlia/Services/DahliaCloudService.swift |
+| getAiModels | modified | GET `/api/v1/ai/models` | `new public contract` | List configured Agent-compatible models for Private Web | apps/server/src/client/AiChat.tsx |
+| chatWithAi | modified | POST `/api/v1/ai/chat` | `new public contract` | Stream one authenticated page-memory Agent response | apps/server/src/client/AiChat.tsx |
 | listSessions | modified | GET `/api/v1/sessions` | `/api/sessions` | OAuth sessions (accounts mode only) | apps/server/src/client/App.tsx |
 | revokeSession | modified | DELETE `/api/v1/sessions/{id}` | `/api/sessions/{id}` | Revoke an OAuth session | apps/server/src/client/App.tsx |
 | listAdministrators | modified | GET `/api/v1/admin/members` | `/api/admin/members` | List platform administrators; administrator only | apps/server/src/client/App.tsx |

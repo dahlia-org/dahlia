@@ -3,3 +3,6 @@ allowBuilds:
   esbuild: true
   workerd: true
 verifyDepsBeforeRun: false
+overrides:
+  '@posthog/core': 1.53.3
+  posthog-node: 5.52.2

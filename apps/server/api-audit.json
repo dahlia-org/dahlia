@@ -57,6 +57,28 @@
       ]
     },
     {
+      "operationId": "getAiModels",
+      "method": "GET",
+      "path": "/api/v1/ai/models",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "List configured Agent-compatible models for Private Web",
+      "consumers": [
+        "apps/server/src/client/AiChat.tsx"
+      ]
+    },
+    {
+      "operationId": "chatWithAi",
+      "method": "POST",
+      "path": "/api/v1/ai/chat",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Stream one authenticated page-memory Agent response",
+      "consumers": [
+        "apps/server/src/client/AiChat.tsx"
+      ]
+    },
+    {
       "operationId": "listSessions",
       "method": "GET",
       "path": "/api/v1/sessions",

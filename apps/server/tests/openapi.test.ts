@@ -242,7 +242,10 @@ it("audits the concrete installed Better Auth endpoints and MCP tools", async ()
     }).sort();
     expect(actual).toEqual(audit.delegated.filter((entry) => entry.path.startsWith("/api/auth/")).map((entry) => `${entry.operation} ${entry.method} ${entry.path}`).sort());
     const mcpSource = await readFile(new URL("../src/mcp.ts", import.meta.url), "utf8");
-    expect([...mcpSource.matchAll(/server.registerTool\("([^"]+)"/g)].map((match) => match[1]).sort()).toEqual(audit.mcp.tools.toSorted());
+    const agentToolSource = await readFile(new URL("../src/agent/tools.ts", import.meta.url), "utf8");
+    const registered = [...mcpSource.matchAll(/server.registerTool\("([^"]+)"/g)].map((match) => match[1]);
+    const shared = [...agentToolSource.matchAll(/id: "((?:query|get)_meeting(?:s|_transcript)?)"/g)].map((match) => match[1]);
+    expect([...registered, ...shared].sort()).toEqual(audit.mcp.tools.toSorted());
   } finally { await store.close?.(); await rm(directory, { recursive: true, force: true }); }
 });
 

@@ -12,7 +12,7 @@ const config: AppConfig = {
   authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite",
   baseUrl: "https://dahlia.example", oauthRedirectUris: [], maxRequestBytes: 1024,
   provider: { backend: "openai", baseUrl: "https://upstream.example/v1", apiKey: "secret" },
-  codexModels: ["gpt-5.6-luna"],
+  foundationModels: ["gpt-5.6-luna"],
 };
 const databricksProvider = {
   backend: "databricks" as const, baseUrl: "https://workspace.example/ai-gateway/mlflow/v1",
@@ -20,7 +20,7 @@ const databricksProvider = {
 const databricksConfig: AppConfig = {
   ...config,
   provider: databricksProvider,
-  codexModels: ["system.ai.gpt-5-6-luna", "system.ai.custom"],
+  foundationModels: ["system.ai.gpt-5-6-luna", "system.ai.custom"],
 };
 const identity = { userId: "verified-user" };
 const request = (body: unknown, headers?: HeadersInit) => new Request("https://dahlia.example/api/v1/responses", {
@@ -28,7 +28,7 @@ const request = (body: unknown, headers?: HeadersInit) => new Request("https://d
 });
 const configs: AppConfig[] = [config, {
   ...config, provider: { backend: "cloudflare", baseUrl: "https://cf.example/v1", apiKey: "secret" },
-  codexModels: ["gpt-5.6-luna", "gpt-4.1", "gemini-3-flash"],
+  foundationModels: ["gpt-5.6-luna", "gpt-4.1", "gemini-3-flash"],
 }, databricksConfig];
 
 describe("AI Gateway", () => {
@@ -58,12 +58,12 @@ describe("AI Gateway", () => {
   it.each(configs)("uses the configured model list without provider discovery ($provider.backend)", async (backendConfig) => {
     const transport = vi.fn<GatewayFetch>();
     const models = await new GatewayService(backendConfig, transport).models();
-    expect(models.data.map((m) => m.id)).toEqual(backendConfig.codexModels);
+    expect(models.data.map((m) => m.id)).toEqual(backendConfig.foundationModels);
     expect(transport).not.toHaveBeenCalled();
   });
 
   it.each(configs)("publishes nothing when the model list is unset ($provider.backend)", async (backendConfig) => {
-    expect((await new GatewayService({ ...backendConfig, codexModels: undefined }).models()).data).toEqual([]);
+    expect((await new GatewayService({ ...backendConfig, foundationModels: undefined }).models()).data).toEqual([]);
   });
 
   it.each(configs)("rejects models outside the configured list ($provider.backend)", async (backendConfig) => {
@@ -98,7 +98,7 @@ describe("AI Gateway", () => {
 
   it("does not mutate the body; resolves model, OBO and trusted user tags inside Databricks", async () => {
     const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
-    const backend = new DatabricksBackend(databricksProvider, databricksConfig.codexModels!, transport);
+    const backend = new DatabricksBackend(databricksProvider, databricksConfig.foundationModels!, transport);
     const body = Object.freeze({ model: "system.ai.gpt-5-6-luna", input: [], max_output_tokens: 256, stream: true, tools: [{ type: "function", name: "note" }] });
     const controller = new AbortController();
     await backend.responses(body, {
@@ -138,6 +138,52 @@ describe("AI Gateway", () => {
     expect(transport).not.toHaveBeenCalled();
   });
 
+  it("falls back to the Databricks App service principal when OBO is absent", async () => {
+    const transport = vi.fn<GatewayFetch>(async (input) => String(input).endsWith("/oidc/v1/token")
+      ? Response.json({ access_token: "app-token", expires_in: 3600 })
+      : new Response("{}"));
+    const service = new GatewayService({
+      ...databricksConfig,
+      databricksWorkspace: {
+        host: "https://workspace.example",
+        clientId: "app-client",
+        clientSecret: "app-secret",
+        tokenUrl: "https://workspace.example/oidc/v1/token",
+      },
+    }, transport);
+    await service.responses(request({ model: "system.ai.gpt-5-6-luna", input: [] }), identity);
+    expect(String(transport.mock.calls[0]![0])).toBe("https://workspace.example/oidc/v1/token");
+    expect(new Headers(transport.mock.calls[1]![1]?.headers).get("authorization")).toBe("Bearer app-token");
+
+    await service.responses(request({ model: "system.ai.gpt-5-6-luna", input: [] }, {
+      "x-forwarded-access-token": "obo",
+    }), identity);
+    expect(new Headers(transport.mock.calls[2]![1]?.headers).get("authorization")).toBe("Bearer obo");
+    expect(transport.mock.calls.filter(([input]) => String(input).endsWith("/oidc/v1/token"))).toHaveLength(1);
+  });
+
+  it("cancels while a Databricks App token is pending", async () => {
+    let respond!: (response: Response) => void;
+    const transport = vi.fn<GatewayFetch>(() => new Promise((resolve) => { respond = resolve; }));
+    const service = new GatewayService({
+      ...databricksConfig,
+      databricksWorkspace: {
+        host: "https://workspace.example", clientId: "app-client", clientSecret: "app-secret",
+        tokenUrl: "https://workspace.example/oidc/v1/token",
+      },
+    }, transport);
+    const controller = new AbortController();
+    const response = service.responses(new Request("https://dahlia.example/api/v1/responses", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "system.ai.gpt-5-6-luna", input: [] }), signal: controller.signal,
+    }), identity);
+    await vi.waitFor(() => expect(transport).toHaveBeenCalledOnce());
+    controller.abort();
+    await expect(response).rejects.toMatchObject({ name: "AbortError" });
+    respond(Response.json({ access_token: "unused", expires_in: 3600 }));
+    expect(transport).toHaveBeenCalledOnce();
+  });
+
   it("streams incrementally and preserves upstream status and safe headers", async () => {
     let streamController!: ReadableStreamDefaultController<Uint8Array>;
     const stream = new ReadableStream<Uint8Array>({ start(controller) { streamController = controller; } });
@@ -159,7 +205,7 @@ describe("AI Gateway", () => {
   it.each(configs)("preserves optional Responses fields ($provider.backend)", async (backendConfig) => {
     const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
     const service = new GatewayService(backendConfig, transport);
-    const model = backendConfig.codexModels![0]!;
+    const model = backendConfig.foundationModels![0]!;
     for (const body of [
       { model, input: [], max_output_tokens: null },
       { model, input: [], stream: null },

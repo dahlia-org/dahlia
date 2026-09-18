@@ -64,7 +64,7 @@ pnpm exec wrangler secret put OPENAI_API_KEY
 pnpm exec wrangler secret put OPENAI_BASE_URL
 ```
 
-Use `https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/v1` as the base URL. Set `CLOUDFLARE_AI_GATEWAY_ID` to select a gateway (default: `default`). Dahlia disables gateway logging, payload collection, caching, and additional gateway attempts. List the exposed models in `DAHLIA_CODEX_MODELS`; the example config uses `gpt-5.6-luna,gpt-4.1,gemini-3-flash`. Jobs support `gpt-4.1` (text/image, reasoning `none`) and `gemini-3-flash` (audio, reasoning `minimal`, `low`, `medium`, `high`). Public short names map to `openai/gpt-4.1` and `google/gemini-3-flash`. Set `DAHLIA_CODEX_AUTO_REVIEW_MODEL` to override the reserved automatic-review model independently of that catalog.
+Use `https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/v1` as the base URL. Set `CLOUDFLARE_AI_GATEWAY_ID` to select a gateway (default: `default`). Dahlia disables gateway logging, payload collection, caching, and additional gateway attempts. List the exposed models in `DAHLIA_FOUNDATION_MODELS`; the example config uses `gpt-5.6-luna,gpt-4.1,gemini-3-flash`. Jobs support `gpt-4.1` (text/image, reasoning `none`) and `gemini-3-flash` (audio, reasoning `minimal`, `low`, `medium`, `high`). Public short names map to `openai/gpt-4.1` and `google/gemini-3-flash`. Set `DAHLIA_CODEX_AUTO_REVIEW_MODEL` to override the reserved automatic-review model independently of that catalog.
 
 ## 5. Validate and deploy
 
@@ -83,7 +83,7 @@ curl -fsS https://<host>/healthz
 curl -fsS https://<host>/.well-known/oauth-authorization-server
 ```
 
-Then sign in with Google and complete a streaming Responses request through `/api/v1/responses` using one ID from `DAHLIA_CODEX_MODELS`.
+Then sign in with Google and complete a streaming Responses request through `/api/v1/responses` using one ID from `DAHLIA_FOUNDATION_MODELS`.
 
 ## Operational notes
 
@@ -104,7 +104,7 @@ The template enables independent summary, image-analysis and search Queues, each
 
 Disable Hyperdrive query caching before using the binding: `pnpm exec wrangler hyperdrive update <id> --caching-disabled true`. This is Hyperdrive resource configuration, not a Wrangler binding field. Stale authorization and job reads are unsafe. Apply the registered PostgreSQL migrations using `DAHLIA_DATABASE_TYPE=postgres DAHLIA_DATABASE_URL=<migration-url> pnpm db:migrate`. Supply the same provider/embedding environment values used by the Worker when migrating. Semantic search requires the existing pgvector extension and its model/dimension-specific HNSW index; the migration command creates that index when embeddings are configured (the underlying column remains `real[]`).
 
-`DAHLIA_AI_BACKEND` is independent of the runtime. Both Node and Workers support Databricks (`DATABRICKS_HOST`, explicit `DAHLIA_CODEX_MODELS`, and service principal credentials for background AI) and Cloudflare (account REST token). Workers require `DAHLIA_SUMMARY_QUEUE` plus `IMAGES` for summary capability; configured captioning requires `DAHLIA_IMAGE_QUEUE` plus `IMAGES`, and configured embeddings require `DAHLIA_SEARCH_QUEUE`. Missing required bindings fail initialization. Cloudflare embedding is `@cf/baai/bge-m3`, 1024 dimensions; captioning is `gpt-4.1`. Existing saved model settings are preserved: select supported models and reasoning explicitly before enabling generation.
+`DAHLIA_AI_BACKEND` is independent of the runtime. Both Node and Workers support Databricks (`DATABRICKS_HOST`, explicit `DAHLIA_FOUNDATION_MODELS`, and service principal credentials for background AI) and Cloudflare (account REST token). Workers require `DAHLIA_SUMMARY_QUEUE` plus `IMAGES` for summary capability; configured captioning requires `DAHLIA_IMAGE_QUEUE` plus `IMAGES`, and configured embeddings require `DAHLIA_SEARCH_QUEUE`. Missing required bindings fail initialization. Cloudflare embedding is `@cf/baai/bge-m3`, 1024 dimensions; captioning is `gpt-4.1`. Existing saved model settings are preserved: select supported models and reasoning explicitly before enabling generation.
 
 Messages contain job references only. DB commits precede notification. Every minute, Cron enumerates owners and reconciles/dispatches pages of at most 100 rows, with continuations in Queue. Search run messages hold at most 16 document references. DB state owns attempts, availability, leases and generations; duplicates and stale claims do no work. Summary timeout/lease/attempt limits remain 4 minutes / 5 minutes / 3 attempts. Transient AI failures persist a DB retry; DB errors use native Queue retry. A DLQ entry does not delete the canonical job, and Cron can recover an expired lease. Monitor bounded `job_notification_failed`, `queue_job_failed` and processor event/error codes plus Queue/DLQ counts. Keep Cron enabled and resolve infrastructure failures before replaying DLQ messages. Drain jobs before changing the deployment-wide provider.
 

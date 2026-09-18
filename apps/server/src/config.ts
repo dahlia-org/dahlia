@@ -64,7 +64,7 @@ export interface AppConfig {
   betterAuthSecret?: string;
   oauthRedirectUris: string[];
   maxRequestBytes: number;
-  codexModels?: string[];
+  foundationModels?: string[];
   codexAutoReviewModel?: string;
   storageBackend?: StorageBackend;
   storageLocalPath?: string;
@@ -243,8 +243,8 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     .max(64 * 1024 * 1024)
     .parse(env.DAHLIA_MAX_REQUEST_BYTES ?? String(16 * 1024 * 1024));
   const aiBackend = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai");
-  const codexModels = z.array(z.string().max(UPSTREAM_MODEL_MAX_LENGTH))
-    .parse([...new Set(csv(env.DAHLIA_CODEX_MODELS))]);
+  const foundationModels = z.array(z.string().max(UPSTREAM_MODEL_MAX_LENGTH))
+    .parse([...new Set(csv(env.DAHLIA_FOUNDATION_MODELS))]);
   const codexAutoReviewModel = env.DAHLIA_CODEX_AUTO_REVIEW_MODEL?.trim();
   const storageBackend = storageBackendSchema.parse(env.DAHLIA_STORAGE_BACKEND?.trim() || "local");
   const searchEmbeddingModel = env.DAHLIA_SEARCH_EMBEDDING_MODEL?.trim();
@@ -298,7 +298,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     provider: providerConfig(env, aiBackend, databricksWorkspace),
     oauthRedirectUris: csv(env.DAHLIA_OAUTH_REDIRECT_URIS),
     maxRequestBytes,
-    codexModels,
+    foundationModels,
     codexAutoReviewModel: codexAutoReviewModel
       ? z.string().max(UPSTREAM_MODEL_MAX_LENGTH).parse(codexAutoReviewModel)
       : undefined,

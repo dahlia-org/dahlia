@@ -42,7 +42,7 @@
   },
   "vars": {
     "DAHLIA_AI_BACKEND": "cloudflare",
-    "DAHLIA_CODEX_MODELS": "gpt-5.6-luna,gpt-4.1,gemini-3-flash",
+    "DAHLIA_FOUNDATION_MODELS": "gpt-5.6-luna,gpt-4.1,gemini-3-flash",
     "DAHLIA_STORAGE_BACKEND": "r2",
     "DAHLIA_AUTH_TYPE": "accounts",
     "DAHLIA_DATABASE_TYPE": "hyperdrive",

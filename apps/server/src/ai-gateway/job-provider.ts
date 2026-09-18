@@ -11,7 +11,7 @@ export function createJobProvider(config: AppConfig, transport: typeof fetch = f
     const tokens = new DatabricksTokenProvider(config.databricksWorkspace, transport);
     return {
       provider,
-      backend: new DatabricksBackend(provider, config.codexModels ?? [], transport),
+      backend: new DatabricksBackend(provider, config.foundationModels ?? [], transport),
       normalizeModel: (model: string) => model,
       resolveModel: (model: string) => model === CODEX_AUTO_REVIEW_ALIAS
         ? config.codexAutoReviewModel?.trim() ?? model
@@ -25,7 +25,7 @@ export function createJobProvider(config: AppConfig, transport: typeof fetch = f
   if (provider?.backend === "cloudflare") {
     return {
       provider,
-      backend: new CloudflareBackend(provider, transport, config.codexModels ?? []),
+      backend: new CloudflareBackend(provider, transport, config.foundationModels ?? []),
       normalizeModel: (model: string) => model.replace(/^(openai|google)\//, ""),
       resolveModel: cloudflareModel,
       headers: (): Promise<Record<string, string>> => Promise.resolve({

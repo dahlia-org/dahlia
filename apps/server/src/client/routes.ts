@@ -15,6 +15,7 @@ const coreDashboardPaths = new Set([
   "/sessions",
   "/dashboard",
   "/dashboard/settings",
+  "/ai",
   "/workspaces",
   "/orgs",
   "/admin",
@@ -34,7 +35,7 @@ export function isCoreDashboardPath(path: string): boolean {
 }
 
 export type DashboardRoute = {
-  page?: "file" | "overview" | "settings" | "workspaces" | "workspace" | "meeting" | "project" | "organizations" | "organization" | "invitation" | "admin-users" | "admin-organizations" | "admin-organization" | "admin-settings";
+  page?: "ai" | "file" | "overview" | "settings" | "workspaces" | "workspace" | "meeting" | "project" | "organizations" | "organization" | "invitation" | "admin-users" | "admin-organizations" | "admin-organization" | "admin-settings";
   redirect?: string;
   fileId?: string;
   workspaceId?: string;
@@ -51,6 +52,7 @@ export function resolveDashboardRoute(
   if (path === "/") return { redirect: "/dashboard" };
   if (path === "/sessions") return { redirect: "/dashboard/settings" };
   if (path === "/dashboard") return { page: "overview" };
+  if (path === "/ai") return capabilities.ai ? { page: "ai" } : { redirect: "/dashboard" };
   if (path === "/orgs") {
     return capabilities.sharing
       ? { page: "organizations" }

@@ -7,6 +7,7 @@ import { CloudflareBackend } from "./cloudflare";
 import { GatewayRequestError } from "./errors";
 import { CODEX_AUTO_REVIEW_ALIAS } from "./model-alias";
 import { modelList } from "./models";
+import { DatabricksTokenProvider } from "../databricks/token";
 
 export { GatewayRequestError } from "./errors";
 export const LATEST_CODEX_CLIENT_VERSION = "0.153.4";
@@ -20,11 +21,14 @@ export class GatewayService {
   ) {
     const provider = config.provider;
     if (provider?.backend === "databricks") {
-      this.backend = new DatabricksBackend(provider, config.codexModels ?? [], transport);
+      const tokens = config.databricksWorkspace
+        ? new DatabricksTokenProvider(config.databricksWorkspace, transport)
+        : undefined;
+      this.backend = new DatabricksBackend(provider, config.foundationModels ?? [], transport, tokens);
     } else if (provider) {
       this.backend = provider.backend === "cloudflare"
-        ? new CloudflareBackend(provider, transport, config.codexModels ?? [])
-        : new OpenAIBackend(provider, transport, config.codexModels ?? []);
+        ? new CloudflareBackend(provider, transport, config.foundationModels ?? [])
+        : new OpenAIBackend(provider, transport, config.foundationModels ?? []);
     }
   }
 
@@ -68,7 +72,7 @@ export class GatewayService {
     const autoReviewModel = this.config.codexAutoReviewModel?.trim();
     if (body.model === CODEX_AUTO_REVIEW_ALIAS && autoReviewModel) {
       upstreamModel = autoReviewModel;
-    } else if (!this.config.codexModels?.includes(body.model)) {
+    } else if (!this.config.foundationModels?.includes(body.model)) {
       throw new GatewayRequestError("Model is not configured", 400, "model_not_configured");
     }
     return proxyUpstreamResponse(await this.backend.responses(body as RequestBody, {

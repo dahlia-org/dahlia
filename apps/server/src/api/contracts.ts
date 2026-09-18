@@ -11,6 +11,7 @@ import { summaryStartSchema } from "../summary/service";
 import { workspaceSearchRequestSchema } from "../search/model";
 import { transcriptChunkSchema } from "../sync/schemas";
 import { conversationAnalyticsSchema, conversationAnalyticsUnavailableSchema } from "../conversation-analytics";
+import { aiChatSchema } from "../agent/service";
 import * as S from "./schemas";
 
 const bearer: Record<string, string[]>[] = [{ bearerAuth: [] }, { browserSession: [] }, { trustedProxy: [] }];
@@ -82,6 +83,7 @@ export type OperationId =
   | "getServerOrganization" | "getSearchSettings" | "updateSearchSettings"
   | "listGovernanceWorkspaces" | "confirmWorkspaceDeletion" | "forceDeleteWorkspace"
   | "getCapabilities" | "listWorkspaces" | "getWorkspace"
+  | "getAiModels" | "chatWithAi"
   | "listProjects" | "getProject" | "listMeetings" | "listDeletedMeetings" | "getMeeting" | "listSummaries"
   | "getSummary" | "getLatestSummary" | "listTranscripts" | "getTranscript" | "getLatestTranscript"
   | "getConversationAnalytics"
@@ -114,6 +116,11 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
     teams: z.array(z.object({ id: S.principalId, name: z.string() })), hasMoreMembers: z.boolean(), hasMoreTeams: z.boolean(),
   })) }, { query: z.object({ membersOffset: z.string().regex(/^\d+$/).optional(), teamsOffset: z.string().regex(/^\d+$/).optional() }).strict() }, browser),
   getCapabilities: route("get", "/api/v1/capabilities", "getCapabilities", "Discover feature versions; unsupported features are omitted", { 200: json(S.capabilities) }),
+  getAiModels: route("get", "/api/v1/ai/models", "getAiModels", "Agent-compatible models available to Private Web", { 200: json(z.object({ items: z.array(S.aiModel) })) }, {}, browser),
+  chatWithAi: route("post", "/api/v1/ai/chat", "chatWithAi", "Stream one page-memory Agent response; no conversation is persisted", { 200: {
+    description: "text/event-stream with text, tool, error, and done events. Tool input and output are never included.",
+    content: { "text/event-stream": { schema: z.string() } },
+  } }, body(aiChatSchema), browser),
   listWorkspaces: route("get", "/api/v1/workspaces", "listWorkspaces", "Accessible Workspaces", { 200: json(S.page(S.workspaceRead)) }, { query: z.object({ organizationId: S.principalId.optional() }).strict() }),
   getWorkspace: route("get", v, "getWorkspace", "Get Workspace", { 200: json(S.workspaceRead) }),
   listProjects: route("get", `${v}/projects`, "listProjects", "Workspace project tree", { 200: json(S.page(S.project)) }),

@@ -44,14 +44,14 @@ describe("summary model capture", () => {
 
   it("uses configured catalog defaults for transcript and audio jobs", async () => {
     const transcript = createTranscriptSummaryMethod(loadConfig({
-      ...cloudflare, DAHLIA_CODEX_MODELS: "gpt-4.1",
+      ...cloudflare, DAHLIA_FOUNDATION_MODELS: "gpt-4.1",
     }), {} as never, {} as never)!;
     expect(await transcript.captureSettings(DEFAULT_GENERATION_PREFERENCES)).toMatchObject({
       model: "gpt-4.1", reasoningEffort: "none",
     });
 
     const audio = createAudioSummaryMethod(loadConfig({
-      ...cloudflare, DAHLIA_CODEX_MODELS: "gemini-3-flash",
+      ...cloudflare, DAHLIA_FOUNDATION_MODELS: "gemini-3-flash",
     }), {} as never, {} as never)!;
     const combined = { ...DEFAULT_GENERATION_PREFERENCES, processing: {
       location: "remote" as const, remote: { workflow: "combined" as const },
@@ -672,7 +672,7 @@ describe("server summary jobs", () => {
       const method = createTranscriptSummaryMethod(loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: cloudflare ? "cloudflare" : "databricks",
         OPENAI_API_KEY: "synthetic", OPENAI_BASE_URL: "https://api.cloudflare.com/client/v4/accounts/synthetic/ai/v1",
         DATABRICKS_HOST: "https://workspace.example", DATABRICKS_CLIENT_ID: "client", DATABRICKS_CLIENT_SECRET: "secret",
-        DAHLIA_CODEX_MODELS: cloudflare ? "gpt-4.1" : "system.ai.gpt-5-6-luna" }), store.sync, sync, transport)!;
+        DAHLIA_FOUNDATION_MODELS: cloudflare ? "gpt-4.1" : "system.ai.gpt-5-6-luna" }), store.sync, sync, transport)!;
       const service = new SummaryService(store.sync, [method]);
       await service.start(owner, workspaceId, meetingId, { id: uuidV7() });
       await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
@@ -760,7 +760,7 @@ function audioMethod(value: Awaited<ReturnType<typeof setup>>, result?: (body: R
   });
   const config = loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "databricks", DATABRICKS_HOST: "https://workspace.example",
     DATABRICKS_CLIENT_ID: "client", DATABRICKS_CLIENT_SECRET: "secret",
-    DAHLIA_CODEX_MODELS: models.join(",") });
+    DAHLIA_FOUNDATION_MODELS: models.join(",") });
   return { method: createAudioSummaryMethod(config, value.store.sync, value.sync, transport)!, calls, transport };
 }
 
@@ -1334,7 +1334,7 @@ describe("Cloudflare native audio summary", () => {
     try {
       await addRecording(value);
       const config = loadConfig({ DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters", DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "cloudflare", OPENAI_API_KEY: "test-token",
-        OPENAI_BASE_URL: "https://api.cloudflare.com/client/v4/accounts/test/ai/v1", DAHLIA_CODEX_MODELS: "gemini-3-flash" });
+        OPENAI_BASE_URL: "https://api.cloudflare.com/client/v4/accounts/test/ai/v1", DAHLIA_FOUNDATION_MODELS: "gemini-3-flash" });
       let calls = 0;
       const transport: typeof fetch = async (url, init) => {
         calls++;

@@ -1,5 +1,8 @@
 import { serverMigrationManifest } from "../src/migrations";
+import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -86,7 +89,7 @@ describe("deployment routing", () => {
     expect(worker).not.toContain("isApplicationPath");
     expect(worker).toContain("DAHLIA_AI_BACKEND");
     expect(worker).toContain("DATABRICKS_HOST");
-    expect(worker).toContain("DAHLIA_CODEX_MODELS: env.DAHLIA_CODEX_MODELS");
+    expect(worker).toContain("DAHLIA_FOUNDATION_MODELS: env.DAHLIA_FOUNDATION_MODELS");
     expect(worker).toContain("OPENAI_API_KEY");
     expect(worker).toContain("OPENAI_BASE_URL");
     expect(cloudflareVite).toContain("cloudflare(");
@@ -190,12 +193,31 @@ describe("deployment routing", () => {
     expect(example).toContain("DAHLIA_DATABASE_TYPE=sqlite");
     expect(example).toContain("DAHLIA_DATABASE_URL=file:.data/dahlia-auth.sqlite");
     expect(packageJson.scripts.predev).toBe("pnpm run db:migrate");
+    expect(packageJson.scripts.dev).toContain("scripts/wait-for-api.mjs");
     expect(packageJson.scripts["dev:api"]).toContain("--env-file-if-exists=.env.local");
     expect(packageJson.scripts["db:migrate"]).toContain("--env-file-if-exists=.env.local");
     expect(viteConfig.envDir).toBeUndefined();
     expect(viteConfig.server?.proxy).toHaveProperty("/.well-known");
     expect(viteConfig.server?.proxy).toHaveProperty("/mcp");
     expect(viteConfig.server?.proxy).toHaveProperty("/sign-out");
+  });
+
+  it("waits for the local API to report healthy before starting the client", async () => {
+    let requests = 0;
+    const server = createServer((_request, response) => {
+      response.writeHead(++requests < 2 ? 503 : 200).end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      await new Promise<void>((resolve, reject) => execFile(process.execPath, ["scripts/wait-for-api.mjs"], {
+        cwd: new URL("..", import.meta.url), env: { ...process.env, DATABRICKS_APP_PORT: String(port) },
+      }, (error) => error ? reject(new Error(error.message, { cause: error })) : resolve()));
+      expect(requests).toBe(2);
+    } finally {
+      server.close();
+    }
   });
 
   it("uses the current database variables in Server CI", () => {
@@ -282,7 +304,7 @@ describe("deployment routing", () => {
       schema_name: \${resources.schemas.app_schema.name}
       name: \${var.volume_name}`);
     expect(bundle).toContain("scripts/postdeploy.sh");
-    expect(resource).toContain("name: DAHLIA_CODEX_MODELS");
+    expect(resource).toContain("name: DAHLIA_FOUNDATION_MODELS");
     expect(resource).toContain("system.ai.gpt-5-6-luna");
     expect(resource).not.toContain("DATABRICKS_MODEL_SCHEMA");
     expect(resource).not.toContain("ai_schema");
