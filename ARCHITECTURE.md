@@ -140,7 +140,7 @@ Better Auth、Gateway 管理 metadata、meeting sync は単一の Drizzle applic
 `DAHLIA_DATABASE_TYPE` は `sqlite`、`postgres`、`lakebase`、`hyperdrive` から選び、SQLite／PostgreSQL の接続先は
 `DAHLIA_DATABASE_URL` で指定する。Node は SQLite／PostgreSQL／Lakebase、Workers は Hyperdrive／PostgreSQL を扱う。
 Lakebase は公式 `@databricks/lakebase` connector で OAuth credential を更新する。
-database 選択は認証および AI backend と独立する。`DAHLIA_AI_BACKEND` で Databricks、Cloudflare、OpenAI を選択し、Databricks Responses は Apps proxy の `X-Forwarded-Access-Token`、その他は `OPENAI_API_KEY` と必要に応じて `OPENAI_BASE_URL` を使う。
+database 選択は認証および AI backend と独立する。`DAHLIA_AI_BACKEND` で Databricks、Cloudflare、OpenAI を選択し、Databricks Responses は Apps proxy の `X-Forwarded-Access-Token` を優先して、ない場合は App service principal の短期 token を使う。その他は `OPENAI_API_KEY` と必要に応じて `OPENAI_BASE_URL` を使う。
 Databricks Apps の header identity は sessionless だが、認証・administrator・Server canonical data のため Lakebase を使用する。
 AI Gateway は `AIGatewayBackend.listModels` と `responses(body, context)` を共通境界とする。全 backend の公開モデル一覧は `DAHLIA_FOUNDATION_MODELS` で列挙し、通常の Responses は列挙された ID だけを受け付ける。backend ごとの JSON catalog が一致する slug の metadata を供給する。Databricks は `system.ai.*` の完全修飾 slug をそのまま上流へ渡し、ヘッダー構築だけを backend が所有する。
 Server 共通層は `DAHLIA_CODEX_AUTO_REVIEW_MODEL` による予約モデル上書きを所有し、設定された上流 ID はスキーマを補完せず転送する。
