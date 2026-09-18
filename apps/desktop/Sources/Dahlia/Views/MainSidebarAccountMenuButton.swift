@@ -29,8 +29,10 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
         )
     }
 
-    func makeNSView(context: Context) -> NSButton {
-        let button = NSButton(title: "", target: context.coordinator, action: #selector(MainSidebarAccountMenuCoordinator.toggleMenu))
+    func makeNSView(context: Context) -> MainSidebarAccountButton {
+        let button = MainSidebarAccountButton(frame: .zero)
+        button.target = context.coordinator
+        button.action = #selector(MainSidebarAccountMenuCoordinator.toggleMenu)
         button.isBordered = false
         button.imagePosition = .imageLeading
         button.imageScaling = .scaleProportionallyDown
@@ -43,7 +45,7 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
         return button
     }
 
-    func updateNSView(_ button: NSButton, context: Context) {
+    func updateNSView(_ button: MainSidebarAccountButton, context: Context) {
         context.coordinator.update(
             workspaces: workspaces,
             currentWorkspace: currentWorkspace,
@@ -57,11 +59,11 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
         configure(button)
     }
 
-    static func dismantleNSView(_: NSButton, coordinator: MainSidebarAccountMenuCoordinator) {
+    static func dismantleNSView(_: MainSidebarAccountButton, coordinator: MainSidebarAccountMenuCoordinator) {
         coordinator.dismissMenu()
     }
 
-    private func configure(_ button: NSButton) {
+    private func configure(_ button: MainSidebarAccountButton) {
         _ = dynamicTypeSize
         let currentConnection = connections.first { $0.id == currentConnectionID }
         let accountTitle = isLocalAccount
@@ -84,12 +86,14 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
         let font = NSFont.preferredFont(forTextStyle: .body)
         if !isLocalAccount, let currentConnectionID {
             let state = accountController.syncStates[currentConnectionID] ?? .pending
-            button.image = NSImage(systemSymbolName: state.symbol, accessibilityDescription: state.title)?
+            let icon = NSImage(systemSymbolName: state.symbol, accessibilityDescription: state.title)?
                 .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular)
                     .applying(.init(paletteColors: [state == .synced ? .systemGreen : .secondaryLabelColor, .secondaryLabelColor])))
+            button.setIcon(icon, animated: progress?.isSyncing == true)
         } else {
-            button.image = NSImage(systemSymbolName: isLocalAccount ? "person.2" : "icloud.slash", accessibilityDescription: nil)?
+            let icon = NSImage(systemSymbolName: isLocalAccount ? "person.2" : "icloud.slash", accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular))
+            button.setIcon(icon, animated: false)
         }
         button.toolTip = syncTitle
         button.setAccessibilityLabel("\(L10n.account), \(accountTitle); \(L10n.currentWorkspace), \(workspaceTitle); \(syncTitle ?? "")")

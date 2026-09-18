@@ -1,7 +1,10 @@
 import SwiftUI
 
 struct MeetingSyncStatusView: View {
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+
     let state: MeetingSyncState
+    var isSyncing = false
 
     var body: some View {
         Label {
@@ -10,6 +13,11 @@ struct MeetingSyncStatusView: View {
             Image(systemName: state.symbol)
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(state == .synced ? Color.green : Color.secondary, Color.secondary)
+                .symbolEffect(
+                    .rotate,
+                    options: .repeat(.continuous),
+                    isActive: isSyncing && !accessibilityReduceMotion
+                )
         }
         .labelStyle(.iconOnly)
         .font(.caption)
@@ -17,7 +25,6 @@ struct MeetingSyncStatusView: View {
         .dahliaHoverHelp(label: state.title)
         .accessibilityLabel(state.title)
     }
-
 }
 
 extension MeetingSyncState {

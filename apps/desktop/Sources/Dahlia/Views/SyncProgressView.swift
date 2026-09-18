@@ -16,20 +16,33 @@ enum SyncRecoveryAction: Hashable {
 }
 
 struct SyncProgressView: View {
-    let connections: [DahliaAccountConnection]
+    let connection: DahliaAccountConnection
+    var navigation: MainSidebarAccountMenuNavigationState
+    var openURL: (URL) -> Bool = { NSWorkspace.shared.open($0) }
     @State private var controller = DahliaCloudAccountController.shared
     @State private var workingAction: SyncRecoveryAction?
     @State private var pendingDiscard: PendingSyncDiscard?
-    @State private var actionError: String?
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(connection.displayName).font(.headline).accessibilityAddTraits(.isHeader)
+                    Text(connection.origin).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
+                    if let serverURL {
+                        Button(L10n.syncOpenServer, systemImage: "safari") {
+                            request(.openServer(serverURL))
+                        }
+                        .buttonStyle(.dahlia())
+                        .controlSize(.small)
+                    }
+                }
+                Divider()
                 Text(L10n.syncProgress).font(.headline).accessibilityAddTraits(.isHeader)
                 if controller.syncProgressUnavailable {
                     Label(L10n.syncProgressUnavailable, systemImage: "exclamationmark.triangle")
                 }
-                if let actionError {
+                if let actionError = navigation.accountDetailError {
                     Label(actionError, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
                 } else if let error = controller.errorMessage {
@@ -37,9 +50,7 @@ struct SyncProgressView: View {
                         .foregroundStyle(.red)
                 }
                 if !controller.syncProgressUnavailable {
-                    ForEach(connections) { connection in
-                        account(connection)
-                    }
+                    accountProgress
                 }
             }
             .padding(12)
@@ -66,9 +77,8 @@ struct SyncProgressView: View {
         }
     }
 
-    private func account(_ connection: DahliaAccountConnection) -> some View {
+    private var accountProgress: some View {
         LazyVStack(alignment: .leading, spacing: 8) {
-            Text(connection.displayName).font(.subheadline).foregroundStyle(.secondary)
             if let progress = controller.syncProgress[connection.id] {
                 if let issue = progress.discoveryIssue {
                     SyncIssueView(issue: issue)
@@ -90,6 +100,10 @@ struct SyncProgressView: View {
                 Label(L10n.syncFetching, systemImage: "arrow.triangle.2.circlepath")
             }
         }
+    }
+
+    private var serverURL: URL? {
+        SyncServerLink.url(origin: connection.origin)
     }
 
     @ViewBuilder
@@ -124,11 +138,12 @@ struct SyncProgressView: View {
             execute(action)
             return
         }
-        guard NSWorkspace.shared.open(url) else {
-            actionError = L10n.syncOpenServerFailed
+        let presentationID = navigation.accountDetailPresentationID
+        guard openURL(url) else {
+            navigation.publishAccountDetailError(L10n.syncOpenServerFailed, for: presentationID)
             return
         }
-        actionError = nil
+        navigation.publishAccountDetailError(nil, for: presentationID)
     }
 
     private func requestDestructive(
@@ -140,12 +155,13 @@ struct SyncProgressView: View {
     }
 
     private func execute(_ action: SyncRecoveryAction) {
+        let presentationID = navigation.accountDetailPresentationID
         guard workingAction == nil else { return }
         guard !controller.isBusy else {
-            actionError = L10n.syncRecoveryBusy
+            navigation.publishAccountDetailError(L10n.syncRecoveryBusy, for: presentationID)
             return
         }
-        actionError = nil
+        navigation.publishAccountDetailError(nil, for: presentationID)
         workingAction = action
         Task { @MainActor in
             defer { workingAction = nil }
@@ -186,7 +202,7 @@ struct SyncProgressView: View {
             } catch is CancellationError {
                 return
             } catch {
-                actionError = error.localizedDescription
+                navigation.publishAccountDetailError(error.localizedDescription, for: presentationID)
             }
         }
     }
@@ -459,6 +475,15 @@ extension WorkspaceSyncProgress.Phase {
 }
 
 extension AccountSyncProgress {
+    var isSyncing: Bool {
+        workspaces.contains { progress in
+            switch progress.phase {
+            case .preparing, .text, .attachments, .fetching: true
+            case .retrying, .attention, .synced: false
+            }
+        }
+    }
+
     var summary: String {
         if hasAttention { return L10n.syncAttention }
         switch state {

@@ -6,6 +6,7 @@ struct MainSidebarAccountMenuRow: View {
     var image: Image?
     var imageColor: Color?
     var syncState: MeetingSyncState?
+    var isSyncing = false
     var showsDisclosure = false
     var selectionState: Bool?
     var isEnabled = true
@@ -14,18 +15,17 @@ struct MainSidebarAccountMenuRow: View {
     var showsHelp = true
     var onHoverStart: (() -> Void)?
     var onHoverStartAtY: ((CGFloat) -> Void)?
-    var onHoverStartInFrame: ((CGRect) -> Void)?
     var onHoverEnd: (() -> Void)?
     let action: () -> Void
 
     @State private var isHovered = false
-    @State private var frame: CGRect = .zero
+    @State private var minY: CGFloat = 0
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 if let syncState {
-                    MeetingSyncStatusView(state: syncState)
+                    MeetingSyncStatusView(state: syncState, isSyncing: isSyncing)
                         .frame(width: 18)
                 } else if let image {
                     image
@@ -91,17 +91,16 @@ struct MainSidebarAccountMenuRow: View {
         .help(showsHelp ? (help ?? title) : "")
         .accessibilityHint(help ?? "")
         .accessibilityAddTraits(selectionState == true ? .isSelected : [])
-        .onGeometryChange(for: CGRect.self) { proxy in
-            proxy.frame(in: .global)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.frame(in: .global).minY
         } action: {
-            frame = $0
+            minY = $0
         }
         .onHover { hovered in
             isHovered = hovered
             if hovered {
                 onHoverStart?()
-                onHoverStartAtY?(frame.minY)
-                onHoverStartInFrame?(frame)
+                onHoverStartAtY?(minY)
             } else {
                 onHoverEnd?()
             }
