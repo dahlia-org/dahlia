@@ -63,6 +63,7 @@ describe("Mastra meeting tools", () => {
   it("registers and executes the same Mastra tool object through the MCP adapter", async () => {
     const listMeetings = vi.fn().mockResolvedValue({ items: [], nextCursor: null });
     const tool = createMeetingTools({ listMeetings } as unknown as MeetingSyncService).query_meetings;
+    const signal = new AbortController().signal;
     let registered: { name: string; options: { inputSchema: unknown }; handler: (input: unknown, context: unknown) => Promise<unknown> } | undefined;
     const server = { registerTool(name: string, options: { inputSchema: unknown }, handler: (input: unknown, context: unknown) => Promise<unknown>) {
       registered = { name, options, handler };
@@ -72,9 +73,9 @@ describe("Mastra meeting tools", () => {
     expect(tool.strict).toBe(true);
     expect(registered?.options.inputSchema).toBe(tool.mcpInputSchema);
     expect(tool.mcpInputSchema.safeParse({ workspace_id: encodeId("workspace", workspaceId) }).success).toBe(true);
-    const result = await registered!.handler({ workspace_id: encodeId("workspace", workspaceId) }, { mcpReq: { signal: new AbortController().signal } });
+    const result = await registered!.handler({ workspace_id: encodeId("workspace", workspaceId) }, { mcpReq: { signal } });
     expect(result).toEqual({ content: [{ type: "text", text: JSON.stringify({ items: [], nextCursor: null }) }] });
-    expect(listMeetings).toHaveBeenCalledOnce();
+    expect(listMeetings).toHaveBeenCalledWith(identity, workspaceId, undefined, signal, undefined, undefined);
   });
 
   it("retains the existing MCP names, descriptions, TypeIDs, defaults and errors", async () => {
@@ -194,15 +195,16 @@ describe("AI chat boundary", () => {
         default_reasoning_level: "medium", supported_reasoning_levels: [{ effort: "medium", description: "Balanced" }] }],
     }) } as unknown as GatewayService;
     const service = createAiService(config, gateway, createMeetingTools({ listMeetings } as unknown as MeetingSyncService));
+    const request = new Request("https://dahlia.example/api/v1/ai/chat");
     const events = [];
     for await (const event of service.stream({ workspaceId, model: "gpt-5.6-test", reasoningEffort: "medium", messages: [{ role: "user", content: "List meetings" }] }, identity,
-      new Request("https://dahlia.example/api/v1/ai/chat"))) events.push(event);
+      request)) events.push(event);
     expect(events).toEqual([
       { type: "tool", name: "query_meetings", status: "running" },
       { type: "tool", name: "query_meetings", status: "complete" },
       { type: "text", text: "No meetings" },
     ]);
-    expect(listMeetings).toHaveBeenCalledWith(identity, workspaceId, undefined, undefined, undefined, undefined);
+    expect(listMeetings).toHaveBeenCalledWith(identity, workspaceId, undefined, request.signal, undefined, undefined);
     expect(bodies).toHaveLength(2);
     expect(bodies[0]).toMatchObject({ store: false, include: ["reasoning.encrypted_content"] });
     const queryTool = bodies[0]?.tools?.find(({ name }) => name === "query_meetings");

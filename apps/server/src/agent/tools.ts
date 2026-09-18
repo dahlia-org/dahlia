@@ -55,7 +55,7 @@ export function createMeetingTools(sync: MeetingSyncService) {
         identity,
         workspaceId,
         optionalToolString(query, fixed),
-        undefined,
+        context.abortSignal,
         projectId,
         wireCursor(optionalToolString(cursor, fixed), "meeting", "decode") as string | undefined,
       ), "meetings", "encode");
