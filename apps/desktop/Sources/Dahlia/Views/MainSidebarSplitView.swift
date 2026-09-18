@@ -28,7 +28,7 @@ struct MainSidebarSplitView<Sidebar: View, Detail: View>: View {
             ZStack(alignment: .leading) {
                 sidebar
                     .padding(.top, DahliaDesign.windowHeaderHeight)
-                    .frame(width: sidebarWidth, height: geometry.size.height)
+                    .frame(width: sidebarWidth, height: geometry.size.height, alignment: .leading)
                     .opacity(isVisible ? 1 : 0)
                     .animation(
                         reduceMotion || isVisible ? nil : .easeOut(duration: Self.animationDuration),
