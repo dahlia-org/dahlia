@@ -41,10 +41,21 @@ export function mergeRecoveredMessages(current: Message[], stored: Message[]): M
   return overlap < 0 ? stored : [...current.slice(0, overlap), ...stored];
 }
 
-export function recoverFailedDraft(stored: Message[], attempted: Message, previousMessageId?: string): string {
+export function recoverFailedDraft(stored: Message[], attempted: Message, previousMessages: Message[]): string {
+  const previousMessageId = previousMessages.findLast(({ id }) => id)?.id;
   const previous = previousMessageId ? stored.findIndex(({ id }) => id === previousMessageId) : undefined;
   if (previous === -1) return attempted.content;
-  const added = previous === undefined ? stored : stored.slice(previous + 1);
+  let added = previous === undefined ? stored : stored.slice(previous + 1);
+  if (previous === undefined && previousMessages.length) {
+    const addedCount = Array.from({ length: stored.length + 1 }, (_, count) => count).find((count) => {
+      const before = stored.slice(0, stored.length - count);
+      const known = before.length ? previousMessages.slice(-before.length) : [];
+      return known.length === before.length
+        && before.every((message, index) => message.role === known[index]?.role && message.content === known[index]?.content);
+    });
+    if (addedCount === undefined) return attempted.content;
+    added = addedCount ? stored.slice(-addedCount) : [];
+  }
   return added.some(({ role, content }) => role === "user" && content === attempted.content)
     ? "" : attempted.content;
 }
@@ -220,10 +231,9 @@ export function AiChat() {
           const recovered = await json<{ messages: Message[]; hasMore: boolean }>(`/api/v1/ai/threads/${activeThreadId}`, undefined,
             { notifyMutation: false });
           if (current()) {
-            const previousMessageId = nextMessages.slice(0, -1).findLast(({ id }) => id)?.id;
             setMessages(mergeRecoveredMessages(nextMessages, recovered.messages));
             setHasEarlierMessages(recovered.hasMore);
-            setDraft(recoverFailedDraft(recovered.messages, nextMessages.at(-1)!, previousMessageId));
+            setDraft(recoverFailedDraft(recovered.messages, nextMessages.at(-1)!, nextMessages.slice(0, -1)));
           }
         } catch { /* Keep the visible draft when recovery is unavailable. */ }
       }

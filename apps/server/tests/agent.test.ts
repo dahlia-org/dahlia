@@ -309,17 +309,23 @@ describe("AI chat boundary", () => {
 
   it("restores only an AI prompt that was not persisted", () => {
     const attempted = { role: "user" as const, content: "Keep this question" };
-    expect(recoverFailedDraft([], attempted)).toBe(attempted.content);
-    expect(recoverFailedDraft([attempted], attempted)).toBe("");
-    expect(recoverFailedDraft([attempted, { role: "assistant", content: "Saved answer" }], attempted)).toBe("");
+    expect(recoverFailedDraft([], attempted, [])).toBe(attempted.content);
+    expect(recoverFailedDraft([attempted], attempted, [])).toBe("");
+    expect(recoverFailedDraft([attempted, { role: "assistant", content: "Saved answer" }], attempted, [])).toBe("");
     const previous = { id: "previous", role: "assistant" as const, content: "Previous answer" };
     const repeated = { role: "user" as const, content: "Repeated question" };
+    const earlier = { role: "user" as const, content: repeated.content };
     expect(recoverFailedDraft([
-      { role: "user", content: repeated.content }, previous,
-    ], repeated, previous.id)).toBe(repeated.content);
+      earlier, previous,
+    ], repeated, [earlier, previous])).toBe(repeated.content);
     expect(recoverFailedDraft([
-      { role: "user", content: repeated.content }, previous, repeated,
-    ], repeated, previous.id)).toBe("");
+      earlier, previous, repeated,
+    ], repeated, [earlier, previous])).toBe("");
+    const idlessPrevious = { role: "assistant" as const, content: previous.content };
+    expect(recoverFailedDraft([earlier, idlessPrevious], repeated, [earlier, idlessPrevious])).toBe(repeated.content);
+    expect(recoverFailedDraft([
+      earlier, idlessPrevious, repeated, { role: "assistant", content: "Partial answer" },
+    ], repeated, [earlier, idlessPrevious])).toBe("");
   });
 
   it("keeps already loaded earlier pages when recovering the latest page", () => {
