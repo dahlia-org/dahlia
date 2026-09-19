@@ -373,6 +373,19 @@
     "aiChatRequest": {
       "workspaceId": "id:workspace"
     },
+    "aiThreadCreateRequest": {
+      "workspaceId": "id:workspace"
+    },
+    "aiThread": {
+      "id": "id:aiThread",
+      "workspaceId": "id:workspace"
+    },
+    "aiThreadPage": {
+      "items": "array:aiThread"
+    },
+    "aiThreadDetail": {
+      "thread": "aiThread"
+    },
     "search": {
       "workspaceId": "id:workspace",
       "meetings": "array:meeting",
@@ -631,6 +644,43 @@
     }
   },
   "routes": [
+    {
+      "path": "/api/v1/ai/threads",
+      "methods": [
+        "POST"
+      ],
+      "request": "aiThreadCreateRequest",
+      "response": "aiThread",
+      "limit": 131072
+    },
+    {
+      "path": "/api/v1/ai/threads",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "response": "aiThreadPage"
+    },
+    {
+      "path": "/api/v1/ai/threads/:aiThread",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "response": "aiThreadDetail"
+    },
+    {
+      "path": "/api/v1/ai/threads/:aiThread",
+      "methods": [
+        "DELETE"
+      ]
+    },
+    {
+      "path": "/api/v1/ai/threads/:aiThread/messages",
+      "methods": [
+        "POST"
+      ]
+    },
     {
       "path": "/api/v1/ai/chat",
       "methods": [

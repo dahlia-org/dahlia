@@ -163,7 +163,7 @@ jobs:
           TEST_MIGRATION_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia_baseline
 
       - name: Validate PostgreSQL application store
-        run: pnpm exec vitest run tests/postgres-store.test.ts tests/postgres-retention.test.ts
+        run: pnpm exec vitest run tests/postgres-store.test.ts tests/postgres-retention.test.ts tests/agent-history-postgres.test.ts
         env:
           TEST_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia
 

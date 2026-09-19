@@ -366,6 +366,7 @@ describe("deployment routing", () => {
     expect(serverPackage.exports).toHaveProperty(".");
     expect(serverPackage.exports).toHaveProperty("./client");
     expect(serverPackage.exports).toHaveProperty("./migrations/postgres-auth/*");
+    expect(serverPackage.exports).toHaveProperty("./migrations/postgres-agent/*");
     expect(serverPackage.exports).toHaveProperty("./package.json");
     expect(serverPackage.scripts["start:databricks"]).toBe("pnpm run db:migrate:prod && pnpm run start");
     expect(serverPackage.scripts["dev:cloudflare"]).toContain("vite.cloudflare.config.ts");

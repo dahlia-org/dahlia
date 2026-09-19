@@ -16,6 +16,8 @@ Vault / Project / Meeting の名前と説明、Meeting の Calendar Event スナ
 
 **検索の例外は明示的に承認されたもの:** PostgreSQL / Lakebase の `search.documents`、SQLite の `search_documents` とその全文・vector 索引は暗号化対象外とする。検索テキスト、会議名、要約、OCR、caption、入力 hash、model、vector は DB 直接参照で読める。検索対象の内容を DB 全体から秘匿する保証はしない。ベクトルを文書へ統合し、独立した `search_embeddings` と暗号化用の復号 scan は削除する。DB 側の検索と既存 RRF を再利用し、Vault 認可・RLS / FORCE RLS は維持する。
 
+Mastra Message History はこの例外に含めない。暗号化 Workspace の prompt と answer を `agent` schema へ平文で複製せず、専用の暗号化 storage が実装されるまでは page memory のみを使う。
+
 file / recording 本体、device DB、認証・credential 表はこの暗号化の対象外。object storage 自体の保護は別の運用境界である。
 
 ## 制約と rollout

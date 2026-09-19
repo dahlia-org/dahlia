@@ -42,4 +42,21 @@ describe("auth schema generation", { timeout: 30_000 }, () => {
       rmSync(directory, { force: true, recursive: true });
     }
   });
+
+  it("keeps the Agent migration history synchronized with its schema", () => {
+    const directory = mkdtempSync(join(tmpdir(), "dahlia-agent-schema-"));
+    const packageDirectory = new URL("..", import.meta.url);
+    try {
+      cpSync(new URL("../drizzle/postgres-agent/", import.meta.url), directory, { recursive: true });
+      const migrations = readdirSync(directory).toSorted();
+      const generated = spawnSync("pnpm", [
+        "exec", "drizzle-kit", "generate", "--dialect", "postgresql",
+        "--schema", "./src/db/postgres-agent-schema.ts", "--out", directory, "--name", "schema-drift",
+      ], { cwd: packageDirectory, encoding: "utf8" });
+      expect(generated.status, generated.stderr || generated.stdout).toBe(0);
+      expect(readdirSync(directory).toSorted()).toEqual(migrations);
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
 });

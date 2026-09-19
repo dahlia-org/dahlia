@@ -2995,6 +2995,65 @@
           "supportedReasoningEfforts"
         ]
       },
+      "AiThread": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^chat_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string",
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "workspaceId",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AiHistoryMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "content",
+          "createdAt"
+        ]
+      },
       "WorkspaceRead": {
         "allOf": [
           {
@@ -8513,6 +8572,317 @@
                   "required": [
                     "items"
                   ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/threads": {
+      "post": {
+        "operationId": "createAiThread",
+        "summary": "Create a private AI chat thread",
+        "tags": [
+          "ai"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16000
+                  }
+                },
+                "required": [
+                  "workspaceId",
+                  "title"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "headers": {
+              "Location": {
+                "description": "URI of the created representation or individual job.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiThread"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listAiThreads",
+        "summary": "List the current user's private AI chat threads",
+        "tags": [
+          "ai"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,5})$"
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AiThread"
+                      }
+                    },
+                    "hasMore": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "hasMore"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/threads/{threadId}": {
+      "get": {
+        "operationId": "getAiThread",
+        "summary": "Read one owned AI chat thread",
+        "tags": [
+          "ai"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^chat_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "threadId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "before",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "thread": {
+                      "$ref": "#/components/schemas/AiThread"
+                    },
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AiHistoryMessage"
+                      }
+                    },
+                    "hasMore": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "thread",
+                    "messages",
+                    "hasMore"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAiThread",
+        "summary": "Delete one owned AI chat thread",
+        "tags": [
+          "ai"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^chat_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "threadId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success; no response body."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/threads/{threadId}/messages": {
+      "post": {
+        "operationId": "continueAiThread",
+        "summary": "Persist a user message and stream the AI response",
+        "tags": [
+          "ai"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^chat_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "threadId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "reasoningEffort": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh",
+                      "max",
+                      "ultra"
+                    ]
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16000
+                  }
+                },
+                "required": [
+                  "model",
+                  "reasoningEffort",
+                  "content"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "text/event-stream with text, tool, error, and done events. Tool input and output are never included.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }

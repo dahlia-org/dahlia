@@ -6,9 +6,9 @@
 
 認証・管理・同期で DB を分けず、Drizzle の単一 application database に統一する。認証方式、DB、AI provider、storage の選択は独立させる。
 
-- PostgreSQL / Lakebase は `auth`（生成 Better Auth）、`app`（Workspace / Project、permission、meeting、transcript、screenshot、同期履歴）、`search`（文書・テキスト・vector）、`crypto`（wrapped Workspace key）、`jobs`（summary / image_analysis / search_index / storage_delete）。検索 projection は `search.documents` に置き、`search → app → auth` の参照を持つ。検索データ全体は暗号化対象外だが、Workspace 単位の RLS / FORCE RLS を適用する。ジョブは `jobs → app / auth` の参照を持つ。
+- PostgreSQL / Lakebase は `auth`（生成 Better Auth）、`app`（Workspace / Project、permission、meeting、transcript、screenshot、同期履歴）、`search`（文書・テキスト・vector）、`crypto`（wrapped Workspace key）、`jobs`（summary / image_analysis / search_index / storage_delete）、`agent`（Mastra chat history）。検索 projection は `search.documents` に置き、`search → app → auth` の参照を持つ。検索データ全体は暗号化対象外だが、Workspace 単位の RLS / FORCE RLS を適用する。ジョブは `jobs → app / auth` の参照を持つ。Agent history は user TypeID を resource ID に使い、独立した RLS と migration ledger で管理する。暗号化 Workspace は平文履歴を作らず page memory のみとする。
 - SQLite は Better Auth を top-level、Dahlia table は prefix なしにする。PostgreSQL の content ID は native UUID、非 UUID の user / workspace ID や hash は text。SQLite も境界で canonical UUID を検証する。
-- Better Auth schema は生成物として手編集しない。全認証方式で Auth → application の順に migration を適用する。PostgreSQL の ledger は `drizzle.__dahlia_auth_migrations` と `drizzle.__dahlia_server_migrations` に分離し、SQLite は単一 baseline を使う。
+- Better Auth schema は生成物として手編集しない。PostgreSQL / Lakebase は Auth → application → Agent の順に migration を適用する。PostgreSQL の ledger は `drizzle.__dahlia_auth_migrations`、`drizzle.__dahlia_server_migrations`、`drizzle.__dahlia_agent_migrations` に分離し、SQLite は単一 baseline を使う。
 - Node は SQLite / PostgreSQL / Lakebase、Workers は Hyperdrive / direct PostgreSQL を対象とする。D1はサポート対象から外し、専用adapter・migrationを配布しない。
 - Lakebase は公式接続・OAuth refresh を再利用する。provider secret は DB に保存せず runtime secrets に置く。DB は認証と content を含む backup / retention / access-control の管理対象になる。
 
