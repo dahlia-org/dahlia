@@ -253,7 +253,16 @@
   .ai-picker-empty { @apply block px-3 py-4 text-xs text-muted-foreground; }
   .ai-send { @apply grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground disabled:bg-muted disabled:text-muted-foreground; }
   .ai-send svg { @apply size-4; }
-  .ai-header { @apply sticky top-11 z-20 -mb-6 bg-background pt-7 md:top-0; }
+  .ai-header { @apply sticky top-0 z-20 bg-background; }
+  .ai-header::after, .ai-bottom::before {
+    content: "";
+    @apply pointer-events-none absolute inset-x-0 h-4;
+    backdrop-filter: blur(6px);
+    background: linear-gradient(to bottom, var(--background), transparent);
+    mask-image: linear-gradient(to bottom, black, transparent);
+  }
+  .ai-header::after { @apply top-full; }
+  .ai-bottom::before { @apply bottom-full; transform: rotate(180deg); }
   .ai-new-chat { @apply flex min-w-0 items-center gap-1.5 rounded-sm border-0 bg-transparent p-0 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring; }
   .ai-header svg { @apply size-3.5; }
   .ai-transcript { @apply grid gap-6 px-5 pb-72 pt-4 sm:px-8; }
@@ -263,6 +272,6 @@
   .ai-status { @apply m-0 text-xs text-muted-foreground; }
   .ai-error { @apply flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive; }
   .ai-error .secondary { @apply min-h-8 shrink-0 text-xs; }
-  .ai-bottom { @apply fixed bottom-0 right-0 z-10 w-full bg-background/95 px-4 pb-5 pt-3 backdrop-blur md:w-[calc(100%-240px)] md:px-8; }
+  .ai-bottom { @apply fixed bottom-0 right-0 z-10 w-full bg-background px-4 pb-5 pt-3 md:w-[calc(100%-240px)] md:px-8; }
   .ai-bottom .ai-composer { @apply shadow-md; }
 }

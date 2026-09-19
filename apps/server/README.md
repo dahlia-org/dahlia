@@ -404,6 +404,8 @@ The account menu's **Connect with MCP** dialog shows `mcp.json`, Claude Code, an
 
 ## Provider and model configuration
 
+The Private Web AI chat places messages directly below its sticky header. Messages gradually blur into the header and bottom composer as they scroll past those edges. The browser regression harness at `/tests/browser/ai-chat.html` (run `pnpm dev:client`) checks the header spacing and scroll-edge styling alongside chat controls.
+
 The AI backend uses the OpenAI Responses-compatible contract and is independent of the database. Select `databricks`, `cloudflare`, or `openai` with `DAHLIA_AI_BACKEND`; it defaults to `openai`. `DAHLIA_FOUNDATION_MODELS` is a comma-separated, ordered list of model IDs exposed by `/api/v1/models` for every backend. Empty or missing values expose no picker-visible models, reject Responses model IDs, and leave Server summary generation without a selectable model. While the selected non-Databricks backend has no `OPENAI_API_KEY`, Responses returns `503 provider_not_configured`.
 
 Upgrade note: deployments upgrading to this model-list contract must set `DAHLIA_FOUNDATION_MODELS` explicitly. Use `gpt-5.6-luna` for the bundled OpenAI example, the Cloudflare list shown below, or fully qualified `system.ai.*` IDs for Databricks.
