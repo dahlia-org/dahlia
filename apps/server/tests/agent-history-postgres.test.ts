@@ -21,6 +21,7 @@ describe.runIf(databaseUrl)("PostgreSQL Agent history", () => {
     try {
       const thread = await history.create(owner, workspaceId, "Persistent history");
       threadId = thread.id;
+      expect((await history.list(owner, 0)).items.map(({ id }) => id)).toContain(thread.id);
       const initialCreatedAt = new Date();
       const messages: MastraDBMessage[] = ["Question", "Answer", "Follow-up"].map((text, index) => ({
         id: uuidV7(), threadId: thread.id, resourceId,
@@ -35,24 +36,31 @@ describe.runIf(databaseUrl)("PostgreSQL Agent history", () => {
       expect(await history.get(stranger, thread.id)).toBeNull();
       expect((await history.list(stranger, 0)).items).toEqual([]);
 
-      const later = Date.now() + 10_000;
-      await history.memory(owner).saveMessages({ messages: Array.from({ length: 49 }, (_, index) => ({
-        id: uuidV7(), threadId: thread.id, resourceId, createdAt: new Date(later + index), role: "assistant" as const,
+      const later = new Date(Date.now() + 10_000);
+      const sameTime = Array.from({ length: 60 }, (_, index) => ({
+        id: uuidV7(), threadId: thread.id, resourceId, createdAt: later,
+        role: index % 2 ? "assistant" as const : "user" as const,
         content: { format: 2 as const, parts: [{ type: "text" as const, text: `History ${index}` }] },
-      })) });
+      }));
+      await history.memory(owner).saveMessages({ messages: sameTime });
       const latest = await history.get(owner, thread.id);
       expect(latest?.messages).toHaveLength(50);
-      const before = new Date(latest!.messages[0]!.createdAt);
+      expect(latest?.hasMore).toBe(true);
+      const before = latest!.messages[0]!;
       await history.memory(owner).saveMessages({ messages: [{
-        id: uuidV7(), threadId: thread.id, resourceId, createdAt: new Date(later + 100), role: "user",
+        id: uuidV7(), threadId: thread.id, resourceId, createdAt: new Date(later.getTime() + 100), role: "user",
         content: { format: 2, parts: [{ type: "text", text: "Concurrent question" }] },
       }, {
-        id: uuidV7(), threadId: thread.id, resourceId, createdAt: new Date(later + 101), role: "assistant",
+        id: uuidV7(), threadId: thread.id, resourceId, createdAt: new Date(later.getTime() + 101), role: "assistant",
         content: { format: 2, parts: [{ type: "text", text: "Concurrent answer" }] },
       }] });
-      const earlier = await history.get(owner, thread.id, before);
-      expect(earlier?.messages.map(({ content }) => content)).toEqual(["Question", "Answer", "Follow-up"]);
-      expect(earlier?.messages.some(({ id }) => latest?.messages.some((message) => message.id === id))).toBe(true);
+      const earlier = await history.get(owner, thread.id, {
+        createdAt: new Date(before.createdAt), id: before.id, role: before.role,
+      });
+      expect(earlier?.hasMore).toBe(false);
+      const paged = [...earlier!.messages, ...latest!.messages];
+      expect(new Set(paged.map(({ id }) => id)).size).toBe(63);
+      expect(paged.map(({ content }) => content)).not.toContain("Concurrent question");
 
       const claims = await Promise.all([history.startRun(owner, thread.id), history.startRun(owner, thread.id)]);
       expect(claims.filter(Boolean)).toHaveLength(1);

@@ -369,8 +369,13 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   registerApi(app, "getAiThread", async (context) => {
     if (!aiHistory) return context.json({ error: "ai_history_unavailable" }, 404);
     const identity = await identities.fromBrowser(context.req.raw);
-    const query = aiThreadHistoryQuerySchema.parse(context.req.query());
-    const result = await aiHistory.get(identity, context.req.param("threadId")!, query.before ? new Date(query.before) : undefined);
+    const query = aiThreadHistoryQuerySchema.safeParse(context.req.query());
+    if (!query.success || Boolean(query.data.before) !== Boolean(query.data.beforeId && query.data.beforeRole)) {
+      return context.json({ error: "invalid_request" }, 400);
+    }
+    const result = await aiHistory.get(identity, context.req.param("threadId")!, query.data.before ? {
+      createdAt: new Date(query.data.before), id: query.data.beforeId!, role: query.data.beforeRole!,
+    } : undefined);
     return result ? context.json(result) : context.json({ error: "ai_thread_not_found" }, 404);
   });
   registerApi(app, "deleteAiThread", async (context) => {

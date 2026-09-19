@@ -2,6 +2,7 @@ import { Brain, BriefcaseBusiness, Plus, Send, Sparkles, Square, Trash2 } from "
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { json, RequestError, uiText } from "./api";
+import { useActionDialog } from "./ActionDialog";
 import { MenuIcon, useSidebar } from "./Sidebar";
 import { DetailHeaderBar } from "./layout/AppShell";
 import {
@@ -32,6 +33,10 @@ type PickerOption = { value: string; label: string; description: string };
 export function prependEarlierMessages(current: Message[], earlier: Message[]): Message[] {
   const known = new Set(current.flatMap(({ id }) => id ? [id] : []));
   return [...earlier.filter(({ id }) => !id || !known.has(id)), ...current];
+}
+
+export function recoverFailedDraft(stored: Message[], attempted: Message): string {
+  return stored.slice(-2).some(({ role, content }) => role === "user" && content === attempted.content) ? "" : attempted.content;
 }
 
 function ComposerPicker({ kind, label, value, options, disabled, onValueChange }: {
@@ -67,6 +72,7 @@ function ComposerPicker({ kind, label, value, options, disabled, onValueChange }
 }
 
 export function AiChat() {
+  const { dialog, openDialog } = useActionDialog();
   const { workspaces } = useSidebar();
   const [models, setModels] = useState<AiModel[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
@@ -87,8 +93,12 @@ export function AiChat() {
   const [threadId, setThreadId] = useState<string>();
   const [hasEarlierMessages, setHasEarlierMessages] = useState(false);
   const [openingThread, setOpeningThread] = useState(false);
+  const [loadingMoreThreads, setLoadingMoreThreads] = useState(false);
   const controller = useRef<AbortController | undefined>(undefined);
   const viewGeneration = useRef(0);
+  const threadListGeneration = useRef(0);
+  const refreshingThreads = useRef(false);
+  const loadingMoreThreadsRef = useRef(false);
   const loadingEarlier = useRef(false);
   const transcript = useRef<HTMLDivElement>(null);
 
@@ -100,17 +110,23 @@ export function AiChat() {
     return () => request.abort();
   }, []);
   async function refreshThreads() {
+    const generation = ++threadListGeneration.current;
+    refreshingThreads.current = true;
     try {
       const result = await json<{ items: AiThread[]; hasMore: boolean }>("/api/v1/ai/threads", undefined, { notifyMutation: false });
+      if (threadListGeneration.current !== generation) return;
       setHistoryEnabled(true);
       setThreads(result.items);
       setThreadPage(0);
       setHasMoreThreads(result.hasMore);
       setHistoryReady(true);
     } catch (caught) {
+      if (threadListGeneration.current !== generation) return;
       if (caught instanceof RequestError && caught.status === 404) { setHistoryReady(true); return; }
       setHistoryReady(true);
       throw caught;
+    } finally {
+      if (threadListGeneration.current === generation) refreshingThreads.current = false;
     }
   }
   useEffect(() => {
@@ -193,7 +209,10 @@ export function AiChat() {
         try {
           const { messages: stored } = await json<{ messages: Message[] }>(`/api/v1/ai/threads/${activeThreadId}`, undefined,
             { notifyMutation: false });
-          if (current()) setMessages(stored);
+          if (current()) {
+            setMessages(stored);
+            setDraft(recoverFailedDraft(stored, nextMessages.at(-1)!));
+          }
         } catch { /* Keep the visible draft when recovery is unavailable. */ }
       }
     } finally {
@@ -260,26 +279,37 @@ export function AiChat() {
     }
   }
   async function loadMoreThreads() {
+    if (loadingMoreThreadsRef.current || refreshingThreads.current) return;
+    loadingMoreThreadsRef.current = true;
+    setLoadingMoreThreads(true);
+    const generation = threadListGeneration.current;
     try {
       const page = threadPage + 1;
       const result = await json<{ items: AiThread[]; hasMore: boolean }>(`/api/v1/ai/threads?page=${page}`, undefined,
         { notifyMutation: false });
+      if (threadListGeneration.current !== generation) return;
       setThreads((current) => [...current, ...result.items.filter((item) => !current.some(({ id }) => id === item.id))]);
       setThreadPage(page);
       setHasMoreThreads(result.hasMore);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : uiText("Could not load chat history.", "チャット履歴を読み込めませんでした。"));
+      if (threadListGeneration.current === generation) {
+        setError(caught instanceof Error ? caught.message : uiText("Could not load chat history.", "チャット履歴を読み込めませんでした。"));
+      }
+    } finally {
+      loadingMoreThreadsRef.current = false;
+      setLoadingMoreThreads(false);
     }
   }
   async function loadEarlierMessages() {
-    if (!threadId || loadingEarlier.current) return;
+    if (!threadId || pending || loadingEarlier.current) return;
     const id = threadId;
     const generation = viewGeneration.current;
-    const before = messages.find(({ createdAt }) => createdAt)?.createdAt;
-    if (!before) return;
+    const before = messages.find(({ id, createdAt }) => id && createdAt);
+    if (!before?.id || !before.createdAt) return;
     loadingEarlier.current = true;
     try {
-      const result = await json<{ messages: Message[]; hasMore: boolean }>(`/api/v1/ai/threads/${id}?before=${encodeURIComponent(before)}`, undefined,
+      const query = new URLSearchParams({ before: before.createdAt, beforeId: before.id, beforeRole: before.role });
+      const result = await json<{ messages: Message[]; hasMore: boolean }>(`/api/v1/ai/threads/${id}?${query}`, undefined,
         { notifyMutation: false });
       if (viewGeneration.current !== generation || threadId !== id) return;
       setMessages((current) => prependEarlierMessages(current, result.messages));
@@ -292,15 +322,16 @@ export function AiChat() {
       if (viewGeneration.current === generation) loadingEarlier.current = false;
     }
   }
-  async function deleteThread(id: string) {
-    if (!globalThis.confirm(uiText("Delete this chat history?", "このチャット履歴を削除しますか？"))) return;
-    try {
-      await json(`/api/v1/ai/threads/${id}`, { method: "DELETE" });
-      if (threadId === id) reset();
-      await refreshThreads();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : uiText("Could not delete chat.", "チャットを削除できませんでした。"));
-    }
+  function deleteThread(id: string) {
+    openDialog({ title: uiText("Delete chat history?", "チャット履歴を削除しますか？"),
+      description: uiText("This chat and its messages will be permanently deleted.", "このチャットとメッセージは完全に削除されます。"),
+      confirmLabel: uiText("Delete chat", "チャットを削除"), destructive: true,
+      onSubmit: async () => {
+        await json(`/api/v1/ai/threads/${id}`, { method: "DELETE" });
+        if (threadId === id) reset();
+        await refreshThreads();
+      },
+    });
   }
   const retry = () => { if (messages.at(-1)?.role === "user") void send(messages); };
   const keyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -346,13 +377,14 @@ export function AiChat() {
   </div>;
 
   return <section className={`ai-chat${messages.length ? " has-messages" : ""}${historyEnabled ? " with-history" : ""}`} aria-label="AI">
+    {dialog}
     {historyEnabled && <aside className="ai-history" aria-label={uiText("Chat history", "チャット履歴")}>
       <button className="ai-history-new" onClick={reset}><Plus aria-hidden="true" />{uiText("New chat", "新しいチャット")}</button>
       {threads.map((thread) => <div className={`ai-history-row${thread.id === threadId ? " active" : ""}`} key={thread.id}>
         <button onClick={() => void openThread(thread.id)}><span>{thread.title}</span><time>{new Date(thread.updatedAt).toLocaleDateString()}</time></button>
         <button className="ai-history-delete" aria-label={uiText("Delete chat", "チャットを削除")} onClick={() => void deleteThread(thread.id)}><Trash2 aria-hidden="true" /></button>
       </div>)}
-      {hasMoreThreads && <button className="secondary" onClick={() => void loadMoreThreads()}>{uiText("Load more", "さらに読み込む")}</button>}
+      {hasMoreThreads && <button className="secondary" disabled={loadingMoreThreads} onClick={() => void loadMoreThreads()}>{loadingMoreThreads ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに読み込む")}</button>}
     </aside>}
     {messages.length > 0 && <header className="ai-header">
       <DetailHeaderBar>
@@ -375,7 +407,7 @@ export function AiChat() {
         : uiText("Answers use meetings in the selected Workspace. History disappears when you leave this page.", "選択したワークスペースのミーティングから回答します。履歴はページを離れると消えます。")}</p>
     </div> : <>
       <div className="ai-transcript" ref={transcript}>
-        {hasEarlierMessages && <button className="secondary" disabled={openingThread} onClick={() => void loadEarlierMessages()}>{uiText("Load earlier messages", "以前のメッセージを読み込む")}</button>}
+        {hasEarlierMessages && <button className="secondary" disabled={openingThread || pending} onClick={() => void loadEarlierMessages()}>{uiText("Load earlier messages", "以前のメッセージを読み込む")}</button>}
         {messages.map((message, index) => <article className={`ai-message ${message.role}`} key={message.id || index}>{message.content}</article>)}
         {answer && <article className="ai-message assistant">{answer}</article>}
         {tool && <p className="ai-status" role="status">{uiText(`Checking meetings with ${tool}…`, `${tool} でミーティングを確認中…`)}</p>}

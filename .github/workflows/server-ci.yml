@@ -127,6 +127,9 @@ jobs:
             IF to_regclass('drizzle.__dahlia_server_migrations') IS NULL THEN
               RAISE EXCEPTION 'header migration did not create application ledger';
             END IF;
+            IF to_regclass('drizzle.__dahlia_agent_migrations') IS NULL THEN
+              RAISE EXCEPTION 'header migration did not create agent ledger';
+            END IF;
           END
           $$;
           SQL

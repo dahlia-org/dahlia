@@ -8737,6 +8737,28 @@
             "required": false,
             "name": "before",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "beforeId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "assistant"
+              ]
+            },
+            "required": false,
+            "name": "beforeRole",
+            "in": "query"
           }
         ],
         "responses": {

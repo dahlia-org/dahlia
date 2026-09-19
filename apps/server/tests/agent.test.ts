@@ -6,7 +6,7 @@ import { registerMastraTool } from "../src/mcp";
 import { encodeId } from "../src/typeid";
 import type { Identity } from "../src/auth/identity";
 import type { MeetingSyncService } from "../src/sync/service";
-import { prependEarlierMessages, readAiEvents } from "../src/client/AiChat";
+import { prependEarlierMessages, readAiEvents, recoverFailedDraft } from "../src/client/AiChat";
 import type { AppConfig } from "../src/config";
 import type { GatewayService } from "../src/ai-gateway/service";
 
@@ -305,5 +305,12 @@ describe("AI chat boundary", () => {
       { id: "message-1", role: "assistant", content: "Earlier" },
       ...current,
     ]);
+  });
+
+  it("restores only an AI prompt that was not persisted", () => {
+    const attempted = { role: "user" as const, content: "Keep this question" };
+    expect(recoverFailedDraft([], attempted)).toBe(attempted.content);
+    expect(recoverFailedDraft([attempted], attempted)).toBe("");
+    expect(recoverFailedDraft([attempted, { role: "assistant", content: "Saved answer" }], attempted)).toBe("");
   });
 });

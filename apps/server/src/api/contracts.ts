@@ -12,7 +12,7 @@ import { workspaceSearchRequestSchema } from "../search/model";
 import { transcriptChunkSchema } from "../sync/schemas";
 import { conversationAnalyticsSchema, conversationAnalyticsUnavailableSchema } from "../conversation-analytics";
 import { aiChatSchema } from "../agent/service";
-import { aiThreadCreateSchema, aiThreadMessageSchema } from "../agent/history";
+import { aiThreadCreateSchema, aiThreadHistoryQuerySchema, aiThreadMessageSchema } from "../agent/history";
 import * as S from "./schemas";
 
 const bearer: Record<string, string[]>[] = [{ bearerAuth: [] }, { browserSession: [] }, { trustedProxy: [] }];
@@ -128,7 +128,7 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   listAiThreads: route("get", "/api/v1/ai/threads", "listAiThreads", "List the current user's private AI chat threads", { 200: json(z.object({ items: z.array(aiThread), hasMore: z.boolean() })) },
     { query: z.object({ page: aiThreadPage }).strict() }, browser),
   getAiThread: route("get", "/api/v1/ai/threads/{threadId}", "getAiThread", "Read one owned AI chat thread", { 200: json(z.object({ thread: aiThread, messages: z.array(aiHistoryMessage), hasMore: z.boolean() })) },
-    { params: z.object({ threadId: aiThreadId }), query: z.object({ before: z.iso.datetime().optional() }).strict() }, browser),
+    { params: z.object({ threadId: aiThreadId }), query: aiThreadHistoryQuerySchema }, browser),
   deleteAiThread: route("delete", "/api/v1/ai/threads/{threadId}", "deleteAiThread", "Delete one owned AI chat thread", { 204: empty },
     { params: z.object({ threadId: aiThreadId }) }, browser),
   continueAiThread: route("post", "/api/v1/ai/threads/{threadId}/messages", "continueAiThread", "Persist a user message and stream the AI response", { 200: {

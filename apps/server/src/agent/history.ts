@@ -22,7 +22,11 @@ export const aiThreadMessageSchema = z.object({
   reasoningEffort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]),
   content: z.string().trim().min(1).max(16_000),
 }).strict();
-export const aiThreadHistoryQuerySchema = z.object({ before: z.iso.datetime().optional() }).strict();
+export const aiThreadHistoryQuerySchema = z.object({
+  before: z.iso.datetime().optional(),
+  beforeId: z.string().min(1).max(200).optional(),
+  beforeRole: z.enum(["user", "assistant"]).optional(),
+}).strict();
 
 export interface AiThread {
   id: string;
@@ -39,11 +43,17 @@ export interface AiHistoryMessage {
   createdAt: string;
 }
 
+export interface AiHistoryCursor {
+  createdAt: Date;
+  id: string;
+  role: AiHistoryMessage["role"];
+}
+
 export interface AiHistoryService {
   memory(identity: Identity): Memory;
   create(identity: Identity, workspaceId: string, title: string): Promise<AiThread>;
   list(identity: Identity, page: number): Promise<{ items: AiThread[]; hasMore: boolean }>;
-  get(identity: Identity, threadId: string, before?: Date): Promise<{ thread: AiThread; messages: AiHistoryMessage[]; hasMore: boolean } | null>;
+  get(identity: Identity, threadId: string, before?: AiHistoryCursor): Promise<{ thread: AiThread; messages: AiHistoryMessage[]; hasMore: boolean } | null>;
   delete(identity: Identity, threadId: string): Promise<"deleted" | "missing" | "busy">;
   startRun(identity: Identity, threadId: string): Promise<string | null>;
   finishRun(identity: Identity, threadId: string, runId: string): Promise<void>;
@@ -60,15 +70,9 @@ function threadValue(thread: { id: string; title?: string; metadata?: Record<str
     createdAt: thread.createdAt.toISOString(), updatedAt: thread.updatedAt.toISOString() };
 }
 
-function messageText(message: MastraDBMessage): string {
-  return message.content.parts.filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
+function messageText(content: MastraDBMessage["content"]): string {
+  return content.parts.filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
     .map((part) => part.text).join("");
-}
-
-function historyMessage(message: MastraDBMessage): AiHistoryMessage | null {
-  if (message.role !== "user" && message.role !== "assistant") return null;
-  const content = messageText(message);
-  return content ? { id: message.id, role: message.role, content, createdAt: message.createdAt.toISOString() } : null;
 }
 
 function compareHistoryMessages(left: AiHistoryMessage, right: AiHistoryMessage): number {
@@ -177,14 +181,24 @@ export function createAiHistoryService(pool: Pool): AiHistoryService {
       const memory = memoryFor(pool, identity);
       const thread = await memory.getThreadById({ threadId, resourceId: resourceId(identity) });
       if (!thread || thread.metadata?.kind !== "dahlia-chat") return null;
-      const recalled = await memory.recall({ threadId, resourceId: resourceId(identity), page: 0, perPage: PAGE_SIZE,
-        filter: before ? { dateRange: { end: before } } : undefined,
-        orderBy: { field: "createdAt", direction: "DESC" },
-        threadConfig: { lastMessages: PAGE_SIZE, semanticRecall: false } });
-      const messages = recalled.messages.map(historyMessage)
-        .filter((message): message is AiHistoryMessage => message !== null)
-        .sort(compareHistoryMessages);
-      return { thread: threadValue(thread), messages, hasMore: recalled.hasMore };
+      const values: unknown[] = [threadId];
+      const cursor = before ? `AND (COALESCE("createdAtZ", "createdAt"), CASE role WHEN 'user' THEN 0 ELSE 1 END, id)
+        < ($2::timestamptz, $3::integer, $4::text)` : "";
+      if (before) values.push(before.createdAt, before.role === "user" ? 0 : 1, before.id);
+      values.push(PAGE_SIZE + 1);
+      const rows = await withIdentityTransaction(pool, identity, (client) => client.query<{
+        id: string; content: string; role: string; createdAt: Date;
+      }>(`SELECT id, content, role, COALESCE("createdAtZ", "createdAt") AS "createdAt"
+        FROM agent.mastra_messages
+        WHERE thread_id = $1 AND role IN ('user', 'assistant') ${cursor}
+        ORDER BY COALESCE("createdAtZ", "createdAt") DESC,
+          CASE role WHEN 'user' THEN 0 ELSE 1 END DESC, id DESC
+        LIMIT $${values.length}`, values));
+      const messages = rows.rows.slice(0, PAGE_SIZE).map((row) => {
+        const content = messageText(JSON.parse(row.content) as MastraDBMessage["content"]);
+        return { id: row.id, role: row.role as AiHistoryMessage["role"], content, createdAt: row.createdAt.toISOString() };
+      }).filter(({ content }) => content).sort(compareHistoryMessages);
+      return { thread: threadValue(thread), messages, hasMore: rows.rows.length > PAGE_SIZE };
     },
     async delete(identity, threadId) {
       return withIdentityTransaction(pool, identity, async (client) => {

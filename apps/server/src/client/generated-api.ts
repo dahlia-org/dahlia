@@ -3362,6 +3362,8 @@ export interface operations {
         parameters: {
             query?: {
                 before?: string;
+                beforeId?: string;
+                beforeRole?: "user" | "assistant";
             };
             header?: never;
             path: {

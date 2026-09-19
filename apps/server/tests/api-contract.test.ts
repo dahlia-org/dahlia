@@ -4,7 +4,7 @@ import { createApp } from "./public-test-client";
 import { createWorkerHandler } from "../src/worker";
 import { testStore } from "./test-store";
 import type { AiService } from "../src/agent/service";
-import type { AiHistoryService, AiThread } from "../src/agent/history";
+import type { AiHistoryCursor, AiHistoryService, AiThread } from "../src/agent/history";
 import { encodeId } from "../src/typeid";
 import { MeetingSyncService } from "../src/sync/service";
 
@@ -120,6 +120,7 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     const thread: AiThread = { id: threadUuid, title: "Question", workspaceId: workspaceUuid,
       createdAt: "2026-09-19T00:00:00.000Z", updatedAt: "2026-09-19T00:00:00.000Z" };
     let busy = false;
+    let requestedCursor: AiHistoryCursor | undefined;
     const history: AiHistoryService = {
       memory: () => ({} as never),
       create: async (_identity, requestedWorkspaceId) => {
@@ -127,9 +128,12 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
         return thread;
       },
       list: async () => ({ items: [thread], hasMore: false }),
-      get: async (_identity, requestedThreadId) => requestedThreadId === threadUuid
-        ? { thread, messages: [{ id: "message-1", role: "user", content: "Question", createdAt: thread.createdAt }], hasMore: false }
-        : null,
+      get: async (_identity, requestedThreadId, cursor) => {
+        requestedCursor = cursor;
+        return requestedThreadId === threadUuid
+          ? { thread, messages: [{ id: "message-1", role: "user", content: "Question", createdAt: thread.createdAt }], hasMore: false }
+          : null;
+      },
       delete: async () => busy ? "busy" : "deleted",
       startRun: async () => busy ? null : "run-1",
       finishRun: async () => undefined,
@@ -143,6 +147,11 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     expect(await created.json()).toEqual(thread);
     expect(await (await send("/api/v1/ai/threads")).json()).toEqual({ items: [thread], hasMore: false });
     expect((await send("/api/v1/ai/threads?page=1000000")).status).toBe(400);
+    expect((await send(`/api/v1/ai/threads/${threadId}?before=${encodeURIComponent(thread.createdAt)}`)).status).toBe(400);
+    expect((await send(`/api/v1/ai/threads/${threadId}?${new URLSearchParams({
+      before: thread.createdAt, beforeId: "message-1", beforeRole: "user",
+    })}`)).status).toBe(200);
+    expect(requestedCursor).toEqual({ createdAt: new Date(thread.createdAt), id: "message-1", role: "user" });
     const continued = await send(`/api/v1/ai/threads/${threadId}/messages`, "POST",
       JSON.stringify({ model: "test-model", reasoningEffort: "medium", content: "Question" }), mutationHeaders);
     expect(continued.status).toBe(200);
