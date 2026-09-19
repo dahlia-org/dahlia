@@ -311,7 +311,7 @@ describe("AI chat boundary", () => {
     const attempted = { role: "user" as const, content: "Keep this question" };
     expect(recoverFailedDraft([], attempted)).toBe(attempted.content);
     expect(recoverFailedDraft([attempted], attempted)).toBe("");
-    expect(recoverFailedDraft([attempted, { role: "assistant", content: "Saved answer" }], attempted)).toBe(attempted.content);
+    expect(recoverFailedDraft([attempted, { role: "assistant", content: "Saved answer" }], attempted)).toBe("");
     const previous = { id: "previous", role: "assistant" as const, content: "Previous answer" };
     const repeated = { role: "user" as const, content: "Repeated question" };
     expect(recoverFailedDraft([

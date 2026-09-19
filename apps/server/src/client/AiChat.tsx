@@ -44,7 +44,7 @@ export function mergeRecoveredMessages(current: Message[], stored: Message[]): M
 export function recoverFailedDraft(stored: Message[], attempted: Message, previousMessageId?: string): string {
   const previous = previousMessageId ? stored.findIndex(({ id }) => id === previousMessageId) : undefined;
   if (previous === -1) return attempted.content;
-  const added = previous === undefined ? stored.slice(-1) : stored.slice(previous + 1);
+  const added = previous === undefined ? stored : stored.slice(previous + 1);
   return added.some(({ role, content }) => role === "user" && content === attempted.content)
     ? "" : attempted.content;
 }
