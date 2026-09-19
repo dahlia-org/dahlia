@@ -6,7 +6,7 @@ import { registerMastraTool } from "../src/mcp";
 import { encodeId } from "../src/typeid";
 import type { Identity } from "../src/auth/identity";
 import type { MeetingSyncService } from "../src/sync/service";
-import { prependEarlierMessages, readAiEvents, recoverFailedDraft } from "../src/client/AiChat";
+import { mergeRecoveredMessages, prependEarlierMessages, readAiEvents, recoverFailedDraft } from "../src/client/AiChat";
 import type { AppConfig } from "../src/config";
 import type { GatewayService } from "../src/ai-gateway/service";
 
@@ -311,6 +311,22 @@ describe("AI chat boundary", () => {
     const attempted = { role: "user" as const, content: "Keep this question" };
     expect(recoverFailedDraft([], attempted)).toBe(attempted.content);
     expect(recoverFailedDraft([attempted], attempted)).toBe("");
-    expect(recoverFailedDraft([attempted, { role: "assistant", content: "Saved answer" }], attempted)).toBe("");
+    expect(recoverFailedDraft([attempted, { role: "assistant", content: "Saved answer" }], attempted)).toBe(attempted.content);
+    const previous = { id: "previous", role: "assistant" as const, content: "Previous answer" };
+    const repeated = { role: "user" as const, content: "Repeated question" };
+    expect(recoverFailedDraft([
+      { role: "user", content: repeated.content }, previous,
+    ], repeated, previous.id)).toBe(repeated.content);
+    expect(recoverFailedDraft([
+      { role: "user", content: repeated.content }, previous, repeated,
+    ], repeated, previous.id)).toBe("");
+  });
+
+  it("keeps already loaded earlier pages when recovering the latest page", () => {
+    const current = Array.from({ length: 60 }, (_, index) => ({
+      id: `message-${index}`, role: index % 2 ? "assistant" as const : "user" as const, content: String(index),
+    }));
+    const stored = current.slice(10).map((message) => ({ ...message }));
+    expect(mergeRecoveredMessages([...current, { role: "user", content: "Failed" }], stored)).toEqual(current);
   });
 });

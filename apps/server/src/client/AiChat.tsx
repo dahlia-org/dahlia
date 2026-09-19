@@ -35,8 +35,18 @@ export function prependEarlierMessages(current: Message[], earlier: Message[]): 
   return [...earlier.filter(({ id }) => !id || !known.has(id)), ...current];
 }
 
-export function recoverFailedDraft(stored: Message[], attempted: Message): string {
-  return stored.slice(-2).some(({ role, content }) => role === "user" && content === attempted.content) ? "" : attempted.content;
+export function mergeRecoveredMessages(current: Message[], stored: Message[]): Message[] {
+  const storedIds = new Set(stored.flatMap(({ id }) => id ? [id] : []));
+  const overlap = current.findIndex(({ id }) => Boolean(id && storedIds.has(id)));
+  return overlap < 0 ? stored : [...current.slice(0, overlap), ...stored];
+}
+
+export function recoverFailedDraft(stored: Message[], attempted: Message, previousMessageId?: string): string {
+  const previous = previousMessageId ? stored.findIndex(({ id }) => id === previousMessageId) : undefined;
+  if (previous === -1) return attempted.content;
+  const added = previous === undefined ? stored.slice(-1) : stored.slice(previous + 1);
+  return added.some(({ role, content }) => role === "user" && content === attempted.content)
+    ? "" : attempted.content;
 }
 
 function ComposerPicker({ kind, label, value, options, disabled, onValueChange }: {
@@ -207,11 +217,13 @@ export function AiChat() {
       else if (!request.signal.aborted) setError(caught instanceof Error ? caught.message : uiText("AI request failed.", "AIへのリクエストに失敗しました。"));
       if (persist && activeThreadId) {
         try {
-          const { messages: stored } = await json<{ messages: Message[] }>(`/api/v1/ai/threads/${activeThreadId}`, undefined,
+          const recovered = await json<{ messages: Message[]; hasMore: boolean }>(`/api/v1/ai/threads/${activeThreadId}`, undefined,
             { notifyMutation: false });
           if (current()) {
-            setMessages(stored);
-            setDraft(recoverFailedDraft(stored, nextMessages.at(-1)!));
+            const previousMessageId = nextMessages.slice(0, -1).findLast(({ id }) => id)?.id;
+            setMessages(mergeRecoveredMessages(nextMessages, recovered.messages));
+            setHasEarlierMessages(recovered.hasMore);
+            setDraft(recoverFailedDraft(recovered.messages, nextMessages.at(-1)!, previousMessageId));
           }
         } catch { /* Keep the visible draft when recovery is unavailable. */ }
       }
