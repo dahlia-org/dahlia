@@ -82,8 +82,8 @@ export function PageHeader({ title, description, actions }: { title: string; des
   return <header className="mb-8 flex items-start justify-between gap-6"><div className="min-w-0"><h1 className="text-2xl font-semibold tracking-tight">{title}</h1>{description && <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>}</div>{actions}</header>;
 }
 
-export function DetailHeaderBar({ children, actions }: { children: ReactNode; actions?: ReactNode }) {
-  return <div className="relative -top-6 left-1/2 mb-6 flex h-9 w-[calc(100vw-240px)] -translate-x-1/2 items-center gap-3 px-4 max-md:w-screen">
+export function DetailHeaderBar({ children, actions, className = "" }: { children: ReactNode; actions?: ReactNode; className?: string }) {
+  return <div className={`relative left-1/2 flex h-9 w-[calc(100vw-240px)] -translate-x-1/2 items-center gap-3 px-4 max-md:w-screen ${className}`}>
     {children}
     {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
   </div>;

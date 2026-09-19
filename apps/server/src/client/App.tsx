@@ -980,7 +980,7 @@ function BreadcrumbSwitcher({ label, href, icon, menuLabel, options, current = f
 }
 
 function BreadcrumbHeader({ segments, actions }: { segments: BreadcrumbSegment[]; actions?: ReactNode }) {
-  return <DetailHeaderBar actions={actions}>
+  return <DetailHeaderBar actions={actions} className="-mt-6 mb-12">
     <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-visible whitespace-nowrap" aria-label={uiText("Breadcrumbs", "パンくず")}>
       {segments.map((segment, index) => <span className="contents" key={`${segment.href ?? "current"}:${segment.label}`}>
         {index > 0 && <span className="text-xs text-muted-foreground" aria-hidden="true">/</span>}

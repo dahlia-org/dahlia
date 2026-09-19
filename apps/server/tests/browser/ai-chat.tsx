@@ -91,7 +91,18 @@ async function run() {
   assert(header.includes("Dahlia AI") && header.includes("/") && header.includes("New chat"), "Chat breadcrumb is missing after chat starts");
   const headerBounds = document.querySelector<HTMLElement>(".ai-header")!.getBoundingClientRect();
   const firstMessageBounds = document.querySelector<HTMLElement>(".ai-message")!.getBoundingClientRect();
+  const headerContentBounds = document.querySelector<HTMLElement>(".ai-header > div")!.getBoundingClientRect();
+  assert(Math.abs(headerBounds.top - headerContentBounds.top) < 1 && Math.abs(headerBounds.bottom - headerContentBounds.bottom) < 1,
+    "Chat header reserves space outside its visible toolbar");
+  assert(firstMessageBounds.top >= headerBounds.bottom, "First message overlaps the header");
   assert(firstMessageBounds.top - headerBounds.bottom <= 24, "Chat messages start too far below the header");
+  for (const [selector, pseudo] of [[".ai-header", "::after"], [".ai-bottom", "::before"]] as const) {
+    assert(getComputedStyle(document.querySelector<HTMLElement>(selector)!).backdropFilter === "none",
+      `${selector} isolates its scroll edge from the messages behind it`);
+    const edge = getComputedStyle(document.querySelector<HTMLElement>(selector)!, pseudo);
+    assert(edge.backdropFilter.includes("blur(") && edge.maskImage.includes("linear-gradient") && edge.pointerEvents === "none",
+      `${selector} is missing its non-interactive blurred scroll edge`);
+  }
   assert(!document.querySelector(".ai-header .secondary"), "The redundant right-side new chat button is still visible");
   ({ workspace, reasoning, model } = controls());
   assert(workspace.disabled && reasoning.disabled && model.disabled, "Selectors remained enabled while responding");
