@@ -79,6 +79,51 @@
       ]
     },
     {
+      "operationId": "createAiThread",
+      "method": "POST",
+      "path": "/api/v1/ai/threads",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Create a private persistent AI chat for the current user",
+      "consumers": ["apps/server/src/client/AiChat.tsx"]
+    },
+    {
+      "operationId": "listAiThreads",
+      "method": "GET",
+      "path": "/api/v1/ai/threads",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "List the current user's persistent AI chats",
+      "consumers": ["apps/server/src/client/AiChat.tsx"]
+    },
+    {
+      "operationId": "getAiThread",
+      "method": "GET",
+      "path": "/api/v1/ai/threads/{threadId}",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Read an owned AI chat and its messages",
+      "consumers": ["apps/server/src/client/AiChat.tsx"]
+    },
+    {
+      "operationId": "deleteAiThread",
+      "method": "DELETE",
+      "path": "/api/v1/ai/threads/{threadId}",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Delete an owned AI chat",
+      "consumers": ["apps/server/src/client/AiChat.tsx"]
+    },
+    {
+      "operationId": "continueAiThread",
+      "method": "POST",
+      "path": "/api/v1/ai/threads/{threadId}/messages",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Continue an owned AI chat with Mastra Message History",
+      "consumers": ["apps/server/src/client/AiChat.tsx"]
+    },
+    {
       "operationId": "listSessions",
       "method": "GET",
       "path": "/api/v1/sessions",

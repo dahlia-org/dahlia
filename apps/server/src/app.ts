@@ -24,6 +24,9 @@ import { searchSettingsSchema } from "./search/settings-model";
 import { ConversationAnalyticsService } from "./conversation-analytics";
 import { AI_CHAT_MAX_REQUEST_BYTES, aiChatSchema, createAiService, type AiService } from "./agent/service";
 import { createMeetingTools } from "./agent/tools";
+import { AI_HISTORY_RUN_TIMEOUT_MS, aiThreadCreateSchema, aiThreadHistoryQuerySchema, aiThreadMessageSchema,
+  type AiHistoryService } from "./agent/history";
+import { encodeId } from "./typeid";
 
 import {
   AuthenticationError,
@@ -116,6 +119,7 @@ export interface AppDependencies {
   imageAnalysisEnabled?: boolean;
   summaryService?: SummaryService;
   aiService?: AiService;
+  aiHistory?: AiHistoryService;
   onSyncMutation?(ownerUserId: string, context: { waitUntil(task: Promise<unknown>): void }): void;
 }
 
@@ -200,6 +204,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   const conversationAnalytics = new ConversationAnalyticsService(store.sync);
   const meetingTools = createMeetingTools(sync);
   const ai = dependencies.aiService ?? createAiService(config, gateway, meetingTools, dependencies.fetch);
+  const aiHistory = dependencies.aiHistory;
   const mcp = createServerMcpHandler(config, sync, async (request) => {
     if (config.authProvider === "accounts") await identities.verifyMcpAccessToken(request);
     else await identities.fromMcpHeader(request);
@@ -343,6 +348,67 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     await identities.fromBrowser(context.req.raw);
     if (!await store.sync.isAvailable()) return context.json({ items: [] });
     return context.json({ items: await ai.models(context.req.raw.signal) });
+  });
+  registerApi(app, "listAiThreads", async (context) => {
+    if (!aiHistory) return context.json({ error: "ai_history_unavailable" }, 404);
+    const identity = await identities.fromBrowser(context.req.raw);
+    return context.json(await aiHistory.list(identity, Number(context.req.query("page") ?? 0)));
+  });
+  registerApi(app, "createAiThread", aiChatBodyLimit, async (context) => {
+    if (!aiHistory) return context.json({ error: "ai_history_unavailable" }, 404);
+    const identity = await identities.fromBrowser(context.req.raw);
+    const input = aiThreadCreateSchema.parse(await context.req.json());
+    const workspaceId = input.workspaceId;
+    const workspace = await sync.getWorkspace(identity, workspaceId);
+    if (!workspace) return context.json({ error: "workspace_not_found" }, 404);
+    if (workspace.encryption === "server") return context.json({ error: "ai_history_encrypted_workspace_unsupported" }, 409);
+    const thread = await aiHistory.create(identity, workspaceId, input.title);
+    context.header("Location", `/api/v1/ai/threads/${thread.id}`);
+    return context.json(thread, 201);
+  });
+  registerApi(app, "getAiThread", async (context) => {
+    if (!aiHistory) return context.json({ error: "ai_history_unavailable" }, 404);
+    const identity = await identities.fromBrowser(context.req.raw);
+    const query = aiThreadHistoryQuerySchema.parse(context.req.query());
+    const result = await aiHistory.get(identity, context.req.param("threadId")!, query.before ? new Date(query.before) : undefined);
+    return result ? context.json(result) : context.json({ error: "ai_thread_not_found" }, 404);
+  });
+  registerApi(app, "deleteAiThread", async (context) => {
+    if (!aiHistory) return context.json({ error: "ai_history_unavailable" }, 404);
+    const identity = await identities.fromBrowser(context.req.raw);
+    const result = await aiHistory.delete(identity, context.req.param("threadId")!);
+    if (result === "busy") return context.json({ error: "ai_thread_busy" }, 409);
+    return result === "deleted" ? context.body(null, 204) : context.json({ error: "ai_thread_not_found" }, 404);
+  });
+  registerApi(app, "continueAiThread", aiChatBodyLimit, async (context) => {
+    if (!aiHistory) return context.json({ error: "ai_history_unavailable" }, 404);
+    const identity = await identities.fromBrowser(context.req.raw);
+    const threadId = context.req.param("threadId")!;
+    const saved = await aiHistory.get(identity, threadId);
+    if (!saved) return context.json({ error: "ai_thread_not_found" }, 404);
+    const input = aiThreadMessageSchema.parse(await context.req.json());
+    const runId = await aiHistory.startRun(identity, threadId);
+    if (!runId) return context.json({ error: "ai_thread_busy" }, 409);
+    const workspaceId = saved.thread.workspaceId;
+    const history = { memory: aiHistory.memory(identity), threadId, resourceId: encodeId("user", identity.userId) };
+    const signal = AbortSignal.any([context.req.raw.signal, AbortSignal.timeout(AI_HISTORY_RUN_TIMEOUT_MS)]);
+    const aiRequest = new Request(context.req.url, { method: context.req.method, headers: context.req.raw.headers, signal });
+    return streamSSE(context, async (stream) => {
+      try {
+        for await (const event of ai.stream({ ...input, workspaceId,
+          messages: [{ role: "user", content: input.content }], history }, identity, aiRequest)) {
+          if (stream.aborted) break;
+          if (event.type === "text") await stream.writeSSE({ event: "text", data: JSON.stringify({ text: event.text }) });
+          else if (event.type === "tool") await stream.writeSSE({ event: "tool", data: JSON.stringify({ name: event.name, status: event.status }) });
+          else if (event.type === "error") await stream.writeSSE({ event: "error", data: JSON.stringify({ code: event.code }) });
+        }
+      } catch (error) {
+        if (!stream.aborted) await stream.writeSSE({ event: "error", data: JSON.stringify({ code: aiErrorCode(error) }) });
+      } finally {
+        await aiHistory.finishRun(identity, threadId, runId).catch(() => undefined);
+      }
+      if (!stream.aborted) await stream.writeSSE({ event: "done", data: "{}" });
+    });
   });
   registerApi(app, "chatWithAi", aiChatBodyLimit, async (context) => {
     const identity = await identities.fromBrowser(context.req.raw);

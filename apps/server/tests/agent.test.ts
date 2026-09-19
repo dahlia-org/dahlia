@@ -6,7 +6,7 @@ import { registerMastraTool } from "../src/mcp";
 import { encodeId } from "../src/typeid";
 import type { Identity } from "../src/auth/identity";
 import type { MeetingSyncService } from "../src/sync/service";
-import { readAiEvents } from "../src/client/AiChat";
+import { prependEarlierMessages, readAiEvents } from "../src/client/AiChat";
 import type { AppConfig } from "../src/config";
 import type { GatewayService } from "../src/ai-gateway/service";
 
@@ -291,5 +291,19 @@ describe("AI chat boundary", () => {
       { type: "done" },
     ]);
     expect(JSON.stringify(events)).not.toContain("workspace_id");
+  });
+
+  it("does not duplicate messages when older pages overlap", () => {
+    const current = [
+      { id: "message-2", role: "user" as const, content: "Already visible" },
+      { role: "assistant" as const, content: "New response" },
+    ];
+    expect(prependEarlierMessages(current, [
+      { id: "message-1", role: "assistant", content: "Earlier" },
+      { id: "message-2", role: "user", content: "Already visible" },
+    ])).toEqual([
+      { id: "message-1", role: "assistant", content: "Earlier" },
+      ...current,
+    ]);
   });
 });

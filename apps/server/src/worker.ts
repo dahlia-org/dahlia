@@ -17,6 +17,7 @@ import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 
 import { createApp } from "./app";
+import { createAiHistoryService, type AiHistoryService } from "./agent/history";
 import { R2ObjectStorage, type R2BucketLike } from "./storage/r2";
 import { S3ObjectStorage } from "./storage/s3";
 import { initializeDahliaAuth } from "./auth/better-auth";
@@ -83,7 +84,7 @@ const healthApp = new Hono();
 healthApp.use("*", secureHeaders());
 healthApp.get("/healthz", (context) => context.json({ status: "ok" }));
 
-function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): ApplicationStore & { jobs?: WorkerJobStores } {
+function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): ApplicationStore & { jobs?: WorkerJobStores; aiHistory: AiHistoryService } {
   if (config.databaseType === "hyperdrive" && !env.HYPERDRIVE) throw new Error("The HYPERDRIVE binding is required");
   const url = config.databaseType === "hyperdrive" ? env.HYPERDRIVE!.connectionString
     : config.databaseType === "postgres" ? config.databaseUrl : undefined;
@@ -91,6 +92,7 @@ function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): Applic
   const connection = connectPostgresUrl(url, 5);
   const permissions = syncedWorkspacePermission;
   return { ...createPostgresApplicationStore(connection.db, "postgres", config.searchEmbedding, config.encryption, config.authProviderId, config.localSingleUser), close: connection.close,
+    aiHistory: createAiHistoryService(connection.pool),
     jobs: {
       summaryJobs: createSummaryJobStore(connection.db, true, config.encryption),
       imageAnalysis: createImageAnalysisStore(connection.db, true, config.encryption),
@@ -182,7 +184,7 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     const jobs = applicationStore.jobs ? createQueueJobs(env, applicationStore.jobs, applicationStore.sync,
       syncService, summaryMethods, captioner, searchEmbedder) : undefined;
     const app = createApp({
-      config, auth, authStore: applicationStore, objectStorage, searchTokenizer, searchEmbedder, screenshotTransformer, syncService,
+      config, auth, authStore: applicationStore, aiHistory: applicationStore.aiHistory, objectStorage, searchTokenizer, searchEmbedder, screenshotTransformer, syncService,
       mcpSupportsCimd: false,
       summaryService: summaryMethods.length ? new SummaryService(applicationStore.sync, summaryMethods) : undefined,
       imageAnalysisEnabled: captioner !== undefined,
