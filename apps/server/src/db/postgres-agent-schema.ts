@@ -2,7 +2,7 @@ import { index, jsonb, pgPolicy, pgSchema, text, timestamp, type AnyPgColumn } f
 import { sql } from "drizzle-orm";
 
 export const agentSchema = pgSchema("agent");
-const currentResource = sql`nullif(current_setting('app.resource_id', true), '')`;
+const currentResource = sql`"agent"."user_resource_id"(nullif(current_setting('app.user_id', true), '')::uuid)`;
 
 export const agentThreads = agentSchema.table("mastra_threads", {
   id: text("id").primaryKey(),

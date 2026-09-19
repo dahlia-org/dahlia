@@ -82,10 +82,7 @@ function compareHistoryMessages(left: AiHistoryMessage, right: AiHistoryMessage)
 }
 
 function configureIdentity(client: PoolClient, identity: Identity) {
-  return client.query(
-    "SELECT set_config('app.user_id', $1, true), set_config('app.resource_id', $2, true)",
-    [identity.userId, resourceId(identity)],
-  );
+  return client.query("SELECT set_config('app.user_id', $1, true)", [identity.userId]);
 }
 
 async function withIdentityTransaction<T>(pool: Pool, identity: Identity,

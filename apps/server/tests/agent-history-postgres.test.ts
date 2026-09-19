@@ -19,9 +19,23 @@ describe.runIf(databaseUrl)("PostgreSQL Agent history", () => {
     const resourceId = encodeId("user", owner.userId);
     let threadId: string | undefined;
     try {
+      for (const userId of [owner.userId, stranger.userId, "00000000-0000-7000-8000-000000000001"]) {
+        const encoded = await connection.pool.query<{ resource_id: string }>(
+          "SELECT agent.user_resource_id($1::uuid) AS resource_id",
+          [userId],
+        );
+        expect(encoded.rows[0]?.resource_id).toBe(encodeId("user", userId));
+      }
       const thread = await history.create(owner, workspaceId, "Persistent history");
       threadId = thread.id;
       expect((await history.list(owner, 0)).items.map(({ id }) => id)).toContain(thread.id);
+      expect((await connection.pool.query<{ count: string }>(
+        "SELECT count(*) FROM agent.mastra_threads WHERE id = $1",
+        [thread.id],
+      )).rows[0]?.count).toBe("0");
+      await expect(connection.pool.query(`INSERT INTO agent.mastra_threads
+        (id, "resourceId", title, "createdAt", "updatedAt") VALUES ($1, $2, 'Forbidden', now(), now())`,
+      [uuidV7(), resourceId])).rejects.toThrow();
       const initialCreatedAt = new Date();
       const messages: MastraDBMessage[] = ["Question", "Answer", "Follow-up"].map((text, index) => ({
         id: uuidV7(), threadId: thread.id, resourceId,
@@ -35,6 +49,12 @@ describe.runIf(databaseUrl)("PostgreSQL Agent history", () => {
         .toEqual(["Question", "Answer", "Follow-up"]);
       expect(await history.get(stranger, thread.id)).toBeNull();
       expect((await history.list(stranger, 0)).items).toEqual([]);
+      expect(await history.startRun(stranger, thread.id)).toBeNull();
+      expect(await history.delete(stranger, thread.id)).toBe("missing");
+      await expect(history.memory(stranger).saveMessages({ messages: [{
+        id: uuidV7(), threadId: thread.id, resourceId: encodeId("user", stranger.userId), createdAt: new Date(),
+        role: "user", content: { format: 2, parts: [{ type: "text", text: "Forbidden continuation" }] },
+      }] })).rejects.toThrow();
 
       const later = new Date(Date.now() + 10_000);
       const sameTime = Array.from({ length: 60 }, (_, index) => ({
@@ -77,7 +97,7 @@ describe.runIf(databaseUrl)("PostgreSQL Agent history", () => {
       const client = await connection.pool.connect();
       try {
         await client.query("BEGIN");
-        await client.query("SELECT set_config('app.resource_id', $1, true)", [resourceId]);
+        await client.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
         await client.query("UPDATE agent.ai_thread_runs SET expires_at = timestamp '1970-01-01' WHERE thread_id = $1", [thread.id]);
         await client.query("COMMIT");
       } finally {
@@ -86,9 +106,9 @@ describe.runIf(databaseUrl)("PostgreSQL Agent history", () => {
       expect(await history.delete(owner, thread.id)).toBe("deleted");
       threadId = undefined;
       expect(await history.get(owner, thread.id)).toBeNull();
-      expect((await connection.pool.query<{ resource: string | null }>(
-        "SELECT nullif(current_setting('app.resource_id', true), '') AS resource",
-      )).rows).toEqual([{ resource: null }]);
+      expect((await connection.pool.query<{ user_id: string | null }>(
+        "SELECT nullif(current_setting('app.user_id', true), '') AS user_id",
+      )).rows).toEqual([{ user_id: null }]);
     } finally {
       if (threadId) await history.delete(owner, threadId).catch(() => undefined);
       await connection.close();
