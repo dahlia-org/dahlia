@@ -15,6 +15,11 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | getSession | modified | GET `/api/v1/session` | `/api/session` | Current browser identity | apps/server/src/client/App.tsx<br>apps/desktop/Sources/Dahlia/Services/DahliaCloudService.swift |
 | getAiModels | modified | GET `/api/v1/ai/models` | `new public contract` | List configured Agent-compatible models for Private Web | apps/server/src/client/AiChat.tsx |
 | chatWithAi | modified | POST `/api/v1/ai/chat` | `new public contract` | Stream one authenticated page-memory Agent response | apps/server/src/client/AiChat.tsx |
+| createAiThread | modified | POST `/api/v1/ai/threads` | `new public contract` | Create a private persistent AI chat for the current user | apps/server/src/client/AiChat.tsx |
+| listAiThreads | modified | GET `/api/v1/ai/threads` | `new public contract` | List the current user's persistent AI chats | apps/server/src/client/AiChat.tsx |
+| getAiThread | modified | GET `/api/v1/ai/threads/{threadId}` | `new public contract` | Read an owned AI chat and its messages | apps/server/src/client/AiChat.tsx |
+| deleteAiThread | modified | DELETE `/api/v1/ai/threads/{threadId}` | `new public contract` | Delete an owned AI chat | apps/server/src/client/AiChat.tsx |
+| continueAiThread | modified | POST `/api/v1/ai/threads/{threadId}/messages` | `new public contract` | Continue an owned AI chat with Mastra Message History | apps/server/src/client/AiChat.tsx |
 | listSessions | modified | GET `/api/v1/sessions` | `/api/sessions` | OAuth sessions (accounts mode only) | apps/server/src/client/App.tsx |
 | revokeSession | modified | DELETE `/api/v1/sessions/{id}` | `/api/sessions/{id}` | Revoke an OAuth session | apps/server/src/client/App.tsx |
 | listAdministrators | modified | GET `/api/v1/admin/members` | `/api/admin/members` | List platform administrators; administrator only | apps/server/src/client/App.tsx |

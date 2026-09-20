@@ -4,6 +4,7 @@ import { createApp } from "./public-test-client";
 import { createWorkerHandler } from "../src/worker";
 import { testStore } from "./test-store";
 import type { AiService } from "../src/agent/service";
+import type { AiHistoryCursor, AiHistoryService, AiThread } from "../src/agent/history";
 import { encodeId } from "../src/typeid";
 import { MeetingSyncService } from "../src/sync/service";
 
@@ -29,14 +30,16 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
       yield { type: "text", text: "Answer" };
     },
   };
-  function fixture(withAi = false, selectedAiService = aiService) {
+  function fixture(withAi = false, selectedAiService = aiService, aiHistory?: AiHistoryService,
+    workspaceEncryption?: "none" | "server") {
     const store = testStore();
     if (withAi) store.sync.isAvailable = async () => true;
     const syncService = withAi ? {
       parseId: (value: string) => MeetingSyncService.prototype.parseId.call(undefined, value),
-      getWorkspace: async (_identity: unknown, requestedWorkspaceId: string) => requestedWorkspaceId === "01990ab0-0000-7000-8000-000000000001" ? { workspaceId: requestedWorkspaceId } : null,
+      getWorkspace: async (_identity: unknown, requestedWorkspaceId: string) => requestedWorkspaceId === "01990ab0-0000-7000-8000-000000000001"
+        ? { workspaceId: requestedWorkspaceId, encryption: workspaceEncryption } : null,
     } as unknown as MeetingSyncService : undefined;
-    const app = createApp({ config, authStore: store, aiService: withAi ? selectedAiService : undefined, syncService, extensions: [{
+    const app = createApp({ config, authStore: store, aiService: withAi ? selectedAiService : undefined, aiHistory, syncService, extensions: [{
       registerRoutes(app) {
         app.post("/api/v1/custom", (context) => context.json({ extension: true }));
         app.post("/api/v1/workspaces/custom", (context) => context.json({ userId: context.get("identity")?.userId }));
@@ -107,6 +110,60 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     expect(await (await send("/api/v1/ai/models")).json()).toEqual({ items: [] });
     const capabilities = await (await send("/api/v1/capabilities")).json();
     expect(capabilities).not.toHaveProperty("ai");
+  });
+
+  it("creates, resumes and deletes an owned persistent AI thread", async () => {
+    const workspaceUuid = "01990ab0-0000-7000-8000-000000000001";
+    const workspaceId = encodeId("workspace", workspaceUuid);
+    const threadUuid = "01990ab0-0000-7000-8000-000000000010";
+    const threadId = encodeId("aiThread", threadUuid);
+    const thread: AiThread = { id: threadUuid, title: "Question", workspaceId: workspaceUuid,
+      createdAt: "2026-09-19T00:00:00.000Z", updatedAt: "2026-09-19T00:00:00.000Z" };
+    let busy = false;
+    let requestedCursor: AiHistoryCursor | undefined;
+    const history: AiHistoryService = {
+      memory: () => ({} as never),
+      create: async (_identity, requestedWorkspaceId) => {
+        expect(requestedWorkspaceId).toBe(workspaceUuid);
+        return thread;
+      },
+      list: async () => ({ items: [thread], hasMore: false }),
+      get: async (_identity, requestedThreadId, cursor) => {
+        requestedCursor = cursor;
+        return requestedThreadId === threadUuid
+          ? { thread, messages: [{ id: "message-1", role: "user", content: "Question", createdAt: thread.createdAt }], hasMore: false }
+          : null;
+      },
+      delete: async () => busy ? "busy" : "deleted",
+      startRun: async () => busy ? null : "run-1",
+      finishRun: async () => undefined,
+    };
+    const send = fixture(true, aiService, history);
+    const mutationHeaders = { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" };
+    const encrypted = fixture(true, aiService, history, "server");
+    expect((await encrypted("/api/v1/ai/threads", "POST", JSON.stringify({ workspaceId, title: "Private" }), mutationHeaders)).status).toBe(409);
+    const created = await send("/api/v1/ai/threads", "POST", JSON.stringify({ workspaceId, title: "Question" }), mutationHeaders);
+    expect(created.status, await created.clone().text()).toBe(201);
+    expect(await created.json()).toEqual(thread);
+    expect(await (await send("/api/v1/ai/threads")).json()).toEqual({ items: [thread], hasMore: false });
+    expect((await send("/api/v1/ai/threads?page=1000000")).status).toBe(400);
+    expect((await send(`/api/v1/ai/threads/${threadId}?before=${encodeURIComponent(thread.createdAt)}`)).status).toBe(400);
+    expect((await send(`/api/v1/ai/threads/${threadId}?${new URLSearchParams({
+      before: thread.createdAt, beforeId: "message-1", beforeRole: "user",
+    })}`)).status).toBe(200);
+    expect(requestedCursor).toEqual({ createdAt: new Date(thread.createdAt), id: "message-1", role: "user" });
+    const continued = await send(`/api/v1/ai/threads/${threadId}/messages`, "POST",
+      JSON.stringify({ model: "test-model", reasoningEffort: "medium", content: "Question" }), mutationHeaders);
+    expect(continued.status).toBe(200);
+    expect(await continued.text()).toMatch(/event: text[\s\S]+event: done/);
+    busy = true;
+    expect((await send(`/api/v1/ai/threads/${threadId}/messages`, "POST",
+      JSON.stringify({ model: "test-model", reasoningEffort: "medium", content: "Again" }), mutationHeaders)).status).toBe(409);
+    expect((await send(`/api/v1/ai/threads/${threadId}`, "DELETE", undefined,
+      { ...identityHeaders, origin: config.baseUrl })).status).toBe(409);
+    busy = false;
+    expect((await send(`/api/v1/ai/threads/${threadId}`, "DELETE", undefined,
+      { ...identityHeaders, origin: config.baseUrl })).status).toBe(204);
   });
 
   it("distinguishes unsupported methods, missing paths, disabled features and extensions", async () => {

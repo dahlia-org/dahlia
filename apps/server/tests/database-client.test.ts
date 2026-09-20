@@ -122,7 +122,7 @@ describe("PostgreSQL migrations", () => {
 
   it("migrates generated auth tables before application tables in every authentication mode", () => {
     expect(postgresMigrations(serverMigrationManifest).map(({ id }) => id))
-      .toEqual(["auth", "server"]);
+      .toEqual(["auth", "server", "agent"]);
   });
 
   it("tracks each extension directory by stable ledger ID", () => {
@@ -294,5 +294,26 @@ describe("PostgreSQL migrations", () => {
           .toEqual(directory.files?.toSorted() ?? []);
       }
     }
+  });
+
+  it("isolates Mastra history in its own forced-RLS schema and ledger", () => {
+    const agentDirectory = serverMigrationManifest.postgres.directories.find(({ id }) => id === "agent")!;
+    const sql = readPostgresMigrations({ migrationsFolder: agentDirectory.path })
+      .flatMap((migration) => migration.sql).join("\n");
+    expect(sql).toContain('CREATE SCHEMA "agent"');
+    expect(sql).toContain('CREATE TABLE "agent"."mastra_threads"');
+    expect(sql).toContain('CREATE TABLE "agent"."mastra_messages"');
+    expect(sql).toContain('ALTER TABLE "agent"."mastra_threads" FORCE ROW LEVEL SECURITY');
+    expect(sql).toContain('CREATE FUNCTION "agent"."user_resource_id"');
+    expect(sql).toContain("current_setting('app.user_id', true)");
+    const identityMigration = readFileSync(new URL(
+      "../drizzle/postgres-agent/20260919210432_user-identity-rls/migration.sql",
+      import.meta.url,
+    ), "utf8");
+    expect(identityMigration).toContain('ALTER POLICY "agent_thread_owner"');
+    expect(identityMigration).toContain("current_setting('app.user_id', true)");
+    expect(sql).not.toContain("AS RESTRICTIVE");
+    expect(postgresMigrationConfigs([agentDirectory])[0]?.migrationsTable)
+      .toBe("__dahlia_agent_migrations");
   });
 });

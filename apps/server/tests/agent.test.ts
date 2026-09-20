@@ -6,7 +6,7 @@ import { registerMastraTool } from "../src/mcp";
 import { encodeId } from "../src/typeid";
 import type { Identity } from "../src/auth/identity";
 import type { MeetingSyncService } from "../src/sync/service";
-import { readAiEvents } from "../src/client/AiChat";
+import { mergeRecoveredMessages, prependEarlierMessages, readAiEvents, recoverFailedDraft } from "../src/client/AiChat";
 import type { AppConfig } from "../src/config";
 import type { GatewayService } from "../src/ai-gateway/service";
 
@@ -291,5 +291,48 @@ describe("AI chat boundary", () => {
       { type: "done" },
     ]);
     expect(JSON.stringify(events)).not.toContain("workspace_id");
+  });
+
+  it("does not duplicate messages when older pages overlap", () => {
+    const current = [
+      { id: "message-2", role: "user" as const, content: "Already visible" },
+      { role: "assistant" as const, content: "New response" },
+    ];
+    expect(prependEarlierMessages(current, [
+      { id: "message-1", role: "assistant", content: "Earlier" },
+      { id: "message-2", role: "user", content: "Already visible" },
+    ])).toEqual([
+      { id: "message-1", role: "assistant", content: "Earlier" },
+      ...current,
+    ]);
+  });
+
+  it("restores only an AI prompt that was not persisted", () => {
+    const attempted = { role: "user" as const, content: "Keep this question" };
+    expect(recoverFailedDraft([], attempted, [])).toBe(attempted.content);
+    expect(recoverFailedDraft([attempted], attempted, [])).toBe("");
+    expect(recoverFailedDraft([attempted, { role: "assistant", content: "Saved answer" }], attempted, [])).toBe("");
+    const previous = { id: "previous", role: "assistant" as const, content: "Previous answer" };
+    const repeated = { role: "user" as const, content: "Repeated question" };
+    const earlier = { role: "user" as const, content: repeated.content };
+    expect(recoverFailedDraft([
+      earlier, previous,
+    ], repeated, [earlier, previous])).toBe(repeated.content);
+    expect(recoverFailedDraft([
+      earlier, previous, repeated,
+    ], repeated, [earlier, previous])).toBe("");
+    const idlessPrevious = { role: "assistant" as const, content: previous.content };
+    expect(recoverFailedDraft([earlier, idlessPrevious], repeated, [earlier, idlessPrevious])).toBe(repeated.content);
+    expect(recoverFailedDraft([
+      earlier, idlessPrevious, repeated, { role: "assistant", content: "Partial answer" },
+    ], repeated, [earlier, idlessPrevious])).toBe("");
+  });
+
+  it("keeps already loaded earlier pages when recovering the latest page", () => {
+    const current = Array.from({ length: 60 }, (_, index) => ({
+      id: `message-${index}`, role: index % 2 ? "assistant" as const : "user" as const, content: String(index),
+    }));
+    const stored = current.slice(10).map((message) => ({ ...message }));
+    expect(mergeRecoveredMessages([...current, { role: "user", content: "Failed" }], stored)).toEqual(current);
   });
 });

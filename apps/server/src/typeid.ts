@@ -3,6 +3,7 @@ export const idPrefixes = {
   summary: "sum", transcript: "transcript", segment: "seg", recording: "rec",
   event: "evt", summaryJob: "sjob", contact: "contact", topic: "topic", insight: "inst",
   projectReference: "prr", user: "user", organization: "org", team: "team",
+  aiThread: "chat",
   organizationJoinRequest: "ojr", organizationMember: "omem", teamMember: "tmem", invitation: "inv", session: "sess",
   transaction: "txn", operation: "op", patch: "patch",
 } as const;

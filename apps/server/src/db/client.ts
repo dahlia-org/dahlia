@@ -57,6 +57,7 @@ export function connectApplicationDatabase(config: AppConfig) {
   const pool = createDatabasePool(config, 5);
   return {
     db: drizzle({ client: pool }),
+    pool,
     close: () => pool.end(),
   };
 }

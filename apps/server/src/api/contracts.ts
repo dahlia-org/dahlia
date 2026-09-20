@@ -12,6 +12,7 @@ import { workspaceSearchRequestSchema } from "../search/model";
 import { transcriptChunkSchema } from "../sync/schemas";
 import { conversationAnalyticsSchema, conversationAnalyticsUnavailableSchema } from "../conversation-analytics";
 import { aiChatSchema } from "../agent/service";
+import { aiThreadCreateSchema, aiThreadHistoryQuerySchema, aiThreadMessageSchema } from "../agent/history";
 import * as S from "./schemas";
 
 const bearer: Record<string, string[]>[] = [{ bearerAuth: [] }, { browserSession: [] }, { trustedProxy: [] }];
@@ -77,13 +78,18 @@ const v = "/api/v1/workspaces/{workspaceId}";
 const o = "/api/v1/organizations/{organizationId}";
 const joinRequest = z.object({ id: S.id, organizationId: S.principalId, userId: S.principalId, status: z.enum(["pending", "approved", "rejected", "cancelled"]), createdAt: S.date, resolvedAt: S.date.nullable(), resolvedBy: S.principalId.nullable(), organizationName: z.string(), userName: z.string(), userEmail: z.string() }).openapi("OrganizationJoinRequest");
 const j = `${m}/summary-jobs`;
+const aiThreadId = z.string().uuid();
+const aiThread = z.object({ id: aiThreadId, title: z.string(), workspaceId: aiThreadCreateSchema.shape.workspaceId,
+  createdAt: S.date, updatedAt: S.date }).openapi("AiThread");
+const aiHistoryMessage = z.object({ id: z.string(), role: z.enum(["user", "assistant"]), content: z.string(), createdAt: S.date }).openapi("AiHistoryMessage");
+const aiThreadPage = z.string().regex(/^(0|[1-9][0-9]{0,5})$/).optional();
 export type OperationId =
   "getHealth" | "getOpenAPI" | "getSession" | "listSessions" | "revokeSession"
   | "listAdministrators" | "addAdministrator" | "removeAdministrator" | "listServerUsers" | "listServerOrganizations"
   | "getServerOrganization" | "getSearchSettings" | "updateSearchSettings"
   | "listGovernanceWorkspaces" | "confirmWorkspaceDeletion" | "forceDeleteWorkspace"
   | "getCapabilities" | "listWorkspaces" | "getWorkspace"
-  | "getAiModels" | "chatWithAi"
+  | "getAiModels" | "chatWithAi" | "createAiThread" | "listAiThreads" | "getAiThread" | "deleteAiThread" | "continueAiThread"
   | "listProjects" | "getProject" | "listMeetings" | "listDeletedMeetings" | "getMeeting" | "listSummaries"
   | "getSummary" | "getLatestSummary" | "listTranscripts" | "getTranscript" | "getLatestTranscript"
   | "getConversationAnalytics"
@@ -117,6 +123,18 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   })) }, { query: z.object({ membersOffset: z.string().regex(/^\d+$/).optional(), teamsOffset: z.string().regex(/^\d+$/).optional() }).strict() }, browser),
   getCapabilities: route("get", "/api/v1/capabilities", "getCapabilities", "Discover feature versions; unsupported features are omitted", { 200: json(S.capabilities) }),
   getAiModels: route("get", "/api/v1/ai/models", "getAiModels", "Agent-compatible models available to Private Web", { 200: json(z.object({ items: z.array(S.aiModel) })) }, {}, browser),
+  createAiThread: route("post", "/api/v1/ai/threads", "createAiThread", "Create a private AI chat thread",
+    { 201: { ...json(aiThread, "Created."), headers: location } }, body(aiThreadCreateSchema), browser),
+  listAiThreads: route("get", "/api/v1/ai/threads", "listAiThreads", "List the current user's private AI chat threads", { 200: json(z.object({ items: z.array(aiThread), hasMore: z.boolean() })) },
+    { query: z.object({ page: aiThreadPage }).strict() }, browser),
+  getAiThread: route("get", "/api/v1/ai/threads/{threadId}", "getAiThread", "Read one owned AI chat thread", { 200: json(z.object({ thread: aiThread, messages: z.array(aiHistoryMessage), hasMore: z.boolean() })) },
+    { params: z.object({ threadId: aiThreadId }), query: aiThreadHistoryQuerySchema }, browser),
+  deleteAiThread: route("delete", "/api/v1/ai/threads/{threadId}", "deleteAiThread", "Delete one owned AI chat thread", { 204: empty },
+    { params: z.object({ threadId: aiThreadId }) }, browser),
+  continueAiThread: route("post", "/api/v1/ai/threads/{threadId}/messages", "continueAiThread", "Persist a user message and stream the AI response", { 200: {
+    description: "text/event-stream with text, tool, error, and done events. Tool input and output are never included.",
+    content: { "text/event-stream": { schema: z.string() } },
+  } }, { params: z.object({ threadId: aiThreadId }), ...body(aiThreadMessageSchema) }, browser),
   chatWithAi: route("post", "/api/v1/ai/chat", "chatWithAi", "Stream one page-memory Agent response; no conversation is persisted", { 200: {
     description: "text/event-stream with text, tool, error, and done events. Tool input and output are never included.",
     content: { "text/event-stream": { schema: z.string() } },

@@ -223,6 +223,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ai/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the current user's private AI chat threads */
+        get: operations["listAiThreads"];
+        put?: never;
+        /** Create a private AI chat thread */
+        post: operations["createAiThread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/threads/{threadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one owned AI chat thread */
+        get: operations["getAiThread"];
+        put?: never;
+        post?: never;
+        /** Delete one owned AI chat thread */
+        delete: operations["deleteAiThread"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/threads/{threadId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Persist a user message and stream the AI response */
+        post: operations["continueAiThread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai/chat": {
         parameters: {
             query?: never;
@@ -1863,6 +1916,23 @@ export interface components {
                 description: string;
             }[];
         };
+        AiThread: {
+            id: string;
+            title: string;
+            workspaceId: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AiHistoryMessage: {
+            id: string;
+            /** @enum {string} */
+            role: "user" | "assistant";
+            content: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
         WorkspaceRead: components["schemas"]["Workspace"] & {
             organizationName: string;
         };
@@ -3227,6 +3297,146 @@ export interface operations {
                     "application/json": {
                         items: components["schemas"]["AIModel"][];
                     };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listAiThreads: {
+        parameters: {
+            query?: {
+                page?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["AiThread"][];
+                        hasMore: boolean;
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createAiThread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    workspaceId: string;
+                    title: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    /** @description URI of the created representation or individual job. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiThread"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getAiThread: {
+        parameters: {
+            query?: {
+                before?: string;
+                beforeId?: string;
+                beforeRole?: "user" | "assistant";
+            };
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        thread: components["schemas"]["AiThread"];
+                        messages: components["schemas"]["AiHistoryMessage"][];
+                        hasMore: boolean;
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteAiThread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success; no response body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    continueAiThread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    model: string;
+                    /** @enum {string} */
+                    reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                    content: string;
+                };
+            };
+        };
+        responses: {
+            /** @description text/event-stream with text, tool, error, and done events. Tool input and output are never included. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
                 };
             };
             default: components["responses"]["Problem"];

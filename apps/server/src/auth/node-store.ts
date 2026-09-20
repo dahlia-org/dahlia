@@ -10,6 +10,7 @@ import { drizzle } from "drizzle-orm/sqlite-proxy";
 import { migrate as migrateSqlite } from "drizzle-orm/sqlite-proxy/migrator";
 
 import type { AppConfig } from "../config";
+import { createAiHistoryService, type AiHistoryService } from "../agent/history";
 import { connectApplicationDatabase, migrateApplicationDatabase } from "../db/client";
 import {
   postgresMigrations,
@@ -25,6 +26,7 @@ import { createPostgresSearchIndexStore, createSqliteSearchIndexStore, type Sear
 import { createImageAnalysisStore, type ImageAnalysisStore } from "../image-analysis/store";
 
 export interface NodeApplicationStore extends ApplicationStore {
+  aiHistory?: AiHistoryService;
   migrate(): Promise<void>;
   rotateEncryptionKeys(apply: boolean): Promise<{ checked: number; pending: number; rotated: number }>;
   searchIndex?: SearchIndexStore;
@@ -47,6 +49,7 @@ export function createNodeApplicationStore(
         config.authProviderId,
         config.localSingleUser,
       ),
+      aiHistory: createAiHistoryService(connection.pool),
       migrate: () => migrateApplicationDatabase(
         config,
         postgresMigrations(migrations),

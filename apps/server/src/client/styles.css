@@ -231,6 +231,16 @@
   .org-domain-loading { @apply m-5 text-xs text-muted-foreground; }
 
   .ai-chat { @apply flex min-h-[calc(100dvh-44px)] flex-col md:min-h-dvh; }
+  .ai-history { @apply flex shrink-0 gap-2 overflow-x-auto border-b bg-card p-3 md:fixed md:bottom-0 md:left-60 md:top-0 md:z-20 md:w-60 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r; }
+  .ai-history-new { @apply flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring; }
+  .ai-history-new svg, .ai-history-delete svg { @apply size-3.5; }
+  .ai-history-row { @apply flex min-w-48 items-center rounded-lg hover:bg-muted md:min-w-0; }
+  .ai-history-row.active { @apply bg-muted; }
+  .ai-history-row > button:first-child { @apply flex min-w-0 flex-1 flex-col items-start px-3 py-2 text-left; }
+  .ai-history-row span { @apply w-full truncate text-xs font-medium; }
+  .ai-history-row time { @apply text-[10px] text-muted-foreground; }
+  .ai-history-delete { @apply grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring; }
+  .ai-chat.with-history > :not(.ai-history) { @apply md:ml-60; }
   .ai-start { @apply flex flex-1 flex-col items-center justify-center px-5 pb-24 text-center; }
   .ai-mark { @apply grid size-14 place-items-center rounded-full border bg-card text-xl font-semibold text-primary shadow-lg; font-family: Georgia, serif; }
   .ai-start h1 { @apply mb-10 mt-6 text-3xl font-semibold tracking-tight sm:text-4xl; }
@@ -274,4 +284,5 @@
   .ai-error .secondary { @apply min-h-8 shrink-0 text-xs; }
   .ai-bottom { @apply fixed bottom-0 right-0 z-10 w-full bg-background px-4 pb-5 pt-3 md:w-[calc(100%-240px)] md:px-8; }
   .ai-bottom .ai-composer { @apply shadow-md; }
+  .ai-chat.with-history .ai-bottom { @apply md:w-[calc(100%-480px)]; }
 }

@@ -1,6 +1,7 @@
 import { Agent } from "@mastra/core/agent";
 import { ModelsDevGateway, ModelRouterLanguageModel, type MastraModelConfig } from "@mastra/core/llm";
 import { noopLogger } from "@mastra/core/logger";
+import type { Memory } from "@mastra/memory";
 import { z } from "zod";
 
 import { cloudflareHeaders, cloudflareModel } from "../ai-gateway/cloudflare";
@@ -48,6 +49,7 @@ export interface AiChatInput {
   model: string;
   reasoningEffort: ReasoningEffort;
   messages: Array<{ role: "user" | "assistant"; content: string }>;
+  history?: { memory: Memory; threadId: string; resourceId: string };
 }
 export type AiChatEvent = { type: "text"; text: string }
   | { type: "tool"; name: string; status: "running" | "complete" }
@@ -101,6 +103,7 @@ export function createAiService(
         name: "Dahlia AI",
         model: await mastraModel(config, input.model, request.headers, identity, request.signal, databricksTokens),
         tools,
+        memory: input.history?.memory,
         instructions: [
           `context: ${JSON.stringify(modelContext)}`,
           "Answer questions using only the selected Dahlia Workspace and the provided conversation.",
@@ -121,6 +124,8 @@ export function createAiService(
         abortSignal: request.signal,
         maxSteps: 8,
         providerOptions: { openai: { reasoningEffort: input.reasoningEffort, store: false } },
+        ...(input.history ? { memory: { thread: input.history.threadId, resource: input.history.resourceId,
+          options: { lastMessages: 50, semanticRecall: false } } } : {}),
       });
       for await (const chunk of output.fullStream) {
         if (chunk.type === "text-delta") yield { type: "text", text: chunk.payload.text };
