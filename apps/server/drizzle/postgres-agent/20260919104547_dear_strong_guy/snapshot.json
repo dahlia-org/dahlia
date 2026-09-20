@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "cb9ab937-c442-40d9-9fa2-da991caecfb3",
+  "id": "0719768d-06c0-4779-9566-6781e2aaa1ca",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -517,8 +517,8 @@
       "roles": [
         "public"
       ],
-      "using": "EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"mastra_messages\".\"thread_id\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.resource_id', true), '')\n)",
-      "withCheck": "EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"mastra_messages\".\"thread_id\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.resource_id', true), '')\n)",
+      "using": "EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"mastra_messages\".\"thread_id\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n) AND (\"agent\".\"mastra_messages\".\"resourceId\" IS NULL OR \"agent\".\"mastra_messages\".\"resourceId\" = nullif(current_setting('app.user_id', true), ''))",
+      "withCheck": "EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"mastra_messages\".\"thread_id\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n) AND (\"agent\".\"mastra_messages\".\"resourceId\" IS NULL OR \"agent\".\"mastra_messages\".\"resourceId\" = nullif(current_setting('app.user_id', true), ''))",
       "name": "agent_message_owner",
       "entityType": "policies",
       "schema": "agent",
@@ -530,8 +530,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"agent\".\"mastra_resources\".\"id\" = nullif(current_setting('app.resource_id', true), '')",
-      "withCheck": "\"agent\".\"mastra_resources\".\"id\" = nullif(current_setting('app.resource_id', true), '')",
+      "using": "\"agent\".\"mastra_resources\".\"id\" = nullif(current_setting('app.user_id', true), '')",
+      "withCheck": "\"agent\".\"mastra_resources\".\"id\" = nullif(current_setting('app.user_id', true), '')",
       "name": "agent_resource_owner",
       "entityType": "policies",
       "schema": "agent",
@@ -543,8 +543,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"agent\".\"mastra_threads\".\"resourceId\" = nullif(current_setting('app.resource_id', true), '')",
-      "withCheck": "\"agent\".\"mastra_threads\".\"resourceId\" = nullif(current_setting('app.resource_id', true), '')",
+      "using": "\"agent\".\"mastra_threads\".\"resourceId\" = nullif(current_setting('app.user_id', true), '')",
+      "withCheck": "\"agent\".\"mastra_threads\".\"resourceId\" = nullif(current_setting('app.user_id', true), '')",
       "name": "agent_thread_owner",
       "entityType": "policies",
       "schema": "agent",
@@ -556,8 +556,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"agent\".\"ai_thread_runs\".\"resource_id\" = nullif(current_setting('app.resource_id', true), '')",
-      "withCheck": "\"agent\".\"ai_thread_runs\".\"resource_id\" = nullif(current_setting('app.resource_id', true), '')",
+      "using": "\"agent\".\"ai_thread_runs\".\"resource_id\" = nullif(current_setting('app.user_id', true), '') AND EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"ai_thread_runs\".\"thread_id\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n)",
+      "withCheck": "\"agent\".\"ai_thread_runs\".\"resource_id\" = nullif(current_setting('app.user_id', true), '') AND EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"ai_thread_runs\".\"thread_id\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n)",
       "name": "ai_thread_run_owner",
       "entityType": "policies",
       "schema": "agent",

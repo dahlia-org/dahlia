@@ -6,7 +6,6 @@ import { z } from "zod";
 
 import type { Identity } from "../auth/identity";
 import { uuidV7 } from "../id";
-import { encodeId } from "../typeid";
 
 const AGENT_SCHEMA = "agent";
 const PAGE_SIZE = 50;
@@ -57,10 +56,6 @@ export interface AiHistoryService {
   delete(identity: Identity, threadId: string): Promise<"deleted" | "missing" | "busy">;
   startRun(identity: Identity, threadId: string): Promise<string | null>;
   finishRun(identity: Identity, threadId: string, runId: string): Promise<void>;
-}
-
-function resourceId(identity: Identity): string {
-  return encodeId("user", identity.userId);
 }
 
 function threadValue(thread: { id: string; title?: string; metadata?: Record<string, unknown>; createdAt: Date; updatedAt: Date }): AiThread {
@@ -165,18 +160,18 @@ export function createAiHistoryService(pool: Pool): AiHistoryService {
     memory: (identity) => memoryFor(pool, identity),
     async create(identity, workspaceId, title) {
       const memory = memoryFor(pool, identity);
-      const thread = await memory.createThread({ threadId: uuidV7(), resourceId: resourceId(identity),
+      const thread = await memory.createThread({ threadId: uuidV7(), resourceId: identity.userId,
         title: title.trim().slice(0, 80) || "New chat", metadata: { kind: "dahlia-chat", workspaceId } });
       return threadValue(thread);
     },
     async list(identity, page) {
-      const result = await memoryFor(pool, identity).listThreads({ filter: { resourceId: resourceId(identity), metadata: { kind: "dahlia-chat" } },
+      const result = await memoryFor(pool, identity).listThreads({ filter: { resourceId: identity.userId, metadata: { kind: "dahlia-chat" } },
         page, perPage: PAGE_SIZE, orderBy: { field: "updatedAt", direction: "DESC" } });
       return { items: result.threads.map(threadValue), hasMore: result.hasMore };
     },
     async get(identity, threadId, before) {
       const memory = memoryFor(pool, identity);
-      const thread = await memory.getThreadById({ threadId, resourceId: resourceId(identity) });
+      const thread = await memory.getThreadById({ threadId, resourceId: identity.userId });
       if (!thread || thread.metadata?.kind !== "dahlia-chat") return null;
       const values: unknown[] = [threadId];
       const cursor = before ? `AND (COALESCE("createdAtZ", "createdAt"), CASE role WHEN 'user' THEN 0 ELSE 1 END, id)
@@ -218,7 +213,7 @@ export function createAiHistoryService(pool: Pool): AiHistoryService {
           SELECT $1, $2, $3, now() + $4::interval
           WHERE EXISTS (SELECT 1 FROM agent.mastra_threads WHERE id = $1)
           ON CONFLICT (thread_id) DO NOTHING RETURNING run_id`,
-        [threadId, runId, resourceId(identity), RUN_LEASE]);
+        [threadId, runId, identity.userId, RUN_LEASE]);
         return result.rowCount === 1 ? runId : null;
       });
     },

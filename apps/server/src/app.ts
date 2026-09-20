@@ -26,7 +26,6 @@ import { AI_CHAT_MAX_REQUEST_BYTES, aiChatSchema, createAiService, type AiServic
 import { createMeetingTools } from "./agent/tools";
 import { AI_HISTORY_RUN_TIMEOUT_MS, aiThreadCreateSchema, aiThreadHistoryQuerySchema, aiThreadMessageSchema,
   type AiHistoryService } from "./agent/history";
-import { encodeId } from "./typeid";
 
 import {
   AuthenticationError,
@@ -395,7 +394,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const runId = await aiHistory.startRun(identity, threadId);
     if (!runId) return context.json({ error: "ai_thread_busy" }, 409);
     const workspaceId = saved.thread.workspaceId;
-    const history = { memory: aiHistory.memory(identity), threadId, resourceId: encodeId("user", identity.userId) };
+    const history = { memory: aiHistory.memory(identity), threadId, resourceId: identity.userId };
     const signal = AbortSignal.any([context.req.raw.signal, AbortSignal.timeout(AI_HISTORY_RUN_TIMEOUT_MS)]);
     const aiRequest = new Request(context.req.url, { method: context.req.method, headers: context.req.raw.headers, signal });
     return streamSSE(context, async (stream) => {

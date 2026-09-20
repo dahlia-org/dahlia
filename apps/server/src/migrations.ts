@@ -37,7 +37,6 @@ const postgresFiles = [
 const postgresAgentFiles = [
   "20260919104547_dear_strong_guy/migration.sql",
   "20260919104548_force_rls/migration.sql",
-  "20260919210432_user-identity-rls/migration.sql",
 ];
 const sqliteFiles = ["20260912095621_initial/migration.sql", "20260912180000_runtime_support/migration.sql"];
 

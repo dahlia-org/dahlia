@@ -121,6 +121,7 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
       createdAt: "2026-09-19T00:00:00.000Z", updatedAt: "2026-09-19T00:00:00.000Z" };
     let busy = false;
     let requestedCursor: AiHistoryCursor | undefined;
+    let continuedHistory: { workspaceId: string; resourceId?: string } | undefined;
     const history: AiHistoryService = {
       memory: () => ({} as never),
       create: async (_identity, requestedWorkspaceId) => {
@@ -138,7 +139,11 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
       startRun: async () => busy ? null : "run-1",
       finishRun: async () => undefined,
     };
-    const send = fixture(true, aiService, history);
+    const continuingAiService: AiService = { ...aiService, async *stream(input) {
+      continuedHistory = { workspaceId: input.workspaceId, resourceId: input.history?.resourceId };
+      yield { type: "text", text: "Answer" };
+    } };
+    const send = fixture(true, continuingAiService, history);
     const mutationHeaders = { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" };
     const encrypted = fixture(true, aiService, history, "server");
     expect((await encrypted("/api/v1/ai/threads", "POST", JSON.stringify({ workspaceId, title: "Private" }), mutationHeaders)).status).toBe(409);
@@ -156,6 +161,7 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
       JSON.stringify({ model: "test-model", reasoningEffort: "medium", content: "Question" }), mutationHeaders);
     expect(continued.status).toBe(200);
     expect(await continued.text()).toMatch(/event: text[\s\S]+event: done/);
+    expect(continuedHistory).toEqual({ workspaceId: workspaceUuid, resourceId: testUserID("owner@example.com") });
     busy = true;
     expect((await send(`/api/v1/ai/threads/${threadId}/messages`, "POST",
       JSON.stringify({ model: "test-model", reasoningEffort: "medium", content: "Again" }), mutationHeaders)).status).toBe(409);

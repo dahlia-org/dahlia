@@ -49,11 +49,17 @@ CREATE INDEX "agent_mastra_threads_resourceid_createdat_idx" ON "agent"."mastra_
 ALTER TABLE "agent"."ai_thread_runs" ADD CONSTRAINT "ai_thread_runs_thread_id_mastra_threads_id_fkey" FOREIGN KEY ("thread_id") REFERENCES "agent"."mastra_threads"("id") ON DELETE CASCADE;--> statement-breakpoint
 CREATE POLICY "agent_message_owner" ON "agent"."mastra_messages" AS PERMISSIVE FOR ALL TO public USING (EXISTS (
   SELECT 1 FROM "agent"."mastra_threads" owner_thread
-  WHERE owner_thread.id = "agent"."mastra_messages"."thread_id" AND owner_thread."resourceId" = nullif(current_setting('app.resource_id', true), '')
-)) WITH CHECK (EXISTS (
+  WHERE owner_thread.id = "agent"."mastra_messages"."thread_id" AND owner_thread."resourceId" = nullif(current_setting('app.user_id', true), '')
+) AND ("agent"."mastra_messages"."resourceId" IS NULL OR "agent"."mastra_messages"."resourceId" = nullif(current_setting('app.user_id', true), ''))) WITH CHECK (EXISTS (
   SELECT 1 FROM "agent"."mastra_threads" owner_thread
-  WHERE owner_thread.id = "agent"."mastra_messages"."thread_id" AND owner_thread."resourceId" = nullif(current_setting('app.resource_id', true), '')
-));--> statement-breakpoint
-CREATE POLICY "agent_resource_owner" ON "agent"."mastra_resources" AS PERMISSIVE FOR ALL TO public USING ("agent"."mastra_resources"."id" = nullif(current_setting('app.resource_id', true), '')) WITH CHECK ("agent"."mastra_resources"."id" = nullif(current_setting('app.resource_id', true), ''));--> statement-breakpoint
-CREATE POLICY "agent_thread_owner" ON "agent"."mastra_threads" AS PERMISSIVE FOR ALL TO public USING ("agent"."mastra_threads"."resourceId" = nullif(current_setting('app.resource_id', true), '')) WITH CHECK ("agent"."mastra_threads"."resourceId" = nullif(current_setting('app.resource_id', true), ''));--> statement-breakpoint
-CREATE POLICY "ai_thread_run_owner" ON "agent"."ai_thread_runs" AS PERMISSIVE FOR ALL TO public USING ("agent"."ai_thread_runs"."resource_id" = nullif(current_setting('app.resource_id', true), '')) WITH CHECK ("agent"."ai_thread_runs"."resource_id" = nullif(current_setting('app.resource_id', true), ''));
+  WHERE owner_thread.id = "agent"."mastra_messages"."thread_id" AND owner_thread."resourceId" = nullif(current_setting('app.user_id', true), '')
+) AND ("agent"."mastra_messages"."resourceId" IS NULL OR "agent"."mastra_messages"."resourceId" = nullif(current_setting('app.user_id', true), '')));--> statement-breakpoint
+CREATE POLICY "agent_resource_owner" ON "agent"."mastra_resources" AS PERMISSIVE FOR ALL TO public USING ("agent"."mastra_resources"."id" = nullif(current_setting('app.user_id', true), '')) WITH CHECK ("agent"."mastra_resources"."id" = nullif(current_setting('app.user_id', true), ''));--> statement-breakpoint
+CREATE POLICY "agent_thread_owner" ON "agent"."mastra_threads" AS PERMISSIVE FOR ALL TO public USING ("agent"."mastra_threads"."resourceId" = nullif(current_setting('app.user_id', true), '')) WITH CHECK ("agent"."mastra_threads"."resourceId" = nullif(current_setting('app.user_id', true), ''));--> statement-breakpoint
+CREATE POLICY "ai_thread_run_owner" ON "agent"."ai_thread_runs" AS PERMISSIVE FOR ALL TO public USING ("agent"."ai_thread_runs"."resource_id" = nullif(current_setting('app.user_id', true), '') AND EXISTS (
+  SELECT 1 FROM "agent"."mastra_threads" owner_thread
+  WHERE owner_thread.id = "agent"."ai_thread_runs"."thread_id" AND owner_thread."resourceId" = nullif(current_setting('app.user_id', true), '')
+)) WITH CHECK ("agent"."ai_thread_runs"."resource_id" = nullif(current_setting('app.user_id', true), '') AND EXISTS (
+  SELECT 1 FROM "agent"."mastra_threads" owner_thread
+  WHERE owner_thread.id = "agent"."ai_thread_runs"."thread_id" AND owner_thread."resourceId" = nullif(current_setting('app.user_id', true), '')
+));
