@@ -45,6 +45,8 @@ interface SidebarState {
   workspaces?: SyncedWorkspaceInfo[];
   error?: string;
   reload: () => void;
+  chatHistoryTarget?: HTMLElement | null;
+  setChatHistoryTarget?: (target: HTMLElement | null) => void;
 }
 const SidebarContext = createContext<SidebarState | null>(null);
 
@@ -55,13 +57,15 @@ export function useSidebar() {
 }
 
 export function SidebarProvider({ session, children }: { session: SessionInfo; children: ReactNode }) {
+  const [chatHistoryTarget, setChatHistoryTarget] = useState<HTMLElement | null>(null);
   const organizationsQuery = useLiveJSON<OrganizationInfo[]>(!session.capabilities.sharing ? undefined
     : "/api/auth/organization/list");
   const workspacesQuery = useLiveJSON<{ items: SyncedWorkspaceInfo[] }>(session.capabilities.sync
     ? apiQuery("listWorkspaces", {}) : undefined);
   const reload = () => { organizationsQuery.reload(); workspacesQuery.reload(); };
   return <SidebarContext.Provider value={{ userId: session.user.id, organizations: organizationsQuery.data,
-    workspaces: workspacesQuery.data?.items, error: workspacesQuery.error?.message, reload }}>
+    workspaces: workspacesQuery.data?.items, error: workspacesQuery.error?.message, reload,
+    chatHistoryTarget, setChatHistoryTarget }}>
     {children}
   </SidebarContext.Provider>;
 }
@@ -129,9 +133,9 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
       <Tooltip label={uiText("Home", "ホーム")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${homeActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/dashboard" aria-label={uiText("Home", "ホーム")} aria-current={homeActive ? "page" : undefined}><MenuIcon name="home" /><span className={homeActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Home", "ホーム")}</span></a></Tooltip>
       {session.capabilities.ai && <Tooltip label={uiText("Chat with Dahlia AI", "Dahlia AI とチャット")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${aiActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/chat" aria-label={uiText("Chat with Dahlia AI", "Dahlia AI とチャット")} aria-current={aiActive ? "page" : undefined}><MenuIcon name="chat" /><span className={aiActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Chat", "チャット")}</span></a></Tooltip>}
       {session.capabilities.sync && <Tooltip label={uiText("Workspaces", "ワークスペース")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${workspacesActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/workspaces" aria-label={uiText("Workspaces", "ワークスペース")} aria-current={workspacesActive ? "page" : undefined}><MenuIcon name="workspace" /><span className={workspacesActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Workspaces", "ワークスペース")}</span></a></Tooltip>}
-      {session.capabilities.sync && selectedWorkspaceId && <Search key={`${selectionKey}:${selectedWorkspaceId}`} workspaceId={selectedWorkspaceId} />}
+      {!aiActive && session.capabilities.sync && selectedWorkspaceId && <Search key={`${selectionKey}:${selectedWorkspaceId}`} workspaceId={selectedWorkspaceId} />}
     </nav>
-    {session.capabilities.sync && selectedWorkspace && <div className="workspace-switcher grid gap-1.5 px-1">
+    {!aiActive && session.capabilities.sync && selectedWorkspace && <div className="workspace-switcher grid gap-1.5 px-1">
       <span className="px-1 text-[11px] font-medium text-muted-foreground">{uiText("Current Workspace", "現在のワークスペース")}</span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild><button className="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-2.5 text-sm font-medium shadow-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring" aria-label={uiText(`Current Workspace: ${selectedWorkspace.name}`, `現在のワークスペース: ${selectedWorkspace.name}`)}>
@@ -148,6 +152,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
       </DropdownMenu>
     </div>}
     <div className="sidebar-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
+      {aiActive ? <div className="flex min-h-0 flex-1 flex-col pt-2" ref={state.setChatHistoryTarget} /> : <>
       {session.capabilities.sync && <nav className="workspace-navigation mt-2" aria-label={uiText("Project navigation", "プロジェクト")}>
         <h2 className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{uiText("Projects", "プロジェクト")}</h2>
         {state.error && <Failure message={state.error} retry={state.reload} />}
@@ -167,6 +172,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
       </nav> : session.capabilities.sharing && <nav className="server-navigation mt-auto grid gap-0.5 pt-6" aria-label={uiText("Organization settings", "組織設定")}>
         <a className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground aria-[current=page]:bg-accent" href="/orgs" aria-current={typeof window !== "undefined" && (window.location.pathname === "/orgs" || window.location.pathname.startsWith("/orgs/")) ? "page" : undefined}><MenuIcon name="organization" /><span>{uiText("Organization settings", "組織設定")}</span></a>
       </nav>}
+      </>}
     </div>
     <div className="sidebar-footer mt-auto border-t pt-2">
       <DropdownMenu>

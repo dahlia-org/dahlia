@@ -111,6 +111,8 @@ async function run() {
   history.replaceState(null, "", "/chat");
   mount();
   await until(() => ready() && document.querySelector('[data-ai-picker="reasoning"]')?.getAttribute("data-value") === "medium", "new chat ready");
+  assert(document.querySelector(".sidebar-scroll .ai-history"), "Chat history is not in the sidebar");
+  assert(!document.querySelector(".workspace-switcher, .workspace-navigation"), "Workspace navigation remains visible on chat");
   assert(Number(creates) === 0 && Number(sends) === 0, "Opening new chat caused a mutation");
   failCreate = true;
   await submit("Keep this draft");
@@ -210,11 +212,13 @@ async function run() {
   reload();
   await until(() => document.body.textContent?.includes("Could not load chat history."), "initial history failure");
   assert(!ready(), "Unknown persistence silently enabled temporary chat");
+  assert(document.querySelector(".ai-chat > .ai-history-failure-mobile"), "History failure has no mobile-visible retry");
   listStatus = 200;
-  click(".ai-error button");
+  click(".ai-history .ai-error button");
   await until(ready, "history retry restores new chat");
   navigateDashboard("/dashboard/settings");
   await until(() => !document.querySelector(".ai-chat"), "leave chat before deletion race");
+  assert(document.querySelector(".workspace-switcher, .workspace-navigation"), "Workspace navigation did not return after leaving chat");
   navigateDashboard(pathA);
   await until(() => messages() === "Saved A", "A before delayed deletion");
   deferDelete = true;
