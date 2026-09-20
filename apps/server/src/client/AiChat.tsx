@@ -432,13 +432,11 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
       </div>
     </div>
   </div>;
-  const historyFailure = (className: string) => historyError && <div className={`ai-error ${className}`} role="alert">
-    <span>{historyError}</span><button className="secondary" onClick={() => void refreshThreads()}>{uiText("Retry", "再試行")}</button>
-  </div>;
-
   const history = <aside className="ai-history" aria-label={uiText("Chat history", "チャット履歴")}>
     <a className="ai-history-new" href="/chat" onClick={newChat}><Plus aria-hidden="true" />{uiText("New chat", "新しいチャット")}</a>
-    {historyFailure("max-md:hidden")}
+    {historyError && <div className="ai-error" role="alert">
+      <span>{historyError}</span><button className="secondary" onClick={() => void refreshThreads()}>{uiText("Retry", "再試行")}</button>
+    </div>}
     {threads.map((thread) => <div className={`ai-history-row${thread.id === requestedThreadId ? " active" : ""}`} key={thread.id}>
       <a href={`/chat/${thread.id}`} aria-current={thread.id === requestedThreadId ? "page" : undefined}><span>{thread.title}</span><time>{new Date(thread.updatedAt).toLocaleDateString()}</time></a>
       <button className="ai-history-delete" aria-label={uiText("Delete chat", "チャットを削除")} onClick={() => void deleteThread(thread.id)}><Trash2 aria-hidden="true" /></button>
@@ -449,7 +447,6 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
   return <section className={`ai-chat${messages.length ? " has-messages" : ""}`} aria-label="AI">
     {dialog}
     {chatHistoryTarget && createPortal(history, chatHistoryTarget)}
-    {historyFailure("ai-history-failure-mobile m-3 md:hidden")}
     {requestedThreadId && (openingThread || threadId !== requestedThreadId) ? <div className="ai-start">
       {threadFailure ? <>
         <p role="alert">{threadFailure === "missing" ? uiText("Chat not found.", "チャットが見つかりません。") : uiText("Could not load this chat.", "チャットを読み込めませんでした。")}</p>

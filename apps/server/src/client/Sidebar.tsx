@@ -152,8 +152,8 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
       </DropdownMenu>
     </div>}
     <div className="sidebar-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
-      {aiActive ? <div className="flex min-h-0 flex-1 flex-col pt-2" ref={state.setChatHistoryTarget} /> : <>
-      {session.capabilities.sync && <nav className="workspace-navigation mt-2" aria-label={uiText("Project navigation", "プロジェクト")}>
+      {aiActive ? <div className="flex min-h-0 flex-1 flex-col pt-2" ref={state.setChatHistoryTarget} />
+        : session.capabilities.sync && <nav className="workspace-navigation mt-2" aria-label={uiText("Project navigation", "プロジェクト")}>
         <h2 className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{uiText("Projects", "プロジェクト")}</h2>
         {state.error && <Failure message={state.error} retry={state.reload} />}
         {!state.workspaces && !state.error && <p className="px-2 py-1 text-xs text-muted-foreground">Loading Workspaces…</p>}
@@ -172,7 +172,6 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
       </nav> : session.capabilities.sharing && <nav className="server-navigation mt-auto grid gap-0.5 pt-6" aria-label={uiText("Organization settings", "組織設定")}>
         <a className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground aria-[current=page]:bg-accent" href="/orgs" aria-current={typeof window !== "undefined" && (window.location.pathname === "/orgs" || window.location.pathname.startsWith("/orgs/")) ? "page" : undefined}><MenuIcon name="organization" /><span>{uiText("Organization settings", "組織設定")}</span></a>
       </nav>}
-      </>}
     </div>
     <div className="sidebar-footer mt-auto border-t pt-2">
       <DropdownMenu>

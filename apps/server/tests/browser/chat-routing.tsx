@@ -42,7 +42,7 @@ globalThis.fetch = async (input, init) => {
   const path = url.pathname;
   const method = init?.method ?? (input instanceof Request ? input.method : "GET");
   if (path === "/api/v1/session") return Response.json({ user: { id: "user", name: "Tester" },
-    capabilities: { admin: false, sessions: false, sharing: false, sync: true, ai: true } });
+    capabilities: { admin: true, sessions: false, sharing: false, sync: true, ai: true } });
   if (path === "/api/v1/workspaces") return Response.json({ items: [{ workspaceId, name: "Workspace", encryption: "none" }], nextCursor: null });
   if (path.endsWith("/projects") || path.endsWith("/meetings")) return Response.json({ items: [], nextCursor: null });
   if (path === "/api/v1/chat/models") return Response.json({ items: [{ id: "model", displayName: "Model",
@@ -113,6 +113,7 @@ async function run() {
   await until(() => ready() && document.querySelector('[data-ai-picker="reasoning"]')?.getAttribute("data-value") === "medium", "new chat ready");
   assert(document.querySelector(".sidebar-scroll .ai-history"), "Chat history is not in the sidebar");
   assert(!document.querySelector(".workspace-switcher, .workspace-navigation"), "Workspace navigation remains visible on chat");
+  assert(document.querySelector(".server-navigation"), "Server settings navigation disappeared on chat");
   let samePageNavigations = 0;
   window.addEventListener(dashboardNavigationEvent, () => { samePageNavigations++; }, { once: true });
   click(".ai-history-new");
@@ -216,7 +217,7 @@ async function run() {
   reload();
   await until(() => document.body.textContent?.includes("Could not load chat history."), "initial history failure");
   assert(!ready(), "Unknown persistence silently enabled temporary chat");
-  assert(document.querySelector(".ai-chat > .ai-history-failure-mobile"), "History failure has no mobile-visible retry");
+  assert(document.querySelector(".ai-history .ai-error") && !document.querySelector(".ai-chat > .ai-error"), "History failure is not next to the sidebar list");
   listStatus = 200;
   click(".ai-history .ai-error button");
   await until(ready, "history retry restores new chat");
