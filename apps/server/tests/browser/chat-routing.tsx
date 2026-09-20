@@ -196,9 +196,16 @@ async function run() {
   const confirm = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button, [role="alertdialog"] button')]
     .find((button) => button.textContent === "Delete chat");
   assert(confirm, "Missing delete confirmation");
+  listStatus = 503;
   confirm.click();
   await until(() => location.pathname === "/chat" && ready() && !threads.has(idB), "delete current chat");
   assert(messages() === "", "Deleted chat remains visible");
+  assert(!document.querySelector(`.ai-history-row a[href="${pathB}"]`), "Deleted chat returned to history");
+  await until(() => document.body.textContent?.includes("Could not load chat history."), "post-delete history failure");
+  listStatus = 200;
+  click(".ai-error button");
+  await until(() => !document.body.textContent?.includes("Could not load chat history."), "post-delete history retry");
+  assert(!document.querySelector(`.ai-history-row a[href="${pathB}"]`), "History retry restored deleted chat");
   listStatus = 503;
   reload();
   await until(() => document.body.textContent?.includes("Could not load chat history."), "initial history failure");

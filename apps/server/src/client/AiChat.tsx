@@ -380,7 +380,11 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
       confirmLabel: uiText("Delete chat", "チャットを削除"), destructive: true,
       onSubmit: async () => {
         await json(`/api/v1/chat/${id}`, { method: "DELETE" });
-        if (window.location.pathname === `/chat/${id}`) navigateDashboard("/chat", true);
+        setThreads((current) => current.filter((thread) => thread.id !== id));
+        if (window.location.pathname === `/chat/${id}`) {
+          reset();
+          navigateDashboard("/chat", true);
+        }
         await refreshThreads();
       },
     });
