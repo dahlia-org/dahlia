@@ -236,7 +236,7 @@
   .ai-history-new svg, .ai-history-delete svg { @apply size-3.5; }
   .ai-history-row { @apply flex min-w-48 items-center rounded-lg hover:bg-muted md:min-w-0; }
   .ai-history-row.active { @apply bg-muted; }
-  .ai-history-row > button:first-child { @apply flex min-w-0 flex-1 flex-col items-start px-3 py-2 text-left; }
+  .ai-history-row > a:first-child { @apply flex min-w-0 flex-1 flex-col items-start px-3 py-2 text-left; }
   .ai-history-row span { @apply w-full truncate text-xs font-medium; }
   .ai-history-row time { @apply text-[10px] text-muted-foreground; }
   .ai-history-delete { @apply grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring; }

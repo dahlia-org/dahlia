@@ -206,7 +206,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/ai/models": {
+    "/api/v1/chat/models": {
         parameters: {
             query?: never;
             header?: never;
@@ -223,7 +223,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/ai/threads": {
+    "/api/v1/chat": {
         parameters: {
             query?: never;
             header?: never;
@@ -241,7 +241,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/ai/threads/{threadId}": {
+    "/api/v1/chat/{threadId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -259,7 +259,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/ai/threads/{threadId}/messages": {
+    "/api/v1/chat/{threadId}/messages": {
         parameters: {
             query?: never;
             header?: never;
@@ -276,7 +276,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/ai/chat": {
+    "/api/v1/chat/messages": {
         parameters: {
             query?: never;
             header?: never;

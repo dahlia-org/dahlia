@@ -10,12 +10,15 @@ export function shouldRedirectToSignIn(status: number | undefined): boolean {
   return status === 401;
 }
 
+export function isChatPath(path: string): boolean {
+  return path === "/chat" || /^\/chat\/[^/]+$/.test(path);
+}
+
 const coreDashboardPaths = new Set([
   "/",
   "/sessions",
   "/dashboard",
   "/dashboard/settings",
-  "/ai",
   "/workspaces",
   "/orgs",
   "/admin",
@@ -28,6 +31,7 @@ const coreDashboardPaths = new Set([
 
 export function isCoreDashboardPath(path: string): boolean {
   return coreDashboardPaths.has(path)
+    || isChatPath(path)
     || /^\/(?:meetings|projects|files|orgs)\/[^/]+$/.test(path)
     || /^\/workspaces\/[^/]+(?:\/(?:meetings|projects)\/[^/]+)?$/.test(path)
     || /^\/admin\/orgs\/[^/]+$/.test(path)
@@ -37,6 +41,7 @@ export function isCoreDashboardPath(path: string): boolean {
 export type DashboardRoute = {
   page?: "ai" | "file" | "overview" | "settings" | "workspaces" | "workspace" | "meeting" | "project" | "organizations" | "organization" | "invitation" | "admin-users" | "admin-organizations" | "admin-organization" | "admin-settings";
   redirect?: string;
+  threadId?: string;
   fileId?: string;
   workspaceId?: string;
   meetingId?: string;
@@ -52,7 +57,9 @@ export function resolveDashboardRoute(
   if (path === "/") return { redirect: "/dashboard" };
   if (path === "/sessions") return { redirect: "/dashboard/settings" };
   if (path === "/dashboard") return { page: "overview" };
-  if (path === "/ai") return capabilities.ai ? { page: "ai" } : { redirect: "/dashboard" };
+  if (path === "/chat") return capabilities.ai ? { page: "ai" } : { redirect: "/dashboard" };
+  const chat = path.match(/^\/chat\/([^/]+)$/);
+  if (chat) return capabilities.ai ? { page: "ai", threadId: chat[1] } : { redirect: "/dashboard" };
   if (path === "/orgs") {
     return capabilities.sharing
       ? { page: "organizations" }

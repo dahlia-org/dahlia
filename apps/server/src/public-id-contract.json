@@ -645,7 +645,10 @@
   },
   "routes": [
     {
-      "path": "/api/v1/ai/threads",
+      "path": "/api/v1/chat/models"
+    },
+    {
+      "path": "/api/v1/chat",
       "methods": [
         "POST"
       ],
@@ -654,7 +657,7 @@
       "limit": 131072
     },
     {
-      "path": "/api/v1/ai/threads",
+      "path": "/api/v1/chat",
       "methods": [
         "GET",
         "HEAD"
@@ -662,7 +665,7 @@
       "response": "aiThreadPage"
     },
     {
-      "path": "/api/v1/ai/threads/:aiThread",
+      "path": "/api/v1/chat/:aiThread",
       "methods": [
         "GET",
         "HEAD"
@@ -670,19 +673,19 @@
       "response": "aiThreadDetail"
     },
     {
-      "path": "/api/v1/ai/threads/:aiThread",
+      "path": "/api/v1/chat/:aiThread",
       "methods": [
         "DELETE"
       ]
     },
     {
-      "path": "/api/v1/ai/threads/:aiThread/messages",
+      "path": "/api/v1/chat/:aiThread/messages",
       "methods": [
         "POST"
       ]
     },
     {
-      "path": "/api/v1/ai/chat",
+      "path": "/api/v1/chat/messages",
       "methods": [
         "POST"
       ],

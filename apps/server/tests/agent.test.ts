@@ -139,7 +139,7 @@ describe("AI chat boundary", () => {
     }) } as unknown as GatewayService;
     const service = createAiService(config, gateway, {} as never);
     const stream = service.stream({ workspaceId, model: "gpt-5.6-test", reasoningEffort: "low", messages: [{ role: "user", content: "Hello" }] }, identity,
-      new Request("https://dahlia.example/api/v1/ai/chat"));
+      new Request("https://dahlia.example/api/v1/chat/messages"));
     await expect(stream[Symbol.asyncIterator]().next()).rejects.toThrow();
     expect(transport).toHaveBeenCalledOnce();
     const [input, init] = transport.mock.calls[0]!;
@@ -195,7 +195,7 @@ describe("AI chat boundary", () => {
         default_reasoning_level: "medium", supported_reasoning_levels: [{ effort: "medium", description: "Balanced" }] }],
     }) } as unknown as GatewayService;
     const service = createAiService(config, gateway, createMeetingTools({ listMeetings } as unknown as MeetingSyncService));
-    const request = new Request("https://dahlia.example/api/v1/ai/chat");
+    const request = new Request("https://dahlia.example/api/v1/chat/messages");
     const events = [];
     for await (const event of service.stream({ workspaceId, model: "gpt-5.6-test", reasoningEffort: "medium", messages: [{ role: "user", content: "List meetings" }] }, identity,
       request)) events.push(event);
@@ -242,7 +242,7 @@ describe("AI chat boundary", () => {
     const service = createAiService(config, gateway, {} as never, tokenTransport);
     const stream = service.stream({
       workspaceId, model: "system.ai.gpt-5-6-luna", reasoningEffort: "medium", messages: [{ role: "user", content: "Hello" }],
-    }, identity, new Request("https://dahlia.example/api/v1/ai/chat"));
+    }, identity, new Request("https://dahlia.example/api/v1/chat/messages"));
     await expect(stream[Symbol.asyncIterator]().next()).rejects.toThrow("captured");
     expect(tokenTransport).toHaveBeenCalledOnce();
     expect(String(tokenTransport.mock.calls[0]![0])).toBe("https://workspace.example/oidc/v1/token");
@@ -259,7 +259,7 @@ describe("AI chat boundary", () => {
         supported_reasoning_levels: [{ effort: "medium", description: "Balanced" }] }] }) } as unknown as GatewayService;
     const service = createAiService(config, gateway, {} as never);
     const stream = service.stream({ workspaceId, model: "hidden", reasoningEffort: "medium", messages: [{ role: "user", content: "Hello" }] }, identity,
-      new Request("https://dahlia.example/api/v1/ai/chat"));
+      new Request("https://dahlia.example/api/v1/chat/messages"));
     await expect(stream[Symbol.asyncIterator]().next()).rejects.toMatchObject({ status: 400, code: "model_not_configured" });
   });
 
@@ -271,7 +271,7 @@ describe("AI chat boundary", () => {
         supported_reasoning_levels: [{ effort: "low", description: "Fast" }] }] }) } as unknown as GatewayService;
     const service = createAiService(config, gateway, {} as never);
     const stream = service.stream({ workspaceId, model: "gpt-test", reasoningEffort: "high", messages: [{ role: "user", content: "Hello" }] }, identity,
-      new Request("https://dahlia.example/api/v1/ai/chat"));
+      new Request("https://dahlia.example/api/v1/chat/messages"));
     await expect(stream[Symbol.asyncIterator]().next()).rejects.toMatchObject({ status: 400, code: "reasoning_effort_not_supported" });
   });
 

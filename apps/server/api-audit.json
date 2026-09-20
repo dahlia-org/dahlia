@@ -59,7 +59,7 @@
     {
       "operationId": "getAiModels",
       "method": "GET",
-      "path": "/api/v1/ai/models",
+      "path": "/api/v1/chat/models",
       "classification": "modified",
       "previous": "new public contract",
       "reason": "List configured Agent-compatible models for Private Web",
@@ -70,7 +70,7 @@
     {
       "operationId": "chatWithAi",
       "method": "POST",
-      "path": "/api/v1/ai/chat",
+      "path": "/api/v1/chat/messages",
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Stream one authenticated page-memory Agent response",
@@ -81,7 +81,7 @@
     {
       "operationId": "createAiThread",
       "method": "POST",
-      "path": "/api/v1/ai/threads",
+      "path": "/api/v1/chat",
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Create a private persistent AI chat for the current user",
@@ -90,7 +90,7 @@
     {
       "operationId": "listAiThreads",
       "method": "GET",
-      "path": "/api/v1/ai/threads",
+      "path": "/api/v1/chat",
       "classification": "modified",
       "previous": "new public contract",
       "reason": "List the current user's persistent AI chats",
@@ -99,7 +99,7 @@
     {
       "operationId": "getAiThread",
       "method": "GET",
-      "path": "/api/v1/ai/threads/{threadId}",
+      "path": "/api/v1/chat/{threadId}",
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Read an owned AI chat and its messages",
@@ -108,7 +108,7 @@
     {
       "operationId": "deleteAiThread",
       "method": "DELETE",
-      "path": "/api/v1/ai/threads/{threadId}",
+      "path": "/api/v1/chat/{threadId}",
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Delete an owned AI chat",
@@ -117,7 +117,7 @@
     {
       "operationId": "continueAiThread",
       "method": "POST",
-      "path": "/api/v1/ai/threads/{threadId}/messages",
+      "path": "/api/v1/chat/{threadId}/messages",
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Continue an owned AI chat with Mastra Message History",

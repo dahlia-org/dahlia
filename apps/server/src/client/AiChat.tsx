@@ -1,10 +1,12 @@
 import { Brain, BriefcaseBusiness, Plus, Send, Sparkles, Square, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 
 import { json, RequestError, uiText } from "./api";
 import { useActionDialog } from "./ActionDialog";
 import { MenuIcon, useSidebar } from "./Sidebar";
 import { DetailHeaderBar } from "./layout/AppShell";
+import { navigateDashboard } from "./navigation";
+import { decodeId } from "../typeid";
 import {
   Select,
   SelectContent,
@@ -92,7 +94,7 @@ function ComposerPicker({ kind, label, value, options, disabled, onValueChange }
   </Select>;
 }
 
-export function AiChat() {
+export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
   const { dialog, openDialog } = useActionDialog();
   const { workspaces } = useSidebar();
   const [models, setModels] = useState<AiModel[]>([]);
@@ -108,6 +110,8 @@ export function AiChat() {
   const [error, setError] = useState<string>();
   const [historyReady, setHistoryReady] = useState(false);
   const [historyEnabled, setHistoryEnabled] = useState(false);
+  const [historyError, setHistoryError] = useState<string>();
+  const [threadFailure, setThreadFailure] = useState<"missing" | "retry">();
   const [threads, setThreads] = useState<AiThread[]>([]);
   const [threadPage, setThreadPage] = useState(0);
   const [hasMoreThreads, setHasMoreThreads] = useState(false);
@@ -116,6 +120,8 @@ export function AiChat() {
   const [openingThread, setOpeningThread] = useState(false);
   const [loadingMoreThreads, setLoadingMoreThreads] = useState(false);
   const controller = useRef<AbortController | undefined>(undefined);
+  const threadRequest = useRef<AbortController | undefined>(undefined);
+  const activeThread = useRef<string | undefined>(undefined);
   const viewGeneration = useRef(0);
   const threadListGeneration = useRef(0);
   const refreshingThreads = useRef(false);
@@ -125,7 +131,7 @@ export function AiChat() {
 
   useEffect(() => {
     const request = new AbortController();
-    void json<{ items: AiModel[] }>("/api/v1/ai/models", { signal: request.signal }, { notifyMutation: false })
+    void json<{ items: AiModel[] }>("/api/v1/chat/models", { signal: request.signal }, { notifyMutation: false })
       .then(({ items }) => { setModels(items); setModel((current) => current || items[0]?.id || ""); })
       .catch((caught: unknown) => { if (!request.signal.aborted) setError(caught instanceof Error ? caught.message : uiText("Could not load models.", "モデルを読み込めませんでした。")); });
     return () => request.abort();
@@ -133,28 +139,35 @@ export function AiChat() {
   async function refreshThreads() {
     const generation = ++threadListGeneration.current;
     refreshingThreads.current = true;
+    setHistoryError(undefined);
     try {
-      const result = await json<{ items: AiThread[]; hasMore: boolean }>("/api/v1/ai/threads", undefined, { notifyMutation: false });
+      const result = await json<{ items: AiThread[]; hasMore: boolean }>("/api/v1/chat", undefined, { notifyMutation: false });
       if (threadListGeneration.current !== generation) return;
       setHistoryEnabled(true);
-      setThreads(result.items);
+      setThreads((current) => {
+        const active = current.find(({ id }) => id === activeThread.current);
+        return active && !result.items.some(({ id }) => id === active.id) ? [active, ...result.items] : result.items;
+      });
       setThreadPage(0);
       setHasMoreThreads(result.hasMore);
       setHistoryReady(true);
     } catch (caught) {
       if (threadListGeneration.current !== generation) return;
       if (caught instanceof RequestError && caught.status === 404) { setHistoryReady(true); return; }
-      setHistoryReady(true);
-      throw caught;
+      setHistoryError(uiText("Could not load chat history.", "チャット履歴を読み込めませんでした。"));
     } finally {
       if (threadListGeneration.current === generation) refreshingThreads.current = false;
     }
   }
   useEffect(() => {
-    const requested = new URLSearchParams(location.search).get("thread");
-    void refreshThreads().then(() => requested ? openThread(requested) : undefined)
-      .catch((caught: unknown) => setError(caught instanceof Error ? caught.message : uiText("Could not load chat history.", "チャット履歴を読み込めませんでした。")));
+    void refreshThreads();
   }, []);
+  useEffect(() => {
+    // The first send adopts its new URL without reloading or aborting the stream.
+    if (requestedThreadId && requestedThreadId === activeThread.current) return;
+    if (requestedThreadId) void openThread(requestedThreadId);
+    else reset();
+  }, [requestedThreadId]);
   useEffect(() => {
     const selected = models.find(({ id }) => id === model);
     if (selected && !selected.supportedReasoningEfforts.some(({ effort }) => effort === reasoningEffort)) {
@@ -162,18 +175,21 @@ export function AiChat() {
     }
   }, [model, models, reasoningEffort]);
   useEffect(() => () => {
+    viewGeneration.current += 1;
+    threadListGeneration.current += 1;
     controller.current?.abort("unmount");
     controller.current = undefined;
+    threadRequest.current?.abort();
   }, []);
   useEffect(() => {
     if (!workspaceId && workspaces?.[0]) setWorkspaceId(workspaces[0].workspaceId);
   }, [workspaceId, workspaces]);
   useEffect(() => { transcript.current?.lastElementChild?.scrollIntoView({ block: "nearest" }); }, [messages, answer, tool]);
   const selectedWorkspace = workspaces?.find((workspace) => workspace.workspaceId === workspaceId);
-  const persistentHistory = historyEnabled && Boolean(threadId || (selectedWorkspace && selectedWorkspace.encryption !== "server"));
+  const persistentHistory = Boolean(threadId) || (historyEnabled && Boolean(selectedWorkspace && selectedWorkspace.encryption !== "server"));
 
   const send = async (nextMessages: Message[]) => {
-    if (!historyReady || openingThread || !workspaceId || !model || !reasoningEffort || pending) return;
+    if (!historyReady || openingThread || !workspaceId || !model || !reasoningEffort || pending || controller.current) return;
     const request = new AbortController();
     const generation = viewGeneration.current;
     const persist = persistentHistory;
@@ -189,15 +205,16 @@ export function AiChat() {
     let activeThreadId = threadId;
     try {
       if (persist && !activeThreadId) {
-        const created = await json<AiThread>("/api/v1/ai/threads", { method: "POST",
+        const created = await json<AiThread>("/api/v1/chat", { method: "POST",
           body: JSON.stringify({ workspaceId, title: nextMessages.at(-1)!.content }) });
         if (!current()) return;
         activeThreadId = created.id;
+        activeThread.current = created.id;
         setThreadId(created.id);
         setThreads((current) => [created, ...current]);
-        globalThis.history.replaceState(null, "", `/ai?thread=${created.id}`);
+        navigateDashboard(`/chat/${created.id}`, true);
       }
-      const response = await fetch(persist ? `/api/v1/ai/threads/${activeThreadId}/messages` : "/api/v1/ai/chat", {
+      const response = await fetch(persist ? `/api/v1/chat/${activeThreadId}/messages` : "/api/v1/chat/messages", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(persist
@@ -221,14 +238,19 @@ export function AiChat() {
       if (!completed || !responseText.trim()) throw new Error("stream_incomplete");
       setMessages([...nextMessages, { role: "assistant", content: responseText }]);
       setAnswer("");
-      if (persist) void refreshThreads().catch(() => undefined);
+      if (persist) void refreshThreads();
     } catch (caught) {
       if (!current()) return;
       if (request.signal.reason === "stop") setError(uiText("Response stopped.", "回答を停止しました。"));
       else if (!request.signal.aborted) setError(caught instanceof Error ? caught.message : uiText("AI request failed.", "AIへのリクエストに失敗しました。"));
+      if (persist && !activeThreadId) {
+        setMessages(nextMessages.slice(0, -1));
+        setDraft(nextMessages.at(-1)!.content);
+        setLocked(false);
+      }
       if (persist && activeThreadId) {
         try {
-          const recovered = await json<{ messages: Message[]; hasMore: boolean }>(`/api/v1/ai/threads/${activeThreadId}`, undefined,
+          const recovered = await json<{ messages: Message[]; hasMore: boolean }>(`/api/v1/chat/${activeThreadId}`, undefined,
             { notifyMutation: false });
           if (current()) {
             setMessages(mergeRecoveredMessages(nextMessages, recovered.messages));
@@ -247,54 +269,62 @@ export function AiChat() {
   };
   const submit = () => {
     const content = draft.trim();
-    if (!historyReady || openingThread || !content || !workspaceId || !model || !reasoningEffort || pending
+    if (!historyReady || openingThread || !content || !workspaceId || !model || !reasoningEffort || pending || controller.current
       || (!persistentHistory && messages.at(-1)?.role === "user")) return;
     const next = [...messages, { role: "user" as const, content }];
     setMessages(next);
     setDraft("");
     void send(next);
   };
-  const reset = () => {
+  function reset() {
     viewGeneration.current += 1;
     controller.current?.abort("reset");
     controller.current = undefined;
-    setPending(false);
-    setMessages([]);
-    setAnswer("");
-    setDraft("");
-    setError(undefined);
-    setLocked(false);
-    setOpeningThread(false);
-    setThreadId(undefined);
-    setHasEarlierMessages(false);
-    globalThis.history.replaceState(null, "", "/ai");
-  };
-  async function openThread(id: string) {
-    const generation = ++viewGeneration.current;
-    setOpeningThread(true);
-    controller.current?.abort("open");
-    controller.current = undefined;
+    threadRequest.current?.abort();
+    activeThread.current = undefined;
     loadingEarlier.current = false;
     setPending(false);
+    setMessages([]);
     setAnswer("");
     setTool(undefined);
     setDraft("");
     setError(undefined);
+    setThreadFailure(undefined);
+    setLocked(false);
+    setOpeningThread(false);
+    setThreadId(undefined);
     setHasEarlierMessages(false);
+  }
+  function newChat(event: MouseEvent<HTMLAnchorElement>) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (!requestedThreadId) { event.preventDefault(); reset(); }
+  }
+  async function openThread(id: string) {
+    reset();
+    const generation = ++viewGeneration.current;
+    const request = new AbortController();
+    threadRequest.current = request;
+    setOpeningThread(true);
     try {
-      const result = await json<{ thread: AiThread; messages: Message[]; hasMore: boolean }>(`/api/v1/ai/threads/${id}`, undefined,
+      try { decodeId("aiThread", id); } catch {
+        setThreadFailure("missing");
+        return;
+      }
+      const result = await json<{ thread: AiThread; messages: Message[]; hasMore: boolean }>(`/api/v1/chat/${id}`, { signal: request.signal },
         { notifyMutation: false });
       if (viewGeneration.current !== generation) return;
+      activeThread.current = id;
       setThreadId(id);
       setWorkspaceId(result.thread.workspaceId);
       setThreads((current) => current.some((thread) => thread.id === id) ? current : [result.thread, ...current]);
       setMessages(result.messages);
       setHasEarlierMessages(result.hasMore);
       setLocked(true);
-      globalThis.history.replaceState(null, "", `/ai?thread=${id}`);
+      setHistoryEnabled(true);
+      setHistoryReady(true);
     } catch (caught) {
       if (viewGeneration.current === generation) {
-        setError(caught instanceof Error ? caught.message : uiText("Could not load chat history.", "チャット履歴を読み込めませんでした。"));
+        setThreadFailure(caught instanceof RequestError && (caught.status === 403 || caught.status === 404) ? "missing" : "retry");
       }
     } finally {
       if (viewGeneration.current === generation) setOpeningThread(false);
@@ -307,7 +337,7 @@ export function AiChat() {
     const generation = threadListGeneration.current;
     try {
       const page = threadPage + 1;
-      const result = await json<{ items: AiThread[]; hasMore: boolean }>(`/api/v1/ai/threads?page=${page}`, undefined,
+      const result = await json<{ items: AiThread[]; hasMore: boolean }>(`/api/v1/chat?page=${page}`, undefined,
         { notifyMutation: false });
       if (threadListGeneration.current !== generation) return;
       setThreads((current) => [...current, ...result.items.filter((item) => !current.some(({ id }) => id === item.id))]);
@@ -331,7 +361,7 @@ export function AiChat() {
     loadingEarlier.current = true;
     try {
       const query = new URLSearchParams({ before: before.createdAt, beforeId: before.id, beforeRole: before.role });
-      const result = await json<{ messages: Message[]; hasMore: boolean }>(`/api/v1/ai/threads/${id}?${query}`, undefined,
+      const result = await json<{ messages: Message[]; hasMore: boolean }>(`/api/v1/chat/${id}?${query}`, undefined,
         { notifyMutation: false });
       if (viewGeneration.current !== generation || threadId !== id) return;
       setMessages((current) => prependEarlierMessages(current, result.messages));
@@ -349,8 +379,12 @@ export function AiChat() {
       description: uiText("This chat and its messages will be permanently deleted.", "このチャットとメッセージは完全に削除されます。"),
       confirmLabel: uiText("Delete chat", "チャットを削除"), destructive: true,
       onSubmit: async () => {
-        await json(`/api/v1/ai/threads/${id}`, { method: "DELETE" });
-        if (threadId === id) reset();
+        await json(`/api/v1/chat/${id}`, { method: "DELETE" });
+        setThreads((current) => current.filter((thread) => thread.id !== id));
+        if (window.location.pathname === `/chat/${id}`) {
+          reset();
+          navigateDashboard("/chat", true);
+        }
         await refreshThreads();
       },
     });
@@ -400,20 +434,28 @@ export function AiChat() {
 
   return <section className={`ai-chat${messages.length ? " has-messages" : ""}${historyEnabled ? " with-history" : ""}`} aria-label="AI">
     {dialog}
+    {historyError && <div className="ai-error" role="alert"><span>{historyError}</span><button className="secondary" onClick={() => void refreshThreads()}>{uiText("Retry", "再試行")}</button></div>}
     {historyEnabled && <aside className="ai-history" aria-label={uiText("Chat history", "チャット履歴")}>
-      <button className="ai-history-new" onClick={reset}><Plus aria-hidden="true" />{uiText("New chat", "新しいチャット")}</button>
-      {threads.map((thread) => <div className={`ai-history-row${thread.id === threadId ? " active" : ""}`} key={thread.id}>
-        <button onClick={() => void openThread(thread.id)}><span>{thread.title}</span><time>{new Date(thread.updatedAt).toLocaleDateString()}</time></button>
+      <a className="ai-history-new" href="/chat" onClick={newChat}><Plus aria-hidden="true" />{uiText("New chat", "新しいチャット")}</a>
+      {threads.map((thread) => <div className={`ai-history-row${thread.id === requestedThreadId ? " active" : ""}`} key={thread.id}>
+        <a href={`/chat/${thread.id}`} aria-current={thread.id === requestedThreadId ? "page" : undefined}><span>{thread.title}</span><time>{new Date(thread.updatedAt).toLocaleDateString()}</time></a>
         <button className="ai-history-delete" aria-label={uiText("Delete chat", "チャットを削除")} onClick={() => void deleteThread(thread.id)}><Trash2 aria-hidden="true" /></button>
       </div>)}
       {hasMoreThreads && <button className="secondary" disabled={loadingMoreThreads} onClick={() => void loadMoreThreads()}>{loadingMoreThreads ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに読み込む")}</button>}
     </aside>}
+    {requestedThreadId && (openingThread || threadId !== requestedThreadId) ? <div className="ai-start">
+      {threadFailure ? <>
+        <p role="alert">{threadFailure === "missing" ? uiText("Chat not found.", "チャットが見つかりません。") : uiText("Could not load this chat.", "チャットを読み込めませんでした。")}</p>
+        {threadFailure === "retry" && <button className="secondary" onClick={() => void openThread(requestedThreadId)}>{uiText("Retry", "再試行")}</button>}
+        <a href="/chat">{uiText("New chat", "新しいチャット")}</a>
+      </> : <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
+    </div> : <>
     {messages.length > 0 && <header className="ai-header">
       <DetailHeaderBar>
         <div className="flex min-w-0 flex-1 items-center gap-1 whitespace-nowrap px-1.5 text-xs">
-          <button className="ai-new-chat" aria-label={uiText("New chat", "新しいチャット")} onClick={reset}>
+          <a className="ai-new-chat" href="/chat" aria-label={uiText("New chat", "新しいチャット")} onClick={newChat}>
             <MenuIcon name="chat" /><span className="truncate">Dahlia AI</span>
-          </button>
+          </a>
           <span className="text-muted-foreground" aria-hidden="true">/</span>
           <strong className="truncate">{threads.find(({ id }) => id === threadId)?.title || uiText("New chat", "新しいチャット")}</strong>
         </div>
@@ -436,6 +478,7 @@ export function AiChat() {
         {error && <div className="ai-error" role="alert"><span>{error}</span>{!persistentHistory && <button className="secondary" disabled={pending || openingThread || messages.at(-1)?.role !== "user"} onClick={retry}>{uiText("Retry", "再試行")}</button>}</div>}
       </div>
       <div className="ai-bottom">{composer}<p className="sr-only" aria-live="polite">{pending ? uiText("AI is responding", "AIが回答中です") : error || uiText("Ready", "準備完了")}</p></div>
+    </>}
     </>}
   </section>;
 }

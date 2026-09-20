@@ -404,7 +404,23 @@ The account menu's **Connect with MCP** dialog shows `mcp.json`, Claude Code, an
 
 ## Provider and model configuration
 
-The Private Web AI chat places messages directly below its sticky header. Messages gradually blur into the header and bottom composer as they scroll past those edges. The browser regression harness at `/tests/browser/ai-chat.html` (run `pnpm dev:client`) checks the header spacing and scroll-edge styling alongside chat controls.
+The Private Web opens new Dahlia AI chats at `/chat` and saved private chats at `/chat/<id>`. IDs retain their public `chat_…` TypeID format. A Workspace is the chat's meeting-search scope, not a URL parent or permission to read another user's chat. Opening `/chat` does not create a record. The first send creates a chat and replaces the current history entry with its URL without interrupting the response. Selecting another chat or New chat adds a history entry; Back/Forward and direct links restore the selected conversation without submitting a message. Deleting the displayed chat replaces its URL with `/chat`. Missing or inaccessible chats keep their URL and show the same not-found state; network failures can be retried. Signing in returns to the requested chat path.
+
+Chat APIs use the same `/api/v1/chat` namespace:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET / POST | `/api/v1/chat` | List / create private chats |
+| GET / DELETE | `/api/v1/chat/<id>` | Read the chat and messages / delete the chat |
+| POST | `/api/v1/chat/<id>/messages` | Save a message and stream the response |
+| POST | `/api/v1/chat/messages` | Stream a temporary conversation without persistence |
+| GET | `/api/v1/chat/models` | List available chat models |
+
+The creation response's `Location` points to `/api/v1/chat/<id>`. Existing DTOs, pagination and SSE events are unchanged. The old `/ai` page, `?thread=` selection and `/api/v1/ai/*` chat endpoints are not supported. Deployments without chat history, and Workspaces whose encryption prevents history storage, keep temporary conversations at `/chat`; they cannot be restored after leaving the page. No public sharing URL is provided.
+
+If the initial history request fails transiently, a new chat waits for an explicit retry instead of silently switching to a non-persistent conversation. An existing chat can still load and continue independently of the history list.
+
+The chat places messages directly below its sticky header. Messages gradually blur into the header and bottom composer as they scroll past those edges. Run `pnpm dev:client` and open `/tests/browser/ai-chat.html` for the existing layout/composer regression checks, or `/tests/browser/chat-routing.html` for creation, deep links, browser history, failure recovery and navigation races. Both harnesses use mocked HTTP responses without contacting a backend and report PASS/FAIL on the page.
 
 The AI backend uses the OpenAI Responses-compatible contract and is independent of the database. Select `databricks`, `cloudflare`, or `openai` with `DAHLIA_AI_BACKEND`; it defaults to `openai`. `DAHLIA_FOUNDATION_MODELS` is a comma-separated, ordered list of model IDs exposed by `/api/v1/models` for every backend. Empty or missing values expose no picker-visible models, reject Responses model IDs, and leave Server summary generation without a selectable model. While the selected non-Databricks backend has no `OPENAI_API_KEY`, Responses returns `503 provider_not_configured`.
 
