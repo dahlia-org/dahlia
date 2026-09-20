@@ -3,6 +3,7 @@ import type { SessionInfo } from "../App";
 import type { SyncedMeetingInfo } from "../api";
 import { uiText } from "../api";
 import { dashboardNavigationEvent, dashboardNavigationPath } from "../navigation";
+import { isChatPath } from "../routes";
 import { MenuIcon, Sidebar, SidebarProvider } from "../Sidebar";
 import { Tooltip } from "../Tooltip";
 import { Button } from "../components/ui/button";
@@ -23,6 +24,7 @@ export function AppShell({ brand, children, extensionPaths, navigate, path, rout
   session: SessionInfo;
 }) {
   const main = useRef<HTMLElement>(null);
+  const chatPage = isChatPath(path);
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 767px)").matches);
   useEffect(() => {
@@ -73,7 +75,7 @@ export function AppShell({ brand, children, extensionPaths, navigate, path, rout
           <SheetTitle className="sr-only">{uiText("Navigation", "ナビゲーション")}</SheetTitle>{sidebar}
         </SheetContent>
       </Sheet>}
-      <main id="main-content" className={path === "/ai" ? "min-w-0 outline-none md:col-start-2" : "min-w-0 px-5 pb-16 pt-7 outline-none sm:px-8 md:col-start-2 md:px-10 lg:px-14"} key={path} ref={main} tabIndex={-1}>{children}</main>
+      <main id="main-content" className={chatPage ? "min-w-0 outline-none md:col-start-2" : "min-w-0 px-5 pb-16 pt-7 outline-none sm:px-8 md:col-start-2 md:px-10 lg:px-14"} key={chatPage ? "/chat" : path} ref={main} tabIndex={-1}>{children}</main>
     </div>
   </SidebarProvider>;
 }

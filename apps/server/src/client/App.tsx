@@ -2112,7 +2112,7 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   else if (route.page === "organization") page = <Organization session={session} organizationId={route.organizationId!} />;
   else if (route.page === "invitation") page = <Invitation invitationId={route.invitationId!} />;
   else if (route.page === "settings") page = <Settings session={session} extensions={extensions} />;
-  else if (route.page === "ai") page = <AiChat />;
+  else if (route.page === "ai") page = <AiChat requestedThreadId={route.threadId} />;
   else page = <Overview session={session} />;
   return <AppShell brand={<Brand brand={brand} />} extensionPaths={extensions.flatMap((extension) => extension.routes?.map((item) => item.path) ?? [])}
     serverLinks={extensions.flatMap((extension) => extension.navigation ?? []).filter(isServerNavigation).map((item) =>

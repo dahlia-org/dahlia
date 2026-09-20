@@ -8,6 +8,15 @@ import { wireDocument, wireValue, wireURL } from "../src/public-wire";
 
 const uuid = vectors[2]!.uuid;
 describe("public TypeIDs", () => {
+  it("keeps fixed chat paths separate from encoded chat IDs", () => {
+    for (const direction of ["encode", "decode"] as const) {
+      expect(wireURL("/api/v1/chat/models", direction)).toBe("/api/v1/chat/models");
+      expect(wireURL("/api/v1/chat/messages", direction, "POST")).toBe("/api/v1/chat/messages");
+    }
+    const path = `/api/v1/chat/${uuid}`;
+    expect(wireURL(path, "encode")).toBe(`/api/v1/chat/${encodeId("aiThread", uuid)}`);
+    expect(wireURL(wireURL(path, "encode"), "decode")).toBe(path);
+  });
   it("converts nested MCP recording IDs without touching opaque metadata", () => {
     const value = { transcript: { metadata: { runs: [{ recording_session_id: uuid, response: { id: uuid } }] } } };
     const encoded = wireValue(value, "mcpResult", "encode") as typeof value;

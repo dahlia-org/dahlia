@@ -63,7 +63,7 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     const send = fixture(true);
     const session: { capabilities: Record<string, boolean> } = await (await send("/api/v1/session")).json();
     expect(session.capabilities.ai).toBe(true);
-    expect(await (await send("/api/v1/ai/models")).json()).toEqual({ items: [
+    expect(await (await send("/api/v1/chat/models")).json()).toEqual({ items: [
       { id: "test-model", displayName: "Test model", defaultReasoningEffort: "medium", supportedReasoningEfforts: [
         { effort: "low", description: "Fast" }, { effort: "medium", description: "Balanced" },
       ] },
@@ -71,30 +71,30 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
         { effort: "low", description: "Fast" }, { effort: "medium", description: "Balanced" },
       ] },
     ] });
-    expect((await send("/api/v1/ai/models", "GET", undefined, {})).status).toBe(401);
+    expect((await send("/api/v1/chat/models", "GET", undefined, {})).status).toBe(401);
     const workspaceId = encodeId("workspace", "01990ab0-0000-7000-8000-000000000001");
     const body = JSON.stringify({ workspaceId, model: "test-model", reasoningEffort: "medium", messages: [{ role: "user", content: "Question" }] });
-    const response = await send("/api/v1/ai/chat", "POST", body, { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" });
+    const response = await send("/api/v1/chat/messages", "POST", body, { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" });
     expect(response.status).toBe(200);
     const events = await response.text();
     expect(events).toMatch(/event: tool[\s\S]+event: tool[\s\S]+event: text[\s\S]+event: done/);
     expect(events).not.toContain("workspaceId");
-    const invalid = await send("/api/v1/ai/chat", "POST", JSON.stringify({ workspaceId, model: "test-model", reasoningEffort: "medium", messages: [
+    const invalid = await send("/api/v1/chat/messages", "POST", JSON.stringify({ workspaceId, model: "test-model", reasoningEffort: "medium", messages: [
       { role: "user", content: "one" }, { role: "user", content: "two" },
     ] }), { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" });
     expect(invalid.status).toBe(400);
 
     const inaccessible = encodeId("workspace", "01990ab0-0000-7000-8000-000000000002");
-    expect((await send("/api/v1/ai/chat", "POST", JSON.stringify({ workspaceId: inaccessible, model: "test-model", reasoningEffort: "medium", messages: [
+    expect((await send("/api/v1/chat/messages", "POST", JSON.stringify({ workspaceId: inaccessible, model: "test-model", reasoningEffort: "medium", messages: [
       { role: "user", content: "Question" },
     ] }), { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" })).status).toBe(404);
 
-    const tooLarge = await send("/api/v1/ai/chat", "POST", JSON.stringify({ workspaceId, model: "test-model", reasoningEffort: "medium", messages: [
+    const tooLarge = await send("/api/v1/chat/messages", "POST", JSON.stringify({ workspaceId, model: "test-model", reasoningEffort: "medium", messages: [
       { role: "user", content: "x".repeat(128 * 1024) },
     ] }), { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" });
     expect(tooLarge.status).toBe(413);
 
-    const failed = await send("/api/v1/ai/chat", "POST", JSON.stringify({ workspaceId, model: "error-model", reasoningEffort: "medium", messages: [
+    const failed = await send("/api/v1/chat/messages", "POST", JSON.stringify({ workspaceId, model: "error-model", reasoningEffort: "medium", messages: [
       { role: "user", content: "Question" },
     ] }), { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" });
     const failedEvents = await failed.text();
@@ -107,7 +107,7 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     const send = fixture(true, { ...aiService, models: async () => [] });
     const session: { capabilities: Record<string, boolean> } = await (await send("/api/v1/session")).json();
     expect(session.capabilities.ai).toBe(false);
-    expect(await (await send("/api/v1/ai/models")).json()).toEqual({ items: [] });
+    expect(await (await send("/api/v1/chat/models")).json()).toEqual({ items: [] });
     const capabilities = await (await send("/api/v1/capabilities")).json();
     expect(capabilities).not.toHaveProperty("ai");
   });
@@ -146,30 +146,45 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     const send = fixture(true, continuingAiService, history);
     const mutationHeaders = { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" };
     const encrypted = fixture(true, aiService, history, "server");
-    expect((await encrypted("/api/v1/ai/threads", "POST", JSON.stringify({ workspaceId, title: "Private" }), mutationHeaders)).status).toBe(409);
-    const created = await send("/api/v1/ai/threads", "POST", JSON.stringify({ workspaceId, title: "Question" }), mutationHeaders);
+    expect((await encrypted("/api/v1/chat", "POST", JSON.stringify({ workspaceId, title: "Private" }), mutationHeaders)).status).toBe(409);
+    const created = await send("/api/v1/chat", "POST", JSON.stringify({ workspaceId, title: "Question" }), mutationHeaders);
     expect(created.status, await created.clone().text()).toBe(201);
+    expect(created.headers.get("location")).toBe(`/api/v1/chat/${threadUuid}`);
     expect(await created.json()).toEqual(thread);
-    expect(await (await send("/api/v1/ai/threads")).json()).toEqual({ items: [thread], hasMore: false });
-    expect((await send("/api/v1/ai/threads?page=1000000")).status).toBe(400);
-    expect((await send(`/api/v1/ai/threads/${threadId}?before=${encodeURIComponent(thread.createdAt)}`)).status).toBe(400);
-    expect((await send(`/api/v1/ai/threads/${threadId}?${new URLSearchParams({
+    expect(await (await send("/api/v1/chat")).json()).toEqual({ items: [thread], hasMore: false });
+    expect((await send("/api/v1/chat/invalid")).status).toBe(400);
+    expect((await send(`/api/v1/chat/${encodeId("aiThread", "01990ab0-0000-7000-8000-000000000099")}`)).status).toBe(404);
+    expect((await send("/api/v1/chat?page=1000000")).status).toBe(400);
+    expect((await send(`/api/v1/chat/${threadId}?before=${encodeURIComponent(thread.createdAt)}`)).status).toBe(400);
+    expect((await send(`/api/v1/chat/${threadId}?${new URLSearchParams({
       before: thread.createdAt, beforeId: "message-1", beforeRole: "user",
     })}`)).status).toBe(200);
     expect(requestedCursor).toEqual({ createdAt: new Date(thread.createdAt), id: "message-1", role: "user" });
-    const continued = await send(`/api/v1/ai/threads/${threadId}/messages`, "POST",
+    const continued = await send(`/api/v1/chat/${threadId}/messages`, "POST",
       JSON.stringify({ model: "test-model", reasoningEffort: "medium", content: "Question" }), mutationHeaders);
     expect(continued.status).toBe(200);
     expect(await continued.text()).toMatch(/event: text[\s\S]+event: done/);
     expect(continuedHistory).toEqual({ workspaceId: workspaceUuid, resourceId: testUserID("owner@example.com") });
     busy = true;
-    expect((await send(`/api/v1/ai/threads/${threadId}/messages`, "POST",
+    expect((await send(`/api/v1/chat/${threadId}/messages`, "POST",
       JSON.stringify({ model: "test-model", reasoningEffort: "medium", content: "Again" }), mutationHeaders)).status).toBe(409);
-    expect((await send(`/api/v1/ai/threads/${threadId}`, "DELETE", undefined,
+    expect((await send(`/api/v1/chat/${threadId}`, "DELETE", undefined,
       { ...identityHeaders, origin: config.baseUrl })).status).toBe(409);
     busy = false;
-    expect((await send(`/api/v1/ai/threads/${threadId}`, "DELETE", undefined,
+    expect((await send(`/api/v1/chat/${threadId}`, "DELETE", undefined,
       { ...identityHeaders, origin: config.baseUrl })).status).toBe(204);
+  });
+
+  it("does not register the retired AI chat endpoints", async () => {
+    const send = fixture(true);
+    for (const [path, method] of [
+      ["/api/v1/ai/models", "GET"], ["/api/v1/ai/chat", "POST"],
+      ["/api/v1/ai/threads", "GET"], ["/api/v1/ai/threads", "POST"],
+      ["/api/v1/ai/threads/old", "GET"], ["/api/v1/ai/threads/old", "DELETE"],
+      ["/api/v1/ai/threads/old/messages", "POST"],
+    ]) {
+      expect((await send(path!, method, undefined, { ...identityHeaders, origin: config.baseUrl })).status).toBe(404);
+    }
   });
 
   it("distinguishes unsupported methods, missing paths, disabled features and extensions", async () => {

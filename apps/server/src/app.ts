@@ -362,7 +362,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     if (!workspace) return context.json({ error: "workspace_not_found" }, 404);
     if (workspace.encryption === "server") return context.json({ error: "ai_history_encrypted_workspace_unsupported" }, 409);
     const thread = await aiHistory.create(identity, workspaceId, input.title);
-    context.header("Location", `/api/v1/ai/threads/${thread.id}`);
+    context.header("Location", `/api/v1/chat/${thread.id}`);
     return context.json(thread, 201);
   });
   registerApi(app, "getAiThread", async (context) => {

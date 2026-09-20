@@ -122,20 +122,20 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
     teams: z.array(z.object({ id: S.principalId, name: z.string() })), hasMoreMembers: z.boolean(), hasMoreTeams: z.boolean(),
   })) }, { query: z.object({ membersOffset: z.string().regex(/^\d+$/).optional(), teamsOffset: z.string().regex(/^\d+$/).optional() }).strict() }, browser),
   getCapabilities: route("get", "/api/v1/capabilities", "getCapabilities", "Discover feature versions; unsupported features are omitted", { 200: json(S.capabilities) }),
-  getAiModels: route("get", "/api/v1/ai/models", "getAiModels", "Agent-compatible models available to Private Web", { 200: json(z.object({ items: z.array(S.aiModel) })) }, {}, browser),
-  createAiThread: route("post", "/api/v1/ai/threads", "createAiThread", "Create a private AI chat thread",
+  getAiModels: route("get", "/api/v1/chat/models", "getAiModels", "Agent-compatible models available to Private Web", { 200: json(z.object({ items: z.array(S.aiModel) })) }, {}, browser),
+  createAiThread: route("post", "/api/v1/chat", "createAiThread", "Create a private AI chat thread",
     { 201: { ...json(aiThread, "Created."), headers: location } }, body(aiThreadCreateSchema), browser),
-  listAiThreads: route("get", "/api/v1/ai/threads", "listAiThreads", "List the current user's private AI chat threads", { 200: json(z.object({ items: z.array(aiThread), hasMore: z.boolean() })) },
+  listAiThreads: route("get", "/api/v1/chat", "listAiThreads", "List the current user's private AI chat threads", { 200: json(z.object({ items: z.array(aiThread), hasMore: z.boolean() })) },
     { query: z.object({ page: aiThreadPage }).strict() }, browser),
-  getAiThread: route("get", "/api/v1/ai/threads/{threadId}", "getAiThread", "Read one owned AI chat thread", { 200: json(z.object({ thread: aiThread, messages: z.array(aiHistoryMessage), hasMore: z.boolean() })) },
+  getAiThread: route("get", "/api/v1/chat/{threadId}", "getAiThread", "Read one owned AI chat thread", { 200: json(z.object({ thread: aiThread, messages: z.array(aiHistoryMessage), hasMore: z.boolean() })) },
     { params: z.object({ threadId: aiThreadId }), query: aiThreadHistoryQuerySchema }, browser),
-  deleteAiThread: route("delete", "/api/v1/ai/threads/{threadId}", "deleteAiThread", "Delete one owned AI chat thread", { 204: empty },
+  deleteAiThread: route("delete", "/api/v1/chat/{threadId}", "deleteAiThread", "Delete one owned AI chat thread", { 204: empty },
     { params: z.object({ threadId: aiThreadId }) }, browser),
-  continueAiThread: route("post", "/api/v1/ai/threads/{threadId}/messages", "continueAiThread", "Persist a user message and stream the AI response", { 200: {
+  continueAiThread: route("post", "/api/v1/chat/{threadId}/messages", "continueAiThread", "Persist a user message and stream the AI response", { 200: {
     description: "text/event-stream with text, tool, error, and done events. Tool input and output are never included.",
     content: { "text/event-stream": { schema: z.string() } },
   } }, { params: z.object({ threadId: aiThreadId }), ...body(aiThreadMessageSchema) }, browser),
-  chatWithAi: route("post", "/api/v1/ai/chat", "chatWithAi", "Stream one page-memory Agent response; no conversation is persisted", { 200: {
+  chatWithAi: route("post", "/api/v1/chat/messages", "chatWithAi", "Stream one page-memory Agent response; no conversation is persisted", { 200: {
     description: "text/event-stream with text, tool, error, and done events. Tool input and output are never included.",
     content: { "text/event-stream": { schema: z.string() } },
   } }, body(aiChatSchema), browser),

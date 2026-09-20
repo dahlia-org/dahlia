@@ -5,6 +5,8 @@ import { AiChat } from "../../src/client/AiChat";
 import { AppShell } from "../../src/client/layout/AppShell";
 import "../../src/client/styles.css";
 
+Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
+
 const workspaceA = "ws_01k45b0000e008000000000001";
 const workspaceB = "ws_01k45b0000e008000000000002";
 const requests: Array<{ workspaceId: string; model: string; reasoningEffort: string; messages: Array<{ role: string; content: string }> }> = [];
@@ -16,7 +18,7 @@ const sse = (answer: string) => new Response(`event: text\ndata: ${JSON.stringif
 
 globalThis.fetch = async (input, init) => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url, location.href);
-  if (url.pathname === "/api/v1/ai/models") return Response.json({ items: [
+  if (url.pathname === "/api/v1/chat/models") return Response.json({ items: [
     { id: "model-a", displayName: "Model A", defaultReasoningEffort: "medium", supportedReasoningEfforts: [
       { effort: "low", description: "Fast" }, { effort: "medium", description: "Balanced" },
     ] },
@@ -28,7 +30,7 @@ globalThis.fetch = async (input, init) => {
     { workspaceId: workspaceA, name: "Workspace A" }, { workspaceId: workspaceB, name: "Workspace B" },
   ], nextCursor: null });
   if (url.pathname.endsWith("/projects") || url.pathname.endsWith("/meetings")) return Response.json({ items: [], nextCursor: null });
-  if (url.pathname === "/api/v1/ai/chat") {
+  if (url.pathname === "/api/v1/chat/messages") {
     if (typeof init?.body !== "string") throw new Error("Missing chat body");
     const request = JSON.parse(init.body) as typeof requests[number];
     requests.push(request);
@@ -70,15 +72,15 @@ const choose = async (trigger: HTMLButtonElement, value: string) => {
 };
 
 async function run() {
-  history.replaceState(null, "", "/ai");
+  history.replaceState(null, "", "/chat");
   createRoot(document.getElementById("root")!).render(<AppShell brand={<strong>Dahlia</strong>} extensionPaths={[]} navigate={() => {}}
-    path="/ai" session={{ capabilities: { admin: false, sessions: false, sharing: false, sync: true, ai: true }, user: { id: "user" } }}>
+    path="/chat" session={{ capabilities: { admin: false, sessions: false, sharing: false, sync: true, ai: true }, user: { id: "user" } }}>
     <AiChat />
   </AppShell>);
   await until(() => document.querySelector<HTMLElement>('[data-ai-picker="workspace"]')?.dataset.value === workspaceA
     && document.querySelector<HTMLElement>('[data-ai-picker="model"]')?.dataset.value === "model-a"
     && document.querySelector<HTMLElement>('[data-ai-picker="reasoning"]')?.dataset.value === "medium", "initial selection");
-  assert(!document.querySelector(".ai-header"), "The initial /ai page must not show a chat header");
+  assert(!document.querySelector(".ai-header"), "The initial /chat page must not show a chat header");
   let { workspace, reasoning, model } = controls();
   let textarea = document.querySelector<HTMLTextAreaElement>('.ai-composer textarea')!;
   assert(workspace.dataset.value === workspaceA && model.dataset.value === "model-a" && reasoning.dataset.value === "medium", "Initial selectors were not selected");

@@ -321,7 +321,7 @@ describe("desktop-style meeting layout", () => {
     const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
       session, brand: "Dahlia", children: null,
     }) }));
-    expect(html).toContain('href="/ai"');
+    expect(html).toContain('href="/chat"');
     expect(html).toContain('aria-label="Dahlia AI とチャット"');
     expect(html).toContain(">チャット</span>");
   });
@@ -540,8 +540,21 @@ describe("dashboard navigation", () => {
   it("routes the authenticated home to Overview", () => {
     expect(resolveDashboardRoute("/", { admin: false, sessions: false })).toEqual({ redirect: "/dashboard" });
     expect(resolveDashboardRoute("/dashboard", { admin: false, sessions: false })).toEqual({ page: "overview" });
-    expect(resolveDashboardRoute("/ai", { admin: false, sessions: false, ai: true })).toEqual({ page: "ai" });
-    expect(resolveDashboardRoute("/ai", { admin: false, sessions: false, ai: false })).toEqual({ redirect: "/dashboard" });
+    expect(resolveDashboardRoute("/chat", { admin: false, sessions: false, ai: true })).toEqual({ page: "ai" });
+    expect(resolveDashboardRoute("/chat", { admin: false, sessions: false, ai: false })).toEqual({ redirect: "/dashboard" });
+  });
+
+  it("routes chat deep links independently of their validity and retires the AI page", () => {
+    const capabilities = { admin: false, sessions: true, ai: true };
+    for (const id of [encodeId("aiThread", "01990ab0-0000-7000-8000-000000000001"), "invalid"]) {
+      const path = `/chat/${id}`;
+      expect(resolveDashboardRoute(path, capabilities)).toEqual({ page: "ai", threadId: id });
+      expect(dashboardNavigationPath(path, "https://dahlia.example/chat")).toBe(path);
+      expect(resolveDashboardRoute(path, { ...capabilities, ai: false })).toEqual({ redirect: "/dashboard" });
+    }
+    expect(isCoreDashboardPath("/ai")).toBe(false);
+    expect(resolveDashboardRoute("/ai", capabilities)).toEqual({ redirect: "/dashboard" });
+    expect(isCoreDashboardPath("/chat/id/messages")).toBe(false);
   });
 
   it("resolves canonical detail URLs and preserves capability gates", () => {

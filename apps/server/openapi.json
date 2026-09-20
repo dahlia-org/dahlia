@@ -8539,12 +8539,12 @@
         }
       }
     },
-    "/api/v1/ai/models": {
+    "/api/v1/chat/models": {
       "get": {
         "operationId": "getAiModels",
         "summary": "Agent-compatible models available to Private Web",
         "tags": [
-          "ai"
+          "chat"
         ],
         "security": [
           {
@@ -8582,12 +8582,12 @@
         }
       }
     },
-    "/api/v1/ai/threads": {
+    "/api/v1/chat": {
       "post": {
         "operationId": "createAiThread",
         "summary": "Create a private AI chat thread",
         "tags": [
-          "ai"
+          "chat"
         ],
         "security": [
           {
@@ -8651,7 +8651,7 @@
         "operationId": "listAiThreads",
         "summary": "List the current user's private AI chat threads",
         "tags": [
-          "ai"
+          "chat"
         ],
         "security": [
           {
@@ -8704,12 +8704,12 @@
         }
       }
     },
-    "/api/v1/ai/threads/{threadId}": {
+    "/api/v1/chat/{threadId}": {
       "get": {
         "operationId": "getAiThread",
         "summary": "Read one owned AI chat thread",
         "tags": [
-          "ai"
+          "chat"
         ],
         "security": [
           {
@@ -8800,7 +8800,7 @@
         "operationId": "deleteAiThread",
         "summary": "Delete one owned AI chat thread",
         "tags": [
-          "ai"
+          "chat"
         ],
         "security": [
           {
@@ -8831,12 +8831,12 @@
         }
       }
     },
-    "/api/v1/ai/threads/{threadId}/messages": {
+    "/api/v1/chat/{threadId}/messages": {
       "post": {
         "operationId": "continueAiThread",
         "summary": "Persist a user message and stream the AI response",
         "tags": [
-          "ai"
+          "chat"
         ],
         "security": [
           {
@@ -8915,12 +8915,12 @@
         }
       }
     },
-    "/api/v1/ai/chat": {
+    "/api/v1/chat/messages": {
       "post": {
         "operationId": "chatWithAi",
         "summary": "Stream one page-memory Agent response; no conversation is persisted",
         "tags": [
-          "ai"
+          "chat"
         ],
         "security": [
           {
