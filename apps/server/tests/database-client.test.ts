@@ -304,14 +304,11 @@ describe("PostgreSQL migrations", () => {
     expect(sql).toContain('CREATE TABLE "agent"."mastra_threads"');
     expect(sql).toContain('CREATE TABLE "agent"."mastra_messages"');
     expect(sql).toContain('ALTER TABLE "agent"."mastra_threads" FORCE ROW LEVEL SECURITY');
-    expect(sql).toContain('CREATE FUNCTION "agent"."user_resource_id"');
     expect(sql).toContain("current_setting('app.user_id', true)");
-    const identityMigration = readFileSync(new URL(
-      "../drizzle/postgres-agent/20260919210432_user-identity-rls/migration.sql",
-      import.meta.url,
-    ), "utf8");
-    expect(identityMigration).toContain('ALTER POLICY "agent_thread_owner"');
-    expect(identityMigration).toContain("current_setting('app.user_id', true)");
+    expect(sql).not.toContain("user_resource_id");
+    expect(sql).not.toContain("app.resource_id");
+    expect(sql).toContain('"resourceId" IS NULL OR "agent"."mastra_messages"."resourceId" = nullif(current_setting(\'app.user_id\', true), \'\')');
+    expect(sql).toContain('"agent"."ai_thread_runs"."resource_id" = nullif(current_setting(\'app.user_id\', true), \'\') AND EXISTS');
     expect(sql).not.toContain("AS RESTRICTIVE");
     expect(postgresMigrationConfigs([agentDirectory])[0]?.migrationsTable)
       .toBe("__dahlia_agent_migrations");

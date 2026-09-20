@@ -5,7 +5,6 @@ import { createAiHistoryService } from "../src/agent/history";
 import type { Identity } from "../src/auth/identity";
 import { connectPostgresUrl } from "../src/db/postgres";
 import { uuidV7 } from "../src/id";
-import { encodeId } from "../src/typeid";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 
@@ -16,26 +15,70 @@ describe.runIf(databaseUrl)("PostgreSQL Agent history", () => {
     const owner: Identity = { userId: uuidV7(), source: "header" };
     const stranger: Identity = { userId: uuidV7(), source: "header" };
     const workspaceId = uuidV7();
-    const resourceId = encodeId("user", owner.userId);
-    let threadId: string | undefined;
+    const resourceId = owner.userId;
+    const cleanup: { identity: Identity; threadId: string }[] = [];
     try {
-      for (const userId of [owner.userId, stranger.userId, "00000000-0000-7000-8000-000000000001"]) {
-        const encoded = await connection.pool.query<{ resource_id: string }>(
-          "SELECT agent.user_resource_id($1::uuid) AS resource_id",
-          [userId],
-        );
-        expect(encoded.rows[0]?.resource_id).toBe(encodeId("user", userId));
-      }
       const thread = await history.create(owner, workspaceId, "Persistent history");
-      threadId = thread.id;
-      expect((await history.list(owner, 0)).items.map(({ id }) => id)).toContain(thread.id);
-      expect((await connection.pool.query<{ count: string }>(
-        "SELECT count(*) FROM agent.mastra_threads WHERE id = $1",
-        [thread.id],
-      )).rows[0]?.count).toBe("0");
+      const otherWorkspaceThread = await history.create(owner, uuidV7(), "Other workspace");
+      const strangerThread = await history.create(stranger, uuidV7(), "Stranger history");
+      cleanup.push({ identity: owner, threadId: thread.id }, { identity: owner, threadId: otherWorkspaceThread.id },
+        { identity: stranger, threadId: strangerThread.id });
+      expect((await history.list(owner, 0)).items.map(({ id }) => id))
+        .toEqual(expect.arrayContaining([thread.id, otherWorkspaceThread.id]));
+      const ownerClient = await connection.pool.connect();
+      try {
+        await ownerClient.query("BEGIN");
+        await ownerClient.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
+        expect((await ownerClient.query<{ resourceId: string }>(
+          'SELECT "resourceId" FROM agent.mastra_threads WHERE id = $1', [thread.id],
+        )).rows).toEqual([{ resourceId: owner.userId }]);
+        await ownerClient.query(`INSERT INTO agent.mastra_resources
+          (id, "createdAt", "updatedAt") VALUES ($1, now(), now())`, [owner.userId]);
+        expect((await ownerClient.query<{ id: string }>(
+          "SELECT id FROM agent.mastra_resources WHERE id = $1", [owner.userId],
+        )).rows).toEqual([{ id: owner.userId }]);
+        await ownerClient.query("COMMIT");
+      } finally {
+        ownerClient.release();
+      }
+      for (const table of ["mastra_threads", "mastra_messages", "mastra_resources", "ai_thread_runs"]) {
+        expect((await connection.pool.query<{ count: string }>(`SELECT count(*) FROM agent.${table}`))
+          .rows[0]?.count).toBe("0");
+      }
       await expect(connection.pool.query(`INSERT INTO agent.mastra_threads
         (id, "resourceId", title, "createdAt", "updatedAt") VALUES ($1, $2, 'Forbidden', now(), now())`,
       [uuidV7(), resourceId])).rejects.toThrow();
+      const rlsClient = await connection.pool.connect();
+      try {
+        await rlsClient.query("BEGIN");
+        await rlsClient.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
+        const rejectSpoof = async (sql: string, values: unknown[]) => {
+          await rlsClient.query("SAVEPOINT reject_spoof");
+          try {
+            await expect(rlsClient.query(sql, values)).rejects.toThrow();
+          } finally {
+            await rlsClient.query("ROLLBACK TO SAVEPOINT reject_spoof");
+            await rlsClient.query("RELEASE SAVEPOINT reject_spoof");
+          }
+        };
+        await rejectSpoof(`INSERT INTO agent.mastra_threads
+          (id, "resourceId", title, "createdAt", "updatedAt") VALUES ($1, $2, 'Spoofed', now(), now())`,
+        [uuidV7(), stranger.userId]);
+        await rejectSpoof(`INSERT INTO agent.mastra_resources
+          (id, "createdAt", "updatedAt") VALUES ($1, now(), now())`, [stranger.userId]);
+        await rejectSpoof(`INSERT INTO agent.mastra_messages
+          (id, thread_id, content, role, type, "createdAt", "resourceId")
+          VALUES ($1, $2, '{}', 'user', 'v2', now(), $3)`, [uuidV7(), thread.id, stranger.userId]);
+        await rejectSpoof(`INSERT INTO agent.ai_thread_runs
+          (thread_id, run_id, resource_id, expires_at) VALUES ($1, $2, $3, now() + interval '1 minute')`,
+        [thread.id, uuidV7(), stranger.userId]);
+        await rejectSpoof(`INSERT INTO agent.ai_thread_runs
+          (thread_id, run_id, resource_id, expires_at) VALUES ($1, $2, $3, now() + interval '1 minute')`,
+        [strangerThread.id, uuidV7(), owner.userId]);
+        await rlsClient.query("ROLLBACK");
+      } finally {
+        rlsClient.release();
+      }
       const initialCreatedAt = new Date();
       const messages: MastraDBMessage[] = ["Question", "Answer", "Follow-up"].map((text, index) => ({
         id: uuidV7(), threadId: thread.id, resourceId,
@@ -48,11 +91,12 @@ describe.runIf(databaseUrl)("PostgreSQL Agent history", () => {
       expect((await history.get(owner, thread.id))?.messages.map(({ content }) => content))
         .toEqual(["Question", "Answer", "Follow-up"]);
       expect(await history.get(stranger, thread.id)).toBeNull();
-      expect((await history.list(stranger, 0)).items).toEqual([]);
+      expect((await history.list(stranger, 0)).items.map(({ id }) => id)).toEqual([strangerThread.id]);
       expect(await history.startRun(stranger, thread.id)).toBeNull();
       expect(await history.delete(stranger, thread.id)).toBe("missing");
+      expect(await history.startRun(owner, strangerThread.id)).toBeNull();
       await expect(history.memory(stranger).saveMessages({ messages: [{
-        id: uuidV7(), threadId: thread.id, resourceId: encodeId("user", stranger.userId), createdAt: new Date(),
+        id: uuidV7(), threadId: thread.id, resourceId: stranger.userId, createdAt: new Date(),
         role: "user", content: { format: 2, parts: [{ type: "text", text: "Forbidden continuation" }] },
       }] })).rejects.toThrow();
 
@@ -104,13 +148,25 @@ describe.runIf(databaseUrl)("PostgreSQL Agent history", () => {
         client.release();
       }
       expect(await history.delete(owner, thread.id)).toBe("deleted");
-      threadId = undefined;
+      cleanup.splice(cleanup.findIndex((item) => item.threadId === thread.id), 1);
       expect(await history.get(owner, thread.id)).toBeNull();
+      expect(await history.get(owner, otherWorkspaceThread.id)).not.toBeNull();
       expect((await connection.pool.query<{ user_id: string | null }>(
         "SELECT nullif(current_setting('app.user_id', true), '') AS user_id",
       )).rows).toEqual([{ user_id: null }]);
     } finally {
-      if (threadId) await history.delete(owner, threadId).catch(() => undefined);
+      for (const item of cleanup) await history.delete(item.identity, item.threadId).catch(() => undefined);
+      const client = await connection.pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
+        await client.query("DELETE FROM agent.mastra_resources WHERE id = $1", [owner.userId]);
+        await client.query("COMMIT");
+      } catch {
+        await client.query("ROLLBACK").catch(() => undefined);
+      } finally {
+        client.release();
+      }
       await connection.close();
     }
   });

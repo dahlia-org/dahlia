@@ -6,7 +6,7 @@
 
 認証・管理・同期で DB を分けず、Drizzle の単一 application database に統一する。認証方式、DB、AI provider、storage の選択は独立させる。
 
-- PostgreSQL / Lakebase は `auth`（生成 Better Auth）、`app`（Workspace / Project、permission、meeting、transcript、screenshot、同期履歴）、`search`（文書・テキスト・vector）、`crypto`（wrapped Workspace key）、`jobs`（summary / image_analysis / search_index / storage_delete）、`agent`（Mastra chat history）。検索 projection は `search.documents` に置き、`search → app → auth` の参照を持つ。検索データ全体は暗号化対象外だが、Workspace 単位の RLS / FORCE RLS を適用する。ジョブは `jobs → app / auth` の参照を持つ。Agent history は所有主体のTypeIDをresource IDに使い、MVPではtransaction-local `app.user_id` から対応するuser TypeIDを求める独立RLSとmigration ledgerで管理する。将来workspace所有を追加する場合は別の主体設定を増やさず、操作ユーザーの現在のWorkspace権限をRLSで評価する。暗号化 Workspace は平文履歴を作らず page memory のみとする。
+- PostgreSQL / Lakebase は `auth`（生成 Better Auth）、`app`（Workspace / Project、permission、meeting、transcript、screenshot、同期履歴）、`search`（文書・テキスト・vector）、`crypto`（wrapped Workspace key）、`jobs`（summary / image_analysis / search_index / storage_delete）、`agent`（Mastra chat history）。検索 projection は `search.documents` に置き、`search → app → auth` の参照を持つ。検索データ全体は暗号化対象外だが、Workspace 単位の RLS / FORCE RLS を適用する。ジョブは `jobs → app / auth` の参照を持つ。Agent history は認証済みuser UUIDをMastraのtext `resourceId`へそのまま保存し、transaction-local `app.user_id`と直接比較する独立RLSとmigration ledgerで管理する。chatはuser所有・既定privateで、作成時のWorkspaceを固定する。暗号化 Workspace は平文履歴を作らず page memory のみとする。
 - SQLite は Better Auth を top-level、Dahlia table は prefix なしにする。PostgreSQL の content ID は native UUID、非 UUID の user / workspace ID や hash は text。SQLite も境界で canonical UUID を検証する。
 - Better Auth schema は生成物として手編集しない。PostgreSQL / Lakebase は Auth → application → Agent の順に migration を適用する。PostgreSQL の ledger は `drizzle.__dahlia_auth_migrations`、`drizzle.__dahlia_server_migrations`、`drizzle.__dahlia_agent_migrations` に分離し、SQLite は単一 baseline を使う。
 - Node は SQLite / PostgreSQL / Lakebase、Workers は Hyperdrive / direct PostgreSQL を対象とする。D1はサポート対象から外し、専用adapter・migrationを配布しない。
@@ -35,6 +35,8 @@ PostgreSQL は既存の生成 Auth baseline → application initial → runtime_
 2026-09-18: ユーザー承認により、Local→Server 移管画像の再構築に必要な schema と `meeting_attachment_select` の search maintenance 条件も未リリース baseline に統合した。QA を含め、旧 `runtime_support` を適用済みのすべての Server DB は再作成を必要とし、環境別の forward migration は提供しない。
 
 2026-09-18: ユーザー承認により、Project 配下の live meeting page 用 `meetings_workspace_project_live_created_idx` を PostgreSQL / SQLite の initial と snapshot に統合し、未公開の `20260917142558_sour_energizer` / `20260917142559_lively_slayback` を撤回した。既存開発 DB への index 追加 migration は提供せず、新しい baseline を使うには DB を再作成する。
+
+2026-09-20: 未リリースのAgent baselineでMastra `resourceId`をuser TypeIDから認証済みuser UUID文字列へ統一した。Agent initialとsnapshotを再生成し、旧`user-identity-rls` migrationと変換関数を撤回した。旧Agent baseline適用済みDBには自動適用せず、削除・再作成もしない。保持が必要なら別のdata-preserving migrationを計画する。将来の共有はthread単位、Hindsight bankはWorkspace単位とし、所有者・共有権限・bankアクセス権は独立させる。この判断では共有機能、権限table、Workspace所有、Hindsight連携を実装しない。
 
 以下の forward migration の説明は統合前の経緯であり、旧開発 DB からの移行保証ではない。リリース後は従来どおり forward-only とする。
 
