@@ -298,7 +298,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
   }
   function newChat(event: MouseEvent<HTMLAnchorElement>) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    if (!requestedThreadId) { event.preventDefault(); reset(); }
+    if (!requestedThreadId) { event.preventDefault(); reset(); navigateDashboard("/chat"); }
   }
   async function openThread(id: string) {
     reset();

@@ -2,7 +2,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "../../src/client/App";
-import { navigateDashboard } from "../../src/client/navigation";
+import { dashboardNavigationEvent, navigateDashboard } from "../../src/client/navigation";
 import { encodeId } from "../../src/typeid";
 import "../../src/client/styles.css";
 
@@ -113,6 +113,10 @@ async function run() {
   await until(() => ready() && document.querySelector('[data-ai-picker="reasoning"]')?.getAttribute("data-value") === "medium", "new chat ready");
   assert(document.querySelector(".sidebar-scroll .ai-history"), "Chat history is not in the sidebar");
   assert(!document.querySelector(".workspace-switcher, .workspace-navigation"), "Workspace navigation remains visible on chat");
+  let samePageNavigations = 0;
+  window.addEventListener(dashboardNavigationEvent, () => { samePageNavigations++; }, { once: true });
+  click(".ai-history-new");
+  assert(samePageNavigations === 1, "Same-page new chat did not complete navigation");
   assert(Number(creates) === 0 && Number(sends) === 0, "Opening new chat caused a mutation");
   failCreate = true;
   await submit("Keep this draft");
