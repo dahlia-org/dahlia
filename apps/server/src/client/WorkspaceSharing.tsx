@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MenuIcon, useSidebar } from "./Sidebar";
+import { MenuIcon } from "./Sidebar";
 import { Select } from "./Select";
 import { apiOperations as api } from "./generated-operations";
 import { apiQuery, useLivePage, useLiveQuery } from "./live-data";
@@ -17,8 +17,7 @@ const principalLabel = (type: Principal) => type === "organization" ? uiText("Or
   : type === "team" ? uiText("Team", "チーム") : uiText("User", "ユーザー");
 
 export function WorkspaceSharing({ workspace }: { workspace: SyncedWorkspaceInfo }) {
-  const { organizations } = useSidebar();
-  const personal = organizations?.some((organization) => organization.id === workspace.organizationId && organization.kind === "personal");
+  const personal = workspace.personalUserId != null;
   const editable = workspace.role === "admin" && personal === false;
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");

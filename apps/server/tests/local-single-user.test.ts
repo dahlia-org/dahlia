@@ -34,7 +34,7 @@ afterEach(() => {
 
 describe("local single-user header mode", () => {
   it("allocates colliding slugs with one lookup and reuses the first vacant suffix", async () => {
-    const config = localConfig(true);
+    const config = { ...localConfig(true), autoCreateOrgOnSignup: true };
     const store = createNodeAuthStore(config);
     const register = (email: string) => store.resolveHeaderUser({ userId: email, email, name: email, source: "header" });
     try {
@@ -46,19 +46,19 @@ describe("local single-user header mode", () => {
         expect(queries.mock.calls.filter(([sql]) => /^select .* from "organization" where .*"slug"/.test(sql))).toHaveLength(1);
         const raw = new DatabaseSync(fileURLToPath(config.databaseUrl!));
         try {
-          expect(raw.prepare("SELECT slug FROM organization WHERE id = ?").get(id)).toEqual({ slug: "admin_name_9" });
+          expect(raw.prepare("SELECT slug FROM organization WHERE id IN (SELECT organization_id FROM member WHERE user_id = ?)").get(id)).toEqual({ slug: "admin_name_9" });
           raw.prepare("UPDATE organization SET slug = 'renamed' WHERE slug = 'admin_name_3'").run();
           queries.mockClear();
           const next = await register("admin-name@domain0.example");
           expect(queries.mock.calls.filter(([sql]) => /^select .* from "organization" where .*"slug"/.test(sql))).toHaveLength(1);
-          expect(raw.prepare("SELECT slug FROM organization WHERE id = ?").get(next)).toEqual({ slug: "admin_name_3" });
+          expect(raw.prepare("SELECT slug FROM organization WHERE id IN (SELECT organization_id FROM member WHERE user_id = ?)").get(next)).toEqual({ slug: "admin_name_3" });
         } finally { raw.close(); }
       } finally { queries.mockRestore(); }
     } finally { await store.close?.(); }
   });
 
   it("falls back to the fixed local user only when no proxy header is supplied", async () => {
-    const config = localConfig(true);
+    const config = { ...localConfig(true), autoCreateOrgOnSignup: true };
     const store = createNodeAuthStore(config);
     try {
       await store.migrate();
@@ -99,7 +99,7 @@ describe("local single-user header mode", () => {
   });
 
   it("accepts a non-email header value and skips domain Organization enrollment", async () => {
-    const config = localConfig(true);
+    const config = { ...localConfig(true), autoCreateOrgOnSignup: true };
     const store = createNodeAuthStore(config);
     try {
       await store.migrate();
@@ -112,13 +112,13 @@ describe("local single-user header mode", () => {
 
       const raw = new DatabaseSync(fileURLToPath(config.databaseUrl!));
       try {
-        // "garbage" carries no domain, so only the Personal Organization exists.
-        expect(raw.prepare("SELECT name, kind FROM organization").all()).toEqual([{ name: "Personal", kind: "personal" }]);
+        // "garbage" carries no domain, so domain enrollment does not apply.
+        expect(raw.prepare("SELECT name FROM organization").all()).toEqual([{ name: "garbageのOrg" }]);
 
         // An address with no configured domain also gets only Personal.
         expect((await app.request("/api/v1/session", { headers: { "X-Forwarded-Email": "person@example.com" } })).status).toBe(200);
-        expect(raw.prepare("SELECT name, kind FROM organization ORDER BY id").all())
-          .toEqual([{ name: "Personal", kind: "personal" }, { name: "Personal", kind: "personal" }]);
+        expect(raw.prepare("SELECT name FROM organization ORDER BY id").all())
+          .toEqual([{ name: "garbageのOrg" }, { name: "person@example.comのOrg" }]);
       } finally { raw.close(); }
     } finally {
       await store.close?.();
@@ -126,7 +126,7 @@ describe("local single-user header mode", () => {
   });
 
   it("allocates nonempty unique slugs for empty local identity parts and preserves them on retry", async () => {
-    const config = localConfig(true);
+    const config = { ...localConfig(true), autoCreateOrgOnSignup: true };
     const store = createNodeAuthStore(config);
     try {
       await store.migrate();

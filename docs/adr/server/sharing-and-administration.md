@@ -1,5 +1,7 @@
 # Workspace 共有と管理者
 
+2026-09-21: Personal Organization・本人用Workspace・登録時の作成方針は[Org配下の本人用Workspace](../shared/organization-personal-workspaces.md)に置き換えられた。以下の旧Personal Org仕様は履歴である。
+
 対象: Server / Private Web。2026-09-12の[Organization所有・共同編集](../shared/organization-vaults.md)により更新。
 
 ## 共有境界

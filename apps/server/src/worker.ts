@@ -43,6 +43,7 @@ export interface RuntimeSecrets {
   DAHLIA_AUTH_PROVIDER_ID?: string;
   DAHLIA_AUTH_TYPE?: string;
   DAHLIA_LOCAL_SINGLE_USER?: string;
+  DAHLIA_AUTO_CREATE_ORG_ON_SIGNUP?: string;
   DAHLIA_APP_URL?: string;
   DAHLIA_SIGNOUT_URL?: string;
   DAHLIA_DATABASE_TYPE?: string;
@@ -91,7 +92,7 @@ function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): Applic
   if (!url) throw new Error("Worker storage supports DAHLIA_DATABASE_TYPE=hyperdrive or postgres");
   const connection = connectPostgresUrl(url, 5);
   const permissions = syncedWorkspacePermission;
-  return { ...createPostgresApplicationStore(connection.db, "postgres", config.searchEmbedding, config.encryption, config.authProviderId, config.localSingleUser), close: connection.close,
+  return { ...createPostgresApplicationStore(connection.db, "postgres", config.searchEmbedding, config.encryption, config.authProviderId, config.localSingleUser, config.autoCreateOrgOnSignup), close: connection.close,
     aiHistory: createAiHistoryService(connection.pool),
     jobs: {
       summaryJobs: createSummaryJobStore(connection.db, true, config.encryption),
@@ -126,6 +127,7 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     DAHLIA_AUTH_HEADER: env.DAHLIA_AUTH_HEADER,
     DAHLIA_AUTH_PROVIDER_ID: env.DAHLIA_AUTH_PROVIDER_ID,
     DAHLIA_AUTH_TYPE: env.DAHLIA_AUTH_TYPE,
+    DAHLIA_AUTO_CREATE_ORG_ON_SIGNUP: env.DAHLIA_AUTO_CREATE_ORG_ON_SIGNUP,
     DAHLIA_APP_URL: env.DAHLIA_APP_URL,
     DAHLIA_SIGNOUT_URL: env.DAHLIA_SIGNOUT_URL,
     DAHLIA_DATABASE_TYPE: env.DAHLIA_DATABASE_TYPE,

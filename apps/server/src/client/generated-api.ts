@@ -161,7 +161,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Administrator Team Organization directory */
+        /** Administrator Organization directory */
         get: operations["listServerOrganizations"];
         put?: never;
         post?: never;
@@ -178,11 +178,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Team Organization directory details; administrator only, independent of membership */
+        /** Organization directory details; administrator only, independent of membership */
         get: operations["getServerOrganization"];
         put?: never;
         post?: never;
-        /** Delete an empty Team Organization; Server administrator only */
+        /** Delete an empty Organization; Server administrator only */
         delete: operations["deleteOrganization"];
         options?: never;
         head?: never;
@@ -1109,7 +1109,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete a Team Organization Workspace after confirmation */
+        /** Delete an Organization Workspace after confirmation */
         delete: operations["forceDeleteWorkspace"];
         options?: never;
         head?: never;
@@ -1246,7 +1246,7 @@ export interface paths {
         /** Current organization memberships */
         get: operations["listOrganizations"];
         put?: never;
-        /** Create a Team Organization with an explicit initial owner; Server administrator only */
+        /** Create an Organization with an explicit initial owner; Server administrator only */
         post: operations["createOrganization"];
         delete?: never;
         options?: never;
@@ -1311,6 +1311,7 @@ export interface components {
             encryption?: "none" | "server";
             workspaceId: string;
             organizationId: string;
+            personalUserId: string | null;
             name: string;
             icon?: string | null;
             color?: string | null;
@@ -1673,6 +1674,7 @@ export interface components {
             encryption?: "none" | "server";
             workspaceId: string;
             organizationId: string;
+            personalUserId: string | null;
             name: string;
             icon?: string | null;
             color?: string | null;
@@ -1861,8 +1863,6 @@ export interface components {
             id: string;
             name: string;
             slug: string;
-            /** @enum {string} */
-            kind: "personal" | "team";
             role?: string;
         };
         Capabilities: {

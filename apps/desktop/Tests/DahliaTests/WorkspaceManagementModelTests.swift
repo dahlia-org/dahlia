@@ -75,7 +75,7 @@
             let database = try AppDatabaseManager(path: ":memory:")
             let personalOrganizationID = UUID.v7()
             let model = WorkspaceManagementModel(organizationFetcher: { _ in
-                [.init(id: personalOrganizationID.uuidString, name: "Personal", slug: "personal", kind: .personal)]
+                [.init(id: personalOrganizationID.uuidString, name: "Personal", slug: "personal")]
             })
             await model.configure(appDatabase: database)
             let connection = DahliaAccountConnectionRecord(
@@ -86,11 +86,12 @@
             #expect(await model.resolveInitialWorkspace(accountConnectionID: connection.id) { throw URLError(.notConnectedToInternet) } == nil)
             #expect(model.workspaces.isEmpty)
             let personal = CloudWorkspaceRecord(
-                workspaceId: .v7(), connectionId: connection.id, organizationId: personalOrganizationID,
+                workspaceId: .v7(), connectionId: connection.id, organizationId: personalOrganizationID, personalUserId: .v7(),
                 name: "Personal", createdAt: .now, revision: 1, role: "admin"
             )
             var shared = personal
             shared.workspaceId = .v7()
+            shared.personalUserId = nil
             shared.name = "Personal"
             shared.organizationId = .v7()
             shared.createdAt = .distantPast
@@ -105,7 +106,7 @@
             #expect(model.workspaces.allSatisfy { $0.accountConnectionId == connection.id })
             let unavailableDirectory = WorkspaceManagementModel(organizationFetcher: { _ in throw URLError(.notConnectedToInternet) })
             await unavailableDirectory.configure(appDatabase: database)
-            #expect(await unavailableDirectory.resolveInitialWorkspace(accountConnectionID: connection.id) {} == nil)
+            #expect(await unavailableDirectory.resolveInitialWorkspace(accountConnectionID: connection.id) {}?.id == personal.workspaceId)
             #expect(await model.resolveInitialWorkspace(accountConnectionID: .v7()) {} == nil)
         }
 
@@ -650,15 +651,15 @@
 
             #expect(adopted?.name == "Second Attempt")
             let queued = try await database.dbQueue.read { db in
-                (
-                    try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity = 'workspace' AND action = 'update'") ?? 0,
-                    try Int.fetchOne(db, sql: "SELECT baseRevision FROM sync_operations WHERE entity = 'workspace' AND action = 'update'"),
-                    try String.fetchOne(db, sql: "SELECT payloadJSON FROM sync_operations WHERE entity = 'workspace' AND action = 'update'")
+                try (
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity = 'workspace' AND action = 'update'") ?? 0,
+                    Int.fetchOne(db, sql: "SELECT baseRevision FROM sync_operations WHERE entity = 'workspace' AND action = 'update'"),
+                    String.fetchOne(db, sql: "SELECT payloadJSON FROM sync_operations WHERE entity = 'workspace' AND action = 'update'")
                 )
             }
             #expect(queued.0 == 1)
             #expect(queued.1 == remote.revision)
-            let payloadData = Data(try #require(queued.2).utf8)
+            let payloadData = try Data(#require(queued.2).utf8)
             let payload = try #require(try JSONSerialization.jsonObject(with: payloadData) as? [String: Any])
             #expect(payload["name"] as? String == "Second Attempt")
         }
@@ -679,7 +680,7 @@
                 cloudWorkspaceFetcher: { _ in [] },
                 organizationFetcher: { _ in
                     organizationFetchCount += 1
-                    return [.init(id: organizationID.uuidString.lowercased(), name: "Team", slug: "team", kind: .team)]
+                    return [.init(id: organizationID.uuidString.lowercased(), name: "Team", slug: "team")]
                 }
             )
             await model.configure(appDatabase: database)

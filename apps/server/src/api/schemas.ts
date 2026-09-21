@@ -20,7 +20,7 @@ export const page = <T extends z.ZodType>(item: T) => z.object({ items: z.array(
 const appearance = { icon: z.string().nullable().optional(), color: z.string().nullable().optional() };
 const syncFields = { active: z.boolean().optional(), deletingAt: date.nullable().optional(), revision: integer };
 const contentFields = { contentOmitted: z.boolean().optional(), contentPresent: z.boolean().optional() };
-export const workspace = z.object({ meetingDeletionGraceDays: meetingDeletionGraceDaysSchema, generationSettings: workspaceGenerationSettingsSchema, encryption: z.enum(["none", "server"]).optional(), workspaceId: id, organizationId: id, name: z.string(), ...appearance, ...syncFields,
+export const workspace = z.object({ meetingDeletionGraceDays: meetingDeletionGraceDaysSchema, generationSettings: workspaceGenerationSettingsSchema, encryption: z.enum(["none", "server"]).optional(), workspaceId: id, organizationId: id, personalUserId: principalId.nullable(), name: z.string(), ...appearance, ...syncFields,
   createdAt: date, updatedAt: date, role: z.enum(["admin", "editor", "viewer"]), hasResources: z.boolean().optional(),
 }).openapi("Workspace");
 export const workspaceRead = workspace.extend({ organizationName: z.string() }).openapi("WorkspaceRead");
@@ -134,7 +134,7 @@ export const aiModel = z.object({
   })),
 }).openapi("AIModel");
 export const person = z.object({ id: principalId, name: z.string(), email: z.string() }).openapi("Person");
-export const organization = z.object({ id: principalId, name: z.string(), slug: z.string(), kind: z.enum(["personal", "team"]), role: z.string().optional() }).openapi("Organization");
+export const organization = z.object({ id: principalId, name: z.string(), slug: z.string(), role: z.string().optional() }).openapi("Organization");
 export const team = z.object({ id: principalId, name: z.string(), organizationId: principalId, memberCount: integer,
   createdAt: date, updatedAt: date.nullable(),
 }).openapi("Team");

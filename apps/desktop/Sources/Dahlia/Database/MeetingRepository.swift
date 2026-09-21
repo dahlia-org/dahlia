@@ -155,8 +155,9 @@ final class MeetingRepository {
                 guard existing.accountConnectionId == connection.id,
                       existing.syncConfirmedConnectionId == connection.id else { continue }
                 guard existing.organizationId == cloud.organizationId else { throw SyncTransactionQueueError.invalidReceipt }
-                guard existing.syncRole != cloud.role else { continue }
+                guard existing.syncRole != cloud.role || existing.personalUserId != cloud.personalUserId else { continue }
                 existing.syncRole = cloud.role
+                existing.personalUserId = cloud.personalUserId
                 try existing.update(db)
                 changed = true
                 continue
@@ -169,6 +170,7 @@ final class MeetingRepository {
             workspace.syncConfirmedConnectionId = connection.id
             workspace.syncRole = cloud.role
             workspace.organizationId = cloud.organizationId
+            workspace.personalUserId = cloud.personalUserId
             workspace.generationSettings = cloud.generationSettings
             try workspace.insert(db)
             try db.execute(
@@ -260,6 +262,7 @@ final class MeetingRepository {
             workspace.name = adoptedName
             workspace.accountConnectionId = connectionID
             workspace.organizationId = serverWorkspace.organizationId
+            workspace.personalUserId = serverWorkspace.personalUserId
             workspace.syncRole = serverWorkspace.role
             workspace.syncConfirmedConnectionId = connectionID
             try workspace.update(db)

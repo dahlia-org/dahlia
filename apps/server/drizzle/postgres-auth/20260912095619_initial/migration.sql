@@ -174,8 +174,7 @@ CREATE TABLE "auth"."organization" (
 	"slug" text NOT NULL UNIQUE,
 	"logo" text,
 	"created_at" timestamp NOT NULL,
-	"metadata" text,
-	"kind" text DEFAULT 'team' NOT NULL
+	"metadata" text
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."session" (
@@ -221,7 +220,7 @@ CREATE TABLE "auth"."user" (
 	"banned" boolean DEFAULT false,
 	"ban_reason" text,
 	"ban_expires" timestamp,
-	"registration_state" text DEFAULT 'personal' NOT NULL
+	"registration_state" text DEFAULT 'pending' NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."verification" (

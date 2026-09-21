@@ -44,6 +44,7 @@ struct WorkspaceRecord: Codable, FetchableRecord, PersistableRecord, Identifiabl
     var chatModelID = ""
     var chatReasoningEffort: String = CodexReasoningEffortOption.defaultValue
     var aiSettingsBackfilled = true
+    var personalUserId: UUID?
     var organizationId: UUID?
     var syncRole: String?
     var syncConfirmedConnectionId: UUID?
@@ -67,6 +68,7 @@ extension WorkspaceRecord {
     mutating func moveToLocalAccount() {
         accountConnectionId = nil
         organizationId = nil
+        personalUserId = nil
         syncRole = nil
         syncConfirmedConnectionId = nil
         syncPullCursor = nil
@@ -96,6 +98,7 @@ struct CloudWorkspaceRecord: Identifiable, Equatable, Sendable {
     var workspaceId: UUID
     var connectionId: UUID
     var organizationId: UUID
+    var personalUserId: UUID?
     var icon: String?
     var color: String?
     var name: String

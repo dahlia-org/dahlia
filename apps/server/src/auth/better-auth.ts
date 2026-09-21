@@ -41,12 +41,11 @@ function buildDahliaAuth(
         allowUserToCreateOrganization: false,
         disableOrganizationDeletion: true,
         membershipLimit: async (user, org) => await authStore.organizations.hasMember(user.id, org.id) ? Number.MAX_SAFE_INTEGER : 100,
-        schema: { organization: { additionalFields: { kind: { type: "string", required: true, defaultValue: "team", input: false } } } },
         organizationHooks: {
           beforeCreateOrganization: () => { throw new APIError("FORBIDDEN", { code: "use_organization_management_api" }); },
-          beforeCreateTeam: async ({ organization }) => { await authStore.organizations.assertTeamOrganization(organization.id); },
+          beforeCreateTeam: async ({ organization }) => { await authStore.organizations.assertOrganization(organization.id); },
           afterCreateTeam: async ({ team, user }) => { if (user) await authStore.organizations.addTeamCreator(team.id, user.id); },
-          beforeCreateInvitation: async ({ organization }) => { await authStore.organizations.assertTeamOrganization(organization.id); },
+          beforeCreateInvitation: async ({ organization }) => { await authStore.organizations.assertOrganization(organization.id); },
         },
         cancelPendingInvitationsOnReInvite: true,
         requireEmailVerificationOnInvitation: true,
@@ -60,7 +59,7 @@ function buildDahliaAuth(
   return betterAuth({
     advanced: { disableOriginCheck: false, disableCSRFCheck: false, database: { joins: false, generateId: () => uuidV7() } },
     appName: "Dahlia Server",
-    user: { additionalFields: { registrationState: { type: "string", required: true, defaultValue: "personal", input: false, returned: false } } },
+    user: { additionalFields: { registrationState: { type: "string", required: true, defaultValue: "pending", input: false, returned: false } } },
     basePath: "/api/auth",
     baseURL: config.baseUrl,
     database: authStore.database,
@@ -73,7 +72,7 @@ function buildDahliaAuth(
     } : {},
     databaseHooks: { user: {
       create: {
-        before: (user) => Promise.resolve({ data: { ...user, emailVerified: config.authProvider === "header" || user.emailVerified, registrationState: config.authProvider === "header" || user.emailVerified ? "domain" : "personal" } }),
+        before: (user) => Promise.resolve({ data: { ...user, emailVerified: config.authProvider === "header" || user.emailVerified, registrationState: config.authProvider === "header" || user.emailVerified ? "domain" : "pending" } }),
         after: async (user) => { await authStore.organizations.initializeUser(user.id, config.authProvider === "header" ? config.authProviderId ?? "external" : undefined); },
       },
       update: { before: (user) => {

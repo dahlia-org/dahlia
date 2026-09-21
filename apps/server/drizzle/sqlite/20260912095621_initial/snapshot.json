@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "287e9872-8340-44d0-83ab-e881ef02ce73",
+  "id": "30a56bc3-d0fa-40d6-a5b6-0173344dc0be",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -1586,16 +1586,6 @@
     },
     {
       "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "'team'",
-      "generated": null,
-      "name": "kind",
-      "entityType": "columns",
-      "table": "organization"
-    },
-    {
-      "type": "text",
       "notNull": false,
       "autoincrement": false,
       "default": null,
@@ -1928,7 +1918,7 @@
       "type": "text",
       "notNull": true,
       "autoincrement": false,
-      "default": "'personal'",
+      "default": "'pending'",
       "generated": null,
       "name": "registration_state",
       "entityType": "columns",
@@ -3996,6 +3986,16 @@
     },
     {
       "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "personal_user_id",
+      "entityType": "columns",
+      "table": "workspaces"
+    },
+    {
+      "type": "text",
       "notNull": true,
       "autoincrement": false,
       "default": null,
@@ -5146,6 +5146,21 @@
       "onDelete": "RESTRICT",
       "nameExplicit": false,
       "name": "fk_workspaces_organization_id_organization_id_fk",
+      "entityType": "fks",
+      "table": "workspaces"
+    },
+    {
+      "columns": [
+        "personal_user_id"
+      ],
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "RESTRICT",
+      "nameExplicit": false,
+      "name": "fk_workspaces_personal_user_id_user_id_fk",
       "entityType": "fks",
       "table": "workspaces"
     },
@@ -6482,6 +6497,24 @@
       "name": "transcript_segment_start_id_idx",
       "entityType": "indexes",
       "table": "transcript_segments"
+    },
+    {
+      "columns": [
+        {
+          "value": "organization_id",
+          "isExpression": false
+        },
+        {
+          "value": "personal_user_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "workspace_personal_user_idx",
+      "entityType": "indexes",
+      "table": "workspaces"
     },
     {
       "columns": [

@@ -2015,8 +2015,8 @@ describe("SQLite canonical sync", () => {
     const { store, databasePath } = await setup();
     await createWorkspace(store);
     const service = new MeetingSyncService(store.sync);
-    expect(await service.listWorkspaces(owner)).toHaveLength(2);
-    expect(await service.listWorkspaces(other)).toMatchObject([{ workspaceId: other.userId, role: "admin", organizationId: other.userId }]);
+    expect(await service.listWorkspaces(owner)).toHaveLength(1);
+    expect(await service.listWorkspaces(other)).toEqual([]);
     expect(await service.listWorkspaces(owner, testOrganizationID)).toMatchObject([{ workspaceId, role: "admin" }]);
     await store.sync.withIdentity(owner, (sync) => sync.putPermission(workspaceId, "organization", testOrganizationID, "viewer"));
     expect(await service.listWorkspaces(other, testOrganizationID)).toMatchObject([{ workspaceId, role: "viewer" }]);
@@ -2049,10 +2049,10 @@ describe("SQLite canonical sync", () => {
       expect(response.status).toBe(200);
       return response.json();
     };
-    expect(await list("")).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ workspaceId, role: "viewer", organizationName: "Test organization" }), expect.objectContaining({ workspaceId: other.userId, role: "admin" })]) as unknown });
+    expect(await list("")).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ workspaceId, role: "viewer", organizationName: "Test organization" })]) as unknown });
     expect(await list("", owner.userId)).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ workspaceId, role: "admin" })]) as unknown });
     expect(await list(`?organizationId=${testOrganizationID}`)).toMatchObject({ items: [{ workspaceId, role: "viewer" }] });
-    expect(await list(`?organizationId=${other.userId}`)).toMatchObject({ items: [{ workspaceId: other.userId }] });
+    expect(await list(`?organizationId=${other.userId}`)).toMatchObject({ items: [] });
     expect(await list(`?organizationId=${testOrganizationID}`, "unrelated")).toMatchObject({ items: [] });
     database.prepare("DELETE FROM workspace_permissions WHERE principal_id = ? AND role = 'viewer'").run(other.userId);
     expect(await list(`?organizationId=${testOrganizationID}`)).toMatchObject({ items: [] });
@@ -2077,7 +2077,7 @@ describe("SQLite canonical sync", () => {
     const session = await app.request("/api/v1/session", { headers: headers() });
     expect(await session.json()).toMatchObject({ capabilities: { sharing: true } });
     const organizations = await app.request("/api/v1/organizations", { headers: headers() });
-    expect(await organizations.json()).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ id: testOrganizationID }), expect.objectContaining({ id: owner.userId, kind: "personal" })]) as unknown, nextCursor: null });
+    expect(await organizations.json()).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ id: testOrganizationID })]) as unknown, nextCursor: null });
     await store.close?.();
   });
 
@@ -3096,7 +3096,7 @@ describe("SQLite canonical sync", () => {
 
     const prepare = vi.spyOn(DatabaseSync.prototype, "prepare");
     await store.searchIndex!.reconcile("model", 32);
-    expect(prepare.mock.calls.filter(([statement]) => statement === "begin")).toHaveLength(4);
+    expect(prepare.mock.calls.filter(([statement]) => statement === "begin")).toHaveLength(2);
     prepare.mockRestore();
     await store.close?.();
   });

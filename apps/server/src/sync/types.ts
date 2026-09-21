@@ -36,6 +36,7 @@ export interface SyncWorkspaceRecord {
   generationSettings: WorkspaceGenerationSettings;
   organizationId: string;
   organizationName: string;
+  personalUserId: string | null;
   encryption?: "none" | "server";
   hasResources?: boolean;
   icon?: string | null;
@@ -313,7 +314,7 @@ export interface IdentitySyncStore {
   expireFileUploads(workspaceId: string, before: Date): Promise<void>;
   listFiles(workspaceId: string, after: string | undefined, limit: number): Promise<FileRecord[]>;
   listMeetingAttachments(workspaceId: string, meetingId: string, after: string | undefined, limit: number): Promise<(MeetingAttachmentRecord & { file: FileRecord })[]>;
-  listOrganizations(): Promise<{ id: string; name: string; slug: string; kind: string }[]>;
+  listOrganizations(): Promise<{ id: string; name: string; slug: string }[]>;
   listWorkspaces(organizationId?: string): Promise<SyncWorkspaceRecord[]>;
   getWorkspace(workspaceId: string): Promise<SyncWorkspaceRecord | null>;
   listProjects(workspaceId: string): Promise<SyncProjectView[]>;

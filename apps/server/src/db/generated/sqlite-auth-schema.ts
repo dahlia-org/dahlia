@@ -26,7 +26,7 @@ export const user = sqliteTable("user", {
   banned: integer("banned", { mode: "boolean" }).default(false),
   banReason: text("ban_reason"),
   banExpires: integer("ban_expires", { mode: "timestamp_ms" }),
-  registrationState: text("registration_state").default("personal").notNull(),
+  registrationState: text("registration_state").default("pending").notNull(),
 });
 
 export const session = sqliteTable(
@@ -328,7 +328,6 @@ export const organization = sqliteTable(
     logo: text("logo"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     metadata: text("metadata"),
-    kind: text("kind").default("team").notNull(),
   },
   (table) => [uniqueIndex("organization_slug_uidx").on(table.slug)],
 );

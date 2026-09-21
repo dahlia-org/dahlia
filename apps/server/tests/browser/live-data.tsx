@@ -80,7 +80,7 @@ window.fetch = async (input, init) => {
   if (url.pathname === "/api/v1/capabilities") return Response.json(previewMode ? { meetingSummaryGeneration: { version: 1, sources: ["transcript"] } } : {});
   if (url.pathname === "/api/auth/mode") return Response.json({ provider: "header", mcp: { url: "https://dahlia.example/mcp", proxyUrl: "https://dahlia.aws.databricksapps.com/mcp", databricksProxy: true, available: true } });
   if (url.pathname === "/api/v1/session") return Response.json({ user: { id: "browser-fixture", name: previewMode ? "Yuki Tanaka" : "Tester", email: "yuki@example.com" },  capabilities: { sync: true, sharing: true, sessions: false, admin: false } });
-  if (url.pathname === "/api/auth/organization/list") return Response.json([{ id: "o1", name: previewMode ? (ja ? "ダリア製品チーム" : "Dahlia Product Team") : "Test Organization", slug: "test-organization", kind: "team" }]);
+  if (url.pathname === "/api/auth/organization/list") return Response.json([{ id: "o1", name: previewMode ? (ja ? "ダリア製品チーム" : "Dahlia Product Team") : "Test Organization", slug: "test-organization" }]);
   if (url.pathname === "/api/v1/organizations") return Response.json({ items: [{ id: "o1", name: "Test Organization" }], nextCursor: null });
   if (url.pathname === "/api/v1/workspaces") return Response.json({ items: workspaces });
   if (url.pathname === `/api/v1/workspaces/${otherWorkspaceId}/meetings`) return Response.json({ items: [] });
@@ -283,7 +283,7 @@ async function run() {
     if (previewPage === "settings") navigateDashboard("/dashboard/settings");
     return;
   }
-  assert(document.querySelector('#unassigned-heading')?.textContent === "Unassigned" && !document.querySelector('#unassigned-heading svg'), "Unassigned meetings must have a separate section without a folder icon");
+  assert(document.getElementById(`unassigned-heading-${workspaceId}`)?.textContent === "Unassigned" && !document.getElementById(`unassigned-heading-${workspaceId}`)?.querySelector("svg"), "Unassigned meetings must have a separate section without a folder icon");
   assert(document.querySelector('.primary-navigation a[href="/workspaces"]'), "Workspace navigation is missing from the sidebar");
   assert(!document.querySelector(".identity-copy small"), "Account identity must not repeat Organization or Workspace context");
   const accountMenuTrigger = document.querySelector<HTMLButtonElement>('aside button[aria-label^="Account menu:"]')!;
@@ -316,13 +316,10 @@ async function run() {
   assert(getComputedStyle(help).visibility === "visible", "Keyboard focus must show navigation help");
   homeLink.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   await until(() => !help.isConnected || getComputedStyle(help).visibility === "hidden");
-  const workspaceTrigger = document.querySelector<HTMLButtonElement>('aside button[aria-label^="Current Workspace:"]')!;
-  pointerClick(workspaceTrigger);
-  await until(() => document.querySelector('[role="menu"] a[aria-current="true"]'));
-  const documentBeforePortalNavigation = document.documentElement;
-  document.querySelector<HTMLAnchorElement>(`[role="menu"] a[href="/workspaces/${workspaceId}"]`)!.click();
+  const documentBeforeWorkspaceNavigation = document.documentElement;
+  document.querySelector<HTMLAnchorElement>(`aside a[href="/workspaces/${workspaceId}"]`)!.click();
   await until(() => location.pathname === `/workspaces/${workspaceId}`);
-  assert(document.documentElement === documentBeforePortalNavigation, "Workspace menu link reloaded the document");
+  assert(document.documentElement === documentBeforeWorkspaceNavigation, "Sidebar Workspace link reloaded the document");
   const { navigateDashboard } = await import("../../src/client/navigation");
   navigateDashboard("/dashboard");
   await until(() => document.querySelector(`.recent-meetings a[href="/meetings/${primaryMeetingId}"]`));
@@ -633,7 +630,7 @@ async function run() {
   await until(() => !document.querySelector('[data-slot="popover-content"][data-state="open"]'));
   document.querySelector<HTMLButtonElement>('.action-dialog [data-confirm]')!.click();
   await until(() => !document.querySelector('.action-dialog') && document.querySelector('h1 svg')?.parentElement?.getAttribute("style")?.includes("34, 197, 94"));
-  const sidebarIcon = document.querySelector('aside button[aria-label^="Current Workspace:"] svg')!.parentElement!;
+  const sidebarIcon = document.querySelector(`aside a[href="/workspaces/${workspaceId}"] svg`)!.parentElement!;
   assert(sidebarIcon.getBoundingClientRect().width === 18, "Workspace icon expanded into the label space");
   assert(getComputedStyle(document.querySelector('h1 svg')!).color === getComputedStyle(sidebarIcon).color, "Heading and sidebar icon colors differ");
   const child = { ...projects[1]!, parentProjectId: projects[0]!.projectId, icon: "heart", color: "red" };

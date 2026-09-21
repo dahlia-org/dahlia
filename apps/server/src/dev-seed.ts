@@ -51,9 +51,7 @@ export function installDevelopmentSeed(config: AppConfig, store: ApplicationStor
 }
 
 async function seedEmptyAccount(identity: Identity, sync: MeetingSyncService): Promise<void> {
-  const personal = (await sync.listOrganizations(identity)).find((organization) => organization.kind === "personal");
-  if (!personal) return;
-  const [workspace] = await sync.listWorkspaces(identity, personal.id);
+  const workspace = (await sync.listWorkspaces(identity)).find((workspace) => workspace.personalUserId === identity.userId);
   if (!workspace) return;
   const now = new Date().toISOString();
   const workspaceId = workspace.workspaceId;

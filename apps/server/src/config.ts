@@ -52,6 +52,7 @@ export interface AppConfig {
   authHeader: string;
   authProviderId?: string;
   localSingleUser?: boolean;
+  autoCreateOrgOnSignup?: boolean;
   databaseType: DatabaseType;
   databaseUrl?: string;
   lakebaseDatabase?: LakebaseDatabaseConfig;
@@ -289,6 +290,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     authHeader: env.DAHLIA_AUTH_HEADER?.trim() || "X-Forwarded-Email",
     authProviderId: env.DAHLIA_AUTH_PROVIDER_ID?.trim() || "external",
     localSingleUser: env.DAHLIA_LOCAL_SINGLE_USER?.trim() === "1",
+    autoCreateOrgOnSignup: z.enum(["0", "1"]).parse(env.DAHLIA_AUTO_CREATE_ORG_ON_SIGNUP?.trim() ?? "0") === "1",
     databaseType,
     databaseUrl: loadDatabaseUrl(env, databaseType),
     lakebaseDatabase: loadLakebaseDatabase(env, databaseType),

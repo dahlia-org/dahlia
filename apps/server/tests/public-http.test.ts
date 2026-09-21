@@ -79,10 +79,10 @@ it.each(["node", "worker"])("keeps public TypeIDs and persisted UUIDs separate t
     expect(await (await send("/api/v1/admin/members")).json())
       .toMatchObject({ items: [{ id: encodeId("user", userID) }], nextCursor: null });
     const testOrganizationID = uuidV7();
-    database.prepare("INSERT INTO organization (id, name, slug, created_at, kind) VALUES (?, 'example.com', 'example_com', ?, 'team')").run(testOrganizationID, Date.now());
+    database.prepare("INSERT INTO organization (id, name, slug, created_at) VALUES (?, 'example.com', 'example_com', ?)").run(testOrganizationID, Date.now());
     database.prepare("INSERT INTO member (id, user_id, organization_id, role, created_at) VALUES (?, ?, ?, 'owner', ?)").run(uuidV7(), userID, testOrganizationID, Date.now());
     expect(await (await send("/api/v1/organizations")).json())
-      .toMatchObject({ items: expect.arrayContaining([{ id: encodeId("organization", testOrganizationID), name: "example.com", slug: "example_com", kind: "team" }]) as unknown, nextCursor: null });
+      .toMatchObject({ items: expect.arrayContaining([{ id: encodeId("organization", testOrganizationID), name: "example.com", slug: "example_com" }]) as unknown, nextCursor: null });
 
     const organizationID = encodeId("organization", testOrganizationID);
     const create = transaction([

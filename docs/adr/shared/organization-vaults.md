@@ -1,5 +1,7 @@
 # Organization ownership and Workspace roles
 
+2026-09-21: Personal Organization・本人用Workspace・登録時の作成方針は[Org配下の本人用Workspace](organization-personal-workspaces.md)に置き換えられた。以下の旧Personal Org仕様は履歴である。
+
 2026-09-12。ユーザー承認済み。Server / Web / 未公開 Desktop を同時に変更し、個人所有・read-only共有の決定を置き換える。
 
 ## 決定

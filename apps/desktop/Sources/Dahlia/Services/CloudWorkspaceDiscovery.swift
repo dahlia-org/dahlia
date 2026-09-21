@@ -101,6 +101,7 @@ enum CloudWorkspaceDiscovery {
                 workspaceId: workspaceId,
                 connectionId: connection.id,
                 organizationId: organizationId,
+                personalUserId: item.personalUserId.flatMap(UUID.init(uuidString:)),
                 icon: item.icon, color: item.color,
                 name: item.name,
                 createdAt: item.createdAt,

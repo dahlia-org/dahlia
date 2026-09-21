@@ -14,7 +14,7 @@ import { MeetingSyncService } from "../src/sync/service";
 it("seeds authenticated empty SQLite users with UUIDv7 content and preserves edits on restart", async () => {
   const dir = mkdtempSync(join(tmpdir(), "dahlia-dev-seed-"));
   const path = join(dir, "db.sqlite");
-  const config: AppConfig = { authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite",
+  const config: AppConfig = { autoCreateOrgOnSignup: true, authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite",
     databaseUrl: `file:${path}`, baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1_048_576 };
   const store = createNodeApplicationStore(config);
   const originalProjector = store.ensureIdentityUser.bind(store);

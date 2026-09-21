@@ -212,6 +212,15 @@
             "type": "string",
             "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
+          "personalUserId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
           "name": {
             "type": "string"
           },
@@ -267,6 +276,7 @@
           "generationSettings",
           "workspaceId",
           "organizationId",
+          "personalUserId",
           "name",
           "revision",
           "createdAt",
@@ -1934,6 +1944,15 @@
             "type": "string",
             "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
+          "personalUserId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
           "name": {
             "type": "string"
           },
@@ -1989,6 +2008,7 @@
           "generationSettings",
           "workspaceId",
           "organizationId",
+          "personalUserId",
           "name",
           "revision",
           "createdAt",
@@ -2749,13 +2769,6 @@
           "slug": {
             "type": "string"
           },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "personal",
-              "team"
-            ]
-          },
           "role": {
             "type": "string"
           }
@@ -2763,8 +2776,7 @@
         "required": [
           "id",
           "name",
-          "slug",
-          "kind"
+          "slug"
         ]
       },
       "Capabilities": {
@@ -8268,7 +8280,7 @@
     "/api/v1/admin/organizations": {
       "get": {
         "operationId": "listServerOrganizations",
-        "summary": "Administrator Team Organization directory",
+        "summary": "Administrator Organization directory",
         "tags": [
           "admin"
         ],
@@ -8349,7 +8361,7 @@
     "/api/v1/admin/organizations/{organizationId}": {
       "get": {
         "operationId": "getServerOrganization",
-        "summary": "Team Organization directory details; administrator only, independent of membership",
+        "summary": "Organization directory details; administrator only, independent of membership",
         "tags": [
           "admin"
         ],
@@ -8488,7 +8500,7 @@
       },
       "delete": {
         "operationId": "deleteOrganization",
-        "summary": "Delete an empty Team Organization; Server administrator only",
+        "summary": "Delete an empty Organization; Server administrator only",
         "tags": [
           "admin"
         ],
@@ -13901,7 +13913,7 @@
     "/api/v1/organizations/{organizationId}/workspaces/{workspaceId}": {
       "delete": {
         "operationId": "forceDeleteWorkspace",
-        "summary": "Delete a Team Organization Workspace after confirmation",
+        "summary": "Delete an Organization Workspace after confirmation",
         "tags": [
           "organizations"
         ],
@@ -14354,7 +14366,7 @@
     "/api/v1/organizations": {
       "post": {
         "operationId": "createOrganization",
-        "summary": "Create a Team Organization with an explicit initial owner; Server administrator only",
+        "summary": "Create an Organization with an explicit initial owner; Server administrator only",
         "tags": [
           "organizations"
         ],

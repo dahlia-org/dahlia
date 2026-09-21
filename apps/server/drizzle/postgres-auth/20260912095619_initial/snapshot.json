@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "43e4f00c-9561-40ce-bd1d-4fa31da6795f",
+  "id": "1d8730b6-f56e-436d-8476-9a530c273433",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -1946,19 +1946,6 @@
       "table": "organization"
     },
     {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "'team'",
-      "generated": null,
-      "identity": null,
-      "name": "kind",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "organization"
-    },
-    {
       "type": "uuid",
       "typeSchema": null,
       "notNull": true,
@@ -2392,7 +2379,7 @@
       "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
-      "default": "'personal'",
+      "default": "'pending'",
       "generated": null,
       "identity": null,
       "name": "registration_state",

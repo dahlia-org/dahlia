@@ -58,10 +58,10 @@ export interface AdminUserRecord {
 }
 
 export interface ServerUserRecord extends AdminUserRecord { role: string | null }
-export interface ServerOrganizationRecord { id: string; name: string; slug: string; kind: string; memberCount: number; teamCount: number }
+export interface ServerOrganizationRecord { id: string; name: string; slug: string; memberCount: number; teamCount: number }
 
 export interface ServerOrganizationDetails {
-  id: string; name: string; slug: string; kind: string;
+  id: string; name: string; slug: string;
   members: OrganizationMemberRecord[]; teams: { id: string; name: string }[];
 }
 
@@ -128,8 +128,9 @@ export function createPostgresApplicationStore(
   encryption?: AppConfig["encryption"],
   authProviderId = "external",
   localSingleUser = false,
+  autoCreateOrgOnSignup = false,
 ): ApplicationStore {
-  const organizations = createOrganizationStore(db, true);
+  const organizations = createOrganizationStore(db, true, false, autoCreateOrgOnSignup);
   return {
     database: drizzleAdapter(db, { provider: "pg", schema: postgresAuthSchema, schemaName: "auth" }),
     organizations,
@@ -154,11 +155,11 @@ export function createPostgresApplicationStore(
           const userId = uuidV7();
           const now = new Date();
           await tx.insert(postgresAuthSchema.user).values({ id: userId, email,
-            name: identity.name ?? identity.email ?? identity.userId, registrationState: hasEmailDomain(email) ? "domain" : "personal",
+            name: identity.name ?? identity.email ?? identity.userId, registrationState: hasEmailDomain(email) ? "domain" : "pending",
             emailVerified: true, role: "user", createdAt: now, updatedAt: now });
           await tx.insert(postgresAuthSchema.account).values({ id: uuidV7(), userId, issuer: HEADER_IDENTITY_ISSUER,
             providerId: authProviderId, accountId: email, createdAt: now, updatedAt: now });
-          await createOrganizationStore(tx, true, true).initializeUser(userId);
+          await createOrganizationStore(tx, true, true, autoCreateOrgOnSignup).initializeUser(userId);
           return userId;
         });
       } catch (error) {
@@ -276,16 +277,15 @@ export function createPostgresApplicationStore(
         .orderBy(asc(postgresAuthSchema.user.email), asc(postgresAuthSchema.user.id)).limit(limit).offset(offset);
     },
     listServerOrganizations: (limit, offset) => db.select({
-      id: postgresAuthSchema.organization.id, name: postgresAuthSchema.organization.name, slug: postgresAuthSchema.organization.slug, kind: postgresAuthSchema.organization.kind,
+      id: postgresAuthSchema.organization.id, name: postgresAuthSchema.organization.name, slug: postgresAuthSchema.organization.slug,
       memberCount: sql<number>`(select count(*) from ${postgresAuthSchema.member} where ${postgresAuthSchema.member.organizationId} = ${postgresAuthSchema.organization}."id")`.mapWith(Number),
       teamCount: sql<number>`(select count(*) from ${postgresAuthSchema.team} where ${postgresAuthSchema.team.organizationId} = ${postgresAuthSchema.organization}."id")`.mapWith(Number),
-    }).from(postgresAuthSchema.organization).where(eq(postgresAuthSchema.organization.kind, "team"))
+    }).from(postgresAuthSchema.organization)
       .orderBy(asc(postgresAuthSchema.organization.name), asc(postgresAuthSchema.organization.id)).limit(limit).offset(offset),
     async getServerOrganization(organizationId, limit, membersOffset, teamsOffset) {
-      const [organization] = await db.select({ id: postgresAuthSchema.organization.id, name: postgresAuthSchema.organization.name, slug: postgresAuthSchema.organization.slug, kind: postgresAuthSchema.organization.kind })
+      const [organization] = await db.select({ id: postgresAuthSchema.organization.id, name: postgresAuthSchema.organization.name, slug: postgresAuthSchema.organization.slug })
         .from(postgresAuthSchema.organization).where(and(
           eq(postgresAuthSchema.organization.id, organizationId),
-          eq(postgresAuthSchema.organization.kind, "team"),
         )).limit(1);
       if (!organization) return null;
       const members = await db.select({ id: postgresAuthSchema.member.id, userId: postgresAuthSchema.user.id, role: postgresAuthSchema.member.role,
@@ -354,8 +354,9 @@ export function createSqliteApplicationStore(
   encryption?: AppConfig["encryption"],
   authProviderId = "external",
   localSingleUser = false,
+  autoCreateOrgOnSignup = false,
 ): ApplicationStore {
-  const organizations = createOrganizationStore(db, false);
+  const organizations = createOrganizationStore(db, false, false, autoCreateOrgOnSignup);
   return {
     database: drizzleAdapter(db, { provider: "sqlite", schema: sqliteAuthSchema, transaction: transactions }),
     organizations,
@@ -380,11 +381,11 @@ export function createSqliteApplicationStore(
           const userId = uuidV7();
           const now = new Date();
           await tx.insert(sqliteAuthSchema.user).values({ id: userId, email,
-            name: identity.name ?? identity.email ?? identity.userId, registrationState: hasEmailDomain(email) ? "domain" : "personal",
+            name: identity.name ?? identity.email ?? identity.userId, registrationState: hasEmailDomain(email) ? "domain" : "pending",
             emailVerified: true, role: "user", createdAt: now, updatedAt: now });
           await tx.insert(sqliteAuthSchema.account).values({ id: uuidV7(), userId, issuer: HEADER_IDENTITY_ISSUER,
             providerId: authProviderId, accountId: email, createdAt: now, updatedAt: now });
-          await createOrganizationStore(tx, false, true).initializeUser(userId);
+          await createOrganizationStore(tx, false, true, autoCreateOrgOnSignup).initializeUser(userId);
           return userId;
         });
       } catch (error) {
@@ -510,16 +511,15 @@ export function createSqliteApplicationStore(
         .orderBy(asc(sqliteAuthSchema.user.email), asc(sqliteAuthSchema.user.id)).limit(limit).offset(offset);
     },
     listServerOrganizations: (limit, offset) => db.select({
-      id: sqliteAuthSchema.organization.id, name: sqliteAuthSchema.organization.name, slug: sqliteAuthSchema.organization.slug, kind: sqliteAuthSchema.organization.kind,
+      id: sqliteAuthSchema.organization.id, name: sqliteAuthSchema.organization.name, slug: sqliteAuthSchema.organization.slug,
       memberCount: sql<number>`(select count(*) from ${sqliteAuthSchema.member} where ${sqliteAuthSchema.member.organizationId} = ${sqliteAuthSchema.organization}."id")`.mapWith(Number),
       teamCount: sql<number>`(select count(*) from ${sqliteAuthSchema.team} where ${sqliteAuthSchema.team.organizationId} = ${sqliteAuthSchema.organization}."id")`.mapWith(Number),
-    }).from(sqliteAuthSchema.organization).where(eq(sqliteAuthSchema.organization.kind, "team"))
+    }).from(sqliteAuthSchema.organization)
       .orderBy(asc(sqliteAuthSchema.organization.name), asc(sqliteAuthSchema.organization.id)).limit(limit).offset(offset),
     async getServerOrganization(organizationId, limit, membersOffset, teamsOffset) {
-      const [organization] = await db.select({ id: sqliteAuthSchema.organization.id, name: sqliteAuthSchema.organization.name, slug: sqliteAuthSchema.organization.slug, kind: sqliteAuthSchema.organization.kind })
+      const [organization] = await db.select({ id: sqliteAuthSchema.organization.id, name: sqliteAuthSchema.organization.name, slug: sqliteAuthSchema.organization.slug })
         .from(sqliteAuthSchema.organization).where(and(
           eq(sqliteAuthSchema.organization.id, organizationId),
-          eq(sqliteAuthSchema.organization.kind, "team"),
         )).limit(1);
       if (!organization) return null;
       const members = await db.select({ id: sqliteAuthSchema.member.id, userId: sqliteAuthSchema.user.id, role: sqliteAuthSchema.member.role,

@@ -320,6 +320,7 @@ CREATE TABLE "app"."workspaces" (
 	"encrypted_payload" text,
 	"workspace_id" uuid PRIMARY KEY,
 	"organization_id" uuid NOT NULL,
+	"personal_user_id" uuid,
 	"created_by" jsonb NOT NULL,
 	"generation_settings" jsonb DEFAULT '{"outputLanguage":"ja","processing":{"location":"local","remote":{"workflow":"combined"}},"summary":{"style":"detailed"},"local":{"model":"gpt-5.6-luna","reasoningEffort":"high"},"automaticProcessing":true}' NOT NULL,
 	"name" text NOT NULL,
@@ -419,6 +420,7 @@ CREATE INDEX "project_workspace_parent_name_idx" ON "app"."projects" ("workspace
 CREATE INDEX "recordings_meeting_session_idx" ON "app"."recordings" ("meeting_id","session_id");--> statement-breakpoint
 CREATE INDEX "transcript_segment_created_idx" ON "app"."transcript_segments" ("transcript_id","created_at");--> statement-breakpoint
 CREATE INDEX "transcript_segment_start_id_idx" ON "app"."transcript_segments" ("transcript_id","started_at","segment_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "workspace_personal_user_idx" ON "app"."workspaces" ("organization_id","personal_user_id");--> statement-breakpoint
 CREATE INDEX "workspace_permission_principal_workspace_idx" ON "app"."workspace_permissions" ("principal_type","principal_id","role","workspace_id");--> statement-breakpoint
 CREATE INDEX "workspace_transfer_owner_sequence_idx" ON "app"."workspace_transfers" ("owner_user_id","sequence");--> statement-breakpoint
 ALTER TABLE "jobs"."image_analysis" ADD CONSTRAINT "jobs_image_analysis_file_id_files_file_id_fkey" FOREIGN KEY ("file_id") REFERENCES "app"."files"("file_id") ON DELETE CASCADE;--> statement-breakpoint
@@ -447,6 +449,7 @@ ALTER TABLE "app"."projects" ADD CONSTRAINT "project_parent_fk" FOREIGN KEY ("wo
 ALTER TABLE "app"."recordings" ADD CONSTRAINT "recordings_meeting_id_meetings_meeting_id_fkey" FOREIGN KEY ("meeting_id") REFERENCES "app"."meetings"("meeting_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."transcript_segments" ADD CONSTRAINT "transcript_segment_transcript_fk" FOREIGN KEY ("transcript_id") REFERENCES "app"."transcripts"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."workspaces" ADD CONSTRAINT "workspaces_organization_id_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "auth"."organization"("id") ON DELETE RESTRICT;--> statement-breakpoint
+ALTER TABLE "app"."workspaces" ADD CONSTRAINT "workspaces_personal_user_id_user_id_fkey" FOREIGN KEY ("personal_user_id") REFERENCES "auth"."user"("id") ON DELETE RESTRICT;--> statement-breakpoint
 ALTER TABLE "app"."workspace_permissions" ADD CONSTRAINT "workspace_permission_workspace_fk" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."workspace_permissions" ADD CONSTRAINT "workspace_permission_granted_by_user_fk" FOREIGN KEY ("granted_by_user_id") REFERENCES "auth"."user"("id") ON DELETE RESTRICT;--> statement-breakpoint
 ALTER TABLE "app"."transcripts" ADD CONSTRAINT "transcripts_meeting_id_meetings_meeting_id_fkey" FOREIGN KEY ("meeting_id") REFERENCES "app"."meetings"("meeting_id") ON DELETE CASCADE;--> statement-breakpoint
@@ -470,4 +473,4 @@ CREATE VIEW "app"."meeting_images" WITH (security_invoker = true) AS (
     m.revision
   FROM app.meeting_attachments m JOIN app.files f ON f.file_id = m.file_id AND f.workspace_id = m.workspace_id
   WHERE f.metadata ->> 'source' = 'screenshot'
-);--> statement-breakpoint
+);

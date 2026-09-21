@@ -1,6 +1,7 @@
 import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 
 import { describe, expect, it } from "vitest";
@@ -38,6 +39,29 @@ describe("auth schema generation", { timeout: 30_000 }, () => {
       ], { cwd: packageDirectory, encoding: "utf8" });
       expect(generated.status, generated.stderr || generated.stdout).toBe(0);
       expect(readdirSync(directory).toSorted()).toEqual(migrations);
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("reproduces runtime helper SQL and preserves initial migrations", () => {
+    const directory = mkdtempSync(join(tmpdir(), "dahlia-runtime-schema-"));
+    try {
+      for (const dialect of ["postgres", "sqlite"]) {
+        cpSync(new URL(`../drizzle/${dialect}`, import.meta.url), join(directory, "drizzle", dialect), { recursive: true });
+      }
+      cpSync(new URL("../scripts/runtime-support", import.meta.url), join(directory, "scripts/runtime-support"), { recursive: true });
+      const generated = spawnSync(process.execPath, ["--import", createRequire(import.meta.url).resolve("tsx"), new URL("../scripts/generate-runtime-support.mjs", import.meta.url).pathname], {
+        cwd: directory, encoding: "utf8",
+      });
+      expect(generated.status, generated.stderr || generated.stdout).toBe(0);
+      for (const dialect of ["postgres", "sqlite"]) {
+        // Policies are schema-owned; compare the hand-written runtime helpers before them.
+        for (const migration of readdirSync(join(directory, "drizzle", dialect))) {
+          expect(readFileSync(new URL(`../drizzle/${dialect}/${migration}/migration.sql`, import.meta.url), "utf8").split("CREATE POLICY")[0]!.trimEnd())
+            .toBe(readFileSync(join(directory, "drizzle", dialect, migration, "migration.sql"), "utf8").split("CREATE POLICY")[0]!.trimEnd());
+        }
+      }
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }

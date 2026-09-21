@@ -50,6 +50,7 @@ export const syncedWorkspace = sqliteTable("workspaces", {
   encryptedPayload: text("encrypted_payload"),
   workspaceId: text("workspace_id").primaryKey(),
   organizationId: text("organization_id").notNull().references(() => authOrganization.id, { onDelete: "restrict" }),
+  personalUserId: text("personal_user_id").references(() => authUser.id, { onDelete: "restrict" }),
   createdBy: text("created_by", { mode: "json" }).$type<{ id: string; name: string; email: string }>().notNull(),
   generationSettings: text("generation_settings", { mode: "json" }).$type<WorkspaceGenerationSettings>().default(DEFAULT_WORKSPACE_GENERATION_SETTINGS).notNull(),
   name: text("name").notNull(),
@@ -60,7 +61,9 @@ export const syncedWorkspace = sqliteTable("workspaces", {
   deletingAt: sqliteTimestamp("deleting_at"),
   createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
   updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
-}, (table) => [check("workspace_meeting_deletion_grace_check", sql`${table.meetingDeletionGraceDays} BETWEEN 1 AND 90`)]);
+}, (table) => [
+  uniqueIndex("workspace_personal_user_idx").on(table.organizationId, table.personalUserId),
+check("workspace_meeting_deletion_grace_check", sql`${table.meetingDeletionGraceDays} BETWEEN 1 AND 90`)]);
 
 export const syncedProject = sqliteTable("projects", {
   encryptedPayload: text("encrypted_payload"),

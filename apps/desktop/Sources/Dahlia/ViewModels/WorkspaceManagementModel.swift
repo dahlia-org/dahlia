@@ -119,17 +119,12 @@ final class WorkspaceManagementModel {
                 try await discover()
                 try Task.checkCancellation()
                 await loadWorkspaces()
-                guard hasLoadedWorkspaces, let repository,
-                      let connection = try await repository.fetchDahliaAccountConnection(id: accountConnectionID)
-                else { return nil }
-                let organizations = try await fetchOrganizations(connection)
-                try Task.checkCancellation()
-                let personalOrganizationIDs = Set(organizations.filter { $0.kind == .personal }.compactMap { UUID(uuidString: $0.id) })
+                guard hasLoadedWorkspaces else { return nil }
                 return workspaces.filter {
                     $0.accountConnectionId == accountConnectionID && $0.syncConfirmedConnectionId == accountConnectionID
                 }.min {
-                    let firstIsPersonal = $0.organizationId.map { personalOrganizationIDs.contains($0) } ?? false
-                    let secondIsPersonal = $1.organizationId.map { personalOrganizationIDs.contains($0) } ?? false
+                    let firstIsPersonal = $0.personalUserId != nil
+                    let secondIsPersonal = $1.personalUserId != nil
                     if firstIsPersonal != secondIsPersonal { return firstIsPersonal }
                     if $0.createdAt != $1.createdAt { return $0.createdAt < $1.createdAt }
                     return $0.id.uuidString < $1.id.uuidString
@@ -395,7 +390,7 @@ final class WorkspaceManagementModel {
                 let workspaceName = workspaceName?.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard let organizationId, let workspaceName, !workspaceName.isEmpty,
                       try await fetchOrganizations(connection)
-                      .contains(where: { $0.id == organizationId.uuidString.lowercased() && $0.kind == .team }) else {
+                      .contains(where: { $0.id == organizationId.uuidString.lowercased() }) else {
                     throw LocalWorkspaceImportError.unavailable
                 }
                 let transferFence = try await repository.dbQueue.write { db in

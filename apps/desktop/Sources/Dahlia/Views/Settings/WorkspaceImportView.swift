@@ -44,7 +44,7 @@ struct WorkspaceImportView: View {
                 } else {
                     Picker(L10n.workspaceImportOrganization, selection: $organizationId) {
                         Text(L10n.workspaceImportSelectOrganization).tag(nil as UUID?)
-                        ForEach(pending.organizations.filter { $0.kind == .team }, id: \.id) { organization in
+                        ForEach(pending.organizations, id: \.id) { organization in
                             Text(organization.name).tag(UUID(uuidString: organization.id))
                         }
                     }
@@ -78,7 +78,7 @@ struct WorkspaceImportView: View {
         .task {
             workspaceName = pending.workspace.name
             destinationId = destinations.first?.workspaceId
-            let teamOrganizations = pending.organizations.filter { $0.kind == .team }
+            let teamOrganizations = pending.organizations
             let initialOrganizationID = teamOrganizations.first.flatMap { UUID(uuidString: $0.id) }
             let teamOrganizationIDs = Set(teamOrganizations.compactMap { UUID(uuidString: $0.id) })
             let hasTeamWorkspace = destinations.contains { teamOrganizationIDs.contains($0.organizationId) }
@@ -107,9 +107,6 @@ struct WorkspaceImportView: View {
         let organization = pending.organizations.first(where: {
             UUID(uuidString: $0.id) == workspace.organizationId
         })
-        if organization?.kind == .personal {
-            return workspace.name + " (" + role + ")"
-        }
         let organizationName = organization?.name ?? TypeID.encode(workspace.organizationId, as: .organization)
         return organizationName + " / " + workspace.name + " (" + role + ")"
     }

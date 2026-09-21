@@ -19,7 +19,7 @@ export async function seedHeaderIdentity(store: AuthStore, path: string, identit
   database.prepare("INSERT OR IGNORE INTO user (id, name, email, email_verified, registration_state, created_at, updated_at) VALUES (?, ?, ?, 1, 'personal', ?, ?)")
     .run(identity.userId, identity.name ?? identity.email ?? identity.userId, identity.email ?? `${identity.userId}@example.com`, Date.now(), Date.now());
   await store.ensureIdentityUser(identity);
-  database.prepare("INSERT OR IGNORE INTO organization (id, name, slug, kind, created_at) VALUES (?, 'Test organization', 'test-organization', 'team', ?)").run(testOrganizationID, Date.now());
+  database.prepare("INSERT OR IGNORE INTO organization (id, name, slug, created_at) VALUES (?, 'Test organization', 'test-organization', ?)").run(testOrganizationID, Date.now());
   database.prepare("INSERT OR IGNORE INTO member (id, organization_id, user_id, role, created_at) VALUES (?, ?, ?, CASE WHEN EXISTS (SELECT 1 FROM member WHERE organization_id = ?) THEN 'member' ELSE 'owner' END, ?)").run(uuidV7(), testOrganizationID, identity.userId, testOrganizationID, Date.now());
   database.prepare("INSERT OR IGNORE INTO account (id, account_id, provider_id, issuer, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
     .run(uuidV7(), identity.email ?? `${identity.userId}@example.com`, "external", "urn:dahlia:header", identity.userId, Date.now(), Date.now());
@@ -35,7 +35,7 @@ export async function seedPostgresIdentity(store: AuthStore, databaseUrl: string
       VALUES ($1, $2, $3, true, 'personal', now(), now()) ON CONFLICT DO NOTHING`,
     [identity.userId, identity.name ?? identity.userId, identity.email ?? `${identity.userId}@example.com`]);
     await store.ensureIdentityUser(identity);
-    await client.query("INSERT INTO auth.organization (id, name, slug, kind, created_at) VALUES ($1, 'Test organization', 'test-organization', 'team', now()) ON CONFLICT DO NOTHING", [testOrganizationID]);
+    await client.query("INSERT INTO auth.organization (id, name, slug, created_at) VALUES ($1, 'Test organization', 'test-organization', now()) ON CONFLICT DO NOTHING", [testOrganizationID]);
     await client.query("INSERT INTO auth.member (id, organization_id, user_id, role, created_at) VALUES ($1, $2, $3, CASE WHEN EXISTS (SELECT 1 FROM auth.member WHERE organization_id = $2) THEN 'member' ELSE 'owner' END, now()) ON CONFLICT DO NOTHING", [uuidV7(), testOrganizationID, identity.userId]);
   } finally { await client.end(); }
 }
