@@ -706,7 +706,7 @@ describe("Organization-owned Workspaces", () => {
     await store.organizations.delete(a, org.id);
   });
 
-  it.each(["header", "accounts"] as const)("creates a Team Organization through the public API in %s mode", async (mode) => {
+  it.each(["header", "accounts"] as const)("creates an Organization through the public API in %s mode", async (mode) => {
     const { config, auth, store, user, headers } = await setup(mode);
     const actor = await user("creator@example.com");
     await store.addAdminUser(actor.email!);
@@ -902,7 +902,7 @@ describe("Organization-owned Workspaces", () => {
       const actorHeaders = await headers(actor);
       actorHeaders.set("content-type", "application/json");
       for (const route of ["/api/auth/organization/create", "/api/v1/organizations"]) {
-        const response = await app.request(route, { method: "POST", headers: actorHeaders, body: JSON.stringify({ name: "Forbidden personal", slug: `forbidden-${uuidV7()}`, kind: "personal", userId: encodeId("user", administrator.userId), initialOwnerUserId: encodeId("user", administrator.userId) }) });
+        const response = await app.request(route, { method: "POST", headers: actorHeaders, body: JSON.stringify({ name: "Forbidden delegated creation", slug: `forbidden-${uuidV7()}`, userId: encodeId("user", administrator.userId), initialOwnerUserId: encodeId("user", administrator.userId) }) });
         expect(response.status).toBeGreaterThanOrEqual(400);
       }
       await expect(auth.api.createOrganization({ body: { userId: administrator.userId, name: "Bypass", slug: `bypass-${uuidV7()}` } })).rejects.toMatchObject({ statusCode: 403 });

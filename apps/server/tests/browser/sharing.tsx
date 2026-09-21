@@ -19,8 +19,7 @@ window.fetch = async (input, init) => {
   const request = new Request(input instanceof Request ? input : new URL(String(input), location.origin), init);
   const url = new URL(request.url);
   if (url.pathname === "/api/auth/organization/list") return Promise.resolve(Response.json([
-    { id: "personal-org", name: "Personal", kind: "personal", slug: "personal-me" },
-    { id: "org", name: "Example Org", kind: "team", slug: "example" },
+    { id: "org", name: "Example Org", slug: "example" },
   ]));
   if (url.pathname === "/api/v1/workspaces") return Promise.resolve(Response.json({ items: [] }));
   if (url.pathname.endsWith("/permission-targets")) {
@@ -105,6 +104,6 @@ async function run() {
   [...document.querySelectorAll<HTMLButtonElement>('[data-slot="dialog-content"] button')].find((button) => button.textContent === "完了")!.click();
   await until(() => !document.querySelector('[data-slot="dialog-content"]'));
   assert(document.activeElement === opener, "Closing restores focus");
-  document.getElementById("result")!.textContent = "PASS: initial Personal, saved all-Workspace scope, modal, focus, org/team/user search, 51 identical targets, all three roles, revoke beyond first page, failed revoke/retry";
+  document.getElementById("result")!.textContent = "PASS: modal, focus, org/team/user search, 51 identical targets, all three roles, revoke beyond first page, failed revoke/retry";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });

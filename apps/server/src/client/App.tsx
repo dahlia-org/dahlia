@@ -460,7 +460,7 @@ export function Workspaces({ home = false }: { home?: boolean }) {
   const { data: encryptionCapabilities } = useLiveJSON<{ workspaceEncryption?: { version: number } }>(apiQuery("getCapabilities", {}));
   const createWorkspace = () => openDialog({
     title: uiText("New Workspace", "ワークスペースを作成"),
-    description: uiText("Choose the Team Organization that will own this Workspace. Sharing is configured after creation.", "ワークスペースを所有するTeam組織を選んでください。共有は作成後に設定できます。"),
+    description: uiText("Choose the Organization that will own this Workspace. Sharing is configured after creation.", "ワークスペースを所有する組織を選んでください。共有は作成後に設定できます。"),
     confirmLabel: uiText("Create Workspace", "ワークスペースを作成"),
     fields: [{ name: "name", label: uiText("Workspace name", "ワークスペース名"), required: true },
       { name: "organizationId", label: uiText("Organization", "組織"), required: true,

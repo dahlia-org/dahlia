@@ -98,6 +98,14 @@ export default {
         await assert.rejects(store.organizations.delete(owner, owner.userId));
         const session = await context.internalAdapter.createSession(owner.userId);
         await connection.db.execute(sql`UPDATE auth.session SET active_organization_id = ${invitationOnly.id} WHERE id = ${session.id}`);
+        await assert.rejects(store.organizations.delete(owner, invitationOnly.id));
+        const workspaces = await store.sync.withIdentity(owner, (scoped) => scoped.listWorkspaces(invitationOnly.id));
+        assert.equal(workspaces.length, 1);
+        const workspaceId = workspaces[0]!.workspaceId;
+        const confirmation = await store.sync.withIdentity(owner, (scoped) => scoped.confirmWorkspaceDeletion(invitationOnly.id, workspaceId));
+        await store.sync.withIdentity(owner, (scoped) => scoped.forceDeleteWorkspace(invitationOnly.id, {
+          schemaVersion: 3, id: uuidV7(), workspaceId, createdAt: new Date(), requestHash: "worker-governance-delete", operations: [],
+        }, confirmation.revision, confirmation.changeCursor));
         await store.organizations.delete(owner, invitationOnly.id);
         const cleared = await connection.db.execute(sql`SELECT active_organization_id FROM auth.session WHERE id = ${session.id}`);
         assert.equal(cleared.rows[0]?.active_organization_id, null);

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { Client } from 'pg';
 import { createRequire, builtinModules } from 'node:module';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
 // Use Wrangler's installed runtime/build dependencies; no additional package or remote resources.
@@ -16,15 +16,23 @@ assert(databaseUrl, 'TEST_DATABASE_URL must point to a migrated, disposable Post
 const directory = await mkdtemp(join(tmpdir(), 'dahlia-workerd-'));
 let mf;
 try {
+  const wasmModules = [];
   const bundle = await build({ entryPoints: ['tests/fixtures/worker-runtime.ts'], bundle: true, format: 'esm', platform: 'node',
     target: 'es2022', external: ['node:*', 'cloudflare:*'], conditions: ['workerd', 'worker', 'browser'],
     alias: Object.fromEntries(builtinModules.filter((name) => !name.startsWith('node:')).map((name) => [name, `node:${name}`])),
     banner: { js: 'import { createRequire } from "node:module"; const require = createRequire("/worker.js");' },
+    plugins: [{ name: 'workerd-wasm', setup(build) {
+      build.onResolve({ filter: /\.wasm$/ }, async (args) => {
+        const path = `./wasm-${wasmModules.length}.wasm`;
+        wasmModules.push({ type: 'CompiledWasm', path: join(directory, path), contents: await readFile(resolve(args.resolveDir, args.path)) });
+        return { path, external: true };
+      });
+    } }],
     write: false, metafile: true, minify: true });
   assert(!Object.keys(bundle.metafile.inputs).some((file) => /sharp|storage\/local|node-worker|node-indexer/.test(file)), 'Node-only modules leaked into workerd');
   const script = bundle.outputFiles[0].text;
   const started = performance.now();
-  mf = new Miniflare({ modules: true, script, compatibilityDate: '2026-08-08', compatibilityFlags: ['nodejs_compat'],
+  mf = new Miniflare({ modules: [{ type: 'ESModule', path: join(directory, 'worker.js'), contents: script }, ...wasmModules], modulesRoot: directory, compatibilityDate: '2026-08-08', compatibilityFlags: ['nodejs_compat'],
     port: 0, persist: directory, r2Buckets: ['DAHLIA_STORAGE'], images: { binding: 'IMAGES' },
     queueProducers: { DAHLIA_SUMMARY_QUEUE: 'summary' }, queueConsumers: { summary: { maxBatchSize: 1, maxRetries: 0 } },
     bindings: { DAHLIA_APP_URL: 'http://localhost:5173', DAHLIA_AUTH_HEADER: 'Cf-Access-Authenticated-User-Email', DAHLIA_AUTH_TYPE: 'header', DAHLIA_AUTH_SECRET: 'test-worker-secret-at-least-32-characters', DAHLIA_DATABASE_TYPE: 'postgres', DAHLIA_DATABASE_URL: databaseUrl,
@@ -69,9 +77,8 @@ try {
   try {
     const accounts = await database.query('SELECT account_id, user_id FROM auth.account WHERE account_id = $1', [email]);
     assert.deepEqual(accounts.rows, [{ account_id: email, user_id: session.user.id }]);
-    const membership = await database.query(`SELECT o.kind FROM auth.member m JOIN auth.organization o ON o.id = m.organization_id
-      WHERE m.user_id = $1`, [session.user.id]);
-    assert.deepEqual(membership.rows, [{ kind: 'personal' }]);
+    const membership = await database.query(`SELECT organization_id FROM auth.member WHERE user_id = $1`, [session.user.id]);
+    assert.deepEqual(membership.rows, [], 'default signup must not create an Organization');
     await database.query("UPDATE auth.user SET role = 'admin' WHERE id = $1", [session.user.id]);
     const organizationResponse = await mf.dispatchFetch('http://localhost:5173/api/v1/organizations', {
       method: 'POST', headers: { ...identityHeaders, cookie, 'content-type': 'application/json' },
@@ -79,6 +86,11 @@ try {
     });
     assert.equal(organizationResponse.status, 201, await organizationResponse.clone().text());
     const organization = await organizationResponse.json();
+    const workspaceResponse = await mf.dispatchFetch(`http://localhost:5173/api/v1/workspaces?organizationId=${organization.id}`, { headers: { ...identityHeaders, cookie } });
+    assert.equal(workspaceResponse.status, 200, await workspaceResponse.clone().text());
+    const privateWorkspaces = (await workspaceResponse.json()).items;
+    assert.equal(privateWorkspaces.length, 1, 'initial membership must provision a private Workspace');
+    assert.equal(privateWorkspaces[0].personalUserId, identity.user.id);
     const settingsUrl = `http://localhost:5173/api/v1/organizations/${organization.id}/domains`;
     const save = (domains) => mf.dispatchFetch(settingsUrl, { method: 'PUT',
       headers: { ...identityHeaders, cookie, 'content-type': 'application/json' }, body: JSON.stringify({ domains: domains.map((domain) => ({ domain, joinPolicy: 'auto_join' })) }) });

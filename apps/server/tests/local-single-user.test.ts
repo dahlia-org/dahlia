@@ -112,7 +112,7 @@ describe("local single-user header mode", () => {
 
       const raw = new DatabaseSync(fileURLToPath(config.databaseUrl!));
       try {
-        // "garbage" carries no domain, so only the Personal Organization exists.
+        // "garbage" carries no domain, so domain enrollment does not apply.
         expect(raw.prepare("SELECT name FROM organization").all()).toEqual([{ name: "garbageのOrg" }]);
 
         // An address with no configured domain also gets only Personal.
