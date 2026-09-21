@@ -48,6 +48,7 @@ export function createNodeApplicationStore(
         config.encryption,
         config.authProviderId,
         config.localSingleUser,
+        config.autoCreateOrgOnSignup,
       ),
       aiHistory: createAiHistoryService(connection.pool),
       migrate: () => migrateApplicationDatabase(
@@ -111,6 +112,7 @@ export function createNodeApplicationStore(
     config.encryption,
     config.authProviderId,
     config.localSingleUser,
+    config.autoCreateOrgOnSignup,
   );
   const applyMigrationQueries = (queries: string[]) => {
     for (const query of queries) database.exec(query);

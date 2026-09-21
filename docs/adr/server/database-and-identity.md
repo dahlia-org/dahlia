@@ -1,5 +1,7 @@
 # Server database と認可 identity
 
+2026-09-21: Personal Organization・本人用Workspace・登録時の作成方針は[Org配下の本人用Workspace](../shared/organization-personal-workspaces.md)に置き換えられた。以下の旧Personal Org仕様は履歴である。
+
 対象: Server。採択: 2026-08-28〜09-03。設定と migration の操作は [Server README](../../../apps/server/README.md)、実装規則は [Server guide](../../../apps/server/AGENTS.md) を参照する。
 
 ## Schema と migration

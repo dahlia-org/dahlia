@@ -26,27 +26,26 @@ export interface OrganizationStore {
   requests(identity: Identity, organizationId?: string, cursor?: string): Promise<JoinRequest[]>;
   join(identity: Identity, organizationId: string, request: boolean): Promise<void>;
   resolveRequest(identity: Identity, requestId: string, status: "approved" | "rejected" | "cancelled"): Promise<void>;
-  create(identity: Identity, input: { name: string; slug: string; initialOwnerUserId: string }): Promise<{ id: string; name: string; slug: string; kind: string }>;
+  create(identity: Identity, input: { name: string; slug: string; initialOwnerUserId: string }): Promise<{ id: string; name: string; slug: string }>;
   delete(identity: Identity, organizationId: string): Promise<void>;
   initializeUser(userId: string, headerProviderId?: string): Promise<void>;
   transaction<T>(action: (database: DBAdapterInstance, organizations: OrganizationStore) => Promise<T>): Promise<T>;
   hasMember(userId: string, organizationId: string): Promise<boolean>;
   addTeamCreator(teamId: string, userId: string): Promise<void>;
-  assertTeamOrganization(organizationId: string): Promise<void>;
+  assertOrganization(organizationId: string): Promise<void>;
 }
 
-export function createOrganizationStore(connection: NodePgDatabase | SQLiteDatabase, isPostgres: boolean, inTransaction = false): OrganizationStore {
+export function createOrganizationStore(connection: NodePgDatabase | SQLiteDatabase, isPostgres: boolean, inTransaction = false, autoCreateOrgOnSignup = false): OrganizationStore {
   const db = connection as NodePgDatabase;
   const schema = isPostgres ? postgres : sqlite as unknown as typeof postgres;
   const transaction = async <T>(action: (tx: NodePgDatabase) => Promise<T>) => inTransaction ? action(db) : db.transaction(action);
   async function assertAccess(tx: NodePgDatabase, identity: Identity, organizationId: string, access: "read" | "manage" | "write") {
-    const [membership] = await tx.select({ role: schema.member.role, kind: schema.organization.kind }).from(schema.member)
+    const [membership] = await tx.select({ role: schema.member.role }).from(schema.member)
       .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
       .where(and(eq(schema.member.userId, identity.userId), eq(schema.member.organizationId, organizationId)));
     if (!membership || (access !== "read" && !["owner", "admin"].includes(membership.role)) || (access === "write" && identity.impersonated)) {
       throw new APIError("FORBIDDEN", { code: "organization_access_denied" });
     }
-    if (access === "write" && membership.kind !== "team") authorizationConflict("personal_organization_immutable");
   }
   async function verifiedDomain(tx: NodePgDatabase, userId: string) {
     const [user] = await tx.select().from(schema.user).where(eq(schema.user.id, userId));
@@ -67,6 +66,27 @@ export function createOrganizationStore(connection: NodePgDatabase | SQLiteDatab
   }
   async function addMember(tx: NodePgDatabase, userId: string, organizationId: string) {
     await tx.insert(schema.member).values({ id: uuidV7(), userId, organizationId, role: "member", createdAt: new Date() }).onConflictDoNothing({ target: [schema.member.userId, schema.member.organizationId] });
+    await ensurePersonalWorkspace(tx, userId, organizationId);
+  }
+  async function ensurePersonalWorkspace(tx: NodePgDatabase, userId: string, organizationId: string) {
+    if (isPostgres) await tx.execute(sql`select set_config('app.maintenance', 'authorization', true)`);
+    const [user] = await tx.select().from(schema.user).where(eq(schema.user.id, userId));
+    if (!user) throw new APIError("NOT_FOUND", { code: "user_not_found" });
+    await tx.insert(schema.syncedWorkspace).values({ workspaceId: uuidV7(), organizationId, personalUserId: userId,
+      createdBy: { id: user.id, name: user.name, email: user.email }, name: "Personal",
+      generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS, createdAt: new Date(), updatedAt: new Date(),
+    }).onConflictDoNothing({ target: [schema.syncedWorkspace.organizationId, schema.syncedWorkspace.personalUserId] });
+    const [workspace] = await tx.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
+      .where(and(eq(schema.syncedWorkspace.organizationId, organizationId), eq(schema.syncedWorkspace.personalUserId, userId)));
+    await tx.insert(schema.syncedWorkspacePermission).values({ workspaceId: workspace!.id, principalType: "user", principalId: userId,
+      role: "admin", grantedByUserId: userId }).onConflictDoNothing();
+  }
+  async function createOrganization(tx: NodePgDatabase, ownerId: string, name: string, slug: string) {
+    const org = { id: uuidV7(), name, slug, createdAt: new Date() };
+    await tx.insert(schema.organization).values(org);
+    await tx.insert(schema.member).values({ id: uuidV7(), userId: ownerId, organizationId: org.id, role: "owner", createdAt: org.createdAt });
+    await ensurePersonalWorkspace(tx, ownerId, org.id);
+    return org;
   }
   return {
     async getDomains(identity, organizationId) {
@@ -158,15 +178,12 @@ export function createOrganizationStore(connection: NodePgDatabase | SQLiteDatab
       if (!owner) throw new APIError("BAD_REQUEST", { code: "initial_owner_not_found" });
       const [existing] = await db.select().from(schema.organization).where(eq(schema.organization.slug, input.slug));
       if (existing) authorizationConflict("organization_slug_in_use");
-      const org = { id: uuidV7(), name: input.name, slug: input.slug, kind: "team", createdAt: new Date() };
-      await db.insert(schema.organization).values(org);
-      await db.insert(schema.member).values({ id: uuidV7(), userId: owner.id, organizationId: org.id, role: "owner", createdAt: org.createdAt });
-      return org;
+      return createOrganization(db, owner.id, input.name, input.slug);
     },
     async delete(identity, organizationId) {
       if (!inTransaction) return this.transaction(async (_, scoped) => scoped.delete(identity, organizationId));
       await assertAdmin(db, identity);
-      await this.assertTeamOrganization(organizationId);
+      await this.assertOrganization(organizationId);
       const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(eq(schema.syncedWorkspace.organizationId, organizationId)).limit(1);
       if (workspace) authorizationConflict("organization_has_workspaces");
       await db.delete(schema.organization).where(eq(schema.organization.id, organizationId));
@@ -195,10 +212,10 @@ export function createOrganizationStore(connection: NodePgDatabase | SQLiteDatab
           }
           return slug;
         };
-        await tx.insert(schema.organization).values({ id: userId, name: "Personal", slug: await availableSlug(user.email.split("@")[0]!), kind: "personal", createdAt: user.createdAt });
-        await tx.insert(schema.member).values({ id: userId, userId, organizationId: userId, role: "owner", createdAt: user.createdAt });
-        await tx.insert(schema.syncedWorkspace).values({ workspaceId: userId, organizationId: userId, createdBy: { id: user.id, name: user.name, email: user.email }, name: "Personal", generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS, createdAt: user.createdAt, updatedAt: user.createdAt });
-        await tx.insert(schema.syncedWorkspacePermission).values({ workspaceId: userId, principalType: "user", principalId: userId, role: "admin", grantedByUserId: userId });
+        if (autoCreateOrgOnSignup) {
+          await createOrganization(tx, userId, user.name.trim() ? `${user.name}のOrg` : "My Organization",
+            await availableSlug(user.email.split("@")[0]!));
+        }
         if (user.emailVerified && user.registrationState === "domain") {
           const email = headerEmail(user.email);
           const domain = email?.slice(email.lastIndexOf("@") + 1);
@@ -217,8 +234,11 @@ export function createOrganizationStore(connection: NodePgDatabase | SQLiteDatab
         if (isPostgres) await tx.execute(sql`select set_config('app.maintenance', 'authorization', true)`);
         const before = await readAuthorization(tx, schema);
         const adapter = drizzleAdapter(tx, { provider: isPostgres ? "pg" : "sqlite", schema: isPostgres ? postgresAuth : sqliteAuth, transaction: false });
-        const value = await action(adapter, createOrganizationStore(tx, isPostgres, true));
+        const value = await action(adapter, createOrganizationStore(tx, isPostgres, true, autoCreateOrgOnSignup));
         const after = await readAuthorization(tx, schema);
+        for (const member of after.members.filter((m) => !before.members.some((previous) => previous.userId === m.userId && previous.organizationId === m.organizationId))) {
+          await ensurePersonalWorkspace(tx, member.userId, member.organizationId);
+        }
         for (const member of before.members.filter((m) => !after.members.some((current) => current.id === m.id))) {
           const teams = before.teams.filter((t) => t.organizationId === member.organizationId).map((t) => t.id);
           if (teams.length) await tx.delete(schema.teamMember).where(and(eq(schema.teamMember.userId, member.userId), inArray(schema.teamMember.teamId, teams)));
@@ -244,9 +264,9 @@ export function createOrganizationStore(connection: NodePgDatabase | SQLiteDatab
     async addTeamCreator(teamId, userId) {
       await db.insert(schema.teamMember).values({ id: uuidV7(), teamId, userId, createdAt: new Date() });
     },
-    async assertTeamOrganization(organizationId) {
-      const [org] = await db.select({ kind: schema.organization.kind }).from(schema.organization).where(eq(schema.organization.id, organizationId));
-      if (!org || org.kind !== "team") authorizationConflict("personal_organization_immutable");
+    async assertOrganization(organizationId) {
+      const [org] = await db.select({ id: schema.organization.id }).from(schema.organization).where(eq(schema.organization.id, organizationId));
+      if (!org) throw new APIError("NOT_FOUND", { code: "organization_not_found" });
     },
   };
 }

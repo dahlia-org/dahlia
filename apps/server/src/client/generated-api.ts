@@ -1311,6 +1311,7 @@ export interface components {
             encryption?: "none" | "server";
             workspaceId: string;
             organizationId: string;
+            personalUserId: string | null;
             name: string;
             icon?: string | null;
             color?: string | null;
@@ -1673,6 +1674,7 @@ export interface components {
             encryption?: "none" | "server";
             workspaceId: string;
             organizationId: string;
+            personalUserId: string | null;
             name: string;
             icon?: string | null;
             color?: string | null;
@@ -1861,8 +1863,6 @@ export interface components {
             id: string;
             name: string;
             slug: string;
-            /** @enum {string} */
-            kind: "personal" | "team";
             role?: string;
         };
         Capabilities: {

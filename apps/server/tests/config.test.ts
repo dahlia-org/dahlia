@@ -9,6 +9,12 @@ const accounts = {
 };
 
 describe("configuration", () => {
+  it("keeps signup Org provisioning off unless explicitly enabled", () => {
+    expect(loadConfig(accounts).autoCreateOrgOnSignup).toBe(false);
+    expect(loadConfig({ ...accounts, DAHLIA_AUTO_CREATE_ORG_ON_SIGNUP: "0" }).autoCreateOrgOnSignup).toBe(false);
+    expect(loadConfig({ ...accounts, DAHLIA_AUTO_CREATE_ORG_ON_SIGNUP: "1" }).autoCreateOrgOnSignup).toBe(true);
+    for (const value of ["", "true", "false", "2"]) expect(() => loadConfig({ ...accounts, DAHLIA_AUTO_CREATE_ORG_ON_SIGNUP: value })).toThrow();
+  });
   it("defaults to the existing local SQLite database", () => {
     expect(loadConfig(accounts)).toMatchObject({
       authProvider: "accounts",

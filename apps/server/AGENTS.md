@@ -61,7 +61,7 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 - Enforce request byte limits before parsing or buffering. Stream Responses and file/audio bodies without buffering the complete payload.
 - Header authentication is safe only behind a proxy that strips client-supplied identity headers, writes verified values, and prevents direct Server access. Do not weaken that deployment requirement with trust-by-header fallback logic.
 - With the Databricks backend, prefer `X-Forwarded-Access-Token` for the current Responses request and fall back to a short-lived App service principal token only when the forwarded token is absent. Do not store, log, cache, return, or forward the proxy header by name. The configured model list performs no upstream discovery.
-- Identity claims identify users; Personal Organizations represent ownership. Evaluate current user/organization/team permissions with admin > editor > viewer, and require current parent-organization membership for Team access. Keep at least one effective Workspace admin.
+- Identity claims identify users; Organizations own Workspaces. Personal Workspaces require the designated user and current membership of their owning Organization. Evaluate current user/organization/team permissions with admin > editor > viewer, and require current parent-organization membership for Team access. Keep at least one effective Workspace admin.
 - Files and recording reads require current Workspace access before storage access or conditional responses. Preserve streaming, the file CSP sandbox, and non-disclosure of storage credentials. Artifact publishing is retired.
 
 ## Database and Migrations

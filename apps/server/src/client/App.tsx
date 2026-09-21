@@ -448,7 +448,7 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
 export function Workspaces({ home = false }: { home?: boolean }) {
   const { dialog, openDialog } = useActionDialog();
   const { workspaces, error: loadError, reload, organizations } = useSidebar();
-  const teamOrganizations = organizations?.filter((organization) => organization.kind === "team") ?? [];
+  const availableOrganizations = organizations ?? [];
   const [recentWorkspaceId, setRecentWorkspaceId] = useState("");
   const recentWorkspace = workspaces?.find((workspace) => workspace.workspaceId === recentWorkspaceId) ?? workspaces?.[0];
   useEffect(() => {
@@ -464,8 +464,8 @@ export function Workspaces({ home = false }: { home?: boolean }) {
     confirmLabel: uiText("Create Workspace", "ワークスペースを作成"),
     fields: [{ name: "name", label: uiText("Workspace name", "ワークスペース名"), required: true },
       { name: "organizationId", label: uiText("Organization", "組織"), required: true,
-      value: teamOrganizations[0]?.id,
-      options: teamOrganizations.map((organization) => ({ value: organization.id, label: organization.name })) },
+      value: availableOrganizations[0]?.id,
+      options: availableOrganizations.map((organization) => ({ value: organization.id, label: organization.name })) },
       ...workspaceEncryptionFields(Boolean(encryptionCapabilities?.workspaceEncryption))],
     onSubmit: async ({ name, encryption, organizationId: targetOrganizationId }) => {
       const id = await createWorkspaceRecord(targetOrganizationId!, name!, encryption, setRecovering);
@@ -476,7 +476,7 @@ export function Workspaces({ home = false }: { home?: boolean }) {
     {dialog}
     <PageHeader title={home ? uiText("Home", "ホーム") : uiText("Workspaces", "ワークスペース")}
       description={home ? uiText("Pick up where your last conversation left off.", "前回の会話の続きから、始めましょう。") : uiText("Your meetings, organized in one place.", "ミーティングとその記録を、ワークスペースごとに整理します。")}
-      actions={<button className="primary" disabled={teamOrganizations.length === 0} onClick={createWorkspace}><MenuIcon name="plus" />{uiText("New Workspace", "ワークスペースを作成")}</button>} />
+      actions={<button className="primary" disabled={availableOrganizations.length === 0} onClick={createWorkspace}><MenuIcon name="plus" />{uiText("New Workspace", "ワークスペースを作成")}</button>} />
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
     <section className="section-block">
       <div className="collection-heading"><h2>{uiText("Your Workspaces", "ワークスペース一覧")}</h2>{workspaces && <span className="muted">{workspaces.length}</span>}</div>
@@ -627,10 +627,10 @@ export function WorkspaceTrash({ workspace }: { workspace: SyncedWorkspaceInfo }
 
 export function WorkspaceMeetings({ session, workspaceId }: { session: SessionInfo; workspaceId: string }) {
   const { dialog, openDialog } = useActionDialog();
-  const { organizations, workspaces } = useSidebar();
+  const { workspaces } = useSidebar();
   const workspaceQuery = useLiveJSON<SyncedWorkspaceInfo>(apiQuery("getWorkspace", { params: { path: { workspaceId: workspaceId } } }));
   const workspace = workspaceQuery.data;
-  const personal = organizations?.some((organization) => organization.id === workspace?.organizationId && organization.kind === "personal");
+  const personal = workspace?.personalUserId != null;
   const [recovering, setRecovering] = useState(false);
   const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { workspaceId: workspaceId } } }));
   const projects = workspace ? projectsQuery.data?.items ?? [] : [];
@@ -1171,7 +1171,7 @@ function OrganizationWorkspaces({ organization }: { organization: OrganizationIn
   }
   return <section>{dialog}
     <div className="org-section-header"><p>{uiText("Organization governance shows Workspace metadata. Content requires a separate Workspace permission.", "組織の管理用情報を表示しています。内容の閲覧にはワークスペースのアクセス権が必要です。")}</p>
-      {organization.kind === "team" && <button className="primary" disabled={!encryptionCapabilities.data} onClick={createWorkspace}><MenuIcon name="plus" />{uiText("New Workspace", "ワークスペースを作成")}</button>}
+      <button className="primary" disabled={!encryptionCapabilities.data} onClick={createWorkspace}><MenuIcon name="plus" />{uiText("New Workspace", "ワークスペースを作成")}</button>
     </div>
     <DataError error={encryptionCapabilities.error} retry={encryptionCapabilities.reload} />
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
@@ -1179,7 +1179,7 @@ function OrganizationWorkspaces({ organization }: { organization: OrganizationIn
       {workspaces?.some(({ workspaceId }) => workspaceId === workspace.workspaceId)
         ? <a className="flex min-w-0 flex-1 items-center gap-2 hover:text-primary hover:underline" href={`/workspaces/${workspace.workspaceId}`}><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><strong>{workspace.name}</strong></a>
         : <div className="flex min-w-0 flex-1 flex-row items-center gap-2"><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><strong>{workspace.name}</strong></div>}
-      {organization.kind === "team" && <button className="secondary danger-button" onClick={() => void confirm(workspace.workspaceId)}>{uiText("Delete", "削除")}</button>}
+      {<button className="secondary danger-button" onClick={() => void confirm(workspace.workspaceId)}>{uiText("Delete", "削除")}</button>}
     </div>)}
     {query.data?.items.length === 0 && <p>{uiText("No Workspaces", "ワークスペースがありません")}</p>}
     {query.data?.nextCursor && <button onClick={query.loadMore}>{uiText("Show more", "さらに表示")}</button>}
@@ -1483,9 +1483,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
     }
   }
 
-  const personal = organization.kind === "personal";
-  const canGovern = ["owner", "admin"].includes(currentRole ?? "");
-  const canManage = canGovern && !personal;
+  const canManage = ["owner", "admin"].includes(currentRole ?? "");
   const teamMemberIds = useMemo(() => Object.fromEntries(
     Object.entries(teamMembers).map(([teamId, entries]) => [teamId, new Set(entries.map(({ userId }) => userId))]),
   ), [teamMembers]);
@@ -1495,12 +1493,12 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
       {dialog}
       <fieldset className="organization-controls" disabled={pending}>
       <DetailTabs label={uiText("Organization content", "組織の内容")} tabs={[
-        ...(canGovern ? [{ id: "workspaces", label: uiText("Workspace governance", "ワークスペース管理"), content: <OrganizationWorkspaces organization={organization} /> }] : []),
+        ...(canManage ? [{ id: "workspaces", label: uiText("Workspace governance", "ワークスペース管理"), content: <OrganizationWorkspaces organization={organization} /> }] : []),
         { id: "members", label: <>{uiText("Members", "メンバー")}{members && <> <span className="org-count">{members.length}</span></>}</>, content: <>
           <div className="org-section-header flex-row items-center gap-3 max-sm:flex-col max-sm:items-start">
             {members && members.length > 0 && <input className="org-search" type="search" aria-label={uiText("Find members", "メンバーを検索")} placeholder={uiText("Search by name or email", "名前・メールアドレスで検索")} value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} />}
             {canManage && <button className="primary ml-auto max-sm:ml-0" onClick={invite}><MenuIcon name="plus" />{uiText("Invite member", "メンバーを招待")}</button>}
-            {!personal && currentRole && <button className="secondary danger-button" onClick={leaveOrganization}>{uiText("Leave", "脱退")}</button>}
+            {currentRole && <button className="secondary danger-button" onClick={leaveOrganization}>{uiText("Leave", "脱退")}</button>}
           </div>
           {visibleMembers?.length === 0 && <p className="empty-state">{uiText("No matching members.", "該当するメンバーはいません。")}</p>}
           {!members && !error && <p className="muted">{uiText("Loading members…", "メンバーを読み込み中…")}</p>}
@@ -1569,16 +1567,16 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
             <dl className="org-settings-fields">
               <div>
                 <dt>{uiText("Organization name", "組織名")}</dt>
-                <dd><span>{organization.name}</span>{canGovern && <button className="secondary" onClick={renameOrganization}>{uiText("Rename", "名前を変更")}</button>}</dd>
+                <dd><span>{organization.name}</span>{canManage && <button className="secondary" onClick={renameOrganization}>{uiText("Rename", "名前を変更")}</button>}</dd>
               </div>
               <div>
                 <dt>slug</dt>
-                <dd><code>{organization.slug}</code>{canGovern && <button className="secondary" onClick={changeOrganizationSlug}>{uiText("Change slug", "slug を変更")}</button>}</dd>
+                <dd><code>{organization.slug}</code>{canManage && <button className="secondary" onClick={changeOrganizationSlug}>{uiText("Change slug", "slug を変更")}</button>}</dd>
               </div>
             </dl>
           </section>
-          {!personal && canManage && <OrganizationJoinRequests organizationId={organization.id} />}
-          {!personal && <OrganizationDomains organizationId={organization.id} canManage={canManage} />}
+          {canManage && <OrganizationJoinRequests organizationId={organization.id} />}
+          <OrganizationDomains organizationId={organization.id} canManage={canManage} />
         </div> },
       ]} />
       </fieldset>
@@ -1610,7 +1608,6 @@ function Organizations() {
   const { dialog, openDialog } = useActionDialog();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
-  const joinedTeams = organizations?.filter((organization) => organization.kind === "team");
   const showCandidates = Boolean(candidates.data?.items.length || candidates.error);
   const load = useCallback(async () => {
     setError(undefined);
@@ -1695,8 +1692,8 @@ function Organizations() {
       <section className="section-block organization-list">
         <h2 className="section-label">{uiText("Your organizations", "参加している組織")}</h2>
         {!organizations && !error && <p className="muted">{uiText("Loading organizations…", "組織を読み込み中…")}</p>}
-        {joinedTeams?.length === 0 && <div className="panel empty-state"><strong>{uiText("No organizations", "参加している組織はありません")}</strong><span>{uiText("Ask a server administrator to create an organization or invite you.", "サーバー管理者に組織の作成または招待を依頼してください。")}</span></div>}
-        <div className="collection-list">{joinedTeams?.map((organization) => (
+        {organizations?.length === 0 && <div className="panel empty-state"><strong>{uiText("No organizations", "参加している組織はありません")}</strong><span>{uiText("Ask a server administrator to create an organization or invite you.", "サーバー管理者に組織の作成または招待を依頼してください。")}</span></div>}
+        <div className="collection-list">{organizations?.map((organization) => (
           <a className="collection-row" href={`/orgs/${encodeURIComponent(organization.id)}`} key={organization.id}>
             <span className="collection-icon"><MenuIcon name="organization" /></span>
             <span className="collection-copy"><strong>{organization.name}</strong><small>{organization.slug}</small></span>
@@ -1891,11 +1888,11 @@ export function AdminOrganization({ organizationId, session }: { organizationId:
         {!organization.teams.length && <p className="content-empty">{uiText("No teams yet", "チームはまだありません")}</p>}
         {pagination(teamsOffset, organization.hasMoreTeams, setTeamsOffset)}
       </> },
-      ...(organization.kind === "team" ? [{ id: "settings", label: uiText("Settings", "設定"), content:
+      { id: "settings", label: uiText("Settings", "設定"), content:
         <div className="org-settings"><section className="org-settings-action" aria-label={uiText("Delete organization", "組織を削除")}>
           <div><h3>{uiText("Delete organization", "組織を削除")}</h3><p>{uiText("Delete this organization after removing all owned Workspaces.", "配下のワークスペースをすべて削除した後、この組織を削除できます。")}</p></div>
           <button className="secondary danger-button" onClick={() => openDialog({ title: uiText("Delete organization?", "組織を削除しますか？"), description: uiText("All owned Workspaces must be removed first. Memberships and teams will be deleted.", "配下のワークスペースをすべて削除した後に実行できます。所属とチームを削除します。"), confirmLabel: uiText("Delete", "削除"), destructive: true, onSubmit: async () => { await api.deleteOrganization({ params: { path: { organizationId } } }); navigateDashboard("/admin/orgs"); } })}>{uiText("Delete organization", "組織を削除")}</button>
-        </section></div> }] : []),
+        </section></div> },
     ]} />}
   </>;
 }

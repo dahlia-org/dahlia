@@ -31,7 +31,7 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     await client.query('INSERT INTO auth."user"(id, name, email) VALUES ($1, $2, $3)', [owner, "Owner", "owner@example.com"]);
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner]);
     expect((await client.query("SELECT to_regclass('app.account_settings') AS retired")).rows).toEqual([{ retired: null }]);
-    await client.query("INSERT INTO auth.organization(id, name, slug, kind, created_at) VALUES ($1, 'Team', $2, 'team', now())", [owner, `team-${owner}`]);
+    await client.query("INSERT INTO auth.organization(id, name, slug, created_at) VALUES ($1, 'Team', $2, now())", [owner, `team-${owner}`]);
     await client.query("INSERT INTO auth.member(id, organization_id, user_id, role, created_at) VALUES ($1, $1, $1, 'owner', now())", [owner]);
     await client.query("INSERT INTO app.workspaces(workspace_id, organization_id, created_by, name) VALUES ($1, $1, $2, 'Workspace')", [owner, { id: owner, name: "Owner", email: "owner@example.com" }]);
     await client.query("INSERT INTO app.workspace_permissions(workspace_id, principal_type, principal_id, role, granted_by_user_id) VALUES ($1, 'user', $1, 'admin', $1)", [owner]);
@@ -77,7 +77,7 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("enforces file text limits in 
     const document = testUserID("limit-document");
     await client.query('INSERT INTO auth."user"(id, name, email) VALUES ($1, $2, $3)', [owner, "Owner", "limit@example.com"]);
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner]);
-    await client.query("INSERT INTO auth.organization(id, name, slug, kind, created_at) VALUES ($1, 'Team', $2, 'team', now())", [owner, `team-${owner}`]);
+    await client.query("INSERT INTO auth.organization(id, name, slug, created_at) VALUES ($1, 'Team', $2, now())", [owner, `team-${owner}`]);
     await client.query("INSERT INTO auth.member(id, organization_id, user_id, role, created_at) VALUES ($1, $1, $1, 'owner', now())", [owner]);
     await client.query("INSERT INTO app.workspaces(workspace_id, organization_id, created_by, name) VALUES ($1, $2, $3, 'Workspace')", [workspace, owner, { id: owner, name: "Owner", email: "limit@example.com" }]);
     await client.query("INSERT INTO app.workspace_permissions(workspace_id, principal_type, principal_id, role, granted_by_user_id) VALUES ($1, 'user', $2, 'admin', $2)", [workspace, owner]);
@@ -130,7 +130,7 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("moves existing job rows and s
     const owner = testUserID("move-owner"), workspace = testUserID("move-workspace"), meeting = testUserID("move-meeting");
     await client.query('INSERT INTO auth."user"(id, name, email) VALUES ($1, \'Owner\', \'move@example.com\')', [owner]);
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner]);
-    await client.query("INSERT INTO auth.organization(id, name, slug, kind, created_at) VALUES ($1, 'Team', $2, 'team', now())", [owner, `team-${owner}`]);
+    await client.query("INSERT INTO auth.organization(id, name, slug, created_at) VALUES ($1, 'Team', $2, now())", [owner, `team-${owner}`]);
     await client.query("INSERT INTO auth.member(id, organization_id, user_id, role, created_at) VALUES ($1, $1, $1, 'owner', now())", [owner]);
     await client.query("INSERT INTO app.workspaces(workspace_id, organization_id, created_by, name) VALUES ($1, $2, $3, 'Workspace')", [workspace, owner, { id: owner, name: "Owner", email: "limit@example.com" }]);
     await client.query("INSERT INTO app.workspace_permissions(workspace_id, principal_type, principal_id, role, granted_by_user_id) VALUES ($1, 'user', $2, 'admin', $2)", [workspace, owner]);

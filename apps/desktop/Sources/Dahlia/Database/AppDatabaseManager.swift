@@ -339,6 +339,10 @@ final class AppDatabaseManager: Sendable {
             try WorkspaceLiveTranscriptDraftMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v46_workspacePersonalUser") { db in
+            try addColumnIfNeeded(in: db, table: "workspaces", column: "personalUserId", type: .text)
+        }
+
         return migrator
     }()
 

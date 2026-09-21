@@ -296,7 +296,7 @@ describe("desktop-style meeting layout", () => {
     }) }));
     const [navigation, footer] = html.split('<div class="sidebar-footer');
     expect(navigation).toContain("Project navigation");
-    expect(navigation).not.toContain("organization-switcher");
+    expect(navigation).toContain('aria-label="Switch organization"');
     expect(navigation).not.toContain("Account settings");
     expect(footer).toContain('aria-haspopup="menu"');
     expect(footer).toContain('aria-label="Account menu: Example User"');
@@ -313,6 +313,36 @@ describe("desktop-style meeting layout", () => {
     expect(navigation).toContain('href="/orgs"');
     expect(footer).not.toContain("sidebar-settings");
     expect(footer).not.toContain("Artifacts");
+  });
+
+  it("lists only the selected organization's Workspaces and defers collapsed contents", () => {
+    vi.stubGlobal("navigator", { language: "en" });
+    const session = { user: { id: "user" }, capabilities: { sync: true, sharing: true, sessions: true, admin: false } };
+    const ready = { loading: false, error: undefined, reload: vi.fn(), replace: vi.fn() };
+    const query = vi.spyOn(liveData, "useLiveJSON").mockImplementation((input) => {
+      const key = typeof input === "object" ? input.key : input;
+      if (key === "/api/auth/organization/list") return { ...ready, data: [{ id: "org1", name: "First Org", slug: "first" }, { id: "org2", name: "Second Org", slug: "second" }] };
+      if (key?.startsWith('["listWorkspaces"')) return { ...ready, data: { items: [
+        { workspaceId: "private", organizationId: "org1", personalUserId: "user", name: "Personal" },
+        { workspaceId: "team", organizationId: "org1", personalUserId: null, name: "Team Workspace" },
+        { workspaceId: "other", organizationId: "org2", personalUserId: null, name: "Other Workspace" },
+      ] } };
+      if (key?.startsWith('["listProjects"')) return { ...ready, data: { items: [] } };
+      return { ...ready, data: undefined };
+    });
+    const page = vi.spyOn(liveData, "useLivePage").mockReturnValue({ ...ready, data: { items: [] }, loadingMore: false, loadMore: vi.fn() });
+    try {
+      const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, { session, brand: "Dahlia", children: null, routeMeeting: { workspaceId: "other", meetingId: "other-meeting", name: "Other meeting", projectId: null } as SyncedMeetingInfo }) }));
+      expect(html).toContain("First Org");
+      expect(html).toContain('href="/workspaces/private"');
+      expect(html).toContain('href="/workspaces/team"');
+      expect(html).not.toContain('href="/workspaces/other"');
+      expect(html).toContain("Private");
+      expect(html).not.toContain("Other meeting");
+      const keys = query.mock.calls.map(([input]) => typeof input === "object" ? input.key : input);
+      expect(keys.some((key) => key?.startsWith('["listProjects"') && key.includes('"private"'))).toBe(true);
+      expect(keys.some((key) => key?.startsWith('["listProjects"') && key.includes('"team"'))).toBe(false);
+    } finally { query.mockRestore(); page.mockRestore(); }
   });
 
   it("labels the AI navigation as chat", () => {
@@ -723,7 +753,7 @@ it("routes administrator organization details independently of sharing membershi
 
 it("keeps Workspace creation available while showing every accessible Workspace", () => {
   vi.stubGlobal("navigator", { language: "en-US" });
-  const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", organizations: [{ id: "team", name: "Team", slug: "team", kind: "team" }], workspaces: [], reload: vi.fn() });
+  const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", organizations: [{ id: "team", name: "Team", slug: "team" }], workspaces: [], reload: vi.fn() });
   const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue({ data: undefined, loading: false, error: undefined, reload: vi.fn(), replace: vi.fn() });
   try {
     const html = renderToStaticMarkup(createElement(Workspaces));
@@ -737,7 +767,7 @@ it("labels each Workspace with its owning Organization", () => {
   const workspace = { workspaceId: "workspace", organizationId: "alpha", organizationName: "Alpha", name: "企画", role: "admin", revision: 1,
     createdAt: "2026-09-16T00:00:00Z" } as SyncedWorkspaceInfo;
   const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user",
-    organizations: [{ id: "alpha", name: "Alpha", slug: "alpha", kind: "team" }], workspaces: [workspace], reload: vi.fn() });
+    organizations: [{ id: "alpha", name: "Alpha", slug: "alpha" }], workspaces: [workspace], reload: vi.fn() });
   const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue({ data: undefined, loading: false, error: undefined, reload: vi.fn(), replace: vi.fn() });
   try {
     const html = renderToStaticMarkup(createElement(Workspaces));

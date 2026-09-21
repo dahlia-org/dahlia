@@ -212,6 +212,15 @@
             "type": "string",
             "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
+          "personalUserId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
           "name": {
             "type": "string"
           },
@@ -267,6 +276,7 @@
           "generationSettings",
           "workspaceId",
           "organizationId",
+          "personalUserId",
           "name",
           "revision",
           "createdAt",
@@ -1934,6 +1944,15 @@
             "type": "string",
             "pattern": "^org_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
+          "personalUserId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^user_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
           "name": {
             "type": "string"
           },
@@ -1989,6 +2008,7 @@
           "generationSettings",
           "workspaceId",
           "organizationId",
+          "personalUserId",
           "name",
           "revision",
           "createdAt",
@@ -2749,13 +2769,6 @@
           "slug": {
             "type": "string"
           },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "personal",
-              "team"
-            ]
-          },
           "role": {
             "type": "string"
           }
@@ -2763,8 +2776,7 @@
         "required": [
           "id",
           "name",
-          "slug",
-          "kind"
+          "slug"
         ]
       },
       "Capabilities": {

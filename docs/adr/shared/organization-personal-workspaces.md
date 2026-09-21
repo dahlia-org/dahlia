@@ -1,0 +1,25 @@
+# Org配下の本人用Workspace
+
+2026-09-21。ユーザー承認。Personal Organizationの扱いについて、organization-vaultsとsharing-and-administrationの従来判断を置き換える。
+
+## 決定
+
+Serverの全Workspaceは通常のOrganizationに所属する。Organizationのkindを廃止し、Workspaceにnullableなpersonal_user_idを持たせる。NULLは通常Workspace、user UUIDはその本人専用Workspaceを示す。organization_idとpersonal_user_idの一意制約で各Org・本人につき1件にする。所有はOrg、本人は専用領域の利用者である。
+
+組織参加と本人用Workspace・本人へのdirect admin権限の作成は同じDB transactionで確定する。招待承認、参加申請承認、ドメイン自動参加、管理者による追加、初期owner登録で共通処理を使う。再試行は既存IDを保持し、設定や内容を上書きしない。失敗時は参加もrollbackする。
+
+本人用の通常アクセスは本人かつ現在のOrgメンバーに限る。API、SQLite predicate、PostgreSQL RLSで強制する。Org管理者・Server管理者というだけでは内容にアクセスできない。通常Workspaceの外部direct共有は従来どおり。本人用の共有・通常削除・種別変更は禁止し、脱退時は内容とIDを保持してアクセスを失効、再参加で同じIDを利用する。既存のOrg governanceによる確認付き強制削除は維持する。削除したIDや内容の復活は保証しない。
+
+## サインアップとデプロイ
+
+DAHLIA_AUTO_CREATE_ORG_ON_SIGNUPは未指定または0で無効、1で有効。それ以外は設定エラー。無効時は管理者がOrgを作成し、未所属ユーザーは参加または招待を待つ。最初のServer管理者は組織管理画面から作成できる。
+
+有効時は新規登録初期化で通常Orgを1件作成し、本人をownerにして本人用Workspaceを作る。Org名は表示名に「のOrg」を付け、空ならMy Organization。slugは既存の正規化・衝突回避を使用する。既存のドメイン自動参加も行い、各参加先に本人用Workspaceを作る。登録完了とOrg作成を同じtransactionに含める。完了済みユーザーの再ログイン・設定変更ではOrgを作らず、未完了の再試行はその時点の設定を使う。
+
+自動作成は課金から独立した配置方針であり、新しいOrg種別ではない。将来のStripe契約・プラン・制限は既存Orgに紐づける。今回そのschema、制限、一般ユーザーの追加Org作成APIは導入しない。
+
+## UIと互換性
+
+Serverサイドバー上部でOrgを選び、本人用とアクセス可能な通常Workspaceを表示する。各Workspaceの内容は展開時に取得する。未所属Orgからの共有は別に表示する。検索はWorkspace単位、チャットの所有は変更しない。DesktopもWorkspace IDを使い、ローカルWorkspaceを暗黙にServerへ移さない。
+
+未リリースServerのPostgreSQL/SQLite initialを再生成する。旧DBからの自動移行や実データ削除は実施しない。新規DBで適用し、旧DBの保持が必要なら別途移行する。Desktopはv46でnullableなキャッシュ列を追加し、既存行を保持する。

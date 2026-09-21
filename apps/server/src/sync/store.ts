@@ -724,7 +724,7 @@ function createIdentityStore(
     }
     const workspaces: WorkspaceRelocations["workspaces"] = [];
     for (const id of new Set(destinations.values())) {
-      const [workspace] = await content.read(schema.syncedWorkspace, await db.select({ encryption: schema.syncedWorkspace.encryption, encryptedPayload: schema.syncedWorkspace.encryptedPayload, workspaceId: schema.syncedWorkspace.workspaceId, organizationId: schema.syncedWorkspace.organizationId, organizationName: schema.organization.name, name: schema.syncedWorkspace.name,
+      const [workspace] = await content.read(schema.syncedWorkspace, await db.select({ encryption: schema.syncedWorkspace.encryption, encryptedPayload: schema.syncedWorkspace.encryptedPayload, workspaceId: schema.syncedWorkspace.workspaceId, organizationId: schema.syncedWorkspace.organizationId, organizationName: schema.organization.name, personalUserId: schema.syncedWorkspace.personalUserId, name: schema.syncedWorkspace.name,
         generationSettings: schema.syncedWorkspace.generationSettings, icon: schema.syncedWorkspace.icon, color: schema.syncedWorkspace.color, meetingDeletionGraceDays: schema.syncedWorkspace.meetingDeletionGraceDays, revision: schema.syncedWorkspace.revision,
         createdAt: schema.syncedWorkspace.createdAt, updatedAt: schema.syncedWorkspace.updatedAt, role: workspaceRole(schema.syncedWorkspace.workspaceId),
       }).from(schema.syncedWorkspace).innerJoin(schema.organization, eq(schema.organization.id, schema.syncedWorkspace.organizationId))
@@ -1454,7 +1454,7 @@ function createIdentityStore(
   }
 
   async function governance(organizationId: string) {
-    const [member] = await db.select({ kind: schema.organization.kind }).from(schema.member)
+    const [member] = await db.select({ id: schema.organization.id }).from(schema.member)
       .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
       .where(and(eq(schema.member.organizationId, organizationId), eq(schema.member.userId, userPrincipalId), inArray(schema.member.role, ["owner", "admin"]))).limit(1);
     if (!member) throw new SyncTransactionError(403, "organization_admin_required");
@@ -1479,8 +1479,7 @@ function createIdentityStore(
 
   async function forceDeleteWorkspace(organizationId: string, transaction: SyncTransaction, revision: number, changeCursor: string) {
     await lockWorkspace(transaction.workspaceId);
-    const organization = await governance(organizationId);
-    if (organization.kind !== "team") throw new SyncTransactionError(403, "personal_workspace_immutable");
+    await governance(organizationId);
     const previous = await resolveTransaction(transaction);
     if (previous) return previous;
     const confirmation = await confirmWorkspaceDeletion(organizationId, transaction.workspaceId);
@@ -1565,7 +1564,7 @@ function createIdentityStore(
         if (operation.action === "create") {
           const [organization] = await db.select({ id: schema.organization.id }).from(schema.organization)
             .innerJoin(schema.member, and(eq(schema.member.organizationId, schema.organization.id), eq(schema.member.userId, userPrincipalId)))
-            .where(and(eq(schema.organization.id, String(data.organizationId)), or(eq(schema.organization.kind, "team"), exists(db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(and(adminWorkspace(transaction.workspaceId), eq(schema.syncedWorkspace.revision, 0), eq(schema.syncedWorkspace.organizationId, schema.organization.id))))))).limit(1);
+            .where(eq(schema.organization.id, String(data.organizationId))).limit(1);
           if (!organization) throw new SyncTransactionError(403, "organization_forbidden");
           const [existing] = await db.select({
             id: schema.syncedWorkspace.workspaceId,
@@ -1647,10 +1646,9 @@ function createIdentityStore(
             updatedAt: now,
           }, { workspaceId: transaction.workspaceId })).where(adminWorkspace(transaction.workspaceId));
         } else if (operation.action === "reset") {
-          const [organization] = await db.select({ kind: schema.organization.kind }).from(schema.organization)
-            .innerJoin(schema.syncedWorkspace, eq(schema.syncedWorkspace.organizationId, schema.organization.id))
+          const [workspace] = await db.select({ personalUserId: schema.syncedWorkspace.personalUserId }).from(schema.syncedWorkspace)
             .where(eq(schema.syncedWorkspace.workspaceId, transaction.workspaceId)).limit(1);
-          if (organization?.kind === "personal" && data.preservePermissions !== true) throw new SyncTransactionError(403, "personal_workspace_immutable");
+          if (workspace?.personalUserId != null && data.preservePermissions !== true) throw new SyncTransactionError(403, "personal_workspace_immutable");
           const [owned] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
             .where(adminWorkspace(transaction.workspaceId)).limit(1);
           if (!owned) {
@@ -2629,7 +2627,7 @@ function createIdentityStore(
     },
     async listOrganizations() {
       return db.select({
-        id: schema.organization.id, name: schema.organization.name, slug: schema.organization.slug, kind: schema.organization.kind,
+        id: schema.organization.id, name: schema.organization.name, slug: schema.organization.slug,
       }).from(schema.organization).where(exists(
         db.select({ value: sql`1` }).from(schema.member).where(and(
           eq(schema.member.organizationId, schema.organization.id),
@@ -2642,7 +2640,7 @@ function createIdentityStore(
       const rows = await content.read(schema.syncedWorkspace, await db.select({ encryption: schema.syncedWorkspace.encryption, encryptedPayload: schema.syncedWorkspace.encryptedPayload,
         workspaceId: schema.syncedWorkspace.workspaceId,
         organizationId: schema.syncedWorkspace.organizationId,
-        organizationName: schema.organization.name,
+        organizationName: schema.organization.name, personalUserId: schema.syncedWorkspace.personalUserId,
         name: schema.syncedWorkspace.name,
         generationSettings: schema.syncedWorkspace.generationSettings,
         icon: schema.syncedWorkspace.icon, color: schema.syncedWorkspace.color,
@@ -2662,7 +2660,7 @@ function createIdentityStore(
       const [row] = await content.read(schema.syncedWorkspace, await db.select({ encryption: schema.syncedWorkspace.encryption, encryptedPayload: schema.syncedWorkspace.encryptedPayload,
         workspaceId: schema.syncedWorkspace.workspaceId,
         organizationId: schema.syncedWorkspace.organizationId,
-        organizationName: schema.organization.name,
+        organizationName: schema.organization.name, personalUserId: schema.syncedWorkspace.personalUserId,
         name: schema.syncedWorkspace.name,
         generationSettings: schema.syncedWorkspace.generationSettings,
         hasResources: workspaceHasResources(schema.syncedWorkspace.workspaceId).mapWith(Boolean),
@@ -2925,7 +2923,7 @@ function createIdentityStore(
       const pattern = `%${query.toLowerCase().replace(/[\\%_]/g, "\\$&")}%`;
       const matches = (column: AnyColumn) => sql`lower(${column}) like ${pattern} escape '\\'`;
       const organizationsFound = await db.select({ principalId: schema.organization.id, name: schema.organization.name, detail: schema.organization.slug })
-        .from(schema.organization).where(and(and(inArray(schema.organization.id, organizations), eq(schema.organization.kind, "team")),
+        .from(schema.organization).where(and(inArray(schema.organization.id, organizations),
           or(matches(schema.organization.name), matches(schema.organization.slug)))).orderBy(asc(schema.organization.name), asc(schema.organization.id)).limit(51).offset(offset);
       const teamsFound = await db.select({ principalId: schema.team.id, name: schema.team.name, detail: schema.organization.name })
         .from(schema.team).innerJoin(schema.organization, eq(schema.organization.id, schema.team.organizationId))
@@ -2976,11 +2974,10 @@ function createIdentityStore(
       await lockWorkspace(workspaceId);
       const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
         .innerJoin(schema.organization, eq(schema.organization.id, schema.syncedWorkspace.organizationId))
-        .where(and(adminWorkspace(workspaceId), eq(schema.organization.kind, "team"), isNull(schema.syncedWorkspace.deletingAt))).limit(1);
+        .where(and(adminWorkspace(workspaceId), isNull(schema.syncedWorkspace.personalUserId), isNull(schema.syncedWorkspace.deletingAt))).limit(1);
       if (!workspace) return false;
       const target = principalType === "user" ? schema.user : principalType === "team" ? schema.team : schema.organization;
-      const [found] = await db.select({ id: target.id }).from(target).where(and(eq(target.id, principalId),
-        principalType === "organization" ? eq(schema.organization.kind, "team") : undefined)).limit(1);
+      const [found] = await db.select({ id: target.id }).from(target).where(eq(target.id, principalId)).limit(1);
       if (!found) return false;
       await db.insert(schema.syncedWorkspacePermission).values({ workspaceId, principalType, principalId, role, grantedByUserId: userPrincipalId })
         .onConflictDoUpdate({ target: [schema.syncedWorkspacePermission.workspaceId, schema.syncedWorkspacePermission.principalType, schema.syncedWorkspacePermission.principalId], set: { role } });
@@ -2991,7 +2988,7 @@ function createIdentityStore(
       await lockWorkspace(workspaceId);
       const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
         .innerJoin(schema.organization, eq(schema.organization.id, schema.syncedWorkspace.organizationId))
-        .where(and(adminWorkspace(workspaceId), eq(schema.organization.kind, "team"))).limit(1);
+        .where(and(adminWorkspace(workspaceId), isNull(schema.syncedWorkspace.personalUserId))).limit(1);
       if (!workspace) return false;
       const [deleted] = await db.delete(schema.syncedWorkspacePermission).where(and(
         eq(schema.syncedWorkspacePermission.workspaceId, workspaceId), eq(schema.syncedWorkspacePermission.principalType, principalType),

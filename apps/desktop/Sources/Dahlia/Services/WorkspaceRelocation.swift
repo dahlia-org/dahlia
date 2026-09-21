@@ -5,6 +5,7 @@ struct WorkspaceRelocation: Decodable, Sendable {
     struct Workspace: Decodable, Sendable {
         let workspaceId: UUID
         let organizationId: UUID
+        var personalUserId: UUID?
         let name: String
         let createdAt: Date
         let role: String
@@ -73,6 +74,7 @@ struct WorkspaceRelocation: Decodable, Sendable {
                     createdAt: workspace.createdAt,
                     lastOpenedAt: Date(),
                     accountConnectionId: connectionId,
+                    personalUserId: workspace.personalUserId,
                     organizationId: workspace.organizationId,
                     syncRole: workspace.role,
                     syncConfirmedConnectionId: connectionId

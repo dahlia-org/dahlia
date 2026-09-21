@@ -28,7 +28,7 @@ export const user = authSchema.table("user", {
   banned: boolean("banned").default(false),
   banReason: text("ban_reason"),
   banExpires: timestamp("ban_expires"),
-  registrationState: text("registration_state").default("personal").notNull(),
+  registrationState: text("registration_state").default("pending").notNull(),
 });
 
 export const session = authSchema.table(
@@ -309,7 +309,6 @@ export const organization = authSchema.table(
     logo: text("logo"),
     createdAt: timestamp("created_at").notNull(),
     metadata: text("metadata"),
-    kind: text("kind").default("team").notNull(),
   },
   (table) => [uniqueIndex("organization_slug_uidx").on(table.slug)],
 );

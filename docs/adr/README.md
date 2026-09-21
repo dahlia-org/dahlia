@@ -1,5 +1,7 @@
 # 設計判断
 
+- [Org配下の本人用Workspace](shared/organization-personal-workspaces.md): Personal Org廃止、登録時の通常Org自動作成、共有・退会境界。
+
 対象・テーマごとに、採択した設計、その理由、制約と変更の経緯をまとめる。採択は実装・rollout・検証の完了を意味しない。現在の構成と適合状況は [ARCHITECTURE.md](../../ARCHITECTURE.md)、Server の API・運用は [Server README](../../apps/server/README.md)、機能の採否は [PRODUCT.md](../../PRODUCT.md) を参照する。文書全体の入口は [Documentation](../README.md)。
 
 `Codex app-server` は Desktop の内蔵子プロセスであり、Dahlia Server とは別物。

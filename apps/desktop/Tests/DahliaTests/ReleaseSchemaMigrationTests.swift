@@ -8,6 +8,38 @@
 
     @MainActor
     struct ReleaseSchemaMigrationTests {
+        private func insertLegacyWorkspace(_ workspace: WorkspaceRecord, in db: Database) throws {
+            try db.execute(
+                sql: "INSERT INTO workspaces (id, name, createdAt, lastOpenedAt, generationSettings) VALUES (?, ?, ?, ?, ?)",
+                arguments: [
+                    workspace.id,
+                    workspace.name,
+                    workspace.createdAt,
+                    workspace.lastOpenedAt,
+                    String(decoding: JSONEncoder().encode(workspace.generationSettings), as: UTF8.self),
+                ]
+            )
+        }
+
+        @Test
+        func personalWorkspaceMigrationPreservesRows() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v45_workspaceLiveTranscriptDraft")
+            let id = UUID.v7()
+            try queue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO workspaces (id, name, createdAt, lastOpenedAt) VALUES (?, 'Preserved', ?, ?)",
+                    arguments: [id, Date.now, Date.now]
+                )
+            }
+            try AppDatabaseManager.migrator.migrate(queue)
+            try queue.read { db in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: id))
+                #expect(workspace.name == "Preserved")
+                #expect(workspace.personalUserId == nil)
+            }
+        }
+
         @Test
         func workspaceAndTranscriptSchemaMigrationRepairsEarlyLocalFirstSchema() throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
@@ -27,7 +59,7 @@
                 updatedAt: .now
             )
             try queue.write { db in
-                try existing.insert(db)
+                try insertLegacyWorkspace(existing, in: db)
                 try meeting.insert(db)
                 try db.execute(sql: "ALTER TABLE workspaces DROP COLUMN syncPullErrorJSON")
             }
@@ -39,13 +71,13 @@
                 #expect(try WorkspaceRecord.fetchOne(db, key: existing.id)?.name == existing.name)
                 #expect(try MeetingRecord.fetchOne(db, key: meeting.id)?.workspaceId == existing.id)
                 #expect(try AppDatabaseManager.hasExpectedSchema(db, upTo: "v44_workspaceAndTranscriptSchema"))
-                try WorkspaceRecord(
+                try insertLegacyWorkspace(WorkspaceRecord(
                     id: .v7(),
                     path: nil,
                     name: "New workspace",
                     createdAt: .now,
                     lastOpenedAt: .now
-                ).insert(db)
+                ), in: db)
             }
         }
 
@@ -84,7 +116,7 @@
                 lastOpenedAt: .now
             )
             try queue.write { db in
-                try workspace.insert(db)
+                try insertLegacyWorkspace(workspace, in: db)
                 try db.execute(sql: "ALTER TABLE workspaces DROP COLUMN syncPullErrorJSON")
                 try db.execute(sql: "ALTER TABLE workspaces ADD COLUMN unknownColumn TEXT")
                 try db.execute(
@@ -123,7 +155,7 @@
                 lastOpenedAt: .now
             )
             workspace.generationSettings.local.model = "preserved-model"
-            try queue.write { try workspace.insert($0) }
+            try queue.write { try insertLegacyWorkspace(workspace, in: $0) }
 
             try queue.write { try WorkspaceLiveTranscriptDraftMigration.migrate(in: $0, defaults: defaults) }
 
@@ -159,7 +191,7 @@
                 startTime: .now
             )
             try queue.write { db in
-                try workspace.insert(db)
+                try insertLegacyWorkspace(workspace, in: db)
                 try meeting.insert(db)
                 try segment.insert(db)
                 #expect(try Int.fetchOne(
@@ -348,6 +380,7 @@
                 "v43_accountConnectionSyncDiscoveryError",
                 "v44_workspaceAndTranscriptSchema",
                 "v45_workspaceLiveTranscriptDraft",
+                "v46_workspacePersonalUser",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)

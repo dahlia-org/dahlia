@@ -74,11 +74,22 @@ const governanceWorkspace = (workspaceId: AnyPgColumn) => sql`current_setting('a
 
 const meetingRetentionWorkspace = (workspaceId: AnyPgColumn) => sql`current_setting('app.maintenance', true) = 'meeting-retention' AND ${workspaceId} = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid`;
 
+// Keep the Workspace SELECT policy independent of the helpers that query Workspaces.
+const workspaceReadAccess = (table: { workspaceId: AnyPgColumn; organizationId: AnyPgColumn; personalUserId: AnyPgColumn }) => sql`
+  (${table.personalUserId} IS NULL OR (${table.personalUserId} = nullif(current_setting('app.user_id', true), '')::uuid
+    AND EXISTS (SELECT 1 FROM auth.member m WHERE m.organization_id = ${table.organizationId} AND m.user_id = ${table.personalUserId})))
+  AND EXISTS (SELECT 1 FROM app.workspace_permissions p WHERE p.workspace_id = ${table.workspaceId} AND p.role IN ('admin', 'editor', 'viewer') AND (
+    (p.principal_type = 'user' AND p.principal_id = nullif(current_setting('app.user_id', true), '')::uuid)
+    OR (p.principal_type = 'organization' AND EXISTS (SELECT 1 FROM auth.member m WHERE m.organization_id = p.principal_id AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid))
+    OR (p.principal_type = 'team' AND EXISTS (SELECT 1 FROM auth.team_member tm JOIN auth.team t ON t.id = tm.team_id JOIN auth.member m ON m.organization_id = t.organization_id AND m.user_id = tm.user_id
+      WHERE tm.team_id = p.principal_id AND tm.user_id = nullif(current_setting('app.user_id', true), '')::uuid))))`;
+
 export const syncedWorkspace = appSchema.table("workspaces", {
   encryption: text("encryption").$type<"none" | "server">().default("none").notNull(),
   encryptedPayload: text("encrypted_payload"),
   workspaceId: uuid("workspace_id").primaryKey(),
   organizationId: uuid("organization_id").notNull().references(() => authOrganization.id, { onDelete: "restrict" }),
+  personalUserId: uuid("personal_user_id").references(() => authUser.id, { onDelete: "restrict" }),
   createdBy: jsonb("created_by").$type<{ id: string; name: string; email: string }>().notNull(),
   generationSettings: jsonb("generation_settings").$type<WorkspaceGenerationSettings>().default(DEFAULT_WORKSPACE_GENERATION_SETTINGS).notNull(),
   name: text("name").notNull(),
@@ -90,15 +101,17 @@ export const syncedWorkspace = appSchema.table("workspaces", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
+  uniqueIndex("workspace_personal_user_idx").on(table.organizationId, table.personalUserId),
+
   check("workspace_meeting_deletion_grace_check", sql`${table.meetingDeletionGraceDays} BETWEEN 1 AND 90`),
   check("workspace_encryption_check", sql`${table.encryption} IN ('none', 'server')`),
   pgPolicy("workspace_select", {
     for: "select",
-    using: sql`(${meetingRetentionWorkspace(table.workspaceId)}) OR "app"."current_identity_can_read_workspace"(${table.workspaceId}) OR (current_setting('app.maintenance', true) = 'search' AND ${table.workspaceId} = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) = 'authorization' OR (current_setting('app.maintenance', true) = 'governance' AND ${table.organizationId} = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid) OR (${governanceWorkspace(table.workspaceId)})`,
+    using: sql`(${meetingRetentionWorkspace(table.workspaceId)}) OR (${workspaceReadAccess(table)}) OR (current_setting('app.maintenance', true) = 'search' AND ${table.workspaceId} = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) = 'authorization' OR (current_setting('app.maintenance', true) = 'governance' AND ${table.organizationId} = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid) OR (${governanceWorkspace(table.workspaceId)})`,
   }),
   pgPolicy("workspace_insert", {
     for: "insert",
-    withCheck: sql`coalesce(current_setting('app.user_id', true), '') <> ''`,
+    withCheck: sql`coalesce(current_setting('app.user_id', true), '') <> '' OR current_setting('app.maintenance', true) = 'authorization'`,
   }),
   pgPolicy("workspace_update", {
     for: "update",

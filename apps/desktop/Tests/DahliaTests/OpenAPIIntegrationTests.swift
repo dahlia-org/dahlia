@@ -68,9 +68,9 @@
             let workspaceID = "019f0d36-0520-7000-8000-000000000001"
             let fileID = "019f0d36-0520-7000-8000-000000000002"
             let transactionID = "019f0d36-0520-7000-8000-000000000003"
-            let publicWorkspaceID = TypeID.encode(try #require(UUID(uuidString: workspaceID)), as: .workspace)
-            let publicFileID = TypeID.encode(try #require(UUID(uuidString: fileID)), as: .file)
-            let publicTransactionID = TypeID.encode(try #require(UUID(uuidString: transactionID)), as: .transaction)
+            let publicWorkspaceID = try TypeID.encode(#require(UUID(uuidString: workspaceID)), as: .workspace)
+            let publicFileID = try TypeID.encode(#require(UUID(uuidString: fileID)), as: .file)
+            let publicTransactionID = try TypeID.encode(#require(UUID(uuidString: transactionID)), as: .transaction)
             let publicData = Data("""
             {"items":[{"sequence":23,"workspaceId":"\(publicWorkspaceID)","entity":"file","entityId":"\(publicFileID)",
             "action":"upsert","revision":1,"transactionId":"\(publicTransactionID)","record":{"id":"\(publicFileID)",
@@ -224,7 +224,7 @@
             let organizations = try await api.perform(origin: origin, connectionId: connectionID) {
                 try await $0.listOrganizations().ok.body.json
             }
-            let organizationID = try #require(organizations.items.first(where: { $0.kind == .team })?.id)
+            let organizationID = try #require(organizations.items.first?.id)
             let data = Data("""
             {"schemaVersion":3,"id":"\(UUID.v7().uuidString
                 .lowercased())","workspaceId":"\(workspaceID)","createdAt":"2026-09-09T00:00:00.001Z","operations":[

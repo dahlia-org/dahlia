@@ -12,7 +12,7 @@ import type { SessionInfo } from "./App";
 import type { OrganizationInfo, SyncedMeetingInfo, SyncedProjectInfo, SyncedWorkspaceInfo } from "./api";
 import { json, uiText } from "./api";
 import { ArrowRight, Blocks, Building2, Check, ChevronRight, FileText, Folder, Home, Link, LogOut, Menu, MessageCircle, Pencil, Plus, Search as SearchIcon, Settings2, Sparkles, Trash2, User, Users, type LucideIcon } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 
 
 export function projectAncestors(projects: SyncedProjectInfo[], projectId?: string): Set<string> {
@@ -28,6 +28,12 @@ export function projectAncestors(projects: SyncedProjectInfo[], projectId?: stri
 export function selectedSidebarWorkspace(workspaces: SyncedWorkspaceInfo[] | undefined, routeWorkspaceId?: string, savedWorkspaceId?: string): SyncedWorkspaceInfo | undefined {
   const selected = workspaces?.find(({ workspaceId }) => workspaceId === (routeWorkspaceId ?? savedWorkspaceId));
   return selected ?? (routeWorkspaceId ? undefined : workspaces?.[0]);
+}
+
+function preferredOrganizationWorkspace(workspaces: SyncedWorkspaceInfo[], savedWorkspaceId: string, userId: string): SyncedWorkspaceInfo | undefined {
+  return workspaces.find((workspace) => workspace.workspaceId === savedWorkspaceId)
+    ?? workspaces.find((workspace) => workspace.personalUserId === userId)
+    ?? workspaces[0];
 }
 
 function readSelection(key: string, fallback = ""): string {
@@ -116,51 +122,69 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
   const routeWorkspaceId = resolvedWorkspaceId ?? (typeof window === "undefined" ? undefined : window.location.pathname.match(/^\/workspaces\/([^/]+)/)?.[1]);
   const selectionKey = `dahlia:sidebar:${session.user.id}:workspace`;
   const routedWorkspace = useLiveJSON<SyncedWorkspaceInfo>(resolvedWorkspaceId ? apiQuery("getWorkspace", { params: { path: { workspaceId: resolvedWorkspaceId } } }) : undefined);
-  const selectedWorkspace = selectedSidebarWorkspace(state.workspaces, routeWorkspaceId, readSelection(selectionKey)) ?? routedWorkspace.data;
+  const selectionOrgKey = `dahlia:sidebar:${session.user.id}:organization`;
+  const routeWorkspace = state.workspaces?.find((workspace) => workspace.workspaceId === routeWorkspaceId) ?? routedWorkspace.data;
+  const routeOrganizationId = typeof window === "undefined" ? undefined : window.location.pathname.match(/^\/orgs\/([^/]+)/)?.[1];
+  const savedOrganizationId = readSelection(selectionOrgKey);
+  const selectedOrganizationId = routeWorkspace?.organizationId ?? routeOrganizationId
+    ?? state.organizations?.find(({ id }) => id === savedOrganizationId)?.id ?? state.organizations?.[0]?.id;
+  const selectedOrganization = state.organizations?.find(({ id }) => id === selectedOrganizationId);
+  const organizationWorkspaces = selectedOrganization
+    ? (state.workspaces ?? []).filter((workspace) => workspace.organizationId === selectedOrganizationId)
+    : [];
+  const savedWorkspaceId = readSelection(`${selectionKey}:${selectedOrganizationId}`);
+  const selectedWorkspace = routeWorkspace ?? (routeWorkspaceId ? undefined :
+    preferredOrganizationWorkspace(organizationWorkspaces, savedWorkspaceId, state.userId));
   const selectedWorkspaceId = selectedWorkspace?.workspaceId;
-  const selectableWorkspaces = selectedWorkspace && !state.workspaces?.some((workspace) => workspace.workspaceId === selectedWorkspaceId)
-    ? [selectedWorkspace, ...(state.workspaces ?? [])] : state.workspaces ?? [];
+  const externalWorkspaces = (state.workspaces ?? []).filter((workspace) => !state.organizations?.some(({ id }) => id === workspace.organizationId));
+  function organizationHref(organizationId: string) {
+    const workspaces = (state.workspaces ?? []).filter((workspace) => workspace.organizationId === organizationId);
+    const savedId = readSelection(`${selectionKey}:${organizationId}`);
+    const workspace = preferredOrganizationWorkspace(workspaces, savedId, state.userId);
+    return workspace ? `/workspaces/${workspace.workspaceId}` : `/orgs/${organizationId}`;
+  }
   const currentPath = typeof window === "undefined" ? "" : window.location.pathname;
   const homeActive = currentPath === "/dashboard";
   const aiActive = isChatPath(currentPath);
   const workspacesActive = currentPath === "/workspaces";
   useEffect(() => {
-    if (selectedWorkspaceId) save(selectionKey, selectedWorkspaceId);
-  }, [selectionKey, selectedWorkspaceId]);
+    if (selectedOrganizationId) save(selectionOrgKey, selectedOrganizationId);
+    if (selectedWorkspaceId && selectedOrganizationId) save(`${selectionKey}:${selectedOrganizationId}`, selectedWorkspaceId);
+  }, [selectionKey, selectionOrgKey, selectedOrganizationId, selectedWorkspaceId]);
   return <aside className="sidebar flex h-dvh min-w-0 flex-col gap-2 border-r bg-secondary p-3">
     <div className="sidebar-brand flex h-9 items-center px-2">{brand}</div>
+    {session.capabilities.sharing && <DropdownMenu>
+      <DropdownMenuTrigger asChild><button className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm font-medium hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring" aria-label={uiText("Switch organization", "組織を切り替え")}>
+        <MenuIcon name="organization" /><span className="min-w-0 flex-1 truncate text-left">{selectedOrganization?.name ?? routeWorkspace?.organizationName ?? uiText("Choose an organization", "組織を選択")}</span><Chevron expanded={false} />
+      </button></DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-58">
+        {state.organizations?.map((organization) => <DropdownMenuItem asChild key={organization.id}><a href={organizationHref(organization.id)}>
+          <MenuIcon name="organization" /><span className="min-w-0 flex-1 truncate">{organization.name}</span>{organization.id === selectedOrganizationId && <MenuIcon name="check" />}
+        </a></DropdownMenuItem>)}
+        <DropdownMenuSeparator /><DropdownMenuItem asChild><a href="/orgs">{uiText("Join or manage organizations", "組織への参加・管理")}</a></DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>}
     <nav className="primary-navigation flex items-center gap-1 px-1" aria-label={uiText("Library navigation", "ライブラリ")}>
       <Tooltip label={uiText("Home", "ホーム")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${homeActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/dashboard" aria-label={uiText("Home", "ホーム")} aria-current={homeActive ? "page" : undefined}><MenuIcon name="home" /><span className={homeActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Home", "ホーム")}</span></a></Tooltip>
       {session.capabilities.ai && <Tooltip label={uiText("Chat with Dahlia AI", "Dahlia AI とチャット")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${aiActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/chat" aria-label={uiText("Chat with Dahlia AI", "Dahlia AI とチャット")} aria-current={aiActive ? "page" : undefined}><MenuIcon name="chat" /><span className={aiActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Chat", "チャット")}</span></a></Tooltip>}
       {session.capabilities.sync && <Tooltip label={uiText("Workspaces", "ワークスペース")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${workspacesActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/workspaces" aria-label={uiText("Workspaces", "ワークスペース")} aria-current={workspacesActive ? "page" : undefined}><MenuIcon name="workspace" /><span className={workspacesActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Workspaces", "ワークスペース")}</span></a></Tooltip>}
       {!aiActive && session.capabilities.sync && selectedWorkspaceId && <Search key={`${selectionKey}:${selectedWorkspaceId}`} workspaceId={selectedWorkspaceId} />}
     </nav>
-    {!aiActive && session.capabilities.sync && selectedWorkspace && <div className="workspace-switcher grid gap-1.5 px-1">
-      <span className="px-1 text-[11px] font-medium text-muted-foreground">{uiText("Current Workspace", "現在のワークスペース")}</span>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild><button className="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-2.5 text-sm font-medium shadow-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring" aria-label={uiText(`Current Workspace: ${selectedWorkspace.name}`, `現在のワークスペース: ${selectedWorkspace.name}`)}>
-          <AppearanceIcon appearance={collectionAppearance(selectedWorkspace, "workspace")} /><span className="min-w-0 flex-1 truncate text-left">{selectedWorkspace.name}</span><Chevron expanded={false} />
-        </button></DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-58">
-          <DropdownMenuLabel>{uiText("Workspaces", "ワークスペース")}</DropdownMenuLabel>
-          {selectableWorkspaces.map((workspace) => <DropdownMenuItem asChild key={workspace.workspaceId}>
-            <a href={`/workspaces/${workspace.workspaceId}`} aria-current={selectedWorkspaceId === workspace.workspaceId ? "true" : undefined}>
-              <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><span className="min-w-0 flex-1 truncate">{workspace.name}</span>{selectedWorkspaceId === workspace.workspaceId && <MenuIcon name="check" />}
-            </a>
-          </DropdownMenuItem>)}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>}
     <div className="sidebar-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
-      {aiActive ? <div className="flex min-h-0 flex-1 flex-col pt-2" ref={state.setChatHistoryTarget} />
-        : session.capabilities.sync && <nav className="workspace-navigation mt-2" aria-label={uiText("Project navigation", "プロジェクト")}>
-        <h2 className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{uiText("Projects", "プロジェクト")}</h2>
+      {aiActive && <div className="flex min-h-0 flex-1 flex-col pt-2" ref={state.setChatHistoryTarget} />}
+      {session.capabilities.sync && <nav className="workspace-navigation mt-2" aria-label={uiText("Project navigation", "プロジェクト")}>
         {state.error && <Failure message={state.error} retry={state.reload} />}
-        {!state.workspaces && !state.error && <p className="px-2 py-1 text-xs text-muted-foreground">Loading Workspaces…</p>}
-        {state.workspaces?.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">{uiText("No Workspaces", "ワークスペースがありません")}</p>}
-        {selectedWorkspace && <HoverPreviewProvider><WorkspaceChildren key={selectedWorkspace.workspaceId} workspaceId={selectedWorkspace.workspaceId}
-          resolvedMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned} /></HoverPreviewProvider>}
-        {Boolean(state.workspaces?.length) && !selectedWorkspace && <p className="px-2 py-1 text-xs text-muted-foreground">{uiText("Choose a Workspace from Workspaces", "ワークスペースから表示するワークスペースを選択してください")}</p>}
+        {!state.workspaces && !state.error && <p className="px-2 py-1 text-xs text-muted-foreground">{uiText("Loading Workspaces…", "読み込み中…")}</p>}
+        {state.organizations?.length === 0 && <p className="px-2 py-2 text-xs text-muted-foreground">{uiText("Join an organization or wait for an invitation.", "組織に参加するか、招待をお待ちください。")} <a className="text-primary underline" href={session.capabilities.admin ? "/admin/orgs" : "/orgs"}>{uiText("Organizations", "組織")}</a></p>}
+        <HoverPreviewProvider>
+          {organizationWorkspaces.filter((workspace) => workspace.personalUserId === state.userId).map((workspace) => <SidebarWorkspace key={workspace.workspaceId} workspace={workspace} personal selected={workspace.workspaceId === selectedWorkspaceId} routeMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned} />)}
+          <h2 className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{uiText("Workspaces", "ワークスペース")}</h2>
+          {organizationWorkspaces.filter((workspace) => workspace.personalUserId == null).map((workspace) => <SidebarWorkspace key={workspace.workspaceId} workspace={workspace} selected={workspace.workspaceId === selectedWorkspaceId} routeMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned} />)}
+          {externalWorkspaces.length > 0 && <>
+            <h2 className="px-2 pt-4 pb-1 text-[11px] font-semibold text-muted-foreground">{uiText("Shared from other organizations", "他の組織からの共有")}</h2>
+            {externalWorkspaces.map((workspace) => <SidebarWorkspace key={workspace.workspaceId} workspace={workspace} selected={workspace.workspaceId === selectedWorkspaceId} routeMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned} />)}
+          </>}
+        </HoverPreviewProvider>
       </nav>}
       {session.capabilities.admin ? <nav className="server-navigation mt-auto grid gap-0.5 pt-6" aria-label={uiText("Server settings", "サーバー設定")}>
         <h2 className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{uiText("Server settings", "サーバー設定")}</h2>
@@ -208,7 +232,7 @@ function TreeNode({ id, name, href, initialOpen, children, appearance, project }
   const { userId } = useSidebar();
   const key = `dahlia:sidebar:${userId}:${id}`;
   const [open, setOpen] = useState(() => initialOpen || readSelection(key) === "true");
-  const route = window.location.pathname;
+  const route = typeof window === "undefined" ? "" : window.location.pathname;
   const active = route === href;
   useEffect(() => {
     if (initialOpen) setOpen(true);
@@ -234,13 +258,14 @@ function TreeNode({ id, name, href, initialOpen, children, appearance, project }
 }
 
 function WorkspaceChildren({ workspaceId, resolvedMeeting, routeMeetingOwned }: { workspaceId: string; resolvedMeeting?: SyncedMeetingInfo; routeMeetingOwned?: boolean }) {
-  const route = window.location.pathname;
+  const route = typeof window === "undefined" ? "" : window.location.pathname;
   const meetingId = route.match(/^\/meetings\/([^/]+)$/)?.[1];
   const projectId = route.match(/^\/projects\/([^/]+)$/)?.[1];
   const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { workspaceId: workspaceId } } }));
   const meetingQuery = useLiveJSON<SyncedMeetingInfo>(meetingId && !routeMeetingOwned && !resolvedMeeting ? apiQuery("getMeeting", { params: { path: { meetingId: meetingId } } }) : undefined);
   const projects = projectsQuery.data?.items;
-  const selectedMeeting = resolvedMeeting ?? meetingQuery.data;
+  const candidateMeeting = resolvedMeeting ?? meetingQuery.data;
+  const selectedMeeting = candidateMeeting?.workspaceId === workspaceId ? candidateMeeting : undefined;
   if (!projects) return projectsQuery.error
     ? <Failure message={projectsQuery.error.message} retry={projectsQuery.reload} />
     : <p className="px-2 py-1 text-xs text-muted-foreground">{uiText("Loading Projects…", "プロジェクトを読み込み中…")}</p>;
@@ -267,8 +292,8 @@ function WorkspaceChildren({ workspaceId, resolvedMeeting, routeMeetingOwned }: 
     <ul className="grid list-none gap-0.5 p-0">
       {projectsUnder()}
     </ul>
-    <section className="mt-3" aria-labelledby="unassigned-heading">
-      <h2 id="unassigned-heading" className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{uiText("Unassigned", "未分類")}</h2>
+    <section className="mt-3" aria-labelledby={`unassigned-heading-${workspaceId}`}>
+      <h2 id={`unassigned-heading-${workspaceId}`} className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{uiText("Unassigned", "未分類")}</h2>
       <ul className="grid list-none gap-0.5 p-0"><Meetings workspaceId={workspaceId} selectedMeeting={selectedMeeting} /></ul>
     </section>
   </>;
@@ -303,4 +328,19 @@ function Meetings({ workspaceId, projectId, projectName, appearance, selectedMee
     {query.data && !error && visibleMeetings.length === 0 && <li className="px-2 py-1 text-xs text-muted-foreground">{uiText("No meetings", "ミーティングがありません")}</li>}
     {nextCursor && <li><button className="px-2 py-1 text-xs text-primary hover:underline" disabled={query.loadingMore} onClick={query.loadMore}>{uiText("Show more", "さらに表示")}</button></li>}
   </>;
+}
+
+function SidebarWorkspace({ workspace, personal = false, selected, routeMeeting, routeMeetingOwned }: { workspace: SyncedWorkspaceInfo; personal?: boolean; selected: boolean; routeMeeting?: SyncedMeetingInfo; routeMeetingOwned?: boolean }) {
+  const [expanded, setExpanded] = useState(selected);
+  useEffect(() => { if (selected) setExpanded(true); }, [selected]);
+  const label = personal ? uiText("Private", "自分専用") : workspace.name;
+  return <div>
+    <div className="flex items-center rounded-md hover:bg-accent">
+      <button className="rounded p-1 focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} aria-label={uiText(`Expand ${label}`, `${label}を展開`)}><Chevron expanded={expanded} /></button>
+      <a className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1.5 text-sm aria-[current=page]:bg-accent" href={`/workspaces/${workspace.workspaceId}`} aria-current={selected ? "page" : undefined}>
+        <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><span className="truncate">{label}</span>{personal && <span aria-label={uiText("Only you", "本人のみ")}>🔒</span>}
+      </a>
+    </div>
+    {expanded && <div className="pl-3"><WorkspaceChildren workspaceId={workspace.workspaceId} resolvedMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned} /></div>}
+  </div>;
 }

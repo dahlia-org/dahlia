@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "abd40555-f895-493e-a33f-d6576f5e3f8e",
+  "id": "d7ca718c-633f-4dd3-9e02-4f7385aeabdf",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -2885,6 +2885,19 @@
       "table": "workspaces"
     },
     {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "personal_user_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "workspaces"
+    },
+    {
       "type": "jsonb",
       "typeSchema": null,
       "notNull": true,
@@ -4223,6 +4236,34 @@
       "nameExplicit": true,
       "columns": [
         {
+          "value": "organization_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "personal_user_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "workspace_personal_user_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "workspaces"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
           "value": "principal_type",
           "isExpression": false,
           "asc": true,
@@ -4737,6 +4778,23 @@
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
       "name": "workspaces_organization_id_organization_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "workspaces"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "personal_user_id"
+      ],
+      "schemaTo": "auth",
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "RESTRICT",
+      "name": "workspaces_personal_user_id_user_id_fkey",
       "entityType": "fks",
       "schema": "app",
       "table": "workspaces"
@@ -5761,7 +5819,7 @@
       "roles": [
         "public"
       ],
-      "using": "(current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"workspaces\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR \"app\".\"current_identity_can_read_workspace\"(\"app\".\"workspaces\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"app\".\"workspaces\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) = 'authorization' OR (current_setting('app.maintenance', true) = 'governance' AND \"app\".\"workspaces\".\"organization_id\" = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"workspaces\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
+      "using": "(current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"workspaces\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR (\n  (\"app\".\"workspaces\".\"personal_user_id\" IS NULL OR (\"app\".\"workspaces\".\"personal_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid\n    AND EXISTS (SELECT 1 FROM auth.member m WHERE m.organization_id = \"app\".\"workspaces\".\"organization_id\" AND m.user_id = \"app\".\"workspaces\".\"personal_user_id\")))\n  AND EXISTS (SELECT 1 FROM app.workspace_permissions p WHERE p.workspace_id = \"app\".\"workspaces\".\"workspace_id\" AND p.role IN ('admin', 'editor', 'viewer') AND (\n    (p.principal_type = 'user' AND p.principal_id = nullif(current_setting('app.user_id', true), '')::uuid)\n    OR (p.principal_type = 'organization' AND EXISTS (SELECT 1 FROM auth.member m WHERE m.organization_id = p.principal_id AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid))\n    OR (p.principal_type = 'team' AND EXISTS (SELECT 1 FROM auth.team_member tm JOIN auth.team t ON t.id = tm.team_id JOIN auth.member m ON m.organization_id = t.organization_id AND m.user_id = tm.user_id\n      WHERE tm.team_id = p.principal_id AND tm.user_id = nullif(current_setting('app.user_id', true), '')::uuid))))) OR (current_setting('app.maintenance', true) = 'search' AND \"app\".\"workspaces\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) = 'authorization' OR (current_setting('app.maintenance', true) = 'governance' AND \"app\".\"workspaces\".\"organization_id\" = nullif(current_setting('app.maintenance_organization_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"workspaces\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
       "withCheck": null,
       "name": "workspace_select",
       "entityType": "policies",
@@ -5775,7 +5833,7 @@
         "public"
       ],
       "using": null,
-      "withCheck": "coalesce(current_setting('app.user_id', true), '') <> ''",
+      "withCheck": "coalesce(current_setting('app.user_id', true), '') <> '' OR current_setting('app.maintenance', true) = 'authorization'",
       "name": "workspace_insert",
       "entityType": "policies",
       "schema": "app",

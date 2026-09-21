@@ -251,7 +251,7 @@ describe("PostgreSQL migrations", () => {
     expect(sql).not.toContain('CREATE UNIQUE INDEX "workspace_permission_single_owner_idx"');
     expect(sql).toContain('CREATE UNIQUE INDEX "member_user_organization_idx" ON "auth"."member" ("user_id","organization_id")');
     expect(sql).toContain('CREATE UNIQUE INDEX "team_member_user_team_idx" ON "auth"."team_member" ("user_id","team_id")');
-    expect(sql).toContain('"app"."current_identity_can_read_workspace"("app"."workspaces"."workspace_id")');
+    expect(sql).toContain('"workspaces"."personal_user_id" IS NULL');
     expect(sql).not.toContain('ALTER TABLE "app"."workspace_permissions" ENABLE ROW LEVEL SECURITY');
     expect(sql).toContain('ALTER TABLE "search"."documents" FORCE ROW LEVEL SECURITY');
     for (const policy of [

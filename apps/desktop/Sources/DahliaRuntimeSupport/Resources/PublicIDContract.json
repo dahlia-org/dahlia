@@ -19,7 +19,8 @@
       "rootProjectId": "id:project",
       "typeOwnerProjectId": "id:project",
       "id": "id:workspace",
-      "organizationId": "id:organization"
+      "organizationId": "id:organization",
+      "personalUserId": "id:user"
     },
     "project": {
       "workspaceId": "id:workspace",

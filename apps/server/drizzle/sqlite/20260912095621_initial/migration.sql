@@ -189,8 +189,7 @@ CREATE TABLE `organization` (
 	`slug` text NOT NULL,
 	`logo` text,
 	`created_at` integer NOT NULL,
-	`metadata` text,
-	`kind` text DEFAULT 'team' NOT NULL
+	`metadata` text
 );
 --> statement-breakpoint
 CREATE TABLE `session` (
@@ -240,7 +239,7 @@ CREATE TABLE `user` (
 	`banned` integer DEFAULT false,
 	`ban_reason` text,
 	`ban_expires` integer,
-	`registration_state` text DEFAULT 'personal' NOT NULL
+	`registration_state` text DEFAULT 'pending' NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `verification` (
@@ -571,6 +570,7 @@ CREATE TABLE `workspaces` (
 	`encrypted_payload` text,
 	`workspace_id` text PRIMARY KEY,
 	`organization_id` text NOT NULL,
+	`personal_user_id` text,
 	`created_by` text NOT NULL,
 	`generation_settings` text DEFAULT '{"outputLanguage":"ja","processing":{"location":"local","remote":{"workflow":"combined"}},"summary":{"style":"detailed"},"local":{"model":"gpt-5.6-luna","reasoningEffort":"high"},"automaticProcessing":true}' NOT NULL,
 	`name` text NOT NULL,
@@ -582,6 +582,7 @@ CREATE TABLE `workspaces` (
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	CONSTRAINT `fk_workspaces_organization_id_organization_id_fk` FOREIGN KEY (`organization_id`) REFERENCES `organization`(`id`) ON DELETE RESTRICT,
+	CONSTRAINT `fk_workspaces_personal_user_id_user_id_fk` FOREIGN KEY (`personal_user_id`) REFERENCES `user`(`id`) ON DELETE RESTRICT,
 	CONSTRAINT "workspace_meeting_deletion_grace_check" CHECK("meeting_deletion_grace_days" BETWEEN 1 AND 90)
 );
 --> statement-breakpoint
@@ -697,6 +698,7 @@ CREATE INDEX `project_workspace_parent_name_idx` ON `projects` (`workspace_id`,`
 CREATE INDEX `recordings_meeting_session_idx` ON `recordings` (`meeting_id`,`session_id`);--> statement-breakpoint
 CREATE INDEX `transcript_segment_created_idx` ON `transcript_segments` (`transcript_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `transcript_segment_start_id_idx` ON `transcript_segments` (`transcript_id`,`started_at`,`segment_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `workspace_personal_user_idx` ON `workspaces` (`organization_id`,`personal_user_id`);--> statement-breakpoint
 CREATE INDEX `workspace_permission_principal_workspace_idx` ON `workspace_permissions` (`principal_type`,`principal_id`,`role`,`workspace_id`);--> statement-breakpoint
 CREATE INDEX `workspace_transfer_owner_sequence_idx` ON `workspace_transfers` (`owner_user_id`,`sequence`);--> statement-breakpoint
 CREATE VIEW `recording_sessions` AS
