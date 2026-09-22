@@ -13,6 +13,10 @@ export interface MemoryProgress {
   documentId?: string;
   nextAfter?: string;
   modelIds?: string[];
+  modelId?: string;
+  operationAttempts?: number;
+  skippedCount?: number;
+  skippedSources?: Array<{ source: string; code: string }>;
 }
 export interface MemorySource {
   kind: "meeting" | "shared";

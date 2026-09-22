@@ -84,7 +84,8 @@ const aiThread = z.object({ id: aiThreadId, title: z.string(), workspaceId: aiTh
   createdAt: S.date, updatedAt: S.date }).openapi("AiThread");
 const aiHistoryMessage = z.object({ id: z.string(), role: z.enum(["user", "assistant"]), content: z.string(), createdAt: S.date }).openapi("AiHistoryMessage");
 const aiThreadPage = z.string().regex(/^(0|[1-9][0-9]{0,5})$/).optional();
-const memoryStatus = z.object({ enabled: z.boolean(), status: z.string(), errorCode: z.string().nullable(), attempts: z.number() });
+const memoryStatus = z.object({ enabled: z.boolean(), status: z.string(), errorCode: z.string().nullable(), attempts: z.number(),
+  skippedCount: z.number(), skippedSources: z.array(z.object({ source: z.string(), code: z.string() })) });
 const memoryNote = z.object({ id: z.string().uuid(), content: z.string(), revision: z.number(), updatedAt: S.date });
 
 export type OperationId =

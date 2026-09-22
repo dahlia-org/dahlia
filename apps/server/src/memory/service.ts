@@ -20,9 +20,10 @@ export class WorkspaceMemoryService {
     const state = await this.store.status(identity.userId, workspaceId);
     let status = "paused";
     if (state?.purge) status = "deleting";
-    else if (state?.enabled) status = state.indexedGeneration === state.generation ? "ready" : state.status;
+    else if (state?.enabled) status = state.indexedGeneration === state.generation ? (state.progress?.skippedCount ? "partial" : "ready") : state.status;
     return { enabled: state?.enabled ?? false, status,
-      errorCode: state?.errorCode ?? null, attempts: state?.attempts ?? 0 };
+      errorCode: state?.errorCode ?? null, attempts: state?.attempts ?? 0,
+      skippedCount: state?.progress?.skippedCount ?? 0, skippedSources: state?.progress?.skippedSources ?? [] };
   }
   configure(identity: Identity, workspaceId: string, enabled: boolean) {
     return this.store.configure(identity.userId, workspaceId, this.client.bank(workspaceId), enabled);
@@ -78,8 +79,8 @@ export class WorkspaceMemoryService {
       workspace_id: encodeId("workspace", workspaceId),
       // Only canonical Dahlia content is evidence. Memory extraction is never returned as a fact.
       canonicalExcerpt: document.content.slice(0, 16_000), truncated: document.content.length > 16_000,
-    })), hypothesis: hypothesis ?? null,
-    instruction: "Cite these Dahlia sources. A transcript proves that a statement was recorded, not that it is objectively true. The hypothesis is an unverified interpretation: check claims against the canonical excerpts and meeting tools. Do not infer counts or trends from retrieval hits." };
+    })), hypothesis: hypothesis ?? null, skippedCount: current.progress?.skippedCount ?? 0,
+    instruction: "Cite these Dahlia sources. A transcript proves that a statement was recorded, not that it is objectively true. The hypothesis is an unverified interpretation: check claims against the canonical excerpts and meeting tools. If skippedCount is nonzero, disclose incomplete memory coverage and use canonical tools for the omitted sources. Do not infer counts or trends from retrieval hits." };
   }
 
   async step(workspaceId: string, signal: AbortSignal) {
@@ -110,8 +111,15 @@ export class WorkspaceMemoryService {
         const status = await this.client.operation(job.bankId, progress.operationId, signal);
         if (status === "pending" || status === "processing") { await this.store.release(job); return; }
         if ((status === "failed" || status === "cancelled") && progress.generation === job.generation) {
-          await this.client.retryOperation(job.bankId, progress.operationId, signal);
-          throw new HindsightError("memory_operation_retrying");
+          if ((progress.operationAttempts ?? 0) < 3) {
+            progress = { ...progress, operationAttempts: (progress.operationAttempts ?? 0) + 1 };
+            await this.store.setProgress(job, progress);
+            await this.client.retryOperation(job.bankId, progress.operationId!, signal);
+            await this.store.release(job, { progress, status: "indexing" });
+            return;
+          }
+          if (progress.modelId) await this.client.deleteModel(job.bankId, progress.modelId, signal);
+          this.skip(progress, progress.documentId ?? progress.modelId ?? progress.operationId, "memory_operation_failed");
         }
         if (status === "not_found" && !progress.documentId) {
           // An expired/lost model operation is not proof that its refresh completed.
@@ -126,7 +134,7 @@ export class WorkspaceMemoryService {
           progress = null;
         } else {
           if (status === "completed" && progress.documentId) await this.store.confirmDocument(workspaceId, progress.documentId, progress.generation);
-          progress = { ...progress, operationId: undefined, documentId: undefined, after: progress.nextAfter ?? progress.after, nextAfter: undefined };
+          progress = { ...progress, operationId: undefined, documentId: undefined, modelId: undefined, operationAttempts: undefined, after: progress.nextAfter ?? progress.after, nextAfter: undefined };
         }
       }
       if (!progress || progress.generation !== job.generation) {
@@ -137,7 +145,7 @@ export class WorkspaceMemoryService {
         // ponytail: rebuild derived models on reconciliation; selectively invalidate if this becomes costly.
         const [model] = await this.client.models(job.bankId, signal);
         if (model) await this.client.deleteModel(job.bankId, model.id, signal);
-        else progress = { generation: job.generation, phase: "meetings" };
+        else progress = { ...progress, phase: "meetings", after: undefined };
       } else if (progress.phase === "meetings") {
         const [createdAt, meetingId] = progress.after?.split(",") ?? [];
         const cursor = progress.after ? { createdAt: new Date(createdAt!), meetingId: meetingId! } : undefined;
@@ -145,16 +153,21 @@ export class WorkspaceMemoryService {
           cursor));
         if (meeting) {
           const after = `${meeting.createdAt.toISOString()},${meeting.meetingId}`;
-          const document = await meetingDocument(this.sync, identity, workspaceId, meeting.meetingId, signal);
-          if (document && await this.submit(job, progress, document, after, signal)) return;
+          try {
+            const document = await meetingDocument(this.sync, identity, workspaceId, meeting.meetingId, signal);
+            if (document && await this.submit(job, progress, document, after, signal)) return;
+          } catch (error) {
+            if (!(error instanceof HindsightError) || error.code !== "memory_source_too_large") throw error;
+            this.skip(progress, `meeting-${meeting.meetingId}`, error.code);
+          }
           progress.after = after;
-        } else { progress = { generation: job.generation, phase: "notes" }; }
+        } else { progress = { ...progress, phase: "notes", after: undefined }; }
       } else if (progress.phase === "notes") {
         const [note] = await this.store.listNotes(identity.userId, workspaceId, progress.after);
         if (note) {
           if (await this.submit(job, progress, noteDocument(note), note.id, signal)) return;
           progress.after = note.id;
-        } else { progress = { generation: job.generation, phase: "cleanup" }; }
+        } else { progress = { ...progress, phase: "cleanup", after: undefined }; }
       } else if (progress.phase === "cleanup") {
         const [obsolete] = await this.store.obsolete(job);
         if (obsolete) {
@@ -169,14 +182,14 @@ export class WorkspaceMemoryService {
             if (rows.length < 100) break;
             after = rows.at(-1)!.documentId;
           }
-          progress = { generation: job.generation, phase: "models", modelIds: ["workspace", ...projectIds] };
+          progress = { ...progress, phase: "models", after: undefined, modelIds: ["workspace", ...projectIds] };
         }
       } else if (progress.modelIds?.length) {
         const [id, ...rest] = progress.modelIds;
         const operationId = await this.client.createModel(job.bankId, id === "workspace" ? null : id!, signal);
-        progress = { ...progress, modelIds: rest, operationId };
+        progress = { ...progress, modelIds: rest, operationId, modelId: id === "workspace" ? "workspace-insights" : `project-${id}`, operationAttempts: 0 };
       } else {
-        await this.store.release(job, { indexedGeneration: job.generation, status: "ready", progress: null,
+        await this.store.release(job, { indexedGeneration: job.generation, status: "ready", progress: progress.skippedCount ? progress : null,
           attempts: 0, errorCode: null, availableAt: new Date(Date.now() + 60_000) });
         return;
       }
@@ -186,6 +199,11 @@ export class WorkspaceMemoryService {
       await this.store.release(job, { status: "error", errorCode: code, attempts: job.attempts + 1,
         availableAt: new Date(Date.now() + Math.min(300_000, 5_000 * 2 ** Math.min(job.attempts, 6))) });
     }
+  }
+  private skip(progress: MemoryProgress, source: string, code: string) {
+    progress.skippedCount = (progress.skippedCount ?? 0) + 1;
+    // Bound persisted diagnostics; the count still reports all omitted items.
+    progress.skippedSources = [...(progress.skippedSources ?? []), { source, code }].slice(0, 20);
   }
   private async submit(job: MemoryState, progress: MemoryProgress, document: MemoryDocument, after: string, signal: AbortSignal) {
     const hash = await contentHash(document.content);

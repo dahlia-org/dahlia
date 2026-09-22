@@ -10,7 +10,7 @@ import { seedHeaderIdentity, testUserID, testOrganizationID } from "./public-tes
 import { uuidV7 } from "../src/id";
 import { MeetingSyncService } from "../src/sync/service";
 import { WorkspaceMemoryService } from "../src/memory/service";
-import { HindsightClient } from "../src/memory/hindsight";
+import { HindsightClient, HindsightError } from "../src/memory/hindsight";
 import { sharedMemorySchema } from "../src/memory/model";
 import { createQueueJobs } from "../src/jobs/queues";
 import { createApp } from "../src/app";
@@ -43,6 +43,7 @@ async function setup() {
   const retained = new Map<string, string>();
   const operations = new Map<string, string>();
   const models = new Map<string, boolean>();
+  const failingItems = new Set<string>();
   let loseAcknowledgement = false;
   const transport = vi.fn<typeof fetch>(async (url, init) => {
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-secret");
@@ -53,14 +54,20 @@ async function setup() {
     if (path.endsWith("/config")) return Response.json({});
     if (path.endsWith("/memories") && init?.method === "POST") {
       const item = (body.items as Array<{ document_id: string; content: string }>)[0]!;
-      retained.set(item.document_id, item.content); operations.set(String(body.operation_id), "completed");
+      retained.set(item.document_id, item.content); operations.set(String(body.operation_id), failingItems.has(item.document_id) ? "failed" : "completed");
       if (loseAcknowledgement) { loseAcknowledgement = false; throw new Error("lost acknowledgement"); }
       return Response.json({ operation_id: body.operation_id });
     }
-    if (path.includes("/operations/")) return Response.json({ status: operations.get(path.split("/").at(-1)!) ?? "not_found" });
+    if (path.includes("/operations/")) {
+      if (path.endsWith("/retry")) { operations.set(path.split("/").at(-2)!, "pending"); return Response.json({}); }
+      const id = path.split("/").at(-1)!;
+      const status = operations.get(id) ?? "not_found";
+      if (status === "pending") operations.set(id, "failed");
+      return Response.json({ status });
+    }
     if (path.endsWith("/mental-models") && init?.method === "GET") return Response.json({ items: [...models.keys()].map((id) => ({ id })) });
     if (path.endsWith("/mental-models") && init?.method === "POST") {
-      models.set(String(body.id), true); const id = uuidV7(); operations.set(id, "completed"); return Response.json({ operation_id: id });
+      models.set(String(body.id), true); const id = uuidV7(); operations.set(id, failingItems.has(String(body.id)) ? "cancelled" : "completed"); return Response.json({ operation_id: id });
     }
     if (path.includes("/mental-models/") && init?.method === "GET") return models.has(path.split("/").at(-1)!) ? Response.json({}) : new Response(null, { status: 404 });
     if (path.includes("/mental-models/") && init?.method === "DELETE") { models.delete(path.split("/").at(-1)!); return Response.json({}); }
@@ -73,12 +80,12 @@ async function setup() {
   const tick = async () => { db.exec("UPDATE workspace_memory_state SET available_at = 0"); await memory.step(workspaceId, new AbortController().signal); };
   const ready = async () => {
     for (let i = 0; i < 30; i++) {
-      await tick(); if ((await memory.status(owner, workspaceId)).status === "ready") return;
+      await tick(); if (["ready", "partial"].includes((await memory.status(owner, workspaceId)).status)) return;
     }
     throw new Error(JSON.stringify(await memory.status(owner, workspaceId)));
   };
   const close = async () => { db.close(); await app.close?.(); };
-  return { app, config, db, sync, memory, commit, tick, ready, close, requests, retained,
+  return { app, config, db, sync, memory, commit, tick, ready, close, requests, retained, failingItems,
     loseNextAcknowledgement: () => { loseAcknowledgement = true; } };
 }
 
@@ -128,6 +135,56 @@ describe("Workspace memory", () => {
       expect(f.retained.get(`shared-${note.id}`)).toContain(input.content);
       await f.app.memory!.purge(owner.userId, workspaceId);
       await expect(f.app.memory!.saveNote(owner.userId, workspaceId, { ...input, revision: 2 })).rejects.toMatchObject({ status: 409 });
+    } finally { await f.close(); }
+  });
+
+  it("skips an oversized meeting, retains later sources, and recovers on retry", async () => {
+    const f = await setup();
+    try {
+      const bad = uuidV7(), good = uuidV7();
+      await f.commit([bad, good].map((id, i) => ({ entity: "meeting", action: "create", entityId: id, baseRevision: null,
+        data: { projectId: null, name: i ? "Healthy meeting" : "Oversize", description: "Evidence", duration: 60, recordingStartedAt: `2026-09-${22 - i}T00:00:00Z`, createdAt: `2026-09-${22 - i}T00:00:00Z`, updatedAt: new Date().toISOString(), status: "READY" } })));
+      const original = f.sync.listTranscript.bind(f.sync);
+      const transcript = vi.spyOn(f.sync, "listTranscript").mockImplementation((identity, workspace, meeting, ...rest) => {
+        if (meeting === bad) return Promise.resolve({ items: [{ segmentId: uuidV7(), startedAt: new Date(), text: "x".repeat(4 * 1024 * 1024 + 1) }] } as never);
+        return original(identity, workspace, meeting, ...rest);
+      });
+      await f.memory.configure(owner, workspaceId, true);
+      await f.ready();
+      expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "partial", skippedCount: 1,
+        skippedSources: [{ source: `meeting-${bad}`, code: "memory_source_too_large" }] });
+      expect(f.retained.has(`meeting-${good}`)).toBe(true);
+      expect((await f.memory.search(owner, workspaceId, "evidence", false, new AbortController().signal)).skippedCount).toBe(1);
+      transcript.mockRestore();
+      await f.memory.configure(owner, workspaceId, true); await f.ready();
+      expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "ready", skippedCount: 0 });
+      expect(f.retained.has(`meeting-${bad}`)).toBe(true);
+    } finally { await f.close(); }
+  });
+
+  it("bounds failed document/model retries across pending polls and removes failed projections before partial readiness", async () => {
+    const f = await setup();
+    try {
+      await f.memory.configure(owner, workspaceId, true);
+      const bad = uuidV7(), good = uuidV7();
+      for (const id of [bad, good]) await f.app.memory!.saveNote(owner.userId, workspaceId, { id, revision: 0, content: `Note ${id}` });
+      f.failingItems.add(`shared-${bad}`); f.failingItems.add("workspace-insights");
+      const remove = vi.spyOn(f.memory.client, "deleteDocument");
+      remove.mockRejectedValueOnce(new HindsightError("memory_unavailable"));
+      for (let i = 0; i < 30 && !remove.mock.calls.length; i++) await f.tick();
+      expect(remove).toHaveBeenCalled();
+      await expect(f.memory.search(owner, workspaceId, "note", false, new AbortController().signal)).rejects.toThrow("memory_not_ready");
+      await f.ready();
+      expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "partial", skippedCount: 2 });
+      expect(f.requests.filter((r) => r.path.endsWith("/retry"))).toHaveLength(6);
+      expect(f.retained.has(`shared-${bad}`)).toBe(false);
+      expect(f.retained.has(`shared-${good}`)).toBe(true);
+      expect(await f.app.memory!.document(workspaceId, `shared-${bad}`)).toBeUndefined();
+      expect((await f.memory.search(owner, workspaceId, "note", false, new AbortController().signal)).sources).toHaveLength(1);
+      f.failingItems.clear();
+      await f.memory.configure(owner, workspaceId, true); await f.ready();
+      expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "ready", skippedCount: 0 });
+      expect(f.retained.has(`shared-${bad}`)).toBe(true);
     } finally { await f.close(); }
   });
 

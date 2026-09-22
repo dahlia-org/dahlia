@@ -3355,6 +3355,11 @@ export interface operations {
                         status: string;
                         errorCode: string | null;
                         attempts: number;
+                        skippedCount: number;
+                        skippedSources: {
+                            source: string;
+                            code: string;
+                        }[];
                     };
                 };
             };

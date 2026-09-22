@@ -8599,13 +8599,36 @@
                     },
                     "attempts": {
                       "type": "number"
+                    },
+                    "skippedCount": {
+                      "type": "number"
+                    },
+                    "skippedSources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "source": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "source",
+                          "code"
+                        ]
+                      }
                     }
                   },
                   "required": [
                     "enabled",
                     "status",
                     "errorCode",
-                    "attempts"
+                    "attempts",
+                    "skippedCount",
+                    "skippedSources"
                   ]
                 }
               }

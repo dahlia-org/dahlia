@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { json, RequestError, uiText } from "./api";
 import { useActionDialog } from "./ActionDialog";
 
-type MemoryStatus = { enabled: boolean; status: string; errorCode: string | null; attempts: number };
+type MemoryStatus = { enabled: boolean; status: string; errorCode: string | null; attempts: number; skippedCount: number; skippedSources: Array<{ source: string; code: string }> };
 type Note = { id: string; content: string; revision: number; updatedAt: string };
 const statusLabel = (status: string) => ({
+  partial: uiText("Ready with skipped sources", "一部の対象を除いて記憶済み"),
   ready: uiText("Ready", "記憶済み"), paused: uiText("Paused", "停止中"), pending: uiText("Pending", "登録待ち"),
   indexing: uiText("Learning from saved data", "保存データを取り込み中"), error: uiText("Retrying after an error", "エラー・再試行待ち"),
   deleting: uiText("Deleting memories", "記憶を削除中"),
@@ -57,6 +58,11 @@ export function WorkspaceMemory({ workspaceId, role, compact = false, onEnabledW
     {!compact && <h2>{uiText("Workspace memory", "Workspace メモリー")}</h2>}
     <p role="status">{status ? statusLabel(status.status) : uiText("Loading memory status…", "メモリー状態を確認中…")}</p>
     {error && <p role="alert">{error}</p>}
+    {!!status?.skippedCount && <div role="alert">
+      <p>{uiText(`${status.skippedCount} memory items were skipped. Correct the source or connection, then retry.`, `${status.skippedCount} 件を取り込めませんでした。元データや接続を修正し、再試行してください。`)}</p>
+      {!compact && <ul>{status.skippedSources.map((item) => <li key={item.source}>{item.source}: {item.code === "memory_source_too_large" ? uiText("Source exceeds 4 MiB", "元データが 4 MiB を超えています") : uiText("Processing failed after retries", "再試行後も処理に失敗しました")}</li>)}</ul>}
+      {!compact && status.skippedCount > status.skippedSources.length && <p>{uiText("Showing the first 20 items.", "最初の 20 件を表示しています。")}</p>}
+    </div>}
     {!compact && <>
       <p>{uiText("Facts are verified against saved Dahlia data. Shared notes are user-provided information, not verified meeting facts.", "事実は Dahlia の保存データで確認します。共有メモはユーザーが登録した情報であり、会議で確認された事実とは区別します。")}</p>
       {status?.errorCode && <p role="alert">{uiText("Processing failed. Retry or check the server connection and Workspace administrator access.", "処理に失敗しました。再試行するか、サーバーの接続設定とWorkspace 管理者の権限を確認してください。")}</p>}
