@@ -294,7 +294,7 @@ describe("deployment routing", () => {
     expect(bundle).not.toContain("ai_schema");
     expect(resource).toContain("name: ${var.app_schema}");
     expect(resource).not.toContain("${var.schema}");
-    expect(bundle).toContain("postdeploy: \"bash scripts/postdeploy.sh '${workspace.profile}' '${var.database_project_id}'\"");
+    expect(bundle).toContain("postdeploy: \"bash scripts/postdeploy.sh '${workspace.profile}' '${var.database_project_id}' '${resources.apps.dahlia_server.name}' '${resources.apps.hindsight.name}'\"");
     expect(bundle).toContain("volume_name:");
     expect(bundle).toContain("default: storage");
     expect(bundle).not.toContain("legacy_artifact_catalog:");
@@ -345,6 +345,9 @@ describe("deployment routing", () => {
     expect(resource).not.toContain("postgres_roles:");
     expect(resource).not.toContain("postgres_databases:");
     expect(resource).toContain("/databases/databricks-postgres");
+    expect(resource).toContain("value: ${resources.apps.hindsight.url}/api");
+    expect(resource).toContain("name: DAHLIA_HINDSIGHT_AUTH\n            value: databricks");
+    expect(hindsight).toContain("name: HINDSIGHT_API_BASE_PATH\n            value: /api");
     expect(hindsight).toContain("name: dahlia-hindsight-${bundle.target}");
     expect(hindsight).toContain("source_code_path: ../../../apps/hindsight");
     expect(exists("../../hindsight/requirements.txt")).toBe(true);

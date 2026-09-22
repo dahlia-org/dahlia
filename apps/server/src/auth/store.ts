@@ -1,3 +1,4 @@
+import { createMemoryStore, type MemoryStore } from "../memory/store";
 import { hasEmailDomain, headerIdentityValue } from "./header";
 import { lockAuthorization } from "./authorization";
 import { createOrganizationStore, type OrganizationStore } from "./organizations";
@@ -101,6 +102,7 @@ export interface TeamMemberRecord {
 export interface ApplicationStore {
   database: DBAdapterInstance;
   searchSettings: SearchSettingsStore;
+  memory?: MemoryStore;
   sync: MeetingSyncStore;
   resolveHeaderUser(identity: Identity): Promise<string | null>;
   ensureIdentityUser(identity: Identity): Promise<boolean>;
@@ -135,6 +137,7 @@ export function createPostgresApplicationStore(
     database: drizzleAdapter(db, { provider: "pg", schema: postgresAuthSchema, schemaName: "auth" }),
     organizations,
     searchSettings: createSearchSettingsStore(db, true),
+    memory: createMemoryStore(db, true),
     sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding, encryption),
     async resolveHeaderUser(identity) {
       const email = headerIdentityValue({ localSingleUser }, identity.email ?? identity.userId);
@@ -361,6 +364,7 @@ export function createSqliteApplicationStore(
     database: drizzleAdapter(db, { provider: "sqlite", schema: sqliteAuthSchema, transaction: transactions }),
     organizations,
     searchSettings: createSearchSettingsStore(db, false),
+    memory: createMemoryStore(db, false),
     sync: createSqliteMeetingSyncStore(db, searchEmbedding, encryption),
     async resolveHeaderUser(identity) {
       const email = headerIdentityValue({ localSingleUser }, identity.email ?? identity.userId);

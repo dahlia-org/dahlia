@@ -130,7 +130,7 @@ Collector, or enable telemetry emission.
 
 The bundle exposes its Responses-compatible `system.ai.*` models through the ordered `DAHLIA_FOUNDATION_MODELS` value. `/api/v1/models` reads this value without calling a discovery API, and Responses forwards the selected fully qualified model ID unchanged. `DAHLIA_CODEX_AUTO_REVIEW_MODEL=system.ai.gpt-5-6-luna` preserves the reserved `codex-auto-review` route without registering an alias service.
 
-Search embeddings, image analysis, and Hindsight also use their `system.ai.*` models directly. Postdeploy only activates Lakebase Search extensions.
+Search embeddings, image analysis, and Hindsight also use their `system.ai.*` models directly. Postdeploy activates Lakebase Search extensions and grants the Dahlia Server App service principal `CAN_USE` on the Hindsight App.
 
 ## Smoke test
 
@@ -161,3 +161,5 @@ Confirm `/api/v1/models` includes `system.ai.gpt-5-6-luna`, then complete a real
 - `X-Forwarded-Access-Token` is trusted only behind the Databricks Apps proxy, preferred as the Responses upstream Bearer credential, and never persisted or logged. If absent, Responses uses a short-lived App service principal token. The configured model list performs no upstream request.
 - Responses request and response content is streamed without being persisted or logged. Synchronized summary, OCR, caption text, and search query text may be sent to the configured embedding model; only the resulting rebuildable vectors are persisted, and request content is not logged.
 - `/healthz` is process liveness only; anonymous external access is not guaranteed.
+
+The Server calls Hindsight at `${resources.apps.hindsight.url}/api` using short-lived App service-principal OAuth (`DAHLIA_HINDSIGHT_AUTH=databricks`). Hindsight's API base path is `/api`, keeping the authenticated API route separate from its UI. Each target has a distinct bank prefix. Deployment configures connectivity; a Workspace admin must still enable memory in Dahlia settings. Existing completed meetings are then backfilled. See [Server Workspace memory](../../apps/server/README.md#workspace-memory-hindsight) for evidence, deletion, and future user-bank boundaries.

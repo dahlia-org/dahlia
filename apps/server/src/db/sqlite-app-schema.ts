@@ -527,3 +527,39 @@ export const workspaceKey = sqliteTable("workspace_keys", {
   wrappedKey: text("wrapped_key").notNull(),
   createdAt: sqliteTimestamp("created_at").default(sql`(unixepoch() * 1000)`).notNull(),
 });
+
+// Content-free coordination metadata deliberately survives Workspace deletion for remote cleanup.
+export const workspaceMemoryState = sqliteTable("workspace_memory_state", {
+  workspaceId: text("workspace_id").primaryKey(),
+  enabled: integer("enabled", { mode: "boolean" }).default(false).notNull(),
+  requestedBy: text("requested_by").notNull(),
+  bankId: text("bank_id").notNull(),
+  generation: integer("generation").default(1).notNull(),
+  indexedGeneration: integer("indexed_generation").default(0).notNull(),
+  status: text("status").default("pending").notNull(),
+  purge: integer("purge", { mode: "boolean" }).default(false).notNull(),
+  progress: text("progress", { mode: "json" }).$type<import("../memory/model").MemoryProgress>(),
+  lease: text("lease"),
+  leaseUntil: sqliteTimestamp("lease_until"),
+  availableAt: sqliteTimestamp("available_at").notNull(),
+  attempts: integer("attempts").default(0).notNull(),
+  errorCode: text("error_code"),
+}, (table) => [index("workspace_memory_due_idx").on(table.availableAt)]);
+
+export const memoryDocument = sqliteTable("memory_documents", {
+  workspaceId: text("workspace_id").notNull(),
+  documentId: text("document_id").notNull(),
+  source: text("source", { mode: "json" }).$type<import("../memory/model").MemorySource>().notNull(),
+  contentHash: text("content_hash").notNull(),
+  generation: integer("generation").notNull(),
+}, (table) => [primaryKey({ columns: [table.workspaceId, table.documentId] })]);
+
+export const sharedMemory = sqliteTable("shared_memories", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  createdBy: text("created_by").notNull(),
+  content: text("content").notNull(),
+  revision: integer("revision").default(1).notNull(),
+  updatedAt: sqliteTimestamp("updated_at").notNull(),
+}, (table) => [index("shared_memories_workspace_idx").on(table.workspaceId),
+]);

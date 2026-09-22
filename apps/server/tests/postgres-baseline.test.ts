@@ -41,7 +41,7 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
       WHERE relnamespace IN ('app'::regnamespace, 'jobs'::regnamespace) AND relrowsecurity ORDER BY relname`);
     expect(protectedTables.rows.map((row) => row.relname)).toEqual([
       "files", "meeting_attachments", "meeting_events", "meetings", "projects",
-      "recordings", "summaries", "summary", "transaction_receipts",
+      "recordings", "shared_memories", "summaries", "summary", "transaction_receipts",
       "transcript_patch_chunks", "transcript_segments", "transcripts", "workspace_transfers", "workspaces",
     ]);
     expect(protectedTables.rows.every((row) => row.relforcerowsecurity === true)).toBe(true);
@@ -120,8 +120,13 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("moves existing job rows and s
   const names = ["summary", "image_analysis", "search_index", "storage_delete"];
   try {
     await client.query("BEGIN");
-    // Reconstruct the previous physical layout from the same unchanged column contracts.
-    for (const file of serverMigrationManifest.postgres.files) {
+    // Reconstruct only the historical layout; later migrations require the moved jobs schema.
+    const historicalFiles = [
+      "drizzle/postgres-auth/20260912095619_initial/migration.sql",
+      "drizzle/postgres/20260912095620_initial/migration.sql",
+      "drizzle/postgres/20260912180000_runtime_support/migration.sql",
+    ];
+    for (const file of historicalFiles) {
       let sql = readFileSync(new URL(`../${file}`, import.meta.url), "utf8")
         .replace('CREATE SCHEMA "jobs";', "");
       for (const name of names) sql = sql.replaceAll(`"jobs"."${name}"`, `"app"."jobs_${name}"`);
@@ -156,6 +161,9 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("moves existing job rows and s
     for (const [index, name] of names.entries()) {
       expect((await client.query(`SELECT * FROM jobs.${name}`)).rows).toEqual(rows[index]!.rows);
       expect((await client.query("SELECT to_regclass($1) AS old", [`app.jobs_${name}`])).rows).toEqual([{ old: null }]);
+    }
+    for (const file of serverMigrationManifest.postgres.files.filter((file) => !historicalFiles.includes(file))) {
+      await client.query(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
     }
   } finally {
     await client.query("ROLLBACK");

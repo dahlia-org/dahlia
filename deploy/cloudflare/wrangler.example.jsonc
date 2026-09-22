@@ -61,6 +61,7 @@
   },
   "queues": {
     "producers": [
+      { "binding": "DAHLIA_MEMORY_QUEUE", "queue": "dahlia-memory" },
       {
         "binding": "DAHLIA_SUMMARY_QUEUE",
         "queue": "dahlia-summary"
@@ -75,6 +76,7 @@
       }
     ],
     "consumers": [
+      { "queue": "dahlia-memory", "max_batch_size": 1, "max_concurrency": 1, "max_retries": 3, "dead_letter_queue": "dahlia-memory-dlq" },
       {
         "queue": "dahlia-summary",
         "max_batch_size": 1,

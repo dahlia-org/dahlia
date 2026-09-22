@@ -1,3 +1,4 @@
+import { WorkspaceMemoryService } from "./memory/service";
 import * as authSchema from "./db/auth-schema";
 import { workspacePermissions } from "./auth/workspace-permissions";
 import { and, asc, gt, inArray } from "drizzle-orm";
@@ -30,6 +31,10 @@ import { connectPostgresUrl } from "./db/postgres";
 import { createIntlSearchTokenizer } from "./search/tokenizer";
 
 export interface RuntimeSecrets {
+  DAHLIA_HINDSIGHT_URL?: string;
+  DAHLIA_HINDSIGHT_AUTH?: string;
+  DAHLIA_HINDSIGHT_API_KEY?: string;
+  DAHLIA_HINDSIGHT_BANK_PREFIX?: string;
   [key: `DAHLIA_ENCRYPTION_MASTER_KEY_${string}`]: string | undefined;
   DAHLIA_ENCRYPTION_ACTIVE_KEY_ID?: string;
   DAHLIA_AUTH_SECRET?: string;
@@ -115,6 +120,10 @@ function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): Applic
 
 export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
   const config = loadConfig({
+    DAHLIA_HINDSIGHT_URL: env.DAHLIA_HINDSIGHT_URL,
+    DAHLIA_HINDSIGHT_AUTH: env.DAHLIA_HINDSIGHT_AUTH,
+    DAHLIA_HINDSIGHT_API_KEY: env.DAHLIA_HINDSIGHT_API_KEY,
+    DAHLIA_HINDSIGHT_BANK_PREFIX: env.DAHLIA_HINDSIGHT_BANK_PREFIX,
     ...Object.fromEntries(Object.entries(env).filter(([name]) => name.startsWith("DAHLIA_ENCRYPTION_MASTER_KEY_"))) as Record<string, string | undefined>,
     DAHLIA_ENCRYPTION_ACTIVE_KEY_ID: env.DAHLIA_ENCRYPTION_ACTIVE_KEY_ID,
     DAHLIA_AUTH_SECRET: env.DAHLIA_AUTH_SECRET,
@@ -183,10 +192,12 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
       createTranscriptSummaryMethod(config, applicationStore.sync, syncService),
       createAudioSummaryMethod(config, applicationStore.sync, syncService),
     ].filter((method) => method !== undefined) : [];
+    if (config.hindsight && !env.DAHLIA_MEMORY_QUEUE) throw new Error("DAHLIA_MEMORY_QUEUE is required for Hindsight");
+    const workspaceMemory = config.hindsight && applicationStore.memory ? new WorkspaceMemoryService(config, applicationStore.memory, syncService, applicationStore.sync) : undefined;
     const jobs = applicationStore.jobs ? createQueueJobs(env, applicationStore.jobs, applicationStore.sync,
-      syncService, summaryMethods, captioner, searchEmbedder) : undefined;
+      syncService, summaryMethods, captioner, searchEmbedder, workspaceMemory) : undefined;
     const app = createApp({
-      config, auth, authStore: applicationStore, aiHistory: applicationStore.aiHistory, objectStorage, searchTokenizer, searchEmbedder, screenshotTransformer, syncService,
+      workspaceMemory, config, auth, authStore: applicationStore, aiHistory: applicationStore.aiHistory, objectStorage, searchTokenizer, searchEmbedder, screenshotTransformer, syncService,
       mcpSupportsCimd: false,
       summaryService: summaryMethods.length ? new SummaryService(applicationStore.sync, summaryMethods) : undefined,
       imageAnalysisEnabled: captioner !== undefined,

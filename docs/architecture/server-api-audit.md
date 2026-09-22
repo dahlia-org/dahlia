@@ -97,6 +97,12 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | rejectOrganizationJoinRequest | modified | POST `/api/v1/organization-join-requests/{requestId}/reject` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
 | deleteOrganization | modified | DELETE `/api/v1/admin/organizations/{organizationId}` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
 | listDeletedMeetings | modified | GET `/api/v1/workspaces/{workspaceId}/trash/meetings` | `new public contract` | List recoverable deleted meetings within the current Workspace permissions | Web trash |
+| getWorkspaceMemory | modified | GET `/api/v1/workspaces/{workspaceId}/memory` | `none` | Workspace-scoped memory backed by canonical Dahlia data | Private Web |
+| setWorkspaceMemory | modified | PUT `/api/v1/workspaces/{workspaceId}/memory` | `none` | Workspace-scoped memory backed by canonical Dahlia data | Private Web |
+| purgeWorkspaceMemory | modified | DELETE `/api/v1/workspaces/{workspaceId}/memory` | `none` | Workspace-scoped memory backed by canonical Dahlia data | Private Web |
+| listSharedMemories | modified | GET `/api/v1/workspaces/{workspaceId}/memory/notes` | `none` | Workspace-scoped memory backed by canonical Dahlia data | Private Web |
+| saveSharedMemory | modified | PUT `/api/v1/workspaces/{workspaceId}/memory/notes` | `none` | Workspace-scoped memory backed by canonical Dahlia data | Private Web |
+| deleteSharedMemory | modified | DELETE `/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}` | `none` | Workspace-scoped memory backed by canonical Dahlia data | Private Web |
 
 ## Delegated protocols
 

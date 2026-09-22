@@ -422,6 +422,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "search.documents",
       "jobs.summary",
       "app.summaries",
+      "app.shared_memories",
     ];
     const secured = (await client.query<{ count: number }>(`
       select count(*)::integer as count
@@ -1208,6 +1209,9 @@ function createIdentityStore(
     transaction: SyncTransaction,
     changes: Pick<SyncChangeRecord, "entity" | "entityId" | "action" | "revision">[],
   ): Promise<number> {
+    await db.update(schema.workspaceMemoryState).set({ generation: sql`${schema.workspaceMemoryState.generation} + 1`,
+      status: "pending", availableAt: new Date(), attempts: 0, errorCode: null })
+      .where(eq(schema.workspaceMemoryState.workspaceId, transaction.workspaceId));
     let cursor: number | undefined;
     for (const batch of batches(changes, 100)) {
       const inserted = await db.insert(schema.syncChange).values(batch.map((change) => ({

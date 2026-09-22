@@ -113,3 +113,7 @@ Audio uses checksum-verified streaming Base64 with mic/system manifests intact. 
 Validate with `pnpm check` and the local runtime check documented in the Server README. Live validation needs dedicated synthetic recordings/screenshots and real provider credentials: complete a summary, audio transcription/summary, caption/OCR and semantic search, then check persisted results and retry behavior. Mock tests and bundle dry-run do not establish live AI, Hyperdrive or Images availability.
 
 Contracts: [AI REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/), [Images binding](https://developers.cloudflare.com/images/optimization/binding/), [Hyperdrive caching](https://developers.cloudflare.com/hyperdrive/concepts/query-caching/).
+
+### Optional Workspace memory
+
+When `DAHLIA_HINDSIGHT_URL` is configured, bind `DAHLIA_MEMORY_QUEUE` to a queue producer and consumer as shown in `wrangler.example.jsonc`; keep the scheduled trigger enabled for recovery/backfill. Set `DAHLIA_HINDSIGHT_BANK_PREFIX` and explicit `DAHLIA_HINDSIGHT_AUTH`; keep API keys or Databricks credentials in Worker secrets. Workspace admins opt in separately. See [Server memory configuration](../../apps/server/README.md#workspace-memory-hindsight).

@@ -1,3 +1,4 @@
+import { WorkspaceMemory } from "./WorkspaceMemory";
 import { WorkspaceSharing } from "./WorkspaceSharing";
 import { organizationSlugFromName, organizationSlugPattern } from "../auth/organization-slug";
 import { apiUrls } from "./generated-operations";
@@ -731,6 +732,7 @@ export function WorkspaceMeetings({ session, workspaceId }: { session: SessionIn
       ...(session.capabilities.sharing && workspace ? [{ id: "permissions", label: uiText("Permissions", "権限"), content: <WorkspaceSharing workspace={workspace} /> }] : []),
       { id: "settings", label: uiText("Settings", "設定"), content: <>
         <section className="workspace-settings"><h2>{uiText("Workspace details", "ワークスペースの詳細")}</h2><div className="collection-heading"><span>{workspace?.name}</span>{workspace?.role === "admin" && <button className="secondary" onClick={renameWorkspace}>{uiText("Edit Workspace", "ワークスペースを編集")}</button>}</div></section>
+        {workspace && <WorkspaceMemory key={workspaceId} workspaceId={workspaceId} role={workspace.role} />}
         {workspace && <ServerSummarySettings key={workspaceId} workspaceId={workspaceId} onSave={(current, generationSettings) =>
           commitSyncTransaction(workspaceId, [{ entity: "workspace", action: "update", entityId: workspaceId,
             baseRevision: current.revision, data: { name: current.name, generationSettings } }], setRecovering)} />}

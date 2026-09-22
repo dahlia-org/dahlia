@@ -17,7 +17,7 @@ experimental:
   skip_name_prefix_for_schema: true
   scripts:
     prebuild: "cd ../../apps/hindsight && uv run --no-project scripts/sync_upstream.py"
-    postdeploy: "bash scripts/postdeploy.sh '${workspace.profile}' '${var.database_project_id}'"
+    postdeploy: "bash scripts/postdeploy.sh '${workspace.profile}' '${var.database_project_id}' '${resources.apps.dahlia_server.name}' '${resources.apps.hindsight.name}'"
 
 variables:
   database_project_id:

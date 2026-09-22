@@ -206,6 +206,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Workspace memory status */
+        get: operations["getWorkspaceMemory"];
+        /** Enable, pause or retry Workspace memory; admin only */
+        put: operations["setWorkspaceMemory"];
+        post?: never;
+        /** Disable and erase Workspace memory; admin only */
+        delete: operations["purgeWorkspaceMemory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/memory/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List explicitly shared memories */
+        get: operations["listSharedMemories"];
+        /** Save user-confirmed shared information with a revision */
+        put: operations["saveSharedMemory"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete shared information with a revision */
+        delete: operations["deleteSharedMemory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chat/models": {
         parameters: {
             query?: never;
@@ -3275,6 +3329,189 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Capabilities"];
                 };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getWorkspaceMemory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                        status: string;
+                        errorCode: string | null;
+                        attempts: number;
+                        skippedCount: number;
+                        skippedSources: {
+                            source: string;
+                            code: string;
+                        }[];
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    setWorkspaceMemory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    enabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Success; no response body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    purgeWorkspaceMemory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "deleting";
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listSharedMemories: {
+        parameters: {
+            query?: {
+                after?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            content: string;
+                            revision: number;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        }[];
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    saveSharedMemory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    id: string;
+                    content: string;
+                    revision: number;
+                    /** @enum {boolean} */
+                    confirmed: true;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        content: string;
+                        revision: number;
+                        /** Format: date-time */
+                        updatedAt: string;
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteSharedMemory: {
+        parameters: {
+            query: {
+                revision: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+                noteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success; no response body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Problem"];
         };

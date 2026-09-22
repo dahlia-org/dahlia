@@ -1,3 +1,4 @@
+import { WorkspaceMemory, SaveSharedMemory } from "./WorkspaceMemory";
 import { Brain, BriefcaseBusiness, Plus, Send, Sparkles, Square, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
@@ -100,6 +101,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
   const { chatHistoryTarget, workspaces } = useSidebar();
   const [models, setModels] = useState<AiModel[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
+  const [memoryWorkspace, setMemoryWorkspace] = useState("");
   const [model, setModel] = useState("");
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | "">("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -476,7 +478,10 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
     </div> : <>
       <div className="ai-transcript" ref={transcript}>
         {hasEarlierMessages && <button className="secondary" disabled={openingThread || pending} onClick={() => void loadEarlierMessages()}>{uiText("Load earlier messages", "以前のメッセージを読み込む")}</button>}
-        {messages.map((message, index) => <article className={`ai-message ${message.role}`} key={message.id || index}>{message.content}</article>)}
+        {selectedWorkspace && <WorkspaceMemory key={workspaceId} workspaceId={workspaceId} role={selectedWorkspace.role} onEnabledWorkspace={setMemoryWorkspace} compact />}
+        {messages.map((message, index) => <article className={`ai-message ${message.role}`} key={message.id || index}>{message.content}
+          {memoryWorkspace === workspaceId && selectedWorkspace && selectedWorkspace.role !== "viewer" && !pending && <SaveSharedMemory key={workspaceId} workspaceId={workspaceId} workspaceName={selectedWorkspace.name} content={message.content} />}
+        </article>)}
         {answer && <article className="ai-message assistant">{answer}</article>}
         {tool && <p className="ai-status" role="status">{uiText(`Checking meetings with ${tool}…`, `${tool} でミーティングを確認中…`)}</p>}
         {error && <div className="ai-error" role="alert"><span>{error}</span>{!persistentHistory && <button className="secondary" disabled={pending || openingThread || messages.at(-1)?.role !== "user"} onClick={retry}>{uiText("Retry", "再試行")}</button>}</div>}
