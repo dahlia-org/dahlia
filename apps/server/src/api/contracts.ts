@@ -1,3 +1,4 @@
+import { memorySettingsSchema, sharedMemorySchema } from "../memory/model";
 import { organizationDomainsSchema } from "../auth/organization-domains";
 import { projectPublicIDs } from "./public-schema";
 import { createOrganizationSchema } from "../auth/organization-slug";
@@ -83,7 +84,11 @@ const aiThread = z.object({ id: aiThreadId, title: z.string(), workspaceId: aiTh
   createdAt: S.date, updatedAt: S.date }).openapi("AiThread");
 const aiHistoryMessage = z.object({ id: z.string(), role: z.enum(["user", "assistant"]), content: z.string(), createdAt: S.date }).openapi("AiHistoryMessage");
 const aiThreadPage = z.string().regex(/^(0|[1-9][0-9]{0,5})$/).optional();
+const memoryStatus = z.object({ enabled: z.boolean(), status: z.string(), errorCode: z.string().nullable(), attempts: z.number() });
+const memoryNote = z.object({ id: z.string().uuid(), content: z.string(), revision: z.number(), updatedAt: S.date });
+
 export type OperationId =
+  "getWorkspaceMemory" | "setWorkspaceMemory" | "purgeWorkspaceMemory" | "listSharedMemories" | "saveSharedMemory" | "deleteSharedMemory" |
   "getHealth" | "getOpenAPI" | "getSession" | "listSessions" | "revokeSession"
   | "listAdministrators" | "addAdministrator" | "removeAdministrator" | "listServerUsers" | "listServerOrganizations"
   | "getServerOrganization" | "getSearchSettings" | "updateSearchSettings"
@@ -122,6 +127,14 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
     teams: z.array(z.object({ id: S.principalId, name: z.string() })), hasMoreMembers: z.boolean(), hasMoreTeams: z.boolean(),
   })) }, { query: z.object({ membersOffset: z.string().regex(/^\d+$/).optional(), teamsOffset: z.string().regex(/^\d+$/).optional() }).strict() }, browser),
   getCapabilities: route("get", "/api/v1/capabilities", "getCapabilities", "Discover feature versions; unsupported features are omitted", { 200: json(S.capabilities) }),
+  getWorkspaceMemory: route("get", `${v}/memory`, "getWorkspaceMemory", "Read Workspace memory status", { 200: json(memoryStatus) }, {}, browser),
+  setWorkspaceMemory: route("put", `${v}/memory`, "setWorkspaceMemory", "Enable, pause or retry Workspace memory; admin only", { 204: empty }, body(memorySettingsSchema), browser),
+  purgeWorkspaceMemory: route("delete", `${v}/memory`, "purgeWorkspaceMemory", "Disable and erase Workspace memory; admin only", { 202: json(z.object({ status: z.literal("deleting") })) }, {}, browser),
+  listSharedMemories: route("get", `${v}/memory/notes`, "listSharedMemories", "List explicitly shared memories", { 200: json(z.object({ items: z.array(memoryNote), nextCursor: z.string().uuid().nullable() })) },
+    { query: z.object({ after: z.string().uuid().optional() }).strict() }, browser),
+  saveSharedMemory: route("put", `${v}/memory/notes`, "saveSharedMemory", "Save user-confirmed shared information with a revision", { 200: json(memoryNote) }, body(sharedMemorySchema), browser),
+  deleteSharedMemory: route("delete", `${v}/memory/notes/{noteId}`, "deleteSharedMemory", "Delete shared information with a revision", { 204: empty },
+    { query: z.object({ revision: z.string().regex(/^[1-9][0-9]*$/) }).strict() }, browser),
   getAiModels: route("get", "/api/v1/chat/models", "getAiModels", "Agent-compatible models available to Private Web", { 200: json(z.object({ items: z.array(S.aiModel) })) }, {}, browser),
   createAiThread: route("post", "/api/v1/chat", "createAiThread", "Create a private AI chat thread",
     { 201: { ...json(aiThread, "Created."), headers: location } }, body(aiThreadCreateSchema), browser),

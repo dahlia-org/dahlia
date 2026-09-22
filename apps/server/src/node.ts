@@ -1,3 +1,5 @@
+import { WorkspaceMemoryService } from "./memory/service";
+import { MemoryWorker } from "./memory/node-worker";
 import { createAudioSummaryMethod } from "./summary/audio";
 import { createTranscriptSummaryMethod } from "./summary/transcript";
 import { SummaryService } from "./summary/service";
@@ -46,6 +48,8 @@ const syncService = new MeetingSyncService(applicationStore.sync, objectStorage,
   searchEmbedder, transformScreenshot,
   config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined,
   true, captioner?.model);
+const workspaceMemory = config.hindsight && applicationStore.memory ? new WorkspaceMemoryService(config, applicationStore.memory, syncService, applicationStore.sync) : undefined;
+const memoryWorker = workspaceMemory ? new MemoryWorker(workspaceMemory) : undefined;
 const development = process.argv.includes("--seed-dev");
 if (development) {
   const { installDevelopmentSeed } = await import("./dev-seed");
@@ -61,6 +65,7 @@ const summaryService = summaryMethods.length ? new SummaryService(applicationSto
 const summaryWorker = summaryMethods.length ? new SummaryWorker(applicationStore.summaryJobs, summaryMethods, syncService) : undefined;
 const app = createApp({
   summaryService,
+  workspaceMemory,
   config,
   auth,
   mcpSupportsCimd: config.authProvider === "accounts",
@@ -87,6 +92,7 @@ const server = serve({
 }, (info) => {
   console.info(`Dahlia Server is listening on ${info.address}:${info.port}`);
 });
+memoryWorker?.start();
 searchIndexer?.start();
 imageAnalysis?.start();
 summaryWorker?.start();
@@ -100,6 +106,7 @@ let shuttingDown = false;
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  const stoppedMemory = memoryWorker?.stop();
   const stoppedSummary = summaryWorker?.stop();
   const stoppedIndexer = searchIndexer?.stop();
   const stoppedImageAnalysis = imageAnalysis?.stop();
@@ -108,7 +115,7 @@ async function shutdown(): Promise<void> {
     for (const socket of sockets) socket.destroy();
   }, 10_000);
   deadline.unref();
-  await Promise.all([closed, stoppedIndexer, stoppedImageAnalysis, stoppedSummary]);
+  await Promise.all([closed, stoppedIndexer, stoppedImageAnalysis, stoppedSummary, stoppedMemory]);
   clearTimeout(deadline);
   await applicationStore.close?.();
 }

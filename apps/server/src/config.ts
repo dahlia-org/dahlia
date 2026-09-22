@@ -47,6 +47,7 @@ export interface S3StorageConfig {
 }
 
 export interface AppConfig {
+  hindsight?: { url: string; auth: "none" | "bearer" | "databricks"; apiKey?: string; bankPrefix: string };
   encryption?: EncryptionConfig;
   authProvider: AuthProvider;
   authHeader: string;
@@ -260,7 +261,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     : undefined;
   const databricksWorkspace = databricksWorkspaceConfig(
     env,
-    storageBackend === "databricks" || (aiBackend === "databricks"
+    env.DAHLIA_HINDSIGHT_AUTH === "databricks" || storageBackend === "databricks" || (aiBackend === "databricks"
       && Boolean(searchEmbedding || captioningModel
         || env.DATABRICKS_CLIENT_ID?.trim() || env.DATABRICKS_CLIENT_SECRET?.trim())),
   );
@@ -311,6 +312,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     databricksWorkspace,
     searchEmbedding,
     captioningModel,
+    hindsight: hindsightConfig(env),
   };
 
   if (config.searchEmbedding && !["databricks", "cloudflare"].includes(config.provider?.backend ?? "")) {
@@ -348,4 +350,19 @@ export function gatewayResource(config: Pick<AppConfig, "baseUrl">): string {
 
 export function mcpResource(config: Pick<AppConfig, "baseUrl">): string {
   return `${config.baseUrl}/mcp`;
+}
+
+function hindsightConfig(env: Record<string, string | undefined>): AppConfig["hindsight"] {
+  if (!env.DAHLIA_HINDSIGHT_URL?.trim()) {
+    if (env.DAHLIA_HINDSIGHT_AUTH || env.DAHLIA_HINDSIGHT_API_KEY || env.DAHLIA_HINDSIGHT_BANK_PREFIX) throw new Error("DAHLIA_HINDSIGHT_URL is required");
+    return undefined;
+  }
+  const auth = z.enum(["none", "bearer", "databricks"]).parse(required(env, "DAHLIA_HINDSIGHT_AUTH"));
+  const url = validateBaseUrl(required(env, "DAHLIA_HINDSIGHT_URL"), "DAHLIA_HINDSIGHT_URL");
+  const parsed = new URL(url);
+  if (parsed.username || parsed.password || parsed.search || parsed.hash || (auth !== "none" && parsed.protocol !== "https:")) throw new Error("Invalid Hindsight URL");
+  if (auth !== "bearer" && env.DAHLIA_HINDSIGHT_API_KEY) throw new Error("Hindsight API key requires bearer authentication");
+  return { url: url.replace(/\/$/, ""), auth,
+    apiKey: auth === "bearer" ? required(env, "DAHLIA_HINDSIGHT_API_KEY") : undefined,
+    bankPrefix: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/).parse(required(env, "DAHLIA_HINDSIGHT_BANK_PREFIX")) };
 }

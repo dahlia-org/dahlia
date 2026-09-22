@@ -1,3 +1,4 @@
+import type { WorkspaceMemoryService } from "../memory/service";
 import { z } from "zod";
 import type { MeetingSyncStore } from "../sync/types";
 import type { MeetingSyncService } from "../sync/service";
@@ -18,6 +19,7 @@ const cursor = z.union([id, z.string().regex(/^[0-9a-f-]{36}\/[0-9a-f-]{36}$/)])
 const scan = z.object({ action: z.literal("scan"), kind, scopeId: id,
   phase: z.enum(["reconcile", "dispatch"]), after: cursor.optional() }).strict();
 export const jobMessageSchema = z.union([
+  z.object({ action: z.literal("memory"), workspaceId: id.optional(), after: id.optional() }).strict(),
   z.object({ action: z.literal("scopes"), kind, after: id.optional(), userId: id.optional() }).strict(),
   scan.refine((value) => !value.after || (value.kind === "search") === value.after.includes("/")),
   z.object({ action: z.literal("run"), kind: z.literal("summary"),
@@ -32,10 +34,11 @@ export type JobMessage = z.infer<typeof jobMessageSchema>;
 type JobKind = z.infer<typeof kind>;
 
 export interface JobQueue {
-  send(body: JobMessage): Promise<unknown>;
+  send(body: JobMessage, options?: { delaySeconds: number }): Promise<unknown>;
   sendBatch(messages: { body: JobMessage }[]): Promise<unknown>;
 }
 export interface WorkerJobBindings {
+  DAHLIA_MEMORY_QUEUE?: JobQueue;
   DAHLIA_SUMMARY_QUEUE?: JobQueue;
   DAHLIA_IMAGE_QUEUE?: JobQueue;
   DAHLIA_SEARCH_QUEUE?: JobQueue;
@@ -49,7 +52,7 @@ export interface WorkerJobStores {
 
 export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobStores,
   syncStore: MeetingSyncStore, sync: MeetingSyncService,
-  methods: readonly SummaryMethod[], captioner?: ImageCaptioner, embedder?: SearchEmbedder) {
+  methods: readonly SummaryMethod[], captioner?: ImageCaptioner, embedder?: SearchEmbedder, memory?: WorkspaceMemoryService) {
   const queues = {
     summary: methods.length ? bindings.DAHLIA_SUMMARY_QUEUE : undefined,
     image: captioner ? bindings.DAHLIA_IMAGE_QUEUE : undefined,
@@ -68,13 +71,29 @@ export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobSt
       }
     },
     async schedule() {
-      const results = await Promise.allSettled(Object.entries(queues).map(([kind, queue]) =>
-        queue?.send({ kind: kind as JobKind, action: "scopes" }) ?? Promise.resolve()));
+      const results = await Promise.allSettled([
+        memory ? bindings.DAHLIA_MEMORY_QUEUE?.send({ action: "memory" }) : undefined,
+        ...Object.entries(queues).map(([kind, queue]) => queue?.send({ kind: kind as JobKind, action: "scopes" })),
+      ]);
       const failure = results.find((result) => result.status === "rejected");
       if (failure) throw failure.reason;
     },
     async consume(body: unknown, signal: AbortSignal) {
       const message = jobMessageSchema.parse(body);
+      if (message.action === "memory") {
+        const queue = bindings.DAHLIA_MEMORY_QUEUE;
+        if (!queue || !memory) throw new Error("memory_queue_unavailable");
+        if (message.workspaceId) {
+          await memory.step(message.workspaceId, signal);
+          const delaySeconds = await memory.store.nextDelay(message.workspaceId);
+          if (delaySeconds !== undefined) await queue.send(message, { delaySeconds });
+        } else {
+          const ids = await memory.store.due(message.after);
+          if (ids.length) await queue.sendBatch(ids.map((workspaceId) => ({ body: { action: "memory", workspaceId } })));
+          if (ids.length === 100) await queue.send({ action: "memory", after: ids.at(-1) });
+        }
+        return;
+      }
       const queue = queues[message.kind];
       if (!queue) throw new Error("job_queue_unavailable");
       signal.throwIfAborted();

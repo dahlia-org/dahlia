@@ -239,7 +239,7 @@ describe("PostgreSQL migrations", () => {
     expect(sql).toContain('"segment_id" uuid');
     expect(sql).not.toContain("artifact_reservation");
     expect(sql).toContain('CREATE SCHEMA "app"');
-    expect(sql).not.toMatch(/"(?:core|content)"/);
+    expect(sql).not.toMatch(/(?:SCHEMA |REFERENCES |FROM |TABLE )"(?:core|content)"/);
     expect(sql).toContain("FORCE ROW LEVEL SECURITY");
     expect(sql).toContain("CREATE POLICY");
     expect(sql).toContain("current_setting('app.user_id', true)");

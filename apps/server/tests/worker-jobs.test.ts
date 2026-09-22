@@ -18,6 +18,19 @@ function setup(imageQueue?: JobQueue) {
 }
 const signal = () => new AbortController().signal;
 describe("Worker job delivery", () => {
+  it("dispatches existing queues even when memory scheduling fails", async () => {
+    const send = vi.fn<(body: JobMessage) => Promise<void>>().mockResolvedValue(undefined);
+    const queue = { send, sendBatch: vi.fn() };
+    const memoryQueue = { send: vi.fn().mockRejectedValue(new Error("memory unavailable")), sendBatch: vi.fn() };
+    const jobs = createQueueJobs({ DAHLIA_MEMORY_QUEUE: memoryQueue, DAHLIA_SUMMARY_QUEUE: queue,
+      DAHLIA_IMAGE_QUEUE: queue, DAHLIA_SEARCH_QUEUE: queue }, {} as WorkerJobStores,
+    {} as MeetingSyncStore, {} as MeetingSyncService, [{ id: "transcript" }] as never,
+    { model: "image" } as never, { model: "search" } as never, {} as never);
+    await expect(jobs.schedule()).rejects.toThrow("memory unavailable");
+    expect(send.mock.calls.map(([message]) => message)).toEqual([
+      { kind: "summary", action: "scopes" }, { kind: "image", action: "scopes" }, { kind: "search", action: "scopes" },
+    ]);
+  });
   it("settles all scheduled sends before surfacing a queue failure", async () => {
     let release!: () => void;
     const pending = new Promise<void>((resolve) => { release = resolve; });

@@ -642,9 +642,43 @@
     "organizationCandidatePage": {
       "items": "array:organization",
       "nextCursor": "id:organization"
+    },
+    "sharedMemory": {
+      "id": "id:sharedMemory"
+    },
+    "sharedMemoryPage": {
+      "items": "array:sharedMemory",
+      "nextCursor": "id:sharedMemory"
     }
   },
   "routes": [
+    {
+      "path": "/api/v1/workspaces/:workspace/memory",
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspace/memory/notes",
+      "methods": [
+        "GET"
+      ],
+      "response": "sharedMemoryPage",
+      "query": {
+        "after": "id:sharedMemory"
+      }
+    },
+    {
+      "path": "/api/v1/workspaces/:workspace/memory/notes",
+      "response": "sharedMemory",
+      "request": "sharedMemory",
+      "methods": [
+        "PUT"
+      ]
+    },
+    {
+      "path": "/api/v1/workspaces/:workspace/memory/notes/:sharedMemory",
+      "response": "pass"
+    },
     {
       "path": "/api/v1/chat/models"
     },

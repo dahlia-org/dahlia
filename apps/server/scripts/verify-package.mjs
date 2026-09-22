@@ -78,6 +78,7 @@ try {
 
     if ([SummaryService, SummaryWorker, createTranscriptSummaryMethod, createAudioSummaryMethod].some((value) => typeof value !== "function")) throw new Error("Missing Node summary API");
     if (typeof server.createApp !== "function" || typeof App !== "function") throw new Error("Package API is incomplete");
+    if (!serverMigrationManifest.postgres.files.some((name) => name.includes("memory_force_rls"))) throw new Error("Missing memory RLS migration");
     for (const name of ["DatabricksBackend", "OpenAIBackend", "CloudflareBackend"]) {
       if (typeof server[name] !== "function") throw new Error("Missing AI backend export: " + name);
     }

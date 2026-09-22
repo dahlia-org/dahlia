@@ -63,9 +63,7 @@
       "classification": "modified",
       "previous": "new public contract",
       "reason": "List configured Agent-compatible models for Private Web",
-      "consumers": [
-        "apps/server/src/client/AiChat.tsx"
-      ]
+      "consumers": ["apps/server/src/client/AiChat.tsx"]
     },
     {
       "operationId": "chatWithAi",
@@ -74,9 +72,7 @@
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Stream one authenticated page-memory Agent response",
-      "consumers": [
-        "apps/server/src/client/AiChat.tsx"
-      ]
+      "consumers": ["apps/server/src/client/AiChat.tsx"]
     },
     {
       "operationId": "createAiThread",
@@ -1046,6 +1042,72 @@
       "reason": "List recoverable deleted meetings within the current Workspace permissions",
       "consumers": [
         "Web trash"
+      ]
+    },
+    {
+      "operationId": "getWorkspaceMemory",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/memory",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Workspace-scoped memory backed by canonical Dahlia data",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "setWorkspaceMemory",
+      "method": "PUT",
+      "path": "/api/v1/workspaces/{workspaceId}/memory",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Workspace-scoped memory backed by canonical Dahlia data",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "purgeWorkspaceMemory",
+      "method": "DELETE",
+      "path": "/api/v1/workspaces/{workspaceId}/memory",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Workspace-scoped memory backed by canonical Dahlia data",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "listSharedMemories",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/notes",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Workspace-scoped memory backed by canonical Dahlia data",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "saveSharedMemory",
+      "method": "PUT",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/notes",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Workspace-scoped memory backed by canonical Dahlia data",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "deleteSharedMemory",
+      "method": "DELETE",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Workspace-scoped memory backed by canonical Dahlia data",
+      "consumers": [
+        "Private Web"
       ]
     }
   ],

@@ -7,6 +7,8 @@ resources:
       config:
         command: ["python", "scripts/start_databricks.py"]
         env:
+          - name: HINDSIGHT_API_BASE_PATH
+            value: /api
           - name: HINDSIGHT_API_DATABASE_SCHEMA
             value: ${var.hindsight_schema}
           - name: HINDSIGHT_API_TEXT_SEARCH_EXTENSION

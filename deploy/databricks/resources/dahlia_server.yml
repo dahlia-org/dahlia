@@ -39,6 +39,12 @@ resources:
       config:
         command: ["corepack", "pnpm", "start:databricks"]
         env:
+          - name: DAHLIA_HINDSIGHT_URL
+            value: ${resources.apps.hindsight.url}/api
+          - name: DAHLIA_HINDSIGHT_AUTH
+            value: databricks
+          - name: DAHLIA_HINDSIGHT_BANK_PREFIX
+            value: dahlia-${bundle.target}
           - name: DAHLIA_AUTH_TYPE
             value: header
           - name: DAHLIA_AUTH_PROVIDER_ID
