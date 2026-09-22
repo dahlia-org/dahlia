@@ -68,7 +68,7 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
     async saveNote(userId: string, workspaceId: string, input: { id: string; revision: number; content: string }) {
       return scoped(userId, workspaceId, "write", async (tx) => {
         const [setting] = await tx.select().from(state).where(eq(state.workspaceId, workspaceId));
-        if (!setting?.enabled || setting.purge) throw new RequestError(409, "memory_disabled");
+        if (!setting || setting.purge || (!setting.enabled && input.revision === 0)) throw new RequestError(409, "memory_disabled");
         const [existing] = await tx.select().from(notes).where(eq(notes.id, input.id));
         if (existing && existing.workspaceId !== workspaceId) throw new RequestError(409, "memory_revision_conflict");
         if (existing?.content === input.content && existing.revision === input.revision + 1) return existing;

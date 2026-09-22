@@ -1,3 +1,4 @@
+import { uuidV7 } from "../id";
 import { encodeId } from "../typeid";
 import { useEffect, useState } from "react";
 import { json, RequestError, uiText } from "./api";
@@ -91,7 +92,7 @@ export function SaveSharedMemory({ workspaceId, workspaceName, content }: { work
   const { dialog, openDialog } = useActionDialog();
   const [saved, setSaved] = useState(false);
   return <><button className="secondary" disabled={saved} onClick={() => {
-    const id = encodeId("sharedMemory", crypto.randomUUID());
+    const id = encodeId("sharedMemory", uuidV7());
     openDialog({ title: uiText("Save shared information", "共有情報として記憶"),
       description: uiText(`All members of ${workspaceName} can use this information. Review the text; the rest of this private chat is not shared.`, `${workspaceName} の全メンバーが利用できる情報として保存します。内容を確認してください。この非公開チャットの他の内容は共有されません。`),
       confirmLabel: uiText("Share and remember", "共有して記憶"),

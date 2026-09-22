@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const memorySettingsSchema = z.object({ enabled: z.boolean() }).strict();
 export const sharedMemorySchema = z.object({
-  id: z.string().uuid(), content: z.string().trim().min(1).max(16_000),
+  id: z.uuidv7().meta({ format: "uuidv7" }), content: z.string().trim().min(1).max(16_000),
   revision: z.number().int().nonnegative(), confirmed: z.literal(true),
 }).strict();
 export interface MemoryProgress {

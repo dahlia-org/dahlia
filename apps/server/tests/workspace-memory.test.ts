@@ -93,6 +93,8 @@ describe("Workspace memory", () => {
         body: body ? JSON.stringify(body) : undefined });
       expect((await request(path, "PUT", { enabled: true }, viewer)).status).toBe(404);
       expect((await request(path, "PUT", { enabled: true })).status).toBe(204);
+      expect((await request(`${path}/notes`, "PUT", { id: encodeId("sharedMemory", crypto.randomUUID()),
+        content: "Invalid entity ID", revision: 0, confirmed: true })).status).toBe(400);
       const id = encodeId("sharedMemory", uuidV7());
       expect((await request(`${path}/notes`, "PUT", { id, content: "User-confirmed claim", revision: 0 })).status).toBe(400);
       const saved = await request(`${path}/notes`, "PUT", { id, content: "User-confirmed claim", revision: 0, confirmed: true });
@@ -103,6 +105,32 @@ describe("Workspace memory", () => {
       const purge = await request(path, "DELETE"); expect(purge.status).toBe(202); expect(await purge.json()).toEqual({ status: "deleting" });
     } finally { await f.close(); }
   });
+  it("permits revision-matched corrections while paused without publishing memory or new notes", async () => {
+    const f = await setup();
+    try {
+      await f.memory.configure(owner, workspaceId, true);
+      const note = await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Original" });
+      await f.ready();
+      await f.memory.configure(owner, workspaceId, false);
+      const input = { id: note.id, revision: note.revision, content: "Corrected while paused" };
+      await expect(f.app.memory!.saveNote(viewer.userId, workspaceId, input)).rejects.toMatchObject({ status: 404 });
+      const corrected = await f.app.memory!.saveNote(owner.userId, workspaceId, input);
+      expect(corrected.revision).toBe(2);
+      expect(await f.app.memory!.saveNote(owner.userId, workspaceId, input)).toEqual(corrected);
+      await expect(f.app.memory!.saveNote(owner.userId, workspaceId, { ...input, content: "Stale correction" })).rejects.toMatchObject({ status: 409 });
+      await expect(f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "New" })).rejects.toMatchObject({ status: 409 });
+      await expect(f.memory.search(owner, workspaceId, "query", false, new AbortController().signal)).rejects.toThrow("memory_not_ready");
+      const count = f.requests.length;
+      await f.tick();
+      expect(f.requests).toHaveLength(count);
+      await f.memory.configure(owner, workspaceId, true);
+      await f.ready();
+      expect(f.retained.get(`shared-${note.id}`)).toContain(input.content);
+      await f.app.memory!.purge(owner.userId, workspaceId);
+      await expect(f.app.memory!.saveNote(owner.userId, workspaceId, { ...input, revision: 2 })).rejects.toMatchObject({ status: 409 });
+    } finally { await f.close(); }
+  });
+
   it("preserves paginated transcript and screenshot provenance and excludes active meetings", async () => {
     const now = new Date();
     const sync = { getMeeting: vi.fn().mockResolvedValue({ meetingId: workspaceId, name: "Customer", description: "", status: "READY", createdAt: now,

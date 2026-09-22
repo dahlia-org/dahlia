@@ -8848,7 +8848,7 @@
                 "properties": {
                   "id": {
                     "type": "string",
-                    "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                    "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{9}[ef][0-9abcdefghjkmnpqrstvwxyz]{2}[89abrstv][0-9abcdefghjkmnpqrstvwxyz]{12}$"
                   },
                   "content": {
                     "type": "string",
