@@ -1,3 +1,5 @@
+import { ChatMemoryStore } from "./agent/context-store";
+import { ChatMemoryService, createMemoryGenerator } from "./agent/context-service";
 import { WorkspaceMemoryService } from "./memory/service";
 import * as authSchema from "./db/auth-schema";
 import { workspacePermissions } from "./auth/workspace-permissions";
@@ -31,6 +33,7 @@ import { connectPostgresUrl } from "./db/postgres";
 import { createIntlSearchTokenizer } from "./search/tokenizer";
 
 export interface RuntimeSecrets {
+  DAHLIA_CHAT_MEMORY_MODEL?: string;
   DAHLIA_HINDSIGHT_URL?: string;
   DAHLIA_HINDSIGHT_AUTH?: string;
   DAHLIA_HINDSIGHT_API_KEY?: string;
@@ -90,7 +93,7 @@ const healthApp = new Hono();
 healthApp.use("*", secureHeaders());
 healthApp.get("/healthz", (context) => context.json({ status: "ok" }));
 
-function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): ApplicationStore & { jobs?: WorkerJobStores; aiHistory: AiHistoryService } {
+function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): ApplicationStore & { jobs?: WorkerJobStores; aiHistory: AiHistoryService; chatMemoryStore?: ChatMemoryStore } {
   if (config.databaseType === "hyperdrive" && !env.HYPERDRIVE) throw new Error("The HYPERDRIVE binding is required");
   const url = config.databaseType === "hyperdrive" ? env.HYPERDRIVE!.connectionString
     : config.databaseType === "postgres" ? config.databaseUrl : undefined;
@@ -99,6 +102,7 @@ function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): Applic
   const permissions = syncedWorkspacePermission;
   return { ...createPostgresApplicationStore(connection.db, "postgres", config.searchEmbedding, config.encryption, config.authProviderId, config.localSingleUser, config.autoCreateOrgOnSignup), close: connection.close,
     aiHistory: createAiHistoryService(connection.pool),
+    chatMemoryStore: config.chatMemoryModel ? new ChatMemoryStore(connection.pool) : undefined,
     jobs: {
       summaryJobs: createSummaryJobStore(connection.db, true, config.encryption),
       imageAnalysis: createImageAnalysisStore(connection.db, true, config.encryption),
@@ -132,6 +136,7 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     DAHLIA_AI_BACKEND: env.DAHLIA_AI_BACKEND,
     DAHLIA_SEARCH_EMBEDDING_MODEL: env.DAHLIA_SEARCH_EMBEDDING_MODEL,
     DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: env.DAHLIA_SEARCH_EMBEDDING_DIMENSIONS,
+    DAHLIA_CHAT_MEMORY_MODEL: env.DAHLIA_CHAT_MEMORY_MODEL,
     DAHLIA_IMAGE_ANALYSIS_MODEL: env.DAHLIA_IMAGE_ANALYSIS_MODEL,
     DAHLIA_AUTH_HEADER: env.DAHLIA_AUTH_HEADER,
     DAHLIA_AUTH_PROVIDER_ID: env.DAHLIA_AUTH_PROVIDER_ID,
@@ -194,10 +199,12 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     ].filter((method) => method !== undefined) : [];
     if (config.hindsight && !env.DAHLIA_MEMORY_QUEUE) throw new Error("DAHLIA_MEMORY_QUEUE is required for Hindsight");
     const workspaceMemory = config.hindsight && applicationStore.memory ? new WorkspaceMemoryService(config, applicationStore.memory, syncService, applicationStore.sync) : undefined;
+    if (config.chatMemoryModel && !env.DAHLIA_MEMORY_QUEUE) throw new Error("DAHLIA_MEMORY_QUEUE is required for chat memory");
+    const chatMemory = applicationStore.chatMemoryStore ? new ChatMemoryService(applicationStore.chatMemoryStore, syncService, createMemoryGenerator(config)) : undefined;
     const jobs = applicationStore.jobs ? createQueueJobs(env, applicationStore.jobs, applicationStore.sync,
-      syncService, summaryMethods, captioner, searchEmbedder, workspaceMemory) : undefined;
+      syncService, summaryMethods, captioner, searchEmbedder, workspaceMemory, chatMemory) : undefined;
     const app = createApp({
-      workspaceMemory, config, auth, authStore: applicationStore, aiHistory: applicationStore.aiHistory, objectStorage, searchTokenizer, searchEmbedder, screenshotTransformer, syncService,
+      workspaceMemory, chatMemory, config, auth, authStore: applicationStore, aiHistory: applicationStore.aiHistory, objectStorage, searchTokenizer, searchEmbedder, screenshotTransformer, syncService,
       mcpSupportsCimd: false,
       summaryService: summaryMethods.length ? new SummaryService(applicationStore.sync, summaryMethods) : undefined,
       imageAnalysisEnabled: captioner !== undefined,

@@ -1,3 +1,5 @@
+import { ChatMemoryService, createMemoryGenerator } from "./agent/context-service";
+import { ChatMemoryWorker } from "./agent/context-worker";
 import { WorkspaceMemoryService } from "./memory/service";
 import { MemoryWorker } from "./memory/node-worker";
 import { createAudioSummaryMethod } from "./summary/audio";
@@ -50,6 +52,8 @@ const syncService = new MeetingSyncService(applicationStore.sync, objectStorage,
   true, captioner?.model);
 const workspaceMemory = config.hindsight && applicationStore.memory ? new WorkspaceMemoryService(config, applicationStore.memory, syncService, applicationStore.sync) : undefined;
 const memoryWorker = workspaceMemory ? new MemoryWorker(workspaceMemory) : undefined;
+const chatMemory = applicationStore.chatMemoryStore ? new ChatMemoryService(applicationStore.chatMemoryStore, syncService, createMemoryGenerator(config)) : undefined;
+const chatMemoryWorker = chatMemory ? new ChatMemoryWorker(chatMemory) : undefined;
 const development = process.argv.includes("--seed-dev");
 if (development) {
   const { installDevelopmentSeed } = await import("./dev-seed");
@@ -66,6 +70,7 @@ const summaryWorker = summaryMethods.length ? new SummaryWorker(applicationStore
 const app = createApp({
   summaryService,
   workspaceMemory,
+  chatMemory,
   config,
   auth,
   mcpSupportsCimd: config.authProvider === "accounts",
@@ -93,6 +98,7 @@ const server = serve({
   console.info(`Dahlia Server is listening on ${info.address}:${info.port}`);
 });
 memoryWorker?.start();
+chatMemoryWorker?.start();
 searchIndexer?.start();
 imageAnalysis?.start();
 summaryWorker?.start();
@@ -106,6 +112,7 @@ let shuttingDown = false;
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  const stoppedChatMemory = chatMemoryWorker?.stop();
   const stoppedMemory = memoryWorker?.stop();
   const stoppedSummary = summaryWorker?.stop();
   const stoppedIndexer = searchIndexer?.stop();
@@ -115,7 +122,7 @@ async function shutdown(): Promise<void> {
     for (const socket of sockets) socket.destroy();
   }, 10_000);
   deadline.unref();
-  await Promise.all([closed, stoppedIndexer, stoppedImageAnalysis, stoppedSummary, stoppedMemory]);
+  await Promise.all([closed, stoppedIndexer, stoppedImageAnalysis, stoppedSummary, stoppedMemory, stoppedChatMemory]);
   clearTimeout(deadline);
   await applicationStore.close?.();
 }

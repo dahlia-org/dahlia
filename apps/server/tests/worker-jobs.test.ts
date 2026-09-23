@@ -18,6 +18,28 @@ function setup(imageQueue?: JobQueue) {
 }
 const signal = () => new AbortController().signal;
 describe("Worker job delivery", () => {
+  it("dispatches private memory references and reschedules only unfinished work", async () => {
+    const reference = { action: "chat-memory" as const, id: `live:${uuidV7()}`, userId: uuidV7() };
+    const queue = { send: vi.fn(), sendBatch: vi.fn() };
+    const memory = { step: vi.fn().mockResolvedValueOnce(30).mockResolvedValue(undefined),
+      store: { due: vi.fn().mockResolvedValue([reference]) } };
+    const jobs = createQueueJobs({ DAHLIA_MEMORY_QUEUE: queue }, {} as WorkerJobStores,
+      {} as MeetingSyncStore, {} as MeetingSyncService, [], undefined, undefined, undefined, memory as never);
+    await jobs.schedule();
+    expect(queue.send).toHaveBeenCalledWith({ action: "chat-memory" });
+    await jobs.consume({ action: "chat-memory" }, signal());
+    expect(queue.sendBatch).toHaveBeenCalledWith([{ body: reference }]);
+    await jobs.consume(reference, signal());
+    expect(memory.step).toHaveBeenCalledWith(reference.id, reference.userId, expect.any(AbortSignal));
+    expect(queue.send).toHaveBeenLastCalledWith(reference, { delaySeconds: 30 });
+    queue.send.mockClear();
+    await jobs.consume(reference, signal());
+    expect(queue.send).not.toHaveBeenCalled();
+    await jobs.consume(reference, signal());
+    expect(queue.send).not.toHaveBeenCalled();
+    expect(jobMessageSchema.safeParse({ ...reference, text: "private" }).success).toBe(false);
+    expect(jobMessageSchema.safeParse({ action: "chat-memory", id: reference.id }).success).toBe(false);
+  });
   it("dispatches existing queues even when memory scheduling fails", async () => {
     const send = vi.fn<(body: JobMessage) => Promise<void>>().mockResolvedValue(undefined);
     const queue = { send, sendBatch: vi.fn() };

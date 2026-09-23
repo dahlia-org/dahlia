@@ -260,6 +260,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chat/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read private response preferences */
+        get: operations["getAiPreferences"];
+        /** Edit or clear private response preferences with revision checking */
+        put: operations["setAiPreferences"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/{threadId}/live-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read selected meeting context freshness */
+        get: operations["getAiLiveContext"];
+        /** Select or detach a meeting in the thread Workspace */
+        put: operations["setAiLiveContext"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chat/models": {
         parameters: {
             query?: never;
@@ -3505,6 +3541,146 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Success; no response body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getAiPreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        revision: number;
+                        automatic: boolean;
+                        preferences: {
+                            /** @enum {string|null} */
+                            language: "ja" | "en" | "zh" | "ko" | "es" | "fr" | "de" | "pt" | null;
+                            /** @enum {string|null} */
+                            format: "prose" | "bullets" | "code-first" | null;
+                            /** @enum {string|null} */
+                            detail: "concise" | "balanced" | "detailed" | null;
+                            explanation: string | null;
+                        };
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    setAiPreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    revision: number;
+                    automatic: boolean;
+                    preferences: {
+                        /** @enum {string|null} */
+                        language: "ja" | "en" | "zh" | "ko" | "es" | "fr" | "de" | "pt" | null;
+                        /** @enum {string|null} */
+                        format: "prose" | "bullets" | "code-first" | null;
+                        /** @enum {string|null} */
+                        detail: "concise" | "balanced" | "detailed" | null;
+                        explanation: string | null;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        revision: number;
+                        automatic: boolean;
+                        preferences: {
+                            /** @enum {string|null} */
+                            language: "ja" | "en" | "zh" | "ko" | "es" | "fr" | "de" | "pt" | null;
+                            /** @enum {string|null} */
+                            format: "prose" | "bullets" | "code-first" | null;
+                            /** @enum {string|null} */
+                            detail: "concise" | "balanced" | "detailed" | null;
+                            explanation: string | null;
+                        };
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getAiLiveContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        meetingId: string | null;
+                        /** @enum {string} */
+                        status: "off" | "pending" | "ready" | "delayed" | "ended";
+                        /** Format: date-time */
+                        updatedAt: string | null;
+                        /** Format: date-time */
+                        processedThrough: string | null;
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    setAiLiveContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    meetingId: string | null;
+                };
+            };
+        };
         responses: {
             /** @description Success; no response body. */
             204: {

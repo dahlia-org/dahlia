@@ -1,3 +1,4 @@
+import { preferenceSettingsSchema, liveSelectionSchema, liveStatusSchema } from "../agent/context-model";
 import { memorySettingsSchema, sharedMemorySchema } from "../memory/model";
 import { organizationDomainsSchema } from "../auth/organization-domains";
 import { projectPublicIDs } from "./public-schema";
@@ -89,6 +90,7 @@ const memoryStatus = z.object({ enabled: z.boolean(), status: z.string(), errorC
 const memoryNote = z.object({ id: z.string().uuid(), content: z.string(), revision: z.number(), updatedAt: S.date });
 
 export type OperationId =
+  "getAiPreferences" | "setAiPreferences" | "getAiLiveContext" | "setAiLiveContext" |
   "getWorkspaceMemory" | "setWorkspaceMemory" | "purgeWorkspaceMemory" | "listSharedMemories" | "saveSharedMemory" | "deleteSharedMemory" |
   "getHealth" | "getOpenAPI" | "getSession" | "listSessions" | "revokeSession"
   | "listAdministrators" | "addAdministrator" | "removeAdministrator" | "listServerUsers" | "listServerOrganizations"
@@ -136,6 +138,10 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   saveSharedMemory: route("put", `${v}/memory/notes`, "saveSharedMemory", "Save user-confirmed shared information with a revision", { 200: json(memoryNote) }, body(sharedMemorySchema), browser),
   deleteSharedMemory: route("delete", `${v}/memory/notes/{noteId}`, "deleteSharedMemory", "Delete shared information with a revision", { 204: empty },
     { query: z.object({ revision: z.string().regex(/^[1-9][0-9]*$/) }).strict() }, browser),
+  getAiPreferences: route("get", "/api/v1/chat/preferences", "getAiPreferences", "Read private response preferences", { 200: json(preferenceSettingsSchema) }, {}, browser),
+  setAiPreferences: route("put", "/api/v1/chat/preferences", "setAiPreferences", "Edit or clear private response preferences with revision checking", { 200: json(preferenceSettingsSchema) }, body(preferenceSettingsSchema), browser),
+  getAiLiveContext: route("get", "/api/v1/chat/{threadId}/live-context", "getAiLiveContext", "Read selected meeting context freshness", { 200: json(liveStatusSchema) }, { params: z.object({ threadId: aiThreadId }) }, browser),
+  setAiLiveContext: route("put", "/api/v1/chat/{threadId}/live-context", "setAiLiveContext", "Select or detach a meeting in the thread Workspace", { 204: empty }, { params: z.object({ threadId: aiThreadId }), ...body(liveSelectionSchema) }, browser),
   getAiModels: route("get", "/api/v1/chat/models", "getAiModels", "Agent-compatible models available to Private Web", { 200: json(z.object({ items: z.array(S.aiModel) })) }, {}, browser),
   createAiThread: route("post", "/api/v1/chat", "createAiThread", "Create a private AI chat thread",
     { 201: { ...json(aiThread, "Created."), headers: location } }, body(aiThreadCreateSchema), browser),

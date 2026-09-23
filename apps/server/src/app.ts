@@ -1,3 +1,5 @@
+import type { ChatMemoryService } from "./agent/context-service";
+import { preferenceSettingsSchema, liveSelectionSchema } from "./agent/context-model";
 import { WorkspaceMemoryService } from "./memory/service";
 import { memorySettingsSchema, sharedMemorySchema } from "./memory/model";
 import { APIError } from "better-auth/api";
@@ -122,6 +124,7 @@ export interface AppDependencies {
   aiService?: AiService;
   workspaceMemory?: WorkspaceMemoryService;
   aiHistory?: AiHistoryService;
+  chatMemory?: ChatMemoryService;
   onSyncMutation?(ownerUserId: string, context: { waitUntil(task: Promise<unknown>): void }): void;
 }
 
@@ -380,6 +383,28 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     await memoryService().store.deleteNote(identity.userId, context.req.param("workspaceId")!, context.req.param("noteId")!, Number(context.req.query("revision")));
     return context.body(null, 204);
   });
+  const chatMemory = () => {
+    if (!dependencies.chatMemory) throw new RequestError(404, "chat_memory_unavailable");
+    return dependencies.chatMemory;
+  };
+  registerApi(app, "getAiPreferences", async (context) => {
+    const identity = await identities.fromBrowser(context.req.raw);
+    return context.json(await chatMemory().store.settings(identity));
+  });
+  registerApi(app, "setAiPreferences", aiChatBodyLimit, async (context) => {
+    const identity = await identities.fromBrowser(context.req.raw);
+    return context.json(await chatMemory().store.editSettings(identity, preferenceSettingsSchema.parse(await context.req.json())));
+  });
+  registerApi(app, "getAiLiveContext", async (context) => {
+    const identity = await identities.fromBrowser(context.req.raw);
+    return context.json((await chatMemory().context(identity, context.req.param("threadId")!, context.req.raw.signal)).status);
+  });
+  registerApi(app, "setAiLiveContext", aiChatBodyLimit, async (context) => {
+    const identity = await identities.fromBrowser(context.req.raw);
+    const { meetingId } = liveSelectionSchema.parse(await context.req.json());
+    await chatMemory().select(identity, context.req.param("threadId")!, meetingId);
+    return context.body(null, 204);
+  });
   registerApi(app, "getAiModels", async (context) => {
     await identities.fromBrowser(context.req.raw);
     if (!await store.sync.isAvailable()) return context.json({ items: [] });
@@ -427,6 +452,9 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const threadId = context.req.param("threadId")!;
     const saved = await aiHistory.get(identity, threadId);
     if (!saved) return context.json({ error: "ai_thread_not_found" }, 404);
+    const workspace = await sync.getWorkspace(identity, saved.thread.workspaceId);
+    if (!workspace) return context.json({ error: "workspace_not_found" }, 404);
+    if (workspace.encryption === "server") return context.json({ error: "ai_history_encrypted_workspace_unsupported" }, 409);
     const input = aiThreadMessageSchema.parse(await context.req.json());
     const runId = await aiHistory.startRun(identity, threadId);
     if (!runId) return context.json({ error: "ai_thread_busy" }, 409);
@@ -435,9 +463,12 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const signal = AbortSignal.any([context.req.raw.signal, AbortSignal.timeout(AI_HISTORY_RUN_TIMEOUT_MS)]);
     const aiRequest = new Request(context.req.url, { method: context.req.method, headers: context.req.raw.headers, signal });
     return streamSSE(context, async (stream) => {
+      let preferenceRevision: number | undefined;
       try {
+        preferenceRevision = dependencies.chatMemory ? (await dependencies.chatMemory.store.settings(identity)).revision : undefined;
+        const liveContext = dependencies.chatMemory ? (await dependencies.chatMemory.context(identity, threadId, signal, true)).context : undefined;
         for await (const event of ai.stream({ ...input, workspaceId,
-          messages: [{ role: "user", content: input.content }], history }, identity, aiRequest)) {
+          messages: [{ role: "user", content: input.content }], history, liveContext }, identity, aiRequest)) {
           if (stream.aborted) break;
           if (event.type === "text") await stream.writeSSE({ event: "text", data: JSON.stringify({ text: event.text }) });
           else if (event.type === "tool") await stream.writeSSE({ event: "tool", data: JSON.stringify({ name: event.name, status: event.status }) });
@@ -446,6 +477,15 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       } catch (error) {
         if (!stream.aborted) await stream.writeSSE({ event: "error", data: JSON.stringify({ code: aiErrorCode(error) }) });
       } finally {
+        if (dependencies.chatMemory && preferenceRevision !== undefined) {
+          try {
+            const latest = await aiHistory.get(identity, threadId);
+            const message = latest?.messages.findLast((message) => message.role === "user");
+            if (message && message.content === input.content && !saved.messages.some((previous) => previous.id === message.id)) {
+              await dependencies.chatMemory.store.enqueuePreferences(identity, threadId, message.id, preferenceRevision);
+            }
+          } catch { console.warn(JSON.stringify({ event: "preference_enqueue_failed" })); }
+        }
         await aiHistory.finishRun(identity, threadId, runId).catch(() => undefined);
       }
       if (!stream.aborted) await stream.writeSSE({ event: "done", data: "{}" });

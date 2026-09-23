@@ -1108,7 +1108,7 @@ export class MeetingSyncService {
   }
 
   async listTranscript(identity: Identity, workspaceId: string, meetingId: string, cursor?: string,
-    options?: { after?: string; wait?: boolean; signal?: AbortSignal; authorize?: () => void | Promise<void> }) {
+    options?: { after?: string; wait?: boolean; signal?: AbortSignal; authorize?: () => void | Promise<void>; limit?: number }) {
     if (cursor !== undefined && options?.after !== undefined) throw new RequestError(400, "after_and_cursor_are_exclusive");
     const parsedCursor = this.parseTranscriptCursor(cursor);
     const deadline = Date.now() + (options?.wait ? 25_000 : 0);
@@ -1131,7 +1131,7 @@ export class MeetingSyncService {
             if (start < 0) start = records.length;
           }
           page = await transcriptCheckpoint(workspaceId, meetingId, transcript?.id ?? "none", records,
-            options.after, start, TRANSCRIPT_READ_PAGE_SIZE);
+            options.after, start, Math.max(1, Math.min(options.limit ?? TRANSCRIPT_READ_PAGE_SIZE, TRANSCRIPT_READ_PAGE_SIZE)));
         } else {
           page = { items: records.slice(0, TRANSCRIPT_READ_PAGE_SIZE), hasMore: records.length > TRANSCRIPT_READ_PAGE_SIZE };
         }

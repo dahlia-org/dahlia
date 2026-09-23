@@ -139,6 +139,10 @@ try {
       throw new Error("Package assets are incomplete");
     }
 
+    for (const file of serverMigrationManifest.postgres.files.filter((file) => file.includes("postgres-agent/20260922"))) {
+      const content = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/migrations/" + file.slice("drizzle/".length))), "utf8");
+      if (!content.trim()) throw new Error("Missing chat memory migration");
+    }
     const databasePath = fileURLToPath(new URL("./auth.sqlite", import.meta.url));
     const store = createNodeAuthStore({
       authProvider: "header",
