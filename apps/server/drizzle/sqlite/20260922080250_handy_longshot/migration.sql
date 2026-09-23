@@ -1,3 +1,14 @@
+CREATE TABLE `memory_source_jobs` (
+	`workspace_id` text NOT NULL,
+	`document_id` text NOT NULL,
+	`kind` text NOT NULL,
+	`source_id` text NOT NULL,
+	`generation` integer DEFAULT 1 NOT NULL,
+	`operation` text,
+	CONSTRAINT `memory_source_jobs_pk` PRIMARY KEY(`workspace_id`, `document_id`)
+);
+
+--> statement-breakpoint
 CREATE TABLE `memory_documents` (
 	`workspace_id` text NOT NULL,
 	`document_id` text NOT NULL,
@@ -26,6 +37,7 @@ CREATE TABLE `workspace_memory_state` (
 	`indexed_generation` integer DEFAULT 0 NOT NULL,
 	`status` text DEFAULT 'pending' NOT NULL,
 	`purge` integer DEFAULT false NOT NULL,
+	`reconcile` integer DEFAULT true NOT NULL,
 	`progress` text,
 	`lease` text,
 	`lease_until` integer,

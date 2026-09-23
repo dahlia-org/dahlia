@@ -41,6 +41,18 @@ function fixture() {
 }
 
 describe("live meeting context", () => {
+  it("continues without a deleted selection but still rejects revoked Workspace access", async () => {
+    const { service, sync, store } = fixture();
+    sync.getMeeting.mockResolvedValue(null);
+    expect(await service.context(identity, threadId, signal, true)).toEqual({
+      status: { meetingId, status: "unavailable", updatedAt: null, processedThrough: null }, context: "",
+    });
+    expect(store.snapshot).not.toHaveBeenCalled();
+    sync.getWorkspace.mockResolvedValue(null);
+    await expect(service.context(identity, threadId, signal)).rejects.toMatchObject({ code: "workspace_not_found" });
+    sync.getWorkspace.mockResolvedValue({ encryption: "server" });
+    await expect(service.context(identity, threadId, signal)).rejects.toMatchObject({ code: "ai_history_encrypted_workspace_unsupported" });
+  });
   it("preserves attribution and incomplete coverage across generation, saved excerpts and later batches", async () => {
     const { service, store, sync, generate, job } = fixture();
     let saved: LiveSnapshot | null = null;

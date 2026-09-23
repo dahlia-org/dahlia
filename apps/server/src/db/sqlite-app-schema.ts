@@ -538,6 +538,7 @@ export const workspaceMemoryState = sqliteTable("workspace_memory_state", {
   indexedGeneration: integer("indexed_generation").default(0).notNull(),
   status: text("status").default("pending").notNull(),
   purge: integer("purge", { mode: "boolean" }).default(false).notNull(),
+  reconcile: integer("reconcile", { mode: "boolean" }).default(true).notNull(),
   progress: text("progress", { mode: "json" }).$type<import("../memory/model").MemoryProgress>(),
   lease: text("lease"),
   leaseUntil: sqliteTimestamp("lease_until"),
@@ -545,6 +546,16 @@ export const workspaceMemoryState = sqliteTable("workspace_memory_state", {
   attempts: integer("attempts").default(0).notNull(),
   errorCode: text("error_code"),
 }, (table) => [index("workspace_memory_due_idx").on(table.availableAt)]);
+
+// Durable, content-free per-source work. In-flight operations survive newer edits.
+export const memorySourceJob = sqliteTable("memory_source_jobs", {
+  workspaceId: text("workspace_id").notNull(),
+  documentId: text("document_id").notNull(),
+  kind: text("kind").$type<"meeting" | "shared">().notNull(),
+  sourceId: text("source_id").notNull(),
+  generation: integer("generation").default(1).notNull(),
+  operation: text("operation", { mode: "json" }).$type<import("../memory/model").MemoryOperation>(),
+}, (table) => [primaryKey({ columns: [table.workspaceId, table.documentId] })]);
 
 export const memoryDocument = sqliteTable("memory_documents", {
   workspaceId: text("workspace_id").notNull(),

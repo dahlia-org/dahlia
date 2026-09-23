@@ -45,7 +45,7 @@ export type LiveNotes = z.infer<typeof liveNotesSchema>;
 export const emptyLiveNotes: LiveNotes = { topics: [], decisions: [], questions: [] };
 export const liveSelectionSchema = z.object({ meetingId: z.string().uuid().nullable() }).strict();
 export const liveStatusSchema = z.object({ meetingId: z.string().uuid().nullable(),
-  status: z.enum(["off", "pending", "ready", "delayed", "ended"]), updatedAt: z.iso.datetime().nullable(),
+  status: z.enum(["off", "pending", "ready", "delayed", "ended", "unavailable"]), updatedAt: z.iso.datetime().nullable(),
   processedThrough: z.iso.datetime().nullable() }).strict();
 export type LiveStatus = z.infer<typeof liveStatusSchema>;
 export const liveSnapshotSchema = z.object({ after: z.string(), notes: liveNotesSchema,

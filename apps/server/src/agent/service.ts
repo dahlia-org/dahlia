@@ -124,7 +124,7 @@ export function createAiService(
         id: "dahlia-meeting-agent",
         name: "Dahlia AI",
         model: await mastraModel(config, input.model, request.headers, identity, request.signal, databricksTokens),
-        tools: { ...tools, ...(workspaceMemory ? createMemoryTools(workspaceMemory, identity, input.workspaceId, request.signal) : {}) },
+        tools: { ...tools, ...(workspaceMemory ? createMemoryTools(workspaceMemory) : {}) },
         memory,
         instructions: [
           `context: ${JSON.stringify(modelContext)}`,

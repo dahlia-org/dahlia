@@ -1,3 +1,14 @@
+CREATE TABLE "jobs"."memory_source_jobs" (
+	"workspace_id" uuid,
+	"document_id" text,
+	"kind" text NOT NULL,
+	"source_id" uuid NOT NULL,
+	"generation" integer DEFAULT 1 NOT NULL,
+	"operation" jsonb,
+	CONSTRAINT "memory_source_jobs_pkey" PRIMARY KEY("workspace_id","document_id")
+);
+
+--> statement-breakpoint
 CREATE TABLE "jobs"."memory_documents" (
 	"workspace_id" uuid,
 	"document_id" text,
@@ -26,6 +37,7 @@ CREATE TABLE "jobs"."workspace_memory_state" (
 	"indexed_generation" integer DEFAULT 0 NOT NULL,
 	"status" text DEFAULT 'pending' NOT NULL,
 	"purge" boolean DEFAULT false NOT NULL,
+	"reconcile" boolean DEFAULT true NOT NULL,
 	"progress" jsonb,
 	"lease" uuid,
 	"lease_until" timestamp,

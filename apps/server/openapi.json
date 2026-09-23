@@ -9341,7 +9341,8 @@
                         "pending",
                         "ready",
                         "delayed",
-                        "ended"
+                        "ended",
+                        "unavailable"
                       ]
                     },
                     "updatedAt": {

@@ -3654,7 +3654,7 @@ export interface operations {
                     "application/json": {
                         meetingId: string | null;
                         /** @enum {string} */
-                        status: "off" | "pending" | "ready" | "delayed" | "ended";
+                        status: "off" | "pending" | "ready" | "delayed" | "ended" | "unavailable";
                         /** Format: date-time */
                         updatedAt: string | null;
                         /** Format: date-time */
