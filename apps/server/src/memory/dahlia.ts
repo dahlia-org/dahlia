@@ -122,7 +122,7 @@ export class DahliaMemory {
   }
   async search(identity: Identity, input: z.infer<typeof memorySearchSchema>, reflect: boolean, signal: AbortSignal) {
     let targets: MemoryScope[];
-    if (input.scope !== "auto") targets = [{ scope: input.scope, workspaceId: input.workspaceId }];
+    if (input.scope !== "auto") targets = [resultScope({ scope: input.scope, workspaceId: input.workspaceId })];
     else {
       const workspace = input.workspaceId ? await this.workspace(identity, input.workspaceId) : undefined;
       const route = await routeMemory(this.generate, identity, "read", input.query,

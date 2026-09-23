@@ -87,7 +87,9 @@ describe("Dahlia Memory", () => {
       await memory.save(f.owner, { ...input, revision: 1, content: "Human correction", explicit: true }, "human");
       await expect(memory.save(f.owner, { ...input, revision: 2, content: "Automatic overwrite" })).rejects.toMatchObject({ code: "memory_human_edit_protected" });
       await expect(memory.save(f.owner, { ...input, revision: 1, content: "Stale", explicit: true })).rejects.toMatchObject({ code: "memory_revision_conflict" });
-      const result = await memory.search(f.owner, { scope: "personal", query: "Human" }, false, signal);
+      const result = await memory.search(f.owner, { scope: "personal", workspaceId: f.workspaceId, query: "Human" }, false, signal);
+      expect(result.searchedScopes).toEqual([{ scope: "personal" }]);
+      expect(result.results[0]).not.toHaveProperty("workspaceId");
       expect(result.results[0]!.result).toMatchObject({ unavailable: true, canonical: { items: [{ content: "Human correction" }] } });
       await memory.delete(f.owner, { ...input, revision: 2, explicit: true });
       expect((await memory.list(f.owner, { scope: "personal" })).items).toEqual([]);
@@ -188,6 +190,12 @@ describe("Dahlia Memory", () => {
       await f.ready();
       const bank = `test-user-${f.owner.userId}`;
       expect([...f.documents.keys()]).toEqual([bank]);
+      for (const reflect of [false, true]) {
+        const found = await f.memory.search(f.owner, { scope: "personal", workspaceId: f.workspaceId, query: "lesson" }, reflect, signal);
+        expect(found.searchedScopes).toEqual([{ scope: "personal" }]);
+        expect(found.results[0]).not.toHaveProperty("workspaceId");
+        expect(found.results[0]!.result).toMatchObject({ sources: [{ scope: "personal", workspace_id: null }] });
+      }
       expect((await f.personal.search(f.owner, f.owner.userId, "lesson", true, signal))).toMatchObject({ sources: [{ scope: "personal", workspace_id: null }], hypothesis: "Hypothesis" });
       await f.memory.save(f.owner, { ...input, revision: 1, content: "New private lesson" });
       expect((await f.personal.search(f.owner, f.owner.userId, "lesson", true, signal)).sources).toEqual([]);
