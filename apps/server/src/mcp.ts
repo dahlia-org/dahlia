@@ -1,3 +1,4 @@
+import type { MemoryTools } from "./memory/tools";
 import { decodeId, encodeId } from "./typeid";
 import { wireValue, wireURL, wireCursor } from "./public-wire";
 import {
@@ -22,6 +23,7 @@ export function createServerMcpHandler(
   sync?: MeetingSyncService,
   authorize?: (request: Request) => Promise<void>,
   meetingTools?: MeetingTools,
+  memoryTools?: MemoryTools,
 ) {
   return createMcpHandler(({ authInfo, requestInfo }) => {
     const identity = mcpIdentity(authInfo);
@@ -37,6 +39,10 @@ export function createServerMcpHandler(
         ...request, workspaceId: decodeId("workspace", request.workspaceId), projectId: request.projectId ? decodeId("project", request.projectId) : undefined, from: request.from?.toISOString(), to: request.to?.toISOString(),
       })));
       registerMastraTool(server, sharedMeetingTools.query_meetings, identity);
+      for (const tool of Object.values(memoryTools ?? {})) registerMastraTool(server, tool, identity, requestInfo?.signal, async () => {
+        if (requestInfo) await authorize?.(requestInfo);
+        if (authInfo?.expiresAt !== undefined && authInfo.expiresAt <= Date.now() / 1000) throw new RequestError(401, "token_expired");
+      });
       server.registerTool("query_projects", {
         description: "List the complete synchronized Project hierarchy in a Workspace you can read.",
         inputSchema: z.object({ workspace_id: publicIdSchema("workspace"), type: z.enum([
@@ -94,7 +100,7 @@ export function createServerMcpHandler(
 
 export function registerMastraTool(
   server: McpServer,
-  tool: MeetingTools[keyof MeetingTools],
+  tool: MeetingTools[keyof MeetingTools] | MemoryTools[keyof MemoryTools],
   identity: Identity,
   requestSignal?: AbortSignal,
   authorize?: () => Promise<void>,

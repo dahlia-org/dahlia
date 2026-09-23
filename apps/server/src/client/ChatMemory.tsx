@@ -167,7 +167,7 @@ export function LiveChatContext({ threadId, workspaceId, disabled }: { threadId:
     } catch { if (!controller.signal.aborted) setError(uiText("Could not update the meeting. Try again.", "会議を更新できませんでした。再試行してください。")); }
     finally { if (!controller.signal.aborted) setBusy(false); }
   };
-  const stateLabels = { off: uiText("Off", "未選択"), pending: uiText("Preparing", "準備中"), ready: uiText("Up to date", "更新済み"), delayed: uiText("Catching up", "更新待ち"), ended: uiText("Meeting ended", "会議終了") };
+  const stateLabels = { off: uiText("Off", "未選択"), pending: uiText("Preparing", "準備中"), ready: uiText("Up to date", "更新済み"), delayed: uiText("Catching up", "更新待ち"), ended: uiText("Meeting ended", "会議終了"), unavailable: uiText("Meeting unavailable; chat continues without its context", "会議を利用できません。会議の文脈なしでチャットを続行します") };
   return <div className="text-xs p-2">
     <label>{uiText("Live meeting context", "会議のライブ文脈")}
       <select className="border rounded p-1 ml-2 max-w-full" disabled={disabled || busy} value={status?.meetingId ?? ""}
@@ -180,6 +180,7 @@ export function LiveChatContext({ threadId, workspaceId, disabled }: { threadId:
     {cursor && <button type="button" disabled={busy || loadingMeetings} onClick={() => void loadMeetings(cursor)}>{uiText("More meetings", "会議をさらに表示")}</button>}
     {meetingError && <p role="alert">{meetingError}<button type="button" disabled={loadingMeetings} onClick={() => void loadMeetings()}>{uiText("Retry", "再試行")}</button></p>}
     {status && <p role="status">{stateLabels[status.status]}{status.processedThrough ? ` · ${uiText("Processed through", "処理済み")}: ${new Date(status.processedThrough).toLocaleTimeString()}` : ""}</p>}
+    {status?.status === "unavailable" && <button type="button" disabled={busy || disabled} onClick={() => void select(null)}>{uiText("Detach", "解除")}</button>}
     {message && <p role="alert">{message}<button type="button" disabled={busy || disabled} onClick={() => void select(null)}>{uiText("Detach", "解除")}</button></p>}
   </div>;
 }

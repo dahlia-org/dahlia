@@ -728,6 +728,7 @@ export const workspaceMemoryState = jobsSchema.table("workspace_memory_state", {
   indexedGeneration: integer("indexed_generation").default(0).notNull(),
   status: text("status").default("pending").notNull(),
   purge: boolean("purge").default(false).notNull(),
+  reconcile: boolean("reconcile").default(true).notNull(),
   progress: jsonb("progress").$type<import("../memory/model").MemoryProgress>(),
   lease: uuid("lease"),
   leaseUntil: timestamp("lease_until"),
@@ -735,6 +736,16 @@ export const workspaceMemoryState = jobsSchema.table("workspace_memory_state", {
   attempts: integer("attempts").default(0).notNull(),
   errorCode: text("error_code"),
 }, (table) => [index("workspace_memory_due_idx").on(table.availableAt)]);
+
+// Durable, content-free per-source work. In-flight operations survive newer edits.
+export const memorySourceJob = jobsSchema.table("memory_source_jobs", {
+  workspaceId: uuid("workspace_id").notNull(),
+  documentId: text("document_id").notNull(),
+  kind: text("kind").$type<"meeting" | "shared">().notNull(),
+  sourceId: uuid("source_id").notNull(),
+  generation: integer("generation").default(1).notNull(),
+  operation: jsonb("operation").$type<import("../memory/model").MemoryOperation>(),
+}, (table) => [primaryKey({ columns: [table.workspaceId, table.documentId] })]);
 
 export const memoryDocument = jobsSchema.table("memory_documents", {
   workspaceId: uuid("workspace_id").notNull(),

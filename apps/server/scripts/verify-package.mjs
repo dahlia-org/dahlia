@@ -161,6 +161,10 @@ try {
     if (!["ical_uid", "recurrence_id", "calendar_event"].every((column) => meetingColumns.includes(column))) {
       throw new Error("Calendar identity migration is missing");
     }
+    const memoryColumns = database.prepare("PRAGMA table_info(memory_source_jobs)").all().map((column) => column.name);
+    if (!["workspace_id", "document_id", "generation", "operation"].every((column) => memoryColumns.includes(column))) {
+      throw new Error("Incremental memory schema is missing from the package");
+    }
     database.close();
     await store.close?.();
     if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== serverMigrationManifest.sqlite.files.at(-1).split("/").at(-2)) {

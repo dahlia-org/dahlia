@@ -91,6 +91,10 @@
       "entityType": "tables"
     },
     {
+      "name": "memory_source_jobs",
+      "entityType": "tables"
+    },
+    {
       "name": "organization_domains",
       "entityType": "tables"
     },
@@ -2372,6 +2376,66 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
+      "name": "workspace_id",
+      "entityType": "columns",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "document_id",
+      "entityType": "columns",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_id",
+      "entityType": "columns",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "generation",
+      "entityType": "columns",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "operation",
+      "entityType": "columns",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
       "name": "organization_id",
       "entityType": "columns",
       "table": "organization_domains"
@@ -4557,6 +4621,16 @@
       "table": "workspace_memory_state"
     },
     {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "true",
+      "generated": null,
+      "name": "reconcile",
+      "entityType": "columns",
+      "table": "workspace_memory_state"
+    },
+    {
       "type": "text",
       "notNull": false,
       "autoincrement": false,
@@ -5527,6 +5601,16 @@
       "name": "memory_documents_pk",
       "entityType": "pks",
       "table": "memory_documents"
+    },
+    {
+      "columns": [
+        "workspace_id",
+        "document_id"
+      ],
+      "nameExplicit": false,
+      "name": "memory_source_jobs_pk",
+      "entityType": "pks",
+      "table": "memory_source_jobs"
     },
     {
       "columns": [

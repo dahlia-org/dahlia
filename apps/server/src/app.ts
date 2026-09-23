@@ -1,3 +1,4 @@
+import { createMemoryTools } from "./memory/tools";
 import type { ChatMemoryService } from "./agent/context-service";
 import { preferenceSettingsSchema, liveSelectionSchema } from "./agent/context-model";
 import { WorkspaceMemoryService } from "./memory/service";
@@ -214,7 +215,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   const mcp = createServerMcpHandler(config, sync, async (request) => {
     if (config.authProvider === "accounts") await identities.verifyMcpAccessToken(request);
     else await identities.fromMcpHeader(request);
-  }, meetingTools);
+  }, meetingTools, workspaceMemory ? createMemoryTools(workspaceMemory) : undefined);
   const jobOwners = new WeakMap<Request, string>();
   const mcpMetadataUrl = `${config.baseUrl}/.well-known/oauth-protected-resource/mcp`;
   const mcpRequestAuth = config.authProvider === "accounts" && auth

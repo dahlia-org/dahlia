@@ -48,6 +48,12 @@
     },
     {
       "isRlsEnabled": false,
+      "name": "memory_source_jobs",
+      "entityType": "tables",
+      "schema": "jobs"
+    },
+    {
+      "isRlsEnabled": false,
       "name": "organization_domains",
       "entityType": "tables",
       "schema": "app"
@@ -670,6 +676,84 @@
       "entityType": "columns",
       "schema": "jobs",
       "table": "memory_documents"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "workspace_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "document_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "kind",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "source_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "generation",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "operation",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_source_jobs"
     },
     {
       "type": "uuid",
@@ -3631,6 +3715,19 @@
       "table": "workspace_memory_state"
     },
     {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "true",
+      "generated": null,
+      "identity": null,
+      "name": "reconcile",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
       "type": "jsonb",
       "typeSchema": null,
       "notNull": false,
@@ -5298,6 +5395,17 @@
       "entityType": "pks",
       "schema": "jobs",
       "table": "memory_documents"
+    },
+    {
+      "columns": [
+        "workspace_id",
+        "document_id"
+      ],
+      "nameExplicit": false,
+      "name": "memory_source_jobs_pkey",
+      "entityType": "pks",
+      "schema": "jobs",
+      "table": "memory_source_jobs"
     },
     {
       "columns": [

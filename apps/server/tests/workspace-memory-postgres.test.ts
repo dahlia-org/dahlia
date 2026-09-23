@@ -40,7 +40,18 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
       expect((await tx.execute(sql`select id from app.shared_memories where id = ${note.id}`)).rows).toHaveLength(1);
     });
     expect((await pool.query("SELECT * FROM app.shared_memories WHERE id = $1", [note.id])).rows).toEqual([]);
-    await memory.deleteNote(owner.userId, workspaceId, note.id, 1);
+    const pending = (await memory.pending(workspaceId))!;
+    await memory.setOperation(pending, { id: uuidV7(), generation: pending.generation,
+      source: { kind: "shared", id: note.id, revision: "1", projectId: null }, contentHash: "hash", attempts: 0 });
+    await memory.saveNote(owner.userId, workspaceId, { id: note.id, revision: 1, content: "Updated evidence" });
+    expect((await memory.pending(workspaceId))!.operation?.generation).toBe(pending.generation);
+    await memory.finishSource(pending);
+    const updated = (await memory.pending(workspaceId))!;
+    expect(updated.generation).toBe(pending.generation + 1);
+    expect(updated.operation).toBeNull();
+    await memory.finishSource(updated);
+    expect(await memory.pending(workspaceId)).toBeUndefined();
+    await memory.deleteNote(owner.userId, workspaceId, note.id, 2);
   });
   it.each(["purge", "pause"])("serializes a pending save against %s and rejects late retries", async (action) => {
     const concurrent = connectPostgresUrl(url!, 4);

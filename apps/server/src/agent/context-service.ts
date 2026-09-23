@@ -60,9 +60,19 @@ export class ChatMemoryService {
   async context(identity: Identity, threadId: string, signal: AbortSignal, refresh = false): Promise<{ status: LiveStatus; context: string }> {
     const { workspaceId, meetingId } = await this.store.selection(identity, threadId);
     if (!meetingId) return { status: { meetingId: null, status: "off", updatedAt: null, processedThrough: null }, context: "" };
-    const meeting = await this.meeting(identity, workspaceId, meetingId);
-    const saved = await this.store.snapshot(identity, meetingId);
-    const { snapshot, page } = await this.delta(identity, workspaceId, meetingId, saved, signal);
+    let meeting: Awaited<ReturnType<ChatMemoryService["meeting"]>>;
+    let delta: Awaited<ReturnType<ChatMemoryService["delta"]>>;
+    try {
+      meeting = await this.meeting(identity, workspaceId, meetingId);
+      const saved = await this.store.snapshot(identity, meetingId);
+      delta = await this.delta(identity, workspaceId, meetingId, saved, signal);
+    } catch (error) {
+      if (signal.aborted || !(error instanceof RequestError) || error.code !== "meeting_not_found") throw error;
+      // The parent permission is still required when the selected meeting disappears.
+      if (!await this.sync.getWorkspace(identity, workspaceId)) throw new RequestError(404, "workspace_not_found");
+      return { status: { meetingId, status: "unavailable", updatedAt: null, processedThrough: null }, context: "" };
+    }
+    const { snapshot, page } = delta;
     let state: LiveStatus["status"];
     if (!snapshot) state = "pending";
     else if (page.items.length) state = "delayed";

@@ -69,6 +69,9 @@ async function setup() {
     if (path.endsWith("/mental-models") && init?.method === "POST") {
       models.set(String(body.id), true); const id = uuidV7(); operations.set(id, failingItems.has(String(body.id)) ? "cancelled" : "completed"); return Response.json({ operation_id: id });
     }
+    if (path.endsWith("/refresh") && init?.method === "POST") {
+      const id = uuidV7(); operations.set(id, failingItems.has(path.split("/").at(-2)!) ? "failed" : "completed"); return Response.json({ operation_id: id });
+    }
     if (path.includes("/mental-models/") && init?.method === "GET") return models.has(path.split("/").at(-1)!) ? Response.json({}) : new Response(null, { status: 404 });
     if (path.includes("/mental-models/") && init?.method === "DELETE") { models.delete(path.split("/").at(-1)!); return Response.json({}); }
     if (path.includes("/documents/") && init?.method === "DELETE") { retained.delete(path.split("/").at(-1)!); return Response.json({}); }
@@ -78,14 +81,14 @@ async function setup() {
   });
   const memory = new WorkspaceMemoryService(config, app.memory!, sync, app.sync, transport);
   const tick = async () => { db.exec("UPDATE workspace_memory_state SET available_at = 0"); await memory.step(workspaceId, new AbortController().signal); };
-  const ready = async () => {
-    for (let i = 0; i < 30; i++) {
+  const ready = async (maxSteps = 80) => {
+    for (let i = 0; i < maxSteps; i++) {
       await tick(); if (["ready", "partial"].includes((await memory.status(owner, workspaceId)).status)) return;
     }
     throw new Error(JSON.stringify(await memory.status(owner, workspaceId)));
   };
   const close = async () => { db.close(); await app.close?.(); };
-  return { app, config, db, sync, memory, commit, tick, ready, close, requests, retained, failingItems,
+  return { app, config, db, sync, memory, commit, tick, ready, close, requests, retained, operations, models, failingItems,
     loseNextAcknowledgement: () => { loseAcknowledgement = true; } };
 }
 
@@ -171,9 +174,11 @@ describe("Workspace memory", () => {
       f.failingItems.add(`shared-${bad}`); f.failingItems.add("workspace-insights");
       const remove = vi.spyOn(f.memory.client, "deleteDocument");
       remove.mockRejectedValueOnce(new HindsightError("memory_unavailable"));
-      for (let i = 0; i < 30 && !remove.mock.calls.length; i++) await f.tick();
+      for (let i = 0; i < 80 && !remove.mock.calls.length; i++) await f.tick();
       expect(remove).toHaveBeenCalled();
-      await expect(f.memory.search(owner, workspaceId, "note", false, new AbortController().signal)).rejects.toThrow("memory_not_ready");
+      const partial = await f.memory.search(owner, workspaceId, "note", false, new AbortController().signal);
+      expect(partial.coverage).toBe("updating");
+      expect(partial.sources.every((source) => source.id !== bad)).toBe(true);
       await f.ready();
       expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "partial", skippedCount: 2 });
       expect(f.requests.filter((r) => r.path.endsWith("/retry"))).toHaveLength(6);
@@ -185,6 +190,135 @@ describe("Workspace memory", () => {
       await f.memory.configure(owner, workspaceId, true); await f.ready();
       expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "ready", skippedCount: 0 });
       expect(f.retained.has(`shared-${bad}`)).toBe(true);
+    } finally { await f.close(); }
+  });
+
+  it.each(["retry", "resume"])("recreates failed models on %s without retaining unchanged documents", async (action) => {
+    const f = await setup();
+    try {
+      const projectId = uuidV7(), meetingId = uuidV7(), now = new Date().toISOString();
+      await f.commit([{ entity: "project", action: "create", entityId: projectId, baseRevision: null,
+        data: { name: "Project", parentProjectId: null, projectType: null, createdAt: now } },
+      { entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
+        data: { projectId, name: "Meeting", description: "Evidence", status: "READY", duration: 60,
+          recordingStartedAt: now, createdAt: now, updatedAt: now } }]);
+      f.failingItems.add("workspace-insights"); f.failingItems.add(`project-${projectId}`);
+      await f.memory.configure(owner, workspaceId, true); await f.ready();
+      expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "partial", skippedCount: 2 });
+      expect(f.models.size).toBe(0);
+      const before = f.requests.length;
+      f.failingItems.clear();
+      if (action === "resume") await f.memory.configure(owner, workspaceId, false);
+      await f.memory.configure(owner, workspaceId, true); await f.ready();
+      expect(f.models.has("workspace-insights")).toBe(true);
+      expect(f.models.has(`project-${projectId}`)).toBe(true);
+      expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "ready", skippedCount: 0 });
+      expect(f.requests.slice(before).filter((r) => r.path.endsWith("/memories") && r.method === "POST")).toEqual([]);
+    } finally { await f.close(); }
+  });
+  it("clears every recovered failure beyond the diagnostic limit", async () => {
+    const f = await setup();
+    try {
+      await f.memory.configure(owner, workspaceId, true);
+      const ids = Array.from({ length: 21 }, () => uuidV7());
+      for (const id of ids) {
+        await f.app.memory!.saveNote(owner.userId, workspaceId, { id, revision: 0, content: "Original" });
+        f.failingItems.add(`shared-${id}`);
+      }
+      await f.ready(300);
+      const partial = await f.memory.status(owner, workspaceId);
+      expect(partial.skippedCount).toBe(21); expect(partial.skippedSources).toHaveLength(20);
+      f.failingItems.clear();
+      for (const id of ids) await f.app.memory!.saveNote(owner.userId, workspaceId, { id, revision: 1, content: "Corrected" });
+      await f.ready();
+      expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "ready", skippedCount: 0, skippedSources: [] });
+      expect(f.retained.size).toBe(21);
+    } finally { await f.close(); }
+  }, 15_000);
+  it("clears failed coverage when its canonical note is deleted", async () => {
+    const f = await setup();
+    try {
+      await f.memory.configure(owner, workspaceId, true);
+      const id = uuidV7();
+      await f.app.memory!.saveNote(owner.userId, workspaceId, { id, revision: 0, content: "Failed" });
+      f.failingItems.add(`shared-${id}`);
+      await f.ready();
+      expect((await f.memory.status(owner, workspaceId)).skippedCount).toBe(1);
+      await f.app.memory!.deleteNote(owner.userId, workspaceId, id, 1); await f.ready();
+      expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "ready", skippedCount: 0, skippedSources: [] });
+      expect((await f.memory.search(owner, workspaceId, "query", false, new AbortController().signal)).coverage).toBe("ready");
+    } finally { await f.close(); }
+  });
+
+  it.each(["delete", "ineligible"])("clears oversized meeting failure after %s", async (action) => {
+    const f = await setup();
+    try {
+      const id = uuidV7(), now = new Date().toISOString();
+      const data = { projectId: null, name: "Meeting", description: "Evidence", status: "READY", duration: 60, recordingStartedAt: now, updatedAt: now };
+      await f.commit([{ entity: "meeting", action: "create", entityId: id, baseRevision: null, data: { ...data, createdAt: now } }]);
+      vi.spyOn(f.sync, "listTranscript").mockResolvedValue({ items: [{ segmentId: uuidV7(), startedAt: new Date(), text: "x".repeat(4 * 1024 * 1024 + 1) }] } as never);
+      await f.memory.configure(owner, workspaceId, true); await f.ready();
+      expect((await f.memory.status(owner, workspaceId)).skippedCount).toBe(1);
+      const revision = (await f.sync.getMeeting(owner, workspaceId, id))!.revision!;
+      await f.commit([{ entity: "meeting", action: action === "delete" ? "delete" : "update", entityId: id, baseRevision: revision,
+        data: action === "delete" ? {} : { ...data, status: "PROCESSING_TRANSCRIPT" } }]);
+      expect(await f.app.memory!.pending(workspaceId, `meeting-${id}`)).toBeDefined();
+      await f.ready();
+      expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "ready", skippedCount: 0 });
+    } finally { await f.close(); }
+  });
+  it.each(["edit", "delete", "unrelated", "continuous"])("fences final source validation during %s", async (action) => {
+    const f = await setup();
+    try {
+      await f.memory.configure(owner, workspaceId, true);
+      const ids = [uuidV7(), uuidV7(), uuidV7()];
+      for (const id of ids) await f.app.memory!.saveNote(owner.userId, workspaceId, { id, revision: 0, content: `Original ${id}` });
+      await f.ready();
+      const [a, b, c] = [...f.retained.keys()].map((id) => id.slice("shared-".length));
+      const getNote = f.app.memory!.getNote.bind(f.app.memory!);
+      let reads = 0, revision = 1;
+      vi.spyOn(f.app.memory!, "getNote").mockImplementation(async (user, workspace, id) => {
+        if (id === a && ++reads >= 2 && (reads === 2 || action === "continuous")) {
+          if (action === "delete") await f.app.memory!.deleteNote(owner.userId, workspaceId, b!, 1);
+          else await f.app.memory!.saveNote(owner.userId, workspaceId, { id: action === "edit" ? b! : c!, revision: revision++, content: `Changed ${revision}` });
+        }
+        return getNote(user, workspace, id);
+      });
+      const result = f.memory.search(owner, workspaceId, "query", false, new AbortController().signal);
+      if (action === "continuous") await expect(result).rejects.toThrow("memory_source_changed");
+      else {
+        const found = (await result).sources.map((source) => source.id);
+        expect(found).toContain(a);
+        if (action === "unrelated") expect(found).toContain(b);
+        else expect(found).not.toContain(b);
+      }
+      expect(reads).toBeLessThanOrEqual(4);
+    } finally { await f.close(); }
+  });
+
+  it.each(["retain", "delete"])("persists recovered coverage before completing a %s job", async (action) => {
+    const f = await setup();
+    try {
+      await f.memory.configure(owner, workspaceId, true);
+      const id = uuidV7();
+      await f.app.memory!.saveNote(owner.userId, workspaceId, { id, revision: 0, content: "Original" });
+      f.failingItems.add(`shared-${id}`);
+      await f.ready();
+      expect((await f.memory.status(owner, workspaceId)).skippedCount).toBe(1);
+      f.failingItems.clear();
+      if (action === "retain") await f.app.memory!.saveNote(owner.userId, workspaceId, { id, revision: 1, content: "Recovered" });
+      else await f.app.memory!.deleteNote(owner.userId, workspaceId, id, 1);
+      const finish = f.app.memory!.finishSource.bind(f.app.memory!);
+      const interrupted = vi.spyOn(f.app.memory!, "finishSource").mockImplementationOnce(async (job) => {
+        await finish(job);
+        throw new Error("Worker stopped after durable job completion");
+      });
+      await f.tick();
+      if (action === "retain") await f.tick();
+      expect(interrupted).toHaveBeenCalledTimes(1);
+      expect(await f.app.memory!.pending(workspaceId, `shared-${id}`)).toBeUndefined();
+      await f.ready();
+      expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "ready", skippedCount: 0, skippedSources: [] });
     } finally { await f.close(); }
   });
 
@@ -214,7 +348,7 @@ describe("Workspace memory", () => {
       await expect(f.app.memory!.saveNote(viewer.userId, workspaceId, input)).rejects.toMatchObject({ status: 404 });
       await f.app.memory!.saveNote(owner.userId, workspaceId, input);
       expect(await f.app.memory!.saveNote(owner.userId, workspaceId, input)).toMatchObject({ revision: 1 });
-      await expect(f.memory.search(owner, workspaceId, "budget", false, new AbortController().signal)).rejects.toThrow("memory_not_ready");
+      expect(await f.memory.search(owner, workspaceId, "budget", false, new AbortController().signal)).toMatchObject({ coverage: "updating", sources: [] });
       f.loseNextAcknowledgement(); await f.ready();
       expect(f.requests.filter((r) => r.path.endsWith("/memories") && r.method === "POST")).toHaveLength(1);
       const result = await f.memory.search(viewer, workspaceId, "budget", false, new AbortController().signal);
@@ -222,7 +356,7 @@ describe("Workspace memory", () => {
       expect(JSON.stringify(result)).not.toContain("UNTRUSTED EXTRACTED CLAIM");
       const before = f.requests.length; await f.tick(); expect(f.requests).toHaveLength(before);
       await f.app.memory!.deleteNote(owner.userId, workspaceId, input.id, 1);
-      await expect(f.memory.search(owner, workspaceId, "budget", false, new AbortController().signal)).rejects.toThrow("memory_not_ready");
+      expect(await f.memory.search(owner, workspaceId, "budget", false, new AbortController().signal)).toMatchObject({ coverage: "updating", sources: [] });
       await f.ready(); expect(f.retained.size).toBe(0);
       expect((await f.memory.search(owner, workspaceId, "budget", false, new AbortController().signal)).sources).toEqual([]);
     } finally { await f.close(); }
@@ -239,7 +373,7 @@ describe("Workspace memory", () => {
       const { createdAt: _createdAt, ...updated } = data;
       expect(_createdAt).toBe(now);
       await f.commit([{ entity: "meeting", action: "update", entityId: meetingId, baseRevision: meeting!.revision!, data: { ...updated, description: "Corrected constraint" } }]);
-      await expect(f.memory.search(owner, workspaceId, "constraint", false, new AbortController().signal)).rejects.toThrow("memory_not_ready");
+      expect(await f.memory.search(owner, workspaceId, "constraint", false, new AbortController().signal)).toMatchObject({ coverage: "updating", sources: [] });
       await f.ready(); expect(f.retained.get(`meeting-${meetingId}`)).toContain("Corrected constraint");
       f.db.prepare("DELETE FROM workspace_permissions WHERE workspace_id = ? AND principal_id = ?").run(workspaceId, viewer.userId);
       await expect(f.memory.search(viewer, workspaceId, "constraint", false, new AbortController().signal)).rejects.toMatchObject({ status: 404 });
@@ -259,6 +393,138 @@ describe("Workspace memory", () => {
       f.db.prepare("DELETE FROM workspaces WHERE workspace_id = ?").run(workspaceId);
       await f.tick(); expect(f.retained.size).toBe(0);
       expect(f.db.prepare("SELECT * FROM workspace_memory_state").all()).toEqual([]);
+    } finally { await f.close(); }
+  });
+  it("keeps unaffected sources searchable during edits, suppresses reflection, and retains only the changed document", async () => {
+    const f = await setup();
+    try {
+      await f.memory.configure(owner, workspaceId, true);
+      const a = await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Original A" });
+      const b = await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Stable B" });
+      await f.ready();
+      const before = f.requests.length;
+      const reflection = vi.spyOn(f.memory.client, "reflect");
+      await f.app.memory!.saveNote(owner.userId, workspaceId, { id: a.id, revision: 1, content: "New A" });
+      const result = await f.memory.search(owner, workspaceId, "evidence", true, new AbortController().signal);
+      expect(result).toMatchObject({ coverage: "updating", hypothesis: null, sources: [{ id: b.id }] });
+      expect(reflection).not.toHaveBeenCalled();
+      await f.ready();
+      const writes = f.requests.slice(before).filter((request) => request.path.endsWith("/memories") && request.method === "POST");
+      expect(writes).toHaveLength(1);
+      expect(writes[0]!.body).toMatchObject({ items: [{ document_id: `shared-${a.id}` }] });
+      expect(JSON.stringify(writes[0]!.body)).toContain("New A");
+      expect(f.requests.slice(before).filter((request) => request.method === "DELETE" && request.path.includes("mental-models"))).toEqual([]);
+      expect((await f.memory.search(owner, workspaceId, "evidence", false, new AbortController().signal)).coverage).toBe("ready");
+      const unchangedStart = f.requests.length;
+      await f.app.memory!.saveNote(owner.userId, workspaceId, { id: a.id, revision: 2, content: "New A" });
+      await f.ready();
+      const unchanged = await f.memory.search(owner, workspaceId, "evidence", false, new AbortController().signal);
+      expect(unchanged.sources.find((source) => source.id === a.id)?.revision).toBe("3");
+      expect(f.requests.slice(unchangedStart).filter((request) => request.method === "POST" && request.path.endsWith("/memories"))).toEqual([]);
+
+    } finally { await f.close(); }
+  });
+  it("does not rewind backfill while notes are edited and fences older retain completions", async () => {
+    const f = await setup();
+    try {
+      await f.memory.configure(owner, workspaceId, true);
+      const note = await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "First" });
+      await f.tick();
+      const phase = (await f.app.memory!.status(owner.userId, workspaceId))!.progress!.phase;
+      await f.app.memory!.saveNote(owner.userId, workspaceId, { id: note.id, revision: 1, content: "Second" });
+      await f.tick();
+      expect((await f.app.memory!.status(owner.userId, workspaceId))!.progress!.phase).toBe(phase);
+      for (let i = 0; i < 10 && !(await f.app.memory!.pending(workspaceId))?.operation; i++) await f.tick();
+      const operation = (await f.app.memory!.pending(workspaceId))!.operation!;
+      await f.app.memory!.saveNote(owner.userId, workspaceId, { id: note.id, revision: 2, content: "Third" });
+      await f.tick();
+      expect((await f.app.memory!.pending(workspaceId))!.generation).toBeGreaterThan(operation.generation);
+      expect((await f.memory.search(owner, workspaceId, "q", false, new AbortController().signal)).sources).toEqual([]);
+      await f.ready();
+      expect(f.retained.get(`shared-${note.id}`)).toContain("Third");
+      expect(await f.app.memory!.pending(workspaceId)).toBeUndefined();
+    } finally { await f.close(); }
+  });
+  it("waits for an in-flight retain before deleting its source or erasing the bank", async () => {
+    const f = await setup();
+    try {
+      await f.memory.configure(owner, workspaceId, true);
+      const note = await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Delete during retain" });
+      for (let i = 0; i < 10 && !(await f.app.memory!.pending(workspaceId))?.operation; i++) await f.tick();
+      const operation = (await f.app.memory!.pending(workspaceId))!.operation!;
+      f.operations.set(operation.id, "processing");
+      await f.app.memory!.deleteNote(owner.userId, workspaceId, note.id, 1);
+      await f.tick();
+      expect(f.retained.has(`shared-${note.id}`)).toBe(true);
+      expect((await f.memory.search(owner, workspaceId, "q", false, new AbortController().signal)).sources).toEqual([]);
+      f.operations.set(operation.id, "completed");
+      await f.ready();
+      expect(f.retained.has(`shared-${note.id}`)).toBe(false);
+      const next = await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Erase during retain" });
+      await f.tick();
+      const erasing = (await f.app.memory!.pending(workspaceId))!.operation!;
+      f.operations.set(erasing.id, "processing");
+      await f.app.memory!.purge(owner.userId, workspaceId);
+      await f.tick();
+      expect(f.retained.has(`shared-${next.id}`)).toBe(true);
+      f.operations.set(erasing.id, "completed");
+      await f.tick();
+      expect(f.retained.size).toBe(0);
+      expect(await f.app.memory!.pending(workspaceId)).toBeUndefined();
+    } finally { await f.close(); }
+  });
+  it("ignores live recording sync while serving old meetings, then indexes the completed meeting", async () => {
+    const f = await setup();
+    try {
+      const id = uuidV7(), sessionId = uuidV7(), now = new Date().toISOString();
+      await f.commit([{ entity: "meeting", action: "create", entityId: id, baseRevision: null,
+        data: { projectId: null, name: "Live", description: "", status: "READY", duration: null, recordingStartedAt: now, createdAt: now, updatedAt: now } },
+      { entity: "meeting_event", action: "create", entityId: uuidV7(), baseRevision: null,
+        data: { meetingId: id, sessionId, kind: "recording_started", occurredAt: now } }]);
+      await f.memory.configure(owner, workspaceId, true);
+      await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Past evidence" });
+      await f.ready();
+      const generation = (await f.app.memory!.status(owner.userId, workspaceId))!.generation;
+      for (let i = 0; i < 3; i++) {
+        const meeting = await f.sync.getMeeting(owner, workspaceId, id);
+        await f.commit([{ entity: "meeting", action: "update", entityId: id, baseRevision: meeting!.revision!,
+          data: { projectId: null, name: "Live", description: `update ${i}`, status: "READY", duration: null, recordingStartedAt: now, updatedAt: now } }]);
+        expect((await f.app.memory!.status(owner.userId, workspaceId))!.generation).toBe(generation);
+        expect((await f.memory.search(owner, workspaceId, "past", false, new AbortController().signal)).sources).toHaveLength(1);
+      }
+      await f.commit([{ entity: "meeting_event", action: "create", entityId: uuidV7(), baseRevision: null,
+        data: { meetingId: id, sessionId, kind: "recording_ended", occurredAt: now } }]);
+      await f.ready();
+      expect(f.retained.get(`meeting-${id}`)).toContain("update 2");
+    } finally { await f.close(); }
+  });
+  it("updates only affected Project models and reindexes project context without touching unrelated meetings", async () => {
+    const f = await setup();
+    try {
+      const [a, b, c] = [uuidV7(), uuidV7(), uuidV7()];
+      const [moving, stable] = [uuidV7(), uuidV7()];
+      const now = new Date().toISOString();
+      for (const id of [a, b, c]) await f.commit([{ entity: "project", action: "create", entityId: id, baseRevision: null,
+        data: { name: `Project-${id}`, parentProjectId: null, projectType: null, description: "Original project", createdAt: now } }]);
+      const data = { name: "Meeting", description: "Evidence", status: "READY", duration: 60, recordingStartedAt: now, createdAt: now, updatedAt: now };
+      for (const [id, projectId] of [[moving, a], [stable, c]]) await f.commit([{ entity: "meeting", action: "create", entityId: id!, baseRevision: null, data: { ...data, projectId } }]);
+      await f.memory.configure(owner, workspaceId, true); await f.ready();
+      const before = f.requests.length;
+      const { createdAt: _createdAt, ...updated } = data; expect(_createdAt).toBe(now);
+      await f.commit([{ entity: "meeting", action: "update", entityId: moving, baseRevision: (await f.sync.getMeeting(owner, workspaceId, moving))!.revision!, data: { ...updated, projectId: b } }]);
+      await f.ready();
+      const requests = f.requests.slice(before);
+      expect(requests.filter((r) => r.path.endsWith("/memories") && r.method === "POST")).toHaveLength(1);
+      expect(requests.filter((r) => r.path.endsWith(`/project-${c}/refresh`))).toHaveLength(0);
+      expect(requests.some((r) => r.path.endsWith(`/project-${a}/refresh`))).toBe(true);
+      expect(f.models.has(`project-${b}`)).toBe(true);
+      const project = await f.sync.getProject(owner, workspaceId, b);
+      const beforeRename = f.requests.length;
+      await f.commit([{ entity: "project", action: "update", entityId: b, baseRevision: project!.revision,
+        data: { name: "Renamed", parentProjectId: null, projectType: null, description: "New project context" } }]);
+      await f.ready();
+      expect(f.retained.get(`meeting-${moving}`)).toContain("New project context");
+      expect(f.requests.slice(beforeRename).filter((r) => r.path.endsWith("/memories") && r.method === "POST")).toHaveLength(1);
     } finally { await f.close(); }
   });
   it("dispatches identifier-only Worker queue jobs and schedules pending work", async () => {

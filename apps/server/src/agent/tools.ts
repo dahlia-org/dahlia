@@ -26,7 +26,7 @@ const transcriptMcpInputSchema = meetingInputSchema.extend({
   cursor: z.string().optional(), after: z.string().max(2048).optional(), wait: z.boolean().default(false),
 });
 
-function withMcpInputSchema<T extends object, S extends z.ZodObject>(
+export function withMcpInputSchema<T extends object, S extends z.ZodObject>(
   tool: T,
   mcpInputSchema: S,
   toAgentInput: (input: z.infer<S>) => unknown = (input) => input,
@@ -111,7 +111,7 @@ export function meetingRequestContext(identity: Identity, workspaceId?: string, 
   return context;
 }
 
-function meetingContext(context: RequestContext, requestedWorkspaceId: string) {
+export function meetingContext(context: RequestContext, requestedWorkspaceId: string) {
   const typedContext = context as RequestContext<MeetingToolContext>;
   const identity = typedContext.get("identity");
   if (!identity) throw new Error("Meeting tool identity is unavailable");
@@ -120,5 +120,5 @@ function meetingContext(context: RequestContext, requestedWorkspaceId: string) {
   if (fixedWorkspaceId && fixedWorkspaceId !== decodedWorkspaceId) {
     throw new RequestError(403, "workspace_scope_mismatch");
   }
-  return { identity, workspaceId: decodedWorkspaceId, fixed: fixedWorkspaceId !== undefined };
+  return { identity, workspaceId: decodedWorkspaceId, fixed: fixedWorkspaceId !== undefined, authorize: typedContext.get("authorize") };
 }
