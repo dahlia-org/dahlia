@@ -361,7 +361,14 @@ describe("desktop-style meeting layout", () => {
     const url = "https://dahlia.aws.databricksapps.com/mcp";
     const direct = { url, databricksProxy: false, available: true } as const;
     const proxy = { url: "https://dahlia.example/mcp", proxyUrl: url, databricksProxy: true, available: true } as const;
-    expect(mcpConnectionOutput("codex", direct, "DEFAULT", true)).toContain("codex mcp login dahlia --scopes mcp:read,mcp:memory:write");
+    expect(mcpConnectionOutput("codex", direct, "DEFAULT", "share")).toContain("codex mcp login dahlia --scopes mcp:read,mcp:memory:write");
+    expect(mcpConnectionOutput("codex", direct, "DEFAULT", "read")).toContain("codex mcp login dahlia --scopes mcp:read,mcp:memory:read");
+    for (const mode of ["read", "share"] as const) {
+      const scopes = `mcp:read mcp:memory:${mode === "share" ? "write" : "read"}`;
+      expect(JSON.parse(mcpConnectionOutput("mcpJSON", direct, "DEFAULT", mode))).toEqual({ mcpServers: { dahlia: { type: "http", url, oauth: { scopes } } } });
+      expect(mcpConnectionOutput("claude", direct, "DEFAULT", mode)).toBe(`claude mcp add-json --scope user dahlia '${JSON.stringify({ type: "http", url, oauth: { scopes } })}'`);
+      expect(mcpConnectionOutput("claude", proxy, "DEFAULT", mode)).not.toContain("oauth");
+    }
     expect(mcpConnectionOutput("codex", direct)).toBe(`codex mcp add dahlia --url '${url}'`);
     expect(mcpConnectionOutput("claude", direct)).toBe(`claude mcp add --scope user --transport http dahlia '${url}'`);
     expect(JSON.parse(mcpConnectionOutput("mcpJSON", direct))).toEqual({ mcpServers: { dahlia: { type: "http", url } } });

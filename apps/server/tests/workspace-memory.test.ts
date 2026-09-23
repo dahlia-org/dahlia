@@ -101,17 +101,17 @@ describe("Workspace memory", () => {
       const request = (url: string, method = "GET", body?: unknown, identity = owner) => app.request(url, { method,
         headers: { "x-forwarded-email": `${identity.userId}@example.com`, "content-type": "application/json", "x-dahlia-workspace-transfers": "1" },
         body: body ? JSON.stringify(body) : undefined });
-      expect((await request(path, "PUT", { enabled: true }, viewer)).status).toBe(404);
-      expect((await request(path, "PUT", { enabled: true })).status).toBe(204);
-      expect((await request(`${path}/notes`, "PUT", { id: encodeId("sharedMemory", crypto.randomUUID()),
-        content: "Invalid entity ID", revision: 0, confirmed: true })).status).toBe(400);
+      expect((await request(`${path}/analysis/settings`, "PATCH", { enabled: true }, viewer)).status).toBe(404);
+      expect((await request(`${path}/analysis/settings`, "PATCH", { enabled: true })).status).toBe(200);
+      expect((await request(`${path}/notes`, "POST", { id: encodeId("sharedMemory", crypto.randomUUID()),
+        content: "Invalid entity ID", revision: 0, explicit: true })).status).toBe(400);
       const id = encodeId("sharedMemory", uuidV7());
-      expect((await request(`${path}/notes`, "PUT", { id, content: "User-confirmed claim", revision: 0 })).status).toBe(400);
-      const saved = await request(`${path}/notes`, "PUT", { id, content: "User-confirmed claim", revision: 0, confirmed: true });
-      expect(saved.status).toBe(200); expect(await saved.json()).toMatchObject({ id, revision: 1 });
+      expect((await request(`${path}/notes`, "POST", { id, content: "User-confirmed claim", revision: 0 })).status).toBe(400);
+      const saved = await request(`${path}/notes`, "POST", { id, content: "User-confirmed claim", revision: 0, explicit: true });
+      expect(saved.status).toBe(200); expect(await saved.json()).toMatchObject({ memory: { id, revision: 1 } });
       expect(await (await request(`${path}/notes`)).json()).toMatchObject({ items: [{ id }] });
-      expect((await request(`${path}/notes/${id}?revision=1`, "DELETE", undefined, viewer)).status).toBe(404);
-      expect((await request(`${path}/notes/${id}?revision=1`, "DELETE")).status).toBe(204);
+      expect((await request(`${path}/notes/${id}?revision=1&explicit=true`, "DELETE", undefined, viewer)).status).toBe(404);
+      expect((await request(`${path}/notes/${id}?revision=1&explicit=true`, "DELETE")).status).toBe(200);
       const purge = await request(path, "DELETE"); expect(purge.status).toBe(202); expect(await purge.json()).toEqual({ status: "deleting" });
     } finally { await f.close(); }
   });

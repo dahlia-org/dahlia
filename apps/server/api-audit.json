@@ -1059,28 +1059,6 @@
       ]
     },
     {
-      "operationId": "getWorkspaceMemory",
-      "method": "GET",
-      "path": "/api/v1/workspaces/{workspaceId}/memory",
-      "classification": "modified",
-      "previous": "none",
-      "reason": "Workspace-scoped memory backed by canonical Dahlia data",
-      "consumers": [
-        "Private Web"
-      ]
-    },
-    {
-      "operationId": "setWorkspaceMemory",
-      "method": "PUT",
-      "path": "/api/v1/workspaces/{workspaceId}/memory",
-      "classification": "modified",
-      "previous": "none",
-      "reason": "Workspace-scoped memory backed by canonical Dahlia data",
-      "consumers": [
-        "Private Web"
-      ]
-    },
-    {
       "operationId": "purgeWorkspaceMemory",
       "method": "DELETE",
       "path": "/api/v1/workspaces/{workspaceId}/memory",
@@ -1092,56 +1070,23 @@
       ]
     },
     {
-      "operationId": "listSharedMemories",
+      "operationId": "getWorkingMemory",
       "method": "GET",
-      "path": "/api/v1/workspaces/{workspaceId}/memory/notes",
-      "classification": "modified",
-      "previous": "none",
-      "reason": "Workspace-scoped memory backed by canonical Dahlia data",
-      "consumers": [
-        "Private Web"
-      ]
-    },
-    {
-      "operationId": "saveSharedMemory",
-      "method": "PUT",
-      "path": "/api/v1/workspaces/{workspaceId}/memory/notes",
-      "classification": "modified",
-      "previous": "none",
-      "reason": "Workspace-scoped memory backed by canonical Dahlia data",
-      "consumers": [
-        "Private Web"
-      ]
-    },
-    {
-      "operationId": "deleteSharedMemory",
-      "method": "DELETE",
-      "path": "/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}",
-      "classification": "modified",
-      "previous": "none",
-      "reason": "Workspace-scoped memory backed by canonical Dahlia data",
-      "consumers": [
-        "Private Web"
-      ]
-    },
-    {
-      "operationId": "getAiPreferences",
-      "method": "GET",
-      "path": "/api/v1/chat/preferences",
+      "path": "/api/v1/user/memory/working",
       "classification": "modified",
       "previous": "new public contract",
-      "reason": "Read owner-only response preferences",
+      "reason": "Read owner-only Working Memory",
       "consumers": [
         "apps/server/src/client/ChatMemory.tsx"
       ]
     },
     {
-      "operationId": "setAiPreferences",
-      "method": "PUT",
-      "path": "/api/v1/chat/preferences",
+      "operationId": "updateWorkingMemory",
+      "method": "PATCH",
+      "path": "/api/v1/user/memory/working",
       "classification": "modified",
       "previous": "new public contract",
-      "reason": "Edit and forget owner-only response preferences",
+      "reason": "Edit one owner-only Working Memory section",
       "consumers": [
         "apps/server/src/client/ChatMemory.tsx"
       ]
@@ -1171,7 +1116,7 @@
     {
       "operationId": "memoryScopes",
       "method": "GET",
-      "path": "/api/v1/memory/scopes",
+      "path": "/api/v1/user/memory/scopes",
       "classification": "modified",
       "previous": "none",
       "reason": "Dahlia Memory personal and Workspace scopes",
@@ -1180,89 +1125,199 @@
       ]
     },
     {
-      "operationId": "memoryList",
-      "method": "POST",
-      "path": "/api/v1/memory/list",
+      "operationId": "personalMemoryList",
+      "method": "GET",
+      "path": "/api/v1/user/memory/notes",
       "classification": "modified",
       "previous": "none",
-      "reason": "Dahlia Memory personal and Workspace scopes",
+      "reason": "Personal canonical memory list in an owner-scoped URL",
       "consumers": [
         "Private Web"
       ]
     },
     {
-      "operationId": "memoryGet",
-      "method": "POST",
-      "path": "/api/v1/memory/get",
+      "operationId": "personalMemoryGet",
+      "method": "GET",
+      "path": "/api/v1/user/memory/notes/{noteId}",
       "classification": "modified",
       "previous": "none",
-      "reason": "Dahlia Memory personal and Workspace scopes",
+      "reason": "Personal canonical memory get in an owner-scoped URL",
       "consumers": [
         "Private Web"
       ]
     },
     {
-      "operationId": "memorySave",
+      "operationId": "personalMemorySave",
       "method": "POST",
-      "path": "/api/v1/memory/save",
+      "path": "/api/v1/user/memory/notes",
       "classification": "modified",
       "previous": "none",
-      "reason": "Dahlia Memory personal and Workspace scopes",
+      "reason": "Personal canonical memory save in an owner-scoped URL",
       "consumers": [
         "Private Web"
       ]
     },
     {
-      "operationId": "memoryDelete",
-      "method": "POST",
-      "path": "/api/v1/memory/delete",
+      "operationId": "personalMemoryDelete",
+      "method": "DELETE",
+      "path": "/api/v1/user/memory/notes/{noteId}",
       "classification": "modified",
       "previous": "none",
-      "reason": "Dahlia Memory personal and Workspace scopes",
+      "reason": "Personal canonical memory delete in an owner-scoped URL",
       "consumers": [
         "Private Web"
       ]
     },
     {
-      "operationId": "memoryRecall",
+      "operationId": "personalMemoryRecall",
       "method": "POST",
-      "path": "/api/v1/memory/recall",
+      "path": "/api/v1/user/memory/recall",
       "classification": "modified",
       "previous": "none",
-      "reason": "Dahlia Memory personal and Workspace scopes",
+      "reason": "Personal canonical memory recall in an owner-scoped URL",
       "consumers": [
         "Private Web"
       ]
     },
     {
-      "operationId": "memoryReflect",
+      "operationId": "personalMemoryReflect",
       "method": "POST",
-      "path": "/api/v1/memory/reflect",
+      "path": "/api/v1/user/memory/reflect",
       "classification": "modified",
       "previous": "none",
-      "reason": "Dahlia Memory personal and Workspace scopes",
+      "reason": "Personal canonical memory reflect in an owner-scoped URL",
       "consumers": [
         "Private Web"
       ]
     },
     {
-      "operationId": "memoryStatus",
-      "method": "POST",
-      "path": "/api/v1/memory/status",
+      "operationId": "personalMemoryStatus",
+      "method": "GET",
+      "path": "/api/v1/user/memory/analysis/status",
       "classification": "modified",
       "previous": "none",
-      "reason": "Dahlia Memory personal and Workspace scopes",
+      "reason": "Personal canonical memory status in an owner-scoped URL",
       "consumers": [
         "Private Web"
       ]
     },
     {
-      "operationId": "memoryConfigure",
-      "method": "POST",
-      "path": "/api/v1/memory/configure",
+      "operationId": "personalMemoryConfigure",
+      "method": "PATCH",
+      "path": "/api/v1/user/memory/analysis/settings",
       "classification": "modified",
       "previous": "none",
-      "reason": "Dahlia Memory personal and Workspace scopes",
+      "reason": "Personal canonical memory configure in an owner-scoped URL",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "workspaceMemoryList",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/notes",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Workspace canonical memory list in an owner-scoped URL",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "workspaceMemoryGet",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Workspace canonical memory get in an owner-scoped URL",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "workspaceMemorySave",
+      "method": "POST",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/notes",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Workspace canonical memory save in an owner-scoped URL",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "workspaceMemoryDelete",
+      "method": "DELETE",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Workspace canonical memory delete in an owner-scoped URL",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "workspaceMemoryRecall",
+      "method": "POST",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/recall",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Workspace canonical memory recall in an owner-scoped URL",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "workspaceMemoryReflect",
+      "method": "POST",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/reflect",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Workspace canonical memory reflect in an owner-scoped URL",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "workspaceMemoryStatus",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/analysis/status",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Workspace canonical memory status in an owner-scoped URL",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "workspaceMemoryConfigure",
+      "method": "PATCH",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/analysis/settings",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Workspace canonical memory configure in an owner-scoped URL",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "personalMemoryUpdate",
+      "method": "PATCH",
+      "path": "/api/v1/user/memory/notes/{noteId}",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Edit a saved note with revision checking",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "workspaceMemoryUpdate",
+      "method": "PATCH",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Edit a saved note with revision checking",
       "consumers": [
         "Private Web"
       ]
@@ -2171,6 +2226,8 @@
       "get_memory",
       "recall_memory",
       "reflect_memory",
+      "get_working_memory",
+      "update_working_memory",
       "save_memory",
       "delete_memory"
     ],

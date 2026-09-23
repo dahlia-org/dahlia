@@ -247,7 +247,7 @@ it("audits the concrete installed Better Auth endpoints and MCP tools", async ()
     const agentToolSource = await readFile(new URL("../src/agent/tools.ts", import.meta.url), "utf8");
     const registered = [...mcpSource.matchAll(/server.registerTool\("([^"]+)"/g)].map((match) => match[1]);
     const shared = [...agentToolSource.matchAll(/id: "((?:query|get)_meeting(?:s|_transcript)?)"/g)].map((match) => match[1]);
-    expect([...registered, ...shared, ...Object.keys(createDahliaMemoryTools({} as DahliaMemory))].sort()).toEqual(audit.mcp.tools.toSorted());
+    expect([...registered, ...shared, ...Object.keys(createDahliaMemoryTools({} as DahliaMemory, true, {} as never))].sort()).toEqual(audit.mcp.tools.toSorted());
   } finally { await store.close?.(); await rm(directory, { recursive: true, force: true }); }
 });
 

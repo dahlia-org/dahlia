@@ -18,4 +18,8 @@
 
 Server は未リリースのため、個人領域の表と共有ノートの人手保護フラグを既存のメモリー migration に統合し、個人表の FORCE RLS も既存のメモリー RLS migration にまとめる。Drizzle snapshot と登録一覧を同期する。適用済みの開発 DB は自動更新されない。検証は新しい空 DB を使い、保持が必要な DB や migration ledger を削除・変更しない。個人表は owner RLS、SQLite は同じアプリケーション認可を使う。削除後の remote bank cleanup のため、本文を含まない job 状態はアカウント削除に追随して消さない。
 
-汎用 Agent を外部公開せず、内蔵 Agent と MCP は同じ bounded tools を使う。Hooks とクライアントプラグインは含めない。呼び出しタイミングは利用者のクライアント指示に依存する。既存の個人の回答設定とスレッド Observational Memory は引き続き別の保存契約を持ち、全文を MCP に公開しない。
+汎用 Agent を外部公開せず、内蔵 Agent と MCP は同じ bounded tools を使う。個人の Working Memory は Mastra の resource-scoped Markdown とし、手動メモと明示的で継続的な利用者発言から学習したメモを分ける。Web・内蔵 Agent・MCP は同じ owner と revision を使う。`GET/PATCH /api/v1/user/memory/working` と `get_working_memory` / `update_working_memory` で本人に公開し、チャット削除では保存済みの内容を消さない。個人の保存済み記憶は `/api/v1/user/memory`、Workspace の保存済み記憶と長期記憶の管理は `/api/v1/workspaces/{workspaceId}/memory` に置き、本文の `scope` で所有先を変更できないようにする。保存メモの CRUD は各所有先の `/notes` と `/notes/{noteId}` に統一し、分析は `/analysis/status` と `/analysis/settings`、検索と考察は `/recall` と `/reflect` に置く。自動ルーティングは MCP／内蔵 Agent の共有サービスだけに公開する。Workspace の `DELETE /memory` は共有メモと Hindsight bank の全削除で、会議の正本は削除しない。スレッド Observational Memory と会議由来の live context は別領域とし、live context API は `/api/v1/chat/{threadId}/live-context` に置く。
+
+外部クライアントは `mcp:memory:read` による参照専用と `mcp:memory:write` による記憶共有を選べる。クライアント指示や任意の hooks はツール呼び出しのタイミングを決めるが、認可境界には使わない。Header 配置の権限はサーバー単位の設定であり、クライアントごとに分離する場合は Accounts OAuth を使う。既存の全文会話を自動取り込みせず、長く使う個人の学びだけを簡潔に保存する。
+
+Working Memory の編集中セクションは読込時の revision を維持し、別クライアントによる同セクションの更新を上書きしない。学習メモの上限到達時は既存内容を保持して自動学習を停止し、`capacityReached` と UI で通知する。利用者が整理・再有効化する。外部クライアントの read/share は Codex の login scopes と Claude Code の `oauth.scopes` に反映し、変更時は再認証する。Header/proxy 環境の権限は管理者設定であり、クライアント指示や hooks は権限を変更しない。

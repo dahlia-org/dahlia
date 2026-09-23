@@ -37,15 +37,17 @@ function shellArgument(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-export function mcpConnectionOutput(client: MCPClient, mcp: MCPConnectionInfo["mcp"], profile = "DEFAULT", memory = false): string {
+export function mcpConnectionOutput(client: MCPClient, mcp: MCPConnectionInfo["mcp"], profile = "DEFAULT", memoryMode: "off" | "read" | "share" = "off"): string {
   const url = mcp.databricksProxy ? mcp.proxyUrl : mcp.url;
   const normalizedProfile = profile.trim() || "DEFAULT";
+  const scopes = `mcp:read mcp:memory:${memoryMode === "share" ? "write" : "read"}`;
+  const http = { type: "http", url, ...(memoryMode !== "off" ? { oauth: { scopes } } : {}) };
   if (client === "mcpJSON") {
     return JSON.stringify({
       mcpServers: {
         dahlia: mcp.databricksProxy
           ? { type: "stdio", command: "uvx", args: ["uc-mcp-proxy", "--url", url, "--profile", normalizedProfile] }
-          : { type: "http", url },
+          : http,
       },
     }, null, 2);
   }
@@ -55,9 +57,12 @@ export function mcpConnectionOutput(client: MCPClient, mcp: MCPConnectionInfo["m
       ? `claude mcp add --scope user dahlia -- ${command}`
       : `codex mcp add dahlia -- ${command}`;
   }
-  return client === "claude"
-    ? `claude mcp add --scope user --transport http dahlia ${shellArgument(url)}`
-    : `codex mcp add dahlia --url ${shellArgument(url)}${memory ? "\ncodex mcp login dahlia --scopes mcp:read,mcp:memory:write" : ""}`;
+  if (client === "claude") {
+    return memoryMode === "off"
+      ? `claude mcp add --scope user --transport http dahlia ${shellArgument(url)}`
+      : `claude mcp add-json --scope user dahlia ${shellArgument(JSON.stringify(http))}`;
+  }
+  return `codex mcp add dahlia --url ${shellArgument(url)}${memoryMode !== "off" ? `\ncodex mcp login dahlia --scopes mcp:read,mcp:memory:${memoryMode === "share" ? "write" : "read"}` : ""}`;
 }
 
 const clients: Array<{ id: MCPClient; label: string }> = [
@@ -71,6 +76,7 @@ export function MCPConnectionDialog({ onClose, memory = false }: { onClose: () =
   const [error, setError] = useState<string>();
   const [client, setClient] = useState<MCPClient>("mcpJSON");
   const [profile, setProfile] = useState("DEFAULT");
+  const [memoryMode, setMemoryMode] = useState<"read" | "share">("read");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   useEffect(() => {
@@ -85,7 +91,7 @@ export function MCPConnectionDialog({ onClose, memory = false }: { onClose: () =
 
   const mcpUnavailable = connection?.mcp.available === false;
   const canConfigure = !error && !mcpUnavailable;
-  const output = connection ? mcpConnectionOutput(client, connection.mcp, profile, memory) : "";
+  const output = connection ? mcpConnectionOutput(client, connection.mcp, profile, memory ? memoryMode : "off") : "";
   async function copy() {
     try {
       await navigator.clipboard.writeText(output);
@@ -106,10 +112,11 @@ export function MCPConnectionDialog({ onClose, memory = false }: { onClose: () =
       )}</DialogDescription>
     </DialogHeader>
     <div className="grid gap-4">
-      {memory && <p className="text-sm" role="note">{uiText(
-        "Dahlia Memory requires a separate memory permission. Approve memory read/write in the OAuth flow; reconnect existing clients. Databricks Apps requires the operator to enable Memory MCP access. Shared saves still require your explicit instruction.",
-        "Dahlia Memory は独立したメモリー権限を使います。OAuth でメモリーの読み書きを許可し、既存の接続は再認証してください。Databricks Apps は管理者による Memory MCP の有効化が必要です。共有への保存には引き続き明示的な依頼が必要です。",
-      )}</p>}
+      {memory && <div className="grid gap-2 text-sm" role="group" aria-label={uiText("Memory mode", "記憶モード")}>
+        <label><input type="radio" name="memory-mode" checked={memoryMode === "read"} onChange={() => setMemoryMode("read")} />{uiText("Reference only", "参照のみ")}</label>
+        <label><input type="radio" name="memory-mode" checked={memoryMode === "share"} onChange={() => setMemoryMode("share")} />{uiText("Share memory", "記憶を共有")}</label>
+        <p role="note">{uiText("Claude Code and Codex settings request the selected OAuth permission. Reauthenticate after changing modes. JSON uses Claude Code’s oauth.scopes; other clients must support it. Databricks proxy permissions are set by the operator; here the mode only changes the suggested instruction. Hooks are optional.", "Claude Code・Codex の設定には選択した OAuth 権限を反映します。変更後は再認証してください。JSON は Claude Code の oauth.scopes 対応クライアント用です。Databricks proxy の権限は管理者が設定し、ここでの選択は指示例だけを変更します。hooks は任意です。")}</p>
+      </div>}
       {connection?.mcp.databricksProxy && <div className="grid gap-1 rounded-lg border bg-muted/50 p-3 text-sm">
         <strong>{uiText("Databricks Apps authentication", "Databricks Apps の認証")}</strong>
         <span className="leading-6 text-muted-foreground">{uiText(
@@ -135,6 +142,13 @@ export function MCPConnectionDialog({ onClose, memory = false }: { onClose: () =
       </Tabs>}
       {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : !canConfigure ? null : connection ? <>
         <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-950 p-4 text-xs leading-5 text-zinc-100"><code>{output}</code></pre>
+        {memory && <p className="text-xs text-muted-foreground">{memoryMode === "read" ? uiText(
+          "Client instruction: Read get_working_memory and recall_memory when relevant. Do not call update_working_memory, save_memory or delete_memory.",
+          "クライアント指示例: 必要に応じて get_working_memory と recall_memory を参照する。update_working_memory、save_memory、delete_memory は呼ばない。",
+        ) : uiText(
+          "Client instruction: Read Dahlia Memory when relevant. Save only concise durable personal lessons after a conversation; never save full transcripts or secrets. Update Working Memory, share to a Workspace or delete only on my explicit request.",
+          "クライアント指示例: 必要に応じて Dahlia Memory を参照する。会話後は長く役立つ簡潔な個人の学びだけ保存し、全文や秘密情報は保存しない。Working Memory の更新、Workspace への共有、削除は私の明示的な依頼がある場合だけ行う。",
+        )}</p>}
         <Button type="button" variant="outline" className="w-fit" onClick={() => void copy()}>
           {copyState === "copied" ? uiText("Copied", "コピーしました") : uiText("Copy", "コピー")}
         </Button>

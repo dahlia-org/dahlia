@@ -656,7 +656,7 @@
   },
   "routes": [
     {
-      "path": "/api/v1/memory/scopes",
+      "path": "/api/v1/user/memory/scopes",
       "methods": [
         "GET"
       ],
@@ -664,102 +664,11 @@
       "request": "pass"
     },
     {
-      "path": "/api/v1/memory/list",
-      "methods": [
-        "POST"
-      ],
-      "response": "pass",
-      "request": "pass"
-    },
-    {
-      "path": "/api/v1/memory/get",
-      "methods": [
-        "POST"
-      ],
-      "response": "pass",
-      "request": "pass"
-    },
-    {
-      "path": "/api/v1/memory/save",
-      "methods": [
-        "POST"
-      ],
-      "response": "pass",
-      "request": "pass"
-    },
-    {
-      "path": "/api/v1/memory/delete",
-      "methods": [
-        "POST"
-      ],
-      "response": "pass",
-      "request": "pass"
-    },
-    {
-      "path": "/api/v1/memory/recall",
-      "methods": [
-        "POST"
-      ],
-      "response": "pass",
-      "request": "pass"
-    },
-    {
-      "path": "/api/v1/memory/reflect",
-      "methods": [
-        "POST"
-      ],
-      "response": "pass",
-      "request": "pass"
-    },
-    {
-      "path": "/api/v1/memory/status",
-      "methods": [
-        "POST"
-      ],
-      "response": "pass",
-      "request": "pass"
-    },
-    {
-      "path": "/api/v1/memory/configure",
-      "methods": [
-        "POST"
-      ],
-      "response": "pass",
-      "request": "pass"
-    },
-    {
-      "path": "/api/v1/workspaces/:workspace/memory",
-      "response": "pass",
-      "request": "pass"
-    },
-    {
-      "path": "/api/v1/workspaces/:workspace/memory/notes",
-      "methods": [
-        "GET"
-      ],
-      "response": "sharedMemoryPage",
-      "query": {
-        "after": "id:sharedMemory"
-      }
-    },
-    {
-      "path": "/api/v1/workspaces/:workspace/memory/notes",
-      "response": "sharedMemory",
-      "request": "sharedMemory",
-      "methods": [
-        "PUT"
-      ]
-    },
-    {
-      "path": "/api/v1/workspaces/:workspace/memory/notes/:sharedMemory",
-      "response": "pass"
-    },
-    {
-      "path": "/api/v1/chat/preferences",
+      "path": "/api/v1/user/memory/working",
       "methods": [
         "GET",
         "HEAD",
-        "PUT"
+        "PATCH"
       ],
       "response": "pass",
       "request": "pass",
@@ -2229,6 +2138,163 @@
       "methods": [
         "POST"
       ]
+    },
+    {
+      "path": "/api/v1/user/memory/notes",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/user/memory/notes/:noteId",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/user/memory/notes",
+      "methods": [
+        "POST"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/user/memory/notes/:noteId",
+      "methods": [
+        "PATCH"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/user/memory/notes/:noteId",
+      "methods": [
+        "DELETE"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/user/memory/recall",
+      "methods": [
+        "POST"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/user/memory/reflect",
+      "methods": [
+        "POST"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/user/memory/analysis/status",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/user/memory/analysis/settings",
+      "methods": [
+        "PATCH"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspaceId/memory/notes",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspaceId/memory/notes/:noteId",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspaceId/memory/notes",
+      "methods": [
+        "POST"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspaceId/memory/notes/:noteId",
+      "methods": [
+        "PATCH"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspaceId/memory/notes/:noteId",
+      "methods": [
+        "DELETE"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspaceId/memory/recall",
+      "methods": [
+        "POST"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspaceId/memory/reflect",
+      "methods": [
+        "POST"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspaceId/memory/analysis/status",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspaceId/memory/analysis/settings",
+      "methods": [
+        "PATCH"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspace/memory",
+      "methods": [
+        "DELETE"
+      ],
+      "response": "pass"
     }
   ]
 }

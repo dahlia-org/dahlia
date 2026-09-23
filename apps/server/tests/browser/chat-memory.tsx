@@ -1,23 +1,21 @@
 // pnpm dev:client -> /tests/browser/chat-memory.html. In-memory API only.
 import { createRoot } from "react-dom/client";
-import { ChatPreferences, LiveChatContext } from "../../src/client/ChatMemory";
-import { emptyPreferences, type PreferenceSettings } from "../../src/agent/context-model";
+import { WorkingMemoryEditor, LiveChatContext } from "../../src/client/ChatMemory";
+import { type WorkingMemorySettings } from "../../src/agent/context-model";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
-let saved: PreferenceSettings = { revision: 0, automatic: true, preferences: { ...emptyPreferences } };
+let saved: WorkingMemorySettings = { revision: 0, automatic: true, capacityReached: false, manual: "", learned: "" };
 let poll: (() => void) | undefined;
 const nativeInterval = window.setInterval.bind(window);
 window.setInterval = ((callback: TimerHandler, delay?: number) => {
   if (delay === 15_000) poll = callback as () => void;
   return nativeInterval(callback, delay);
 }) as typeof window.setInterval;
-let holdRead = false, failWrite = false;
 let liveMeeting: string | null = "A", holdLive = false, holdWrite = false;
 let releaseLive: (() => void) | undefined, releaseWrite: (() => void) | undefined;
 let failMeetings = false, holdMeetings = false;
 let releaseMeetings: (() => void) | undefined;
 let meetingChoices = [{ meetingId: "A", name: "A", isRecording: true }, { meetingId: "B", name: "B", isRecording: true }];
-let releaseRead: (() => void) | undefined;
 window.fetch = async (input, init) => {
   const request = input instanceof Request ? input : new Request(new URL(input, location.origin), init);
   const path = new URL(request.url).pathname;
@@ -40,18 +38,13 @@ window.fetch = async (input, init) => {
     if (holdLive) { holdLive = false; await new Promise<void>((resolve) => { releaseLive = resolve; }); }
     return response;
   }
-  if (path !== "/api/v1/chat/preferences") throw new Error("Unexpected request");
-  if (request.method === "PUT") {
-    if (failWrite) return Response.json({ error: "unavailable" }, { status: 503 });
-    const next: PreferenceSettings = await request.json();
+  if (path !== "/api/v1/user/memory/working") throw new Error("Unexpected request");
+  if (request.method === "PATCH") {
+    const next: { section: "manual" | "learned" | "settings"; content?: string; automatic?: boolean; revision: number } = await request.json();
     if (next.revision !== saved.revision) return Response.json({ error: "memory_revision_conflict" }, { status: 409 });
-    saved = { ...next, revision: next.revision + 1 };
+    saved = { ...saved, [next.section === "settings" ? "automatic" : next.section]: next.section === "settings" ? next.automatic : next.content, revision: next.revision + 1 };
   }
   const response = Response.json(saved);
-  if (request.method === "GET" && holdRead) {
-    holdRead = false;
-    await new Promise<void>((resolve) => { releaseRead = resolve; });
-  }
   return response;
 };
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
@@ -62,37 +55,40 @@ async function until(predicate: () => unknown) {
     await new Promise(requestAnimationFrame);
   }
 }
-const explanation = () => document.querySelector("textarea")!;
+const textarea = (index: number) => document.querySelectorAll("textarea")[index]!;
 const select = (index: number) => document.querySelectorAll("select")[index]!;
 const button = (text: string) => [...document.querySelectorAll("button")].find((element) => element.textContent === text)!;
 async function run() {
   const root = createRoot(document.getElementById("root")!);
-  root.render(<ChatPreferences />);
+  root.render(<WorkingMemoryEditor />);
   await until(() => document.querySelector("details"));
-  saved = { ...saved, revision: 1, preferences: { ...saved.preferences, language: "ja", explanation: "Explain terms" } };
+  saved = { ...saved, revision: 1, manual: "## Profile\nI use Dahlia", learned: "- Japanese replies" };
   document.querySelector("details")!.open = true;
-  await until(() => explanation().value === "Explain terms");
-  assert(select(0).value === "ja" && !button("Forget").disabled, "Opening did not load learned preferences");
-  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(explanation(), "My unsaved explanation");
-  explanation().dispatchEvent(new Event("input", { bubbles: true }));
-  saved = { ...saved, revision: 2, preferences: { ...saved.preferences, format: "bullets", explanation: "Short examples" } };
+  await until(() => textarea(0).value.includes("Dahlia"));
+  assert(textarea(1).value.includes("Japanese"), "Opening did not load learned notes");
+  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea(0), "My unsaved note");
+  textarea(0).dispatchEvent(new Event("input", { bubbles: true }));
+  saved = { ...saved, revision: 2, learned: "- Short examples" };
   poll!();
-  await until(() => select(1).value === "bullets");
-  assert(explanation().value === "My unsaved explanation", "Refresh erased a dirty draft");
-  button("Save explanation preference").click();
-  await until(() => saved.preferences.explanation === "My unsaved explanation" && !button("Forget").disabled);
-  holdRead = true; poll!();
-  await until(() => releaseRead);
-  button("Forget").click();
-  await until(() => saved.preferences.explanation === null && !select(0).disabled);
-  releaseRead!();
-  await new Promise(requestAnimationFrame);
-  assert(explanation().value === "" && button("Forget").disabled, "An old read resurrected the forgotten preference");
-  failWrite = true;
-  select(0).value = "en";
-  select(0).dispatchEvent(new Event("change", { bubbles: true }));
-  await until(() => document.querySelector('[role="alert"]') && !select(0).disabled);
-  assert(saved.preferences.language === "ja", "Failed write changed the saved preference");
+  await until(() => textarea(1).value.includes("Short examples"));
+  assert(textarea(0).value === "My unsaved note", "Refresh erased a draft");
+  button("Save notes").click();
+  await until(() => saved.manual === "My unsaved note");
+  await until(() => !textarea(0).disabled);
+  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea(0), "Concurrent draft");
+  textarea(0).dispatchEvent(new Event("input", { bubbles: true }));
+  saved = { ...saved, revision: saved.revision + 1, manual: "Updated by another client", learned: "Poll completed" };
+  poll!();
+  await until(() => textarea(1).value === "Poll completed");
+  button("Save notes").click();
+  await until(() => document.querySelector("[role=alert]"));
+  assert(saved.manual === "Updated by another client", "Concurrent update was overwritten");
+  assert(textarea(0).value === "Concurrent draft", "Conflict lost the draft");
+  button("Discard drafts and reload").click();
+  await until(() => textarea(0).value === "Updated by another client");
+  saved = { ...saved, revision: saved.revision + 1, automatic: false, capacityReached: true };
+  poll!();
+  await until(() => document.body.textContent.includes("reached capacity"));
   failMeetings = true;
   root.render(<LiveChatContext threadId="thread" workspaceId="workspace" disabled={false} />);
   await until(() => document.querySelectorAll("select").length === 1 && select(0).value === "A");
@@ -133,6 +129,6 @@ async function run() {
   releaseMeetings!(); await new Promise(requestAnimationFrame);
   assert(![...select(0).options].some((option) => option.value === "C"), "An old meeting list crossed workspace scope");
   document.body.dataset.testResult = "passed";
-  document.getElementById("result")!.textContent = "PASS: learned preferences on open, background refresh, dirty draft, latest revision save, forget, stale read, failed save; live selection, detach and thread switch races; meeting list retry, newly synced recording, stale list rejection";
+  document.getElementById("result")!.textContent = "PASS: learned preferences on open, background refresh, dirty draft, same-section conflict, cross-section save, capacity warning, forget, stale read, failed save; live selection, detach and thread switch races; meeting list retry, newly synced recording, stale list rejection";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });

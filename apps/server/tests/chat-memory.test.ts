@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { emptyPreferences, preferenceSettingsSchema, validatedPreferences, emptyLiveNotes, liveSnapshotSchema, type LiveSnapshot } from "../src/agent/context-model";
+import { workingMemorySettingsSchema, validatedMemoryNote, emptyLiveNotes, liveSnapshotSchema, type LiveSnapshot } from "../src/agent/context-model";
 import { ChatMemoryService } from "../src/agent/context-service";
 import type { ChatMemoryStore } from "../src/agent/context-store";
 import type { MeetingSyncService } from "../src/sync/service";
@@ -11,18 +11,30 @@ const userId = uuidV7(), workspaceId = uuidV7(), meetingId = uuidV7(), threadId 
 const identity = { userId, source: "header" as const };
 const signal = new AbortController().signal;
 
-describe("private preference boundaries", () => {
-  it("retains persistent preferences and nuanced explanation style, but rejects quoted, one-off and business text", () => {
-    const extract = (key: "language" | "explanation", value: string, evidence: string) => ({ candidates: [{ key, value, evidence }] });
-    expect(validatedPreferences("今後は日本語で回答してください。", extract("language", "ja", "今後は日本語で回答してください。"))).toEqual({ language: "ja" });
-    const value = "専門用語は初出時に説明してほしい";
-    expect(validatedPreferences(`今後は${value}。`, extract("explanation", value, `今後は${value}。`))).toEqual({ explanation: value });
-    for (const text of ["今回だけ日本語で回答してください。", "引用：『今後は日本語で回答してください。』", "> 今後は日本語で回答してください。", "```\n今後は日本語で回答してください。\n```", "いつも英語です"]) {
-      expect(validatedPreferences(text, extract("language", "ja", "今後は日本語で回答してください。"))).toEqual({});
+describe("private Working Memory boundaries", () => {
+  it("accepts direct persistent user statements and rejects quoted or one-off text", () => {
+    const extraction = { evidence: "今後は日本語で回答してください。", note: "日本語で回答してほしい" };
+    expect(validatedMemoryNote(extraction.evidence, extraction)).toBe(extraction.note);
+    for (const text of ["今回だけ日本語で回答してください。", `引用：『${extraction.evidence}』`, `> ${extraction.evidence}`, `\`\`\`\n${extraction.evidence}\n\`\`\``]) {
+      expect(validatedMemoryNote(text, extraction)).toBeNull();
     }
-    expect(validatedPreferences("今後はA社の契約を優先する", extract("explanation", "A社の契約を優先する", "今後はA社の契約を優先する"))).toEqual({});
-    expect(validatedPreferences("I always prefer Japanese", extract("language", "company-secret", "I always prefer Japanese"))).toEqual({});
-    expect(preferenceSettingsSchema.safeParse({ revision: 0, automatic: true, preferences: { ...emptyPreferences, explanation: "x".repeat(241) } }).success).toBe(false);
+    expect(validatedMemoryNote("Remember my API key is 123", { evidence: "Remember my API key is 123", note: "API key is 123" })).toBeNull();
+    expect(workingMemorySettingsSchema.safeParse({ revision: 0, automatic: true, capacityReached: false, manual: "x".repeat(6001), learned: "" }).success).toBe(false);
+  });
+  it("learns from an owned chat after its Workspace access is revoked", async () => {
+    const messageId = uuidV7(), evidence = "今後は日本語で回答してください。";
+    const job = { id: `working:${messageId}`, userId, threadId, kind: "working" as const,
+      messageId, revision: 0, lease: "lease", attempts: 0 };
+    const store = { claim: vi.fn().mockResolvedValue(job), selection: vi.fn().mockResolvedValue({ workspaceId, meetingId: null }),
+      settings: vi.fn().mockResolvedValue({ automatic: true }), message: vi.fn().mockResolvedValue(evidence),
+      applyLearned: vi.fn(), finish: vi.fn() };
+    const sync = { getWorkspace: vi.fn().mockResolvedValue(null) };
+    const generate = vi.fn().mockResolvedValue({ evidence, note: "日本語で回答してほしい" });
+    await new ChatMemoryService(store as unknown as ChatMemoryStore, sync as unknown as MeetingSyncService, generate)
+      .step(job.id, userId, signal);
+    expect(sync.getWorkspace).not.toHaveBeenCalled();
+    expect(store.applyLearned).toHaveBeenCalledWith({ userId, source: "accounts" }, job, "日本語で回答してほしい");
+    expect(store.finish).toHaveBeenCalledWith({ userId, source: "accounts" }, job);
   });
 });
 

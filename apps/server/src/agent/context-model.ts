@@ -1,41 +1,30 @@
 import { z } from "zod";
 
-export const preferenceValues = {
-  language: z.enum(["ja", "en", "zh", "ko", "es", "fr", "de", "pt"]),
-  format: z.enum(["prose", "bullets", "code-first"]),
-  detail: z.enum(["concise", "balanced", "detailed"]),
-  explanation: z.string().trim().min(1).max(240),
-};
-export const preferencesSchema = z.object({ language: preferenceValues.language.nullable(),
-  format: preferenceValues.format.nullable(), detail: preferenceValues.detail.nullable(), explanation: preferenceValues.explanation.nullable() }).strict();
-export type Preferences = z.infer<typeof preferencesSchema>;
-export const emptyPreferences: Preferences = { language: null, format: null, detail: null, explanation: null };
-export const preferenceSettingsSchema = z.object({ revision: z.number().int().nonnegative(),
-  automatic: z.boolean(), preferences: preferencesSchema }).strict();
-export type PreferenceSettings = z.infer<typeof preferenceSettingsSchema>;
-export const preferenceExtractionSchema = z.object({ candidates: z.array(z.object({
-  key: z.enum(["language", "format", "detail", "explanation"]), value: z.string().max(240), evidence: z.string().min(1).max(500),
-}).strict()).max(4) }).strict();
-export type PreferenceExtraction = z.infer<typeof preferenceExtractionSchema>;
+export const workingMemoryContentSchema = z.string().trim().max(6000);
+export const workingMemorySettingsSchema = z.object({ revision: z.number().int().nonnegative(), automatic: z.boolean(), capacityReached: z.boolean(),
+  manual: workingMemoryContentSchema, learned: workingMemoryContentSchema }).strict();
+export type WorkingMemorySettings = z.infer<typeof workingMemorySettingsSchema>;
+export const workingMemoryEditSchema = z.discriminatedUnion("section", [
+  z.object({ section: z.enum(["manual", "learned"]), content: workingMemoryContentSchema,
+    revision: z.number().int().nonnegative(), explicit: z.boolean() }).strict(),
+  z.object({ section: z.literal("settings"), automatic: z.boolean(), revision: z.number().int().nonnegative(), explicit: z.literal(true) }).strict(),
+]);
+export type WorkingMemoryEdit = z.infer<typeof workingMemoryEditSchema>;
+export const workingMemoryExtractionSchema = z.object({ evidence: z.string().max(500),
+  note: z.string().trim().max(500) }).strict();
 
-// Only direct, persistent requests can become cross-workspace preferences.
-export function directPreferenceText(content: string) {
+// Only direct, persistent user statements can become cross-client memory.
+export function directMemoryText(content: string) {
   return content.replace(/```[\s\S]*?```/g, "").replace(/`[^`]*`/g, "")
     .replace(/^[ \t]*>.*$/gm, "").replace(/[「『“][\s\S]*?[」』”]/g, "")
     .replace(/"[^"\n]*"/g, "");
 }
-export function validatedPreferences(content: string, extraction: PreferenceExtraction): Partial<Preferences> {
-  // ponytail: conservative Japanese/English evidence gates; expand only with language-specific regression cases.
-  const direct = directPreferenceText(content);
-  const result: Partial<Preferences> = {};
-  for (const { key, value, evidence } of extraction.candidates) {
-    if (!direct.includes(evidence) || !/(今後|これから|いつも|普段|好み|prefer|always|from now on)/i.test(evidence)) continue;
-    if (key === "explanation" && (!evidence.includes(value)
-      || !/(説明|用語|専門|例示|読みやす|文体|explain|terminology|jargon|examples|writing style)/i.test(value))) continue;
-    const parsed = preferenceValues[key].safeParse(value);
-    if (parsed.success) Object.assign(result, { [key]: parsed.data });
-  }
-  return result;
+export function validatedMemoryNote(content: string, extraction: z.infer<typeof workingMemoryExtractionSchema>): string | null {
+  const direct = directMemoryText(content);
+  if (!extraction.evidence || !extraction.note || !direct.includes(extraction.evidence)
+    || !/(今後|これから|いつも|普段|覚えて|記憶して|prefer|always|from now on|remember|my preference)/i.test(extraction.evidence)
+    || /(password|api.?key|access.?token|secret|private.?key|パスワード|秘密鍵|トークン|認証情報)/i.test(extraction.evidence + extraction.note)) return null;
+  return extraction.note.replace(/[\r\n]+/g, " ");
 }
 
 const point = z.object({ text: z.string().min(1).max(1000), segmentIds: z.array(z.string().uuid()).min(1).max(10) }).strict();
