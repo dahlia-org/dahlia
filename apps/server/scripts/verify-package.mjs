@@ -162,8 +162,12 @@ try {
       throw new Error("Calendar identity migration is missing");
     }
     const memoryColumns = database.prepare("PRAGMA table_info(memory_source_jobs)").all().map((column) => column.name);
-    if (!["workspace_id", "document_id", "generation", "operation"].every((column) => memoryColumns.includes(column))) {
+    if (!["workspace_id", "document_id", "kind", "source_id", "generation", "operation"].every((column) => memoryColumns.includes(column))) {
       throw new Error("Incremental memory schema is missing from the package");
+    }
+    const memoryStateColumns = database.prepare("PRAGMA table_info(workspace_memory_state)").all().map((column) => column.name);
+    if (!memoryStateColumns.includes("reconcile")) {
+      throw new Error("Memory reconciliation schema is missing from the package");
     }
     database.close();
     await store.close?.();
