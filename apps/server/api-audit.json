@@ -2231,7 +2231,7 @@
       "save_memory",
       "delete_memory"
     ],
-    "authorization": "Read-only. Each call checks its capability scope and current Workspace access. Dahlia Memory requires mcp:memory:read; save/delete require mcp:memory:write and current scope authorization."
+    "authorization": "Each call checks its capability scope and current Workspace access. Dahlia Memory reads require mcp:memory:read; writes require mcp:memory:write and current scope authorization."
   },
   "fallbacks": [
     "/.well-known/*: unknown metadata -> native 404",
