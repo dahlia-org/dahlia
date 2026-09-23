@@ -42,6 +42,8 @@ PostgreSQL は既存の生成 Auth baseline → application initial → runtime_
 
 以下の forward migration の説明は統合前の経緯であり、旧開発 DB からの移行保証ではない。リリース後は従来どおり forward-only とする。
 
+2026-09-23: Server は引き続き未リリースであり、ユーザー承認により migration の直接編集・統合を許可する。Dahlia Memory の個人表と共有ノート保護列を既存のメモリー migration に、個人表の FORCE RLS を既存の RLS migration に統合した。Drizzle snapshot と登録一覧も同期する。適用済み DB や ledger は自動変更しない。検証には新しい空 DB を使い、保持する開発データの移行は別途扱う。Desktop の released migration はこの許可の対象外。
+
 ## Header identity
 
 proxy は client-supplied identity header を除去・上書きし、Server への直接到達を防ぐ。Server 側の CIDR 判定で代替しない。

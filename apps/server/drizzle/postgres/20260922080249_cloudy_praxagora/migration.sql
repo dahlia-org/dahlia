@@ -19,6 +19,7 @@ CREATE TABLE "jobs"."memory_documents" (
 );
 --> statement-breakpoint
 CREATE TABLE "app"."shared_memories" (
+	"protected" boolean DEFAULT true NOT NULL,
 	"id" uuid PRIMARY KEY,
 	"workspace_id" uuid NOT NULL,
 	"created_by" uuid NOT NULL,
@@ -51,3 +52,56 @@ CREATE INDEX "workspace_memory_due_idx" ON "jobs"."workspace_memory_state" ("ava
 ALTER TABLE "app"."shared_memories" ADD CONSTRAINT "shared_memories_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
 CREATE POLICY "shared_memory_read" ON "app"."shared_memories" AS PERMISSIVE FOR SELECT TO public USING ("app"."current_identity_can_read_workspace"("app"."shared_memories"."workspace_id"));--> statement-breakpoint
 CREATE POLICY "shared_memory_write" ON "app"."shared_memories" AS PERMISSIVE FOR ALL TO public USING ("app"."current_identity_can_write_workspace"("app"."shared_memories"."workspace_id")) WITH CHECK ("app"."current_identity_can_write_workspace"("app"."shared_memories"."workspace_id"));
+--> statement-breakpoint
+CREATE TABLE "app"."personal_memories" (
+	"id" uuid PRIMARY KEY,
+	"user_id" uuid NOT NULL,
+	"created_by" uuid NOT NULL,
+	"content" text NOT NULL,
+	"protected" boolean DEFAULT true NOT NULL,
+	"revision" integer DEFAULT 1 NOT NULL,
+	"updated_at" timestamp NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "app"."personal_memories" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "jobs"."personal_memory_documents" (
+	"user_id" uuid,
+	"document_id" text,
+	"source" jsonb NOT NULL,
+	"content_hash" text NOT NULL,
+	"generation" integer NOT NULL,
+	CONSTRAINT "personal_memory_documents_pkey" PRIMARY KEY("user_id","document_id")
+);
+--> statement-breakpoint
+CREATE TABLE "jobs"."personal_memory_source_jobs" (
+	"user_id" uuid,
+	"document_id" text,
+	"kind" text NOT NULL,
+	"source_id" uuid NOT NULL,
+	"generation" integer DEFAULT 1 NOT NULL,
+	"operation" jsonb,
+	CONSTRAINT "personal_memory_source_jobs_pkey" PRIMARY KEY("user_id","document_id")
+);
+--> statement-breakpoint
+CREATE TABLE "jobs"."personal_memory_state" (
+	"user_id" uuid PRIMARY KEY,
+	"enabled" boolean DEFAULT false NOT NULL,
+	"requested_by" uuid NOT NULL,
+	"bank_id" text NOT NULL,
+	"generation" integer DEFAULT 1 NOT NULL,
+	"indexed_generation" integer DEFAULT 0 NOT NULL,
+	"status" text DEFAULT 'pending' NOT NULL,
+	"purge" boolean DEFAULT false NOT NULL,
+	"reconcile" boolean DEFAULT true NOT NULL,
+	"progress" jsonb,
+	"lease" uuid,
+	"lease_until" timestamp,
+	"available_at" timestamp NOT NULL,
+	"attempts" integer DEFAULT 0 NOT NULL,
+	"error_code" text
+);
+--> statement-breakpoint
+CREATE INDEX "personal_memories_user_idx" ON "app"."personal_memories" ("user_id");--> statement-breakpoint
+CREATE INDEX "personal_memory_due_idx" ON "jobs"."personal_memory_state" ("available_at");--> statement-breakpoint
+ALTER TABLE "app"."personal_memories" ADD CONSTRAINT "personal_memories_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
+CREATE POLICY "personal_memory_owner" ON "app"."personal_memories" AS PERMISSIVE FOR ALL TO public USING ("app"."personal_memories"."user_id" = nullif(current_setting('app.user_id', true), '')::uuid) WITH CHECK ("app"."personal_memories"."user_id" = nullif(current_setting('app.user_id', true), '')::uuid);

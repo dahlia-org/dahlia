@@ -11,6 +11,34 @@ const url = process.env.TEST_DATABASE_URL;
 const connection = url ? connectPostgresUrl(url, 1) : undefined;
 afterAll(async () => connection?.close());
 describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
+  it("forces personal owner RLS even for the table owner, with no pool identity leakage", async () => {
+    const { db, pool } = connection!;
+    const roles = await pool.query("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user");
+    expect(roles.rows[0]).toEqual({ rolsuper: false, rolbypassrls: false });
+    const app = createPostgresAuthStore(db, "postgres");
+    const owner: Identity = { userId: uuidV7(), source: "header" };
+    const stranger: Identity = { userId: uuidV7(), source: "header" };
+    await seedPostgresIdentity(app, url!, owner); await seedPostgresIdentity(app, url!, stranger);
+    const memory = app.personalMemory!;
+    const note = await memory.saveNote(owner.userId, owner.userId, { id: uuidV7(), revision: 0, content: "Private lesson" }, "human", true, true);
+    expect(await memory.getNote(owner.userId, owner.userId, note.id)).toMatchObject({ content: "Private lesson", protected: true });
+    await expect(memory.listNotes(stranger.userId, owner.userId)).rejects.toMatchObject({ status: 404 });
+    expect(await memory.listNotes(stranger.userId, stranger.userId)).toEqual([]);
+    const state = await pool.query("SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = 'app.personal_memories'::regclass");
+    expect(state.rows[0]).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.user_id', ${owner.userId}, true)`);
+      expect((await tx.execute(sql`select id from app.personal_memories where id = ${note.id}`)).rows).toHaveLength(1);
+    });
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.user_id', ${stranger.userId}, true)`);
+      expect((await tx.execute(sql`select id from app.personal_memories where id = ${note.id}`)).rows).toEqual([]);
+      expect((await tx.execute(sql`update app.personal_memories set content = 'forbidden' where id = ${note.id} returning id`)).rows).toEqual([]);
+    });
+    expect((await pool.query("SELECT * FROM app.personal_memories WHERE id = $1", [note.id])).rows).toEqual([]);
+    await expect(pool.query("INSERT INTO app.personal_memories (id, user_id, created_by, content, updated_at) VALUES ($1,$2,$2,'forbidden',now())", [uuidV7(), owner.userId])).rejects.toThrow();
+    await memory.deleteNote(owner.userId, owner.userId, note.id, 1);
+  });
   it("isolates content, resolves a live worker admin and clears transaction-local identity on a shared pool", async () => {
     const { db, pool } = connection!;
     const roles = await pool.query<{ rolsuper: boolean; rolbypassrls: boolean }>("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user");

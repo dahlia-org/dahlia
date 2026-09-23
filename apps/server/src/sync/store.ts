@@ -1214,12 +1214,12 @@ function createIdentityStore(
       .where(and(eq(m.workspaceId, workspaceId), eq(m.meetingId, meetingId)));
     const d = schema.memoryDocument, j = schema.memorySourceJob;
     const documentId = `meeting-${meetingId}`;
-    const indexed = await db.select({ id: d.documentId }).from(d).where(and(eq(d.workspaceId, workspaceId), eq(d.documentId, documentId))).limit(1);
-    const pending = await db.select({ id: j.documentId }).from(j).where(and(eq(j.workspaceId, workspaceId), eq(j.documentId, documentId))).limit(1);
+    const indexed = await db.select({ id: d.documentId }).from(d).where(and(eq(d.scopeId, workspaceId), eq(d.documentId, documentId))).limit(1);
+    const pending = await db.select({ id: j.documentId }).from(j).where(and(eq(j.scopeId, workspaceId), eq(j.documentId, documentId))).limit(1);
     const eligible = meeting?.active && !meeting.deletedAt && !meeting.deletingAt && meeting.status === "READY" && !meeting.isRecording;
     if (!indexed.length && !pending.length && !eligible) {
       const [memory] = await db.select({ progress: schema.workspaceMemoryState.progress }).from(schema.workspaceMemoryState)
-        .where(eq(schema.workspaceMemoryState.workspaceId, workspaceId));
+        .where(eq(schema.workspaceMemoryState.scopeId, workspaceId));
       if (!memory?.progress?.failures?.[documentId]) return;
     }
     await enqueueMemorySource(db, schema, workspaceId, "meeting", meetingId);
@@ -1227,7 +1227,7 @@ function createIdentityStore(
 
   async function enqueueMemoryChanges(workspaceId: string, changes: Pick<SyncChangeRecord, "entity" | "entityId" | "action" | "revision">[]) {
     const [memory] = await db.select({ purge: schema.workspaceMemoryState.purge }).from(schema.workspaceMemoryState)
-      .where(eq(schema.workspaceMemoryState.workspaceId, workspaceId));
+      .where(eq(schema.workspaceMemoryState.scopeId, workspaceId));
     if (!memory || memory.purge) return;
     const meetings = new Set<string>();
     for (const change of changes) {
@@ -1243,7 +1243,7 @@ function createIdentityStore(
         rows.forEach((row) => meetings.add(row.id));
       } else if (change.entity === "workspace" && change.action === "reset") {
         await db.update(schema.workspaceMemoryState).set({ reconcile: true, generation: sql`${schema.workspaceMemoryState.generation} + 1`,
-          availableAt: new Date(), status: "pending" }).where(eq(schema.workspaceMemoryState.workspaceId, workspaceId));
+          availableAt: new Date(), status: "pending" }).where(eq(schema.workspaceMemoryState.scopeId, workspaceId));
       }
     }
     for (const meetingId of meetings) await enqueueMemoryMeeting(workspaceId, meetingId);

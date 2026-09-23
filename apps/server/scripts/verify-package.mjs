@@ -79,6 +79,8 @@ try {
     if ([SummaryService, SummaryWorker, createTranscriptSummaryMethod, createAudioSummaryMethod].some((value) => typeof value !== "function")) throw new Error("Missing Node summary API");
     if (typeof server.createApp !== "function" || typeof App !== "function") throw new Error("Package API is incomplete");
     if (!serverMigrationManifest.postgres.files.some((name) => name.includes("memory_force_rls"))) throw new Error("Missing memory RLS migration");
+    const memoryRls = await readFile(new URL("./drizzle/postgres/20260922080251_memory_force_rls/migration.sql", new URL(import.meta.resolve("@dahlia-ai/server/package.json"))), "utf8");
+    if (!memoryRls.includes('"app"."personal_memories" FORCE ROW LEVEL SECURITY')) throw new Error("Missing personal memory RLS enforcement");
     for (const name of ["DatabricksBackend", "OpenAIBackend", "CloudflareBackend"]) {
       if (typeof server[name] !== "function") throw new Error("Missing AI backend export: " + name);
     }
@@ -165,6 +167,8 @@ try {
     if (!["workspace_id", "document_id", "kind", "source_id", "generation", "operation"].every((column) => memoryColumns.includes(column))) {
       throw new Error("Incremental memory schema is missing from the package");
     }
+    const personalColumns = database.prepare("PRAGMA table_info(personal_memories)").all().map((column) => column.name);
+    if (!["user_id", "content", "revision", "protected"].every((column) => personalColumns.includes(column))) throw new Error("Missing canonical personal memory schema");
     const memoryStateColumns = database.prepare("PRAGMA table_info(workspace_memory_state)").all().map((column) => column.name);
     if (!memoryStateColumns.includes("reconcile")) {
       throw new Error("Memory reconciliation schema is missing from the package");

@@ -48,6 +48,7 @@ export interface S3StorageConfig {
 
 export interface AppConfig {
   chatMemoryModel?: string;
+  memoryMcpAccess?: "off" | "read" | "write";
   hindsight?: { url: string; auth: "none" | "bearer" | "databricks"; apiKey?: string; bankPrefix: string };
   encryption?: EncryptionConfig;
   authProvider: AuthProvider;
@@ -257,6 +258,8 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
       .refine((value) => (value & (value - 1)) === 0, "must be a power of two")
       .parse(env.DAHLIA_SEARCH_EMBEDDING_DIMENSIONS ?? String(DEFAULT_SEARCH_EMBEDDING_DIMENSIONS)),
   } : undefined;
+  const memoryMcpAccess = env.DAHLIA_MEMORY_MCP_ACCESS ?? "off";
+  if (!["off", "read", "write"].includes(memoryMcpAccess)) throw new Error("DAHLIA_MEMORY_MCP_ACCESS must be off, read or write");
   const chatMemoryModel = env.DAHLIA_CHAT_MEMORY_MODEL?.trim() || undefined;
   if (chatMemoryModel && (!foundationModels.includes(chatMemoryModel) || databaseType === "sqlite")) {
     throw new Error("DAHLIA_CHAT_MEMORY_MODEL requires PostgreSQL and a model in DAHLIA_FOUNDATION_MODELS");
@@ -318,6 +321,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     searchEmbedding,
     captioningModel,
     chatMemoryModel,
+    memoryMcpAccess: memoryMcpAccess as "off" | "read" | "write",
     hindsight: hindsightConfig(env),
   };
 

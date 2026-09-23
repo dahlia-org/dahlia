@@ -26,6 +26,8 @@ macOS、ローカル SQLite、録音、UI、内蔵 Codex / local MCP。
 
 ## Server / Cloud
 
+- [Dahlia Memory の個人領域と外部エージェント](server/dahlia-memory.md)
+
 Server / Private Web、配置、API、認可、storage。
 
 - [Server API 契約と生成クライアント](server/openapi.md)

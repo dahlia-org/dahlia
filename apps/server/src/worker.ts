@@ -34,6 +34,7 @@ import { createIntlSearchTokenizer } from "./search/tokenizer";
 
 export interface RuntimeSecrets {
   DAHLIA_CHAT_MEMORY_MODEL?: string;
+  DAHLIA_MEMORY_MCP_ACCESS?: string;
   DAHLIA_HINDSIGHT_URL?: string;
   DAHLIA_HINDSIGHT_AUTH?: string;
   DAHLIA_HINDSIGHT_API_KEY?: string;
@@ -137,6 +138,7 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     DAHLIA_SEARCH_EMBEDDING_MODEL: env.DAHLIA_SEARCH_EMBEDDING_MODEL,
     DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: env.DAHLIA_SEARCH_EMBEDDING_DIMENSIONS,
     DAHLIA_CHAT_MEMORY_MODEL: env.DAHLIA_CHAT_MEMORY_MODEL,
+    DAHLIA_MEMORY_MCP_ACCESS: env.DAHLIA_MEMORY_MCP_ACCESS,
     DAHLIA_IMAGE_ANALYSIS_MODEL: env.DAHLIA_IMAGE_ANALYSIS_MODEL,
     DAHLIA_AUTH_HEADER: env.DAHLIA_AUTH_HEADER,
     DAHLIA_AUTH_PROVIDER_ID: env.DAHLIA_AUTH_PROVIDER_ID,
@@ -198,13 +200,14 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
       createAudioSummaryMethod(config, applicationStore.sync, syncService),
     ].filter((method) => method !== undefined) : [];
     if (config.hindsight && !env.DAHLIA_MEMORY_QUEUE) throw new Error("DAHLIA_MEMORY_QUEUE is required for Hindsight");
+    const personalMemory = config.hindsight && applicationStore.personalMemory ? new WorkspaceMemoryService(config, applicationStore.personalMemory, syncService, applicationStore.sync) : undefined;
     const workspaceMemory = config.hindsight && applicationStore.memory ? new WorkspaceMemoryService(config, applicationStore.memory, syncService, applicationStore.sync) : undefined;
     if (config.chatMemoryModel && !env.DAHLIA_MEMORY_QUEUE) throw new Error("DAHLIA_MEMORY_QUEUE is required for chat memory");
     const chatMemory = applicationStore.chatMemoryStore ? new ChatMemoryService(applicationStore.chatMemoryStore, syncService, createMemoryGenerator(config)) : undefined;
     const jobs = applicationStore.jobs ? createQueueJobs(env, applicationStore.jobs, applicationStore.sync,
-      syncService, summaryMethods, captioner, searchEmbedder, workspaceMemory, chatMemory) : undefined;
+      syncService, summaryMethods, captioner, searchEmbedder, workspaceMemory, chatMemory, personalMemory) : undefined;
     const app = createApp({
-      workspaceMemory, chatMemory, config, auth, authStore: applicationStore, aiHistory: applicationStore.aiHistory, objectStorage, searchTokenizer, searchEmbedder, screenshotTransformer, syncService,
+      workspaceMemory, personalMemory, chatMemory, config, auth, authStore: applicationStore, aiHistory: applicationStore.aiHistory, objectStorage, searchTokenizer, searchEmbedder, screenshotTransformer, syncService,
       mcpSupportsCimd: false,
       summaryService: summaryMethods.length ? new SummaryService(applicationStore.sync, summaryMethods) : undefined,
       imageAnalysisEnabled: captioner !== undefined,

@@ -63,7 +63,9 @@
       "classification": "modified",
       "previous": "new public contract",
       "reason": "List configured Agent-compatible models for Private Web",
-      "consumers": ["apps/server/src/client/AiChat.tsx"]
+      "consumers": [
+        "apps/server/src/client/AiChat.tsx"
+      ]
     },
     {
       "operationId": "chatWithAi",
@@ -72,7 +74,9 @@
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Stream one authenticated page-memory Agent response",
-      "consumers": ["apps/server/src/client/AiChat.tsx"]
+      "consumers": [
+        "apps/server/src/client/AiChat.tsx"
+      ]
     },
     {
       "operationId": "createAiThread",
@@ -81,7 +85,9 @@
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Create a private persistent AI chat for the current user",
-      "consumers": ["apps/server/src/client/AiChat.tsx"]
+      "consumers": [
+        "apps/server/src/client/AiChat.tsx"
+      ]
     },
     {
       "operationId": "listAiThreads",
@@ -90,7 +96,9 @@
       "classification": "modified",
       "previous": "new public contract",
       "reason": "List the current user's persistent AI chats",
-      "consumers": ["apps/server/src/client/AiChat.tsx"]
+      "consumers": [
+        "apps/server/src/client/AiChat.tsx"
+      ]
     },
     {
       "operationId": "getAiThread",
@@ -99,7 +107,9 @@
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Read an owned AI chat and its messages",
-      "consumers": ["apps/server/src/client/AiChat.tsx"]
+      "consumers": [
+        "apps/server/src/client/AiChat.tsx"
+      ]
     },
     {
       "operationId": "deleteAiThread",
@@ -108,7 +118,9 @@
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Delete an owned AI chat",
-      "consumers": ["apps/server/src/client/AiChat.tsx"]
+      "consumers": [
+        "apps/server/src/client/AiChat.tsx"
+      ]
     },
     {
       "operationId": "continueAiThread",
@@ -117,7 +129,9 @@
       "classification": "modified",
       "previous": "new public contract",
       "reason": "Continue an owned AI chat with Mastra Message History",
-      "consumers": ["apps/server/src/client/AiChat.tsx"]
+      "consumers": [
+        "apps/server/src/client/AiChat.tsx"
+      ]
     },
     {
       "operationId": "listSessions",
@@ -1153,6 +1167,105 @@
       "consumers": [
         "apps/server/src/client/ChatMemory.tsx"
       ]
+    },
+    {
+      "operationId": "memoryScopes",
+      "method": "GET",
+      "path": "/api/v1/memory/scopes",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Dahlia Memory personal and Workspace scopes",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "memoryList",
+      "method": "POST",
+      "path": "/api/v1/memory/list",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Dahlia Memory personal and Workspace scopes",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "memoryGet",
+      "method": "POST",
+      "path": "/api/v1/memory/get",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Dahlia Memory personal and Workspace scopes",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "memorySave",
+      "method": "POST",
+      "path": "/api/v1/memory/save",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Dahlia Memory personal and Workspace scopes",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "memoryDelete",
+      "method": "POST",
+      "path": "/api/v1/memory/delete",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Dahlia Memory personal and Workspace scopes",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "memoryRecall",
+      "method": "POST",
+      "path": "/api/v1/memory/recall",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Dahlia Memory personal and Workspace scopes",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "memoryReflect",
+      "method": "POST",
+      "path": "/api/v1/memory/reflect",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Dahlia Memory personal and Workspace scopes",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "memoryStatus",
+      "method": "POST",
+      "path": "/api/v1/memory/status",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Dahlia Memory personal and Workspace scopes",
+      "consumers": [
+        "Private Web"
+      ]
+    },
+    {
+      "operationId": "memoryConfigure",
+      "method": "POST",
+      "path": "/api/v1/memory/configure",
+      "classification": "modified",
+      "previous": "none",
+      "reason": "Dahlia Memory personal and Workspace scopes",
+      "consumers": [
+        "Private Web"
+      ]
     }
   ],
   "delegated": [
@@ -2052,9 +2165,16 @@
       "get_meeting",
       "get_meeting_transcript",
       "query_screenshots",
-      "get_meeting_screenshots"
+      "get_meeting_screenshots",
+      "list_memory_scopes",
+      "list_memories",
+      "get_memory",
+      "recall_memory",
+      "reflect_memory",
+      "save_memory",
+      "delete_memory"
     ],
-    "authorization": "Read-only. Each call checks its capability scope and current Workspace access."
+    "authorization": "Read-only. Each call checks its capability scope and current Workspace access. Dahlia Memory requires mcp:memory:read; save/delete require mcp:memory:write and current scope authorization."
   },
   "fallbacks": [
     "/.well-known/*: unknown metadata -> native 404",

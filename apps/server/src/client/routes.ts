@@ -18,6 +18,7 @@ const coreDashboardPaths = new Set([
   "/",
   "/sessions",
   "/dashboard",
+  "/memory",
   "/dashboard/settings",
   "/workspaces",
   "/orgs",
@@ -39,7 +40,7 @@ export function isCoreDashboardPath(path: string): boolean {
 }
 
 export type DashboardRoute = {
-  page?: "ai" | "file" | "overview" | "settings" | "workspaces" | "workspace" | "meeting" | "project" | "organizations" | "organization" | "invitation" | "admin-users" | "admin-organizations" | "admin-organization" | "admin-settings";
+  page?: "memory" | "ai" | "file" | "overview" | "settings" | "workspaces" | "workspace" | "meeting" | "project" | "organizations" | "organization" | "invitation" | "admin-users" | "admin-organizations" | "admin-organization" | "admin-settings";
   redirect?: string;
   threadId?: string;
   fileId?: string;
@@ -57,6 +58,7 @@ export function resolveDashboardRoute(
   if (path === "/") return { redirect: "/dashboard" };
   if (path === "/sessions") return { redirect: "/dashboard/settings" };
   if (path === "/dashboard") return { page: "overview" };
+  if (path === "/memory") return { page: "memory" };
   if (path === "/chat") return capabilities.ai ? { page: "ai" } : { redirect: "/dashboard" };
   const chat = path.match(/^\/chat\/([^/]+)$/);
   if (chat) return capabilities.ai ? { page: "ai", threadId: chat[1] } : { redirect: "/dashboard" };

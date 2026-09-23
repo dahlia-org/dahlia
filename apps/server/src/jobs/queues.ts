@@ -22,7 +22,7 @@ const scan = z.object({ action: z.literal("scan"), kind, scopeId: id,
 export const jobMessageSchema = z.union([
   z.object({ action: z.literal("chat-memory"), id: z.string().min(1).max(200).optional(), userId: id.optional() }).strict()
     .refine((message) => (message.id === undefined) === (message.userId === undefined)),
-  z.object({ action: z.literal("memory"), workspaceId: id.optional(), after: id.optional() }).strict(),
+  z.object({ action: z.literal("memory"), personal: z.boolean().optional(), workspaceId: id.optional(), after: id.optional() }).strict(),
   z.object({ action: z.literal("scopes"), kind, after: id.optional(), userId: id.optional() }).strict(),
   scan.refine((value) => !value.after || (value.kind === "search") === value.after.includes("/")),
   z.object({ action: z.literal("run"), kind: z.literal("summary"),
@@ -55,7 +55,7 @@ export interface WorkerJobStores {
 
 export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobStores,
   syncStore: MeetingSyncStore, sync: MeetingSyncService,
-  methods: readonly SummaryMethod[], captioner?: ImageCaptioner, embedder?: SearchEmbedder, memory?: WorkspaceMemoryService, chatMemory?: ChatMemoryService) {
+  methods: readonly SummaryMethod[], captioner?: ImageCaptioner, embedder?: SearchEmbedder, memory?: WorkspaceMemoryService, chatMemory?: ChatMemoryService, personalMemory?: WorkspaceMemoryService) {
   const queues = {
     summary: methods.length ? bindings.DAHLIA_SUMMARY_QUEUE : undefined,
     image: captioner ? bindings.DAHLIA_IMAGE_QUEUE : undefined,
@@ -77,6 +77,7 @@ export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobSt
       const results = await Promise.allSettled([
         chatMemory ? bindings.DAHLIA_MEMORY_QUEUE?.send({ action: "chat-memory" }) : undefined,
         memory ? bindings.DAHLIA_MEMORY_QUEUE?.send({ action: "memory" }) : undefined,
+        personalMemory ? bindings.DAHLIA_MEMORY_QUEUE?.send({ action: "memory", personal: true }) : undefined,
         ...Object.entries(queues).map(([kind, queue]) => queue?.send({ kind: kind as JobKind, action: "scopes" })),
       ]);
       const failure = results.find((result) => result.status === "rejected");
@@ -97,16 +98,17 @@ export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobSt
         return;
       }
       if (message.action === "memory") {
+        const engine = message.personal ? personalMemory : memory;
         const queue = bindings.DAHLIA_MEMORY_QUEUE;
-        if (!queue || !memory) throw new Error("memory_queue_unavailable");
+        if (!queue || !engine) throw new Error("memory_queue_unavailable");
         if (message.workspaceId) {
-          await memory.step(message.workspaceId, signal);
-          const delaySeconds = await memory.store.nextDelay(message.workspaceId);
+          await engine.step(message.workspaceId, signal);
+          const delaySeconds = await engine.store.nextDelay(message.workspaceId);
           if (delaySeconds !== undefined) await queue.send(message, { delaySeconds });
         } else {
-          const ids = await memory.store.due(message.after);
-          if (ids.length) await queue.sendBatch(ids.map((workspaceId) => ({ body: { action: "memory", workspaceId } })));
-          if (ids.length === 100) await queue.send({ action: "memory", after: ids.at(-1) });
+          const ids = await engine.store.due(message.after);
+          if (ids.length) await queue.sendBatch(ids.map((workspaceId) => ({ body: { ...message, workspaceId } })));
+          if (ids.length === 100) await queue.send({ ...message, after: ids.at(-1) });
         }
         return;
       }

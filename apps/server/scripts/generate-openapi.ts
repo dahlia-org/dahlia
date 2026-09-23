@@ -69,7 +69,7 @@ import type { operations } from "./generated-api";
 import { serverClient, unwrap } from "./api";
 
 export const apiOperations = {
-${Object.values(contracts).map(({ operationId, method, path }) => `  ${operationId}: (init: FetchOptions<operations["${operationId}"]>, notifyMutation = ${!["get", "head"].includes(method) && !["search", "textSearch", "resolveTransaction"].includes(operationId)}) => unwrap(serverClient.${method.toUpperCase()}("${path}", init), notifyMutation),`).join("\n")}
+${Object.values(contracts).map(({ operationId, method, path }) => `  ${operationId}: (init: FetchOptions<operations["${operationId}"]>, notifyMutation = ${!["get", "head"].includes(method) && !["search", "textSearch", "resolveTransaction", "memoryList", "memoryGet", "memoryRecall", "memoryReflect", "memoryStatus"].includes(operationId)}) => unwrap(serverClient.${method.toUpperCase()}("${path}", init), notifyMutation),`).join("\n")}
 };
 export type GetOperation = ${Object.values(contracts).filter((v) => v.method === "get").map((v) => JSON.stringify(v.operationId)).join(" | ")};
 export const apiUrls = {
