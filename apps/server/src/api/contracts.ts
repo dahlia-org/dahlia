@@ -1,3 +1,4 @@
+import { memoryResultSchema, memoryScopeSchema, memoryConfigureSchema, memoryListSchema, memoryGetSchema, memorySearchSchema, memorySaveSchema, memoryDeleteSchema } from "../memory/dahlia";
 import { preferenceSettingsSchema, liveSelectionSchema, liveStatusSchema } from "../agent/context-model";
 import { memorySettingsSchema, sharedMemorySchema } from "../memory/model";
 import { organizationDomainsSchema } from "../auth/organization-domains";
@@ -90,6 +91,7 @@ const memoryStatus = z.object({ enabled: z.boolean(), status: z.string(), errorC
 const memoryNote = z.object({ id: z.string().uuid(), content: z.string(), revision: z.number(), updatedAt: S.date });
 
 export type OperationId =
+  "memoryScopes" | "memoryList" | "memoryGet" | "memorySave" | "memoryDelete" | "memoryRecall" | "memoryReflect" | "memoryStatus" | "memoryConfigure" |
   "getAiPreferences" | "setAiPreferences" | "getAiLiveContext" | "setAiLiveContext" |
   "getWorkspaceMemory" | "setWorkspaceMemory" | "purgeWorkspaceMemory" | "listSharedMemories" | "saveSharedMemory" | "deleteSharedMemory" |
   "getHealth" | "getOpenAPI" | "getSession" | "listSessions" | "revokeSession"
@@ -130,6 +132,15 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
     teams: z.array(z.object({ id: S.principalId, name: z.string() })), hasMoreMembers: z.boolean(), hasMoreTeams: z.boolean(),
   })) }, { query: z.object({ membersOffset: z.string().regex(/^\d+$/).optional(), teamsOffset: z.string().regex(/^\d+$/).optional() }).strict() }, browser),
   getCapabilities: route("get", "/api/v1/capabilities", "getCapabilities", "Discover feature versions; unsupported features are omitted", { 200: json(S.capabilities) }),
+  memoryScopes: route("get", "/api/v1/memory/scopes", "memoryScopes", "List authorized Dahlia Memory scopes", { 200: json(memoryResultSchema) }, {}, browser),
+  memoryList: route("post", "/api/v1/memory/list", "memoryList", "Dahlia Memory list", { 200: json(memoryResultSchema) }, body(memoryListSchema), browser),
+  memoryGet: route("post", "/api/v1/memory/get", "memoryGet", "Dahlia Memory get", { 200: json(memoryResultSchema) }, body(memoryGetSchema), browser),
+  memorySave: route("post", "/api/v1/memory/save", "memorySave", "Dahlia Memory save", { 200: json(memoryResultSchema) }, body(memorySaveSchema), browser),
+  memoryDelete: route("post", "/api/v1/memory/delete", "memoryDelete", "Dahlia Memory delete", { 200: json(memoryResultSchema) }, body(memoryDeleteSchema), browser),
+  memoryRecall: route("post", "/api/v1/memory/recall", "memoryRecall", "Dahlia Memory recall", { 200: json(memoryResultSchema) }, body(memorySearchSchema), browser),
+  memoryReflect: route("post", "/api/v1/memory/reflect", "memoryReflect", "Dahlia Memory reflect", { 200: json(memoryResultSchema) }, body(memorySearchSchema), browser),
+  memoryStatus: route("post", "/api/v1/memory/status", "memoryStatus", "Dahlia Memory status", { 200: json(memoryResultSchema) }, body(memoryScopeSchema), browser),
+  memoryConfigure: route("post", "/api/v1/memory/configure", "memoryConfigure", "Dahlia Memory configure", { 200: json(memoryResultSchema) }, body(memoryConfigureSchema), browser),
   getWorkspaceMemory: route("get", `${v}/memory`, "getWorkspaceMemory", "Read Workspace memory status", { 200: json(memoryStatus) }, {}, browser),
   setWorkspaceMemory: route("put", `${v}/memory`, "setWorkspaceMemory", "Enable, pause or retry Workspace memory; admin only", { 204: empty }, body(memorySettingsSchema), browser),
   purgeWorkspaceMemory: route("delete", `${v}/memory`, "purgeWorkspaceMemory", "Disable and erase Workspace memory; admin only", { 202: json(z.object({ status: z.literal("deleting") })) }, {}, browser),

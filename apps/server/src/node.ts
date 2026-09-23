@@ -51,7 +51,8 @@ const syncService = new MeetingSyncService(applicationStore.sync, objectStorage,
   config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined,
   true, captioner?.model);
 const workspaceMemory = config.hindsight && applicationStore.memory ? new WorkspaceMemoryService(config, applicationStore.memory, syncService, applicationStore.sync) : undefined;
-const memoryWorker = workspaceMemory ? new MemoryWorker(workspaceMemory) : undefined;
+const personalMemory = config.hindsight && applicationStore.personalMemory ? new WorkspaceMemoryService(config, applicationStore.personalMemory, syncService, applicationStore.sync) : undefined;
+const memoryWorker = workspaceMemory ? new MemoryWorker(workspaceMemory, personalMemory) : undefined;
 const chatMemory = applicationStore.chatMemoryStore ? new ChatMemoryService(applicationStore.chatMemoryStore, syncService, createMemoryGenerator(config)) : undefined;
 const chatMemoryWorker = chatMemory ? new ChatMemoryWorker(chatMemory) : undefined;
 const development = process.argv.includes("--seed-dev");
@@ -70,6 +71,7 @@ const summaryWorker = summaryMethods.length ? new SummaryWorker(applicationStore
 const app = createApp({
   summaryService,
   workspaceMemory,
+  personalMemory,
   chatMemory,
   config,
   auth,

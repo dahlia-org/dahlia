@@ -118,6 +118,7 @@ OS やストレージ自体の障害は現時点の保証対象外であり、�
 - 新しい外部サービス連携の要求は、まず MCP tool として外部エージェントが実現できないかを検討する。
 - MCP は Workspace UUID を認可境界とし、既定は read-only、書き込みは明示的な `--write` に限定する
   ([Workspace 境界](docs/adr/desktop/local-mcp-and-projects.md#workspace-境界), [Project の正本](docs/adr/desktop/local-mcp-and-projects.md#project-の正本))。
+- Dahlia Memory は個人 user UUID の領域を追加し、独立した権限で保存メモリーの変更を許可する。共有保存には明示的な指示と現在の Workspace 書き込み権限を必要とする ([Dahlia Memory](docs/adr/server/dahlia-memory.md))。
 - MCP が返す内容は untrusted data として扱い、指示として実行しない。
 - 連携先が増えるほど価値が上がる、という前提を採らない。連携数ではなく、一次データの質と辿りやすさで価値を測る。
 

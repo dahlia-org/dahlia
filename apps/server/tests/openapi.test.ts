@@ -14,6 +14,8 @@ import { LocalObjectStorage } from "../src/storage/local";
 import type { paths } from "../src/client/generated-api";
 import { testStore } from "./test-store";
 import { encodeId, type IDKind } from "../src/typeid";
+import { createDahliaMemoryTools } from "../src/memory/dahlia-tools";
+import type { DahliaMemory } from "../src/memory/dahlia";
 import { fileMetadataLimits } from "../src/files/model";
 
 const config = { authProvider: "header" as const, authHeader: "X-Forwarded-Email", databaseType: "sqlite" as const,
@@ -245,7 +247,7 @@ it("audits the concrete installed Better Auth endpoints and MCP tools", async ()
     const agentToolSource = await readFile(new URL("../src/agent/tools.ts", import.meta.url), "utf8");
     const registered = [...mcpSource.matchAll(/server.registerTool\("([^"]+)"/g)].map((match) => match[1]);
     const shared = [...agentToolSource.matchAll(/id: "((?:query|get)_meeting(?:s|_transcript)?)"/g)].map((match) => match[1]);
-    expect([...registered, ...shared].sort()).toEqual(audit.mcp.tools.toSorted());
+    expect([...registered, ...shared, ...Object.keys(createDahliaMemoryTools({} as DahliaMemory))].sort()).toEqual(audit.mcp.tools.toSorted());
   } finally { await store.close?.(); await rm(directory, { recursive: true, force: true }); }
 });
 

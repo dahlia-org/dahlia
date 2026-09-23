@@ -107,6 +107,15 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | setAiPreferences | modified | PUT `/api/v1/chat/preferences` | `new public contract` | Edit and forget owner-only response preferences | apps/server/src/client/ChatMemory.tsx |
 | getAiLiveContext | modified | GET `/api/v1/chat/{threadId}/live-context` | `new public contract` | Read authorized meeting freshness | apps/server/src/client/ChatMemory.tsx |
 | setAiLiveContext | modified | PUT `/api/v1/chat/{threadId}/live-context` | `new public contract` | Select a same-Workspace meeting for live context | apps/server/src/client/ChatMemory.tsx |
+| memoryScopes | modified | GET `/api/v1/memory/scopes` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
+| memoryList | modified | POST `/api/v1/memory/list` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
+| memoryGet | modified | POST `/api/v1/memory/get` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
+| memorySave | modified | POST `/api/v1/memory/save` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
+| memoryDelete | modified | POST `/api/v1/memory/delete` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
+| memoryRecall | modified | POST `/api/v1/memory/recall` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
+| memoryReflect | modified | POST `/api/v1/memory/reflect` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
+| memoryStatus | modified | POST `/api/v1/memory/status` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
+| memoryConfigure | modified | POST `/api/v1/memory/configure` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
 
 ## Delegated protocols
 
@@ -241,7 +250,7 @@ These concrete endpoints preserve Better Auth/OAuth/OIDC, OpenAI and MCP formats
 | headMcpScreenshot | HEAD `/mcp/resources/workspaces/{workspaceId}/meetings/{meetingId}/screenshots/{screenshotId}/content` | MCP resource HTTP bytes | current Workspace read permission and MCP read scope |
 | signInHeader | POST `/api/auth/header/sign-in` | Better Auth | header |
 
-MCP methods: tools/list, tools/call. Tools: search, query_meetings, query_projects, get_project, get_meeting, get_meeting_transcript, query_screenshots, get_meeting_screenshots. Read-only. Each call checks its capability scope and current Workspace access.
+MCP methods: tools/list, tools/call. Tools: search, query_meetings, query_projects, get_project, get_meeting, get_meeting_transcript, query_screenshots, get_meeting_screenshots, list_memory_scopes, list_memories, get_memory, recall_memory, reflect_memory, save_memory, delete_memory. Read-only. Each call checks its capability scope and current Workspace access. Dahlia Memory requires mcp:memory:read; save/delete require mcp:memory:write and current scope authorization.
 
 ## Dispatch and fallbacks
 

@@ -103,6 +103,22 @@
       "entityType": "tables"
     },
     {
+      "name": "personal_memories",
+      "entityType": "tables"
+    },
+    {
+      "name": "personal_memory_documents",
+      "entityType": "tables"
+    },
+    {
+      "name": "personal_memory_source_jobs",
+      "entityType": "tables"
+    },
+    {
+      "name": "personal_memory_state",
+      "entityType": "tables"
+    },
+    {
       "name": "search_documents",
       "entityType": "tables"
     },
@@ -2532,6 +2548,336 @@
     },
     {
       "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "personal_memories"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "table": "personal_memories"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_by",
+      "entityType": "columns",
+      "table": "personal_memories"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "content",
+      "entityType": "columns",
+      "table": "personal_memories"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "true",
+      "generated": null,
+      "name": "protected",
+      "entityType": "columns",
+      "table": "personal_memories"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "revision",
+      "entityType": "columns",
+      "table": "personal_memories"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "personal_memories"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "table": "personal_memory_documents"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "document_id",
+      "entityType": "columns",
+      "table": "personal_memory_documents"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source",
+      "entityType": "columns",
+      "table": "personal_memory_documents"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "content_hash",
+      "entityType": "columns",
+      "table": "personal_memory_documents"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "generation",
+      "entityType": "columns",
+      "table": "personal_memory_documents"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "table": "personal_memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "document_id",
+      "entityType": "columns",
+      "table": "personal_memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "personal_memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_id",
+      "entityType": "columns",
+      "table": "personal_memory_source_jobs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "generation",
+      "entityType": "columns",
+      "table": "personal_memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "operation",
+      "entityType": "columns",
+      "table": "personal_memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "enabled",
+      "entityType": "columns",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "requested_by",
+      "entityType": "columns",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "bank_id",
+      "entityType": "columns",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "generation",
+      "entityType": "columns",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "indexed_generation",
+      "entityType": "columns",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "purge",
+      "entityType": "columns",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "true",
+      "generated": null,
+      "name": "reconcile",
+      "entityType": "columns",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "progress",
+      "entityType": "columns",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease",
+      "entityType": "columns",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease_until",
+      "entityType": "columns",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error_code",
+      "entityType": "columns",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "text",
       "notNull": true,
       "autoincrement": false,
       "default": null,
@@ -2857,6 +3203,16 @@
       "default": null,
       "generated": null,
       "name": "content",
+      "entityType": "columns",
+      "table": "shared_memories"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "true",
+      "generated": null,
+      "name": "protected",
       "entityType": "columns",
       "table": "shared_memories"
     },
@@ -5256,6 +5612,21 @@
     },
     {
       "columns": [
+        "user_id"
+      ],
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_personal_memories_user_id_user_id_fk",
+      "entityType": "fks",
+      "table": "personal_memories"
+    },
+    {
+      "columns": [
         "workspace_id",
         "meeting_id"
       ],
@@ -5624,6 +5995,26 @@
     },
     {
       "columns": [
+        "user_id",
+        "document_id"
+      ],
+      "nameExplicit": false,
+      "name": "personal_memory_documents_pk",
+      "entityType": "pks",
+      "table": "personal_memory_documents"
+    },
+    {
+      "columns": [
+        "user_id",
+        "document_id"
+      ],
+      "nameExplicit": false,
+      "name": "personal_memory_source_jobs_pk",
+      "entityType": "pks",
+      "table": "personal_memory_source_jobs"
+    },
+    {
+      "columns": [
         "workspace_id",
         "document_id"
       ],
@@ -5871,6 +6262,24 @@
       "nameExplicit": false,
       "name": "organization_join_requests_pk",
       "table": "organization_join_requests",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "personal_memories_pk",
+      "table": "personal_memories",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "user_id"
+      ],
+      "nameExplicit": false,
+      "name": "personal_memory_state_pk",
+      "table": "personal_memory_state",
       "entityType": "pks"
     },
     {
@@ -6550,6 +6959,34 @@
       "name": "organization_join_requests_user_idx",
       "entityType": "indexes",
       "table": "organization_join_requests"
+    },
+    {
+      "columns": [
+        {
+          "value": "user_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "personal_memories_user_idx",
+      "entityType": "indexes",
+      "table": "personal_memories"
+    },
+    {
+      "columns": [
+        {
+          "value": "available_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "personal_memory_due_idx",
+      "entityType": "indexes",
+      "table": "personal_memory_state"
     },
     {
       "columns": [

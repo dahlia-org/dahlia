@@ -11,7 +11,7 @@ import {
   GATEWAY_SCOPES,
   hasApiScope,
   MCP_OAUTH_SCOPES,
-  MCP_READ_SCOPE,
+  MCP_READ_SCOPE, MEMORY_READ_SCOPE, MEMORY_WRITE_SCOPE,
   MCP_SCOPE,
   OAUTH_SCOPES,
 } from "../src/auth/scopes";
@@ -181,12 +181,17 @@ describe("fixed OAuth client policy", () => {
   it("uses one Desktop API scope and hierarchical MCP scopes", () => {
     expect(GATEWAY_SCOPES).toEqual([ALL_APIS_SCOPE]);
     expect(OAUTH_SCOPES).toEqual(["openid", "profile", "email", "offline_access", ALL_APIS_SCOPE]);
-    expect(MCP_OAUTH_SCOPES).toEqual(["openid", "profile", "email", "offline_access", MCP_SCOPE, MCP_READ_SCOPE]);
+    expect(MCP_OAUTH_SCOPES).toEqual(["openid", "profile", "email", "offline_access", MCP_SCOPE, MCP_READ_SCOPE, MEMORY_READ_SCOPE, MEMORY_WRITE_SCOPE]);
     expect(AUTHORIZATION_SERVER_SCOPES).toEqual([
-      "openid", "profile", "email", "offline_access", ALL_APIS_SCOPE, MCP_SCOPE, MCP_READ_SCOPE,
+      "openid", "profile", "email", "offline_access", ALL_APIS_SCOPE, MCP_SCOPE, MCP_READ_SCOPE, MEMORY_READ_SCOPE, MEMORY_WRITE_SCOPE,
     ]);
     expect(hasApiScope([MCP_SCOPE], MCP_READ_SCOPE)).toBe(true);
     expect(hasApiScope([MCP_READ_SCOPE], MCP_SCOPE)).toBe(false);
+    expect(hasApiScope([MEMORY_WRITE_SCOPE], MEMORY_READ_SCOPE)).toBe(true);
+    for (const scope of [MCP_SCOPE, MCP_READ_SCOPE, ALL_APIS_SCOPE]) {
+      expect(hasApiScope([scope], MEMORY_READ_SCOPE)).toBe(false);
+      expect(hasApiScope([scope], MEMORY_WRITE_SCOPE)).toBe(false);
+    }
   });
 
   it("does not fall back to a browser session when an Authorization header is present", async () => {

@@ -37,7 +37,7 @@ function shellArgument(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-export function mcpConnectionOutput(client: MCPClient, mcp: MCPConnectionInfo["mcp"], profile = "DEFAULT"): string {
+export function mcpConnectionOutput(client: MCPClient, mcp: MCPConnectionInfo["mcp"], profile = "DEFAULT", memory = false): string {
   const url = mcp.databricksProxy ? mcp.proxyUrl : mcp.url;
   const normalizedProfile = profile.trim() || "DEFAULT";
   if (client === "mcpJSON") {
@@ -57,7 +57,7 @@ export function mcpConnectionOutput(client: MCPClient, mcp: MCPConnectionInfo["m
   }
   return client === "claude"
     ? `claude mcp add --scope user --transport http dahlia ${shellArgument(url)}`
-    : `codex mcp add dahlia --url ${shellArgument(url)}`;
+    : `codex mcp add dahlia --url ${shellArgument(url)}${memory ? "\ncodex mcp login dahlia --scopes mcp:read,mcp:memory:write" : ""}`;
 }
 
 const clients: Array<{ id: MCPClient; label: string }> = [
@@ -66,7 +66,7 @@ const clients: Array<{ id: MCPClient; label: string }> = [
   { id: "codex", label: "Codex" },
 ];
 
-export function MCPConnectionDialog({ onClose }: { onClose: () => void }) {
+export function MCPConnectionDialog({ onClose, memory = false }: { onClose: () => void; memory?: boolean }) {
   const [connection, setConnection] = useState<MCPConnectionInfo>();
   const [error, setError] = useState<string>();
   const [client, setClient] = useState<MCPClient>("mcpJSON");
@@ -85,7 +85,7 @@ export function MCPConnectionDialog({ onClose }: { onClose: () => void }) {
 
   const mcpUnavailable = connection?.mcp.available === false;
   const canConfigure = !error && !mcpUnavailable;
-  const output = connection ? mcpConnectionOutput(client, connection.mcp, profile) : "";
+  const output = connection ? mcpConnectionOutput(client, connection.mcp, profile, memory) : "";
   async function copy() {
     try {
       await navigator.clipboard.writeText(output);
@@ -106,6 +106,10 @@ export function MCPConnectionDialog({ onClose }: { onClose: () => void }) {
       )}</DialogDescription>
     </DialogHeader>
     <div className="grid gap-4">
+      {memory && <p className="text-sm" role="note">{uiText(
+        "Dahlia Memory requires a separate memory permission. Approve memory read/write in the OAuth flow; reconnect existing clients. Databricks Apps requires the operator to enable Memory MCP access. Shared saves still require your explicit instruction.",
+        "Dahlia Memory は独立したメモリー権限を使います。OAuth でメモリーの読み書きを許可し、既存の接続は再認証してください。Databricks Apps は管理者による Memory MCP の有効化が必要です。共有への保存には引き続き明示的な依頼が必要です。",
+      )}</p>}
       {connection?.mcp.databricksProxy && <div className="grid gap-1 rounded-lg border bg-muted/50 p-3 text-sm">
         <strong>{uiText("Databricks Apps authentication", "Databricks Apps の認証")}</strong>
         <span className="leading-6 text-muted-foreground">{uiText(

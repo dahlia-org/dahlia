@@ -83,7 +83,7 @@
     "prepack": "pnpm run build",
     "preview:cloudflare": "pnpm run ensure:wrangler && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false vite preview --config vite.cloudflare.config.ts",
     "test": "vitest run",
-    "test:memory": "vitest run tests/workspace-memory.test.ts tests/workspace-memory-postgres.test.ts",
+    "test:memory": "vitest run tests/dahlia-memory.test.ts tests/memory-tools.test.ts tests/workspace-memory.test.ts tests/workspace-memory-postgres.test.ts",
     "test:package": "node scripts/verify-package.mjs",
     "test:watch": "vitest",
     "test:worker": "node scripts/verify-worker.mjs",

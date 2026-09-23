@@ -206,6 +206,159 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/memory/scopes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List authorized Dahlia Memory scopes */
+        get: operations["memoryScopes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dahlia Memory list */
+        post: operations["memoryList"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dahlia Memory get */
+        post: operations["memoryGet"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/save": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dahlia Memory save */
+        post: operations["memorySave"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dahlia Memory delete */
+        post: operations["memoryDelete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/recall": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dahlia Memory recall */
+        post: operations["memoryRecall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/reflect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dahlia Memory reflect */
+        post: operations["memoryReflect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dahlia Memory status */
+        post: operations["memoryStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/configure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dahlia Memory configure */
+        post: operations["memoryConfigure"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/memory": {
         parameters: {
             query?: never;
@@ -1995,6 +2148,79 @@ export interface components {
                 };
             };
         };
+        DahliaMemoryResult: {
+            items?: components["schemas"]["DahliaMemoryNote"][];
+            nextCursor?: string | null;
+            memory?: components["schemas"]["DahliaMemoryNote"];
+            /** @enum {string} */
+            scope?: "personal" | "workspace";
+            workspaceId?: string;
+            saved?: boolean;
+            deleted?: boolean;
+            /** @enum {string} */
+            suggestedScope?: "personal" | "workspace" | "both" | "uncertain";
+            reason?: string;
+            scopes?: {
+                /** @enum {string} */
+                scope: "personal" | "workspace";
+                workspaceId?: string;
+                name: string;
+                writable: boolean;
+            }[];
+            searchedScopes?: {
+                /** @enum {string} */
+                scope: "personal" | "workspace";
+                workspaceId?: string;
+            }[];
+            results?: {
+                /** @enum {string} */
+                scope: "personal" | "workspace";
+                workspaceId?: string;
+                result: {
+                    sources?: {
+                        kind: string;
+                        id: string;
+                        revision: string;
+                        meeting_id: string | null;
+                        workspace_id: string | null;
+                        /** @enum {string} */
+                        scope: "personal" | "workspace";
+                        canonicalExcerpt: string;
+                        truncated: boolean;
+                    }[];
+                    hypothesis?: string | null;
+                    coverage?: string;
+                    skippedCount?: number;
+                    unavailable?: boolean;
+                    code?: string;
+                    instruction?: string;
+                    canonical?: {
+                        /** @enum {string} */
+                        scope: "personal" | "workspace";
+                        workspaceId?: string;
+                        items: components["schemas"]["DahliaMemoryNote"][];
+                        nextCursor: string | null;
+                    };
+                };
+            }[];
+            enabled?: boolean;
+            status?: string;
+            errorCode?: string | null;
+            attempts?: number;
+            skippedCount?: number;
+            skippedSources?: {
+                source: string;
+                code: string;
+            }[];
+        };
+        DahliaMemoryNote: {
+            id: string;
+            content: string;
+            revision: number;
+            /** Format: date-time */
+            updatedAt: string;
+            protected: boolean;
+        };
         AIModel: {
             id: string;
             displayName: string;
@@ -3364,6 +3590,283 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Capabilities"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    memoryScopes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    memoryList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    scope: "personal" | "workspace";
+                    workspaceId?: string;
+                    after?: string;
+                    query?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    memoryGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    scope: "personal" | "workspace";
+                    workspaceId?: string;
+                    id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    memorySave: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default auto
+                     * @enum {string}
+                     */
+                    scope?: "personal" | "workspace" | "auto";
+                    workspaceId?: string;
+                    id: string;
+                    content: string;
+                    revision: number;
+                    /** @default false */
+                    explicit?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    memoryDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    scope: "personal" | "workspace";
+                    workspaceId?: string;
+                    id: string;
+                    revision: number;
+                    /** @enum {boolean} */
+                    explicit: true;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    memoryRecall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default auto
+                     * @enum {string}
+                     */
+                    scope?: "personal" | "workspace" | "auto";
+                    workspaceId?: string;
+                    query: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    memoryReflect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default auto
+                     * @enum {string}
+                     */
+                    scope?: "personal" | "workspace" | "auto";
+                    workspaceId?: string;
+                    query: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    memoryStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    scope: "personal" | "workspace";
+                    workspaceId?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    memoryConfigure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    scope: "personal" | "workspace";
+                    workspaceId?: string;
+                    enabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
                 };
             };
             default: components["responses"]["Problem"];

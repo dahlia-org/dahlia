@@ -18,6 +18,23 @@ function setup(imageQueue?: JobQueue) {
 }
 const signal = () => new AbortController().signal;
 describe("Worker job delivery", () => {
+  it("keeps personal and legacy Workspace deliveries in separate engines", async () => {
+    const id = uuidV7(), queue = { send: vi.fn(), sendBatch: vi.fn() };
+    const personal = { step: vi.fn(), store: { due: vi.fn().mockResolvedValue([id]), nextDelay: vi.fn().mockResolvedValue(5) } };
+    const workspace = { step: vi.fn(), store: { nextDelay: vi.fn() } };
+    const jobs = createQueueJobs({ DAHLIA_MEMORY_QUEUE: queue }, {} as WorkerJobStores,
+      {} as MeetingSyncStore, {} as MeetingSyncService, [], undefined, undefined, workspace as never, undefined, personal as never);
+    await jobs.schedule(); expect(queue.send).toHaveBeenCalledWith({ action: "memory", personal: true });
+    await jobs.consume({ action: "memory", personal: true }, signal());
+    const message = { action: "memory" as const, personal: true, workspaceId: id };
+    expect(queue.sendBatch).toHaveBeenCalledWith([{ body: message }]);
+    await jobs.consume(message, signal());
+    expect(personal.step).toHaveBeenCalledWith(id, expect.any(AbortSignal));
+    expect(workspace.step).not.toHaveBeenCalled();
+    expect(queue.send).toHaveBeenCalledWith(message, { delaySeconds: 5 });
+    await jobs.consume({ action: "memory", workspaceId: id }, signal());
+    expect(workspace.step).toHaveBeenCalledWith(id, expect.any(AbortSignal));
+  });
   it("dispatches private memory references and reschedules only unfinished work", async () => {
     const reference = { action: "chat-memory" as const, id: `live:${uuidV7()}`, userId: uuidV7() };
     const queue = { send: vi.fn(), sendBatch: vi.fn() };

@@ -1,5 +1,6 @@
+import { DahliaMemory, memoryScopeSchema, memoryConfigureSchema, memoryListSchema, memoryGetSchema, memorySearchSchema, memorySaveSchema, memoryDeleteSchema } from "./memory/dahlia";
+import { createMemoryGenerator, type MemoryGenerator, type ChatMemoryService } from "./agent/context-service";
 import { createMemoryTools } from "./memory/tools";
-import type { ChatMemoryService } from "./agent/context-service";
 import { preferenceSettingsSchema, liveSelectionSchema } from "./agent/context-model";
 import { WorkspaceMemoryService } from "./memory/service";
 import { memorySettingsSchema, sharedMemorySchema } from "./memory/model";
@@ -45,6 +46,8 @@ import {
   MCP_CAPABILITY_SCOPES,
   MCP_READ_SCOPE,
   MCP_SCOPE,
+  MEMORY_READ_SCOPE,
+  MEMORY_WRITE_SCOPE,
 } from "./auth/scopes";
 import type { AuthStore } from "./auth/store";
 import { mcpResource, type AppConfig } from "./config";
@@ -124,6 +127,8 @@ export interface AppDependencies {
   summaryService?: SummaryService;
   aiService?: AiService;
   workspaceMemory?: WorkspaceMemoryService;
+  personalMemory?: WorkspaceMemoryService;
+  memoryGenerator?: MemoryGenerator;
   aiHistory?: AiHistoryService;
   chatMemory?: ChatMemoryService;
   onSyncMutation?(ownerUserId: string, context: { waitUntil(task: Promise<unknown>): void }): void;
@@ -210,12 +215,15 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   const conversationAnalytics = new ConversationAnalyticsService(store.sync);
   const meetingTools = createMeetingTools(sync);
   const workspaceMemory = dependencies.workspaceMemory ?? (config.hindsight && store.memory ? new WorkspaceMemoryService(config, store.memory, sync, store.sync, dependencies.fetch) : undefined);
-  const ai = dependencies.aiService ?? createAiService(config, gateway, meetingTools, dependencies.fetch, workspaceMemory);
+  const personalMemory = dependencies.personalMemory ?? (config.hindsight && store.personalMemory ? new WorkspaceMemoryService(config, store.personalMemory, sync, store.sync, dependencies.fetch) : undefined);
+  const dahliaMemory = store.memory && store.personalMemory ? new DahliaMemory({ personal: store.personalMemory, workspace: store.memory }, sync,
+    { personal: personalMemory, workspace: workspaceMemory }, dependencies.memoryGenerator ?? (config.chatMemoryModel ? createMemoryGenerator(config) : undefined)) : undefined;
+  const ai = dependencies.aiService ?? createAiService(config, gateway, meetingTools, dependencies.fetch, workspaceMemory, dahliaMemory);
   const aiHistory = dependencies.aiHistory;
   const mcp = createServerMcpHandler(config, sync, async (request) => {
     if (config.authProvider === "accounts") await identities.verifyMcpAccessToken(request);
     else await identities.fromMcpHeader(request);
-  }, meetingTools, workspaceMemory ? createMemoryTools(workspaceMemory) : undefined);
+  }, meetingTools, workspaceMemory ? createMemoryTools(workspaceMemory) : undefined, dahliaMemory);
   const jobOwners = new WeakMap<Request, string>();
   const mcpMetadataUrl = `${config.baseUrl}/.well-known/oauth-protected-resource/mcp`;
   const mcpRequestAuth = config.authProvider === "accounts" && auth
@@ -351,6 +359,19 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       },
     });
   });
+  const memory = () => {
+    if (!dahliaMemory) throw new RequestError(404, "memory_unavailable");
+    return dahliaMemory;
+  };
+  registerApi(app, "memoryScopes", async (c) => c.json(await memory().scopes(await identities.fromBrowser(c.req.raw))));
+  registerApi(app, "memoryList", aiChatBodyLimit, async (c) => c.json(await memory().list(await identities.fromBrowser(c.req.raw), memoryListSchema.parse(await c.req.json()))));
+  registerApi(app, "memoryGet", aiChatBodyLimit, async (c) => c.json(await memory().get(await identities.fromBrowser(c.req.raw), memoryGetSchema.parse(await c.req.json()))));
+  registerApi(app, "memorySave", aiChatBodyLimit, async (c) => c.json(await memory().save(await identities.fromBrowser(c.req.raw), memorySaveSchema.parse(await c.req.json()), "human", c.req.raw.signal)));
+  registerApi(app, "memoryDelete", aiChatBodyLimit, async (c) => c.json(await memory().delete(await identities.fromBrowser(c.req.raw), memoryDeleteSchema.parse(await c.req.json()))));
+  registerApi(app, "memoryRecall", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), memorySearchSchema.parse(await c.req.json()), false, c.req.raw.signal)));
+  registerApi(app, "memoryReflect", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), memorySearchSchema.parse(await c.req.json()), true, c.req.raw.signal)));
+  registerApi(app, "memoryStatus", aiChatBodyLimit, async (c) => c.json(await memory().status(await identities.fromBrowser(c.req.raw), memoryScopeSchema.parse(await c.req.json()))));
+  registerApi(app, "memoryConfigure", aiChatBodyLimit, async (c) => c.json(await memory().configure(await identities.fromBrowser(c.req.raw), memoryConfigureSchema.parse(await c.req.json()))));
   const memoryService = () => {
     if (!workspaceMemory) throw new RequestError(404, "memory_unavailable");
     return workspaceMemory;
@@ -1148,7 +1169,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       authInfo = {
         token: "",
         clientId: "trusted-proxy",
-        scopes: [MCP_SCOPE],
+        scopes: [MCP_SCOPE, ...(config.memoryMcpAccess === "write" ? [MEMORY_WRITE_SCOPE] : config.memoryMcpAccess === "read" ? [MEMORY_READ_SCOPE] : [])],
         expiresAt: Math.floor(Date.now() / 1000) + 60,
         resource: new URL(mcpResource(config)),
         extra: { identity },

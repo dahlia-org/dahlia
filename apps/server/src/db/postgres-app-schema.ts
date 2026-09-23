@@ -720,7 +720,7 @@ export const workspaceKey = cryptoSchema.table("workspace_keys", {
 
 // Content-free coordination metadata deliberately survives Workspace deletion for remote cleanup.
 export const workspaceMemoryState = jobsSchema.table("workspace_memory_state", {
-  workspaceId: uuid("workspace_id").primaryKey(),
+  scopeId: uuid("workspace_id").primaryKey(),
   enabled: boolean("enabled").default(false).notNull(),
   requestedBy: uuid("requested_by").notNull(),
   bankId: text("bank_id").notNull(),
@@ -739,30 +739,81 @@ export const workspaceMemoryState = jobsSchema.table("workspace_memory_state", {
 
 // Durable, content-free per-source work. In-flight operations survive newer edits.
 export const memorySourceJob = jobsSchema.table("memory_source_jobs", {
-  workspaceId: uuid("workspace_id").notNull(),
+  scopeId: uuid("workspace_id").notNull(),
   documentId: text("document_id").notNull(),
   kind: text("kind").$type<"meeting" | "shared">().notNull(),
   sourceId: uuid("source_id").notNull(),
   generation: integer("generation").default(1).notNull(),
   operation: jsonb("operation").$type<import("../memory/model").MemoryOperation>(),
-}, (table) => [primaryKey({ columns: [table.workspaceId, table.documentId] })]);
+}, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
 
 export const memoryDocument = jobsSchema.table("memory_documents", {
-  workspaceId: uuid("workspace_id").notNull(),
+  scopeId: uuid("workspace_id").notNull(),
   documentId: text("document_id").notNull(),
   source: jsonb("source").$type<import("../memory/model").MemorySource>().notNull(),
   contentHash: text("content_hash").notNull(),
   generation: integer("generation").notNull(),
-}, (table) => [primaryKey({ columns: [table.workspaceId, table.documentId] })]);
+}, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
 
 export const sharedMemory = appSchema.table("shared_memories", {
   id: uuid("id").primaryKey(),
-  workspaceId: uuid("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  scopeId: uuid("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   createdBy: uuid("created_by").notNull(),
   content: text("content").notNull(),
+  protected: boolean("protected").default(true).notNull(),
   revision: integer("revision").default(1).notNull(),
   updatedAt: timestamp("updated_at").notNull(),
-}, (table) => [index("shared_memories_workspace_idx").on(table.workspaceId),
-  pgPolicy("shared_memory_read", { for: "select", using: sql`"app"."current_identity_can_read_workspace"(${table.workspaceId})` }),
-  pgPolicy("shared_memory_write", { for: "all", using: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId})`, withCheck: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId})` }),
+}, (table) => [index("shared_memories_workspace_idx").on(table.scopeId),
+  pgPolicy("shared_memory_read", { for: "select", using: sql`"app"."current_identity_can_read_workspace"(${table.scopeId})` }),
+  pgPolicy("shared_memory_write", { for: "all", using: sql`"app"."current_identity_can_write_workspace"(${table.scopeId})`, withCheck: sql`"app"."current_identity_can_write_workspace"(${table.scopeId})` }),
+]).enableRLS();
+
+// Content-free coordination metadata deliberately survives user deletion for remote cleanup.
+export const personalMemoryState = jobsSchema.table("personal_memory_state", {
+  scopeId: uuid("user_id").primaryKey(),
+  enabled: boolean("enabled").default(false).notNull(),
+  requestedBy: uuid("requested_by").notNull(),
+  bankId: text("bank_id").notNull(),
+  generation: integer("generation").default(1).notNull(),
+  indexedGeneration: integer("indexed_generation").default(0).notNull(),
+  status: text("status").default("pending").notNull(),
+  purge: boolean("purge").default(false).notNull(),
+  reconcile: boolean("reconcile").default(true).notNull(),
+  progress: jsonb("progress").$type<import("../memory/model").MemoryProgress>(),
+  lease: uuid("lease"),
+  leaseUntil: timestamp("lease_until"),
+  availableAt: timestamp("available_at").notNull(),
+  attempts: integer("attempts").default(0).notNull(),
+  errorCode: text("error_code"),
+}, (table) => [index("personal_memory_due_idx").on(table.availableAt)]);
+
+// Durable, content-free per-source work. In-flight operations survive newer edits.
+export const personalMemorySourceJob = jobsSchema.table("personal_memory_source_jobs", {
+  scopeId: uuid("user_id").notNull(),
+  documentId: text("document_id").notNull(),
+  kind: text("kind").$type<"meeting" | "shared">().notNull(),
+  sourceId: uuid("source_id").notNull(),
+  generation: integer("generation").default(1).notNull(),
+  operation: jsonb("operation").$type<import("../memory/model").MemoryOperation>(),
+}, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
+
+export const personalMemoryDocument = jobsSchema.table("personal_memory_documents", {
+  scopeId: uuid("user_id").notNull(),
+  documentId: text("document_id").notNull(),
+  source: jsonb("source").$type<import("../memory/model").MemorySource>().notNull(),
+  contentHash: text("content_hash").notNull(),
+  generation: integer("generation").notNull(),
+}, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
+
+export const personalMemory = appSchema.table("personal_memories", {
+  id: uuid("id").primaryKey(),
+  scopeId: uuid("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  createdBy: uuid("created_by").notNull(),
+  content: text("content").notNull(),
+  protected: boolean("protected").default(true).notNull(),
+  revision: integer("revision").default(1).notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+}, (table) => [index("personal_memories_user_idx").on(table.scopeId),
+  pgPolicy("personal_memory_owner", { for: "all", using: sql`${table.scopeId} = nullif(current_setting('app.user_id', true), '')::uuid`,
+    withCheck: sql`${table.scopeId} = nullif(current_setting('app.user_id', true), '')::uuid` }),
 ]).enableRLS();

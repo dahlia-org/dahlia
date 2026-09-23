@@ -1,3 +1,5 @@
+import { createDahliaMemoryTools, type DahliaMemoryTool } from "./memory/dahlia-tools";
+import type { DahliaMemory } from "./memory/dahlia";
 import type { MemoryTools } from "./memory/tools";
 import { decodeId, encodeId } from "./typeid";
 import { wireValue, wireURL, wireCursor } from "./public-wire";
@@ -11,7 +13,7 @@ import { z } from "zod";
 
 import { RequestError } from "./storage/upload";
 import type { Identity } from "./auth/identity";
-import { hasApiScope, MCP_READ_SCOPE } from "./auth/scopes";
+import { hasApiScope, MCP_READ_SCOPE, MEMORY_READ_SCOPE, MEMORY_WRITE_SCOPE } from "./auth/scopes";
 import type { AppConfig } from "./config";
 import { searchRequestSchema } from "./search/model";
 import { MeetingSyncService } from "./sync/service";
@@ -24,6 +26,7 @@ export function createServerMcpHandler(
   authorize?: (request: Request) => Promise<void>,
   meetingTools?: MeetingTools,
   memoryTools?: MemoryTools,
+  dahliaMemory?: DahliaMemory,
 ) {
   return createMcpHandler(({ authInfo, requestInfo }) => {
     const identity = mcpIdentity(authInfo);
@@ -94,13 +97,21 @@ export function createServerMcpHandler(
       ));
     }
 
+    if (dahliaMemory && hasApiScope(authInfo?.scopes ?? [], MEMORY_READ_SCOPE)) {
+      for (const tool of Object.values(createDahliaMemoryTools(dahliaMemory, hasApiScope(authInfo?.scopes ?? [], MEMORY_WRITE_SCOPE)))) {
+        registerMastraTool(server, tool, identity, requestInfo?.signal, async () => {
+          if (requestInfo) await authorize?.(requestInfo);
+          if (authInfo?.expiresAt !== undefined && authInfo.expiresAt <= Date.now() / 1000) throw new RequestError(401, "token_expired");
+        });
+      }
+    }
     return server;
   }, { legacy: "reject" });
 }
 
 export function registerMastraTool(
   server: McpServer,
-  tool: MeetingTools[keyof MeetingTools] | MemoryTools[keyof MemoryTools],
+  tool: MeetingTools[keyof MeetingTools] | MemoryTools[keyof MemoryTools] | DahliaMemoryTool,
   identity: Identity,
   requestSignal?: AbortSignal,
   authorize?: () => Promise<void>,

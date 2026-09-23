@@ -656,6 +656,78 @@
   },
   "routes": [
     {
+      "path": "/api/v1/memory/scopes",
+      "methods": [
+        "GET"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/memory/list",
+      "methods": [
+        "POST"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/memory/get",
+      "methods": [
+        "POST"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/memory/save",
+      "methods": [
+        "POST"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/memory/delete",
+      "methods": [
+        "POST"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/memory/recall",
+      "methods": [
+        "POST"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/memory/reflect",
+      "methods": [
+        "POST"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/memory/status",
+      "methods": [
+        "POST"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
+      "path": "/api/v1/memory/configure",
+      "methods": [
+        "POST"
+      ],
+      "response": "pass",
+      "request": "pass"
+    },
+    {
       "path": "/api/v1/workspaces/:workspace/memory",
       "response": "pass",
       "request": "pass"

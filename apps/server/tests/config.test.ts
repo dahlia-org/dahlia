@@ -9,6 +9,11 @@ const accounts = {
 };
 
 describe("configuration", () => {
+  it("requires an explicit header-mode grant for Dahlia Memory MCP", () => {
+    expect(loadConfig(accounts).memoryMcpAccess).toBe("off");
+    for (const access of ["off", "read", "write"]) expect(loadConfig({ ...accounts, DAHLIA_MEMORY_MCP_ACCESS: access }).memoryMcpAccess).toBe(access);
+    expect(() => loadConfig({ ...accounts, DAHLIA_MEMORY_MCP_ACCESS: "all" })).toThrow();
+  });
   it("keeps signup Org provisioning off unless explicitly enabled", () => {
     expect(loadConfig(accounts).autoCreateOrgOnSignup).toBe(false);
     expect(loadConfig({ ...accounts, DAHLIA_AUTO_CREATE_ORG_ON_SIGNUP: "0" }).autoCreateOrgOnSignup).toBe(false);

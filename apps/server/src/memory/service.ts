@@ -16,8 +16,8 @@ export class WorkspaceMemoryService {
     private readonly syncStore: MeetingSyncStore, transport: typeof fetch = fetch) {
     this.client = new HindsightClient(config.hindsight!, config.databricksWorkspace, transport);
   }
-  async status(identity: Identity, workspaceId: string) {
-    const state = await this.store.status(identity.userId, workspaceId);
+  async status(identity: Identity, scopeId: string) {
+    const state = await this.store.status(identity.userId, scopeId);
     const failures = Object.entries(state?.progress?.failures ?? {});
     let status = "paused";
     if (state?.purge) status = "deleting";
@@ -29,28 +29,28 @@ export class WorkspaceMemoryService {
       errorCode: state?.errorCode ?? null, attempts: state?.attempts ?? 0,
       skippedCount: failures.length, skippedSources: failures.slice(-20).map(([source, code]) => ({ source, code })) };
   }
-  configure(identity: Identity, workspaceId: string, enabled: boolean) {
-    return this.store.configure(identity.userId, workspaceId, this.client.bank(workspaceId), enabled);
+  configure(identity: Identity, scopeId: string, enabled: boolean) {
+    return this.store.configure(identity.userId, scopeId, this.client.bank(scopeId, this.store.personal), enabled);
   }
-  private async readable(identity: Identity, workspaceId: string) {
-    const state = await this.store.status(identity.userId, workspaceId);
-    if (!state?.enabled || state.purge || state.bankId !== this.client.bank(workspaceId)) {
+  private async readable(identity: Identity, scopeId: string) {
+    const state = await this.store.status(identity.userId, scopeId);
+    if (!state?.enabled || state.purge || state.bankId !== this.client.bank(scopeId, this.store.personal)) {
       throw new HindsightError("memory_not_ready");
     }
     return state;
   }
-  private async source(identity: Identity, workspaceId: string, documentId: string, signal: AbortSignal) {
-    const saved = await this.store.document(workspaceId, documentId);
-    if (!saved || saved.generation <= 0 || await this.store.pending(workspaceId, documentId)) return null;
+  private async source(identity: Identity, scopeId: string, documentId: string, signal: AbortSignal) {
+    const saved = await this.store.document(scopeId, documentId);
+    if (!saved || saved.generation <= 0 || await this.store.pending(scopeId, documentId)) return null;
     const document = saved.source.kind === "meeting"
-      ? await meetingDocument(this.sync, identity, workspaceId, saved.source.id, signal)
-      : await this.store.getNote(identity.userId, workspaceId, saved.source.id).then((note) => note ? noteDocument(note) : null);
+      ? await meetingDocument(this.sync, identity, scopeId, saved.source.id, signal)
+      : await this.store.getNote(identity.userId, scopeId, saved.source.id).then((note) => note ? noteDocument(note, this.store.personal) : null);
     if (!document || document.source.revision !== saved.source.revision) return null;
     return await contentHash(document.content) === saved.contentHash ? document : null;
   }
-  async search(identity: Identity, workspaceId: string, query: string, reflect: boolean, signal: AbortSignal) {
+  async search(identity: Identity, scopeId: string, query: string, reflect: boolean, signal: AbortSignal) {
     signal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
-    const state = await this.readable(identity, workspaceId);
+    const state = await this.readable(identity, scopeId);
     const reflection = reflect && !state.reconcile && state.generation === state.indexedGeneration ? await this.client.reflect(state.bankId, query, signal) : undefined;
     const facts = await this.client.recall(state.bankId, query, signal);
     const reflectionSources: string[][] = [];
@@ -65,19 +65,19 @@ export class WorkspaceMemoryService {
     const ids = [...new Set([...reflectionSources.flat(), ...facts.flatMap((fact) => fact.document_id ? [fact.document_id] : [])])].slice(0, 30);
     const documents: MemoryDocument[] = [];
     for (const id of ids) {
-      const document = await this.source(identity, workspaceId, id, signal);
+      const document = await this.source(identity, scopeId, id, signal);
       if (document) documents.push(document);
       if (documents.length === 5) break;
     }
-    let current = await this.readable(identity, workspaceId);
+    let current = await this.readable(identity, scopeId);
     // A later source read can race with an earlier one. Publish only a stable validation pass.
     for (let attempt = 0; attempt < 3; attempt++) {
       const generation = current.generation;
       for (let i = documents.length - 1; i >= 0; i--) {
-        const verified = await this.source(identity, workspaceId, documents[i]!.id, signal);
+        const verified = await this.source(identity, scopeId, documents[i]!.id, signal);
         if (!verified || verified.source.revision !== documents[i]!.source.revision) documents.splice(i, 1);
       }
-      current = await this.readable(identity, workspaceId);
+      current = await this.readable(identity, scopeId);
       if (current.generation === generation) break;
       if (attempt === 2) throw new HindsightError("memory_source_changed");
     }
@@ -94,7 +94,8 @@ export class WorkspaceMemoryService {
     return { sources: documents.map((document) => ({
       kind: document.source.kind, id: document.source.id, revision: document.source.revision,
       meeting_id: document.source.kind === "meeting" ? encodeId("meeting", document.source.id) : null,
-      workspace_id: encodeId("workspace", workspaceId),
+      workspace_id: this.store.personal ? null : encodeId("workspace", scopeId),
+      scope: this.store.personal ? "personal" : "workspace",
       // Only canonical Dahlia content is evidence. Memory extraction is never returned as a fact.
       canonicalExcerpt: document.content.slice(0, 16_000), truncated: document.content.length > 16_000,
     })), hypothesis: hypothesis ?? null,
@@ -103,13 +104,13 @@ export class WorkspaceMemoryService {
     instruction: "Cite these Dahlia sources. A transcript proves that a statement was recorded, not that it is objectively true. The hypothesis is an unverified interpretation: check claims against the canonical excerpts and meeting tools. If coverage is not ready, disclose incomplete memory coverage and use canonical tools for the omitted sources. Do not infer counts or trends from retrieval hits." };
   }
 
-  async step(workspaceId: string, signal: AbortSignal) {
+  async step(scopeId: string, signal: AbortSignal) {
     signal = AbortSignal.any([signal, AbortSignal.timeout(90_000)]);
-    const job = await this.store.claim(workspaceId);
+    const job = await this.store.claim(scopeId);
     if (!job) return;
     try {
-      if (job.purge || !await this.store.exists(workspaceId)) {
-        const source = await this.store.pending(workspaceId);
+      if (job.purge || !await this.store.exists(scopeId)) {
+        const source = await this.store.pending(scopeId);
         for (const id of [job.progress?.operationId, source?.operation?.id]) {
           if (!id) continue;
           const status = await this.client.operation(job.bankId, id, signal);
@@ -120,19 +121,21 @@ export class WorkspaceMemoryService {
         return;
       }
       if (!job.enabled) { await this.store.release(job, { availableAt: new Date(Date.now() + 60_000) }); return; }
-      if (job.bankId !== this.client.bank(workspaceId)) throw new HindsightError("memory_bank_config_changed");
-      const workerUser = await this.store.workerUser(workspaceId);
+      if (job.bankId !== this.client.bank(scopeId, this.store.personal)) throw new HindsightError("memory_bank_config_changed");
+      const workerUser = await this.store.workerUser(scopeId);
       if (!workerUser) throw new HindsightError("memory_authorization_changed");
       const identity: Identity = { userId: workerUser, source: "accounts" };
-      const workspace = await this.sync.getWorkspace(identity, workspaceId);
-      if (!workspace || workspace.role !== "admin" || workspace.encryption === "server") throw new HindsightError("memory_authorization_changed");
+      if (!this.store.personal) {
+        const workspace = await this.sync.getWorkspace(identity, scopeId);
+        if (!workspace || workspace.role !== "admin" || workspace.encryption === "server") throw new HindsightError("memory_authorization_changed");
+      }
       if (!job.reconcile && job.indexedGeneration === job.generation) {
         await this.store.release(job, { availableAt: new Date(Date.now() + 60_000) }); return;
       }
       let progress = job.progress;
       if (!progress) {
-        await this.client.initialize(job.bankId, signal);
-        progress = { phase: "meetings", dirtyModels: ["workspace"] };
+        await this.client.initialize(job.bankId, signal, this.store.personal);
+        progress = { phase: this.store.personal ? "notes" : "meetings", dirtyModels: ["workspace"] };
         await this.store.startScan(job, progress);
       }
       if (progress.operationId) {
@@ -158,29 +161,29 @@ export class WorkspaceMemoryService {
       if (job.reconcile && progress.phase === "delta") {
         const failedModels = Object.keys(progress.failures ?? {}).flatMap((id) =>
           id === "workspace-insights" ? ["workspace"] : id.startsWith("project-") ? [id.slice("project-".length)] : []);
-        progress = { ...progress, phase: "meetings", after: undefined, failures: {},
+        progress = { ...progress, phase: this.store.personal ? "notes" : "meetings", after: undefined, failures: {},
           dirtyModels: [...new Set([...(progress.dirtyModels ?? []), ...failedModels])] };
         await this.store.startScan(job, progress);
       }
       if (progress.phase === "meetings") {
         const [createdAt, meetingId] = progress.after?.split(",") ?? [];
         const cursor = progress.after ? { createdAt: new Date(createdAt!), meetingId: meetingId! } : undefined;
-        const [meeting] = await this.syncStore.withIdentity(identity, (scoped) => scoped.listMeetings(workspaceId, undefined, 1, undefined, cursor));
+        const [meeting] = await this.syncStore.withIdentity(identity, (scoped) => scoped.listMeetings(scopeId, undefined, 1, undefined, cursor));
         if (meeting) {
-          if (!meeting.isRecording && meeting.status === "READY") await this.store.enqueue(workspaceId, "meeting", meeting.meetingId);
+          if (!meeting.isRecording && meeting.status === "READY") await this.store.enqueue(scopeId, "meeting", meeting.meetingId);
           progress.after = `${meeting.createdAt.toISOString()},${meeting.meetingId}`;
         } else progress = { ...progress, phase: "notes", after: undefined };
       } else if (progress.phase === "notes") {
-        const [note] = await this.store.listNotes(identity.userId, workspaceId, progress.after);
-        if (note) { await this.store.enqueue(workspaceId, "shared", note.id); progress.after = note.id; }
+        const [note] = await this.store.listNotes(identity.userId, scopeId, progress.after);
+        if (note) { await this.store.enqueue(scopeId, "shared", note.id); progress.after = note.id; }
         else progress = { ...progress, phase: "cleanup", after: undefined };
       } else if (progress.phase === "cleanup") {
         // Recheck indexed documents too, including sources deleted while ingestion was paused.
-        const rows = await this.store.documents(workspaceId, progress.after);
-        for (const row of rows) await this.store.enqueue(workspaceId, row.source.kind, row.source.id);
+        const rows = await this.store.documents(scopeId, progress.after);
+        for (const row of rows) await this.store.enqueue(scopeId, row.source.kind, row.source.id);
         progress = rows.length === 100 ? { ...progress, after: rows.at(-1)!.documentId } : { ...progress, phase: "delta", after: undefined };
       } else {
-        const source = await this.store.pending(workspaceId);
+        const source = await this.store.pending(scopeId);
         if (source) await this.processSource(job, progress, source, identity, signal);
         else if (progress.dirtyModels?.length) {
           const id = progress.dirtyModels[0]!;
@@ -188,7 +191,7 @@ export class WorkspaceMemoryService {
           // Persist the model identity before the external create; GET + refresh recovers a lost acknowledgement.
           progress.modelId = modelId;
           await this.store.setProgress(job, progress);
-          const operationId = await this.client.createModel(job.bankId, id === "workspace" ? null : id, signal);
+          const operationId = await this.client.createModel(job.bankId, id === "workspace" ? null : id, signal, this.store.personal);
           progress = { ...progress, operationId, operationAttempts: 0 };
           await this.store.setProgress(job, progress);
         } else {
@@ -206,7 +209,7 @@ export class WorkspaceMemoryService {
   }
   private modelId(id: string) { return id === "workspace" ? "workspace-insights" : `project-${id}`; }
   private async processSource(job: MemoryState, progress: MemoryProgress, pending: MemorySourceJob, identity: Identity, signal: AbortSignal) {
-    const previous = await this.store.document(job.workspaceId, pending.documentId);
+    const previous = await this.store.document(job.scopeId, pending.documentId);
     const markModelsDirty = async (projectId?: string | null) => {
       progress.dirtyModels = [...new Set([...(progress.dirtyModels ?? []), "workspace",
         ...[previous?.source.projectId, projectId].filter((id): id is string => !!id)])];
@@ -231,7 +234,7 @@ export class WorkspaceMemoryService {
         }
         await markModelsDirty(operation.source.projectId);
         await this.client.deleteDocument(job.bankId, pending.documentId, signal);
-        await this.store.forgetDocument(job.workspaceId, pending.documentId);
+        await this.store.forgetDocument(job.scopeId, pending.documentId);
         if (operation.generation === pending.generation) this.skip(progress, pending.documentId, "memory_operation_failed");
         await this.store.setProgress(job, progress);
         await this.store.finishSource({ ...pending, generation: operation.generation });
@@ -241,8 +244,8 @@ export class WorkspaceMemoryService {
     let document: MemoryDocument | null;
     try {
       document = pending.kind === "meeting"
-        ? await meetingDocument(this.sync, identity, job.workspaceId, pending.sourceId, signal)
-        : await this.store.getNote(identity.userId, job.workspaceId, pending.sourceId).then((note) => note ? noteDocument(note) : null);
+        ? await meetingDocument(this.sync, identity, job.scopeId, pending.sourceId, signal)
+        : await this.store.getNote(identity.userId, job.scopeId, pending.sourceId).then((note) => note ? noteDocument(note, this.store.personal) : null);
       if (!document) this.unskip(progress, pending.documentId);
     } catch (error) {
       if (!(error instanceof HindsightError) || error.code !== "memory_source_too_large") throw error;
@@ -261,7 +264,7 @@ export class WorkspaceMemoryService {
     await markModelsDirty(document?.source.projectId);
     if (!document) {
       await this.client.deleteDocument(job.bankId, pending.documentId, signal);
-      await this.store.forgetDocument(job.workspaceId, pending.documentId);
+      await this.store.forgetDocument(job.scopeId, pending.documentId);
       await this.store.setProgress(job, progress);
       await this.store.finishSource(pending);
       return;
@@ -269,7 +272,7 @@ export class WorkspaceMemoryService {
     // Only replay a lost operation when its exact canonical input still exists.
     const id = operation?.generation === pending.generation && operation.contentHash === hash ? operation.id : uuidV7();
     await this.store.setOperation(pending, { id, generation: pending.generation, source: document.source, contentHash: hash!, attempts: 0 });
-    await this.client.retain(job.bankId, document, id, signal);
+    await this.client.retain(job.bankId, document, id, signal, this.store.personal);
   }
   private unskip(progress: MemoryProgress, source: string) {
     delete progress.failures?.[source];

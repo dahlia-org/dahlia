@@ -103,6 +103,7 @@ export interface ApplicationStore {
   database: DBAdapterInstance;
   searchSettings: SearchSettingsStore;
   memory?: MemoryStore;
+  personalMemory?: MemoryStore;
   sync: MeetingSyncStore;
   resolveHeaderUser(identity: Identity): Promise<string | null>;
   ensureIdentityUser(identity: Identity): Promise<boolean>;
@@ -138,6 +139,7 @@ export function createPostgresApplicationStore(
     organizations,
     searchSettings: createSearchSettingsStore(db, true),
     memory: createMemoryStore(db, true),
+    personalMemory: createMemoryStore(db, true, true),
     sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding, encryption),
     async resolveHeaderUser(identity) {
       const email = headerIdentityValue({ localSingleUser }, identity.email ?? identity.userId);
@@ -365,6 +367,7 @@ export function createSqliteApplicationStore(
     organizations,
     searchSettings: createSearchSettingsStore(db, false),
     memory: createMemoryStore(db, false),
+    personalMemory: createMemoryStore(db, false, true),
     sync: createSqliteMeetingSyncStore(db, searchEmbedding, encryption),
     async resolveHeaderUser(identity) {
       const email = headerIdentityValue({ localSingleUser }, identity.email ?? identity.userId);

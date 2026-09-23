@@ -185,7 +185,7 @@ app.workspace_permissions
     └─ admin / editor / viewer（Organization所属だけではアクセスを付与しない）
 ```
 
-`/mcp` は MCP 2026-07-28 の stateless endpoint とし、accounts mode では DPoP-bound access token と exact resource audience を必須とする。`mcp` は全tool、`mcp:read` はread-only toolだけを許可する。Desktop が main API を呼ぶ capability scope は `all-apis` に統一する。Node の authorization server は CIMD を提供し、RFC 7591 DCR は開かない。Databricks Apps の header mode では Apps proxy が OAuth 認証を完了済みのため、転送 identity を owner として使い、artifact 操作で user access token を再利用しない。
+`/mcp` は MCP 2026-07-28 の stateless endpoint とし、accounts mode では DPoP-bound access token と exact resource audience を必須とする。`mcp` と `mcp:read` は既存の会議参照 tool を許可する。Dahlia Memory は独立した `mcp:memory:read` / `mcp:memory:write` を使い、認証済み本人の個人領域と現在認可された Workspace 領域を分離する。Router は候補の提案に限定し、共有保存は明示的な指示と書き込み権限を必要とする ([ADR](docs/adr/server/dahlia-memory.md))。Desktop が main API を呼ぶ capability scope は `all-apis` に統一する。Node の authorization server は CIMD を提供し、RFC 7591 DCR は開かない。Databricks Apps の header mode では Apps proxy が OAuth 認証を完了済みのため、転送 identity を owner として使い、artifact 操作で user access token を再利用しない。
 
 Cloudflare では Hono Worker は `/api/**`、`/.well-known/**`、`/mcp`、`/healthz` だけを処理する。React SPA と静的 asset は
 Workers Static Assets が直接配信し、Worker 内から asset binding を呼ばない。`/dashboard/**` の navigation は

@@ -8,9 +8,9 @@ export async function contentHash(content: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
-export function noteDocument(note: SharedMemory): MemoryDocument {
+export function noteDocument(note: SharedMemory, personal = false): MemoryDocument {
   return { id: `shared-${note.id}`, source: { kind: "shared", id: note.id, revision: String(note.revision), projectId: null },
-    content: `User-registered shared information (not independently verified):\n${note.content}`, timestamp: note.updatedAt.toISOString() };
+    content: `${personal ? "Private user memory" : "User-registered shared information"} (not independently verified):\n${note.content}`, timestamp: note.updatedAt.toISOString() };
 }
 export async function meetingDocument(sync: MeetingSyncService, identity: Identity, workspaceId: string, meetingId: string,
   signal: AbortSignal): Promise<MemoryDocument | null> {

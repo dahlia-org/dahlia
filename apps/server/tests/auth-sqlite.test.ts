@@ -295,7 +295,7 @@ describe("SQLite Better Auth store", () => {
     expect(await metadata.json()).toMatchObject({
       resource: "http://localhost:5173/mcp",
       authorization_servers: ["http://localhost:5173"],
-      scopes_supported: ["mcp", "mcp:read"],
+      scopes_supported: ["mcp", "mcp:read", "mcp:memory:read", "mcp:memory:write"],
     });
     const unauthorizedMcp = await app.request("/mcp", {
       method: "POST",

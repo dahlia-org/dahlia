@@ -2949,6 +2949,309 @@
           }
         }
       },
+      "DahliaMemoryResult": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DahliaMemoryNote"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "memory": {
+            "$ref": "#/components/schemas/DahliaMemoryNote"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "workspace"
+            ]
+          },
+          "workspaceId": {
+            "type": "string",
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "saved": {
+            "type": "boolean"
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "suggestedScope": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "workspace",
+              "both",
+              "uncertain"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "personal",
+                    "workspace"
+                  ]
+                },
+                "workspaceId": {
+                  "type": "string",
+                  "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "writable": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "scope",
+                "name",
+                "writable"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "searchedScopes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "personal",
+                    "workspace"
+                  ]
+                },
+                "workspaceId": {
+                  "type": "string",
+                  "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                }
+              },
+              "required": [
+                "scope"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "personal",
+                    "workspace"
+                  ]
+                },
+                "workspaceId": {
+                  "type": "string",
+                  "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                },
+                "result": {
+                  "type": "object",
+                  "properties": {
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "revision": {
+                            "type": "string"
+                          },
+                          "meeting_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "workspace_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "scope": {
+                            "type": "string",
+                            "enum": [
+                              "personal",
+                              "workspace"
+                            ]
+                          },
+                          "canonicalExcerpt": {
+                            "type": "string"
+                          },
+                          "truncated": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "id",
+                          "revision",
+                          "meeting_id",
+                          "workspace_id",
+                          "scope",
+                          "canonicalExcerpt",
+                          "truncated"
+                        ]
+                      }
+                    },
+                    "hypothesis": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "coverage": {
+                      "type": "string"
+                    },
+                    "skippedCount": {
+                      "type": "number"
+                    },
+                    "unavailable": {
+                      "type": "boolean"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "instruction": {
+                      "type": "string"
+                    },
+                    "canonical": {
+                      "type": "object",
+                      "properties": {
+                        "scope": {
+                          "type": "string",
+                          "enum": [
+                            "personal",
+                            "workspace"
+                          ]
+                        },
+                        "workspaceId": {
+                          "type": "string",
+                          "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                        },
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/DahliaMemoryNote"
+                          }
+                        },
+                        "nextCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "scope",
+                        "items",
+                        "nextCursor"
+                      ]
+                    }
+                  }
+                }
+              },
+              "required": [
+                "scope",
+                "result"
+              ]
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "errorCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attempts": {
+            "type": "number"
+          },
+          "skippedCount": {
+            "type": "number"
+          },
+          "skippedSources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "code"
+              ]
+            }
+          }
+        }
+      },
+      "DahliaMemoryNote": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "content": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "protected": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "content",
+          "revision",
+          "updatedAt",
+          "protected"
+        ]
+      },
       "AIModel": {
         "type": "object",
         "properties": {
@@ -8541,6 +8844,579 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/memory/scopes": {
+      "get": {
+        "operationId": "memoryScopes",
+        "summary": "List authorized Dahlia Memory scopes",
+        "tags": [
+          "memory"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/memory/list": {
+      "post": {
+        "operationId": "memoryList",
+        "summary": "Dahlia Memory list",
+        "tags": [
+          "memory"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "personal",
+                      "workspace"
+                    ]
+                  },
+                  "workspaceId": {
+                    "type": "string",
+                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  },
+                  "after": {
+                    "type": "string",
+                    "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  },
+                  "query": {
+                    "type": "string",
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "scope"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/memory/get": {
+      "post": {
+        "operationId": "memoryGet",
+        "summary": "Dahlia Memory get",
+        "tags": [
+          "memory"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "personal",
+                      "workspace"
+                    ]
+                  },
+                  "workspaceId": {
+                    "type": "string",
+                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  },
+                  "id": {
+                    "type": "string",
+                    "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  }
+                },
+                "required": [
+                  "scope",
+                  "id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/memory/save": {
+      "post": {
+        "operationId": "memorySave",
+        "summary": "Dahlia Memory save",
+        "tags": [
+          "memory"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "personal",
+                      "workspace",
+                      "auto"
+                    ],
+                    "default": "auto"
+                  },
+                  "workspaceId": {
+                    "type": "string",
+                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  },
+                  "id": {
+                    "type": "string",
+                    "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16000
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "explicit": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "content",
+                  "revision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/memory/delete": {
+      "post": {
+        "operationId": "memoryDelete",
+        "summary": "Dahlia Memory delete",
+        "tags": [
+          "memory"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "personal",
+                      "workspace"
+                    ]
+                  },
+                  "workspaceId": {
+                    "type": "string",
+                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  },
+                  "id": {
+                    "type": "string",
+                    "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "explicit": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "required": [
+                  "scope",
+                  "id",
+                  "revision",
+                  "explicit"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/memory/recall": {
+      "post": {
+        "operationId": "memoryRecall",
+        "summary": "Dahlia Memory recall",
+        "tags": [
+          "memory"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "personal",
+                      "workspace",
+                      "auto"
+                    ],
+                    "default": "auto"
+                  },
+                  "workspaceId": {
+                    "type": "string",
+                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  },
+                  "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "query"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/memory/reflect": {
+      "post": {
+        "operationId": "memoryReflect",
+        "summary": "Dahlia Memory reflect",
+        "tags": [
+          "memory"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "personal",
+                      "workspace",
+                      "auto"
+                    ],
+                    "default": "auto"
+                  },
+                  "workspaceId": {
+                    "type": "string",
+                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  },
+                  "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "query"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/memory/status": {
+      "post": {
+        "operationId": "memoryStatus",
+        "summary": "Dahlia Memory status",
+        "tags": [
+          "memory"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "personal",
+                      "workspace"
+                    ]
+                  },
+                  "workspaceId": {
+                    "type": "string",
+                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  }
+                },
+                "required": [
+                  "scope"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/memory/configure": {
+      "post": {
+        "operationId": "memoryConfigure",
+        "summary": "Dahlia Memory configure",
+        "tags": [
+          "memory"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "personal",
+                      "workspace"
+                    ]
+                  },
+                  "workspaceId": {
+                    "type": "string",
+                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "scope",
+                  "enabled"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
                 }
               }
             }
