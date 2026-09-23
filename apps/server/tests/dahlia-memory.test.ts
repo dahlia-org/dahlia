@@ -237,8 +237,9 @@ describe("Dahlia Memory", () => {
       const write = await list([MEMORY_WRITE_SCOPE]);
       expect(write).toContain('"save_memory"');
       expect(write).toContain('"update_working_memory"');
-      const listed = JSON.parse(write) as { result: { tools: Array<{ name: string; inputSchema: { oneOf: Array<{ properties: Record<string, unknown> }> } }> } };
+      const listed = JSON.parse(write) as { result: { tools: Array<{ name: string; inputSchema: { type: string; oneOf: Array<{ properties: Record<string, unknown> }> } }> } };
       const editSchema = listed.result.tools.find((tool) => tool.name === "update_working_memory")!.inputSchema;
+      expect(editSchema.type).toBe("object");
       expect(editSchema.oneOf).toHaveLength(2);
       expect(editSchema.oneOf[0]?.properties).toHaveProperty("content");
       expect(editSchema.oneOf[0]?.properties).not.toHaveProperty("automatic");
