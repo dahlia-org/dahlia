@@ -207,12 +207,13 @@ export function createAiHistoryService(pool: Pool): AiHistoryService {
         const preferences = row?.metadata?.preferences;
         if (row?.workingMemory && preferences) {
           const values = JSON.parse(row.workingMemory) as Record<string, unknown>;
-          for (const [key, source] of Object.entries(preferences.sources)) {
-            if (source.threadId === threadId) { values[key] = null; delete preferences.sources[key]; }
+          const sourcedKeys = Object.entries(preferences.sources).filter(([, source]) => source.threadId === threadId).map(([key]) => key);
+          for (const key of sourcedKeys) { values[key] = null; delete preferences.sources[key]; }
+          if (sourcedKeys.length) {
+            preferences.revision++;
+            await client.query('UPDATE agent.mastra_resources SET "workingMemory" = $2, metadata = $3, "updatedAt" = now(), "updatedAtZ" = now() WHERE id = $1',
+              [identity.userId, JSON.stringify(values), JSON.stringify(row.metadata)]);
           }
-          preferences.revision++;
-          await client.query('UPDATE agent.mastra_resources SET "workingMemory" = $2, metadata = $3, "updatedAt" = now(), "updatedAtZ" = now() WHERE id = $1',
-            [identity.userId, JSON.stringify(values), JSON.stringify(row.metadata)]);
         }
         await client.query("DELETE FROM agent.mastra_messages WHERE thread_id = $1", [threadId]);
         await client.query("DELETE FROM agent.mastra_threads WHERE id = $1", [threadId]);

@@ -71,7 +71,9 @@ describe.runIf(url)("Chat memory PostgreSQL", () => {
         jobs.push((await store.claim(owner, `preference:${id}`))!);
       }
       await store.applyPreferences(owner, jobs[0]!, { language: "ja" });
+      const beforeDeletion = await store.settings(owner);
       await history.delete(owner, unrelated.id);
+      expect(await store.settings(owner)).toEqual(beforeDeletion);
       await store.applyPreferences(owner, jobs[1]!, { detail: "detailed" });
       expect((await store.settings(owner)).preferences).toMatchObject({ language: "ja", detail: "detailed" });
       await history.delete(owner, source.id);

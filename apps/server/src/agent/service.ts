@@ -196,6 +196,7 @@ function responsesModel(modelId: string, url: string, apiKey: string, headers?: 
 
 // Mastra's internal OM agents do not inherit the chat agent's signal or logger.
 // Keep provider errors content-free before those agents can log them.
+// Mastra LanguageModel returns streams from both doGenerate and doStream.
 export function requestMemoryModel(model: Extract<LanguageModel, { specificationVersion: "v2" }>, signal: AbortSignal): Extract<LanguageModel, { specificationVersion: "v2" }> {
   const safeError = () => signal.aborted ? new DOMException("Memory request cancelled", "AbortError") : new Error("memory_inference_failed");
   const wrap = (invoke: typeof model.doStream): typeof model.doStream => async (options) => {
