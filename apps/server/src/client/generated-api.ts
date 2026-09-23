@@ -206,7 +206,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/memory/scopes": {
+    "/api/v1/user/memory/scopes": {
         parameters: {
             query?: never;
             header?: never;
@@ -223,159 +223,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/memory/list": {
+    "/api/v1/user/memory/notes": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List saved notes; independent of analysis */
+        get: operations["personalMemoryList"];
         put?: never;
-        /** Dahlia Memory list */
-        post: operations["memoryList"];
+        /** Create a saved note with revision zero */
+        post: operations["personalMemorySave"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/memory/get": {
+    "/api/v1/user/memory/notes/{noteId}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Read a saved note */
+        get: operations["personalMemoryGet"];
         put?: never;
-        /** Dahlia Memory get */
-        post: operations["memoryGet"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/memory/save": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Dahlia Memory save */
-        post: operations["memorySave"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/memory/delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Dahlia Memory delete */
-        post: operations["memoryDelete"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/memory/recall": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Dahlia Memory recall */
-        post: operations["memoryRecall"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/memory/reflect": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Dahlia Memory reflect */
-        post: operations["memoryReflect"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/memory/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Dahlia Memory status */
-        post: operations["memoryStatus"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/memory/configure": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Dahlia Memory configure */
-        post: operations["memoryConfigure"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/memory": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read Workspace memory status */
-        get: operations["getWorkspaceMemory"];
-        /** Enable, pause or retry Workspace memory; admin only */
-        put: operations["setWorkspaceMemory"];
         post?: never;
-        /** Disable and erase Workspace memory; admin only */
-        delete: operations["purgeWorkspaceMemory"];
+        /** Delete a saved note with explicit confirmation and revision */
+        delete: operations["personalMemoryDelete"];
+        options?: never;
+        head?: never;
+        /** Edit a saved note with revision checking */
+        patch: operations["personalMemoryUpdate"];
+        trace?: never;
+    };
+    "/api/v1/user/memory/recall": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recall related memories */
+        post: operations["personalMemoryRecall"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user/memory/reflect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reflect on memories with sources */
+        post: operations["personalMemoryReflect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user/memory/analysis/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read analysis availability and ingestion status */
+        get: operations["personalMemoryStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user/memory/analysis/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Enable, pause or retry personal analysis; owner only */
+        patch: operations["personalMemoryConfigure"];
         trace?: never;
     };
     "/api/v1/workspaces/{workspaceId}/memory/notes": {
@@ -385,11 +335,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List explicitly shared memories */
-        get: operations["listSharedMemories"];
-        /** Save user-confirmed shared information with a revision */
-        put: operations["saveSharedMemory"];
-        post?: never;
+        /** List saved notes; independent of analysis */
+        get: operations["workspaceMemoryList"];
+        put?: never;
+        /** Create a saved note with revision zero */
+        post: operations["workspaceMemorySave"];
         delete?: never;
         options?: never;
         head?: never;
@@ -403,32 +353,119 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Read a saved note */
+        get: operations["workspaceMemoryGet"];
         put?: never;
         post?: never;
-        /** Delete shared information with a revision */
-        delete: operations["deleteSharedMemory"];
+        /** Delete a saved note with explicit confirmation and revision */
+        delete: operations["workspaceMemoryDelete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Edit a saved note with revision checking */
+        patch: operations["workspaceMemoryUpdate"];
         trace?: never;
     };
-    "/api/v1/chat/preferences": {
+    "/api/v1/workspaces/{workspaceId}/memory/recall": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Read private response preferences */
-        get: operations["getAiPreferences"];
-        /** Edit or clear private response preferences with revision checking */
-        put: operations["setAiPreferences"];
+        get?: never;
+        put?: never;
+        /** Recall related memories */
+        post: operations["workspaceMemoryRecall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/memory/reflect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reflect on memories with sources */
+        post: operations["workspaceMemoryReflect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/memory/analysis/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read analysis availability and ingestion status */
+        get: operations["workspaceMemoryStatus"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/memory/analysis/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Enable, pause or retry analysis; Workspace admin only */
+        patch: operations["workspaceMemoryConfigure"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Disable analysis and delete all shared notes and the Hindsight bank; preserves meetings; admin only */
+        delete: operations["purgeWorkspaceMemory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user/memory/working": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read private Working Memory */
+        get: operations["getWorkingMemory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit one private Working Memory section with revision checking */
+        patch: operations["updateWorkingMemory"];
         trace?: never;
     };
     "/api/v1/chat/{threadId}/live-context": {
@@ -3616,24 +3653,17 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    memoryList: {
+    personalMemoryList: {
         parameters: {
-            query?: never;
+            query?: {
+                after?: string;
+                query?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @enum {string} */
-                    scope: "personal" | "workspace";
-                    workspaceId?: string;
-                    after?: string;
-                    query?: string;
-                };
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful response */
             200: {
@@ -3647,7 +3677,7 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    memoryGet: {
+    personalMemorySave: {
         parameters: {
             query?: never;
             header?: never;
@@ -3657,47 +3687,12 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @enum {string} */
-                    scope: "personal" | "workspace";
-                    workspaceId?: string;
-                    id: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DahliaMemoryResult"];
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    memorySave: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /**
-                     * @default auto
-                     * @enum {string}
-                     */
-                    scope?: "personal" | "workspace" | "auto";
-                    workspaceId?: string;
                     id: string;
                     content: string;
-                    revision: number;
-                    /** @default false */
-                    explicit?: boolean;
+                    /** @enum {number} */
+                    revision: 0;
+                    /** @enum {boolean} */
+                    explicit: true;
                 };
             };
         };
@@ -3714,20 +3709,68 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    memoryDelete: {
+    personalMemoryGet: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                noteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    personalMemoryDelete: {
+        parameters: {
+            query: {
+                revision: string;
+                explicit: "true";
+            };
+            header?: never;
+            path: {
+                noteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    personalMemoryUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                noteId: string;
+            };
             cookie?: never;
         };
         requestBody: {
             content: {
                 "application/json": {
-                    /** @enum {string} */
-                    scope: "personal" | "workspace";
-                    workspaceId?: string;
-                    id: string;
+                    content: string;
                     revision: number;
                     /** @enum {boolean} */
                     explicit: true;
@@ -3747,7 +3790,7 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    memoryRecall: {
+    personalMemoryRecall: {
         parameters: {
             query?: never;
             header?: never;
@@ -3757,12 +3800,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /**
-                     * @default auto
-                     * @enum {string}
-                     */
-                    scope?: "personal" | "workspace" | "auto";
-                    workspaceId?: string;
                     query: string;
                 };
             };
@@ -3780,7 +3817,7 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    memoryReflect: {
+    personalMemoryReflect: {
         parameters: {
             query?: never;
             header?: never;
@@ -3790,12 +3827,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /**
-                     * @default auto
-                     * @enum {string}
-                     */
-                    scope?: "personal" | "workspace" | "auto";
-                    workspaceId?: string;
                     query: string;
                 };
             };
@@ -3813,22 +3844,14 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    memoryStatus: {
+    personalMemoryStatus: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @enum {string} */
-                    scope: "personal" | "workspace";
-                    workspaceId?: string;
-                };
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful response */
             200: {
@@ -3842,7 +3865,7 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    memoryConfigure: {
+    personalMemoryConfigure: {
         parameters: {
             query?: never;
             header?: never;
@@ -3852,9 +3875,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @enum {string} */
-                    scope: "personal" | "workspace";
-                    workspaceId?: string;
                     enabled: boolean;
                 };
             };
@@ -3872,7 +3892,209 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    getWorkspaceMemory: {
+    workspaceMemoryList: {
+        parameters: {
+            query?: {
+                after?: string;
+                query?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    workspaceMemorySave: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    id: string;
+                    content: string;
+                    /** @enum {number} */
+                    revision: 0;
+                    /** @enum {boolean} */
+                    explicit: true;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    workspaceMemoryGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                noteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    workspaceMemoryDelete: {
+        parameters: {
+            query: {
+                revision: string;
+                explicit: "true";
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+                noteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    workspaceMemoryUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                noteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    content: string;
+                    revision: number;
+                    /** @enum {boolean} */
+                    explicit: true;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    workspaceMemoryRecall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    query: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    workspaceMemoryReflect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    query: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    workspaceMemoryStatus: {
         parameters: {
             query?: never;
             header?: never;
@@ -3889,23 +4111,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        enabled: boolean;
-                        status: string;
-                        errorCode: string | null;
-                        attempts: number;
-                        skippedCount: number;
-                        skippedSources: {
-                            source: string;
-                            code: string;
-                        }[];
-                    };
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
                 };
             };
             default: components["responses"]["Problem"];
         };
     };
-    setWorkspaceMemory: {
+    workspaceMemoryConfigure: {
         parameters: {
             query?: never;
             header?: never;
@@ -3922,12 +4134,14 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Success; no response body. */
-            204: {
+            /** @description Successful response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DahliaMemoryResult"];
+                };
             };
             default: components["responses"]["Problem"];
         };
@@ -3958,15 +4172,11 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    listSharedMemories: {
+    getWorkingMemory: {
         parameters: {
-            query?: {
-                after?: string;
-            };
+            query?: never;
             header?: never;
-            path: {
-                workspaceId: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -3978,137 +4188,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        items: {
-                            id: string;
-                            content: string;
-                            revision: number;
-                            /** Format: date-time */
-                            updatedAt: string;
-                        }[];
-                        nextCursor: string | null;
+                        revision: number;
+                        automatic: boolean;
+                        capacityReached: boolean;
+                        manual: string;
+                        learned: string;
                     };
                 };
             };
             default: components["responses"]["Problem"];
         };
     };
-    saveSharedMemory: {
+    updateWorkingMemory: {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                workspaceId: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
                 "application/json": {
-                    id: string;
+                    /** @enum {string} */
+                    section: "manual" | "learned";
                     content: string;
                     revision: number;
-                    /** @enum {boolean} */
-                    confirmed: true;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        id: string;
-                        content: string;
-                        revision: number;
-                        /** Format: date-time */
-                        updatedAt: string;
-                    };
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    deleteSharedMemory: {
-        parameters: {
-            query: {
-                revision: string;
-            };
-            header?: never;
-            path: {
-                workspaceId: string;
-                noteId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Success; no response body. */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    getAiPreferences: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        revision: number;
-                        automatic: boolean;
-                        preferences: {
-                            /** @enum {string|null} */
-                            language: "ja" | "en" | "zh" | "ko" | "es" | "fr" | "de" | "pt" | null;
-                            /** @enum {string|null} */
-                            format: "prose" | "bullets" | "code-first" | null;
-                            /** @enum {string|null} */
-                            detail: "concise" | "balanced" | "detailed" | null;
-                            explanation: string | null;
-                        };
-                    };
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    setAiPreferences: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    revision: number;
+                    explicit: boolean;
+                } | {
+                    /** @enum {string} */
+                    section: "settings";
                     automatic: boolean;
-                    preferences: {
-                        /** @enum {string|null} */
-                        language: "ja" | "en" | "zh" | "ko" | "es" | "fr" | "de" | "pt" | null;
-                        /** @enum {string|null} */
-                        format: "prose" | "bullets" | "code-first" | null;
-                        /** @enum {string|null} */
-                        detail: "concise" | "balanced" | "detailed" | null;
-                        explanation: string | null;
-                    };
+                    revision: number;
+                    /** @enum {boolean} */
+                    explicit: true;
                 };
             };
         };
@@ -4122,15 +4234,9 @@ export interface operations {
                     "application/json": {
                         revision: number;
                         automatic: boolean;
-                        preferences: {
-                            /** @enum {string|null} */
-                            language: "ja" | "en" | "zh" | "ko" | "es" | "fr" | "de" | "pt" | null;
-                            /** @enum {string|null} */
-                            format: "prose" | "bullets" | "code-first" | null;
-                            /** @enum {string|null} */
-                            detail: "concise" | "balanced" | "detailed" | null;
-                            explanation: string | null;
-                        };
+                        capacityReached: boolean;
+                        manual: string;
+                        learned: string;
                     };
                 };
             };

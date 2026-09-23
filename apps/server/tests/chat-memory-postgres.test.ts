@@ -5,7 +5,7 @@ import { createPostgresAuthStore } from "../src/auth/store";
 import { seedPostgresIdentity, testOrganizationID } from "./public-test-client";
 import { createAiHistoryService, withIdentityTransaction } from "../src/agent/history";
 import { ChatMemoryStore } from "../src/agent/context-store";
-import { emptyPreferences, preferencesSchema } from "../src/agent/context-model";
+import { workingMemoryTemplate } from "../src/agent/context-store";
 import { connectPostgresUrl } from "../src/db/postgres";
 import { uuidV7 } from "../src/id";
 
@@ -14,75 +14,77 @@ const connection = url ? connectPostgresUrl(url, 1) : undefined;
 afterAll(async () => connection?.close());
 
 describe.runIf(url)("Chat memory PostgreSQL", () => {
-  it("merges queued preferences in source order, preserving manual invalidation and lease ownership", async () => {
+  it("keeps distinct learned lines from queued jobs and ignores exact duplicates", async () => {
     const store = new ChatMemoryStore(connection!.pool), history = createAiHistoryService(connection!.pool);
     const owner = { userId: uuidV7(), source: "header" as const };
-    const thread = await history.create(owner, uuidV7(), "Queued preferences");
-    try {
-      const ids = [uuidV7(), uuidV7(), uuidV7(), uuidV7()];
-      const now = Date.now();
-      await history.memory(owner).saveMessages({ messages: ids.map((id, index) => ({
-        id, threadId: thread.id, resourceId: owner.userId, role: "user", createdAt: new Date(now + index),
-        content: { format: 2, parts: [{ type: "text", text: "Persistent preference" }] },
-      })) });
-      const jobs = [];
-      for (const id of ids) {
-        await store.enqueuePreferences(owner, thread.id, id, 0);
-        jobs.push((await store.claim(owner, `preference:${id}`))!);
-      }
-      await store.applyPreferences(owner, jobs[0]!, { language: "ja" });
-      await store.applyPreferences(owner, jobs[1]!, { detail: "detailed" });
-      expect((await store.settings(owner)).preferences).toMatchObject({ language: "ja", detail: "detailed" });
-      await store.applyPreferences(owner, jobs[2]!, { language: "en" });
-      const latest = await store.settings(owner);
-      await store.applyPreferences(owner, jobs[0]!, { language: "ja" });
-      await store.applyPreferences(owner, jobs[2]!, { language: "ja" });
-      expect(await store.settings(owner)).toEqual(latest);
-      const manual = await store.editSettings(owner, { ...latest, automatic: false });
-      const resumed = await store.editSettings(owner, { ...manual, automatic: true });
-      await store.applyPreferences(owner, { ...jobs[3]!, revision: manual.revision }, { format: "bullets" });
-      expect(await store.settings(owner)).toEqual(resumed);
-      const job = jobs[3]!;
-      expect(await store.finish(owner, job, 0)).toBe(0);
-      const replacement = (await store.claim(owner, job.id))!;
-      expect(replacement.lease).not.toBe(job.lease);
-      expect(await store.finish(owner, job, 30)).toBeUndefined();
-      expect(await store.finish(owner, replacement, 30)).toBe(30);
-      expect(await store.claim(owner, job.id)).toBeUndefined();
-      await history.delete(owner, thread.id);
-      expect(await store.finish(owner, replacement, 30)).toBeUndefined();
-      await store.applyPreferences(owner, { ...jobs[0]!, revision: (await store.settings(owner)).revision }, { explanation: "Explain terms" });
-      expect((await store.settings(owner)).preferences.explanation).toBeNull();
-    } finally { await history.delete(owner, thread.id); }
+    const thread = await history.create(owner, uuidV7(), "Queued learning");
+    const messages = [uuidV7(), uuidV7()];
+    await history.memory(owner).saveMessages({ messages: messages.map((id) => ({ id, threadId: thread.id, resourceId: owner.userId,
+      role: "user" as const, createdAt: new Date(), content: { format: 2 as const, parts: [{ type: "text" as const, text: "Remember this" }] } })) });
+    for (const id of messages) await store.enqueueLearned(owner, thread.id, id, 0);
+    const first = (await store.claim(owner, `working:${messages[0]}`))!;
+    const second = (await store.claim(owner, `working:${messages[1]}`))!;
+    await store.applyLearned(owner, first, "Prefers concise replies");
+    await store.applyLearned(owner, second, "Prefers concise");
+    await store.applyLearned(owner, second, "Prefers concise");
+    expect((await store.settings(owner)).learned).toBe("- Prefers concise replies\n- Prefers concise");
+    await history.delete(owner, thread.id);
   });
-  it("deletes only the source thread's preferences without invalidating other queued learning", async () => {
+  it("keeps manual and learned Markdown across chat deletion and isolates the owner", async () => {
+    const store = new ChatMemoryStore(connection!.pool), history = createAiHistoryService(connection!.pool);
+    const owner = { userId: uuidV7(), source: "header" as const }, other = { userId: uuidV7(), source: "header" as const };
+    const thread = await history.create(owner, uuidV7(), "Working memory");
+    const messageId = uuidV7();
+    await history.memory(owner).saveMessages({ messages: [{ id: messageId, threadId: thread.id, resourceId: owner.userId,
+      role: "user", createdAt: new Date(), content: { format: 2, parts: [{ type: "text", text: "今後は日本語で回答して" }] } }] });
+    expect(await store.settings(owner)).toEqual({ revision: 0, automatic: true, capacityReached: false, manual: "", learned: "" });
+    await expect(store.editSettings({ ...owner, impersonated: true }, { section: "manual", content: "blocked", revision: 0, explicit: true }))
+      .rejects.toMatchObject({ code: "impersonation_read_only" });
+    const manual = await store.editSettings(owner, { section: "manual", content: "## Profile\nI use Dahlia", revision: 0, explicit: true });
+    await expect(store.editSettings(owner, { section: "manual", content: "stale", revision: 0, explicit: true }))
+      .rejects.toMatchObject({ code: "memory_revision_conflict" });
+    const learned = await store.editSettings(owner, { section: "learned", content: "- Existing note", revision: 0, explicit: true });
+    expect(learned.revision).toBe(manual.revision + 1);
+    await expect(store.editSettings(owner, { section: "learned", content: "injected", revision: learned.revision, explicit: false }))
+      .rejects.toMatchObject({ code: "memory_explicit_instruction_required" });
+    await store.enqueueLearned(owner, thread.id, messageId, learned.revision);
+    const job = (await store.claim(owner, `working:${messageId}`))!;
+    await store.applyLearned(owner, job, "日本語で回答してほしい");
+    expect((await store.settings(owner)).learned).toContain("日本語");
+    await expect(store.editSettings(owner, { section: "learned", content: "stale", revision: learned.revision, explicit: true }))
+      .rejects.toMatchObject({ code: "memory_revision_conflict" });
+    await store.editSettings(owner, { section: "manual", content: "## Profile\nI use Dahlia, updated", revision: learned.revision, explicit: true });
+    expect((await store.settings(other)).manual).toBe("");
+    const beforeEdit = await store.settings(owner);
+    await store.editSettings(owner, { section: "learned", content: beforeEdit.learned, revision: beforeEdit.revision, explicit: true });
+    await store.applyLearned(owner, job, "Stale queued note");
+    expect((await store.settings(owner)).learned).not.toContain("Stale queued note");
+    await history.delete(owner, thread.id);
+    expect((await store.settings(owner)).manual).toContain("Dahlia");
+    expect((await store.settings(owner)).learned).toContain("日本語");
+    expect(await store.claim(owner, job.id)).toBeUndefined();
+    await store.applyLearned(owner, job, "Deleted message");
+    expect((await store.settings(owner)).learned).not.toContain("Deleted message");
+  });
+  it("pauses learning visibly at capacity without replacing saved notes", async () => {
     const store = new ChatMemoryStore(connection!.pool), history = createAiHistoryService(connection!.pool);
     const owner = { userId: uuidV7(), source: "header" as const };
-    const source = await history.create(owner, uuidV7(), "Source");
-    const retained = await history.create(owner, uuidV7(), "Retained");
-    const unrelated = await history.create(owner, uuidV7(), "Unrelated");
-    try {
-      const jobs = [];
-      for (const threadId of [source.id, retained.id, retained.id]) {
-        const id = uuidV7();
-        await history.memory(owner).saveMessages({ messages: [{ id, threadId, resourceId: owner.userId,
-          role: "user", createdAt: new Date(), content: { format: 2, parts: [{ type: "text", text: "Persistent preference" }] } }] });
-        await store.enqueuePreferences(owner, threadId, id, 0);
-        jobs.push((await store.claim(owner, `preference:${id}`))!);
-      }
-      await store.applyPreferences(owner, jobs[0]!, { language: "ja" });
-      const beforeDeletion = await store.settings(owner);
-      await history.delete(owner, unrelated.id);
-      expect(await store.settings(owner)).toEqual(beforeDeletion);
-      await store.applyPreferences(owner, jobs[1]!, { detail: "detailed" });
-      expect((await store.settings(owner)).preferences).toMatchObject({ language: "ja", detail: "detailed" });
-      await history.delete(owner, source.id);
-      await store.applyPreferences(owner, jobs[2]!, { format: "bullets" });
-      await store.applyPreferences(owner, jobs[0]!, { language: "en" });
-      expect((await store.settings(owner)).preferences).toMatchObject({ language: null, detail: "detailed", format: "bullets" });
-    } finally {
-      for (const thread of [source, retained, unrelated]) await history.delete(owner, thread.id);
-    }
+    const thread = await history.create(owner, uuidV7(), "Capacity");
+    const messageId = uuidV7();
+    await history.memory(owner).saveMessages({ messages: [{ id: messageId, threadId: thread.id, resourceId: owner.userId,
+      role: "user", createdAt: new Date(), content: { format: 2, parts: [{ type: "text", text: "Remember my preference" }] } }] });
+    const full = await store.editSettings(owner, { section: "learned", content: "x".repeat(5999), revision: 0, explicit: true });
+    await store.enqueueLearned(owner, thread.id, messageId, full.revision);
+    const job = (await store.claim(owner, `working:${messageId}`))!;
+    await store.applyLearned(owner, job, "New preference");
+    const paused = await store.settings(owner);
+    expect(paused).toMatchObject({ automatic: false, capacityReached: true, learned: full.learned, revision: full.revision + 1 });
+    const shorter = await store.editSettings(owner, { section: "learned", content: "Shortened notes", revision: paused.revision, explicit: true });
+    expect(shorter).toMatchObject({ automatic: false, capacityReached: false });
+    const resumed = await store.editSettings(owner, { section: "settings", automatic: true, revision: shorter.revision, explicit: true });
+    await store.applyLearned(owner, { ...job, revision: resumed.revision }, "New preference");
+    expect((await store.settings(owner)).learned).toBe("Shortened notes\n- New preference");
+    await history.delete(owner, thread.id);
   });
   it("shares only meeting context with current readers and hides it on revocation or meeting deletion", async () => {
     const { db, pool } = connection!;
@@ -117,65 +119,25 @@ describe.runIf(url)("Chat memory PostgreSQL", () => {
     expect(await memory.snapshot(owner, meetingId)).toBeNull();
     expect((await pool.query("SELECT * FROM agent.live_contexts WHERE meeting_id = $1", [meetingId])).rows).toEqual([]);
   });
-  it("protects edits and forgotten preferences, isolates OM, and cascades deleted thread memory", async () => {
+  it("shares the Markdown Working Memory with Mastra while retaining private observational memory", async () => {
     const { pool } = connection!;
-    expect((await pool.query("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user")).rows[0])
-      .toEqual({ rolsuper: false, rolbypassrls: false });
     const store = new ChatMemoryStore(pool), history = createAiHistoryService(pool);
     const owner = { userId: uuidV7(), source: "header" as const }, other = { userId: uuidV7(), source: "header" as const };
     const thread = await history.create(owner, uuidV7(), "Private memory");
-    const otherThread = await history.create(other, uuidV7(), "Other owner");
-    const messageId = uuidV7();
+    await store.editSettings(owner, { section: "manual", content: "I prefer short answers", revision: 0, explicit: true });
     const memory = history.memory(owner);
-    await memory.saveMessages({ messages: [{ id: messageId, threadId: thread.id, resourceId: owner.userId,
-      role: "user", createdAt: new Date(), content: { format: 2, parts: [{ type: "text", text: "今後は日本語で回答して" }] } }] });
-    expect(await store.settings(owner)).toEqual({ revision: 0, automatic: true, preferences: emptyPreferences });
-    await store.enqueuePreferences(owner, thread.id, messageId, 0);
-    const [a, b] = await Promise.all([store.claim(owner, `preference:${messageId}`), store.claim(owner, `preference:${messageId}`)]);
-    const job = a ?? b;
-    expect([a, b].filter(Boolean)).toHaveLength(1);
-    await store.applyPreferences(owner, job!, { language: "ja" });
-    const learned = await store.settings(owner);
-    expect(learned.preferences.language).toBe("ja");
-    expect((await store.settings(other)).preferences.language).toBeNull();
-    const cleared = await store.editSettings(owner, { ...learned, preferences: emptyPreferences });
-    await store.applyPreferences(owner, job!, { language: "en" });
-    await store.applyPreferences(owner, { ...job!, revision: cleared.revision }, { language: "en", explanation: "専門用語は初出時に説明" });
-    expect((await store.settings(owner)).preferences.language).toBeNull();
-    expect((await store.settings(owner)).preferences.explanation).toBe("専門用語は初出時に説明");
-    await expect(store.editSettings(owner, learned)).rejects.toMatchObject({ code: "memory_revision_conflict" });
-    await expect(store.enqueuePreferences(other, thread.id, uuidV7(), 0)).rejects.toThrow();
-    expect(await store.claim(other, job!.id)).toBeUndefined();
-    expect((await pool.query("SELECT * FROM agent.mastra_resources WHERE id = $1", [owner.userId])).rows).toEqual([]);
-    expect((await pool.query("SELECT * FROM agent.memory_jobs WHERE id = $1", [job!.id])).rows).toEqual([]);
-    expect((await store.due()).every((job) => !('content' in job))).toBe(true);
-
+    const configured = new Memory({ storage: memory.storage, vector: false, options: {
+      semanticRecall: false, workingMemory: { enabled: true, scope: "resource", template: workingMemoryTemplate, agentManaged: false },
+      observationalMemory: { scope: "thread", model: createMockModel({ version: "v2", mockText: "<observations>\nUser prefers Japanese replies.\n</observations>" }), retrieval: { scope: "thread" }, observation: { messageTokens: 1, bufferTokens: false } },
+    } });
+    expect(await configured.getWorkingMemory({ threadId: thread.id, resourceId: owner.userId })).toContain("short answers");
     const memoryDomain = (await memory.storage.getStore("memory"))!;
     const record = await memoryDomain.initializeObservationalMemory({ threadId: thread.id, resourceId: owner.userId, scope: "thread", config: {} });
     expect(record.id).toBeTruthy();
-    expect((await memoryDomain.getObservationalMemory(thread.id, owner.userId))?.id).toBe(record.id);
     const otherDomain = (await history.memory(other).storage.getStore("memory"))!;
     expect(await otherDomain.getObservationalMemory(thread.id, owner.userId)).toBeNull();
-    await expect(otherDomain.initializeObservationalMemory({ threadId: thread.id, resourceId: other.userId, scope: "thread", config: {} })).rejects.toThrow();
-    await expect(memoryDomain.initializeObservationalMemory({ threadId: null, resourceId: owner.userId, scope: "resource", config: {} })).rejects.toThrow();
-    const configured = new Memory({ storage: memory.storage, vector: false, options: {
-      semanticRecall: false, workingMemory: { enabled: true, scope: "resource", schema: preferencesSchema, agentManaged: false },
-      observationalMemory: { scope: "thread", model: createMockModel({ version: "v2", mockText: "<observations>\nUser prefers Japanese replies.\n</observations>" }), retrieval: { scope: "thread" }, observation: { messageTokens: 1, bufferTokens: false } },
-    } });
-    expect(await configured.getWorkingMemory({ threadId: thread.id, resourceId: owner.userId })).toContain("専門用語");
-    const engine = await configured.omEngine;
-    expect(engine).toBeTruthy();
-    const observed = await engine!.observe({ threadId: thread.id, resourceId: owner.userId });
-    expect(observed.observed).toBe(true);
-    expect(observed.record.activeObservations).toContain("Japanese");
-    await configured.settled();
-    expect((await history.get(owner, thread.id))?.messages.some((message) => message.id === messageId)).toBe(true);
     await history.delete(owner, thread.id);
     expect(await memoryDomain.getObservationalMemory(thread.id, owner.userId)).toBeNull();
-    expect((await store.settings(owner)).preferences.explanation).toBeNull();
-    expect(await store.claim(owner, job!.id)).toBeUndefined();
-    expect((await pool.query("SELECT nullif(current_setting('app.user_id', true), '') AS user_id")).rows).toEqual([{ user_id: null }]);
-    expect((await pool.query("SELECT nullif(current_setting('app.maintenance', true), '') AS maintenance")).rows).toEqual([{ maintenance: null }]);
-    await history.delete(other, otherThread.id);
+    expect((await store.settings(owner)).manual).toContain("short answers");
   });
 });

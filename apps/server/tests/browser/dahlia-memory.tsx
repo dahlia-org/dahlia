@@ -1,28 +1,32 @@
 // pnpm dev:client -> /tests/browser/dahlia-memory.html. No real user data.
 import { createRoot } from "react-dom/client";
+import { WorkspaceMemory } from "../../src/client/WorkspaceMemory";
 import { DahliaMemoryPage } from "../../src/client/DahliaMemory";
-import { emptyPreferences } from "../../src/agent/context-model";
 import "../../src/client/styles.css";
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
 type Note = { id: string; content: string; revision: number; protected: boolean; updatedAt: string };
 const rows: Record<string, Note[]> = { personal: [{ id: "test", content: "Private lesson", revision: 1, protected: true, updatedAt: new Date().toISOString() }], team: [] };
 const writes: Array<{ scope: string; workspaceId?: string; explicit: boolean }> = [];
 let failSave = false;
+let purges = 0;
 window.fetch = async (input, init) => {
   const request = input instanceof Request ? input : new Request(new URL(input, location.origin), init);
   const path = new URL(request.url).pathname;
-  if (path.endsWith("/preferences")) return Response.json({ revision: 0, automatic: true, preferences: emptyPreferences });
+  if (path === "/api/v1/user/memory/working") return Response.json({ revision: 0, automatic: true, capacityReached: false, manual: "", learned: "" });
   if (path.endsWith("/scopes")) return Response.json({ scopes: [{ scope: "personal", name: "Personal", writable: true }, { scope: "workspace", workspaceId: "team", name: "Team", writable: true }] });
-  const body: { scope: string; workspaceId?: string; content: string; id: string; revision: number; explicit: boolean } = await request.json();
-  const key = body.scope === "personal" ? "personal" : body.workspaceId!;
-  if (path.endsWith("/list")) return Response.json({ items: rows[key], nextCursor: null });
+  const body: { content: string; id: string; revision: number; explicit: boolean } = ["POST", "PATCH"].includes(request.method) ? await request.json() : { content: "", id: "", revision: Number(new URL(request.url).searchParams.get("revision")), explicit: false };
+  if (request.method === "PATCH" || request.method === "DELETE") body.id = path.split("/").at(-1)!;
+  if (request.method === "DELETE") body.explicit = new URL(request.url).searchParams.get("explicit") === "true";
+  const key = path.startsWith("/api/v1/user/") ? "personal" : path.split("/")[4]!;
+  if (path.endsWith("/notes") && request.method === "GET") return Response.json({ items: rows[key], nextCursor: null });
   if (path.endsWith("/status")) return Response.json({ enabled: false, status: "unavailable", skippedCount: 0 });
-  if (path.endsWith("/save")) {
+  if (path.endsWith("/memory") && request.method === "DELETE") { purges++; rows[key] = []; return Response.json({ status: "deleting" }); }
+  if (path.includes("/notes") && ["POST", "PATCH"].includes(request.method)) {
     if (failSave) return Response.json({ error: "memory_revision_conflict" }, { status: 409 });
-    writes.push(body); rows[key] = [...rows[key]!.filter((n) => n.id !== body.id), { ...body, protected: true, revision: body.revision + 1, updatedAt: new Date().toISOString() }];
+    writes.push({ ...body, scope: key === "personal" ? "personal" : "workspace", workspaceId: key }); rows[key] = [...rows[key]!.filter((n) => n.id !== body.id), { ...body, protected: true, revision: body.revision + 1, updatedAt: new Date().toISOString() }];
     return Response.json({ saved: true });
   }
-  if (path.endsWith("/delete")) { writes.push(body); rows[key] = rows[key]!.filter((n) => n.id !== body.id); return Response.json({ deleted: true }); }
+  if (request.method === "DELETE") { writes.push({ ...body, scope: key === "personal" ? "personal" : "workspace", workspaceId: key }); rows[key] = rows[key]!.filter((n) => n.id !== body.id); return Response.json({ deleted: true }); }
   if (path.endsWith("/reflect")) return Response.json({ results: [{ result: { hypothesis: "Possible lesson", coverage: "partial", sources: [{ id: "test", canonicalExcerpt: "Verified source", truncated: false }] } }] });
   throw new Error(`Unexpected test path ${path}`);
 };
@@ -37,7 +41,8 @@ function text(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
   Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(input, value);
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
-createRoot(document.getElementById("root")!).render(<DahliaMemoryPage />);
+const root = createRoot(document.getElementById("root")!);
+root.render(<DahliaMemoryPage />);
 async function run() {
   await until(() => button("Edit"));
   assert(document.body.textContent.includes("Personal · Only you"), "Private audience missing");
@@ -64,6 +69,12 @@ async function run() {
   (document.querySelector("[data-confirm]") as HTMLButtonElement).click();
   await until(() => !document.querySelector("[role=dialog]") && rows.team!.length === 0);
   assert(writes.every((w) => w.explicit), "Missing explicit confirmation");
-  document.getElementById("result")!.textContent = "PASS: scope, conflict preservation, explicit sharing copy, sources and deletion";
+  root.render(<WorkspaceMemory workspaceId="team" role="admin" />);
+  await until(() => document.body.textContent.includes("Analysis is not configured"));
+  assert(!button("Enable") && button("Erase memories"), "Analysis availability incorrectly gated memory purge");
+  button("Erase memories").click(); await until(() => document.querySelector("[data-confirm]"));
+  (document.querySelector("[data-confirm]") as HTMLButtonElement).click();
+  await until(() => purges === 1);
+  document.getElementById("result")!.textContent = "PASS: scope, conflict preservation, explicit sharing copy, sources, deletion and purge without analysis";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });

@@ -8854,12 +8854,12 @@
         }
       }
     },
-    "/api/v1/memory/scopes": {
+    "/api/v1/user/memory/scopes": {
       "get": {
         "operationId": "memoryScopes",
         "summary": "List authorized Dahlia Memory scopes",
         "tags": [
-          "memory"
+          "user"
         ],
         "security": [
           {
@@ -8886,12 +8886,12 @@
         }
       }
     },
-    "/api/v1/memory/list": {
-      "post": {
-        "operationId": "memoryList",
-        "summary": "Dahlia Memory list",
+    "/api/v1/user/memory/notes": {
+      "get": {
+        "operationId": "personalMemoryList",
+        "summary": "List saved notes; independent of analysis",
         "tags": [
-          "memory"
+          "user"
         ],
         "security": [
           {
@@ -8901,41 +8901,26 @@
             "trustedProxy": []
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "scope": {
-                    "type": "string",
-                    "enum": [
-                      "personal",
-                      "workspace"
-                    ]
-                  },
-                  "workspaceId": {
-                    "type": "string",
-                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                  },
-                  "after": {
-                    "type": "string",
-                    "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                  },
-                  "query": {
-                    "type": "string",
-                    "maxLength": 4000
-                  }
-                },
-                "required": [
-                  "scope"
-                ],
-                "additionalProperties": false
-              }
-            }
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": false,
+            "name": "after",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "required": false,
+            "name": "query",
+            "in": "query"
           }
-        },
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -8951,14 +8936,12 @@
             "$ref": "#/components/responses/Problem"
           }
         }
-      }
-    },
-    "/api/v1/memory/get": {
+      },
       "post": {
-        "operationId": "memoryGet",
-        "summary": "Dahlia Memory get",
+        "operationId": "personalMemorySave",
+        "summary": "Create a saved note with revision zero",
         "tags": [
-          "memory"
+          "user"
         ],
         "security": [
           {
@@ -8975,83 +8958,6 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "scope": {
-                    "type": "string",
-                    "enum": [
-                      "personal",
-                      "workspace"
-                    ]
-                  },
-                  "workspaceId": {
-                    "type": "string",
-                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                  },
-                  "id": {
-                    "type": "string",
-                    "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                  }
-                },
-                "required": [
-                  "scope",
-                  "id"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DahliaMemoryResult"
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      }
-    },
-    "/api/v1/memory/save": {
-      "post": {
-        "operationId": "memorySave",
-        "summary": "Dahlia Memory save",
-        "tags": [
-          "memory"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "scope": {
-                    "type": "string",
-                    "enum": [
-                      "personal",
-                      "workspace",
-                      "auto"
-                    ],
-                    "default": "auto"
-                  },
-                  "workspaceId": {
-                    "type": "string",
-                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                  },
                   "id": {
                     "type": "string",
                     "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
@@ -9062,81 +8968,10 @@
                     "maxLength": 16000
                   },
                   "revision": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "explicit": {
-                    "type": "boolean",
-                    "default": false
-                  }
-                },
-                "required": [
-                  "id",
-                  "content",
-                  "revision"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DahliaMemoryResult"
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      }
-    },
-    "/api/v1/memory/delete": {
-      "post": {
-        "operationId": "memoryDelete",
-        "summary": "Dahlia Memory delete",
-        "tags": [
-          "memory"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "scope": {
-                    "type": "string",
+                    "type": "number",
                     "enum": [
-                      "personal",
-                      "workspace"
+                      0
                     ]
-                  },
-                  "workspaceId": {
-                    "type": "string",
-                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                  },
-                  "id": {
-                    "type": "string",
-                    "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                  },
-                  "revision": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0
                   },
                   "explicit": {
                     "type": "boolean",
@@ -9146,8 +8981,8 @@
                   }
                 },
                 "required": [
-                  "scope",
                   "id",
+                  "content",
                   "revision",
                   "explicit"
                 ],
@@ -9173,12 +9008,190 @@
         }
       }
     },
-    "/api/v1/memory/recall": {
-      "post": {
-        "operationId": "memoryRecall",
-        "summary": "Dahlia Memory recall",
+    "/api/v1/user/memory/notes/{noteId}": {
+      "get": {
+        "operationId": "personalMemoryGet",
+        "summary": "Read a saved note",
         "tags": [
-          "memory"
+          "user"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "noteId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "personalMemoryUpdate",
+        "summary": "Edit a saved note with revision checking",
+        "tags": [
+          "user"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "noteId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16000
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "explicit": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "required": [
+                  "content",
+                  "revision",
+                  "explicit"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "personalMemoryDelete",
+        "summary": "Delete a saved note with explicit confirmation and revision",
+        "tags": [
+          "user"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "noteId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "required": true,
+            "name": "revision",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            },
+            "required": true,
+            "name": "explicit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/user/memory/recall": {
+      "post": {
+        "operationId": "personalMemoryRecall",
+        "summary": "Recall related memories",
+        "tags": [
+          "user"
         ],
         "security": [
           {
@@ -9195,19 +9208,6 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "scope": {
-                    "type": "string",
-                    "enum": [
-                      "personal",
-                      "workspace",
-                      "auto"
-                    ],
-                    "default": "auto"
-                  },
-                  "workspaceId": {
-                    "type": "string",
-                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                  },
                   "query": {
                     "type": "string",
                     "minLength": 1,
@@ -9239,12 +9239,12 @@
         }
       }
     },
-    "/api/v1/memory/reflect": {
+    "/api/v1/user/memory/reflect": {
       "post": {
-        "operationId": "memoryReflect",
-        "summary": "Dahlia Memory reflect",
+        "operationId": "personalMemoryReflect",
+        "summary": "Reflect on memories with sources",
         "tags": [
-          "memory"
+          "user"
         ],
         "security": [
           {
@@ -9261,19 +9261,6 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "scope": {
-                    "type": "string",
-                    "enum": [
-                      "personal",
-                      "workspace",
-                      "auto"
-                    ],
-                    "default": "auto"
-                  },
-                  "workspaceId": {
-                    "type": "string",
-                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                  },
                   "query": {
                     "type": "string",
                     "minLength": 1,
@@ -9305,12 +9292,12 @@
         }
       }
     },
-    "/api/v1/memory/status": {
-      "post": {
-        "operationId": "memoryStatus",
-        "summary": "Dahlia Memory status",
+    "/api/v1/user/memory/analysis/status": {
+      "get": {
+        "operationId": "personalMemoryStatus",
+        "summary": "Read analysis availability and ingestion status",
         "tags": [
-          "memory"
+          "user"
         ],
         "security": [
           {
@@ -9320,33 +9307,6 @@
             "trustedProxy": []
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "scope": {
-                    "type": "string",
-                    "enum": [
-                      "personal",
-                      "workspace"
-                    ]
-                  },
-                  "workspaceId": {
-                    "type": "string",
-                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                  }
-                },
-                "required": [
-                  "scope"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Successful response",
@@ -9364,12 +9324,12 @@
         }
       }
     },
-    "/api/v1/memory/configure": {
-      "post": {
-        "operationId": "memoryConfigure",
-        "summary": "Dahlia Memory configure",
+    "/api/v1/user/memory/analysis/settings": {
+      "patch": {
+        "operationId": "personalMemoryConfigure",
+        "summary": "Enable, pause or retry personal analysis; owner only",
         "tags": [
-          "memory"
+          "user"
         ],
         "security": [
           {
@@ -9386,23 +9346,591 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "scope": {
-                    "type": "string",
-                    "enum": [
-                      "personal",
-                      "workspace"
-                    ]
-                  },
-                  "workspaceId": {
-                    "type": "string",
-                    "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                  },
                   "enabled": {
                     "type": "boolean"
                   }
                 },
                 "required": [
-                  "scope",
+                  "enabled"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/memory/notes": {
+      "get": {
+        "operationId": "workspaceMemoryList",
+        "summary": "List saved notes; independent of analysis",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": false,
+            "name": "after",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "required": false,
+            "name": "query",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "post": {
+        "operationId": "workspaceMemorySave",
+        "summary": "Create a saved note with revision zero",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16000
+                  },
+                  "revision": {
+                    "type": "number",
+                    "enum": [
+                      0
+                    ]
+                  },
+                  "explicit": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "content",
+                  "revision",
+                  "explicit"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}": {
+      "get": {
+        "operationId": "workspaceMemoryGet",
+        "summary": "Read a saved note",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "noteId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "workspaceMemoryUpdate",
+        "summary": "Edit a saved note with revision checking",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "noteId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16000
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "explicit": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "required": [
+                  "content",
+                  "revision",
+                  "explicit"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "workspaceMemoryDelete",
+        "summary": "Delete a saved note with explicit confirmation and revision",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "noteId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "required": true,
+            "name": "revision",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            },
+            "required": true,
+            "name": "explicit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/memory/recall": {
+      "post": {
+        "operationId": "workspaceMemoryRecall",
+        "summary": "Recall related memories",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "query"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/memory/reflect": {
+      "post": {
+        "operationId": "workspaceMemoryReflect",
+        "summary": "Reflect on memories with sources",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "query"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/memory/analysis/status": {
+      "get": {
+        "operationId": "workspaceMemoryStatus",
+        "summary": "Read analysis availability and ingestion status",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DahliaMemoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/memory/analysis/settings": {
+      "patch": {
+        "operationId": "workspaceMemoryConfigure",
+        "summary": "Enable, pause or retry analysis; Workspace admin only",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
                   "enabled"
                 ],
                 "additionalProperties": false
@@ -9428,149 +9956,9 @@
       }
     },
     "/api/v1/workspaces/{workspaceId}/memory": {
-      "get": {
-        "operationId": "getWorkspaceMemory",
-        "summary": "Read Workspace memory status",
-        "tags": [
-          "workspaces"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "workspaceId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "enabled": {
-                      "type": "boolean"
-                    },
-                    "status": {
-                      "type": "string"
-                    },
-                    "errorCode": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "attempts": {
-                      "type": "number"
-                    },
-                    "skippedCount": {
-                      "type": "number"
-                    },
-                    "skippedSources": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "source": {
-                            "type": "string"
-                          },
-                          "code": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "source",
-                          "code"
-                        ]
-                      }
-                    }
-                  },
-                  "required": [
-                    "enabled",
-                    "status",
-                    "errorCode",
-                    "attempts",
-                    "skippedCount",
-                    "skippedSources"
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      },
-      "put": {
-        "operationId": "setWorkspaceMemory",
-        "summary": "Enable, pause or retry Workspace memory; admin only",
-        "tags": [
-          "workspaces"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "workspaceId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "enabled": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "enabled"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "204": {
-            "description": "Success; no response body."
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      },
       "delete": {
         "operationId": "purgeWorkspaceMemory",
-        "summary": "Disable and erase Workspace memory; admin only",
+        "summary": "Disable analysis and delete all shared notes and the Hindsight bank; preserves meetings; admin only",
         "tags": [
           "workspaces"
         ],
@@ -9621,260 +10009,12 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/memory/notes": {
+    "/api/v1/user/memory/working": {
       "get": {
-        "operationId": "listSharedMemories",
-        "summary": "List explicitly shared memories",
+        "operationId": "getWorkingMemory",
+        "summary": "Read private Working Memory",
         "tags": [
-          "workspaces"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "workspaceId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": false,
-            "name": "after",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string",
-                            "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                          },
-                          "content": {
-                            "type": "string"
-                          },
-                          "revision": {
-                            "type": "number"
-                          },
-                          "updatedAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          }
-                        },
-                        "required": [
-                          "id",
-                          "content",
-                          "revision",
-                          "updatedAt"
-                        ]
-                      }
-                    },
-                    "nextCursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                    }
-                  },
-                  "required": [
-                    "items",
-                    "nextCursor"
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      },
-      "put": {
-        "operationId": "saveSharedMemory",
-        "summary": "Save user-confirmed shared information with a revision",
-        "tags": [
-          "workspaces"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "workspaceId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{9}[ef][0-9abcdefghjkmnpqrstvwxyz]{2}[89abrstv][0-9abcdefghjkmnpqrstvwxyz]{12}$"
-                  },
-                  "content": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16000
-                  },
-                  "revision": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "confirmed": {
-                    "type": "boolean",
-                    "enum": [
-                      true
-                    ]
-                  }
-                },
-                "required": [
-                  "id",
-                  "content",
-                  "revision",
-                  "confirmed"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-                    },
-                    "content": {
-                      "type": "string"
-                    },
-                    "revision": {
-                      "type": "number"
-                    },
-                    "updatedAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "content",
-                    "revision",
-                    "updatedAt"
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      }
-    },
-    "/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}": {
-      "delete": {
-        "operationId": "deleteSharedMemory",
-        "summary": "Delete shared information with a revision",
-        "tags": [
-          "workspaces"
-        ],
-        "security": [
-          {
-            "browserSession": []
-          },
-          {
-            "trustedProxy": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "workspaceId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
-            },
-            "required": true,
-            "name": "noteId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^[1-9][0-9]*$"
-            },
-            "required": true,
-            "name": "revision",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Success; no response body."
-          },
-          "default": {
-            "$ref": "#/components/responses/Problem"
-          }
-        }
-      }
-    },
-    "/api/v1/chat/preferences": {
-      "get": {
-        "operationId": "getAiPreferences",
-        "summary": "Read private response preferences",
-        "tags": [
-          "chat"
+          "user"
         ],
         "security": [
           {
@@ -9899,72 +10039,24 @@
                     "automatic": {
                       "type": "boolean"
                     },
-                    "preferences": {
-                      "type": "object",
-                      "properties": {
-                        "language": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
-                          "enum": [
-                            "ja",
-                            "en",
-                            "zh",
-                            "ko",
-                            "es",
-                            "fr",
-                            "de",
-                            "pt",
-                            null
-                          ]
-                        },
-                        "format": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
-                          "enum": [
-                            "prose",
-                            "bullets",
-                            "code-first",
-                            null
-                          ]
-                        },
-                        "detail": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
-                          "enum": [
-                            "concise",
-                            "balanced",
-                            "detailed",
-                            null
-                          ]
-                        },
-                        "explanation": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
-                          "minLength": 1,
-                          "maxLength": 240
-                        }
-                      },
-                      "required": [
-                        "language",
-                        "format",
-                        "detail",
-                        "explanation"
-                      ],
-                      "additionalProperties": false
+                    "capacityReached": {
+                      "type": "boolean"
+                    },
+                    "manual": {
+                      "type": "string",
+                      "maxLength": 6000
+                    },
+                    "learned": {
+                      "type": "string",
+                      "maxLength": 6000
                     }
                   },
                   "required": [
                     "revision",
                     "automatic",
-                    "preferences"
+                    "capacityReached",
+                    "manual",
+                    "learned"
                   ],
                   "additionalProperties": false
                 }
@@ -9976,11 +10068,11 @@
           }
         }
       },
-      "put": {
-        "operationId": "setAiPreferences",
-        "summary": "Edit or clear private response preferences with revision checking",
+      "patch": {
+        "operationId": "updateWorkingMemory",
+        "summary": "Edit one private Working Memory section with revision checking",
         "tags": [
-          "chat"
+          "user"
         ],
         "security": [
           {
@@ -9995,83 +10087,69 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "revision": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "automatic": {
-                    "type": "boolean"
-                  },
-                  "preferences": {
+                "oneOf": [
+                  {
                     "type": "object",
                     "properties": {
-                      "language": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
+                      "section": {
+                        "type": "string",
                         "enum": [
-                          "ja",
-                          "en",
-                          "zh",
-                          "ko",
-                          "es",
-                          "fr",
-                          "de",
-                          "pt",
-                          null
+                          "manual",
+                          "learned"
                         ]
                       },
-                      "format": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "enum": [
-                          "prose",
-                          "bullets",
-                          "code-first",
-                          null
-                        ]
+                      "content": {
+                        "type": "string",
+                        "maxLength": 6000
                       },
-                      "detail": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "enum": [
-                          "concise",
-                          "balanced",
-                          "detailed",
-                          null
-                        ]
+                      "revision": {
+                        "type": "integer",
+                        "minimum": 0
                       },
-                      "explanation": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "minLength": 1,
-                        "maxLength": 240
+                      "explicit": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
-                      "language",
-                      "format",
-                      "detail",
-                      "explanation"
+                      "section",
+                      "content",
+                      "revision",
+                      "explicit"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "section": {
+                        "type": "string",
+                        "enum": [
+                          "settings"
+                        ]
+                      },
+                      "automatic": {
+                        "type": "boolean"
+                      },
+                      "revision": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "explicit": {
+                        "type": "boolean",
+                        "enum": [
+                          true
+                        ]
+                      }
+                    },
+                    "required": [
+                      "section",
+                      "automatic",
+                      "revision",
+                      "explicit"
                     ],
                     "additionalProperties": false
                   }
-                },
-                "required": [
-                  "revision",
-                  "automatic",
-                  "preferences"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -10091,72 +10169,24 @@
                     "automatic": {
                       "type": "boolean"
                     },
-                    "preferences": {
-                      "type": "object",
-                      "properties": {
-                        "language": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
-                          "enum": [
-                            "ja",
-                            "en",
-                            "zh",
-                            "ko",
-                            "es",
-                            "fr",
-                            "de",
-                            "pt",
-                            null
-                          ]
-                        },
-                        "format": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
-                          "enum": [
-                            "prose",
-                            "bullets",
-                            "code-first",
-                            null
-                          ]
-                        },
-                        "detail": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
-                          "enum": [
-                            "concise",
-                            "balanced",
-                            "detailed",
-                            null
-                          ]
-                        },
-                        "explanation": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
-                          "minLength": 1,
-                          "maxLength": 240
-                        }
-                      },
-                      "required": [
-                        "language",
-                        "format",
-                        "detail",
-                        "explanation"
-                      ],
-                      "additionalProperties": false
+                    "capacityReached": {
+                      "type": "boolean"
+                    },
+                    "manual": {
+                      "type": "string",
+                      "maxLength": 6000
+                    },
+                    "learned": {
+                      "type": "string",
+                      "maxLength": 6000
                     }
                   },
                   "required": [
                     "revision",
                     "automatic",
-                    "preferences"
+                    "capacityReached",
+                    "manual",
+                    "learned"
                   ],
                   "additionalProperties": false
                 }

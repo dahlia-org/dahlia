@@ -1,25 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { json, RequestError, uiText } from "./api";
 import { apiOperations } from "./generated-operations";
-import type { PreferenceSettings, Preferences, LiveStatus } from "../agent/context-model";
+import type { WorkingMemorySettings, LiveStatus } from "../agent/context-model";
 
-const labels = {
-  language: ["Language", "言語"], format: ["Response format", "回答形式"], detail: ["Detail", "詳しさ"],
-} as const;
-const choices = {
-  language: [["ja", "日本語"], ["en", "English"], ["zh", "中文"], ["ko", "한국어"], ["es", "Español"], ["fr", "Français"], ["de", "Deutsch"], ["pt", "Português"]],
-  format: [["prose", uiText("Prose", "文章")], ["bullets", uiText("Bullets", "箇条書き")], ["code-first", uiText("Code first", "コードを先に")]],
-  detail: [["concise", uiText("Concise", "簡潔")], ["balanced", uiText("Balanced", "標準")], ["detailed", uiText("Detailed", "詳しく")]],
-};
-export function ChatPreferences() {
-  const [settings, setSettings] = useState<PreferenceSettings>();
+export function WorkingMemoryEditor() {
+  const [settings, setSettings] = useState<WorkingMemorySettings>();
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
-  const [explanation, setExplanation] = useState("");
+  const [manual, setManual] = useState("");
+  const [learned, setLearned] = useState("");
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [reload, setReload] = useState(0);
-  const dirtyExplanation = useRef(false);
+  const dirtyManual = useRef(false);
+  const dirtyLearned = useRef(false);
+  const bases = useRef<Partial<Record<"manual" | "learned", WorkingMemorySettings>>>({});
+  const accept = useCallback((value: WorkingMemorySettings) => {
+    for (const section of ["manual", "learned"] as const) {
+      const dirty = section === "manual" ? dirtyManual : dirtyLearned;
+      if (!dirty.current || bases.current[section]?.[section] === value[section]) bases.current[section] = value;
+    }
+    setSettings(value);
+    if (!dirtyManual.current) setManual(value.manual);
+    if (!dirtyLearned.current) setLearned(value.learned);
+  }, []);
   const readRequest = useRef<AbortController | null>(null);
   useEffect(() => {
     if (busy) return;
@@ -30,61 +34,51 @@ export function ChatPreferences() {
       if (loading) return;
       loading = true;
       try {
-        const value = await apiOperations.getAiPreferences({ signal: controller.signal });
+        const value = await apiOperations.getWorkingMemory({ signal: controller.signal });
         if (controller.signal.aborted) return;
-        setSettings(value);
-        if (!dirtyExplanation.current) setExplanation(value.preferences.explanation ?? "");
+        accept(value);
         setLoadError("");
       } catch (error) {
         if (!controller.signal.aborted && !(error instanceof RequestError && error.message === "chat_memory_unavailable")) {
-          setLoadError(uiText("Could not load preferences.", "好みを読み込めませんでした。"));
+          setLoadError(uiText("Could not load Working Memory.", "Working Memory を読み込めませんでした。"));
         }
       } finally { loading = false; }
     };
     void refresh();
     const timer = open ? setInterval(() => { void refresh(); }, 15_000) : undefined;
     return () => { controller.abort(); clearInterval(timer); };
-  }, [open, busy, reload]);
+  }, [open, busy, reload, accept]);
   const message = error || loadError;
   if (!settings) return message ? <p role="alert">{message}</p> : null;
-  async function save(next: PreferenceSettings) {
+  async function save(section: "manual" | "learned" | "settings", content?: string, automatic?: boolean) {
     readRequest.current?.abort();
     setBusy(true); setError("");
     try {
-      const saved = await apiOperations.setAiPreferences({ body: next });
-      setSettings(saved);
+      const body = section === "settings" ? { section, automatic: automatic!, revision: settings!.revision, explicit: true as const }
+        : { section, content: content!, revision: bases.current[section]!.revision, explicit: true };
+      const saved = await apiOperations.updateWorkingMemory({ body });
+      if (section === "manual") dirtyManual.current = false;
+      if (section === "learned") dirtyLearned.current = false;
+      accept(saved);
       return saved;
     } catch {
-      setError(uiText("Could not save. Reload the preferences before retrying.", "保存できませんでした。好みを再読み込みしてから再試行してください。"));
+      setError(uiText("Could not save or these notes changed elsewhere. Your draft is kept; copy it before discarding and reloading.", "保存できないか、他で同じメモが変更されています。下書きは保持しています。破棄して再読み込みする前にコピーしてください。"));
     } finally { setBusy(false); }
   }
-  async function saveExplanation(value: string) {
-    dirtyExplanation.current = true;
-    setExplanation(value);
-    const saved = await save({ ...settings!, preferences: { ...settings!.preferences, explanation: value.trim() || null } });
-    if (saved) {
-      dirtyExplanation.current = false;
-      setExplanation(saved.preferences.explanation ?? "");
-    }
-  }
   return <details className="text-xs p-2" onToggle={(event) => setOpen(event.currentTarget.open)}>
-    <summary>{uiText("Response preferences", "回答の好み")}</summary>
-    <p>{uiText("Private preferences apply across Workspaces. Edited or cleared fields will not be automatically overwritten.", "本人専用の好みはワークスペースをまたいで使います。編集・削除した項目は自動更新で上書きしません。")}</p>
-    <label><input type="checkbox" checked={settings.automatic} disabled={busy} onChange={(event) => void save({ ...settings, automatic: event.target.checked })} />{uiText("Learn preferences automatically", "好みを自動で覚える")}</label>
-    <div className="flex flex-wrap gap-2 py-2">{(Object.keys(labels) as Array<Exclude<keyof Preferences, "explanation">>).map((key) => <label key={key}>
-      {uiText(labels[key][0], labels[key][1])}<select className="border rounded p-1 ml-1" value={settings.preferences[key] ?? ""} disabled={busy}
-        onChange={(event) => void save({ ...settings, preferences: { ...settings.preferences, [key]: event.target.value || null } })}>
-        <option value="">{uiText("Not remembered", "記憶しない")}</option>
-        {choices[key].map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-      </select>
-    </label>)}</div>
-    <label className="block">{uiText("Explanation preferences (no business information)", "説明の好み（業務情報は含めない）")}
-      <textarea maxLength={240} rows={2} disabled={busy} value={explanation} onChange={(event) => { dirtyExplanation.current = true; setExplanation(event.target.value); }}
-        placeholder={uiText("Explain technical terms on first use", "専門用語は初出時に説明してほしい")} />
+    <summary>{uiText("Working Memory", "Working Memory")}</summary>
+    <p>{uiText("Private across Workspaces and clients. Saved notes remain after chat deletion. Only direct persistent requests are learned automatically.", "ワークスペースとクライアントをまたぐ本人専用の記憶です。チャット削除後も残ります。自動学習は継続的な依頼だけを対象にします。")}</p>
+    <label><input type="checkbox" checked={settings.automatic} disabled={busy} onChange={(event) => void save("settings", undefined, event.target.checked)} />{uiText("Learn automatically", "自動で覚える")}</label>
+    {settings.capacityReached && <p role="alert">{uiText("Automatic learning paused: learned notes reached capacity. Shorten them, save, then enable learning again. The last note was not added.", "学習メモの容量に達したため自動学習を停止しました。内容を整理して保存し、自動学習を再度有効にしてください。最後のメモは追加されていません。")}</p>}
+    <label className="block">{uiText("Your notes (Markdown)", "手動メモ（Markdown）")}
+      <textarea maxLength={6000} rows={5} disabled={busy} value={manual} onChange={(event) => { dirtyManual.current = true; setManual(event.target.value); }} />
     </label>
-    <button type="button" disabled={busy || explanation === (settings.preferences.explanation ?? "")} onClick={() => void saveExplanation(explanation)}>{uiText("Save explanation preference", "説明の好みを保存")}</button>
-    <button type="button" disabled={busy || !settings.preferences.explanation} onClick={() => void saveExplanation("")}>{uiText("Forget", "削除")}</button>
-    {message && <p role="alert">{message}<button type="button" onClick={() => { setError(""); setReload((value) => value + 1); }}>{uiText("Reload", "再読み込み")}</button></p>}
+    <button type="button" disabled={busy || manual === settings.manual} onClick={() => void save("manual", manual)}>{uiText("Save notes", "メモを保存")}</button>
+    <label className="block">{uiText("Learned notes (Markdown)", "自動学習メモ（Markdown）")}
+      <textarea maxLength={6000} rows={5} disabled={busy} value={learned} onChange={(event) => { dirtyLearned.current = true; setLearned(event.target.value); }} />
+    </label>
+    <button type="button" disabled={busy || learned === settings.learned} onClick={() => void save("learned", learned)}>{uiText("Save learned notes", "学習メモを保存")}</button>
+    {message && <p role="alert">{message}<button type="button" onClick={() => { dirtyManual.current = false; dirtyLearned.current = false; setError(""); setReload((value) => value + 1); }}>{uiText("Discard drafts and reload", "下書きを破棄して再読み込み")}</button></p>}
   </details>;
 }
 

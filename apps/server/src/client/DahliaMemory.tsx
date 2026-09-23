@@ -3,7 +3,7 @@ import { uuidV7 } from "../id";
 import { encodeId } from "../typeid";
 import { json, uiText } from "./api";
 import { useActionDialog } from "./ActionDialog";
-import { ChatPreferences } from "./ChatMemory";
+import { WorkingMemoryEditor } from "./ChatMemory";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { MCPConnectionDialog } from "./MCPConnectionDialog";
@@ -13,14 +13,38 @@ type Note = { id: string; content: string; revision: number; updatedAt: string; 
 type Status = { enabled: boolean; status: string; skippedCount: number };
 type Result = { sources?: Array<{ id: string; canonicalExcerpt: string; meeting_id?: string | null; truncated: boolean }>;
   hypothesis?: string | null; unavailable?: boolean; coverage?: string; canonical?: { items: Note[] } };
-const post = <T,>(operation: string, input: unknown, signal?: AbortSignal) => json<T>(`/api/v1/memory/${operation}`, { method: "POST", body: JSON.stringify(input), signal }, { notifyMutation: ["save", "delete", "configure"].includes(operation) });
+const memoryRequest = <T,>(scope: Scope, operation: "list" | "status" | "save" | "delete" | "configure" | "recall" | "reflect", input: Record<string, unknown>, signal?: AbortSignal) => {
+  const owner = scope.workspaceId ? `/api/v1/workspaces/${scope.workspaceId}` : "/api/v1/user";
+  const { id, ...edit } = input;
+  let method: "GET" | "POST" | "PATCH" | "DELETE";
+  let path: string;
+  let data = input;
+  switch (operation) {
+    case "list": method = "GET"; path = "notes"; break;
+    case "status": method = "GET"; path = "analysis/status"; break;
+    case "save": {
+      const updating = Number(input.revision) > 0;
+      method = updating ? "PATCH" : "POST";
+      path = updating ? `notes/${String(id)}` : "notes";
+      if (updating) data = edit;
+      break;
+    }
+    case "delete": method = "DELETE"; path = `notes/${String(id)}`; data = edit; break;
+    case "configure": method = "PATCH"; path = "analysis/settings"; break;
+    case "recall": method = "POST"; path = "recall"; break;
+    case "reflect": method = "POST"; path = "reflect"; break;
+  }
+  const query = new URLSearchParams(Object.entries(data).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)]));
+  const read = method === "GET" || method === "DELETE";
+  return json<T>(`${owner}/memory/${path}${read && query.size ? `?${query}` : ""}`, { method, ...(read ? {} : { body: JSON.stringify(data) }), signal }, { notifyMutation: ["save", "delete", "configure"].includes(operation) });
+};
 const scopeKey = (scope: Scope) => scope.workspaceId ?? "personal";
 export function DahliaMemoryPage() {
   const [connection, setConnection] = useState(false);
   const [scopes, setScopes] = useState<Scope[]>([]), [selected, setSelected] = useState("personal"), [error, setError] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    void json<{ scopes: Scope[] }>("/api/v1/memory/scopes", { signal: controller.signal }).then((value) => setScopes(value.scopes))
+    void json<{ scopes: Scope[] }>("/api/v1/user/memory/scopes", { signal: controller.signal }).then((value) => setScopes(value.scopes))
       .catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, []);
@@ -33,14 +57,13 @@ export function DahliaMemoryPage() {
       {scopes.map((s) => <option key={scopeKey(s)} value={scopeKey(s)}>{s.scope === "personal" ? uiText("Personal (only you)", "個人（自分のみ）") : s.name}</option>)}
     </select></label>
     {current && <MemoryPanel key={selected} scope={current} scopes={scopes} />}
-    <details><summary>{uiText("Response preferences", "回答の好み")}</summary><ChatPreferences /></details>
+    <WorkingMemoryEditor />
     <p>{uiText("Configure your MCP client to recall related memories before work and save useful personal lessons. Shared saves and deletion require your explicit instruction.", "MCP クライアントには、作業前の関連記憶の検索と有用な個人の記憶の保存を指示してください。共有への保存と削除には明示的な依頼が必要です。")}</p>
     <Button variant="outline" onClick={() => setConnection(true)}>{uiText("Connect an AI tool", "AI ツールを接続")}</Button>
     {connection && <MCPConnectionDialog memory onClose={() => setConnection(false)} />}
   </main>;
 }
 function MemoryPanel({ scope, scopes }: { scope: Scope; scopes: Scope[] }) {
-  const target = { scope: scope.scope, ...(scope.workspaceId ? { workspaceId: scope.workspaceId } : {}) };
   const [notes, setNotes] = useState<Note[]>([]), [next, setNext] = useState<string | null>(null), [query, setQuery] = useState(""), [listedQuery, setListedQuery] = useState("");
   const [status, setStatus] = useState<Status>(), [error, setError] = useState(""), [busy, setBusy] = useState(false), [reload, setReload] = useState(0);
   const [results, setResults] = useState<Result[]>([]);
@@ -50,10 +73,10 @@ function MemoryPanel({ scope, scopes }: { scope: Scope; scopes: Scope[] }) {
     const controller = new AbortController();
     const read = new AbortController(); activeRead.current = read;
     setResults([]); setBusy(false);
-    const loadStatus = () => post<Status>("status", target, controller.signal).then(setStatus).catch(() => {
+    const loadStatus = () => memoryRequest<Status>(scope, "status", {}, controller.signal).then(setStatus).catch(() => {
       if (!controller.signal.aborted) setError(uiText("Could not read analysis status.", "分析の状態を取得できません。"));
     });
-    void post<{ items: Note[]; nextCursor: string | null }>("list", target, read.signal).then((v) => { if (!read.signal.aborted) { setNotes(v.items); setNext(v.nextCursor); setListedQuery(""); } })
+    void memoryRequest<{ items: Note[]; nextCursor: string | null }>(scope, "list", {}, read.signal).then((v) => { if (!read.signal.aborted) { setNotes(v.items); setNext(v.nextCursor); setListedQuery(""); } })
       .catch(() => { if (!read.signal.aborted) setError(uiText("Could not read memories.", "記憶を取得できません。")); });
     void loadStatus();
     const timer = setInterval(() => void loadStatus(), 10_000);
@@ -69,7 +92,7 @@ function MemoryPanel({ scope, scopes }: { scope: Scope; scopes: Scope[] }) {
       description: destination.scope === "personal" ? uiText("Only you can read this memory.", "この記憶は自分だけが読めます。") : uiText(`Share with members of ${destination.name}.`, `${destination.name} のメンバーに共有します。`),
       confirmLabel: uiText("Save", "保存"), fields: [{ name: "content", label: uiText("Memory", "記憶"), value: note?.content ?? "", multiline: true, required: true }],
       onSubmit: async ({ content }) => {
-        await post("save", { scope: destination.scope, workspaceId: destination.workspaceId, content,
+        await memoryRequest(destination, "save", { content,
           id, revision: existing ? existing.revision : 0, explicit: true });
         setReload((v) => v + 1);
       },
@@ -77,22 +100,22 @@ function MemoryPanel({ scope, scopes }: { scope: Scope; scopes: Scope[] }) {
   };
   const remove = (note: Note) => openDialog({ title: uiText("Delete memory", "記憶を削除"), description: note.content,
     confirmLabel: uiText("Delete", "削除"), destructive: true, onSubmit: async () => {
-      await post("delete", { ...target, id: note.id, revision: note.revision, explicit: true }); setReload((v) => v + 1);
+      await memoryRequest(scope, "delete", { id: note.id, revision: note.revision, explicit: true }); setReload((v) => v + 1);
     } });
   const configure = () => openDialog({ title: status?.enabled ? uiText("Pause analysis", "分析を停止") : uiText("Enable analysis", "分析を有効化"),
     description: uiText("Saved memories are processed by the configured external memory service. Pausing keeps your saved notes available.", "保存した記憶を設定済みの外部メモリーサービスで処理します。停止後も保存した記憶は管理できます。"),
-    confirmLabel: uiText("Confirm", "確認"), onSubmit: async () => { setStatus(await post<Status>("configure", { ...target, enabled: !status?.enabled })); } });
+    confirmLabel: uiText("Confirm", "確認"), onSubmit: async () => { setStatus(await memoryRequest<Status>(scope, "configure", { enabled: !status?.enabled })); } });
   const search = async (mode: "list" | "recall" | "reflect", after?: string) => {
     activeRead.current?.abort();
     const controller = new AbortController(); activeRead.current = controller;
     setBusy(true); setError("");
     try {
       if (mode === "list") {
-        const result = await post<{ items: Note[]; nextCursor: string | null }>(mode, { ...target, query: after ? listedQuery : query.trim(), after }, controller.signal);
+        const result = await memoryRequest<{ items: Note[]; nextCursor: string | null }>(scope, mode, { query: after ? listedQuery : query.trim(), after }, controller.signal);
         if (controller.signal.aborted) return;
         setNotes((items) => after ? [...items, ...result.items] : result.items); setNext(result.nextCursor); setListedQuery(after ? listedQuery : query.trim()); setResults([]);
       } else {
-        const result = await post<{ results: Array<{ result: Result }> }>(mode, { ...target, query: query.trim() }, controller.signal);
+        const result = await memoryRequest<{ results: Array<{ result: Result }> }>(scope, mode, { query: query.trim() }, controller.signal);
         if (controller.signal.aborted) return;
         setResults(result.results.map((r) => r.result));
       }

@@ -1,5 +1,4 @@
 import type { ChatMemoryService } from "../src/agent/context-service";
-import { emptyPreferences } from "../src/agent/context-model";
 import { testUserID } from "./public-test-client";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./public-test-client";
@@ -61,19 +60,19 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     };
   }
 
-  it("routes private preferences and live meeting selection through authenticated, validated contracts", async () => {
-    const settings = { revision: 0, automatic: true, preferences: emptyPreferences };
+  it("routes private Working Memory and live meeting selection through authenticated, validated contracts", async () => {
+    const settings = { revision: 0, automatic: true, capacityReached: false, manual: "", learned: "" };
     let selected: string | null = null;
     const service = { store: { settings: async () => settings, editSettings: async (_identity: unknown, input: typeof settings) => input },
       select: async (_identity: unknown, _threadId: string, meetingId: string | null) => { selected = meetingId; },
       context: async () => ({ status: { meetingId: selected, status: selected ? "pending" : "off", processedThrough: null, updatedAt: null }, context: "" }),
     } as unknown as ChatMemoryService;
     const send = fixture(true, aiService, undefined, "none", service);
-    expect((await send("/api/v1/chat/preferences", "GET", undefined, {})).status).toBe(401);
-    expect(await (await send("/api/v1/chat/preferences")).json()).toEqual(settings);
+    expect((await send("/api/v1/user/memory/working", "GET", undefined, {})).status).toBe(401);
+    expect(await (await send("/api/v1/user/memory/working")).json()).toEqual(settings);
     const headers = { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" };
-    expect((await send("/api/v1/chat/preferences", "PUT", JSON.stringify({ ...settings, preferences: { ...emptyPreferences, explanation: "x".repeat(241) } }), headers)).status).toBe(400);
-    expect((await send("/api/v1/chat/preferences", "PUT", JSON.stringify(settings), { ...headers, origin: "https://untrusted.example" })).status).toBe(403);
+    expect((await send("/api/v1/user/memory/working", "PATCH", JSON.stringify({ section: "manual", content: "x".repeat(6001), revision: 0, explicit: true }), headers)).status).toBe(400);
+    expect((await send("/api/v1/user/memory/working", "PATCH", JSON.stringify({ section: "manual", content: "note", revision: 0, explicit: true }), { ...headers, origin: "https://untrusted.example" })).status).toBe(403);
     const threadId = "01990ab0-0000-7000-8000-000000000010", meetingId = "01990ab0-0000-7000-8000-000000000011";
     expect((await send(`/api/v1/chat/${threadId}/live-context`, "PUT", JSON.stringify({ meetingId }), headers)).status).toBe(204);
     expect(selected).toBe(meetingId);

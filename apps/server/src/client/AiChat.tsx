@@ -1,4 +1,4 @@
-import { ChatPreferences, LiveChatContext } from "./ChatMemory";
+import { WorkingMemoryEditor, LiveChatContext } from "./ChatMemory";
 import { WorkspaceMemory, SaveSharedMemory } from "./WorkspaceMemory";
 import { Brain, BriefcaseBusiness, Plus, Send, Sparkles, Square, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
@@ -419,7 +419,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
     description,
   })) ?? [];
   const composer = <div className="ai-composer">
-    {persistentHistory && <ChatPreferences />}
+    {persistentHistory && <WorkingMemoryEditor />}
     {persistentHistory && threadId && <LiveChatContext key={threadId} threadId={threadId} workspaceId={workspaceId} disabled={pending} />}
     <textarea aria-label={uiText("Message", "メッセージ")} placeholder={uiText("Ask about your meetings…", "ミーティングについて質問…")} rows={messages.length ? 2 : 4}
       value={draft} disabled={pending || openingThread || !historyReady} onChange={(event) => setDraft(event.target.value)} onKeyDown={keyDown} />

@@ -1,6 +1,5 @@
-import { memoryResultSchema, memoryScopeSchema, memoryConfigureSchema, memoryListSchema, memoryGetSchema, memorySearchSchema, memorySaveSchema, memoryDeleteSchema } from "../memory/dahlia";
-import { preferenceSettingsSchema, liveSelectionSchema, liveStatusSchema } from "../agent/context-model";
-import { memorySettingsSchema, sharedMemorySchema } from "../memory/model";
+import { memoryResultSchema, memoryScopeSchema, memoryConfigureSchema, memoryListSchema, memoryGetSchema, memorySearchSchema, memorySaveSchema } from "../memory/dahlia";
+import { workingMemorySettingsSchema, workingMemoryEditSchema, liveSelectionSchema, liveStatusSchema } from "../agent/context-model";
 import { organizationDomainsSchema } from "../auth/organization-domains";
 import { projectPublicIDs } from "./public-schema";
 import { createOrganizationSchema } from "../auth/organization-slug";
@@ -86,14 +85,16 @@ const aiThread = z.object({ id: aiThreadId, title: z.string(), workspaceId: aiTh
   createdAt: S.date, updatedAt: S.date }).openapi("AiThread");
 const aiHistoryMessage = z.object({ id: z.string(), role: z.enum(["user", "assistant"]), content: z.string(), createdAt: S.date }).openapi("AiHistoryMessage");
 const aiThreadPage = z.string().regex(/^(0|[1-9][0-9]{0,5})$/).optional();
-const memoryStatus = z.object({ enabled: z.boolean(), status: z.string(), errorCode: z.string().nullable(), attempts: z.number(),
-  skippedCount: z.number(), skippedSources: z.array(z.object({ source: z.string(), code: z.string() })) });
-const memoryNote = z.object({ id: z.string().uuid(), content: z.string(), revision: z.number(), updatedAt: S.date });
+export const memoryCreateBody = memorySaveSchema.omit({ scope: true, workspaceId: true }).extend({ revision: z.literal(0), explicit: z.literal(true) });
+export const memoryUpdateBody = memoryCreateBody.omit({ id: true }).extend({ revision: z.number().int().positive() });
+export const memoryDeleteQuery = z.object({ revision: z.string().regex(/^[1-9][0-9]*$/).refine((value) => Number.isSafeInteger(Number(value)), "Invalid revision"), explicit: z.literal("true") }).strict();
 
 export type OperationId =
-  "memoryScopes" | "memoryList" | "memoryGet" | "memorySave" | "memoryDelete" | "memoryRecall" | "memoryReflect" | "memoryStatus" | "memoryConfigure" |
-  "getAiPreferences" | "setAiPreferences" | "getAiLiveContext" | "setAiLiveContext" |
-  "getWorkspaceMemory" | "setWorkspaceMemory" | "purgeWorkspaceMemory" | "listSharedMemories" | "saveSharedMemory" | "deleteSharedMemory" |
+  "memoryScopes" |
+  "personalMemoryList" | "personalMemoryGet" | "personalMemorySave" | "personalMemoryUpdate" | "personalMemoryDelete" | "personalMemoryRecall" | "personalMemoryReflect" | "personalMemoryStatus" | "personalMemoryConfigure" |
+  "workspaceMemoryList" | "workspaceMemoryGet" | "workspaceMemorySave" | "workspaceMemoryUpdate" | "workspaceMemoryDelete" | "workspaceMemoryRecall" | "workspaceMemoryReflect" | "workspaceMemoryStatus" | "workspaceMemoryConfigure" |
+  "getWorkingMemory" | "updateWorkingMemory" | "getAiLiveContext" | "setAiLiveContext" |
+  "purgeWorkspaceMemory" |
   "getHealth" | "getOpenAPI" | "getSession" | "listSessions" | "revokeSession"
   | "listAdministrators" | "addAdministrator" | "removeAdministrator" | "listServerUsers" | "listServerOrganizations"
   | "getServerOrganization" | "getSearchSettings" | "updateSearchSettings"
@@ -132,25 +133,28 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
     teams: z.array(z.object({ id: S.principalId, name: z.string() })), hasMoreMembers: z.boolean(), hasMoreTeams: z.boolean(),
   })) }, { query: z.object({ membersOffset: z.string().regex(/^\d+$/).optional(), teamsOffset: z.string().regex(/^\d+$/).optional() }).strict() }, browser),
   getCapabilities: route("get", "/api/v1/capabilities", "getCapabilities", "Discover feature versions; unsupported features are omitted", { 200: json(S.capabilities) }),
-  memoryScopes: route("get", "/api/v1/memory/scopes", "memoryScopes", "List authorized Dahlia Memory scopes", { 200: json(memoryResultSchema) }, {}, browser),
-  memoryList: route("post", "/api/v1/memory/list", "memoryList", "Dahlia Memory list", { 200: json(memoryResultSchema) }, body(memoryListSchema), browser),
-  memoryGet: route("post", "/api/v1/memory/get", "memoryGet", "Dahlia Memory get", { 200: json(memoryResultSchema) }, body(memoryGetSchema), browser),
-  memorySave: route("post", "/api/v1/memory/save", "memorySave", "Dahlia Memory save", { 200: json(memoryResultSchema) }, body(memorySaveSchema), browser),
-  memoryDelete: route("post", "/api/v1/memory/delete", "memoryDelete", "Dahlia Memory delete", { 200: json(memoryResultSchema) }, body(memoryDeleteSchema), browser),
-  memoryRecall: route("post", "/api/v1/memory/recall", "memoryRecall", "Dahlia Memory recall", { 200: json(memoryResultSchema) }, body(memorySearchSchema), browser),
-  memoryReflect: route("post", "/api/v1/memory/reflect", "memoryReflect", "Dahlia Memory reflect", { 200: json(memoryResultSchema) }, body(memorySearchSchema), browser),
-  memoryStatus: route("post", "/api/v1/memory/status", "memoryStatus", "Dahlia Memory status", { 200: json(memoryResultSchema) }, body(memoryScopeSchema), browser),
-  memoryConfigure: route("post", "/api/v1/memory/configure", "memoryConfigure", "Dahlia Memory configure", { 200: json(memoryResultSchema) }, body(memoryConfigureSchema), browser),
-  getWorkspaceMemory: route("get", `${v}/memory`, "getWorkspaceMemory", "Read Workspace memory status", { 200: json(memoryStatus) }, {}, browser),
-  setWorkspaceMemory: route("put", `${v}/memory`, "setWorkspaceMemory", "Enable, pause or retry Workspace memory; admin only", { 204: empty }, body(memorySettingsSchema), browser),
-  purgeWorkspaceMemory: route("delete", `${v}/memory`, "purgeWorkspaceMemory", "Disable and erase Workspace memory; admin only", { 202: json(z.object({ status: z.literal("deleting") })) }, {}, browser),
-  listSharedMemories: route("get", `${v}/memory/notes`, "listSharedMemories", "List explicitly shared memories", { 200: json(z.object({ items: z.array(memoryNote), nextCursor: z.string().uuid().nullable() })) },
-    { query: z.object({ after: z.string().uuid().optional() }).strict() }, browser),
-  saveSharedMemory: route("put", `${v}/memory/notes`, "saveSharedMemory", "Save user-confirmed shared information with a revision", { 200: json(memoryNote) }, body(sharedMemorySchema), browser),
-  deleteSharedMemory: route("delete", `${v}/memory/notes/{noteId}`, "deleteSharedMemory", "Delete shared information with a revision", { 204: empty },
-    { query: z.object({ revision: z.string().regex(/^[1-9][0-9]*$/) }).strict() }, browser),
-  getAiPreferences: route("get", "/api/v1/chat/preferences", "getAiPreferences", "Read private response preferences", { 200: json(preferenceSettingsSchema) }, {}, browser),
-  setAiPreferences: route("put", "/api/v1/chat/preferences", "setAiPreferences", "Edit or clear private response preferences with revision checking", { 200: json(preferenceSettingsSchema) }, body(preferenceSettingsSchema), browser),
+  memoryScopes: route("get", "/api/v1/user/memory/scopes", "memoryScopes", "List authorized Dahlia Memory scopes", { 200: json(memoryResultSchema) }, {}, browser),
+  personalMemoryList: route("get", "/api/v1/user/memory/notes", "personalMemoryList", "List saved notes; independent of analysis", { 200: json(memoryResultSchema) }, { query: memoryListSchema.omit({ scope: true, workspaceId: true }) }, browser),
+  personalMemoryGet: route("get", "/api/v1/user/memory/notes/{noteId}", "personalMemoryGet", "Read a saved note", { 200: json(memoryResultSchema) }, { params: z.object({ noteId: memoryGetSchema.shape.id }) }, browser),
+  personalMemorySave: route("post", "/api/v1/user/memory/notes", "personalMemorySave", "Create a saved note with revision zero", { 200: json(memoryResultSchema) }, { ...body(memoryCreateBody) }, browser),
+  personalMemoryUpdate: route("patch", "/api/v1/user/memory/notes/{noteId}", "personalMemoryUpdate", "Edit a saved note with revision checking", { 200: json(memoryResultSchema) }, { params: z.object({ noteId: memoryGetSchema.shape.id }), ...body(memoryUpdateBody) }, browser),
+  personalMemoryDelete: route("delete", "/api/v1/user/memory/notes/{noteId}", "personalMemoryDelete", "Delete a saved note with explicit confirmation and revision", { 200: json(memoryResultSchema) }, { params: z.object({ noteId: memoryGetSchema.shape.id }), query: memoryDeleteQuery }, browser),
+  personalMemoryRecall: route("post", "/api/v1/user/memory/recall", "personalMemoryRecall", "Recall related memories", { 200: json(memoryResultSchema) }, { ...body(memorySearchSchema.omit({ scope: true, workspaceId: true })) }, browser),
+  personalMemoryReflect: route("post", "/api/v1/user/memory/reflect", "personalMemoryReflect", "Reflect on memories with sources", { 200: json(memoryResultSchema) }, { ...body(memorySearchSchema.omit({ scope: true, workspaceId: true })) }, browser),
+  personalMemoryStatus: route("get", "/api/v1/user/memory/analysis/status", "personalMemoryStatus", "Read analysis availability and ingestion status", { 200: json(memoryResultSchema) }, {}, browser),
+  personalMemoryConfigure: route("patch", "/api/v1/user/memory/analysis/settings", "personalMemoryConfigure", "Enable, pause or retry personal analysis; owner only", { 200: json(memoryResultSchema) }, { ...body(memoryConfigureSchema.omit({ scope: true, workspaceId: true })) }, browser),
+  workspaceMemoryList: route("get", "/api/v1/workspaces/{workspaceId}/memory/notes", "workspaceMemoryList", "List saved notes; independent of analysis", { 200: json(memoryResultSchema) }, { params: z.object({ workspaceId: memoryScopeSchema.shape.workspaceId.unwrap() }), query: memoryListSchema.omit({ scope: true, workspaceId: true }) }, browser),
+  workspaceMemoryGet: route("get", "/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}", "workspaceMemoryGet", "Read a saved note", { 200: json(memoryResultSchema) }, { params: z.object({ workspaceId: memoryScopeSchema.shape.workspaceId.unwrap(), noteId: memoryGetSchema.shape.id }) }, browser),
+  workspaceMemorySave: route("post", "/api/v1/workspaces/{workspaceId}/memory/notes", "workspaceMemorySave", "Create a saved note with revision zero", { 200: json(memoryResultSchema) }, { params: z.object({ workspaceId: memoryScopeSchema.shape.workspaceId.unwrap() }), ...body(memoryCreateBody) }, browser),
+  workspaceMemoryUpdate: route("patch", "/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}", "workspaceMemoryUpdate", "Edit a saved note with revision checking", { 200: json(memoryResultSchema) }, { params: z.object({ workspaceId: memoryScopeSchema.shape.workspaceId.unwrap(), noteId: memoryGetSchema.shape.id }), ...body(memoryUpdateBody) }, browser),
+  workspaceMemoryDelete: route("delete", "/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}", "workspaceMemoryDelete", "Delete a saved note with explicit confirmation and revision", { 200: json(memoryResultSchema) }, { params: z.object({ workspaceId: memoryScopeSchema.shape.workspaceId.unwrap(), noteId: memoryGetSchema.shape.id }), query: memoryDeleteQuery }, browser),
+  workspaceMemoryRecall: route("post", "/api/v1/workspaces/{workspaceId}/memory/recall", "workspaceMemoryRecall", "Recall related memories", { 200: json(memoryResultSchema) }, { params: z.object({ workspaceId: memoryScopeSchema.shape.workspaceId.unwrap() }), ...body(memorySearchSchema.omit({ scope: true, workspaceId: true })) }, browser),
+  workspaceMemoryReflect: route("post", "/api/v1/workspaces/{workspaceId}/memory/reflect", "workspaceMemoryReflect", "Reflect on memories with sources", { 200: json(memoryResultSchema) }, { params: z.object({ workspaceId: memoryScopeSchema.shape.workspaceId.unwrap() }), ...body(memorySearchSchema.omit({ scope: true, workspaceId: true })) }, browser),
+  workspaceMemoryStatus: route("get", "/api/v1/workspaces/{workspaceId}/memory/analysis/status", "workspaceMemoryStatus", "Read analysis availability and ingestion status", { 200: json(memoryResultSchema) }, { params: z.object({ workspaceId: memoryScopeSchema.shape.workspaceId.unwrap() }) }, browser),
+  workspaceMemoryConfigure: route("patch", "/api/v1/workspaces/{workspaceId}/memory/analysis/settings", "workspaceMemoryConfigure", "Enable, pause or retry analysis; Workspace admin only", { 200: json(memoryResultSchema) }, { params: z.object({ workspaceId: memoryScopeSchema.shape.workspaceId.unwrap() }), ...body(memoryConfigureSchema.omit({ scope: true, workspaceId: true })) }, browser),
+  purgeWorkspaceMemory: route("delete", "/api/v1/workspaces/{workspaceId}/memory", "purgeWorkspaceMemory", "Disable analysis and delete all shared notes and the Hindsight bank; preserves meetings; admin only", { 202: json(z.object({ status: z.literal("deleting") })) }, {}, browser),
+  getWorkingMemory: route("get", "/api/v1/user/memory/working", "getWorkingMemory", "Read private Working Memory", { 200: json(workingMemorySettingsSchema) }, {}, browser),
+  updateWorkingMemory: route("patch", "/api/v1/user/memory/working", "updateWorkingMemory", "Edit one private Working Memory section with revision checking", { 200: json(workingMemorySettingsSchema) }, body(workingMemoryEditSchema), browser),
   getAiLiveContext: route("get", "/api/v1/chat/{threadId}/live-context", "getAiLiveContext", "Read selected meeting context freshness", { 200: json(liveStatusSchema) }, { params: z.object({ threadId: aiThreadId }) }, browser),
   setAiLiveContext: route("put", "/api/v1/chat/{threadId}/live-context", "setAiLiveContext", "Select or detach a meeting in the thread Workspace", { 204: empty }, { params: z.object({ threadId: aiThreadId }), ...body(liveSelectionSchema) }, browser),
   getAiModels: route("get", "/api/v1/chat/models", "getAiModels", "Agent-compatible models available to Private Web", { 200: json(z.object({ items: z.array(S.aiModel) })) }, {}, browser),

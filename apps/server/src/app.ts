@@ -1,9 +1,8 @@
-import { DahliaMemory, memoryScopeSchema, memoryConfigureSchema, memoryListSchema, memoryGetSchema, memorySearchSchema, memorySaveSchema, memoryDeleteSchema } from "./memory/dahlia";
+import { DahliaMemory, memoryConfigureSchema, memoryListSchema, memoryGetSchema, memorySearchSchema, memorySaveSchema } from "./memory/dahlia";
 import { createMemoryGenerator, type MemoryGenerator, type ChatMemoryService } from "./agent/context-service";
 import { createMemoryTools } from "./memory/tools";
-import { preferenceSettingsSchema, liveSelectionSchema } from "./agent/context-model";
+import { workingMemoryEditSchema, liveSelectionSchema } from "./agent/context-model";
 import { WorkspaceMemoryService } from "./memory/service";
-import { memorySettingsSchema, sharedMemorySchema } from "./memory/model";
 import { APIError } from "better-auth/api";
 import { EncryptionError } from "./encryption/crypto";
 import { installPublicIDs } from "./public-http";
@@ -13,7 +12,7 @@ import { summaryJobResponse, type SummaryService } from "./summary/service";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { textSearchRequest } from "./api/schemas";
-import { registerApi, openapiDocument } from "./api/contracts";
+import { registerApi, openapiDocument, memoryCreateBody, memoryUpdateBody, memoryDeleteQuery } from "./api/contracts";
 import { problemResponse, problemMiddleware } from "./api/problem";
 import { TrieRouter } from "hono/router/trie-router";
 import { bodyLimit } from "hono/body-limit";
@@ -218,12 +217,12 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   const personalMemory = dependencies.personalMemory ?? (config.hindsight && store.personalMemory ? new WorkspaceMemoryService(config, store.personalMemory, sync, store.sync, dependencies.fetch) : undefined);
   const dahliaMemory = store.memory && store.personalMemory ? new DahliaMemory({ personal: store.personalMemory, workspace: store.memory }, sync,
     { personal: personalMemory, workspace: workspaceMemory }, dependencies.memoryGenerator ?? (config.chatMemoryModel ? createMemoryGenerator(config) : undefined)) : undefined;
-  const ai = dependencies.aiService ?? createAiService(config, gateway, meetingTools, dependencies.fetch, workspaceMemory, dahliaMemory);
+  const ai = dependencies.aiService ?? createAiService(config, gateway, meetingTools, dependencies.fetch, workspaceMemory, dahliaMemory, dependencies.chatMemory?.store);
   const aiHistory = dependencies.aiHistory;
   const mcp = createServerMcpHandler(config, sync, async (request) => {
     if (config.authProvider === "accounts") await identities.verifyMcpAccessToken(request);
     else await identities.fromMcpHeader(request);
-  }, meetingTools, workspaceMemory ? createMemoryTools(workspaceMemory) : undefined, dahliaMemory);
+  }, meetingTools, workspaceMemory ? createMemoryTools(workspaceMemory) : undefined, dahliaMemory, dependencies.chatMemory?.store);
   const jobOwners = new WeakMap<Request, string>();
   const mcpMetadataUrl = `${config.baseUrl}/.well-known/oauth-protected-resource/mcp`;
   const mcpRequestAuth = config.authProvider === "accounts" && auth
@@ -364,58 +363,48 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     return dahliaMemory;
   };
   registerApi(app, "memoryScopes", async (c) => c.json(await memory().scopes(await identities.fromBrowser(c.req.raw))));
-  registerApi(app, "memoryList", aiChatBodyLimit, async (c) => c.json(await memory().list(await identities.fromBrowser(c.req.raw), memoryListSchema.parse(await c.req.json()))));
-  registerApi(app, "memoryGet", aiChatBodyLimit, async (c) => c.json(await memory().get(await identities.fromBrowser(c.req.raw), memoryGetSchema.parse(await c.req.json()))));
-  registerApi(app, "memorySave", aiChatBodyLimit, async (c) => c.json(await memory().save(await identities.fromBrowser(c.req.raw), memorySaveSchema.parse(await c.req.json()), "human", c.req.raw.signal)));
-  registerApi(app, "memoryDelete", aiChatBodyLimit, async (c) => c.json(await memory().delete(await identities.fromBrowser(c.req.raw), memoryDeleteSchema.parse(await c.req.json()))));
-  registerApi(app, "memoryRecall", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), memorySearchSchema.parse(await c.req.json()), false, c.req.raw.signal)));
-  registerApi(app, "memoryReflect", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), memorySearchSchema.parse(await c.req.json()), true, c.req.raw.signal)));
-  registerApi(app, "memoryStatus", aiChatBodyLimit, async (c) => c.json(await memory().status(await identities.fromBrowser(c.req.raw), memoryScopeSchema.parse(await c.req.json()))));
-  registerApi(app, "memoryConfigure", aiChatBodyLimit, async (c) => c.json(await memory().configure(await identities.fromBrowser(c.req.raw), memoryConfigureSchema.parse(await c.req.json()))));
-  const memoryService = () => {
-    if (!workspaceMemory) throw new RequestError(404, "memory_unavailable");
-    return workspaceMemory;
-  };
-  registerApi(app, "getWorkspaceMemory", async (context) => {
-    const identity = await identities.fromBrowser(context.req.raw);
-    return context.json(await memoryService().status(identity, context.req.param("workspaceId")!));
+  registerApi(app, "personalMemoryList", async (c) => c.json(await memory().list(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...memoryListSchema.omit({ scope: true, workspaceId: true }).parse(c.req.query()) })));
+  registerApi(app, "personalMemoryGet", async (c) => c.json(await memory().get(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, id: memoryGetSchema.shape.id.parse(c.req.param("noteId")) })));
+  registerApi(app, "personalMemorySave", aiChatBodyLimit, async (c) => c.json(await memory().save(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...memoryCreateBody.parse(await c.req.json()) }, "human", c.req.raw.signal)));
+  registerApi(app, "personalMemoryUpdate", aiChatBodyLimit, async (c) => c.json(await memory().save(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...memoryUpdateBody.parse(await c.req.json()), id: memorySaveSchema.shape.id.parse(c.req.param("noteId")) }, "human", c.req.raw.signal)));
+  registerApi(app, "personalMemoryDelete", async (c) => {
+    const query = memoryDeleteQuery.parse(c.req.query());
+    return c.json(await memory().delete(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, id: memoryGetSchema.shape.id.parse(c.req.param("noteId")), revision: Number(query.revision), explicit: true }));
   });
-  registerApi(app, "setWorkspaceMemory", aiChatBodyLimit, async (context) => {
-    const identity = await identities.fromBrowser(context.req.raw);
-    await memoryService().configure(identity, context.req.param("workspaceId")!, memorySettingsSchema.parse(await context.req.json()).enabled);
-    return context.body(null, 204);
+  registerApi(app, "personalMemoryRecall", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...memorySearchSchema.omit({ scope: true, workspaceId: true }).parse(await c.req.json()) }, false, c.req.raw.signal)));
+  registerApi(app, "personalMemoryReflect", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...memorySearchSchema.omit({ scope: true, workspaceId: true }).parse(await c.req.json()) }, true, c.req.raw.signal)));
+  registerApi(app, "personalMemoryStatus", async (c) => c.json(await memory().status(await identities.fromBrowser(c.req.raw), { scope: "personal" as const })));
+  registerApi(app, "personalMemoryConfigure", aiChatBodyLimit, async (c) => c.json(await memory().configure(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...memoryConfigureSchema.omit({ scope: true, workspaceId: true }).parse(await c.req.json()) })));
+  registerApi(app, "workspaceMemoryList", async (c) => c.json(await memory().list(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, ...memoryListSchema.omit({ scope: true, workspaceId: true }).parse(c.req.query()) })));
+  registerApi(app, "workspaceMemoryGet", async (c) => c.json(await memory().get(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, id: memoryGetSchema.shape.id.parse(c.req.param("noteId")) })));
+  registerApi(app, "workspaceMemorySave", aiChatBodyLimit, async (c) => c.json(await memory().save(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, ...memoryCreateBody.parse(await c.req.json()) }, "human", c.req.raw.signal)));
+  registerApi(app, "workspaceMemoryUpdate", aiChatBodyLimit, async (c) => c.json(await memory().save(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, ...memoryUpdateBody.parse(await c.req.json()), id: memorySaveSchema.shape.id.parse(c.req.param("noteId")) }, "human", c.req.raw.signal)));
+  registerApi(app, "workspaceMemoryDelete", async (c) => {
+    const query = memoryDeleteQuery.parse(c.req.query());
+    return c.json(await memory().delete(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, id: memoryGetSchema.shape.id.parse(c.req.param("noteId")), revision: Number(query.revision), explicit: true }));
   });
+  registerApi(app, "workspaceMemoryRecall", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, ...memorySearchSchema.omit({ scope: true, workspaceId: true }).parse(await c.req.json()) }, false, c.req.raw.signal)));
+  registerApi(app, "workspaceMemoryReflect", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, ...memorySearchSchema.omit({ scope: true, workspaceId: true }).parse(await c.req.json()) }, true, c.req.raw.signal)));
+  registerApi(app, "workspaceMemoryStatus", async (c) => c.json(await memory().status(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")! })));
+  registerApi(app, "workspaceMemoryConfigure", aiChatBodyLimit, async (c) => c.json(await memory().configure(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, ...memoryConfigureSchema.omit({ scope: true, workspaceId: true }).parse(await c.req.json()) })));
   registerApi(app, "purgeWorkspaceMemory", async (context) => {
     const identity = await identities.fromBrowser(context.req.raw);
-    await memoryService().store.purge(identity.userId, context.req.param("workspaceId")!);
+    if (identity.impersonated) throw new RequestError(403, "impersonation_read_only");
+    if (!store.memory) throw new RequestError(404, "memory_unavailable");
+    await store.memory.purge(identity.userId, context.req.param("workspaceId")!);
     return context.json({ status: "deleting" }, 202);
-  });
-  registerApi(app, "listSharedMemories", async (context) => {
-    const identity = await identities.fromBrowser(context.req.raw);
-    const items = await memoryService().store.listNotes(identity.userId, context.req.param("workspaceId")!, context.req.query("after"));
-    return context.json({ items: items.map(({ id, content, revision, updatedAt }) => ({ id, content, revision, updatedAt })), nextCursor: items.length === 100 ? items.at(-1)!.id : null });
-  });
-  registerApi(app, "saveSharedMemory", aiChatBodyLimit, async (context) => {
-    const identity = await identities.fromBrowser(context.req.raw);
-    const { id, content, revision, updatedAt } = await memoryService().store.saveNote(identity.userId, context.req.param("workspaceId")!, sharedMemorySchema.parse(await context.req.json()));
-    return context.json({ id, content, revision, updatedAt });
-  });
-  registerApi(app, "deleteSharedMemory", async (context) => {
-    const identity = await identities.fromBrowser(context.req.raw);
-    await memoryService().store.deleteNote(identity.userId, context.req.param("workspaceId")!, context.req.param("noteId")!, Number(context.req.query("revision")));
-    return context.body(null, 204);
   });
   const chatMemory = () => {
     if (!dependencies.chatMemory) throw new RequestError(404, "chat_memory_unavailable");
     return dependencies.chatMemory;
   };
-  registerApi(app, "getAiPreferences", async (context) => {
+  registerApi(app, "getWorkingMemory", async (context) => {
     const identity = await identities.fromBrowser(context.req.raw);
     return context.json(await chatMemory().store.settings(identity));
   });
-  registerApi(app, "setAiPreferences", aiChatBodyLimit, async (context) => {
+  registerApi(app, "updateWorkingMemory", aiChatBodyLimit, async (context) => {
     const identity = await identities.fromBrowser(context.req.raw);
-    return context.json(await chatMemory().store.editSettings(identity, preferenceSettingsSchema.parse(await context.req.json())));
+    return context.json(await chatMemory().store.editSettings(identity, workingMemoryEditSchema.parse(await context.req.json())));
   });
   registerApi(app, "getAiLiveContext", async (context) => {
     const identity = await identities.fromBrowser(context.req.raw);
@@ -504,9 +493,9 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
             const latest = await aiHistory.get(identity, threadId);
             const message = latest?.messages.findLast((message) => message.role === "user");
             if (message && message.content === input.content && !saved.messages.some((previous) => previous.id === message.id)) {
-              await dependencies.chatMemory.store.enqueuePreferences(identity, threadId, message.id, preferenceRevision);
+              await dependencies.chatMemory.store.enqueueLearned(identity, threadId, message.id, preferenceRevision);
             }
-          } catch { console.warn(JSON.stringify({ event: "preference_enqueue_failed" })); }
+          } catch { console.warn(JSON.stringify({ event: "working_memory_enqueue_failed" })); }
         }
         await aiHistory.finishRun(identity, threadId, runId).catch(() => undefined);
       }

@@ -67,7 +67,7 @@ describe("shared memory tools", () => {
       expect(JSON.stringify(result)).toContain("memory_encrypted_workspace_unsupported");
     }
   });
-  it("advertises memory only when configured and the MCP read scope is granted", async () => {
+  it("advertises memory only when configured and the dedicated memory scope is granted", async () => {
     const { tools } = fixture();
     const list = async (configured: boolean, scopes: string[]) => {
       const handler = createServerMcpHandler({} as AppConfig, {} as MeetingSyncService, undefined, undefined, configured ? tools : undefined);
@@ -83,7 +83,9 @@ describe("shared memory tools", () => {
       if (!scopes.length) { expect(value.error).toBeDefined(); return []; }
       return value.result!.tools.map((tool) => tool.name);
     };
-    expect(await list(true, ["mcp:read"])).toEqual(expect.arrayContaining(Object.keys(tools)));
+    for (const scope of ["mcp", "mcp:read"]) expect(await list(true, [scope])).not.toContain("recall_workspace_memory");
+    expect(await list(true, ["mcp:memory:read"])).toEqual(expect.arrayContaining(Object.keys(tools)));
+    expect(await list(true, ["mcp:memory:write"])).toEqual(expect.arrayContaining(Object.keys(tools)));
     expect(await list(false, ["mcp:read"])).not.toContain("recall_workspace_memory");
     expect(await list(true, [])).not.toContain("recall_workspace_memory");
   });

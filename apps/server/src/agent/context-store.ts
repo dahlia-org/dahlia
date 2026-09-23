@@ -3,14 +3,16 @@ import type { Identity } from "../auth/identity";
 import { uuidV7 } from "../id";
 import { RequestError } from "../storage/upload";
 import { withIdentityTransaction } from "./history";
-import { emptyPreferences, preferencesSchema, liveSnapshotSchema,
-  type Preferences, type PreferenceSettings, type LiveSnapshot } from "./context-model";
+import { workingMemoryContentSchema, liveSnapshotSchema,
+  type WorkingMemoryEdit, type WorkingMemorySettings, type LiveSnapshot } from "./context-model";
 
-type ProfileMetadata = { revision: number; manualRevision?: number; automatic: boolean; locked: Array<keyof Preferences>;
-  sources: Partial<Record<keyof Preferences, { threadId: string; messageId: string }>> };
-export interface MemoryJob { id: string; userId: string; threadId: string; kind: "preference" | "live";
+type ProfileMetadata = WorkingMemorySettings & { learningRevision: number; manualRevision: number; learnedRevision: number };
+export interface MemoryJob { id: string; userId: string; threadId: string; kind: "working" | "live";
   messageId: string | null; revision: number; lease: string; attempts: number }
-const defaults = (): ProfileMetadata => ({ revision: 0, automatic: true, locked: [], sources: {} });
+const defaults = (): ProfileMetadata => ({ revision: 0, learningRevision: 0, manualRevision: 0, learnedRevision: 0,
+  automatic: true, capacityReached: false, manual: "", learned: "" });
+const template = ({ manual, learned }: ProfileMetadata) => `# Working Memory\n\n## User notes\n${manual || "(none)"}\n\n## Learned from direct user statements\n${learned || "(none)"}`;
+export const workingMemoryTemplate = template(defaults());
 
 export class ChatMemoryStore {
   constructor(private readonly pool: Pool) {}
@@ -18,71 +20,70 @@ export class ChatMemoryStore {
     return withIdentityTransaction(this.pool, identity, action);
   }
   private async profile(client: PoolClient, userId: string) {
-    const { rows: [row] } = await client.query<{ workingMemory: string | null; metadata: { preferences?: ProfileMetadata } | null }>(
+    const { rows: [row] } = await client.query<{ metadata: { workingMemory?: ProfileMetadata } | null }>(
       'SELECT "workingMemory", metadata FROM agent.mastra_resources WHERE id = $1', [userId]);
-    return { preferences: preferencesSchema.parse(row?.workingMemory ? JSON.parse(row.workingMemory) : emptyPreferences),
-      metadata: row?.metadata?.preferences ?? defaults() };
+    return row?.metadata?.workingMemory ?? defaults();
   }
-  private async saveProfile(client: PoolClient, userId: string, preferences: Preferences, metadata: ProfileMetadata) {
+  private async saveProfile(client: PoolClient, userId: string, metadata: ProfileMetadata) {
     await client.query(`INSERT INTO agent.mastra_resources (id, "workingMemory", metadata, "createdAt", "updatedAt", "createdAtZ", "updatedAtZ")
       VALUES ($1, $2, $3, now(), now(), now(), now()) ON CONFLICT (id) DO UPDATE SET
       "workingMemory" = EXCLUDED."workingMemory", metadata = COALESCE(agent.mastra_resources.metadata, '{}'::jsonb) || EXCLUDED.metadata,
-      "updatedAt" = now(), "updatedAtZ" = now()`, [userId, JSON.stringify(preferences), JSON.stringify({ preferences: metadata })]);
+      "updatedAt" = now(), "updatedAtZ" = now()`, [userId, template(metadata), JSON.stringify({ workingMemory: metadata })]);
   }
-  async settings(identity: Identity): Promise<PreferenceSettings> {
+  async settings(identity: Identity): Promise<WorkingMemorySettings> {
     return this.scoped(identity, async (client) => {
-      const { preferences, metadata } = await this.profile(client, identity.userId);
-      return { preferences, revision: metadata.revision, automatic: metadata.automatic };
+      const { revision, automatic, capacityReached, manual, learned } = await this.profile(client, identity.userId);
+      return { revision, automatic, capacityReached, manual, learned };
     });
   }
-  async editSettings(identity: Identity, input: PreferenceSettings) {
+  async editSettings(identity: Identity, input: WorkingMemoryEdit) {
+    if (identity.impersonated) throw new RequestError(403, "impersonation_read_only");
     return this.scoped(identity, async (client) => {
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))", [identity.userId]);
-      const { preferences, metadata } = await this.profile(client, identity.userId);
-      if (input.revision !== metadata.revision) throw new RequestError(409, "memory_revision_conflict");
-      for (const key of Object.keys(preferences) as Array<keyof Preferences>) {
-        if (preferences[key] !== input.preferences[key]) {
-          if (!metadata.locked.includes(key)) metadata.locked.push(key);
-          delete metadata.sources[key];
-        }
+      const metadata = await this.profile(client, identity.userId);
+      const changedAt = input.section === "manual" ? metadata.manualRevision
+        : input.section === "learned" ? metadata.learnedRevision : metadata.revision;
+      if (input.revision > metadata.revision || input.revision < changedAt) throw new RequestError(409, "memory_revision_conflict");
+      if (input.section === "settings") {
+        metadata.automatic = input.automatic;
+        if (input.automatic) metadata.capacityReached = false;
+      } else {
+        if (!input.explicit) throw new RequestError(403, "memory_explicit_instruction_required");
+        metadata[input.section] = input.content;
+        if (input.section === "learned") metadata.capacityReached = false;
       }
-      metadata.automatic = input.automatic;
       metadata.revision++;
-      metadata.manualRevision = metadata.revision;
-      await this.saveProfile(client, identity.userId, input.preferences, metadata);
-      return { ...input, revision: metadata.revision };
+      if (input.section === "manual") metadata.manualRevision = metadata.revision;
+      if (input.section === "learned") metadata.learnedRevision = metadata.revision;
+      if (input.section !== "manual") metadata.learningRevision = metadata.revision;
+      await this.saveProfile(client, identity.userId, metadata);
+      const { revision, automatic, capacityReached, manual, learned } = metadata;
+      return { revision, automatic, capacityReached, manual, learned };
     });
   }
-  async applyPreferences(identity: Identity, job: MemoryJob, patch: Partial<Preferences>) {
+  async applyLearned(identity: Identity, job: MemoryJob, note: string | null) {
     return this.scoped(identity, async (client) => {
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))", [identity.userId]);
-      const { preferences, metadata } = await this.profile(client, identity.userId);
-      if (!metadata.automatic || job.revision < (metadata.manualRevision ?? 0)) return;
-      // A deleted thread/message must not resurrect a preference after extraction completes.
+      const metadata = await this.profile(client, identity.userId);
+      if (!metadata.automatic || !note || job.revision < metadata.learningRevision) return;
+      // A deleted message cannot contribute new learned memory.
       const source = await client.query("SELECT 1 FROM agent.mastra_messages WHERE id = $1 AND thread_id = $2 AND role = 'user'", [job.messageId, job.threadId]);
       if (!source.rowCount) return;
-      // Queue delivery order is not conversation order; an older request must not overwrite a newer one.
-      const newer = await client.query<{ id: string }>(`SELECT id FROM agent.mastra_messages
-        WHERE id = ANY($1::text[]) AND (COALESCE("createdAtZ", "createdAt"), id) >=
-          (SELECT COALESCE("createdAtZ", "createdAt"), id FROM agent.mastra_messages WHERE id = $2)`,
-      [Object.values(metadata.sources).map((source) => source.messageId), job.messageId]);
-      const newerSourceIds = new Set(newer.rows.map((row) => row.id));
-      let changed = false;
-      for (const key of Object.keys(patch) as Array<keyof Preferences>) {
-        if (metadata.locked.includes(key) || patch[key] == null) continue;
-        const previous = metadata.sources[key];
-        if (previous && newerSourceIds.has(previous.messageId)) continue;
-        Object.assign(preferences, { [key]: patch[key] });
-        metadata.sources[key] = { threadId: job.threadId, messageId: job.messageId! };
-        changed = true;
-      }
-      if (changed) { metadata.revision++; await this.saveProfile(client, identity.userId, preferences, metadata); }
+      const next = [metadata.learned, `- ${note}`].filter(Boolean).join("\n");
+      if (metadata.learned.split("\n").includes(`- ${note}`)) return;
+      if (!workingMemoryContentSchema.safeParse(next).success) {
+        metadata.automatic = false;
+        metadata.capacityReached = true;
+      } else metadata.learned = next;
+      metadata.revision++;
+      if (!metadata.capacityReached) metadata.learnedRevision = metadata.revision;
+      await this.saveProfile(client, identity.userId, metadata);
     });
   }
-  async enqueuePreferences(identity: Identity, threadId: string, messageId: string, revision: number) {
+  async enqueueLearned(identity: Identity, threadId: string, messageId: string, revision: number) {
     await this.scoped(identity, (client) => client.query(`INSERT INTO agent.memory_jobs
-      (id, user_id, thread_id, kind, message_id, revision) VALUES ($1, $2, $3, 'preference', $4, $5) ON CONFLICT DO NOTHING`,
-    [`preference:${messageId}`, identity.userId, threadId, messageId, revision]));
+      (id, user_id, thread_id, kind, message_id, revision) VALUES ($1, $2, $3, 'working', $4, $5) ON CONFLICT DO NOTHING`,
+    [`working:${messageId}`, identity.userId, threadId, messageId, revision]));
   }
   async selectMeeting(identity: Identity, threadId: string, meetingId: string | null) {
     await this.scoped(identity, async (client) => {

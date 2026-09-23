@@ -1,5 +1,6 @@
 import { createDahliaMemoryTools, type DahliaMemoryTool } from "./memory/dahlia-tools";
 import type { DahliaMemory } from "./memory/dahlia";
+import type { ChatMemoryStore } from "./agent/context-store";
 import type { MemoryTools } from "./memory/tools";
 import { decodeId, encodeId } from "./typeid";
 import { wireValue, wireURL, wireCursor } from "./public-wire";
@@ -27,6 +28,7 @@ export function createServerMcpHandler(
   meetingTools?: MeetingTools,
   memoryTools?: MemoryTools,
   dahliaMemory?: DahliaMemory,
+  workingMemory?: ChatMemoryStore,
 ) {
   return createMcpHandler(({ authInfo, requestInfo }) => {
     const identity = mcpIdentity(authInfo);
@@ -42,10 +44,6 @@ export function createServerMcpHandler(
         ...request, workspaceId: decodeId("workspace", request.workspaceId), projectId: request.projectId ? decodeId("project", request.projectId) : undefined, from: request.from?.toISOString(), to: request.to?.toISOString(),
       })));
       registerMastraTool(server, sharedMeetingTools.query_meetings, identity);
-      for (const tool of Object.values(memoryTools ?? {})) registerMastraTool(server, tool, identity, requestInfo?.signal, async () => {
-        if (requestInfo) await authorize?.(requestInfo);
-        if (authInfo?.expiresAt !== undefined && authInfo.expiresAt <= Date.now() / 1000) throw new RequestError(401, "token_expired");
-      });
       server.registerTool("query_projects", {
         description: "List the complete synchronized Project hierarchy in a Workspace you can read.",
         inputSchema: z.object({ workspace_id: publicIdSchema("workspace"), type: z.enum([
@@ -97,8 +95,16 @@ export function createServerMcpHandler(
       ));
     }
 
+    if (memoryTools && hasApiScope(authInfo?.scopes ?? [], MEMORY_READ_SCOPE)) {
+      for (const tool of Object.values(memoryTools)) registerMastraTool(server, tool, identity, requestInfo?.signal, async () => {
+        if (requestInfo) await authorize?.(requestInfo);
+        if (authInfo?.expiresAt !== undefined && authInfo.expiresAt <= Date.now() / 1000) throw new RequestError(401, "token_expired");
+      });
+    }
+
     if (dahliaMemory && hasApiScope(authInfo?.scopes ?? [], MEMORY_READ_SCOPE)) {
-      for (const tool of Object.values(createDahliaMemoryTools(dahliaMemory, hasApiScope(authInfo?.scopes ?? [], MEMORY_WRITE_SCOPE)))) {
+      for (const tool of Object.values(createDahliaMemoryTools(dahliaMemory, hasApiScope(authInfo?.scopes ?? [], MEMORY_WRITE_SCOPE), workingMemory))) {
+        if (!tool) continue;
         registerMastraTool(server, tool, identity, requestInfo?.signal, async () => {
           if (requestInfo) await authorize?.(requestInfo);
           if (authInfo?.expiresAt !== undefined && authInfo.expiresAt <= Date.now() / 1000) throw new RequestError(401, "token_expired");

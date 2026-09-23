@@ -97,25 +97,30 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | rejectOrganizationJoinRequest | modified | POST `/api/v1/organization-join-requests/{requestId}/reject` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
 | deleteOrganization | modified | DELETE `/api/v1/admin/organizations/{organizationId}` | `none` | Organization participation and Server administrator lifecycle | Private Web<br>Desktop |
 | listDeletedMeetings | modified | GET `/api/v1/workspaces/{workspaceId}/trash/meetings` | `new public contract` | List recoverable deleted meetings within the current Workspace permissions | Web trash |
-| getWorkspaceMemory | modified | GET `/api/v1/workspaces/{workspaceId}/memory` | `none` | Workspace-scoped memory backed by canonical Dahlia data | Private Web |
-| setWorkspaceMemory | modified | PUT `/api/v1/workspaces/{workspaceId}/memory` | `none` | Workspace-scoped memory backed by canonical Dahlia data | Private Web |
 | purgeWorkspaceMemory | modified | DELETE `/api/v1/workspaces/{workspaceId}/memory` | `none` | Workspace-scoped memory backed by canonical Dahlia data | Private Web |
-| listSharedMemories | modified | GET `/api/v1/workspaces/{workspaceId}/memory/notes` | `none` | Workspace-scoped memory backed by canonical Dahlia data | Private Web |
-| saveSharedMemory | modified | PUT `/api/v1/workspaces/{workspaceId}/memory/notes` | `none` | Workspace-scoped memory backed by canonical Dahlia data | Private Web |
-| deleteSharedMemory | modified | DELETE `/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}` | `none` | Workspace-scoped memory backed by canonical Dahlia data | Private Web |
-| getAiPreferences | modified | GET `/api/v1/chat/preferences` | `new public contract` | Read owner-only response preferences | apps/server/src/client/ChatMemory.tsx |
-| setAiPreferences | modified | PUT `/api/v1/chat/preferences` | `new public contract` | Edit and forget owner-only response preferences | apps/server/src/client/ChatMemory.tsx |
+| getWorkingMemory | modified | GET `/api/v1/user/memory/working` | `new public contract` | Read owner-only Working Memory | apps/server/src/client/ChatMemory.tsx |
+| updateWorkingMemory | modified | PATCH `/api/v1/user/memory/working` | `new public contract` | Edit one owner-only Working Memory section | apps/server/src/client/ChatMemory.tsx |
 | getAiLiveContext | modified | GET `/api/v1/chat/{threadId}/live-context` | `new public contract` | Read authorized meeting freshness | apps/server/src/client/ChatMemory.tsx |
 | setAiLiveContext | modified | PUT `/api/v1/chat/{threadId}/live-context` | `new public contract` | Select a same-Workspace meeting for live context | apps/server/src/client/ChatMemory.tsx |
-| memoryScopes | modified | GET `/api/v1/memory/scopes` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
-| memoryList | modified | POST `/api/v1/memory/list` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
-| memoryGet | modified | POST `/api/v1/memory/get` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
-| memorySave | modified | POST `/api/v1/memory/save` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
-| memoryDelete | modified | POST `/api/v1/memory/delete` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
-| memoryRecall | modified | POST `/api/v1/memory/recall` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
-| memoryReflect | modified | POST `/api/v1/memory/reflect` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
-| memoryStatus | modified | POST `/api/v1/memory/status` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
-| memoryConfigure | modified | POST `/api/v1/memory/configure` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
+| memoryScopes | modified | GET `/api/v1/user/memory/scopes` | `none` | Dahlia Memory personal and Workspace scopes | Private Web |
+| personalMemoryList | modified | GET `/api/v1/user/memory/notes` | `none` | Personal canonical memory list in an owner-scoped URL | Private Web |
+| personalMemoryGet | modified | GET `/api/v1/user/memory/notes/{noteId}` | `none` | Personal canonical memory get in an owner-scoped URL | Private Web |
+| personalMemorySave | modified | POST `/api/v1/user/memory/notes` | `none` | Personal canonical memory save in an owner-scoped URL | Private Web |
+| personalMemoryDelete | modified | DELETE `/api/v1/user/memory/notes/{noteId}` | `none` | Personal canonical memory delete in an owner-scoped URL | Private Web |
+| personalMemoryRecall | modified | POST `/api/v1/user/memory/recall` | `none` | Personal canonical memory recall in an owner-scoped URL | Private Web |
+| personalMemoryReflect | modified | POST `/api/v1/user/memory/reflect` | `none` | Personal canonical memory reflect in an owner-scoped URL | Private Web |
+| personalMemoryStatus | modified | GET `/api/v1/user/memory/analysis/status` | `none` | Personal canonical memory status in an owner-scoped URL | Private Web |
+| personalMemoryConfigure | modified | PATCH `/api/v1/user/memory/analysis/settings` | `none` | Personal canonical memory configure in an owner-scoped URL | Private Web |
+| workspaceMemoryList | modified | GET `/api/v1/workspaces/{workspaceId}/memory/notes` | `none` | Workspace canonical memory list in an owner-scoped URL | Private Web |
+| workspaceMemoryGet | modified | GET `/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}` | `none` | Workspace canonical memory get in an owner-scoped URL | Private Web |
+| workspaceMemorySave | modified | POST `/api/v1/workspaces/{workspaceId}/memory/notes` | `none` | Workspace canonical memory save in an owner-scoped URL | Private Web |
+| workspaceMemoryDelete | modified | DELETE `/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}` | `none` | Workspace canonical memory delete in an owner-scoped URL | Private Web |
+| workspaceMemoryRecall | modified | POST `/api/v1/workspaces/{workspaceId}/memory/recall` | `none` | Workspace canonical memory recall in an owner-scoped URL | Private Web |
+| workspaceMemoryReflect | modified | POST `/api/v1/workspaces/{workspaceId}/memory/reflect` | `none` | Workspace canonical memory reflect in an owner-scoped URL | Private Web |
+| workspaceMemoryStatus | modified | GET `/api/v1/workspaces/{workspaceId}/memory/analysis/status` | `none` | Workspace canonical memory status in an owner-scoped URL | Private Web |
+| workspaceMemoryConfigure | modified | PATCH `/api/v1/workspaces/{workspaceId}/memory/analysis/settings` | `none` | Workspace canonical memory configure in an owner-scoped URL | Private Web |
+| personalMemoryUpdate | modified | PATCH `/api/v1/user/memory/notes/{noteId}` | `none` | Edit a saved note with revision checking | Private Web |
+| workspaceMemoryUpdate | modified | PATCH `/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}` | `none` | Edit a saved note with revision checking | Private Web |
 
 ## Delegated protocols
 
@@ -250,7 +255,7 @@ These concrete endpoints preserve Better Auth/OAuth/OIDC, OpenAI and MCP formats
 | headMcpScreenshot | HEAD `/mcp/resources/workspaces/{workspaceId}/meetings/{meetingId}/screenshots/{screenshotId}/content` | MCP resource HTTP bytes | current Workspace read permission and MCP read scope |
 | signInHeader | POST `/api/auth/header/sign-in` | Better Auth | header |
 
-MCP methods: tools/list, tools/call. Tools: search, query_meetings, query_projects, get_project, get_meeting, get_meeting_transcript, query_screenshots, get_meeting_screenshots, list_memory_scopes, list_memories, get_memory, recall_memory, reflect_memory, save_memory, delete_memory. Read-only. Each call checks its capability scope and current Workspace access. Dahlia Memory requires mcp:memory:read; save/delete require mcp:memory:write and current scope authorization.
+MCP methods: tools/list, tools/call. Tools: search, query_meetings, query_projects, get_project, get_meeting, get_meeting_transcript, query_screenshots, get_meeting_screenshots, list_memory_scopes, list_memories, get_memory, recall_memory, reflect_memory, get_working_memory, update_working_memory, save_memory, delete_memory. Each call checks its capability scope and current Workspace access. Dahlia Memory reads require mcp:memory:read; writes require mcp:memory:write and current scope authorization.
 
 ## Dispatch and fallbacks
 

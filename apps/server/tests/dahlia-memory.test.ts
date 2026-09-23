@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { createApp } from "../src/app";
+import { createWorkerHandler } from "../src/worker";
 import { createServerMcpHandler } from "../src/mcp";
 import type { AppConfig } from "../src/config";
 import type { MemoryGenerator } from "../src/agent/context-service";
@@ -221,7 +222,9 @@ describe("Dahlia Memory", () => {
   it("requires dedicated scopes for MCP and shares the same tools with the internal agent", async () => {
     const f = await fixture();
     try {
-      const handler = createServerMcpHandler(f.config, f.sync, undefined, undefined, undefined, f.memory);
+      const workingMemory = { settings: async () => ({ revision: 0, automatic: true, capacityReached: false, manual: "A private note", learned: "" }),
+        editSettings: async (_identity: unknown, input: { content?: string }) => ({ revision: 1, automatic: true, capacityReached: false, manual: input.content ?? "", learned: "" }) };
+      const handler = createServerMcpHandler(f.config, f.sync, undefined, undefined, undefined, f.memory, workingMemory as never);
       const list = async (scopes: string[]) => {
         const response = await handler.fetch(new Request("http://localhost:5173/mcp", { method: "POST", headers: { "Mcp-Method": "tools/list", "MCP-Protocol-Version": "2026-07-28", "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
           body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: { _meta: { "io.modelcontextprotocol/clientCapabilities": {}, "io.modelcontextprotocol/clientInfo": { name: "test", version: "1" }, "io.modelcontextprotocol/protocolVersion": "2026-07-28" } } }) }), { authInfo: { token: "test", clientId: "test", scopes, extra: { identity: f.owner } } });
@@ -229,8 +232,19 @@ describe("Dahlia Memory", () => {
       };
       expect(await list(["mcp"])).not.toContain('"save_memory"');
       expect(await list(["mcp"])).not.toContain('"list_memories"');
-      const read = await list([MEMORY_READ_SCOPE]); expect(read).toContain('"list_memories"'); expect(read).not.toContain('"save_memory"');
-      expect(await list([MEMORY_WRITE_SCOPE])).toContain('"save_memory"');
+      const read = await list([MEMORY_READ_SCOPE]); expect(read).toContain('"list_memories"'); expect(read).toContain('"get_working_memory"');
+      expect(read).not.toContain('"save_memory"'); expect(read).not.toContain('"update_working_memory"');
+      const write = await list([MEMORY_WRITE_SCOPE]);
+      expect(write).toContain('"save_memory"');
+      expect(write).toContain('"update_working_memory"');
+      const listed = JSON.parse(write) as { result: { tools: Array<{ name: string; inputSchema: { type: string; oneOf: Array<{ properties: Record<string, unknown> }> } }> } };
+      const editSchema = listed.result.tools.find((tool) => tool.name === "update_working_memory")!.inputSchema;
+      expect(editSchema.type).toBe("object");
+      expect(editSchema.oneOf).toHaveLength(2);
+      expect(editSchema.oneOf[0]?.properties).toHaveProperty("content");
+      expect(editSchema.oneOf[0]?.properties).not.toHaveProperty("automatic");
+      expect(editSchema.oneOf[1]?.properties).toHaveProperty("automatic");
+      expect(editSchema.oneOf[1]?.properties).not.toHaveProperty("content");
       const call = async (scopes: string[], name: string, args: unknown, expiresAt = Date.now() / 1000 + 60) => {
         const body = JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name, arguments: args,
           _meta: { "io.modelcontextprotocol/clientCapabilities": {}, "io.modelcontextprotocol/clientInfo": { name: "test", version: "1" }, "io.modelcontextprotocol/protocolVersion": "2026-07-28" } } });
@@ -241,6 +255,12 @@ describe("Dahlia Memory", () => {
         return value;
       };
       const wireNote = f.note("From remote MCP");
+      expect((await call([MEMORY_READ_SCOPE], "get_working_memory", {})).result?.content[0]?.text).toContain("A private note");
+      expect((await call([MEMORY_READ_SCOPE], "update_working_memory", { section: "manual", content: "changed", revision: 0, explicit: true })).error).toBeDefined();
+      expect((await call([MEMORY_WRITE_SCOPE], "update_working_memory", { section: "manual", content: "changed", revision: 0, explicit: true })).result?.content[0]?.text).toContain("changed");
+      const extra = await call([MEMORY_WRITE_SCOPE], "update_working_memory", { section: "settings", automatic: false, content: "leftover", revision: 1, explicit: true });
+      expect(extra.error ?? extra.result?.isError).toBeTruthy();
+      expect((await call([MEMORY_WRITE_SCOPE], "update_working_memory", { section: "settings", automatic: false, revision: 1, explicit: true })).result?.isError).not.toBe(true);
       expect((await call([MEMORY_READ_SCOPE], "save_memory", wireNote)).error).toBeDefined();
       expect((await call([MEMORY_WRITE_SCOPE], "save_memory", wireNote)).result?.content[0]?.text).toContain('"saved":true');
       const expired = await call([MEMORY_WRITE_SCOPE], "delete_memory", { ...wireNote, revision: 1, explicit: true }, 1);
@@ -255,6 +275,23 @@ describe("Dahlia Memory", () => {
       expect(found).toMatchObject({ items: [{ content: "From Claude Code" }] });
       await expect(tools.list_memories.execute!({ scope: "workspace", workspaceId: encodeId("workspace", uuidV7()) }, {
         requestContext: meetingRequestContext(f.owner, f.workspaceId), abortSignal: signal } as never)).rejects.toThrow();
+    } finally { f.close(); }
+  });
+  it("updates private Working Memory in a workspace-pinned AI chat", async () => {
+    const f = await fixture();
+    try {
+      const { workingMemoryEditSchema } = await import("../src/agent/context-model");
+      const editSettings = vi.fn(async (_identity, input) => workingMemoryEditSchema.parse(input));
+      const tools = createDahliaMemoryTools(f.memory, true, { editSettings } as unknown as import("../src/agent/context-store").ChatMemoryStore);
+      if (!("update_working_memory" in tools)) throw new Error("Missing working memory tool");
+      for (const input of [{ section: "manual", content: "User notes", revision: 0, explicit: true },
+        { section: "learned", content: "Learned notes", revision: 1, explicit: true },
+        { section: "settings", automatic: false, revision: 2, explicit: true }]) {
+        expect(await tools.update_working_memory!.execute!(input as never, {
+          requestContext: meetingRequestContext(f.owner, decodeId("workspace", f.workspaceId)), abortSignal: signal,
+        } as never)).toEqual(input);
+      }
+      expect(editSettings).toHaveBeenCalledTimes(3);
     } finally { f.close(); }
   });
   it.each(["route", "explicit-save", "delete", "cancel"])("checks authorization immediately before mutation after %s", async (action) => {
@@ -323,16 +360,45 @@ describe("Dahlia Memory", () => {
       expect(memorySaveSchema.safeParse({ ...input, id }).success).toBe(false);
     }
   });
-  it("exposes canonical memory to Web when analysis is unconfigured", async () => {
+  it.each(["node", "worker"])("exposes canonical Web memory without analysis (%s)", async (runtime) => {
     const f = await fixture();
     try {
-      const app = createApp({ config: { ...f.config, hindsight: undefined }, authStore: f.app });
+      const application = createApp({ config: { ...f.config, hindsight: undefined }, authStore: f.app });
+      const worker = createWorkerHandler(async () => application);
+      const fetchWorker = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+      const app = { request: (path: string, init: RequestInit) => runtime === "node" ? application.request(path, init)
+        : fetchWorker(new Request(new URL(path, f.config.baseUrl), init), {} as Cloudflare.Env, {} as ExecutionContext) };
       const input = f.note("Web memory");
-      const request = (operation: string, value: unknown, email = f.owner.email) => app.request(`/api/v1/memory/${operation}`, { method: "POST", headers: { "Content-Type": "application/json", "X-Forwarded-Email": email }, body: JSON.stringify(value) });
-      expect((await request("save", input)).status).toBe(200);
-      expect(await (await request("list", { scope: "personal" })).json()).toMatchObject({ items: [{ content: "Web memory", protected: true }] });
-      expect(await (await request("list", { scope: "personal" }, f.stranger.email)).json()).toMatchObject({ items: [] });
-      expect((await request("list", { scope: "personal", ownerId: f.owner.userId })).status).toBe(400);
+      const request = (path: string, method = "GET", value?: unknown, email = f.owner.email, workspaceId?: string) => app.request(workspaceId
+        ? `/api/v1/workspaces/${workspaceId}/memory${path}` : `/api/v1/user/memory${path}`,
+      { method, headers: { "Content-Type": "application/json", "X-Forwarded-Email": email }, ...(value === undefined ? {} : { body: JSON.stringify(value) }) });
+      const save = { id: input.id, content: input.content, revision: 0, explicit: true };
+      for (const workspaceId of [undefined, f.workspaceId]) {
+        expect((await request("/notes", "POST", save, f.owner.email, workspaceId)).status).toBe(200);
+        expect(await (await request("/notes", "GET", undefined, f.owner.email, workspaceId)).json()).toMatchObject({ items: [{ content: "Web memory", protected: true }] });
+        expect(await (await request(`/notes/${input.id}`, "GET", undefined, f.owner.email, workspaceId)).json()).toMatchObject({ memory: { revision: 1 } });
+        const edit = { content: "Edited while analysis is off", revision: 1, explicit: true };
+        expect((await request(`/notes/${input.id}`, "PATCH", edit, f.owner.email, workspaceId)).status).toBe(200);
+        expect((await request(`/notes/${input.id}`, "PATCH", { ...edit, content: "Stale update" }, f.owner.email, workspaceId)).status).toBe(409);
+        expect((await request(`/notes/${input.id}`, "PATCH", { ...edit, revision: 0 }, f.owner.email, workspaceId)).status).toBe(400);
+        expect((await request(`/notes/${input.id}?revision=2`, "DELETE", undefined, f.owner.email, workspaceId)).status).toBe(400);
+        expect((await request(`/notes/${input.id}?revision=9007199254740992&explicit=true`, "DELETE", undefined, f.owner.email, workspaceId)).status).toBe(400);
+        expect((await request(`/notes/${input.id}?revision=2&explicit=true`, "DELETE", undefined, f.owner.email, workspaceId)).status).toBe(200);
+        if (workspaceId) {
+          expect((await request("/notes", "POST", save, f.owner.email, workspaceId)).status).toBe(200);
+          expect((await request("", "DELETE", undefined, f.stranger.email, workspaceId)).status).toBe(404);
+          expect((await request("", "DELETE", undefined, f.owner.email, workspaceId)).status).toBe(202);
+          expect(await (await request("/notes", "GET", undefined, f.owner.email, workspaceId)).json()).toMatchObject({ items: [] });
+        }
+        expect((await request("/notes", "POST", { ...save, scope: "personal" }, f.owner.email, workspaceId)).status).toBe(400);
+        expect((await request("/notes?scope=personal", "GET", undefined, f.owner.email, workspaceId)).status).toBe(400);
+        expect((await request("/analysis/status", "GET", undefined, f.owner.email, workspaceId)).status).toBe(200);
+        expect((await request("/save", "POST", save, f.owner.email, workspaceId)).status).toBe(404);
+        expect((await request("/notes", "PUT", save, f.owner.email, workspaceId)).status).toBe(405);
+      }
+      expect(await (await request("/notes", "GET", undefined, f.stranger.email)).json()).toMatchObject({ items: [] });
+      expect((await request("/notes", "GET", undefined, f.stranger.email, f.workspaceId)).status).toBe(404);
+      expect((await app.request("/api/v1/memory/auto/save", { method: "POST", headers: { "Content-Type": "application/json", "X-Forwarded-Email": f.owner.email }, body: JSON.stringify(input) })).status).toBe(404);
     } finally { f.close(); }
   });
 });
