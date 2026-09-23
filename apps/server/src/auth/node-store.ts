@@ -1,3 +1,4 @@
+import { ChatMemoryStore } from "../agent/context-store";
 import { rotateWorkspaceKeys } from "../encryption/rotation";
 import { createSummaryJobStore, type SummaryJobStore } from "../summary/store";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -27,6 +28,7 @@ import { createImageAnalysisStore, type ImageAnalysisStore } from "../image-anal
 
 export interface NodeApplicationStore extends ApplicationStore {
   aiHistory?: AiHistoryService;
+  chatMemoryStore?: ChatMemoryStore;
   migrate(): Promise<void>;
   rotateEncryptionKeys(apply: boolean): Promise<{ checked: number; pending: number; rotated: number }>;
   searchIndex?: SearchIndexStore;
@@ -51,6 +53,7 @@ export function createNodeApplicationStore(
         config.autoCreateOrgOnSignup,
       ),
       aiHistory: createAiHistoryService(connection.pool),
+      chatMemoryStore: config.chatMemoryModel ? new ChatMemoryStore(connection.pool) : undefined,
       migrate: () => migrateApplicationDatabase(
         config,
         postgresMigrations(migrations),

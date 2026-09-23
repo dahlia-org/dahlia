@@ -1109,6 +1109,50 @@
       "consumers": [
         "Private Web"
       ]
+    },
+    {
+      "operationId": "getAiPreferences",
+      "method": "GET",
+      "path": "/api/v1/chat/preferences",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Read owner-only response preferences",
+      "consumers": [
+        "apps/server/src/client/ChatMemory.tsx"
+      ]
+    },
+    {
+      "operationId": "setAiPreferences",
+      "method": "PUT",
+      "path": "/api/v1/chat/preferences",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Edit and forget owner-only response preferences",
+      "consumers": [
+        "apps/server/src/client/ChatMemory.tsx"
+      ]
+    },
+    {
+      "operationId": "getAiLiveContext",
+      "method": "GET",
+      "path": "/api/v1/chat/{threadId}/live-context",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Read authorized meeting freshness",
+      "consumers": [
+        "apps/server/src/client/ChatMemory.tsx"
+      ]
+    },
+    {
+      "operationId": "setAiLiveContext",
+      "method": "PUT",
+      "path": "/api/v1/chat/{threadId}/live-context",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Select a same-Workspace meeting for live context",
+      "consumers": [
+        "apps/server/src/client/ChatMemory.tsx"
+      ]
     }
   ],
   "delegated": [

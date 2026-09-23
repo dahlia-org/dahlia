@@ -1,0 +1,1463 @@
+{
+  "version": "8",
+  "dialect": "postgres",
+  "id": "29c76802-4647-4c27-b636-586cf066768b",
+  "prevIds": [
+    "10038518-a2bf-4cce-b536-71809b70c8b3"
+  ],
+  "ddl": [
+    {
+      "name": "agent",
+      "entityType": "schemas"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "live_contexts",
+      "entityType": "tables",
+      "schema": "agent"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "memory_jobs",
+      "entityType": "tables",
+      "schema": "agent"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "mastra_messages",
+      "entityType": "tables",
+      "schema": "agent"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "mastra_observational_memory",
+      "entityType": "tables",
+      "schema": "agent"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "mastra_resources",
+      "entityType": "tables",
+      "schema": "agent"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "mastra_threads",
+      "entityType": "tables",
+      "schema": "agent"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "ai_thread_runs",
+      "entityType": "tables",
+      "schema": "agent"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "meeting_id",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "live_contexts"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "workspace_id",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "live_contexts"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "snapshot",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "live_contexts"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "live_contexts"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease_until",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "live_contexts"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "memory_jobs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "memory_jobs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "thread_id",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "memory_jobs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "kind",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "memory_jobs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "message_id",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "memory_jobs"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "revision",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "memory_jobs"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "memory_jobs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "memory_jobs"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease_until",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "memory_jobs"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "memory_jobs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_messages"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "thread_id",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_messages"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "content",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_messages"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "role",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_messages"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "type",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_messages"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "createdAt",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_messages"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "createdAtZ",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_messages"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "resourceId",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_messages"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lookupKey",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "scope",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "resourceId",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "threadId",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "activeObservations",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "activeObservationsPendingUpdate",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "originType",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "config",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "generationCount",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lastObservedAt",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lastObservedAtZ",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lastReflectionAt",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lastReflectionAtZ",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "pendingMessageTokens",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "totalTokensObserved",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "observationTokenCount",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "isObserving",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "isReflecting",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "observedMessageIds",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "observedTimezone",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "bufferedObservations",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "bufferedObservationTokens",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "bufferedMessageIds",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "bufferedReflection",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "bufferedReflectionTokens",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "bufferedReflectionInputTokens",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "reflectedObservationLineCount",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "bufferedObservationChunks",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "isBufferingObservation",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "isBufferingReflection",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lastBufferedAtTokens",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lastBufferedAtTime",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lastBufferedAtTimeZ",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "metadata",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "createdAt",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "createdAtZ",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "updatedAt",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "updatedAtZ",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_resources"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "workingMemory",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_resources"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "metadata",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_resources"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "createdAt",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_resources"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "createdAtZ",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_resources"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "updatedAt",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_resources"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "updatedAtZ",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_resources"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_threads"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "resourceId",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_threads"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "title",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_threads"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "metadata",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_threads"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "createdAt",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_threads"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "createdAtZ",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_threads"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "updatedAt",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_threads"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "updatedAtZ",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_threads"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "thread_id",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "ai_thread_runs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "run_id",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "ai_thread_runs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "resource_id",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "ai_thread_runs"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "started_at",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "ai_thread_runs"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "ai_thread_runs"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "available_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "agent_memory_due_idx",
+      "entityType": "indexes",
+      "schema": "agent",
+      "table": "memory_jobs"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "thread_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "createdAt",
+          "isExpression": false,
+          "asc": false,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "agent_mastra_messages_thread_id_createdat_idx",
+      "entityType": "indexes",
+      "schema": "agent",
+      "table": "mastra_messages"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "lookupKey",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "agent_om_lookup_idx",
+      "entityType": "indexes",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "resourceId",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "createdAt",
+          "isExpression": false,
+          "asc": false,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "agent_mastra_threads_resourceid_createdat_idx",
+      "entityType": "indexes",
+      "schema": "agent",
+      "table": "mastra_threads"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "meeting_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "meetings",
+      "columnsTo": [
+        "meeting_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "live_contexts_meeting_id_meetings_meeting_id_fkey",
+      "entityType": "fks",
+      "schema": "agent",
+      "table": "live_contexts"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "thread_id"
+      ],
+      "schemaTo": "agent",
+      "tableTo": "mastra_threads",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "memory_jobs_thread_id_mastra_threads_id_fkey",
+      "entityType": "fks",
+      "schema": "agent",
+      "table": "memory_jobs"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "threadId"
+      ],
+      "schemaTo": "agent",
+      "tableTo": "mastra_threads",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "mastra_observational_memory_threadId_mastra_threads_id_fkey",
+      "entityType": "fks",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "thread_id"
+      ],
+      "schemaTo": "agent",
+      "tableTo": "mastra_threads",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "ai_thread_runs_thread_id_mastra_threads_id_fkey",
+      "entityType": "fks",
+      "schema": "agent",
+      "table": "ai_thread_runs"
+    },
+    {
+      "columns": [
+        "meeting_id"
+      ],
+      "nameExplicit": false,
+      "name": "live_contexts_pkey",
+      "schema": "agent",
+      "table": "live_contexts",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "memory_jobs_pkey",
+      "schema": "agent",
+      "table": "memory_jobs",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "mastra_messages_pkey",
+      "schema": "agent",
+      "table": "mastra_messages",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "mastra_observational_memory_pkey",
+      "schema": "agent",
+      "table": "mastra_observational_memory",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "mastra_resources_pkey",
+      "schema": "agent",
+      "table": "mastra_resources",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "mastra_threads_pkey",
+      "schema": "agent",
+      "table": "mastra_threads",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "thread_id"
+      ],
+      "nameExplicit": false,
+      "name": "ai_thread_runs_pkey",
+      "schema": "agent",
+      "table": "ai_thread_runs",
+      "entityType": "pks"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "EXISTS (SELECT 1 FROM app.meetings m WHERE m.meeting_id = \"agent\".\"live_contexts\".\"meeting_id\" AND m.workspace_id = \"agent\".\"live_contexts\".\"workspace_id\" AND app.current_identity_can_read_workspace(m.workspace_id))",
+      "withCheck": "EXISTS (SELECT 1 FROM app.meetings m WHERE m.meeting_id = \"agent\".\"live_contexts\".\"meeting_id\" AND m.workspace_id = \"agent\".\"live_contexts\".\"workspace_id\" AND app.current_identity_can_read_workspace(m.workspace_id))",
+      "name": "agent_live_reader",
+      "entityType": "policies",
+      "schema": "agent",
+      "table": "live_contexts"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"agent\".\"memory_jobs\".\"user_id\" = nullif(current_setting('app.user_id', true), '') AND EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"memory_jobs\".\"thread_id\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n)",
+      "withCheck": "\"agent\".\"memory_jobs\".\"user_id\" = nullif(current_setting('app.user_id', true), '') AND EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"memory_jobs\".\"thread_id\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n)",
+      "name": "agent_memory_job_owner",
+      "entityType": "policies",
+      "schema": "agent",
+      "table": "memory_jobs"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "current_setting('app.maintenance', true) = 'agent-memory'",
+      "withCheck": null,
+      "name": "agent_memory_job_dispatch",
+      "entityType": "policies",
+      "schema": "agent",
+      "table": "memory_jobs"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"mastra_messages\".\"thread_id\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n) AND (\"agent\".\"mastra_messages\".\"resourceId\" IS NULL OR \"agent\".\"mastra_messages\".\"resourceId\" = nullif(current_setting('app.user_id', true), ''))",
+      "withCheck": "EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"mastra_messages\".\"thread_id\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n) AND (\"agent\".\"mastra_messages\".\"resourceId\" IS NULL OR \"agent\".\"mastra_messages\".\"resourceId\" = nullif(current_setting('app.user_id', true), ''))",
+      "name": "agent_message_owner",
+      "entityType": "policies",
+      "schema": "agent",
+      "table": "mastra_messages"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"agent\".\"mastra_observational_memory\".\"scope\" = 'thread' AND \"agent\".\"mastra_observational_memory\".\"resourceId\" = nullif(current_setting('app.user_id', true), '') AND EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"mastra_observational_memory\".\"threadId\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n)",
+      "withCheck": "\"agent\".\"mastra_observational_memory\".\"scope\" = 'thread' AND \"agent\".\"mastra_observational_memory\".\"resourceId\" = nullif(current_setting('app.user_id', true), '') AND EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"mastra_observational_memory\".\"threadId\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n)",
+      "name": "agent_observation_owner",
+      "entityType": "policies",
+      "schema": "agent",
+      "table": "mastra_observational_memory"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"agent\".\"mastra_resources\".\"id\" = nullif(current_setting('app.user_id', true), '')",
+      "withCheck": "\"agent\".\"mastra_resources\".\"id\" = nullif(current_setting('app.user_id', true), '')",
+      "name": "agent_resource_owner",
+      "entityType": "policies",
+      "schema": "agent",
+      "table": "mastra_resources"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"agent\".\"mastra_threads\".\"resourceId\" = nullif(current_setting('app.user_id', true), '')",
+      "withCheck": "\"agent\".\"mastra_threads\".\"resourceId\" = nullif(current_setting('app.user_id', true), '')",
+      "name": "agent_thread_owner",
+      "entityType": "policies",
+      "schema": "agent",
+      "table": "mastra_threads"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"agent\".\"ai_thread_runs\".\"resource_id\" = nullif(current_setting('app.user_id', true), '') AND EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"ai_thread_runs\".\"thread_id\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n)",
+      "withCheck": "\"agent\".\"ai_thread_runs\".\"resource_id\" = nullif(current_setting('app.user_id', true), '') AND EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"ai_thread_runs\".\"thread_id\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n)",
+      "name": "ai_thread_run_owner",
+      "entityType": "policies",
+      "schema": "agent",
+      "table": "ai_thread_runs"
+    }
+  ],
+  "renames": []
+}

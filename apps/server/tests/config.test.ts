@@ -308,3 +308,17 @@ describe("configuration", () => {
       .toThrow("DAHLIA_ADMIN_EMAIL is no longer supported");
   });
 });
+
+
+describe("chat memory configuration", () => {
+  const env = { DAHLIA_AUTH_TYPE: "header", DAHLIA_DATABASE_TYPE: "postgres", DAHLIA_DATABASE_URL: "postgresql://localhost/test",
+    DAHLIA_AI_BACKEND: "openai", OPENAI_API_KEY: "test", DAHLIA_FOUNDATION_MODELS: "gpt-test", DAHLIA_CHAT_MEMORY_MODEL: "gpt-test" };
+  it("requires a configured model, inference credentials and persistent history storage", () => {
+    expect(loadConfig(env).chatMemoryModel).toBe("gpt-test");
+    expect(loadConfig({ ...env, DAHLIA_CHAT_MEMORY_MODEL: "" }).chatMemoryModel).toBeUndefined();
+    expect(() => loadConfig({ ...env, DAHLIA_CHAT_MEMORY_MODEL: "other" })).toThrow("DAHLIA_CHAT_MEMORY_MODEL");
+    expect(() => loadConfig({ ...env, DAHLIA_DATABASE_TYPE: "sqlite", DAHLIA_DATABASE_URL: "file:test.sqlite" })).toThrow("DAHLIA_CHAT_MEMORY_MODEL");
+    expect(() => loadConfig({ ...env, OPENAI_API_KEY: "" })).toThrow("DAHLIA_CHAT_MEMORY_MODEL");
+    expect(() => loadConfig({ ...env, DAHLIA_AI_BACKEND: "databricks", DATABRICKS_HOST: "workspace.example" })).toThrow("DATABRICKS_CLIENT_ID");
+  });
+});

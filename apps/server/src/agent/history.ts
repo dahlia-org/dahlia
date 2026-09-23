@@ -80,7 +80,7 @@ function configureIdentity(client: PoolClient, identity: Identity) {
   return client.query("SELECT set_config('app.user_id', $1, true)", [identity.userId]);
 }
 
-async function withIdentityTransaction<T>(pool: Pool, identity: Identity,
+export async function withIdentityTransaction<T>(pool: Pool, identity: Identity,
   action: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
   let releaseError: Error | undefined;
@@ -200,6 +200,21 @@ export function createAiHistoryService(pool: Pool): AiHistoryService {
         const thread = await client.query<{ id: string }>(`SELECT id FROM agent.mastra_threads
           WHERE id = $1 AND metadata->>'kind' = 'dahlia-chat'`, [threadId]);
         if (!thread.rowCount) return "missing";
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))", [identity.userId]);
+        const profile = await client.query<{ workingMemory: string; metadata: { preferences?: { revision: number; sources: Record<string, { threadId: string }> } } }>(
+          'SELECT "workingMemory", metadata FROM agent.mastra_resources WHERE id = $1', [identity.userId]);
+        const row = profile.rows[0];
+        const preferences = row?.metadata?.preferences;
+        if (row?.workingMemory && preferences) {
+          const values = JSON.parse(row.workingMemory) as Record<string, unknown>;
+          const sourcedKeys = Object.entries(preferences.sources).filter(([, source]) => source.threadId === threadId).map(([key]) => key);
+          for (const key of sourcedKeys) { values[key] = null; delete preferences.sources[key]; }
+          if (sourcedKeys.length) {
+            preferences.revision++;
+            await client.query('UPDATE agent.mastra_resources SET "workingMemory" = $2, metadata = $3, "updatedAt" = now(), "updatedAtZ" = now() WHERE id = $1',
+              [identity.userId, JSON.stringify(values), JSON.stringify(row.metadata)]);
+          }
+        }
         await client.query("DELETE FROM agent.mastra_messages WHERE thread_id = $1", [threadId]);
         await client.query("DELETE FROM agent.mastra_threads WHERE id = $1", [threadId]);
         return "deleted" as const;

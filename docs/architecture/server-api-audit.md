@@ -103,6 +103,10 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | listSharedMemories | modified | GET `/api/v1/workspaces/{workspaceId}/memory/notes` | `none` | Workspace-scoped memory backed by canonical Dahlia data | Private Web |
 | saveSharedMemory | modified | PUT `/api/v1/workspaces/{workspaceId}/memory/notes` | `none` | Workspace-scoped memory backed by canonical Dahlia data | Private Web |
 | deleteSharedMemory | modified | DELETE `/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}` | `none` | Workspace-scoped memory backed by canonical Dahlia data | Private Web |
+| getAiPreferences | modified | GET `/api/v1/chat/preferences` | `new public contract` | Read owner-only response preferences | apps/server/src/client/ChatMemory.tsx |
+| setAiPreferences | modified | PUT `/api/v1/chat/preferences` | `new public contract` | Edit and forget owner-only response preferences | apps/server/src/client/ChatMemory.tsx |
+| getAiLiveContext | modified | GET `/api/v1/chat/{threadId}/live-context` | `new public contract` | Read authorized meeting freshness | apps/server/src/client/ChatMemory.tsx |
+| setAiLiveContext | modified | PUT `/api/v1/chat/{threadId}/live-context` | `new public contract` | Select a same-Workspace meeting for live context | apps/server/src/client/ChatMemory.tsx |
 
 ## Delegated protocols
 

@@ -8993,6 +8993,446 @@
         }
       }
     },
+    "/api/v1/chat/preferences": {
+      "get": {
+        "operationId": "getAiPreferences",
+        "summary": "Read private response preferences",
+        "tags": [
+          "chat"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "automatic": {
+                      "type": "boolean"
+                    },
+                    "preferences": {
+                      "type": "object",
+                      "properties": {
+                        "language": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "ja",
+                            "en",
+                            "zh",
+                            "ko",
+                            "es",
+                            "fr",
+                            "de",
+                            "pt",
+                            null
+                          ]
+                        },
+                        "format": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "prose",
+                            "bullets",
+                            "code-first",
+                            null
+                          ]
+                        },
+                        "detail": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "concise",
+                            "balanced",
+                            "detailed",
+                            null
+                          ]
+                        },
+                        "explanation": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1,
+                          "maxLength": 240
+                        }
+                      },
+                      "required": [
+                        "language",
+                        "format",
+                        "detail",
+                        "explanation"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "revision",
+                    "automatic",
+                    "preferences"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "put": {
+        "operationId": "setAiPreferences",
+        "summary": "Edit or clear private response preferences with revision checking",
+        "tags": [
+          "chat"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "automatic": {
+                    "type": "boolean"
+                  },
+                  "preferences": {
+                    "type": "object",
+                    "properties": {
+                      "language": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "enum": [
+                          "ja",
+                          "en",
+                          "zh",
+                          "ko",
+                          "es",
+                          "fr",
+                          "de",
+                          "pt",
+                          null
+                        ]
+                      },
+                      "format": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "enum": [
+                          "prose",
+                          "bullets",
+                          "code-first",
+                          null
+                        ]
+                      },
+                      "detail": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "enum": [
+                          "concise",
+                          "balanced",
+                          "detailed",
+                          null
+                        ]
+                      },
+                      "explanation": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 240
+                      }
+                    },
+                    "required": [
+                      "language",
+                      "format",
+                      "detail",
+                      "explanation"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "revision",
+                  "automatic",
+                  "preferences"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "automatic": {
+                      "type": "boolean"
+                    },
+                    "preferences": {
+                      "type": "object",
+                      "properties": {
+                        "language": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "ja",
+                            "en",
+                            "zh",
+                            "ko",
+                            "es",
+                            "fr",
+                            "de",
+                            "pt",
+                            null
+                          ]
+                        },
+                        "format": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "prose",
+                            "bullets",
+                            "code-first",
+                            null
+                          ]
+                        },
+                        "detail": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "concise",
+                            "balanced",
+                            "detailed",
+                            null
+                          ]
+                        },
+                        "explanation": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1,
+                          "maxLength": 240
+                        }
+                      },
+                      "required": [
+                        "language",
+                        "format",
+                        "detail",
+                        "explanation"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "revision",
+                    "automatic",
+                    "preferences"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/chat/{threadId}/live-context": {
+      "get": {
+        "operationId": "getAiLiveContext",
+        "summary": "Read selected meeting context freshness",
+        "tags": [
+          "chat"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^chat_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "threadId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "meetingId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "off",
+                        "pending",
+                        "ready",
+                        "delayed",
+                        "ended"
+                      ]
+                    },
+                    "updatedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "processedThrough": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "meetingId",
+                    "status",
+                    "updatedAt",
+                    "processedThrough"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "put": {
+        "operationId": "setAiLiveContext",
+        "summary": "Select or detach a meeting in the thread Workspace",
+        "tags": [
+          "chat"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^chat_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "threadId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "meetingId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  }
+                },
+                "required": [
+                  "meetingId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success; no response body."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
     "/api/v1/chat/models": {
       "get": {
         "operationId": "getAiModels",

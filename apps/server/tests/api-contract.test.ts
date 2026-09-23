@@ -1,3 +1,5 @@
+import type { ChatMemoryService } from "../src/agent/context-service";
+import { emptyPreferences } from "../src/agent/context-model";
 import { testUserID } from "./public-test-client";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./public-test-client";
@@ -31,7 +33,7 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     },
   };
   function fixture(withAi = false, selectedAiService = aiService, aiHistory?: AiHistoryService,
-    workspaceEncryption?: "none" | "server") {
+    workspaceEncryption?: "none" | "server", chatMemory?: ChatMemoryService) {
     const store = testStore();
     if (withAi) store.sync.isAvailable = async () => true;
     const syncService = withAi ? {
@@ -39,7 +41,7 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
       getWorkspace: async (_identity: unknown, requestedWorkspaceId: string) => requestedWorkspaceId === "01990ab0-0000-7000-8000-000000000001"
         ? { workspaceId: requestedWorkspaceId, encryption: workspaceEncryption } : null,
     } as unknown as MeetingSyncService : undefined;
-    const app = createApp({ config, authStore: store, aiService: withAi ? selectedAiService : undefined, aiHistory, syncService, extensions: [{
+    const app = createApp({ config, authStore: store, aiService: withAi ? selectedAiService : undefined, aiHistory, syncService, chatMemory, extensions: [{
       registerRoutes(app) {
         app.post("/api/v1/custom", (context) => context.json({ extension: true }));
         app.post("/api/v1/workspaces/custom", (context) => context.json({ userId: context.get("identity")?.userId }));
@@ -58,6 +60,27 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
       return runtime === "node" ? app.request(request) : fetchWorker(request, {} as Cloudflare.Env, {} as ExecutionContext);
     };
   }
+
+  it("routes private preferences and live meeting selection through authenticated, validated contracts", async () => {
+    const settings = { revision: 0, automatic: true, preferences: emptyPreferences };
+    let selected: string | null = null;
+    const service = { store: { settings: async () => settings, editSettings: async (_identity: unknown, input: typeof settings) => input },
+      select: async (_identity: unknown, _threadId: string, meetingId: string | null) => { selected = meetingId; },
+      context: async () => ({ status: { meetingId: selected, status: selected ? "pending" : "off", processedThrough: null, updatedAt: null }, context: "" }),
+    } as unknown as ChatMemoryService;
+    const send = fixture(true, aiService, undefined, "none", service);
+    expect((await send("/api/v1/chat/preferences", "GET", undefined, {})).status).toBe(401);
+    expect(await (await send("/api/v1/chat/preferences")).json()).toEqual(settings);
+    const headers = { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" };
+    expect((await send("/api/v1/chat/preferences", "PUT", JSON.stringify({ ...settings, preferences: { ...emptyPreferences, explanation: "x".repeat(241) } }), headers)).status).toBe(400);
+    expect((await send("/api/v1/chat/preferences", "PUT", JSON.stringify(settings), { ...headers, origin: "https://untrusted.example" })).status).toBe(403);
+    const threadId = "01990ab0-0000-7000-8000-000000000010", meetingId = "01990ab0-0000-7000-8000-000000000011";
+    expect((await send(`/api/v1/chat/${threadId}/live-context`, "PUT", JSON.stringify({ meetingId }), headers)).status).toBe(204);
+    expect(selected).toBe(meetingId);
+    expect(await (await send(`/api/v1/chat/${threadId}/live-context`)).json()).toMatchObject({ meetingId, status: "pending" });
+    expect((await send(`/api/v1/chat/${threadId}/live-context`, "PUT", JSON.stringify({ meetingId: null }), headers)).status).toBe(204);
+    expect(selected).toBeNull();
+  });
 
   it("gates AI in the session and streams sanitized Agent events", async () => {
     const send = fixture(true);

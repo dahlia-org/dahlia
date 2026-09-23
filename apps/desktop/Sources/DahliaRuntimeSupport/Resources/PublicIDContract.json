@@ -649,6 +649,9 @@
     "sharedMemoryPage": {
       "items": "array:sharedMemory",
       "nextCursor": "id:sharedMemory"
+    },
+    "aiLiveContext": {
+      "meetingId": "id:meeting"
     }
   },
   "routes": [
@@ -678,6 +681,28 @@
     {
       "path": "/api/v1/workspaces/:workspace/memory/notes/:sharedMemory",
       "response": "pass"
+    },
+    {
+      "path": "/api/v1/chat/preferences",
+      "methods": [
+        "GET",
+        "HEAD",
+        "PUT"
+      ],
+      "response": "pass",
+      "request": "pass",
+      "limit": 131072
+    },
+    {
+      "path": "/api/v1/chat/:aiThread/live-context",
+      "methods": [
+        "GET",
+        "HEAD",
+        "PUT"
+      ],
+      "response": "aiLiveContext",
+      "request": "aiLiveContext",
+      "limit": 131072
     },
     {
       "path": "/api/v1/chat/models"

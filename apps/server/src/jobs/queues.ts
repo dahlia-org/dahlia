@@ -1,3 +1,4 @@
+import type { ChatMemoryService } from "../agent/context-service";
 import type { WorkspaceMemoryService } from "../memory/service";
 import { z } from "zod";
 import type { MeetingSyncStore } from "../sync/types";
@@ -19,6 +20,8 @@ const cursor = z.union([id, z.string().regex(/^[0-9a-f-]{36}\/[0-9a-f-]{36}$/)])
 const scan = z.object({ action: z.literal("scan"), kind, scopeId: id,
   phase: z.enum(["reconcile", "dispatch"]), after: cursor.optional() }).strict();
 export const jobMessageSchema = z.union([
+  z.object({ action: z.literal("chat-memory"), id: z.string().min(1).max(200).optional(), userId: id.optional() }).strict()
+    .refine((message) => (message.id === undefined) === (message.userId === undefined)),
   z.object({ action: z.literal("memory"), workspaceId: id.optional(), after: id.optional() }).strict(),
   z.object({ action: z.literal("scopes"), kind, after: id.optional(), userId: id.optional() }).strict(),
   scan.refine((value) => !value.after || (value.kind === "search") === value.after.includes("/")),
@@ -52,7 +55,7 @@ export interface WorkerJobStores {
 
 export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobStores,
   syncStore: MeetingSyncStore, sync: MeetingSyncService,
-  methods: readonly SummaryMethod[], captioner?: ImageCaptioner, embedder?: SearchEmbedder, memory?: WorkspaceMemoryService) {
+  methods: readonly SummaryMethod[], captioner?: ImageCaptioner, embedder?: SearchEmbedder, memory?: WorkspaceMemoryService, chatMemory?: ChatMemoryService) {
   const queues = {
     summary: methods.length ? bindings.DAHLIA_SUMMARY_QUEUE : undefined,
     image: captioner ? bindings.DAHLIA_IMAGE_QUEUE : undefined,
@@ -72,6 +75,7 @@ export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobSt
     },
     async schedule() {
       const results = await Promise.allSettled([
+        chatMemory ? bindings.DAHLIA_MEMORY_QUEUE?.send({ action: "chat-memory" }) : undefined,
         memory ? bindings.DAHLIA_MEMORY_QUEUE?.send({ action: "memory" }) : undefined,
         ...Object.entries(queues).map(([kind, queue]) => queue?.send({ kind: kind as JobKind, action: "scopes" })),
       ]);
@@ -80,6 +84,18 @@ export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobSt
     },
     async consume(body: unknown, signal: AbortSignal) {
       const message = jobMessageSchema.parse(body);
+      if (message.action === "chat-memory") {
+        const queue = bindings.DAHLIA_MEMORY_QUEUE;
+        if (!queue || !chatMemory) throw new Error("chat_memory_unavailable");
+        if (message.id && message.userId) {
+          const delaySeconds = await chatMemory.step(message.id, message.userId, signal);
+          if (delaySeconds !== undefined) await queue.send(message, { delaySeconds });
+        } else {
+          const due = await chatMemory.store.due();
+          if (due.length) await queue.sendBatch(due.map(({ id, userId }) => ({ body: { action: "chat-memory", id, userId } })));
+        }
+        return;
+      }
       if (message.action === "memory") {
         const queue = bindings.DAHLIA_MEMORY_QUEUE;
         if (!queue || !memory) throw new Error("memory_queue_unavailable");

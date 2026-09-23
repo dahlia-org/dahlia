@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { Memory } from "@mastra/memory";
+import { InMemoryStore } from "@mastra/core/storage";
 
 import { aiChatSchema, createAiService } from "../src/agent/service";
 import { createMeetingTools, meetingRequestContext } from "../src/agent/tools";
@@ -119,6 +121,29 @@ describe("AI chat boundary", () => {
     expect(aiChatSchema.safeParse({ workspaceId: "workspace", model: "model", reasoningEffort: "high", messages: [
       { role: "user", content: "x".repeat(16_001) },
     ] }).success).toBe(false);
+  });
+
+  it("keeps native memory recall optional while retaining strict meeting tools", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const transport = vi.fn<typeof fetch>(async () => { throw new Error("captured"); });
+    vi.stubGlobal("fetch", transport);
+    try {
+      const config = { provider: { backend: "openai", baseUrl: "https://provider.example/v1", apiKey: "test" },
+        baseUrl: "https://dahlia.example", foundationModels: ["test"], chatMemoryModel: "test" } as AppConfig;
+      const gateway = { models: async () => ({ data: [{ id: "test", display_name: "Test" }],
+        models: [{ slug: "test", display_name: "Test", supported_in_api: true, visibility: "list", default_reasoning_level: "low",
+          supported_reasoning_levels: [{ effort: "low", description: "Fast" }] }] }) } as unknown as GatewayService;
+      const memory = new Memory({ storage: new InMemoryStore(), vector: false, options: { semanticRecall: false } });
+      await memory.createThread({ threadId: "thread", resourceId: identity.userId });
+      const service = createAiService(config, gateway, createMeetingTools({} as MeetingSyncService));
+      const run = service.stream({ workspaceId, model: "test", reasoningEffort: "low", messages: [{ role: "user", content: "Hello" }],
+        history: { memory, threadId: "thread", resourceId: identity.userId } }, identity, new Request("https://dahlia.example/api/v1/chat"));
+      await expect(run[Symbol.asyncIterator]().next()).rejects.toThrow("captured");
+      const body = JSON.parse(String(transport.mock.calls[0]![1]?.body)) as { tools: Array<{ name: string; strict?: boolean; parameters: { required?: string[] } }> };
+      expect(body.tools.find((tool) => tool.name === "recall")).toMatchObject({ strict: false });
+      expect(body.tools.find((tool) => tool.name === "recall")!.parameters.required ?? []).not.toContain("partIndex");
+      expect(body.tools.find((tool) => tool.name === "query_meetings")).toMatchObject({ strict: true });
+    } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
   });
 
   it("uses the configured OpenAI Responses endpoint and credentials", async () => {

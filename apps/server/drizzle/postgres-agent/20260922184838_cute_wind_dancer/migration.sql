@@ -1,0 +1,2 @@
+ALTER TABLE "agent"."live_contexts" ADD CONSTRAINT "live_contexts_meeting_id_meetings_meeting_id_fkey" FOREIGN KEY ("meeting_id") REFERENCES "app"."meetings"("meeting_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "agent"."mastra_observational_memory" ADD CONSTRAINT "mastra_observational_memory_threadId_mastra_threads_id_fkey" FOREIGN KEY ("threadId") REFERENCES "agent"."mastra_threads"("id") ON DELETE CASCADE;
