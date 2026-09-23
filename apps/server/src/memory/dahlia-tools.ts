@@ -27,7 +27,7 @@ export function createDahliaMemoryTools(memory: DahliaMemory, writable = true) {
         const reauthorize = async () => { signal.throwIfAborted(); await authorize?.(); signal.throwIfAborted(); };
         await reauthorize();
         const result = await run(identity, args, signal, reauthorize);
-        await reauthorize();
+        if (readOnly) await reauthorize();
         return result;
       },
     }), inputSchema);

@@ -325,6 +325,31 @@ function SignIn({ brand }: { brand: DashboardBrand }) {
   );
 }
 
+export function OAuthConsentDetails({ query }: { query: string }) {
+  const params = new URLSearchParams(query);
+  const scopes = [...new Set(params.getAll("scope").flatMap((value) => value.split(/\s+/)).filter(Boolean))];
+  const descriptions: Record<string, string> = {
+    "mcp:memory:read": uiText("Read your personal memories and memories in Workspaces you can access.", "個人の記憶と、アクセスできる Workspace の記憶を読み取ります。"),
+    "mcp:memory:write": uiText("Read, save, modify and delete your personal memories and memories in Workspaces you can edit. Shared saves and deletion require your explicit instruction.", "個人の記憶と、編集権限のある Workspace の記憶を読み取り・保存・変更・削除します。共有への保存と削除には明示的な依頼が必要です。"),
+    mcp: uiText("Search and read meetings in your accessible Workspaces.", "アクセスできる Workspace の会議を検索・参照します。"),
+    "mcp:read": uiText("Search and read meetings in your accessible Workspaces.", "アクセスできる Workspace の会議を検索・参照します。"),
+    "all-apis": uiText("Use the Dahlia AI Gateway and authorized Dahlia APIs.", "Dahlia AI Gateway と認可された Dahlia API を利用します。"),
+    openid: uiText("Identify your account.", "アカウントを識別します。"),
+    profile: uiText("Read your profile.", "プロフィールを読み取ります。"),
+    email: uiText("Read your email address.", "メールアドレスを読み取ります。"),
+    offline_access: uiText("Keep access using refresh tokens until revoked.", "取り消されるまで更新トークンでアクセスを継続します。"),
+  };
+  return <div className="auth-copy">
+    <h1>{uiText("Allow this client to access Dahlia?", "このクライアントに Dahlia へのアクセスを許可しますか？")}</h1>
+    <dl>
+      <dt>{uiText("Client ID", "クライアント ID")}</dt><dd className="break-all">{params.get("client_id") ?? uiText("Not specified", "未指定")}</dd>
+      <dt>{uiText("Resources", "アクセス先")}</dt><dd>{params.getAll("resource").length ? params.getAll("resource").map((value) => <div className="break-all" key={value}>{value}</div>) : uiText("Dahlia default resource", "Dahlia の既定リソース")}</dd>
+    </dl>
+    <h2>{uiText("Requested permissions", "要求された権限")}</h2>
+    <ul>{scopes.map((scope) => <li key={scope}><code>{scope}</code>: {descriptions[scope] ?? uiText("Additional requested permission", "追加の要求権限")}</li>)}</ul>
+  </div>;
+}
+
 function Consent({ brand }: { brand: DashboardBrand }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
@@ -351,14 +376,10 @@ function Consent({ brand }: { brand: DashboardBrand }) {
     <main className="auth-page">
       <section className="auth-card compact">
         <Brand brand={brand} />
-        <div className="auth-copy">
-          <span className="eyebrow">Dahlia for macOS</span>
-          <h1>Allow this Mac to use the Dahlia AI Gateway?</h1>
-          <p>This grants the app a short-lived access token. Provider credentials are never sent to your Mac.</p>
-        </div>
+        <OAuthConsentDetails query={oauthQuery} />
         <div className="button-row">
           <button className="secondary" disabled={pending} onClick={() => void decide(false)}>{uiText("Cancel", "キャンセル")}</button>
-          <button className="primary" disabled={pending} onClick={() => void decide(true)}>Allow</button>
+          <button className="primary" disabled={pending} onClick={() => void decide(true)}>{uiText("Allow", "許可")}</button>
         </div>
         {error && <p className="error">{error}</p>}
       </section>

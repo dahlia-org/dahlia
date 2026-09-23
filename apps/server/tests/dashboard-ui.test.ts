@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   App,
+  OAuthConsentDetails,
   HeaderAuthenticationNotice,
   Organization,
   ScreenshotFigure,
@@ -787,4 +788,23 @@ it("rejects retired Web paths and workspace ID prefixes", () => {
   expect(resolveDashboardRoute(`/workspaces/${id.replace("ws_", "vlt_")}`, capabilities)).toEqual({ redirect: "/dashboard" });
   expect(resolveDashboardRoute("/vaults/vlt_invalid", capabilities)).toEqual({ redirect: "/dashboard" });
   expect(resolveDashboardRoute(`/vaults/${id.replace("ws_", "vlt_")}`, { ...capabilities, sync: false })).toEqual({ redirect: "/dashboard" });
+});
+
+it("discloses the OAuth client, resources and exact memory permissions", () => {
+  const query = new URLSearchParams({ client_id: "external-client", resource: "https://dahlia.example/mcp", scope: "openid mcp:memory:write" });
+  const html = renderToStaticMarkup(createElement(OAuthConsentDetails, { query: query.toString() }));
+  expect(html).toContain("external-client");
+  expect(html).toContain("https://dahlia.example/mcp");
+  expect(html).toContain("mcp:memory:write");
+  expect(html).toMatch(/delete|削除/);
+  expect(html).not.toContain("Allow this Mac");
+  query.set("scope", "mcp:memory:read");
+  const read = renderToStaticMarkup(createElement(OAuthConsentDetails, { query: query.toString() }));
+  expect(read).toContain("mcp:memory:read");
+  expect(read).not.toMatch(/delete|削除/);
+  query.set("scope", "all-apis offline_access");
+  const gateway = renderToStaticMarkup(createElement(OAuthConsentDetails, { query: query.toString() }));
+  expect(gateway).toContain("AI Gateway");
+  expect(gateway).toContain("offline_access");
+  expect(gateway).not.toContain("mcp:memory:write");
 });

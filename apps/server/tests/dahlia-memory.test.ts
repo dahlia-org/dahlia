@@ -281,6 +281,40 @@ describe("Dahlia Memory", () => {
       }
     } finally { f.close(); }
   });
+  it.each(["save", "delete"])("acknowledges a committed %s even if authorization expires afterward", async (action) => {
+    const f = await fixture();
+    try {
+      const tools = createDahliaMemoryTools(f.memory);
+      if (!("save_memory" in tools) || !("delete_memory" in tools)) throw new Error("Missing write tools");
+      const input = f.note("Committed");
+      if (action === "delete") await f.memory.save(f.owner, input);
+      let authorized = true;
+      const authorize = async () => { if (!authorized) throw new Error("token_expired"); };
+      const context = { requestContext: meetingRequestContext(f.owner, undefined, authorize), abortSignal: signal } as never;
+      const store = f.memory.stores.personal;
+      if (action === "save") {
+        const save = store.saveNote.bind(store);
+        vi.spyOn(store, "saveNote").mockImplementation(async (...args) => { const result = await save(...args); authorized = false; return result; });
+        expect(await tools.save_memory.execute!(input, context)).toMatchObject({ saved: true });
+        expect((await f.memory.get(f.owner, input)).memory.content).toBe("Committed");
+      } else {
+        const remove = store.deleteNote.bind(store);
+        vi.spyOn(store, "deleteNote").mockImplementation(async (...args) => { await remove(...args); authorized = false; });
+        expect(await tools.delete_memory.execute!({ scope: "personal", id: input.id, revision: 1, explicit: true }, context)).toMatchObject({ deleted: true });
+        await expect(f.memory.get(f.owner, input)).rejects.toMatchObject({ code: "memory_not_found" });
+      }
+      await expect(tools.list_memories.execute!({ scope: "personal" }, context)).rejects.toThrow("token_expired");
+    } finally { f.close(); }
+  });
+  it("accepts only UUIDv7 memory IDs at the shared save boundary", () => {
+    const input = { scope: "personal", content: "x", revision: 0 };
+    expect(memorySaveSchema.safeParse({ ...input, id: encodeId("sharedMemory", uuidV7()) }).success).toBe(true);
+    for (const id of ["smem_invalid", encodeId("meeting", uuidV7()),
+      encodeId("sharedMemory", "00000000-0000-4000-8000-000000000000"),
+      encodeId("sharedMemory", "00000000-0000-7000-0000-000000000000")]) {
+      expect(memorySaveSchema.safeParse({ ...input, id }).success).toBe(false);
+    }
+  });
   it("exposes canonical memory to Web when analysis is unconfigured", async () => {
     const f = await fixture();
     try {

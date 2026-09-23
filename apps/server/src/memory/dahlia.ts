@@ -17,7 +17,10 @@ export const memoryListSchema = memoryScopeSchema.extend({ after: publicIdSchema
 export const memoryGetSchema = memoryScopeSchema.extend({ id: publicIdSchema("sharedMemory") });
 export const memorySearchSchema = z.object({ scope: z.enum(["personal", "workspace", "auto"]).default("auto"), workspaceId,
   query: z.string().trim().min(1).max(4000) }).strict();
-export const memorySaveSchema = memorySearchSchema.omit({ query: true }).extend({ id: publicIdSchema("sharedMemory"),
+const newMemoryId = publicIdSchema("sharedMemory").refine((id) => {
+  try { return z.uuidv7().safeParse(decodeId("sharedMemory", id)).success; } catch { return false; }
+}, "Memory IDs must contain a UUIDv7");
+export const memorySaveSchema = memorySearchSchema.omit({ query: true }).extend({ id: newMemoryId,
   content: z.string().trim().min(1).max(16_000), revision: z.number().int().nonnegative(), explicit: z.boolean().default(false) });
 export const memoryDeleteSchema = memoryGetSchema.extend({ revision: z.number().int().positive(), explicit: z.literal(true) });
 export const memoryConfigureSchema = memoryScopeSchema.extend({ enabled: z.boolean() });
