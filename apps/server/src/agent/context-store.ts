@@ -70,7 +70,7 @@ export class ChatMemoryStore {
       const source = await client.query("SELECT 1 FROM agent.mastra_messages WHERE id = $1 AND thread_id = $2 AND role = 'user'", [job.messageId, job.threadId]);
       if (!source.rowCount) return;
       const next = [metadata.learned, `- ${note}`].filter(Boolean).join("\n");
-      if (metadata.learned.includes(`- ${note}`)) return;
+      if (metadata.learned.split("\n").includes(`- ${note}`)) return;
       if (!workingMemoryContentSchema.safeParse(next).success) {
         metadata.automatic = false;
         metadata.capacityReached = true;

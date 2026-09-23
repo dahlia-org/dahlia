@@ -26,7 +26,7 @@ const transcriptMcpInputSchema = meetingInputSchema.extend({
   cursor: z.string().optional(), after: z.string().max(2048).optional(), wait: z.boolean().default(false),
 });
 
-export function withMcpInputSchema<T extends object, S extends z.ZodObject>(
+export function withMcpInputSchema<T extends object, S extends z.ZodType<object>>(
   tool: T,
   mcpInputSchema: S,
   toAgentInput: (input: z.infer<S>) => unknown = (input) => input,

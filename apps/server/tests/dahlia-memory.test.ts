@@ -234,8 +234,16 @@ describe("Dahlia Memory", () => {
       expect(await list(["mcp"])).not.toContain('"list_memories"');
       const read = await list([MEMORY_READ_SCOPE]); expect(read).toContain('"list_memories"'); expect(read).toContain('"get_working_memory"');
       expect(read).not.toContain('"save_memory"'); expect(read).not.toContain('"update_working_memory"');
-      expect(await list([MEMORY_WRITE_SCOPE])).toContain('"save_memory"');
-      expect(await list([MEMORY_WRITE_SCOPE])).toContain('"update_working_memory"');
+      const write = await list([MEMORY_WRITE_SCOPE]);
+      expect(write).toContain('"save_memory"');
+      expect(write).toContain('"update_working_memory"');
+      const listed = JSON.parse(write) as { result: { tools: Array<{ name: string; inputSchema: { oneOf: Array<{ properties: Record<string, unknown> }> } }> } };
+      const editSchema = listed.result.tools.find((tool) => tool.name === "update_working_memory")!.inputSchema;
+      expect(editSchema.oneOf).toHaveLength(2);
+      expect(editSchema.oneOf[0]?.properties).toHaveProperty("content");
+      expect(editSchema.oneOf[0]?.properties).not.toHaveProperty("automatic");
+      expect(editSchema.oneOf[1]?.properties).toHaveProperty("automatic");
+      expect(editSchema.oneOf[1]?.properties).not.toHaveProperty("content");
       const call = async (scopes: string[], name: string, args: unknown, expiresAt = Date.now() / 1000 + 60) => {
         const body = JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name, arguments: args,
           _meta: { "io.modelcontextprotocol/clientCapabilities": {}, "io.modelcontextprotocol/clientInfo": { name: "test", version: "1" }, "io.modelcontextprotocol/protocolVersion": "2026-07-28" } } });
@@ -249,6 +257,9 @@ describe("Dahlia Memory", () => {
       expect((await call([MEMORY_READ_SCOPE], "get_working_memory", {})).result?.content[0]?.text).toContain("A private note");
       expect((await call([MEMORY_READ_SCOPE], "update_working_memory", { section: "manual", content: "changed", revision: 0, explicit: true })).error).toBeDefined();
       expect((await call([MEMORY_WRITE_SCOPE], "update_working_memory", { section: "manual", content: "changed", revision: 0, explicit: true })).result?.content[0]?.text).toContain("changed");
+      const extra = await call([MEMORY_WRITE_SCOPE], "update_working_memory", { section: "settings", automatic: false, content: "leftover", revision: 1, explicit: true });
+      expect(extra.error ?? extra.result?.isError).toBeTruthy();
+      expect((await call([MEMORY_WRITE_SCOPE], "update_working_memory", { section: "settings", automatic: false, revision: 1, explicit: true })).result?.isError).not.toBe(true);
       expect((await call([MEMORY_READ_SCOPE], "save_memory", wireNote)).error).toBeDefined();
       expect((await call([MEMORY_WRITE_SCOPE], "save_memory", wireNote)).result?.content[0]?.text).toContain('"saved":true');
       const expired = await call([MEMORY_WRITE_SCOPE], "delete_memory", { ...wireNote, revision: 1, explicit: true }, 1);

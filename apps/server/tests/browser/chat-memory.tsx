@@ -129,6 +129,6 @@ async function run() {
   releaseMeetings!(); await new Promise(requestAnimationFrame);
   assert(![...select(0).options].some((option) => option.value === "C"), "An old meeting list crossed workspace scope");
   document.body.dataset.testResult = "passed";
-  document.getElementById("result")!.textContent = "PASS: learned preferences on open, background refresh, dirty draft, same-section conflict, cross-section save, capacity warning, forget, stale read, failed save; live selection, detach and thread switch races; meeting list retry, newly synced recording, stale list rejection";
+  document.getElementById("result")!.textContent = "PASS: learned notes on open, background refresh, dirty draft, same-section conflict, cross-section save, capacity warning; live selection, detach and thread switch races; meeting list retry, newly synced recording, stale list rejection";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });

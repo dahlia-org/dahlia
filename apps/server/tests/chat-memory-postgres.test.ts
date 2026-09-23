@@ -14,6 +14,22 @@ const connection = url ? connectPostgresUrl(url, 1) : undefined;
 afterAll(async () => connection?.close());
 
 describe.runIf(url)("Chat memory PostgreSQL", () => {
+  it("keeps distinct learned lines from queued jobs and ignores exact duplicates", async () => {
+    const store = new ChatMemoryStore(connection!.pool), history = createAiHistoryService(connection!.pool);
+    const owner = { userId: uuidV7(), source: "header" as const };
+    const thread = await history.create(owner, uuidV7(), "Queued learning");
+    const messages = [uuidV7(), uuidV7()];
+    await history.memory(owner).saveMessages({ messages: messages.map((id) => ({ id, threadId: thread.id, resourceId: owner.userId,
+      role: "user" as const, createdAt: new Date(), content: { format: 2 as const, parts: [{ type: "text" as const, text: "Remember this" }] } })) });
+    for (const id of messages) await store.enqueueLearned(owner, thread.id, id, 0);
+    const first = (await store.claim(owner, `working:${messages[0]}`))!;
+    const second = (await store.claim(owner, `working:${messages[1]}`))!;
+    await store.applyLearned(owner, first, "Prefers concise replies");
+    await store.applyLearned(owner, second, "Prefers concise");
+    await store.applyLearned(owner, second, "Prefers concise");
+    expect((await store.settings(owner)).learned).toBe("- Prefers concise replies\n- Prefers concise");
+    await history.delete(owner, thread.id);
+  });
   it("keeps manual and learned Markdown across chat deletion and isolates the owner", async () => {
     const store = new ChatMemoryStore(connection!.pool), history = createAiHistoryService(connection!.pool);
     const owner = { userId: uuidV7(), source: "header" as const }, other = { userId: uuidV7(), source: "header" as const };
