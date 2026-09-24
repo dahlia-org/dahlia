@@ -35,7 +35,7 @@ Dahlia Desktop requests `all-apis` when authorizing against a deployed Databrick
 
 The bundle temporarily sets `DAHLIA_AUTH_SECRET` directly to the fixed value `test-only-better-auth-secret-value`. It does not define a Secret resource, retrieve a Unity Catalog Secret, or grant secret permissions. This is a shared test value; replace it with a unique signing secret before production use. Header authentication uses `DAHLIA_AUTH_HEADER` (default `X-Forwarded-Email`) as the email identity and stores its normalized value in `account.account_id`. New users join their email-domain Organization; the first is owner and later users are members. Departed or removed users are not automatically added again. `DAHLIA_SIGNOUT_URL=/.auth/logout` sends the browser through the Databricks Apps proxy logout endpoint after Dahlia clears its local session.
 
-The App name is `mcp-dahlia-server-{target}`, for example `mcp-dahlia-server-dev` or `mcp-dahlia-server-prod`. The Hindsight App name is `dahlia-hindsight-{target}`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. By default, both targets use the managed Volume `dahlia.app.storage`. Choose the deployment environment by overriding `catalog`; override `app_schema` only when a catalog needs more than one Dahlia Server installation. Explicit Vault sharing is available in every target; Vault Admins can grant Admin, Editor, or Viewer access to a user, Organization, or Team. Organization membership alone does not grant Vault access. The bundle lists public Gateway models in `DAHLIA_FOUNDATION_MODELS`, routes automatic reviews to `system.ai.gpt-5-6-luna`, and uses `system.ai.qwen3-embedding-0-6b` for search embeddings. All AI models are used directly; postdeploy does not register Model Services. To disable a worker, remove its model environment value from the App resource.
+The App name is `mcp-dahlia-server-{target}`, for example `mcp-dahlia-server-dev` or `mcp-dahlia-server-prod`. The Hindsight App name is `dahlia-hindsight-{target}`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. By default, both targets use the managed Volume `dahlia.app.storage`. Choose the deployment environment by overriding `catalog`; override `app_schema` only when a catalog needs more than one Dahlia Server installation. Explicit Vault sharing is available in every target; Vault Admins can grant Admin, Editor, or Viewer access to a user, Organization, or Team. Organization membership alone does not grant Vault access. The bundle lists public Gateway models in `DAHLIA_FOUNDATION_MODELS`, routes automatic reviews to `system.ai.gpt-6-luna`, and uses `system.ai.qwen3-embedding-0-6b` for search embeddings. All AI models are used directly; postdeploy does not register Model Services. To disable a worker, remove its model environment value from the App resource.
 
 The bundle syncs the self-contained `apps/server` package and the setup notebooks in `deploy/databricks/notebooks`. The Server package manifest, pnpm lockfile, runtime configuration, and source are deployed without repository-root pnpm files. `pnpm test:package` builds and packs an isolated Server source directory without sibling Desktop files or existing build output, then checks the resulting package. The Server ships its own transcript activity policy JSON; a cross-platform test keeps it equal to the Desktop resource.
 
@@ -53,7 +53,7 @@ Use `-t prod` for production and pass its catalog explicitly when it differs fro
 
 `bundle deploy` creates or updates the resources and uploads source code, but it does not restart an already-running App. Always run both `dahlia_server` and `hindsight` after deployment. The bundle's `prebuild` step materializes the pinned Hindsight v0.9.2 source and maintained Lakebase patch before upload; it does not follow newer upstream tags.
 
-Hindsight's `databricks` model provider derives the OpenAI-compatible base URL from the App-injected `DATABRICKS_HOST`. It uses `system.ai.gpt-5-6-luna` for LLM calls and `system.ai.qwen3-embedding-0-6b` at `${search_embedding_dimensions}` dimensions for embeddings. The provider obtains and refreshes OAuth tokens with the App-injected `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; it never reads a user's forwarded OBO token or a Databricks secret resource.
+Hindsight's `databricks` model provider derives the OpenAI-compatible base URL from the App-injected `DATABRICKS_HOST`. It uses `system.ai.gpt-6-luna` for LLM calls and `system.ai.qwen3-embedding-0-6b` at `${search_embedding_dimensions}` dimensions for embeddings. The provider obtains and refreshes OAuth tokens with the App-injected `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; it never reads a user's forwarded OBO token or a Databricks secret resource.
 
 Lakebase requires each `lakebase_bm25` index to be created after its table contains data. After Hindsight first writes `memory_units` or `mental_models`, create that table's index with the SQL in [`apps/hindsight/README.md`](../../apps/hindsight/README.md) before using full-text recall.
 
@@ -128,7 +128,7 @@ Collector, or enable telemetry emission.
 
 ## AI models
 
-The bundle exposes its Responses-compatible `system.ai.*` models through the ordered `DAHLIA_FOUNDATION_MODELS` value. `/api/v1/models` reads this value without calling a discovery API, and Responses forwards the selected fully qualified model ID unchanged. `DAHLIA_CODEX_AUTO_REVIEW_MODEL=system.ai.gpt-5-6-luna` preserves the reserved `codex-auto-review` route without registering an alias service.
+The bundle exposes its Responses-compatible `system.ai.*` models through the ordered `DAHLIA_FOUNDATION_MODELS` value. `/api/v1/models` reads this value without calling a discovery API, and Responses forwards the selected fully qualified model ID unchanged. `DAHLIA_CODEX_AUTO_REVIEW_MODEL=system.ai.gpt-6-luna` preserves the reserved `codex-auto-review` route without registering an alias service.
 
 Search embeddings, image analysis, and Hindsight also use their `system.ai.*` models directly. Postdeploy activates Lakebase Search extensions and grants the Dahlia Server App service principal `CAN_USE` on the Hindsight App.
 
@@ -153,7 +153,7 @@ For MCP, connect a modern MCP 2026-07-28 client to `https://<app-host>/mcp` with
 
 For Files and recording smoke tests, upload private content, commit it through the canonical transaction API, then verify GET, HEAD, Range, conditional reads and revoked-access rejection. HEAD must report the full size; a mismatched If-Range must return the full representation.
 
-Confirm `/api/v1/models` includes `system.ai.gpt-5-6-luna`, then complete a real `POST /api/v1/responses` request with that full model ID, `input`, and `stream: true`. Confirm SSE events arrive incrementally through the Apps proxy. `/admin/models` is retired.
+Confirm `/api/v1/models` includes `system.ai.gpt-6-sol` and `system.ai.gpt-6-luna`, then complete a real `POST /api/v1/responses` request with a full model ID, `input`, and `stream: true`. Confirm SSE events arrive incrementally through the Apps proxy. `/admin/models` is retired.
 
 ## Security requirements
 
