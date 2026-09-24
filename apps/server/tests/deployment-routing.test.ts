@@ -286,7 +286,7 @@ describe("deployment routing", () => {
     expect(bundle).toContain("database_project_id: dahlia-db-dev");
     expect(bundle).not.toContain("codex_auto_review_model");
     expect(resource).toContain("name: DAHLIA_CODEX_AUTO_REVIEW_MODEL");
-    expect(resource).toContain("value: system.ai.gpt-5-6-luna");
+    expect(resource).toContain("name: DAHLIA_CODEX_AUTO_REVIEW_MODEL\n            value: system.ai.gpt-6-luna");
     expect(bundle).toContain("database_project_id: dahlia-db");
     expect(bundle).toContain("catalog:");
     expect(bundle).toContain("default: dahlia");
@@ -305,10 +305,12 @@ describe("deployment routing", () => {
       name: \${var.volume_name}`);
     expect(bundle).toContain("scripts/postdeploy.sh");
     expect(resource).toContain("name: DAHLIA_FOUNDATION_MODELS");
+    expect(resource).toContain("name: DAHLIA_FOUNDATION_MODELS\n            value: system.ai.gpt-6-astra,system.ai.gpt-6-sol,system.ai.gpt-6-luna,");
     expect(resource).toContain("system.ai.gpt-5-6-luna");
     expect(resource).not.toContain("DATABRICKS_MODEL_SCHEMA");
     expect(resource).not.toContain("ai_schema");
     expect(resource).toContain("name: DAHLIA_IMAGE_ANALYSIS_MODEL");
+    expect(resource).toContain("name: DAHLIA_IMAGE_ANALYSIS_MODEL\n            value: system.ai.gpt-6-luna");
     expect(resource).not.toContain("DAHLIA_CAPTIONING_MODEL");
     expect(resource).not.toContain("service_principal_client_id");
     expect(bundle).toMatch(/prod:[\s\S]*?volumes:[\s\S]*?prevent_destroy: true/);
@@ -359,7 +361,7 @@ describe("deployment routing", () => {
     expect(hindsight).toContain("name: HINDSIGHT_API_EMBEDDINGS_PROVIDER\n            value: databricks");
     expect(hindsight).toContain("name: LAKEBASE_ENDPOINT\n            value_from: postgres");
     expect(hindsight).not.toContain("HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER");
-    expect(hindsight).toContain("system.ai.gpt-5-6-luna");
+    expect(hindsight).toContain("name: HINDSIGHT_API_LLM_MODEL\n            value: system.ai.gpt-6-luna");
     expect(hindsight).toContain("system.ai.qwen3-embedding-0-6b");
     expect(hindsight).toContain("name: HINDSIGHT_API_EMBEDDINGS_OPENAI_DIMENSIONS\n            value: ${var.search_embedding_dimensions}");
     expect(hindsight).not.toMatch(/API_KEY|secret:|value_from: openai-api-key|user_api_scopes/);

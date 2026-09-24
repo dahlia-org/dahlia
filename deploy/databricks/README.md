@@ -128,7 +128,7 @@ Collector, or enable telemetry emission.
 
 ## AI models
 
-The bundle exposes its Responses-compatible `system.ai.*` models through the ordered `DAHLIA_FOUNDATION_MODELS` value. `/api/v1/models` reads this value without calling a discovery API, and Responses forwards the selected fully qualified model ID unchanged. `DAHLIA_CODEX_AUTO_REVIEW_MODEL=system.ai.gpt-6-luna` preserves the reserved `codex-auto-review` route without registering an alias service.
+The bundle exposes its Responses-compatible `system.ai.*` models through the ordered `DAHLIA_FOUNDATION_MODELS` value. GPT 6 Sol and Luna precede the retained GPT 5.6 IDs, which remain available for saved model selections and Desktop image analysis. `/api/v1/models` reads this value without calling a discovery API, and Responses forwards the selected fully qualified model ID unchanged. `DAHLIA_CODEX_AUTO_REVIEW_MODEL=system.ai.gpt-6-luna` preserves the reserved `codex-auto-review` route without registering an alias service.
 
 Search embeddings, image analysis, and Hindsight also use their `system.ai.*` models directly. Postdeploy activates Lakebase Search extensions and grants the Dahlia Server App service principal `CAN_USE` on the Hindsight App.
 

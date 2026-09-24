@@ -10,7 +10,7 @@ const upstreamHashes: [string, string][] = [["gpt-6-astra","2398784eb6729f680770
 const hiddenModels = modelList([]).models;
 
 describe("model catalog", () => {
-  it.each(upstreamHashes)("preserves upstream GPT metadata for %s", (slug, digest) => {
+  it.each(upstreamHashes)("keeps pinned Codex GPT metadata for %s", (slug, digest) => {
     const model = catalog.models.find((model) => model.slug === `system.ai.${slug}`)!;
     expect(createHash("sha256").update(JSON.stringify({ ...model, slug })).digest("hex")).toBe(digest);
   });
