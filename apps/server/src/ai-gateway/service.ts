@@ -10,7 +10,7 @@ import { modelList } from "./models";
 import { DatabricksTokenProvider } from "../databricks/token";
 
 export { GatewayRequestError } from "./errors";
-export const LATEST_CODEX_CLIENT_VERSION = "0.153.4";
+export const LATEST_CODEX_CLIENT_VERSION = "0.156.0";
 
 export class GatewayService {
   private readonly backend?: AIGatewayBackend;

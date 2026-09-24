@@ -20,7 +20,7 @@ const databricksProvider = {
 const databricksConfig: AppConfig = {
   ...config,
   provider: databricksProvider,
-  foundationModels: ["system.ai.gpt-5-6-luna", "system.ai.custom"],
+  foundationModels: ["system.ai.gpt-6-luna", "system.ai.custom"],
 };
 const identity = { userId: "verified-user" };
 const request = (body: unknown, headers?: HeadersInit) => new Request("https://dahlia.example/api/v1/responses", {
@@ -75,16 +75,17 @@ describe("AI Gateway", () => {
   });
 
   it("publishes fully qualified Databricks slugs with Codex metadata", async () => {
+    expect(LATEST_CODEX_CLIENT_VERSION).toBe("0.156.0");
     const transport = vi.fn<GatewayFetch>();
     const list = await new GatewayService(databricksConfig, transport).models(
       new Request(`https://dahlia.example/api/v1/models?client_version=${LATEST_CODEX_CLIENT_VERSION}`, {
         headers: { "x-forwarded-access-token": "must-not-use" },
       }),
     );
-    expect(list.data.map((m) => m.id)).toEqual(["system.ai.gpt-5-6-luna", "system.ai.custom"]);
-    expect(list.data.map((m) => m.display_name)).toEqual(["GPT 5.6 Luna", "system.ai.custom"]);
-    expect(list.models.find((m) => m.slug === "system.ai.gpt-5-6-luna"))
-      .toMatchObject({ default_reasoning_level: "medium", visibility: "list", display_name: "GPT 5.6 Luna" });
+    expect(list.data.map((m) => m.id)).toEqual(["system.ai.gpt-6-luna", "system.ai.custom"]);
+    expect(list.data.map((m) => m.display_name)).toEqual(["GPT 6 Luna", "system.ai.custom"]);
+    expect(list.models.find((m) => m.slug === "system.ai.gpt-6-luna"))
+      .toMatchObject({ default_reasoning_level: "medium", visibility: "list", display_name: "GPT 6 Luna", minimal_client_version: "0.155.0" });
     expect(list.models.find((m) => m.slug === "system.ai.custom")).toBeUndefined();
     expect(transport).not.toHaveBeenCalled();
   });
@@ -99,7 +100,7 @@ describe("AI Gateway", () => {
   it("does not mutate the body; resolves model, OBO and trusted user tags inside Databricks", async () => {
     const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
     const backend = new DatabricksBackend(databricksProvider, databricksConfig.foundationModels!, transport);
-    const body = Object.freeze({ model: "system.ai.gpt-5-6-luna", input: [], max_output_tokens: 256, stream: true, tools: [{ type: "function", name: "note" }] });
+    const body = Object.freeze({ model: "system.ai.gpt-6-luna", input: [], max_output_tokens: 256, stream: true, tools: [{ type: "function", name: "note" }] });
     const controller = new AbortController();
     await backend.responses(body, {
       identity, signal: controller.signal,
@@ -108,7 +109,7 @@ describe("AI Gateway", () => {
     const [url, init] = transport.mock.calls[0]!;
     expect(String(url)).toBe(`${databricksProvider.baseUrl}/responses`);
     expect(JSON.parse(String(init?.body))).toEqual(body);
-    expect(body.model).toBe("system.ai.gpt-5-6-luna");
+    expect(body.model).toBe("system.ai.gpt-6-luna");
     const headers = new Headers(init?.headers);
     expect(headers.get("authorization")).toBe("Bearer obo");
     expect(headers.get("Databricks-Ai-Gateway-Request-Tags")).toBe('{"user_id":"verified-user"}');
@@ -124,17 +125,17 @@ describe("AI Gateway", () => {
     const app = createApp({ config: databricksConfig, authStore: testStore(), fetch: transport });
     const response = await app.request("/api/v1/responses", {
       method: "POST", headers: { "X-Forwarded-Email": "real@example.com", "x-forwarded-access-token": "obo" },
-      body: JSON.stringify({ model: "system.ai.gpt-5-6-luna", input: [], identity: { userId: "forged" }, upstreamModel: "other.ai.model" }),
+      body: JSON.stringify({ model: "system.ai.gpt-6-luna", input: [], identity: { userId: "forged" }, upstreamModel: "other.ai.model" }),
     });
     expect(response.status).toBe(200);
     expect(new Headers(transport.mock.calls[0]![1]?.headers).get("Databricks-Ai-Gateway-Request-Tags")).toBe(JSON.stringify({ user_id: testUserID("real@example.com") }));
-    expect(JSON.parse(String(transport.mock.calls[0]![1]?.body))).toMatchObject({ model: "system.ai.gpt-5-6-luna" });
+    expect(JSON.parse(String(transport.mock.calls[0]![1]?.body))).toMatchObject({ model: "system.ai.gpt-6-luna" });
   });
 
   it("requires OBO before sending a fully qualified model", async () => {
     const transport = vi.fn<GatewayFetch>();
     const service = new GatewayService(databricksConfig, transport);
-    await expect(service.responses(request({ model: "system.ai.gpt-5-6-luna", input: [] }), identity)).rejects.toMatchObject({ status: 401 });
+    await expect(service.responses(request({ model: "system.ai.gpt-6-luna", input: [] }), identity)).rejects.toMatchObject({ status: 401 });
     expect(transport).not.toHaveBeenCalled();
   });
 
@@ -151,11 +152,11 @@ describe("AI Gateway", () => {
         tokenUrl: "https://workspace.example/oidc/v1/token",
       },
     }, transport);
-    await service.responses(request({ model: "system.ai.gpt-5-6-luna", input: [] }), identity);
+    await service.responses(request({ model: "system.ai.gpt-6-luna", input: [] }), identity);
     expect(String(transport.mock.calls[0]![0])).toBe("https://workspace.example/oidc/v1/token");
     expect(new Headers(transport.mock.calls[1]![1]?.headers).get("authorization")).toBe("Bearer app-token");
 
-    await service.responses(request({ model: "system.ai.gpt-5-6-luna", input: [] }, {
+    await service.responses(request({ model: "system.ai.gpt-6-luna", input: [] }, {
       "x-forwarded-access-token": "obo",
     }), identity);
     expect(new Headers(transport.mock.calls[2]![1]?.headers).get("authorization")).toBe("Bearer obo");
@@ -175,7 +176,7 @@ describe("AI Gateway", () => {
     const controller = new AbortController();
     const response = service.responses(new Request("https://dahlia.example/api/v1/responses", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: "system.ai.gpt-5-6-luna", input: [] }), signal: controller.signal,
+      body: JSON.stringify({ model: "system.ai.gpt-6-luna", input: [] }), signal: controller.signal,
     }), identity);
     await vi.waitFor(() => expect(transport).toHaveBeenCalledOnce());
     controller.abort();
