@@ -4,13 +4,13 @@ import { modelList } from "../src/ai-gateway/models";
 import { cloudflareModels } from "../src/ai-gateway/cloudflare";
 import catalog from "../src/ai-gateway/databricks-models.json";
 
-// Codex main 713caa89f389acd9cbcd77016edbb607273826af, with Databricks slugs, plan availability, and space-separated display names.
-const upstreamHashes: [string, string][] = [["gpt-6-astra","2398784eb6729f680770523fa868e676a342a6842433508fdeb34b87b77c112c"],["gpt-5-6-sol","8a0319235164a1db323baf7de68b862ad1becd2034972862a31b332dde1aed42"],["gpt-5-6-terra","40652a62267fb6dbcb38c24f04abb24f2880a2cf5a7c43e36fbbe4191eb351ac"],["gpt-5-6-luna","5db57f41f678e0166165febfa8760bbfa109ccd6e175acd483cf58523a63e065"],["gpt-5-5","841469379b687aa687dc5431e754d2a60baaa408b024bfe2573ab50c9f1bd55b"]];
+// Codex main 713caa89 (existing entries) and 694d8d45 (GPT-6 Sol/Luna), with Databricks slugs, plan availability, and display names.
+const upstreamHashes: [string, string][] = [["gpt-6-astra","2398784eb6729f680770523fa868e676a342a6842433508fdeb34b87b77c112c"],["gpt-6-sol","fd36871888525ad8f4158bed9409064f43b017a1a0efe7bac3aa1c39c09178a3"],["gpt-6-luna","78228fe201f4bbdf72fdc78cd70a22e16075de9cd0ef706b4f97c627bbc3abcd"],["gpt-5-6-sol","8a0319235164a1db323baf7de68b862ad1becd2034972862a31b332dde1aed42"],["gpt-5-6-terra","40652a62267fb6dbcb38c24f04abb24f2880a2cf5a7c43e36fbbe4191eb351ac"],["gpt-5-6-luna","5db57f41f678e0166165febfa8760bbfa109ccd6e175acd483cf58523a63e065"],["gpt-5-5","841469379b687aa687dc5431e754d2a60baaa408b024bfe2573ab50c9f1bd55b"]];
 
 const hiddenModels = modelList([]).models;
 
 describe("model catalog", () => {
-  it.each(upstreamHashes)("preserves upstream GPT metadata for %s", (slug, digest) => {
+  it.each(upstreamHashes)("keeps pinned Codex GPT metadata for %s", (slug, digest) => {
     const model = catalog.models.find((model) => model.slug === `system.ai.${slug}`)!;
     expect(createHash("sha256").update(JSON.stringify({ ...model, slug })).digest("hex")).toBe(digest);
   });

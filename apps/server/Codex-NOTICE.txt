@@ -3,6 +3,8 @@ Dahlia Server includes modified catalog material from OpenAI Codex.
 Source: https://github.com/openai/codex
 Databricks GPT catalog: main checked 2026-09-10
 Commit: 713caa89f389acd9cbcd77016edbb607273826af
+GPT-6 Sol/Luna: main checked 2026-09-25
+Commit: 694d8d45bd3d440fa4f4cbf22667ac6c17a13758
 Other retained provider/review metadata: rust-v0.153.4
 Commit: 3d2ee51ca2d5db578f328aa75e20aa22c0197c9a
 Sources: codex-rs/models-manager/models.json and codex-rs/models-manager/prompt.md
