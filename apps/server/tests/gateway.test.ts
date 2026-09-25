@@ -90,6 +90,24 @@ describe("AI Gateway", () => {
     expect(transport).not.toHaveBeenCalled();
   });
 
+  it("keeps the previous Codex catalog usable during the Desktop rollout", async () => {
+    const service = new GatewayService({ ...databricksConfig,
+      foundationModels: ["system.ai.gpt-6-luna", "system.ai.gpt-5-6-luna", "system.ai.custom"],
+    });
+    const oldRequest = new Request("https://dahlia.example/api/v1/models?client_version=0.153.4");
+    const old = await service.models(oldRequest);
+    expect(old.data.map(({ id }) => id)).toEqual(["system.ai.gpt-5-6-luna", "system.ai.custom"]);
+    expect(old.models.some(({ slug }) => slug === "system.ai.gpt-6-luna")).toBe(false);
+    expect(old.models.find(({ slug }) => slug === "gpt-5.4-mini")).toMatchObject({ visibility: "hide", supported_in_api: false });
+
+    const current = await service.models(new Request("https://dahlia.example/api/v1/models?client_version=0.156.0"));
+    expect(current.data[0]?.id).toBe("system.ai.gpt-6-luna");
+    expect((await service.models()).data).toEqual(current.data);
+    expect((await new GatewayService(config).models(oldRequest)).data.map(({ id }) => id)).toEqual(["gpt-5.6-luna"]);
+    await expect(service.models(new Request("https://dahlia.example/api/v1/models?client_version=0.150.0")))
+      .rejects.toMatchObject({ code: "unsupported_codex_client_version" });
+  });
+
   it("maps the Cloudflare mock ID while preserving the rest of the request", async () => {
     const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
     await new GatewayService(configs[1]!, transport).responses(request({ model: "gpt-5.6-luna", input: "hello", max_output_tokens: 256 }), identity);
