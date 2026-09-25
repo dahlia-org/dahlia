@@ -10,7 +10,8 @@ import { modelList } from "./models";
 import { DatabricksTokenProvider } from "../databricks/token";
 
 export { GatewayRequestError } from "./errors";
-export const LATEST_CODEX_CLIENT_VERSION = "0.153.4";
+export const LATEST_CODEX_CLIENT_VERSION = "0.156.0";
+const PREVIOUS_CODEX_CLIENT_VERSION = "0.153.4";
 
 export class GatewayService {
   private readonly backend?: AIGatewayBackend;
@@ -33,19 +34,30 @@ export class GatewayService {
   }
 
   async models(request?: Request) {
-    requireSupportedCodexClient(request);
+    const clientVersion = requireSupportedCodexClient(request);
     if (!this.backend) return modelList([]);
-    const result = await this.backend.listModels({ signal: request?.signal ?? new AbortController().signal });
+    let result = await this.backend.listModels({ signal: request?.signal ?? new AbortController().signal });
     const configured = this.config.codexAutoReviewModel?.trim();
-    if (!configured) return result;
-    const override = modelList([{ id: CODEX_AUTO_REVIEW_ALIAS, displayName: "Codex Auto Review" }]);
+    if (configured) {
+      const override = modelList([{ id: CODEX_AUTO_REVIEW_ALIAS, displayName: "Codex Auto Review" }]);
+      result = {
+        ...result,
+        data: [...result.data.filter((entry) => entry.id !== CODEX_AUTO_REVIEW_ALIAS), ...override.data],
+        models: [
+          ...result.models.filter((entry) => entry.slug !== CODEX_AUTO_REVIEW_ALIAS),
+          ...override.models.filter((entry) => entry.slug === CODEX_AUTO_REVIEW_ALIAS),
+        ],
+      };
+    }
+    if (clientVersion === LATEST_CODEX_CLIENT_VERSION) return result;
+    const unsupported = new Set(result.models.filter((model) =>
+      typeof model.minimal_client_version === "string"
+      && model.minimal_client_version.localeCompare(clientVersion, undefined, { numeric: true }) > 0,
+    ).map(({ slug }) => slug));
     return {
       ...result,
-      data: [...result.data.filter((entry) => entry.id !== CODEX_AUTO_REVIEW_ALIAS), ...override.data],
-      models: [
-        ...result.models.filter((entry) => entry.slug !== CODEX_AUTO_REVIEW_ALIAS),
-        ...override.models.filter((entry) => entry.slug === CODEX_AUTO_REVIEW_ALIAS),
-      ],
+      data: result.data.filter(({ id }) => !unsupported.has(id)),
+      models: result.models.filter(({ slug }) => !unsupported.has(slug)),
     };
   }
 
@@ -96,17 +108,18 @@ export class GatewayService {
   }
 }
 
-function requireSupportedCodexClient(request?: Request): void {
-  if (!request) return;
+function requireSupportedCodexClient(request?: Request): string {
+  if (!request) return LATEST_CODEX_CLIENT_VERSION;
   const version = new URL(request.url).searchParams.get("client_version")
     ?? LATEST_CODEX_CLIENT_VERSION;
-  if (version !== LATEST_CODEX_CLIENT_VERSION) {
+  if (version !== LATEST_CODEX_CLIENT_VERSION && version !== PREVIOUS_CODEX_CLIENT_VERSION) {
     throw new GatewayRequestError(
       `Codex client version '${version}' is not supported`,
       400,
       "unsupported_codex_client_version",
     );
   }
+  return version;
 }
 
 async function parseBoundedJsonObject(request: Request, maximumBytes: number): Promise<Record<string, unknown>> {

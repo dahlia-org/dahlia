@@ -40,8 +40,9 @@ describe("model catalog", () => {
   it("generates hidden built-ins without publishing them as available", () => {
     const list = modelList([{ id: "system.ai.gpt-5-5" }]);
     expect(hiddenModels.map(({ slug }) => slug)).toEqual([
-      "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-daybreak-blue-latest",
-      "gpt-daybreak-red-latest", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.2",
+      "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
+      "gpt-daybreak-blue-latest", "gpt-daybreak-red-latest", "gpt-5.5", "gpt-5.4",
+      "gpt-5.4-mini", "gpt-5.2",
     ]);
     expect(list.data.map(({ id }) => id)).toEqual(["system.ai.gpt-5-5"]);
     for (const model of hiddenModels) {

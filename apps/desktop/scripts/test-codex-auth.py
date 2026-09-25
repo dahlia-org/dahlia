@@ -123,7 +123,7 @@ def main():
     parser.add_argument("--codex", type=Path, required=True)
     args = parser.parse_args()
     codex = args.codex.resolve()
-    expected = "0.153.4"
+    expected = "0.156.0"
     result = subprocess.run([str(codex), "--version"], capture_output=True, text=True, check=True)
     assert result.stdout.strip() == "codex-cli " + expected, result.stdout
     for scenario in ("recovers", "unauthorized", "refresh-fails"):
