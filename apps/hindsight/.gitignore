@@ -9,3 +9,7 @@ dist/
 # Recreated from UPSTREAM.json + patches; never edit these as source.
 .upstream/
 .upstream-*/
+
+# Operator evaluation questions and expected documents; never commit them.
+eval/
+*.eval.jsonl

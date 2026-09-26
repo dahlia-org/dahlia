@@ -99,4 +99,6 @@ def test_dimension_change_preserves_lakebase_bank_index_ownership(backend, table
     sql = [str(call.args[0]) for call in conn.execute.call_args_list]
     assert any(f"ALTER TABLE tenant_a.{table} ALTER COLUMN embedding TYPE vector(1536)" in query for query in sql)
     assert any("CREATE INDEX" in query for query in sql) == creates_index
+    # Existing Lakebase ANN indexes are found and dropped before the column type changes.
+    assert any("'lakebase_ann'" in query and "pg_am" in query for query in sql)
     conn.commit.assert_called()

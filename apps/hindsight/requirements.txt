@@ -323,11 +323,13 @@ multidict==6.7.1
     #   yarl
 numpy==2.4.6 ; python_full_version < '3.12'
     # via
+    #   hindsight-api-slim
     #   magika
     #   onnxruntime
     #   pandas
 numpy==2.5.3 ; python_full_version >= '3.12'
     # via
+    #   hindsight-api-slim
     #   magika
     #   onnxruntime
     #   pandas
@@ -529,6 +531,7 @@ referencing==0.37.0
 regex==2026.9.3
     # via
     #   dateparser
+    #   hindsight-api-slim
     #   tiktoken
 requests==2.34.2
     # via
@@ -601,14 +604,12 @@ sympy==1.14.0 ; sys_platform == 'win32'
 tenacity==9.1.4
     # via google-genai
 tiktoken==0.14.0
-    # via
-    #   hindsight-api-slim
-    #   litellm
+    # via litellm
 tokenizers==0.23.2
     # via
     #   cohere
     #   litellm
-tornado==6.5.8
+toktok-rs==0.1.4
     # via hindsight-api-slim
 tqdm==4.70.0
     # via

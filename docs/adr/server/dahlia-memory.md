@@ -23,3 +23,9 @@ Server は未リリースのため、個人領域の表と共有ノートの人�
 外部クライアントは `mcp:memory:read` による参照専用と `mcp:memory:write` による記憶共有を選べる。クライアント指示や任意の hooks はツール呼び出しのタイミングを決めるが、認可境界には使わない。Header 配置の権限はサーバー単位の設定であり、クライアントごとに分離する場合は Accounts OAuth を使う。既存の全文会話を自動取り込みせず、長く使う個人の学びだけを簡潔に保存する。
 
 Working Memory の編集中セクションは読込時の revision を維持し、別クライアントによる同セクションの更新を上書きしない。学習メモの上限到達時は既存内容を保持して自動学習を停止し、`capacityReached` と UI で通知する。利用者が整理・再有効化する。外部クライアントの read/share は Codex の login scopes と Claude Code の `oauth.scopes` に反映し、変更時は再認証する。Header/proxy 環境の権限は管理者設定であり、クライアント指示や hooks は権限を変更しない。
+
+## Hindsight の版と評価
+
+2026-09-26: 分析先を Hindsight 0.10.1（`f8950b0c`）に固定した。observation、directive、Knowledge Pages などの機能を段階的に使うための前提であり、この更新では Dahlia が送る retain、recall、reflect、mental model の要求の形を変えない。Lakebase 向けの保守パッチは、上流が名称変更を更新処理に統合した分だけ縮めた。0.10 系では、reflect の取得ツールが失敗すると reflect 全体が HTTP 500 になる。この場合は既存の `memory_upstream_failed` として、その scope を利用不可にし、正本の文字列一致による候補を返す。recall だけの結果に切り替えて仮説を省く縮退は採らない。
+
+検索設定の比較は、運用者がローカルで実行する評価ハーネスで行う。対象の bank を Hindsight の clone で複製し、複製先だけで hit@k、MRR、応答時間を測り、終了時に複製先を削除する。質問と期待する文書の組は運用者が用意し、リポジトリに置かない。出力は数値だけで、質問、想起した文、本文は出さない。reranker の実装はサーバーの設定なので、実装どうしの比較はそれぞれの設定の App に対して行う。
