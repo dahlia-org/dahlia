@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/vectorize-io/hindsight",
-  "version": "0.9.2",
-  "revision": "ebad478240d3171bb88201ececda5e8d9883d22d",
+  "version": "0.10.1",
+  "revision": "f8950b0c07d9e34c76493dba802bb309f0ce60fd",
   "source_subdirectory": "hindsight-api-slim"
 }

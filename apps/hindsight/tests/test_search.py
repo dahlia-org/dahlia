@@ -75,9 +75,9 @@ def test_sql_uses_bm25_preserves_filters_and_schema(lakebase, monkeypatch):
         assert '"tenant_one"."idx_memory_units_text_search"' in sql
         assert "bank_id = $1" in sql and "fact_type = 'world'" in sql
         assert "AND tags @> $4" in sql and "AND updated_at > $5" in sql
-        assert "> 0.5" in sql and " ASC" in sql and "LIMIT $2" in sql
+        assert ">= 0.5" in sql and " ASC" in sql and "LIMIT $2" in sql
         page = knowledge_bm25_arm("lakebase_text", table_alias="mm", text_param="$3")
-        assert '"tenant_one"."idx_mental_models_text_search"' in page.score_expr
+        assert '"tenant_one"."idx_mental_models_text_search"' in page.order_by
         assert page.match_filter.endswith("> 0")
         assert "検索" in PostgreSQLDialect().prepare_bm25_text([], "日本語検索", text_search_extension="lakebase_text")
         assert PostgreSQLDialect().prepare_bm25_text(["cat", "dog"], "cat dog") == "cat | dog"
@@ -156,6 +156,7 @@ async def test_upstream_batch_writer_keeps_raw_text_and_propagates_tokenizer_fai
         tags_list=["[]"],
         observation_scopes_list=[None],
         text_signals_list=[""],
+        attachment_ids_list=["[]"],
         text_search_extension="lakebase_text",
     )
     assert await PostgreSQLOps().insert_facts_batch(conn, **kwargs) == [str(unit_id)]
@@ -259,25 +260,21 @@ async def test_upstream_observation_creation_uses_projection(lakebase, monkeypat
     conn = Connection()
     conn.fetchrow = AsyncMock(return_value={"id": uuid.uuid4()})
     conn.fetch.return_value = [{"id": uuid.uuid4(), "text": "日本語検索の観察", "context": "", "text_signals": ""}]
-    monkeypatch.setattr(
-        consolidator, "get_memories", lambda: SimpleNamespace(writes_memory_rows_in_sql_for=lambda bank: True)
-    )
+    monkeypatch.setattr(consolidator, "get_memories", lambda: SimpleNamespace(store_owned_for=lambda bank: False))
     monkeypatch.setattr(consolidator, "_filter_live_source_memories", AsyncMock(return_value=[uuid.uuid4()]))
+    engine = SimpleNamespace(_backend=SimpleNamespace(ops=SimpleNamespace(uses_observation_sources_table=False)))
 
-    @asynccontextmanager
-    async def acquire(pool):
-        yield conn
+    async def write(*args):
+        assert conn.depth == 1
 
-    monkeypatch.setattr(consolidator, "acquire_with_retry", acquire)
-    monkeypatch.setattr(consolidator, "_any_live_source_memory", AsyncMock(return_value=True))
-    embed = AsyncMock(return_value=[[1.0, 0.0, 0.0]])
-    monkeypatch.setattr(consolidator.embedding_utils, "generate_embeddings_batch", embed)
-    engine = SimpleNamespace(
-        embeddings=object(), _backend=SimpleNamespace(ops=SimpleNamespace(uses_observation_sources_table=False))
-    )
-    result = await consolidator._create_observation_directly(object(), engine, "a", [uuid.uuid4()], "日本語検索の観察")
-    assert embed.call_args.args[1] == ["日本語検索の観察"]
+    conn.executemany.side_effect = write
+    # The consolidation batch owns the transaction; the projection must join it.
+    async with conn.transaction():
+        result = await consolidator._apply_create_observation(
+            conn, engine, "a", [uuid.uuid4()], "日本語検索の観察", "[1,0,0]"
+        )
     assert result["action"] == "created"
+    assert conn.fetchrow.call_args.args[3] == "日本語検索の観察"
     assert "日本語 検索" in conn.executemany.call_args.args[1][0][2]
 
 
@@ -362,57 +359,50 @@ async def test_vector_health_accepts_lakebase_indexes(lakebase):
 
     conn = Connection()
 
-    async def catalog(query, schema, names, methods, predicate):
-        assert schema == "tenant"
+    async def catalog(query, schema, names, methods, predicate, bank_id):
+        assert schema == "tenant" and bank_id == "bank"
         assert "fact_type" in predicate
         return [{"index_name": names[0], "healthy": "lakebase_ann" in methods}]
 
     conn.fetch.side_effect = catalog
-    assert await _index_health(conn, "tenant", ["idx_mu_emb_worl_0123456789abcdef"]) == {
+    assert await _index_health(conn, "tenant", ["idx_mu_emb_worl_0123456789abcdef"], "bank") == {
         "idx_mu_emb_worl_0123456789abcdef": True,
     }
 
 
 @pytest.mark.parametrize("backend", ["native", "lakebase_text"])
-@pytest.mark.parametrize("model_id", [None, "page"])
-async def test_upstream_rename_refreshes_page_atomically(monkeypatch, backend, model_id):
+async def test_upstream_page_rename_refreshes_projection_atomically(monkeypatch, backend):
     from types import SimpleNamespace
 
     from hindsight_api.engine import memory_engine
 
     monkeypatch.setenv("HINDSIGHT_API_TEXT_SEARCH_EXTENSION", backend)
     conn = Connection([{"id": "page", "name": "日本語検索", "content": "会議"}])
-    row = {"mental_model_id": model_id}
+    row = {"id": "page", "name": "日本語検索", "content": "会議", "reflect_response": None}
     conn.fetchrow = AsyncMock(return_value=row)
-
-    @asynccontextmanager
-    async def acquire(pool):
-        yield conn
 
     async def write(*args):
         assert conn.depth == 1
 
-    conn.execute.side_effect = write
     conn.executemany.side_effect = write
-    monkeypatch.setattr(memory_engine, "acquire_with_retry", acquire)
     engine = SimpleNamespace(
         _authenticate_tenant=AsyncMock(),
         _operation_validator=None,
         _get_backend=AsyncMock(),
-        _KP_COLUMNS="*",
-        _row_to_knowledge_node=lambda value: value,
+        _mental_model_embedding_vector=AsyncMock(return_value=[1.0, 0.0, 0.0]),
+        _pg_carries_page_search=lambda bank: True,
+        _index_knowledge_page=AsyncMock(),
+        _row_to_mental_model=lambda value: value,
     )
 
+    # Knowledge-node renames reuse update_mental_model on the caller's connection.
     async def rename():
-        return await memory_engine.MemoryEngine.rename_knowledge_node(
-            engine, "bank", "node", "日本語検索", request_context=None
+        return await memory_engine.MemoryEngine.update_mental_model(
+            engine, "bank", "page", name="日本語検索", conn=conn, request_context=None
         )
 
     assert await rename() == row
-    assert conn.execute.call_count == int(model_id is not None)
-    if model_id is not None:
-        assert conn.execute.call_args.args[1:] == ("bank", "page", "日本語検索")
-    if backend == "lakebase_text" and model_id is not None:
+    if backend == "lakebase_text":
         assert conn.executemany.call_args.args[1] == [("bank", "page", "日本語 検索 会議")]
         with monkeypatch.context() as patch:
 

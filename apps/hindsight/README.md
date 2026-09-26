@@ -34,6 +34,8 @@ CREATE EXTENSION IF NOT EXISTS lakebase_vector WITH SCHEMA public CASCADE;
 `hindsight-api`、`hindsight-worker`、`hindsight-admin` は取り込んだ本体のエントリーポイントです。
 分離 worker の構成は upstream の環境変数を使い、API と worker に同じ検索・トークナイザー設定を渡します。
 `slim` 構成なので、例では外部 embedding プロバイダーを使い、ローカル機械学習モデルの依存は追加していません。
+reranker は `rrf` を指定し、ニューラル reranker を使わずに検索結果の融合順位をそのまま使います。
+Hindsight に `none` という reranker はなく、指定すると起動時にエラーになります。
 HTTP API・認証設定は [upstream のドキュメント](https://hindsight.vectorize.io/)を参照してください。
 
 `pyproject.toml` で公開 PyPI を既定のレジストリに指定しています。
@@ -133,9 +135,9 @@ GitHubへ専用forkを公開する必要はありません。通常の起動で�
 - パッチ競合・依存解決失敗では現行のソース・固定情報・`pyproject.toml`・lockfileを変更しません。
   作業用チェックアウトに未保存の変更や未追跡ファイルがある場合も停止します。
 
-現在の基準は正式リリース **v0.9.2**、コミット
-`ebad478240d3171bb88201ececda5e8d9883d22d` です。
-`pyproject.toml` の `hindsight-api-slim==0.9.2` と `uv.lock` で依存を固定しています。
+現在の基準は正式リリース **v0.10.1**、コミット
+`f8950b0c07d9e34c76493dba802bb309f0ce60fd` です。
+`pyproject.toml` の `hindsight-api-slim==0.10.1` と `uv.lock` で依存を固定しています。
 
 ### バージョンを更新する
 
@@ -177,23 +179,53 @@ uv sync --locked
 
 | ファイル | 必要な理由 |
 | --- | --- |
-| `engine/llm_wrapper.py` | `databricks` を API key 不要の OpenAI 互換 provider として既存ディスパッチへ登録 |
+| `engine/provider_auth.py` | `databricks` を API key 不要の provider として登録 |
+| `engine/llm_wrapper.py` | `databricks` を OpenAI 互換 provider として既存ディスパッチへ登録 |
 | `engine/providers/openai_compatible_llm.py` | App service principal の短命 OAuth token を各 LLM リクエストへ供給 |
-| `engine/embeddings.py` | 同じ認証と AI Gateway URL を使う `databricks` embedding provider を登録 |
+| `engine/embeddings.py` | 同じ認証と AI Gateway URL を使う `databricks` embedding provider を登録。token は AsyncOpenAI が各リクエストの前に取得 |
 | `engine/vector_index_health.py` | 既存の索引健全性チェックが lakebase_ann を認識するための登録 |
-| `config.py` | 全文検索の選択値追加と PostgreSQL 以外での誤設定拒否 |
+| `config.py` | 全文検索の選択値追加と PostgreSQL 以外での誤設定拒否。upstream の最小スコア契約テストも Lakebase の BM25 を検証する |
 | `_vector_index.py` | 拡張名・ANN索引句・検索設定を既存ディスパッチへ登録 |
-| `migrations.py` | 未変更の履歴を互換設定で実行し、選択された全文検索だけ初期設定。ANN型の識別、次元変更時の bank 別索引管理の維持、mental_models の既存索引の対応 |
+| `migrations.py` | 未変更の履歴を互換設定で実行し、選択された全文検索だけ初期設定。ANN型の識別（`lakebase_ann` の索引も検出）、次元変更時の bank 別索引管理の維持、mental_models の既存索引の対応 |
 | `engine/sql/postgresql.py` | Lakebase BM25 SQL とクエリ処理への分岐 |
 | `engine/search/retrieval.py` | BM25 の候補上限・prefilter を検索トランザクション内に限定 |
 | `engine/db/ops_postgresql.py` | 通常保存・インポートが使う共通バッチ保存で本文と検索用データを同時更新 |
 | `engine/memories/pg/writes.py` | 編集・復元の直接SQL後、既存トランザクション内で更新 |
 | `engine/consolidation/consolidator.py` | 観察の新規作成・更新・重複統合の直接SQL後、既存トランザクション内で更新 |
-| `engine/memory_engine.py` | ページ作成・更新・名称変更・内容クリアの直接SQLで同時更新し、ページ検索にもBM25設定を適用 |
+| `engine/memory_engine.py` | ページ作成・更新・内容クリアの直接SQLで同時更新し、ページ検索にもBM25設定を適用。名称変更は upstream が更新処理を再利用する |
 | `engine/transfer/importer.py` | 共通 `_restore_rows` の一箇所でページの本文保存と検索用データを同時更新 |
 
 他バックエンドでは追加のDB処理・トークナイズ・Lakebase初期設定を実行しません。
 既存のトランザクションがある保存経路では、それをそのまま利用します。
+
+## 検索品質の評価
+
+`scripts/evaluate_memory.py` は、運用者がローカルから実行する評価ハーネスです。
+指定した bank を `POST /banks/{id}/clone` で複製し、複製先だけで recall を測ります。元の bank は変更しません。
+終了時に複製先を削除します（`--keep-clone` を付けたときは残します）。
+Dahlia の bank ID は `<DAHLIA_HINDSIGHT_BANK_PREFIX>-workspace-<Workspace UUID>` または `-user-<user UUID>` です。
+
+質問と期待する文書 ID の組は JSONL で渡します。リポジトリには置かないでください（`eval/` と `*.eval.jsonl` は Git の管理外です）。
+文書 ID は Hindsight の `meeting-<meeting UUID>` または `shared-<note UUID>` です。
+
+```jsonl
+{"query": "...", "expected": ["meeting-<meeting UUID>"]}
+```
+
+```sh
+export HINDSIGHT_EVAL_TOKEN="$(databricks auth token -p <profile> | jq -r .access_token)"
+uv run --locked python scripts/evaluate_memory.py \
+  --url https://<hindsight-app-url>/api --bank <bank ID> --questions ~/memory.eval.jsonl
+```
+
+- 出力は JSON の数値だけです。質問数と、組み合わせごとの hit@k（`--k`、既定は 1,3,5,10）、MRR、recall の応答時間（クライアントで計測した p50、p95、max のミリ秒）、エラー数を出します。質問、想起した文、本文は出力しません。
+- 基準の recall は Dahlia Server と同じ `types: world, experience`、`budget: mid`、`max_tokens: 4096` です。
+  `--observations on|both` で observation を加え（`prefer_observations` を指定し、`source_facts` から元の文書に展開します）、
+  `--rerank on|off|both` で複製先の `enable_reranking` を切り替えます。
+  reranker の実装（`HINDSIGHT_API_RERANKER_PROVIDER`）はサーバーの設定なので、実装どうしを比べるときは、それぞれの設定の App に対して実行します。
+- `--extraction-mode` または `--strategy` を指定すると、複製先の設定を変えて全文書を再抽出します。LLM を呼ぶので費用がかかります。
+- bank の複製には `HINDSIGHT_API_ENABLE_DOCUMENT_EXPORT_API` と `HINDSIGHT_API_ENABLE_DOCUMENT_IMPORT_API`（どちらも既定で有効）が必要です。
+  token は環境変数から読み、redirect には従いません。
 
 ## 検証
 
