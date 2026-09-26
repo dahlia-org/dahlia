@@ -1,10 +1,10 @@
 {
-  "id": "b41d4e69-fe8c-4249-9651-6aa67fa552fd",
-  "prevIds": [
-    "37fc9340-16f3-4708-b703-994217cf6fd3"
-  ],
   "version": "8",
   "dialect": "postgres",
+  "id": "e442543b-cd64-4c9b-922d-b14a75b17b91",
+  "prevIds": [
+    "a52e6ccd-2bdf-41fd-9eef-05e3bb7007e9"
+  ],
   "ddl": [
     {
       "name": "app",
@@ -1405,19 +1405,6 @@
       "generated": null,
       "identity": null,
       "name": "reason",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "screenshot_assessments"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "duplicate_of_file_id",
       "entityType": "columns",
       "schema": "app",
       "table": "screenshot_assessments"

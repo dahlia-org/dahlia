@@ -414,7 +414,6 @@ export const screenshotAssessment = appSchema.table("screenshot_assessments", {
   informative: boolean("informative").notNull(),
   // Omitted for encrypted Workspaces because it describes image content.
   reason: text("reason"),
-  duplicateOfFileId: uuid("duplicate_of_file_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("screenshot_assessments_workspace_idx").on(table.workspaceId),

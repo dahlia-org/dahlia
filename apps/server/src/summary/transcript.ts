@@ -12,7 +12,7 @@ import { GatewayRequestError } from "../ai-gateway/errors";
 import { sendOpenAIResponses } from "../ai-gateway/adapters";
 import { isSummaryModel } from "./audio-model";
 import { SummaryError, summaryDocument, summaryResponseSchema, type SummaryMethod, type SummaryInput } from "./model";
-import { selectSummaryScreenshots } from "./screenshot-selection";
+import { createScreenshotSelector, selectSummaryScreenshots, summaryScreenshotCandidates, type ScreenshotSelector } from "./screenshot-selection";
 
 export async function fingerprint(value: unknown): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)));
@@ -84,6 +84,7 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
   const execution = createJobProvider(config, transport);
   if (!execution) return undefined;
   const { provider, backend } = execution;
+  const selector = createScreenshotSelector(config, transport);
   return {
     id: "transcript",
     async captureSettings(settings, detail, input) {
@@ -120,7 +121,7 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
       }));
       if (!job.transcriptResult && await fingerprint(input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
       if (!input.transcript?.some((segment) => segment.text.trim())) throw new SummaryError("summary_transcript_empty");
-      const { content, images, imageIds } = await summaryImageContent(input, sync, identity, signal, recordingSessions);
+      const { content, images, imageIds } = await summaryImageContent(input, sync, identity, signal, recordingSessions, selector);
       const model = execution.resolveModel(job.settings.model);
       if (provider.backend === "cloudflare" && (model !== "openai/gpt-4.1" || job.settings.reasoningEffort !== "none")) {
         throw new SummaryError("summary_invalid_model");
@@ -201,8 +202,13 @@ function summaryElapsedTime(startedAt: Date, timeBase: Date, sessions: readonly 
 }
 
 export async function summaryImageContent(input: Awaited<ReturnType<typeof collectSummaryInput>>, sync: MeetingSyncService,
-  identity: import("../auth/identity").Identity, signal: AbortSignal, recordingSessions: readonly SummaryRecordingSession[] = []) {
-  const images = selectSummaryScreenshots(input.images, input.assessments);
+  identity: import("../auth/identity").Identity, signal: AbortSignal, recordingSessions: readonly SummaryRecordingSession[] = [],
+  selector?: ScreenshotSelector) {
+  const images = await selectSummaryScreenshots(summaryScreenshotCandidates(input.images, input.assessments), signal, selector, async (image) => {
+    const { upstream } = await sync.readFileContent(identity, image.fileId, "thumb_480", "GET", new Request("https://dahlia.invalid/", { signal }));
+    if (!upstream.ok) { await upstream.body?.cancel(); throw new SummaryError("summary_image_unavailable", upstream.status >= 500); }
+    return new Uint8Array(await boundedBytes(upstream, 1024 * 1024));
+  });
   const imageIds = new Set(images.map((image) => image.screenshotId));
   const { meeting, project } = input;
   const content: Record<string, unknown>[] = [{ type: "input_text", text: `<context>

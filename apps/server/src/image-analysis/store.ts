@@ -15,10 +15,6 @@ export type ImageAnalysisReference = Pick<ImageAnalysisClaim, "fileId" | "ownerU
 export interface ImageAnalysisStore {
   reconcile(model: string): Promise<void>;
   claim(model: string, reference?: ImageAnalysisReference): Promise<ImageAnalysisClaim | null>;
-  /** Claims first-attempt jobs of the same owner and meeting, in capture order, to analyze with `claim`. */
-  claimBatch(claim: ImageAnalysisClaim, limit: number): Promise<{ meetingId: string | null; claims: ImageAnalysisClaim[] }>;
-  /** Returns a claimed job to the queue without counting an attempt. */
-  release(claim: ImageAnalysisClaim): Promise<void>;
   finish(claim: ImageAnalysisClaim, error?: { code: string; retryAt?: Date }): Promise<void>;
 }
 
@@ -100,7 +96,8 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
           or(eq(jobs.status, "pending"), and(eq(jobs.status, "processing"), lte(jobs.leaseExpiresAt, now))),
         );
         const owners = reference ? [reference.ownerUserId] : (await transaction.select({ ownerUserId: jobs.ownerUserId }).from(jobs).where(due)
-          .groupBy(jobs.ownerUserId).orderBy(sql`min(${jobs.availableAt})`, asc(jobs.ownerUserId)).limit(100)).map((row) => row.ownerUserId);
+          .groupBy(jobs.ownerUserId).orderBy(sql`min(${jobs.availableAt})`, asc(jobs.ownerUserId))).map((row) => row.ownerUserId);
+        // Readiness is evaluated per owner, so owners with only unready jobs cannot hide others' ready jobs.
         for (const ownerUserId of owners) {
           // Forced RLS hides files and attachments until the job owner's identity is set.
           if (isPostgres) await transaction.execute(sql`select set_config('app.user_id', ${ownerUserId}, true)`);
@@ -129,44 +126,6 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
         }
         return null;
       });
-    },
-    claimBatch(claim, limit) {
-      return db.transaction(async (transaction) => {
-        if (isPostgres) await transaction.execute(sql`select set_config('app.user_id', ${claim.ownerUserId}, true)`);
-        const attachments = schema.meetingAttachment;
-        const [attachment] = await transaction.select({ meetingId: attachments.meetingId }).from(attachments)
-          .innerJoin(schema.syncedMeeting, and(eq(schema.syncedMeeting.workspaceId, attachments.workspaceId),
-            eq(schema.syncedMeeting.meetingId, attachments.meetingId)))
-          .where(and(eq(attachments.fileId, claim.fileId), eq(attachments.workspaceId, claim.workspaceId),
-            isNull(schema.syncedMeeting.deletingAt), isNull(schema.syncedMeeting.deletedAt)))
-          .orderBy(asc(attachments.meetingId)).limit(1);
-        if (!attachment || limit <= 0) return { meetingId: attachment?.meetingId ?? null, claims: [] };
-        const now = new Date();
-        const query = transaction.select({ job: jobs }).from(jobs)
-          .innerJoin(attachments, and(eq(attachments.fileId, jobs.fileId), eq(attachments.workspaceId, jobs.workspaceId)))
-          .innerJoin(files, and(eq(files.fileId, jobs.fileId), eq(files.workspaceId, jobs.workspaceId)))
-          .where(and(
-            eq(attachments.meetingId, attachment.meetingId), ne(jobs.fileId, claim.fileId),
-            eq(jobs.workspaceId, claim.workspaceId), eq(jobs.ownerUserId, claim.ownerUserId), eq(jobs.model, claim.model),
-            eq(jobs.attempts, 0), lte(jobs.availableAt, now), eq(files.active, true), isNotNull(files.uploadedAt),
-            inArray(files.contentType, [...imageContentTypes]),
-            or(eq(jobs.status, "pending"), and(eq(jobs.status, "processing"), lte(jobs.leaseExpiresAt, now))),
-          )).orderBy(asc(sql`coalesce(${attachments.capturedAt}, ${attachments.createdAt})`), asc(jobs.fileId)).limit(limit);
-        const rows = isPostgres ? await query.for("update", { of: jobs, skipLocked: true }) : await query;
-        const siblings = [...new Map(rows.map(({ job }) => [job.fileId, job])).values()];
-        if (siblings.length) {
-          await transaction.update(jobs).set({
-            outputLanguage: claim.outputLanguage, status: "processing", claimedAt: claim.claimedAt,
-            leaseExpiresAt: new Date(claim.claimedAt.getTime() + 300_000),
-          }).where(inArray(jobs.fileId, siblings.map((job) => job.fileId)));
-        }
-        return { meetingId: attachment.meetingId, claims: siblings.map((job) => ({ ...job, outputLanguage: claim.outputLanguage, claimedAt: claim.claimedAt })) };
-      });
-    },
-    async release(claim) {
-      await db.update(jobs).set({ status: "pending", claimedAt: null, leaseExpiresAt: null }).where(and(
-        eq(jobs.fileId, claim.fileId), eq(jobs.ownerUserId, claim.ownerUserId),
-        eq(jobs.model, claim.model), eq(jobs.claimedAt, claim.claimedAt)));
     },
     async finish(claim, error) {
       const filter = and(eq(jobs.fileId, claim.fileId), eq(jobs.ownerUserId, claim.ownerUserId),

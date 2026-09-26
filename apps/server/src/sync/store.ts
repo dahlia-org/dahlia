@@ -666,7 +666,7 @@ function createIdentityStore(
     }
     for (const table of [schema.syncedProject, schema.syncedMeeting, schema.syncedFile,
       schema.meetingAttachment, schema.meetingEvent, schema.transcriptPatchChunk, schema.searchDocument,
-      schema.searchIndexJob, schema.imageAnalysisJob, schema.summaryJob]) {
+      schema.searchIndexJob, schema.imageAnalysisJob, schema.summaryJob, schema.screenshotAssessment]) {
       await db.update(table).set({ workspaceId: destinationWorkspaceId }).where(eq(table.workspaceId, sourceWorkspaceId));
     }
     for (const meeting of meetings) await enqueueMemoryMeeting(sourceWorkspaceId, meeting.id);
@@ -2228,7 +2228,7 @@ function createIdentityStore(
         workspaceId: input.workspaceId, model: input.model, informative: assessment.informative,
         // The reason describes image content, which an encrypted Workspace must not store in plaintext.
         reason: workspace?.encryption === "none" ? assessment.reason : null,
-        duplicateOfFileId: assessment.duplicateOfFileId, createdAt: new Date(),
+        createdAt: new Date(),
       };
       await db.insert(schema.screenshotAssessment).values({ fileId: input.fileId, ...values })
         .onConflictDoUpdate({ target: schema.screenshotAssessment.fileId, set: values });
@@ -2240,7 +2240,7 @@ function createIdentityStore(
   async function listScreenshotAssessments(workspaceId: string, meetingId: string): Promise<ScreenshotAssessment[]> {
     return db.select({
       fileId: schema.screenshotAssessment.fileId, informative: schema.screenshotAssessment.informative,
-      reason: schema.screenshotAssessment.reason, duplicateOfFileId: schema.screenshotAssessment.duplicateOfFileId,
+      reason: schema.screenshotAssessment.reason,
     }).from(schema.screenshotAssessment)
       .innerJoin(schema.meetingAttachment, and(
         eq(schema.meetingAttachment.fileId, schema.screenshotAssessment.fileId),

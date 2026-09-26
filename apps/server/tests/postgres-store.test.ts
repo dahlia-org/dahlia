@@ -525,45 +525,40 @@ integration("PostgreSQL application store", () => {
     expect(await store.removeAdminUser(suffix)).toBe("removed");
   });
 
-  it("claims a meeting's screenshot jobs in capture order and hides selection hints from outsiders", async () => {
+  it("claims ready screenshot jobs under forced RLS and hides usefulness hints from outsiders", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const owner: Identity = { userId: crypto.randomUUID(), source: "header" };
     const outsider: Identity = { userId: crypto.randomUUID(), source: "header" };
     await seedPostgresIdentity(store, databaseUrl!, owner);
     await seedPostgresIdentity(store, databaseUrl!, outsider);
-    const workspaceId = crypto.randomUUID(), meetingId = crypto.randomUUID(), now = new Date();
-    const fileIds = [uuidV7(), uuidV7(), uuidV7()];
+    const workspaceId = crypto.randomUUID(), meetingId = crypto.randomUUID(), hiddenFileId = uuidV7(), fileId = uuidV7(), now = new Date();
     await store.sync.withIdentity(owner, (sync) => createWorkspace(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "meeting",
       action: "create", entityId: meetingId, baseRevision: null, data: meetingData(null, now, "Meeting", "") }]));
     await store.sync.withIdentity(owner, async (sync) => {
-      for (const [index, fileId] of fileIds.entries()) {
+      for (const [index, id] of [hiddenFileId, fileId].entries()) {
         const checksum = `SHA-256:${String(index).repeat(64)}`;
-        await sync.reserveFile({ fileId, workspaceId, uri: `/Volumes/test/app/files/files/${fileId}/original`, offset: 0, size: 1,
+        await sync.reserveFile({ fileId: id, workspaceId, uri: `/Volumes/test/app/files/files/${id}/original`, offset: 0, size: 1,
           contentType: "image/png", checksum, name: "capture.png", metadata: { source: "screenshot" }, active: false,
           uploadedAt: now, revision: 0, createdAt: now, updatedAt: now });
-        const capturedAt = new Date(now.getTime() + (fileIds.length - index) * 30_000);
-        await commit(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "file", action: "upsert", entityId: fileId, baseRevision: null,
-          data: { checksum, metadata: {} } }, { id: crypto.randomUUID(), entity: "meeting_attachment", action: "upsert", entityId: fileId,
-          baseRevision: null, data: { meetingId, fileId, capturedAt, sessionId: null, createdAt: capturedAt, searchText: "", embeddingContentHash: "hash" } }]);
+        await commit(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "file", action: "upsert", entityId: id, baseRevision: null,
+          data: { checksum, metadata: {} } }, { id: crypto.randomUUID(), entity: "meeting_attachment", action: "upsert", entityId: id,
+          baseRevision: null, data: { meetingId, fileId: id, capturedAt: now, sessionId: null, createdAt: now, searchText: "", embeddingContentHash: "hash" } }]);
       }
     });
     const jobs = createImageAnalysisStore(connection!.db, true);
     const model = `model-${crypto.randomUUID()}`;
     await jobs.reconcilePage(model, owner.userId);
-    const claim = (await jobs.claim(model, { fileId: fileIds[0]!, ownerUserId: owner.userId, model }))!;
-    const batch = await jobs.claimBatch(claim, 5);
-    // Captures were attached in reverse order, so siblings follow capture time rather than file ID.
-    expect(batch).toEqual({ meetingId, claims: [expect.objectContaining({ fileId: fileIds[2] }), expect.objectContaining({ fileId: fileIds[1] })] });
-    expect(batch.claims.every((sibling) => sibling.claimedAt.getTime() === claim.claimedAt.getTime())).toBe(true);
-    expect(await jobs.claimBatch(claim, 5)).toEqual({ meetingId, claims: [] });
+    // An older job whose owner cannot read its file must not hide the ready job behind it.
+    await connection!.db.update(schema.imageAnalysisJob).set({ ownerUserId: outsider.userId, availableAt: new Date(0) })
+      .where(eq(schema.imageAnalysisJob.fileId, hiddenFileId));
+    const claim = (await jobs.claim(model))!;
+    expect(claim).toMatchObject({ fileId, ownerUserId: owner.userId });
     const input = (await store.sync.withIdentity(owner, (sync) => sync.loadImageAnalysis(claim)))!;
     expect(await store.sync.withIdentity(owner, (sync) => sync.completeImageAnalysis(input, null,
-      { fileId: claim.fileId, informative: false, reason: "A camera view", duplicateOfFileId: null }))).toBe(true);
+      { fileId, informative: false, reason: "A camera view" }))).toBe(true);
     expect(await store.sync.withIdentity(owner, (sync) => sync.listScreenshotAssessments(workspaceId, meetingId)))
-      .toEqual([{ fileId: claim.fileId, informative: false, reason: "A camera view", duplicateOfFileId: null }]);
+      .toEqual([{ fileId, informative: false, reason: "A camera view" }]);
     expect(await store.sync.withIdentity(outsider, (sync) => sync.listScreenshotAssessments(workspaceId, meetingId))).toEqual([]);
-    for (const sibling of batch.claims) await jobs.release(sibling);
-    expect(await jobs.claimBatch(claim, 5)).toMatchObject({ claims: [{ fileId: fileIds[2] }, { fileId: fileIds[1] }] });
   });
 
   it("grants read-only Workspace access through an explicit organization share", async () => {

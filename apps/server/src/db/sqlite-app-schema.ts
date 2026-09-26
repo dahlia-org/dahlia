@@ -449,7 +449,6 @@ export const screenshotAssessment = sqliteTable("screenshot_assessments", {
   model: text("model").notNull(),
   informative: integer("informative", { mode: "boolean" }).notNull(),
   reason: text("reason"),
-  duplicateOfFileId: text("duplicate_of_file_id"),
   createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 }, (table) => [index("screenshot_assessments_workspace_idx").on(table.workspaceId)]);
 

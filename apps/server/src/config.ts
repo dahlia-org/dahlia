@@ -80,7 +80,6 @@ export interface AppConfig {
     dimensions: number;
   };
   captioningModel?: string;
-  imageAnalysisBatchSize?: number;
 }
 
 const authProviderSchema = z.enum(["accounts", "header"]);
@@ -268,8 +267,6 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   const captioningModel = env.DAHLIA_IMAGE_ANALYSIS_MODEL?.trim()
     ? z.string().max(UPSTREAM_MODEL_MAX_LENGTH).parse(env.DAHLIA_IMAGE_ANALYSIS_MODEL.trim())
     : undefined;
-  const imageAnalysisBatchSize = z.coerce.number().int().min(1).max(24)
-    .parse(env.DAHLIA_IMAGE_ANALYSIS_BATCH_SIZE?.trim() || "12");
   const databricksWorkspace = databricksWorkspaceConfig(
     env,
     env.DAHLIA_HINDSIGHT_AUTH === "databricks" || storageBackend === "databricks" || (aiBackend === "databricks"
@@ -323,7 +320,6 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     databricksWorkspace,
     searchEmbedding,
     captioningModel,
-    imageAnalysisBatchSize,
     chatMemoryModel,
     memoryMcpAccess: memoryMcpAccess as "off" | "read" | "write",
     hindsight: hindsightConfig(env),

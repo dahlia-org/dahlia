@@ -4,7 +4,6 @@ CREATE TABLE "app"."screenshot_assessments" (
 	"model" text NOT NULL,
 	"informative" boolean NOT NULL,
 	"reason" text,
-	"duplicate_of_file_id" uuid,
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

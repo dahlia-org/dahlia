@@ -139,22 +139,24 @@ describe("server summary jobs", () => {
     } finally { release(); await pending?.catch(() => {}); await store.close?.(); }
   });
 
-  it("sends only screenshots that survive image-analysis selection", async () => {
+  it("preselects screenshots from low-resolution images and sends only the chosen full images", async () => {
     const date = new Date(0);
-    const images = [0, 1, 2].map((index) => ({ fileId: `file-${index}`, screenshotId: `shot-${index}`, workspaceId: "workspace", meetingId: "meeting",
+    const images = [0, 1, 2, 3].map((index) => ({ fileId: `file-${index}`, screenshotId: `shot-${index}`, workspaceId: "workspace", meetingId: "meeting",
       capturedAt: new Date(index * 30_000), contentType: "image/webp", storageKey: "unused", contentLength: 1,
-      contentHash: String(index).padStart(64, "0"), ocrText: null, caption: null }));
-    const sync = { readFileContent: vi.fn(async () => ({ file: {} as never, upstream: new Response(new Uint8Array([1])), contentType: "image/webp" })) };
+      contentHash: String(index).padStart(64, "0"), ocrText: "Private OCR", caption: "Private caption" }));
+    const variants: string[] = [];
+    const sync = { readFileContent: vi.fn(async (_identity: unknown, fileId: string, variant: string) => {
+      variants.push(`${fileId}:${variant}`);
+      return { file: {} as never, upstream: new Response(new Uint8Array([1])), contentType: "image/webp" };
+    }) };
+    const select = vi.fn(async (inputs: readonly unknown[]) => { expect(inputs).toHaveLength(3); return [2]; });
     const { content, imageIds } = await summaryImageContent({
       meeting: { name: "Meeting", description: "", createdAt: date, recordingStartedAt: null, icalUid: null, recurrenceId: null, calendarEvent: null },
-      project: null, images, assessments: [
-        { fileId: "file-0", informative: false, reason: "A camera view", duplicateOfFileId: null },
-        { fileId: "file-2", informative: true, reason: "A slide", duplicateOfFileId: "file-1" },
-      ],
-    }, sync as unknown as MeetingSyncService, owner, new AbortController().signal);
-    expect([...imageIds]).toEqual(["shot-1"]);
-    expect(sync.readFileContent).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(content)).not.toContain("A camera view");
+      project: null, images, assessments: [{ fileId: "file-0", informative: false, reason: "A camera view" }],
+    }, sync as unknown as MeetingSyncService, owner, new AbortController().signal, [], { select });
+    expect([...imageIds]).toEqual(["shot-3"]);
+    expect(variants).toEqual(["file-1:thumb_480", "file-2:thumb_480", "file-3:thumb_480", "file-3:thumb_1280"]);
+    for (const excluded of ["A camera view", "Private OCR", "Private caption"]) expect(JSON.stringify(content)).not.toContain(excluded);
   });
 
   it("escapes meeting and project XML without serializing internal input fields", async () => {

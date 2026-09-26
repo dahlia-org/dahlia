@@ -74,20 +74,19 @@ describe("Cloudflare background provider contracts", () => {
     expect(await createSearchEmbedder(config, transport)!.embedQuery("query")).toHaveLength(1024);
   });
   it("uses Responses for OCR and caption without an unsupported reasoning parameter", async () => {
-    const slide = { ocr_text: "hello", caption: "A slide", informative: true, reason: "A slide", same_as_previous: false };
     const transport: typeof fetch = (url, init) => {
       expect(String(url)).toContain("/ai/v1/responses");
       const body: unknown = JSON.parse(String(init?.body));
       expect(body).toMatchObject({ model: "openai/gpt-4.1", store: false, stream: false });
       expect(body).not.toHaveProperty("reasoning");
-      return Promise.resolve(Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ images: [slide] }) }] }] }));
+      return Promise.resolve(Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: '{"ocr_text":"hello","caption":"A slide","informative":true,"reason":"A slide"}' }] }] }));
     };
-    expect(await createImageCaptioner(config, transport)!.analyze([{ data: new Uint8Array([1]) }], { outputLanguage: "ja" })).toEqual([slide]);
+    expect(await createImageCaptioner(config, transport)!.analyze(new Uint8Array([1]), { outputLanguage: "ja" })).toEqual({ ocr_text: "hello", caption: "A slide", informative: true, reason: "A slide" });
   });
   it.each([429, 503, 400])("persists the existing transient/permanent distinction for HTTP %i", async (status) => {
     const transport: typeof fetch = () => Promise.resolve(new Response("private", { status }));
     await expect(createSearchEmbedder(config, transport)!.embedQuery("query")).rejects.toMatchObject({ code: `embedding_http_${status}`, retryable: status !== 400 });
-    await expect(createImageCaptioner(config, transport)!.analyze([{ data: new Uint8Array() }], { outputLanguage: "ja" })).rejects.toMatchObject({ code: `captioning_http_${status}`, retryable: status !== 400 });
+    await expect(createImageCaptioner(config, transport)!.analyze(new Uint8Array(), { outputLanguage: "ja" })).rejects.toMatchObject({ code: `captioning_http_${status}`, retryable: status !== 400 });
   });
   it("rejects oversized embeddings and malformed native vectors", async () => {
     await expect(createSearchEmbedder(config, () => Promise.resolve(new Response("x".repeat(4 * 1024 * 1024 + 1))))!.embedQuery("query"))

@@ -1001,9 +1001,9 @@ describe("SQLite canonical sync", () => {
   it("analyzes only published attached files and commits text, delta and embeddings atomically", async () => {
     const { store, service, publish, attach, file, databasePath } = await fileSetup("catalog.ai.gpt-5-6-luna");
     const jobs = store.imageAnalysis!;
-    const analyze = vi.fn(async (_images: readonly unknown[], settings: { outputLanguage: string }) => {
+    const analyze = vi.fn(async (_bytes: Uint8Array, settings: { outputLanguage: string }) => {
       expect(settings.outputLanguage).toBe("en");
-      return [{ ocr_text: "", caption: "Architecture diagram", informative: true, reason: "Shared material", same_as_previous: false }];
+      return { ocr_text: "", caption: "Architecture diagram", informative: true, reason: "Shared material" };
     });
     const captioner: ImageCaptioner = { model: "catalog.ai.gpt-5-6-luna", analyze };
     await updateGenerationSettings(store, owner, file.workspaceId, { outputLanguage: "en" });
@@ -1048,8 +1048,8 @@ describe("SQLite canonical sync", () => {
     const claim = (await store.imageAnalysis!.claim("model"))!;
     expect(await store.sync.withIdentity(other, (scoped) => scoped.loadImageAnalysis(claim))).toBeNull();
     const input = (await store.sync.withIdentity(owner, (scoped) => scoped.loadImageAnalysis(claim)))!;
-    expect(await service.completeImageAnalysis(other, input, { ocr_text: "OCR", caption: "Replacement", informative: true, reason: "Shared material", same_as_previous: false })).toBe(false);
-    expect(await service.completeImageAnalysis(owner, input, { ocr_text: "OCR", caption: "Replacement", informative: true, reason: "Shared material", same_as_previous: false })).toBe(true);
+    expect(await service.completeImageAnalysis(other, input, { ocr_text: "OCR", caption: "Replacement", informative: true, reason: "Shared material" })).toBe(false);
+    expect(await service.completeImageAnalysis(owner, input, { ocr_text: "OCR", caption: "Replacement", informative: true, reason: "Shared material" })).toBe(true);
     expect(await service.getFile(owner, file.id)).toMatchObject({ metadata: { caption: "Existing caption", ocrText: "OCR" } });
     await store.close?.();
   });
@@ -1058,9 +1058,9 @@ describe("SQLite canonical sync", () => {
     const { store, service, attach, file, databasePath } = await fileSetup("model");
     await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: null,
       data: { checksum: file.checksum, metadata: { ocrText: "Imported OCR", caption: "Imported caption" }, imageAnalysis: "replace" } }]));
-    const captioner: ImageCaptioner = { model: "model", analyze: vi.fn(async () => [{
-      ocr_text: "Server OCR", caption: "Server caption", informative: true, reason: "Shared material", same_as_previous: false,
-    }]) };
+    const captioner: ImageCaptioner = { model: "model", analyze: vi.fn(async () => ({
+      ocr_text: "Server OCR", caption: "Server caption", informative: true, reason: "Shared material",
+    })) };
     const worker = new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service);
     expect(await worker.processOne()).toBe(false);
     await attach();
@@ -1140,7 +1140,7 @@ describe("SQLite canonical sync", () => {
     await store.imageAnalysis!.reconcile("model");
     const claim = (await store.imageAnalysis!.claim("model"))!;
     const input = (await store.sync.withIdentity(owner, (scoped) => scoped.loadImageAnalysis(claim)))!;
-    expect(await service.completeImageAnalysis(owner, input, { ocr_text: "Replacement", caption: "Generated caption", informative: true, reason: "Shared material", same_as_previous: false })).toBe(true);
+    expect(await service.completeImageAnalysis(owner, input, { ocr_text: "Replacement", caption: "Generated caption", informative: true, reason: "Shared material" })).toBe(true);
     expect(await service.getFile(owner, file.id)).toMatchObject({
       metadata: { ocrText: legacyOCR, caption: "Generated caption" },
     });
@@ -1158,7 +1158,7 @@ describe("SQLite canonical sync", () => {
         let calls = 0;
         const captioner: ImageCaptioner = { model: "model", analyze: async () => {
           calls++; if (boundary === "during") await changeRole();
-          return [{ ocr_text: "Authorized OCR", caption: "Authorized caption", informative: true, reason: "Shared material", same_as_previous: false }];
+          return { ocr_text: "Authorized OCR", caption: "Authorized caption", informative: true, reason: "Shared material" };
         } };
         if (boundary === "before") await changeRole();
         await new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service).processOne();
@@ -1192,73 +1192,55 @@ describe("SQLite canonical sync", () => {
       await service.commitTransaction(owner, wire([{ entity: "meeting_attachment", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
       if (change === "delete") await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
     }
-    expect(await service.completeImageAnalysis(owner, input, { ocr_text: "stale", caption: "stale", informative: true, reason: "Shared material", same_as_previous: false })).toBe(false);
+    expect(await service.completeImageAnalysis(owner, input, { ocr_text: "stale", caption: "stale", informative: true, reason: "Shared material" })).toBe(false);
     if (change !== "delete" && change !== "permission") expect((await service.getFile(owner, file.id)).metadata).not.toHaveProperty("ocrText", "stale");
     await store.close?.();
   });
 
-  it("analyzes a meeting's screenshots in batches and stores selection hints outside file sync", async () => {
+  it("stores screenshot usefulness outside file sync and backfills it without a new file revision", async () => {
     const { store, service, databasePath } = await fileSetup("model");
-    const files = await attachScreenshots(service, 4);
-    const calls: { reference?: boolean }[][] = [];
-    const captioner: ImageCaptioner = { model: "model", batchSize: 3, analyze: vi.fn(async (images: readonly { reference?: boolean }[]) => {
-      calls.push(images.map((image) => image.reference ? { reference: true } : {}));
-      const offset = calls.length === 1 ? 0 : 3;
-      return images.filter((image) => !image.reference).map((_, index) => ({
-        ocr_text: "", caption: `Screen ${offset + index}`, informative: offset + index !== 1,
-        reason: offset + index === 1 ? "A camera view" : "A slide", same_as_previous: offset + index === 2,
-      }));
-    }) };
+    const files = await attachScreenshots(service, 2);
+    let calls = 0;
+    const captioner: ImageCaptioner = { model: "model", analyze: async () => {
+      calls++;
+      return calls === 2
+        ? { ocr_text: "", caption: "Two people talking", informative: false, reason: "A camera view" }
+        : { ocr_text: "Roadmap", caption: "A roadmap slide", informative: true, reason: "A slide" };
+    } };
     await store.imageAnalysis!.reconcile("model");
     const worker = new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service);
     expect(await worker.processOne()).toBe(true);
     expect(await worker.processOne()).toBe(true);
     expect(await worker.processOne()).toBe(false);
-    // The second batch starts with the previous capture as a reference for duplicate detection.
-    expect(calls).toEqual([[{}, {}, {}], [{ reference: true }, {}]]);
-    const database = new DatabaseSync(databasePath);
-    const rows = database.prepare("SELECT file_id AS fileId, informative, reason, duplicate_of_file_id AS duplicateOf FROM screenshot_assessments").all();
-    expect(files.map((file) => rows.find((row) => row.fileId === file.id))).toEqual([
-      { fileId: files[0]!.id, informative: 1, reason: "A slide", duplicateOf: null },
-      { fileId: files[1]!.id, informative: 0, reason: "A camera view", duplicateOf: null },
-      { fileId: files[2]!.id, informative: 1, reason: "A slide", duplicateOf: files[1]!.id },
-      { fileId: files[3]!.id, informative: 1, reason: "A slide", duplicateOf: null },
-    ]);
-    expect(await store.sync.withIdentity(owner, (scoped) => scoped.listScreenshotAssessments(workspaceId, meetingId))).toHaveLength(4);
+    expect(await store.sync.withIdentity(owner, (scoped) => scoped.listScreenshotAssessments(workspaceId, meetingId))).toEqual([
+      { fileId: files[0]!.id, informative: true, reason: "A slide" },
+      { fileId: files[1]!.id, informative: false, reason: "A camera view" },
+    ].sort((left, right) => left.fileId.localeCompare(right.fileId)));
     expect(await store.sync.withIdentity(other, (scoped) => scoped.listScreenshotAssessments(workspaceId, meetingId))).toEqual([]);
-    // Backfilling a missing hint keeps existing OCR/captions and does not publish a new file revision.
+    // Existing OCR/captions are preserved and no file revision or delta is published for the hint alone.
     const before = await service.getFile(owner, files[0]!.id);
+    const cursor = await service.latestCursor(owner);
+    const database = new DatabaseSync(databasePath);
     database.prepare("DELETE FROM screenshot_assessments WHERE file_id = ?").run(files[0]!.id);
     await store.imageAnalysis!.reconcile("model");
     expect(await worker.processOne()).toBe(true);
-    expect(calls).toHaveLength(3);
-    expect(await service.getFile(owner, files[0]!.id)).toMatchObject({ revision: before.revision, metadata: { caption: "Screen 0" } });
-    expect(database.prepare("SELECT count(*) AS n FROM screenshot_assessments").get()).toEqual({ n: 4 });
+    expect(calls).toBe(3);
+    expect(await service.getFile(owner, files[0]!.id)).toMatchObject({ revision: before.revision, metadata: { caption: "A roadmap slide" } });
+    expect(await service.latestCursor(owner)).toBe(cursor);
+    expect(database.prepare("SELECT count(*) AS n FROM screenshot_assessments").get()).toEqual({ n: 2 });
+    // The setup's unpublished upload and pending embeddings would otherwise block the transfer.
+    database.prepare("DELETE FROM files WHERE active = 0").run();
+    database.prepare("DELETE FROM jobs_search_index").run();
     database.close();
-    await store.close?.();
-  });
-
-  it("retries a failed batch one screenshot at a time", async () => {
-    const { store, service, databasePath } = await fileSetup("model");
-    await attachScreenshots(service, 2);
-    await store.imageAnalysis!.reconcile("model");
-    const sizes: number[] = [];
-    const captioner: ImageCaptioner = { model: "model", batchSize: 12, analyze: async (images) => {
-      sizes.push(images.length);
-      throw new ImageAnalysisError("captioning_invalid_response", false);
-    } };
-    const worker = new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service);
-    expect(await worker.processOne()).toBe(true);
-    const database = new DatabaseSync(databasePath);
-    expect(database.prepare("SELECT status, attempts FROM jobs_image_analysis").all())
-      .toEqual([{ status: "pending", attempts: 1 }, { status: "pending", attempts: 1 }]);
-    database.prepare("UPDATE jobs_image_analysis SET available_at = 0").run();
-    expect(await worker.processOne()).toBe(true);
-    expect(await worker.processOne()).toBe(true);
-    expect(sizes).toEqual([2, 1, 2]);
-    expect(database.prepare("SELECT status, attempts FROM jobs_image_analysis").all())
-      .toEqual([{ status: "failed", attempts: 2 }, { status: "failed", attempts: 2 }]);
-    database.close();
+    // Hints follow their files when the Workspace content moves.
+    const destinationWorkspaceId = freshId();
+    await commit(store, owner, { ...transaction(freshId(), [{ id: freshId(), entity: "workspace", action: "create", entityId: destinationWorkspaceId,
+      baseRevision: null, data: { organizationId: testOrganizationID, name: "Destination", createdAt: now } }]), workspaceId: destinationWorkspaceId });
+    await store.sync.withIdentity(owner, async (sync) => sync.transferWorkspace({ sourceWorkspaceId: workspaceId, destinationWorkspaceId,
+      audienceHash: (await sync.workspaceTransferAudience(workspaceId, destinationWorkspaceId)).audienceHash,
+      sourceRevision: 1, destinationRevision: 1, idempotencyKey: freshId(), requestHash: freshId() }));
+    expect(await store.sync.withIdentity(owner, (scoped) => scoped.listScreenshotAssessments(destinationWorkspaceId, meetingId))).toHaveLength(2);
+    expect(await store.sync.withIdentity(owner, (scoped) => scoped.listScreenshotAssessments(workspaceId, meetingId))).toEqual([]);
     await store.close?.();
   });
 

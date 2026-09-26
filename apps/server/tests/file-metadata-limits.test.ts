@@ -23,6 +23,6 @@ describe("file metadata Unicode limits", () => {
     expect(fileMetadataSchema.safeParse({ source: "screenshot", ocr_text: ocrText, caption }).success).toBe(true);
     expect(fileMetadataSchema.safeParse({ source: "screenshot", ocr_text: `${ocrText}x`, caption }).success).toBe(false);
     expect(fileMetadataSchema.safeParse({ source: "screenshot", ocr_text: ocrText, caption: `${caption}x` }).success).toBe(false);
-    expect(imageAnalysisSchema.safeParse({ ocr_text: ocrText, caption, informative: true, reason: "A slide", same_as_previous: false }).success).toBe(true);
+    expect(imageAnalysisSchema.safeParse({ ocr_text: ocrText, caption, informative: true, reason: "A slide" }).success).toBe(true);
   });
 });

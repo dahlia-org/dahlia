@@ -23,7 +23,6 @@ export const imageAnalysisSchema = z.object({
   // Selection hints for summaries; stored outside synced file metadata.
   informative: z.boolean(),
   reason: codePointLimitedString(z.string().trim().min(1), IMAGE_ANALYSIS_REASON_LIMIT),
-  same_as_previous: z.boolean(),
 }).strict();
 export type ImageAnalysis = z.infer<typeof imageAnalysisSchema>;
 
@@ -31,7 +30,6 @@ export interface ScreenshotAssessment {
   fileId: string;
   informative: boolean;
   reason: string | null;
-  duplicateOfFileId: string | null;
 }
 
 export function needsImageAnalysis(metadata: FileRecord["metadata"], mode: ImageAnalysisClaim["mode"] = "fill_missing", assessed = true): boolean {

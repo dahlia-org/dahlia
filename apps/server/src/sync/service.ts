@@ -187,7 +187,7 @@ export class MeetingSyncService {
           endedAt: transcript.endedAt.toISOString(), metadata: transcript.metadata } } } };
   }
 
-  async completeImageAnalysis(identity: Identity, input: ImageAnalysisInput, output: ImageAnalysis, duplicateOfFileId: string | null = null): Promise<boolean> {
+  async completeImageAnalysis(identity: Identity, input: ImageAnalysisInput, output: ImageAnalysis): Promise<boolean> {
     const analysis = imageAnalysisSchema.parse(output);
     const metadata = { ...input.file.metadata };
     const generatedMetadata: { ocrText?: string; caption?: string } = {};
@@ -199,8 +199,7 @@ export class MeetingSyncService {
       metadata.caption = analysis.caption;
       generatedMetadata.caption = analysis.caption;
     }
-    const assessment = { fileId: input.fileId, informative: analysis.informative, reason: analysis.reason,
-      duplicateOfFileId: analysis.same_as_previous ? duplicateOfFileId : null };
+    const assessment = { fileId: input.fileId, informative: analysis.informative, reason: analysis.reason };
     // Backfilling only selection hints must not publish an unchanged file revision.
     if (!Object.keys(generatedMetadata).length) {
       return this.store.withIdentity(identity, (scoped) => scoped.completeImageAnalysis(input, null, assessment));

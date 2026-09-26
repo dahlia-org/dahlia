@@ -135,7 +135,7 @@ try {
   assert.equal(await (await mf.dispatchFetch('http://localhost:5173/runtime/audio')).text(), 'AQIDBAU=');
   for (const backend of ['cloudflare', 'databricks']) {
     const result = await (await mf.dispatchFetch(`http://localhost:5173/runtime/provider?backend=${backend}`)).json();
-    assert.deepEqual(result, { caption: [{ ocr_text: 'Test', caption: 'A synthetic slide', informative: true, reason: 'A slide', same_as_previous: false }], dimensions: 1024 });
+    assert.deepEqual(result, { caption: { ocr_text: 'Test', caption: 'A synthetic slide', informative: true, reason: 'A slide' }, dimensions: 1024 });
   }
   const bindings = await mf.getBindings();
   await bindings.DAHLIA_STORAGE.put('image', await sharp({ create: { width: 640, height: 360, channels: 3, background: '#4488aa' } }).png().toBuffer());

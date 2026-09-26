@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "9f4d9ca1-da5a-44ea-a27e-35ace247f3ef",
+  "id": "efa0a8ef-603e-45d3-8162-2f7ffc0044b4",
   "prevIds": [
     "c8e84425-de57-4535-88a2-02fd289b29c0"
   ],
@@ -2927,16 +2927,6 @@
       "default": null,
       "generated": null,
       "name": "reason",
-      "entityType": "columns",
-      "table": "screenshot_assessments"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "duplicate_of_file_id",
       "entityType": "columns",
       "table": "screenshot_assessments"
     },
