@@ -16,6 +16,8 @@ This file applies to the entire repository. Before editing a path covered by a m
 | `apps/desktop/Sources/Dahlia/Database/` | GRDB and migrations: `apps/desktop/Sources/Dahlia/Database/AGENTS.md` |
 | `apps/desktop/Tests/DahliaTests/` | Test implementation and verification: `apps/desktop/Tests/DahliaTests/AGENTS.md` |
 | `apps/desktop/scripts/` | SwiftPM build, signing, notarization, and lint implementations |
+| `apps/server/` | Server tenant isolation, APIs, and runtime: `apps/server/AGENTS.md` |
+| `apps/hindsight/` | Upstream compatibility and patch workflow: `apps/hindsight/AGENTS.md` |
 | `scripts/` | Root compatibility entrypoints for desktop tooling |
 
 `CLAUDE.md` imports the `AGENTS.md` in the same directory with `@AGENTS.md`. Do not maintain duplicate content.
