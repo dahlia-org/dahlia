@@ -47,7 +47,7 @@ ocr_text must faithfully transcribe visible text in its original language and pr
 caption must describe the visible situation and important content in one or two concise sentences in language ${settings.outputLanguage}.
 informative is true for shared material such as slides, documents, tables, charts, diagrams, code, application or web screens.
 It is false for people's faces or camera video, participant galleries, blank or single-color screens, wallpapers or desktops, lock screens and waiting screens.
-reason must state in one short sentence in language ${settings.outputLanguage} why the screenshot is not informative, or otherwise what kind of material it shows.
+When informative is false, reason must state in one short sentence in language ${settings.outputLanguage} why; otherwise reason is empty.
 Do not use Markdown or infer facts not visible in the image. Return empty ocr_text when no text is visible.`,
             input: [{ role: "user", content: [{ type: "input_image", image_url: `data:image/webp;base64,${Buffer.from(imageData).toString("base64")}` }] }],
             text: { format: {
@@ -58,7 +58,7 @@ Do not use Markdown or infer facts not visible in the image. Return empty ocr_te
                   ocr_text: { type: "string", maxLength: fileMetadataLimits.api.ocrText },
                   caption: { type: "string", minLength: 1, maxLength: fileMetadataLimits.api.caption },
                   informative: { type: "boolean" },
-                  reason: { type: "string", minLength: 1, maxLength: IMAGE_ANALYSIS_REASON_LIMIT },
+                  reason: { type: "string", maxLength: IMAGE_ANALYSIS_REASON_LIMIT },
                 },
                 required: ["ocr_text", "caption", "informative", "reason"],
               },

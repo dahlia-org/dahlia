@@ -186,7 +186,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
           : job.settings.reasoningEffort;
         if (!levels.some(({ effort }) => effort === reasoningEffort)) throw new SummaryError("summary_invalid_reasoning_effort");
         const model = resolveModel(configuredModel);
-        const { content, imageIds, images } = await summaryImageContent(input, sync, identity, signal, [], selector);
+        const { content, imageIds, images, imageSelection } = await summaryImageContent(input, sync, identity, signal, [], selector);
         const chatContent = content.map((item) => item.type === "input_text"
           ? { type: "text", text: item.text } : { type: "image_url", image_url: { url: item.image_url } });
         const parameters = { model, stream: false, reasoning_effort: reasoningEffort,
@@ -324,7 +324,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
         if (transcriptionOnly) return { transcription: transcript };
         return { document: { ...summaryDocument(combined ? combined.summary : value, imageIds),
           ...(transcript ? { transcript } : {}), metadata: {
-          generatedBy: "server", inputTypes: ["context", "audio", ...(images.length ? ["image" as const] : [])],
+          generatedBy: "server", inputTypes: ["context", "audio", ...(images.length ? ["image" as const] : [])], ...(imageSelection ? { imageSelection } : {}),
           detailLevel: job.settings.detail, outputLanguage: job.outputLanguage,
           request: { model, reasoning: { effort: reasoningEffort } }, response: responseMetadata,
         } } };

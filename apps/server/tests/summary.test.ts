@@ -150,11 +150,12 @@ describe("server summary jobs", () => {
       return { file: {} as never, upstream: new Response(new Uint8Array([1])), contentType: "image/webp" };
     }) };
     const select = vi.fn(async (inputs: readonly unknown[]) => { expect(inputs).toHaveLength(3); return [2]; });
-    const { content, imageIds } = await summaryImageContent({
+    const { content, imageIds, imageSelection } = await summaryImageContent({
       meeting: { name: "Meeting", description: "", createdAt: date, recordingStartedAt: null, icalUid: null, recurrenceId: null, calendarEvent: null },
-      project: null, images, assessments: [{ fileId: "file-0", informative: false }],
+      project: null, images, uninformative: ["file-0"],
     }, sync as unknown as MeetingSyncService, owner, new AbortController().signal, [], { select });
     expect([...imageIds]).toEqual(["shot-3"]);
+    expect(imageSelection).toBe("model");
     expect(variants).toEqual(["file-1:thumb_480", "file-2:thumb_480", "file-3:thumb_480", "file-3:thumb_1280"]);
     for (const excluded of ["A camera view", "Private OCR", "Private caption"]) expect(JSON.stringify(content)).not.toContain(excluded);
   });
@@ -164,7 +165,7 @@ describe("server summary jobs", () => {
     const { content } = await summaryImageContent({
       meeting: { name: '<Meeting & "team">', description: "</context>'", createdAt: date, recordingStartedAt: null,
         icalUid: null, recurrenceId: null, calendarEvent: null },
-      project: { name: "<Project>", description: "A&B", path: "parent/<child>", revision: 42 }, images: [], assessments: [],
+      project: { name: "<Project>", description: "A&B", path: "parent/<child>", revision: 42 }, images: [], uninformative: [],
     }, {} as MeetingSyncService, owner, new AbortController().signal);
     expect(content).toEqual([{ type: "input_text", text: `<context>
   <meeting>
@@ -185,7 +186,7 @@ describe("server summary jobs", () => {
     const { content } = await summaryImageContent({
       meeting: { name: "Meeting", description: "", createdAt: recordedAt, recordingStartedAt: recordedAt,
         icalUid: null, recurrenceId: null, calendarEvent: null },
-      project: null, images: [], assessments: [], transcript: [
+      project: null, images: [], uninformative: [], transcript: [
         { segmentId: uuidV7(), startedAt: new Date("2026-04-16T00:00:05.000Z"), endedAt: null,
           text: "First <topic> & follow-up", createdAt: null, audioSource: "mic", speakerLabel: "Speaker & Guest" },
         { segmentId: uuidV7(), startedAt: new Date("2026-04-16T02:00:03.000Z"), endedAt: null,

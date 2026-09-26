@@ -30,11 +30,11 @@ describe("server image captioning", () => {
         informative: { type: "boolean" },
         reason: { maxLength: IMAGE_ANALYSIS_REASON_LIMIT },
       });
-      return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ ocr_text: "", caption: "A diagram", informative: true, reason: "A diagram" }) }] }] });
+      return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ ocr_text: "", caption: "A diagram", informative: true, reason: "" }) }] }] });
     });
     const captioner = createImageCaptioner(loadConfig(environment), transport)!;
     expect(await captioner.analyze(new Uint8Array([1, 2, 3]), { outputLanguage: "en" }))
-      .toEqual({ ocr_text: "", caption: "A diagram", informative: true, reason: "A diagram" });
+      .toEqual({ ocr_text: "", caption: "A diagram", informative: true, reason: "" });
   });
 
   it.each([429, 503, 400, 403])("classifies HTTP %s without exposing response content", async (status) => {
@@ -44,7 +44,8 @@ describe("server image captioning", () => {
       .rejects.toMatchObject({ code: `captioning_http_${status}`, retryable: status === 429 || status >= 500 });
   });
 
-  it.each([{}, { status: "incomplete", output: [] }, { status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: '{"ocr_text":"","caption":"","informative":true,"reason":"x"}' }] }] }])("rejects malformed, truncated and empty captions", async (body) => {
+  it.each([{}, { status: "incomplete", output: [] }, { status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: '{"ocr_text":"","caption":"","informative":true,"reason":""}' }] }] },
+    { status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: '{"ocr_text":"","caption":"Faces","informative":false,"reason":""}' }] }] }])("rejects malformed, truncated and empty captions", async (body) => {
     const transport = vi.fn(async (url: RequestInfo | URL) => String(url).endsWith("/token")
       ? Response.json({ access_token: "app-token", expires_in: 3600 }) : Response.json(body));
     await expect(createImageCaptioner(loadConfig(environment), transport)!.analyze(new Uint8Array(), { outputLanguage: "ja" }))

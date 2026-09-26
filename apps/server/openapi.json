@@ -661,12 +661,6 @@
             ],
             "maxLength": 2048
           },
-          "informative": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
           "ocrText": {
             "type": [
               "string",
@@ -1098,6 +1092,13 @@
             },
             "maxItems": 5
           },
+          "imageSelection": {
+            "type": "string",
+            "enum": [
+              "model",
+              "even"
+            ]
+          },
           "detailLevel": {
             "type": [
               "string",
@@ -1305,12 +1306,6 @@
               "null"
             ],
             "maxLength": 1024
-          },
-          "informative": {
-            "type": [
-              "boolean",
-              "null"
-            ]
           },
           "ocrText": {
             "type": [
@@ -6651,12 +6646,6 @@
                                 "null"
                               ],
                               "maxLength": 1024
-                            },
-                            "informative": {
-                              "type": [
-                                "boolean",
-                                "null"
-                              ]
                             },
                             "ocrText": {
                               "type": [
@@ -13355,12 +13344,6 @@
                           "null"
                         ],
                         "maxLength": 1024
-                      },
-                      "informative": {
-                        "type": [
-                          "boolean",
-                          "null"
-                        ]
                       },
                       "ocrText": {
                         "type": [

@@ -24,8 +24,7 @@ function metadataSchema(ocrTextLimit: number, captionLimit: number) {
     height: fileDimensionSchema.optional(),
     ocr_text: codePointLimitedString(z.string(), ocrTextLimit).nullable().optional(),
     caption: codePointLimitedString(z.string(), captionLimit).nullable().optional(),
-    // Image-analysis hint for summary screenshot selection; absent until analyzed.
-    informative: z.boolean().nullable().optional(),
+    // Set by image analysis only when a screenshot has no shared material; absent means usable for summaries.
     informative_reason: codePointLimitedString(z.string(), fileMetadataLimits.api.informativeReason).nullable().optional(),
   }).strict();
 }

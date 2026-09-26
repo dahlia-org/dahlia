@@ -116,7 +116,7 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
           if (!row) continue;
           const [workspace] = await transaction.select({ settings: schema.syncedWorkspace.generationSettings })
             .from(schema.syncedWorkspace).where(eq(schema.syncedWorkspace.workspaceId, row.workspaceId));
-          if (!workspace) { await transaction.delete(jobs).where(eq(jobs.fileId, row.fileId)); return null; }
+          if (!workspace) { await transaction.delete(jobs).where(eq(jobs.fileId, row.fileId)); continue; }
           const outputLanguage = row.outputLanguage ?? workspace.settings.outputLanguage;
           await transaction.update(jobs).set({
             outputLanguage, status: "processing", claimedAt: now, leaseExpiresAt: new Date(now.getTime() + 300_000),

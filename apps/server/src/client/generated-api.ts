@@ -1697,7 +1697,6 @@ export interface components {
             width?: number;
             height?: number;
             caption?: string | null;
-            informative?: boolean | null;
             ocrText?: string | null;
             informativeReason?: string | null;
         };
@@ -1783,6 +1782,8 @@ export interface components {
             /** @enum {string} */
             generatedBy: "server" | "local_codex";
             inputTypes: ("transcript" | "image" | "audio" | "note" | "context")[];
+            /** @enum {string} */
+            imageSelection?: "model" | "even";
             detailLevel?: string | null;
             outputLanguage?: string | null;
             request: {
@@ -1830,7 +1831,6 @@ export interface components {
             width?: number;
             height?: number;
             caption?: string | null;
-            informative?: boolean | null;
             ocrText?: string | null;
             informativeReason?: string | null;
         };
@@ -2936,7 +2936,6 @@ export interface components {
                         width?: number;
                         height?: number;
                         caption?: string | null;
-                        informative?: boolean | null;
                         ocrText?: string | null;
                         informativeReason?: string | null;
                     };
@@ -5515,7 +5514,6 @@ export interface operations {
                         width?: number;
                         height?: number;
                         caption?: string | null;
-                        informative?: boolean | null;
                         ocrText?: string | null;
                         informativeReason?: string | null;
                     };

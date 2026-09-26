@@ -554,10 +554,9 @@ integration("PostgreSQL application store", () => {
     const claim = (await jobs.claim(model))!;
     expect(claim).toMatchObject({ fileId, ownerUserId: owner.userId });
     await store.sync.withIdentity(owner, (sync) => commit(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "file", action: "upsert",
-      entityId: fileId, baseRevision: 1, data: { checksum: `SHA-256:${"1".repeat(64)}`, metadata: { informative: false, informative_reason: "A camera view" } } }]));
-    expect(await store.sync.withIdentity(owner, (sync) => sync.listScreenshotInformative(workspaceId, meetingId)))
-      .toEqual([{ fileId, informative: false }]);
-    expect(await store.sync.withIdentity(outsider, (sync) => sync.listScreenshotInformative(workspaceId, meetingId))).toEqual([]);
+      entityId: fileId, baseRevision: 1, data: { checksum: `SHA-256:${"1".repeat(64)}`, metadata: { informative_reason: "A camera view" } } }]));
+    expect(await store.sync.withIdentity(owner, (sync) => sync.listUninformativeScreenshots(workspaceId, meetingId))).toEqual([fileId]);
+    expect(await store.sync.withIdentity(outsider, (sync) => sync.listUninformativeScreenshots(workspaceId, meetingId))).toEqual([]);
   });
 
   it("grants read-only Workspace access through an explicit organization share", async () => {

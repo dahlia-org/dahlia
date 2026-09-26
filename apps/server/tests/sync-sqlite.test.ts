@@ -1197,7 +1197,7 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
-  it("stores screenshot usefulness in file metadata and backfills it while keeping OCR and captions", async () => {
+  it("records why a screenshot is not informative in file metadata without reanalyzing existing screenshots", async () => {
     const { store, service, databasePath } = await fileSetup("model");
     const files = await attachScreenshots(service, 2);
     let calls = 0;
@@ -1205,29 +1205,24 @@ describe("SQLite canonical sync", () => {
       calls++;
       return calls === 2
         ? { ocr_text: "", caption: "Two people talking", informative: false, reason: "A camera view" }
-        : { ocr_text: "Roadmap", caption: "A roadmap slide", informative: true, reason: "A slide" };
+        : { ocr_text: "Roadmap", caption: "A roadmap slide", informative: true, reason: "" };
     } };
     await store.imageAnalysis!.reconcile("model");
     const worker = new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service);
     expect(await worker.processOne()).toBe(true);
     expect(await worker.processOne()).toBe(true);
     expect(await worker.processOne()).toBe(false);
-    expect(await service.getFile(owner, files[1]!.id)).toMatchObject({ metadata: { informative: false, informativeReason: "A camera view" } });
-    expect(await store.sync.withIdentity(owner, (scoped) => scoped.listScreenshotInformative(workspaceId, meetingId))).toEqual([
-      { fileId: files[0]!.id, informative: true }, { fileId: files[1]!.id, informative: false },
-    ].sort((left, right) => left.fileId.localeCompare(right.fileId)));
-    expect(await store.sync.withIdentity(other, (scoped) => scoped.listScreenshotInformative(workspaceId, meetingId))).toEqual([]);
-    // A screenshot analyzed before usefulness existed is analyzed once more without replacing its OCR/caption.
+    expect(await service.getFile(owner, files[0]!.id)).toMatchObject({ metadata: { caption: "A roadmap slide", informativeReason: null } });
+    expect(await service.getFile(owner, files[1]!.id)).toMatchObject({ metadata: { informativeReason: "A camera view" } });
+    expect(await store.sync.withIdentity(owner, (scoped) => scoped.listUninformativeScreenshots(workspaceId, meetingId))).toEqual([files[1]!.id]);
+    expect(await store.sync.withIdentity(other, (scoped) => scoped.listUninformativeScreenshots(workspaceId, meetingId))).toEqual([]);
+    // Screenshots analyzed before this field existed are left as they are and stay usable for summaries.
     const database = new DatabaseSync(databasePath);
-    database.prepare("UPDATE files SET metadata = json_remove(metadata, '$.informative', '$.informative_reason') WHERE file_id = ?").run(files[0]!.id);
+    database.prepare("UPDATE files SET metadata = json_remove(metadata, '$.informative_reason')").run();
     database.close();
     await store.imageAnalysis!.reconcile("model");
-    expect(await worker.processOne()).toBe(true);
-    expect(calls).toBe(3);
-    expect(await service.getFile(owner, files[0]!.id)).toMatchObject({
-      metadata: { ocrText: "Roadmap", caption: "A roadmap slide", informative: true, informativeReason: "A slide" },
-    });
     expect(await worker.processOne()).toBe(false);
+    expect(calls).toBe(2);
     await store.close?.();
   });
 

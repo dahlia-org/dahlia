@@ -20,15 +20,14 @@ export const IMAGE_ANALYSIS_REASON_LIMIT = fileMetadataLimits.api.informativeRea
 export const imageAnalysisSchema = z.object({
   ocr_text: codePointLimitedString(z.string(), fileMetadataLimits.api.ocrText),
   caption: codePointLimitedString(z.string().trim().min(1), fileMetadataLimits.api.caption),
-  // Summary selection hint, stored in file metadata.
   informative: z.boolean(),
-  reason: codePointLimitedString(z.string().trim().min(1), IMAGE_ANALYSIS_REASON_LIMIT),
-}).strict();
+  // Why the screenshot is not informative; empty when it is.
+  reason: codePointLimitedString(z.string().trim(), IMAGE_ANALYSIS_REASON_LIMIT),
+}).strict().refine((analysis) => analysis.informative || analysis.reason !== "", { path: ["reason"] });
 export type ImageAnalysis = z.infer<typeof imageAnalysisSchema>;
 
 export function needsImageAnalysis(metadata: FileRecord["metadata"], mode: ImageAnalysisClaim["mode"] = "fill_missing"): boolean {
-  return mode === "replace" || metadata.ocr_text == null || !metadata.caption?.trim()
-    || (metadata.source === "screenshot" && metadata.informative == null);
+  return mode === "replace" || metadata.ocr_text == null || !metadata.caption?.trim();
 }
 
 export class ImageAnalysisError extends Error {
