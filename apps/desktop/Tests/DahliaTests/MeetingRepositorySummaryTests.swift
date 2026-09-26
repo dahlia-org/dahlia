@@ -345,6 +345,31 @@ import GRDB
         }
 
         @Test
+        func summaryScreenshotsExcludeScreenshotsWithoutSharedMaterial() async throws {
+            let context = try makeRepositoryContext()
+            let screenshots = (0 ..< 3).map { index in
+                MeetingScreenshotRecord(
+                    id: .v7(),
+                    meetingId: context.meeting.id,
+                    capturedAt: .now.addingTimeInterval(Double(index)),
+                    imageData: Data([0x89, 0x50, 0x4E, 0x47, UInt8(index)]),
+                    mimeType: "image/png"
+                )
+            }
+            try await context.manager.dbQueue.write { db in
+                for screenshot in screenshots {
+                    try screenshot.insertLegacyForTesting(db)
+                }
+                var file = try #require(try FileRecord.fetchOne(db, key: screenshots[1].originalFileId))
+                file.metadata.informativeReason = "Only a camera view."
+                try file.update(db)
+            }
+
+            #expect(try context.repo.fetchSummaryScreenshots(forMeetingId: context.meeting.id).map(\.id) == [screenshots[0].id, screenshots[2].id])
+            #expect(try context.repo.fetchScreenshots(forMeetingId: context.meeting.id).map(\.id) == screenshots.map(\.id))
+        }
+
+        @Test
         func deletingUnreferencedScreenshotDoesNotChangeSummaryDocument() async throws {
             let context = try makeRepositoryContext()
             let screenshot = MeetingScreenshotRecord(

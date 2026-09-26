@@ -109,6 +109,7 @@ Workersの生成capabilityは従来どおり無効とする。
 画像1枚で決まる有用性は Server の画像解析で判定し、OCR / caption と同じ応答で返させる。画像解析は単一ファイルの判定に限り、
 他の画像との比較はしない。共有資料がない場合だけ、その理由を file metadata の nullable な `informative_reason`
 （wire では `informativeReason`）に保存し、専用テーブルは作らない。値がなければ有用または未判定として要約候補に残す。
+Desktop も同期で受け取った値を files の metadata に保存し、Desktop で生成する要約の入力から同じ画像を除外する。
 既存のスクリーンショットを有用性のためだけに再解析しない。LLM 費用、file revision と同期差分、要約入力の変化を避けるためで、
 未判定の画像は前処理のモデルが同じ基準で除外する。
 

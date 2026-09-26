@@ -5362,6 +5362,7 @@ final class CaptionViewModel: ObservableObject {
         let repo = MeetingRepository(dbQueue: request.dbQueue)
 
         let screenshots = (try? repo.fetchScreenshots(forMeetingId: meetingId)) ?? []
+        let summaryScreenshots = (try? repo.fetchSummaryScreenshots(forMeetingId: meetingId)) ?? []
         let calendarEvent = try repo.fetchCalendarEvent(forMeetingId: meetingId)
         let promptProjectName = request.projectName.nilIfBlank
 
@@ -5380,7 +5381,7 @@ final class CaptionViewModel: ObservableObject {
             ),
             transcriptText: summaryInput.text,
             noteText: request.noteText,
-            screenshots: screenshots,
+            screenshots: summaryScreenshots,
             recordingSessions: request.recordingSessions,
             generationSettings: request.generationSettings
         )) }

@@ -30,6 +30,8 @@ struct FileStorageMetadata: Codable, Equatable, Sendable {
     var source: FileMetadata.Source
     var width: Int?
     var height: Int?
+    /// Set by Server image analysis only when a screenshot has no shared material; such screenshots are not summary input.
+    var informativeReason: String?
 }
 
 struct FileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
@@ -89,7 +91,12 @@ struct FileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
             contentType: type,
             checksum: checksum,
             name: name,
-            metadata: FileStorageMetadata(source: sourceType, width: metadata.width, height: metadata.height),
+            metadata: FileStorageMetadata(
+                source: sourceType,
+                width: metadata.width,
+                height: metadata.height,
+                informativeReason: metadata.informativeReason
+            ),
             createdAt: createdAt,
             updatedAt: updatedAt,
             localReference: existing?.checksum == checksum ? existing?.localReference : nil,
