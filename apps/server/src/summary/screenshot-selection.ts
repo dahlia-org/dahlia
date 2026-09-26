@@ -42,6 +42,12 @@ export function sampleEvenly<T>(items: readonly T[], limit: number): T[] {
   return items.filter((_, index) => index % interval === 0).slice(0, limit);
 }
 
+/** Keeps exactly `min(items.length, limit)` items spread across the whole list, including the first and last. */
+function spreadEvenly<T>(items: readonly T[], limit: number): T[] {
+  if (items.length <= limit) return [...items];
+  return Array.from({ length: limit }, (_, index) => items[Math.round(index * (items.length - 1) / (limit - 1))]!);
+}
+
 /**
  * Lets a vision model see every candidate at low resolution and keep distinct shared material, so periodic
  * captures of the same screen do not use the summary's image budget. Falls back to even sampling.
@@ -49,8 +55,9 @@ export function sampleEvenly<T>(items: readonly T[], limit: number): T[] {
 export async function selectSummaryScreenshots(candidates: readonly SyncScreenshotRecord[], signal: AbortSignal,
   selector?: ScreenshotSelector, read?: (image: SyncScreenshotRecord, signal: AbortSignal) => Promise<Uint8Array>,
   limit = SUMMARY_IMAGE_LIMIT, timeoutMs = PRESELECTION_TIMEOUT_MS): Promise<{ images: SyncScreenshotRecord[]; method: ScreenshotSelectionMethod }> {
-  if (!selector || !read || candidates.length <= 1) return { images: sampleEvenly(candidates, limit), method: "even" };
-  const pool = sampleEvenly(candidates, PRESELECTION_IMAGE_LIMIT);
+  // A single candidate still goes through the model, which also rejects faces and blank screens.
+  if (!selector || !read || !candidates.length) return { images: sampleEvenly(candidates, limit), method: "even" };
+  const pool = spreadEvenly(candidates, PRESELECTION_IMAGE_LIMIT);
   const stop = new AbortController();
   const timeout = AbortSignal.timeout(timeoutMs);
   const deadline = AbortSignal.any([signal, timeout, stop.signal]);

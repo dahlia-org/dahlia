@@ -49,10 +49,23 @@ describe("summary screenshot preselection", () => {
     expect(peak).toBeLessThanOrEqual(8);
   });
 
-  it("treats an empty selection as no useful screenshot", async () => {
-    const selector: ScreenshotSelector = { select: async () => [] };
+  it("shows the model exactly 240 candidates spread across a long meeting", async () => {
+    const images = Array.from({ length: 241 }, (_, index) => screenshot(index));
+    let shown: readonly { capturedAt: Date }[] = [];
+    const selector: ScreenshotSelector = { select: async (inputs) => { shown = inputs; return [0]; } };
+    await selectSummaryScreenshots(images, signal(), selector, async () => new Uint8Array([1]));
+    expect(shown).toHaveLength(240);
+    expect([shown[0]!.capturedAt, shown[239]!.capturedAt]).toEqual([images[0]!.capturedAt, images[240]!.capturedAt]);
+  });
+
+  it("treats an empty selection as no useful screenshot, even for a lone candidate", async () => {
+    const select = vi.fn(async () => []);
+    const selector: ScreenshotSelector = { select };
     expect(await selectSummaryScreenshots([screenshot(0), screenshot(1)], signal(), selector, async () => new Uint8Array([1])))
       .toEqual({ images: [], method: "model" });
+    expect(await selectSummaryScreenshots([screenshot(0)], signal(), selector, async () => new Uint8Array([1])))
+      .toEqual({ images: [], method: "model" });
+    expect(select).toHaveBeenCalledTimes(2);
   });
 
   it("falls back to even sampling with a content-free failure code", async () => {
