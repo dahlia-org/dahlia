@@ -204,8 +204,8 @@ function summaryElapsedTime(startedAt: Date, timeBase: Date, sessions: readonly 
 export async function summaryImageContent(input: Awaited<ReturnType<typeof collectSummaryInput>>, sync: MeetingSyncService,
   identity: import("../auth/identity").Identity, signal: AbortSignal, recordingSessions: readonly SummaryRecordingSession[] = [],
   selector?: ScreenshotSelector) {
-  const images = await selectSummaryScreenshots(summaryScreenshotCandidates(input.images, input.assessments), signal, selector, async (image) => {
-    const { upstream } = await sync.readFileContent(identity, image.fileId, "thumb_480", "GET", new Request("https://dahlia.invalid/", { signal }));
+  const images = await selectSummaryScreenshots(summaryScreenshotCandidates(input.images, input.assessments), signal, selector, async (image, deadline) => {
+    const { upstream } = await sync.readFileContent(identity, image.fileId, "thumb_480", "GET", new Request("https://dahlia.invalid/", { signal: deadline }));
     if (!upstream.ok) { await upstream.body?.cancel(); throw new SummaryError("summary_image_unavailable", upstream.status >= 500); }
     return new Uint8Array(await boundedBytes(upstream, 1024 * 1024));
   });

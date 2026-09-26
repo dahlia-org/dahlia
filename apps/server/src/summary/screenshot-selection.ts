@@ -10,6 +10,8 @@ export const SUMMARY_IMAGE_LIMIT = 24;
 const PRESELECTION_IMAGE_LIMIT = 240;
 const PRESELECTION_IMAGE_BYTES = 1024 * 1024;
 const PRESELECTION_TOTAL_BYTES = 24 * 1024 * 1024;
+// Thumbnail reads and selection share one budget so preselection leaves the summary attempt deadline intact.
+const PRESELECTION_TIMEOUT_MS = 90_000;
 
 export interface ScreenshotSelector {
   /** Returns indices into `images` of up to `limit` distinct, informative screenshots. */
@@ -37,19 +39,21 @@ export function sampleEvenly<T>(items: readonly T[], limit: number): T[] {
  * captures of the same screen do not use the summary's image budget. Falls back to even sampling.
  */
 export async function selectSummaryScreenshots(candidates: readonly SyncScreenshotRecord[], signal: AbortSignal,
-  selector?: ScreenshotSelector, read?: (image: SyncScreenshotRecord) => Promise<Uint8Array>, limit = SUMMARY_IMAGE_LIMIT) {
+  selector?: ScreenshotSelector, read?: (image: SyncScreenshotRecord, signal: AbortSignal) => Promise<Uint8Array>, limit = SUMMARY_IMAGE_LIMIT) {
   if (!selector || !read || candidates.length <= 1) return sampleEvenly(candidates, limit);
   const pool = sampleEvenly(candidates, PRESELECTION_IMAGE_LIMIT);
+  const deadline = AbortSignal.any([signal, AbortSignal.timeout(PRESELECTION_TIMEOUT_MS)]);
   try {
     const images: { data: Uint8Array; capturedAt: Date }[] = [];
     let bytes = 0;
     for (const image of pool) {
-      const data = await read(image);
+      deadline.throwIfAborted();
+      const data = await read(image, deadline);
       bytes += data.byteLength;
       if (data.byteLength > PRESELECTION_IMAGE_BYTES || bytes > PRESELECTION_TOTAL_BYTES) throw new Error("preselection_input_too_large");
       images.push({ data, capturedAt: image.capturedAt });
     }
-    const selected = new Set(await selector.select(images, limit, signal));
+    const selected = new Set(await selector.select(images, limit, deadline));
     return pool.filter((_, index) => selected.has(index)).slice(0, limit);
   } catch {
     signal.throwIfAborted();
@@ -99,7 +103,7 @@ Return the selected image index values in capture order.`,
             required: ["indices"],
           } } },
         }),
-        signal: AbortSignal.any([signal, AbortSignal.timeout(90_000)]),
+        signal,
       });
       if (!response.ok) { await response.body?.cancel(); throw new Error(`preselection_http_${response.status}`); }
       let size = 0;
